@@ -1,5 +1,8 @@
 package damien.nodeworks.block.entity
 
+import damien.nodeworks.card.InventorySideCapability
+import damien.nodeworks.card.NodeCard
+import damien.nodeworks.card.SideCapability
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
@@ -79,6 +82,31 @@ class NodeBlockEntity(
         level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_CLIENTS)
     }
 
+    // --- Card access ---
+
+    /** Returns the card in slot 0 of the given side, or null if empty/not a card. */
+    fun getCard(side: Direction): NodeCard? {
+        return items[side.ordinal * SLOTS_PER_SIDE].item as? NodeCard
+    }
+
+    /** Returns the alias (custom name) of the card on this side, or null. */
+    fun getCardAlias(side: Direction): String? {
+        val stack = items[side.ordinal * SLOTS_PER_SIDE]
+        if (stack.item !is NodeCard) return null
+        if (!stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) return null
+        return stack.hoverName.string
+    }
+
+    /** Resolves the capability for this side based on the card type. */
+    fun getSideCapability(side: Direction): SideCapability? {
+        val card = getCard(side) ?: return null
+        val adjacentPos = worldPosition.relative(side)
+        return when (card) {
+            is damien.nodeworks.card.InventoryCard -> InventorySideCapability(adjacentPos)
+            else -> null
+        }
+    }
+
     // --- Side-aware access ---
 
     private fun sideOffset(side: Direction): Int = side.ordinal * SLOTS_PER_SIDE
@@ -135,7 +163,10 @@ class NodeBlockEntity(
     override fun canPlaceItemThroughFace(slot: Int, stack: ItemStack, side: Direction?): Boolean {
         if (side == null) return false
         val offset = sideOffset(side)
-        return slot in offset until (offset + SLOTS_PER_SIDE)
+        if (slot !in offset until (offset + SLOTS_PER_SIDE)) return false
+        // Slot 0 of each side is the card slot — only accepts NodeCard items
+        val isCardSlot = slot == offset
+        return if (isCardSlot) stack.item is NodeCard else stack.item !is NodeCard
     }
 
     override fun canTakeItemThroughFace(slot: Int, stack: ItemStack, side: Direction): Boolean {
