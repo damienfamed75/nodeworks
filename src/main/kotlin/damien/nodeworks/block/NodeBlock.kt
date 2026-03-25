@@ -2,7 +2,9 @@ package damien.nodeworks.block
 
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.network.NodeConnectionHelper
 import net.minecraft.core.BlockPos
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
@@ -42,5 +44,15 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity {
         return NodeBlockEntity(pos, state)
+    }
+
+    override fun affectNeighborsAfterRemoval(
+        state: BlockState,
+        level: ServerLevel,
+        pos: BlockPos,
+        movedByPiston: Boolean
+    ) {
+        NodeConnectionHelper.removeAllConnections(level, pos)
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 }
