@@ -78,11 +78,15 @@ object NodeConnectionRenderer {
             }
         }
 
-        // Draw selection highlight
+        // Draw selection highlight (only if node still exists and player holds wrench)
         val selectedPos = NetworkWrenchItem.clientSelectedNode
         val player = mc.player
         if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
-            renderSelectionHighlight(poseStack, buffer, selectedPos)
+            if (level.getBlockEntity(selectedPos) is NodeBlockEntity) {
+                renderSelectionHighlight(poseStack, buffer, selectedPos)
+            } else {
+                NetworkWrenchItem.clientSelectedNode = null
+            }
         }
 
         poseStack.popPose()

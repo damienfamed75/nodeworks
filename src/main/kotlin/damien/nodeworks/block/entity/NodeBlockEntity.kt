@@ -40,6 +40,12 @@ class NodeBlockEntity(
 
         /** Client-side callback for tracking node load/unload. Set by client init. */
         var nodeTracker: NodeTracker? = null
+
+        /** Cached per-side slot index arrays to avoid allocation on every hopper interaction. */
+        private val SLOTS_BY_FACE: Array<IntArray> = Array(6) { side ->
+            val offset = side * SLOTS_PER_SIDE
+            IntArray(SLOTS_PER_SIDE) { offset + it }
+        }
     }
 
     /** Callback interface for client-side node position tracking. */
@@ -123,8 +129,7 @@ class NodeBlockEntity(
     // --- WorldlyContainer: controls which slots are accessible from each direction ---
 
     override fun getSlotsForFace(side: Direction): IntArray {
-        val offset = sideOffset(side)
-        return IntArray(SLOTS_PER_SIDE) { offset + it }
+        return SLOTS_BY_FACE[side.ordinal]
     }
 
     override fun canPlaceItemThroughFace(slot: Int, stack: ItemStack, side: Direction?): Boolean {
@@ -153,11 +158,17 @@ class NodeBlockEntity(
         connections.clear()
         input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
         nodeTracker?.onNodeChanged(worldPosition, true)
+        // Always track — level is null during chunk deserialization so we can't check isClientSide.
+        // Duplicate client-side entries are harmless (same positions, same Set).
         NodeConnectionHelper.trackNode(worldPosition)
     }
 
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
+        val currentLevel = level
+        if (currentLevel is net.minecraft.server.level.ServerLevel) {
+            NodeConnectionHelper.removeAllConnectionsOf(currentLevel, this)
+        }
         NodeConnectionHelper.untrackNode(worldPosition)
         super.setRemoved()
     }

@@ -2,9 +2,7 @@ package damien.nodeworks.block
 
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.NodeBlockEntity
-import damien.nodeworks.network.NodeConnectionHelper
 import net.minecraft.core.BlockPos
-import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
@@ -46,13 +44,6 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         return NodeBlockEntity(pos, state)
     }
 
-    override fun affectNeighborsAfterRemoval(
-        state: BlockState,
-        level: ServerLevel,
-        pos: BlockPos,
-        movedByPiston: Boolean
-    ) {
-        NodeConnectionHelper.removeAllConnections(level, pos)
-        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
-    }
+    // Connection cleanup happens in NodeBlockEntity.setRemoved() where the entity
+    // still has its data. By the time affectNeighborsAfterRemoval runs, the BE is gone.
 }
