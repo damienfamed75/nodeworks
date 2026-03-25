@@ -158,9 +158,15 @@ class NodeBlockEntity(
         connections.clear()
         input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
         nodeTracker?.onNodeChanged(worldPosition, true)
-        // Always track — level is null during chunk deserialization so we can't check isClientSide.
-        // Duplicate client-side entries are harmless (same positions, same Set).
-        NodeConnectionHelper.trackNode(worldPosition)
+    }
+
+    override fun setLevel(newLevel: net.minecraft.world.level.Level) {
+        super.setLevel(newLevel)
+        // Track in spatial index now that we know the dimension.
+        // setLevel is called after loadAdditional, so connections are already loaded.
+        if (newLevel is net.minecraft.server.level.ServerLevel) {
+            NodeConnectionHelper.trackNode(newLevel, worldPosition)
+        }
     }
 
     override fun setRemoved() {
@@ -168,8 +174,8 @@ class NodeBlockEntity(
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.removeAllConnectionsOf(currentLevel, this)
+            NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
         }
-        NodeConnectionHelper.untrackNode(worldPosition)
         super.setRemoved()
     }
 
