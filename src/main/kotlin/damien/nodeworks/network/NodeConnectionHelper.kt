@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 object NodeConnectionHelper {
 
     const val MAX_DISTANCE = 8.0
+    private const val MAX_DISTANCE_SQ = MAX_DISTANCE * MAX_DISTANCE
 
     /**
      * Spatial index: chunk column (x >> 4, z >> 4) -> set of node positions in that column.
@@ -29,15 +30,16 @@ object NodeConnectionHelper {
 
     fun untrackNode(pos: BlockPos) {
         val key = chunkKeyOf(pos)
-        val set = nodesByChunk[key] ?: return
-        set.remove(pos)
-        if (set.isEmpty()) nodesByChunk.remove(key)
+        nodesByChunk.computeIfPresent(key) { _, set ->
+            set.remove(pos)
+            if (set.isEmpty()) null else set
+        }
     }
 
     // --- Validation ---
 
     fun isWithinRange(posA: BlockPos, posB: BlockPos): Boolean {
-        return posA.center.distanceTo(posB.center) <= MAX_DISTANCE
+        return posA.center.distanceToSqr(posB.center) <= MAX_DISTANCE_SQ
     }
 
     fun checkLineOfSight(level: Level, posA: BlockPos, posB: BlockPos): Boolean {
@@ -90,8 +92,12 @@ object NodeConnectionHelper {
         return entityA != null || entityB != null
     }
 
-    fun removeAllConnections(level: ServerLevel, pos: BlockPos) {
-        val entity = getNodeEntity(level, pos) ?: return
+    /**
+     * Removes all connections from the given entity. Called during block removal
+     * when the block state is already air (so getNodeEntity won't work for pos).
+     */
+    fun removeAllConnectionsOf(level: ServerLevel, entity: NodeBlockEntity) {
+        val pos = entity.blockPos
         val neighbors = entity.getConnections()
         for (neighborPos in neighbors) {
             getNodeEntity(level, neighborPos)?.removeConnection(pos)
