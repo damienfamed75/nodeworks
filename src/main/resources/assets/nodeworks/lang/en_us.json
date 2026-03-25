@@ -8,5 +8,7 @@
   "message.nodeworks.too_far": "Nodes are too far apart (max 8 blocks).",
   "message.nodeworks.no_line_of_sight": "No line of sight between nodes.",
   "message.nodeworks.connected": "Nodes connected.",
-  "message.nodeworks.disconnected": "Nodes disconnected."
+  "message.nodeworks.disconnected": "Nodes disconnected.",
+  "item.nodeworks.inventory_card": "Inventory Card",
+  "container.nodeworks.node_side": "Node — %s"
 }

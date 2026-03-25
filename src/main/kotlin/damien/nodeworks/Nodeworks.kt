@@ -4,6 +4,7 @@ import damien.nodeworks.item.NetworkWrenchItem
 import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.registry.ModBlocks
 import damien.nodeworks.registry.ModItems
+import damien.nodeworks.registry.ModScreenHandlers
 import net.fabricmc.api.ModInitializer
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
 import org.slf4j.LoggerFactory
@@ -16,6 +17,7 @@ object Nodeworks : ModInitializer {
         ModBlocks.initialize()
         ModBlockEntities.initialize()
         ModItems.initialize()
+        ModScreenHandlers.initialize()
 
         ServerPlayConnectionEvents.DISCONNECT.register { handler, _ ->
             NetworkWrenchItem.clearSelection(handler.player.uuid)

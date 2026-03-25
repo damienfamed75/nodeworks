@@ -1,5 +1,6 @@
 package damien.nodeworks.registry
 
+import damien.nodeworks.card.InventoryCard
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -13,6 +14,12 @@ object ModItems {
     val NETWORK_WRENCH: Item = register(
         "network_wrench",
         ::NetworkWrenchItem,
+        Item.Properties().stacksTo(1)
+    )
+
+    val INVENTORY_CARD: Item = register(
+        "inventory_card",
+        ::InventoryCard,
         Item.Properties().stacksTo(1)
     )
 
