@@ -3,6 +3,7 @@ package damien.nodeworks.network
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.entity.NodeBlockEntity
 import net.minecraft.core.BlockPos
+import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.ClipContext
 import net.minecraft.world.level.Level
@@ -16,21 +17,26 @@ object NodeConnectionHelper {
     private const val MAX_DISTANCE_SQ = MAX_DISTANCE * MAX_DISTANCE
 
     /**
-     * Spatial index: chunk column (x >> 4, z >> 4) -> set of node positions in that column.
-     * Allows O(1) lookup of nearby nodes instead of iterating every loaded node.
+     * Per-dimension spatial index: dimension -> (chunk column key -> set of node positions).
+     * Keeps dimensions fully isolated — a block change in the overworld never touches nether nodes.
      */
-    private val nodesByChunk = ConcurrentHashMap<Long, MutableSet<BlockPos>>()
+    private val nodesByDimension = ConcurrentHashMap<ResourceKey<Level>, ConcurrentHashMap<Long, MutableSet<BlockPos>>>()
 
     private fun chunkKey(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
     private fun chunkKeyOf(pos: BlockPos): Long = chunkKey(pos.x shr 4, pos.z shr 4)
 
-    fun trackNode(pos: BlockPos) {
-        nodesByChunk.computeIfAbsent(chunkKeyOf(pos)) { ConcurrentHashMap.newKeySet() }.add(pos)
+    private fun chunkIndex(level: ServerLevel): ConcurrentHashMap<Long, MutableSet<BlockPos>> {
+        return nodesByDimension.computeIfAbsent(level.dimension()) { ConcurrentHashMap() }
     }
 
-    fun untrackNode(pos: BlockPos) {
+    fun trackNode(level: ServerLevel, pos: BlockPos) {
+        chunkIndex(level).computeIfAbsent(chunkKeyOf(pos)) { ConcurrentHashMap.newKeySet() }.add(pos)
+    }
+
+    fun untrackNode(level: ServerLevel, pos: BlockPos) {
+        val chunks = nodesByDimension[level.dimension()] ?: return
         val key = chunkKeyOf(pos)
-        nodesByChunk.computeIfPresent(key) { _, set ->
+        chunks.computeIfPresent(key) { _, set ->
             set.remove(pos)
             if (set.isEmpty()) null else set
         }
@@ -93,8 +99,8 @@ object NodeConnectionHelper {
     }
 
     /**
-     * Removes all connections from the given entity. Called during block removal
-     * when the block state is already air (so getNodeEntity won't work for pos).
+     * Removes all connections from the given entity. Called during block entity removal
+     * when the block state may already be air.
      */
     fun removeAllConnectionsOf(level: ServerLevel, entity: NodeBlockEntity) {
         val pos = entity.blockPos
@@ -110,12 +116,12 @@ object NodeConnectionHelper {
     // --- Block change handling ---
 
     /**
-     * Called when a block changes at [changedPos]. Uses the spatial index to find
-     * only nearby nodes, then checks only connections whose bounding box contains
-     * the changed position. Only raycasts the specific affected connection.
+     * Called when a block changes at [changedPos]. Uses the per-dimension spatial index
+     * to find only nearby nodes in the same dimension, then checks only connections whose
+     * bounding box contains the changed position.
      */
     fun onBlockChanged(level: ServerLevel, changedPos: BlockPos) {
-        if (nodesByChunk.isEmpty()) return
+        val chunks = nodesByDimension[level.dimension()] ?: return
 
         val cx = changedPos.x shr 4
         val cz = changedPos.z shr 4
@@ -124,7 +130,7 @@ object NodeConnectionHelper {
         // MAX_DISTANCE=8 < 16 (chunk width), so 1 chunk radius is sufficient.
         for (dx in -1..1) {
             for (dz in -1..1) {
-                val nodes = nodesByChunk[chunkKey(cx + dx, cz + dz)] ?: continue
+                val nodes = chunks[chunkKey(cx + dx, cz + dz)] ?: continue
                 for (nodePos in nodes) {
                     checkNodeConnections(level, nodePos, changedPos)
                 }
@@ -142,7 +148,7 @@ object NodeConnectionHelper {
         if (connections.isEmpty()) return
 
         for (targetPos in connections) {
-            // Only check from the "lesser" side to avoid double-raycasting A→B and B→A
+            // Only check from the "lesser" side to avoid double-raycasting A↔B
             if (!isLessThan(nodePos, targetPos)) continue
             // Cheap AABB test: is the changed block within the connection's bounding box?
             if (!isInsideConnectionBounds(nodePos, targetPos, changedPos)) continue
