@@ -16,6 +16,10 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
     companion object {
         private val selectedNodes = ConcurrentHashMap<UUID, BlockPos>()
 
+        /** Client-side selected node for highlight rendering. Only meaningful on the client JVM. */
+        @JvmField
+        var clientSelectedNode: BlockPos? = null
+
         fun clearSelection(playerUuid: UUID) {
             selectedNodes.remove(playerUuid)
         }
@@ -26,16 +30,22 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         val pos = context.clickedPos
         val player = context.player ?: return InteractionResult.PASS
 
-        // Only process on server
-        if (level.isClientSide) return InteractionResult.SUCCESS
-
         // Must click a node block
         if (level.getBlockState(pos).block !is NodeBlock) return InteractionResult.PASS
 
+        // Client side: track selection for highlight rendering
+        if (level.isClientSide) {
+            if (player.isShiftKeyDown) {
+                clientSelectedNode = pos
+            }
+            return InteractionResult.SUCCESS
+        }
+
+        // --- Server side below ---
         val serverLevel = level as ServerLevel
 
-        if (!player.isShiftKeyDown) {
-            // Right-click: select node
+        if (player.isShiftKeyDown) {
+            // Shift + right-click: select node
             selectedNodes[player.uuid] = pos
             player.displayClientMessage(
                 Component.translatable("message.nodeworks.node_selected", pos.x, pos.y, pos.z), false
@@ -43,7 +53,7 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
             return InteractionResult.SUCCESS
         }
 
-        // Shift + right-click: connect/disconnect
+        // Right-click: connect/disconnect
         val selectedPos = selectedNodes[player.uuid]
         if (selectedPos == null) {
             player.displayClientMessage(
@@ -82,7 +92,6 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         }
 
         val connected = NodeConnectionHelper.toggleConnection(serverLevel, selectedPos, pos)
-        selectedNodes.remove(player.uuid)
 
         val msgKey = if (connected) "message.nodeworks.connected" else "message.nodeworks.disconnected"
         player.displayClientMessage(Component.translatable(msgKey), false)

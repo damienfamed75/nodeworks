@@ -1,7 +1,10 @@
 package damien.nodeworks.render
 
-import damien.nodeworks.block.entity.NodeBlockEntity
 import com.mojang.blaze3d.vertex.PoseStack
+import com.mojang.blaze3d.vertex.VertexConsumer
+import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.item.NetworkWrenchItem
+import damien.nodeworks.registry.ModItems
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents
 import net.minecraft.client.Minecraft
@@ -13,6 +16,10 @@ import java.util.concurrent.ConcurrentHashMap
 object NodeConnectionRenderer {
 
     private val knownNodes: MutableSet<BlockPos> = Collections.newSetFromMap(ConcurrentHashMap())
+
+    // Node shape bounds (5/16 to 11/16)
+    private const val MIN = 5f / 16f
+    private const val MAX = 11f / 16f
 
     fun register() {
         NodeBlockEntity.nodeTracker = NodeBlockEntity.NodeTracker { pos, loaded ->
@@ -39,6 +46,7 @@ object NodeConnectionRenderer {
 
         val pose = poseStack.last()
 
+        // Draw connection lines
         for (nodePos in knownNodes) {
             if (!level.isLoaded(nodePos)) continue
             val blockEntity = level.getBlockEntity(nodePos) as? NodeBlockEntity ?: continue
@@ -70,7 +78,69 @@ object NodeConnectionRenderer {
             }
         }
 
+        // Draw selection highlight
+        val selectedPos = NetworkWrenchItem.clientSelectedNode
+        val player = mc.player
+        if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
+            renderSelectionHighlight(poseStack, buffer, selectedPos)
+        }
+
         poseStack.popPose()
+    }
+
+    private fun renderSelectionHighlight(poseStack: PoseStack, buffer: VertexConsumer, pos: BlockPos) {
+        val x = pos.x.toFloat()
+        val y = pos.y.toFloat()
+        val z = pos.z.toFloat()
+        val pose = poseStack.last()
+
+        val x0 = x + MIN
+        val y0 = y + MIN
+        val z0 = z + MIN
+        val x1 = x + MAX
+        val y1 = y + MAX
+        val z1 = z + MAX
+
+        // 12 edges of a box
+        // Bottom face
+        drawLine(buffer, pose, x0, y0, z0, x1, y0, z0)
+        drawLine(buffer, pose, x1, y0, z0, x1, y0, z1)
+        drawLine(buffer, pose, x1, y0, z1, x0, y0, z1)
+        drawLine(buffer, pose, x0, y0, z1, x0, y0, z0)
+        // Top face
+        drawLine(buffer, pose, x0, y1, z0, x1, y1, z0)
+        drawLine(buffer, pose, x1, y1, z0, x1, y1, z1)
+        drawLine(buffer, pose, x1, y1, z1, x0, y1, z1)
+        drawLine(buffer, pose, x0, y1, z1, x0, y1, z0)
+        // Vertical edges
+        drawLine(buffer, pose, x0, y0, z0, x0, y1, z0)
+        drawLine(buffer, pose, x1, y0, z0, x1, y1, z0)
+        drawLine(buffer, pose, x1, y0, z1, x1, y1, z1)
+        drawLine(buffer, pose, x0, y0, z1, x0, y1, z1)
+    }
+
+    private fun drawLine(
+        buffer: VertexConsumer, pose: PoseStack.Pose,
+        x0: Float, y0: Float, z0: Float,
+        x1: Float, y1: Float, z1: Float
+    ) {
+        val dx = x1 - x0
+        val dy = y1 - y0
+        val dz = z1 - z0
+        val len = Math.sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
+        val nx = if (len > 0) dx / len else 0f
+        val ny = if (len > 0) dy / len else 0f
+        val nz = if (len > 0) dz / len else 1f
+
+        buffer.addVertex(pose, x0, y0, z0)
+            .setColor(131, 224, 134, 255)
+            .setNormal(pose, nx, ny, nz)
+            .setLineWidth(3.0f)
+
+        buffer.addVertex(pose, x1, y1, z1)
+            .setColor(131, 224, 134, 255)
+            .setNormal(pose, nx, ny, nz)
+            .setLineWidth(3.0f)
     }
 
     private fun isLessThan(a: BlockPos, b: BlockPos): Boolean {
