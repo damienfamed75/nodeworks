@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find c:/Users/thedo/projects/java/nodeworks/src -name *.kt -o -name *.java)",
+      "Bash(./gradlew dependencies:*)"
+    ]
+  }
+}
