@@ -1,14 +1,21 @@
 package damien.nodeworks.block.entity
 
+import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.HolderLookup
 import net.minecraft.core.NonNullList
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.network.protocol.Packet
+import net.minecraft.network.protocol.game.ClientGamePacketListener
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket
 import net.minecraft.world.Container
 import net.minecraft.world.ContainerHelper
 import net.minecraft.world.WorldlyContainer
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
@@ -30,9 +37,41 @@ class NodeBlockEntity(
     companion object {
         const val SLOTS_PER_SIDE = 9
         const val TOTAL_SLOTS = SLOTS_PER_SIDE * 6 // 54 total
+
+        /** Client-side callback for tracking node load/unload. Set by client init. */
+        var nodeTracker: NodeTracker? = null
+    }
+
+    /** Callback interface for client-side node position tracking. */
+    fun interface NodeTracker {
+        fun onNodeChanged(pos: BlockPos, loaded: Boolean)
     }
 
     private val items: NonNullList<ItemStack> = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
+    private val connections: LinkedHashSet<BlockPos> = linkedSetOf()
+
+    // --- Network connections ---
+
+    fun getConnections(): List<BlockPos> = connections.toList()
+
+    fun hasConnection(pos: BlockPos): Boolean = pos in connections
+
+    fun addConnection(pos: BlockPos): Boolean {
+        if (!connections.add(pos)) return false
+        markDirtyAndSync()
+        return true
+    }
+
+    fun removeConnection(pos: BlockPos): Boolean {
+        if (!connections.remove(pos)) return false
+        markDirtyAndSync()
+        return true
+    }
+
+    private fun markDirtyAndSync() {
+        setChanged()
+        level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_CLIENTS)
+    }
 
     // --- Side-aware access ---
 
@@ -104,11 +143,32 @@ class NodeBlockEntity(
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
         ContainerHelper.saveAllItems(output, items)
+        output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
     }
 
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
         items.clear()
         ContainerHelper.loadAllItems(input, items)
+        connections.clear()
+        input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        nodeTracker?.onNodeChanged(worldPosition, true)
+        NodeConnectionHelper.trackNode(worldPosition)
+    }
+
+    override fun setRemoved() {
+        nodeTracker?.onNodeChanged(worldPosition, false)
+        NodeConnectionHelper.untrackNode(worldPosition)
+        super.setRemoved()
+    }
+
+    // --- Client sync ---
+
+    override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {
+        return saveWithoutMetadata(registries)
+    }
+
+    override fun getUpdatePacket(): Packet<ClientGamePacketListener> {
+        return ClientboundBlockEntityDataPacket.create(this)
     }
 }
