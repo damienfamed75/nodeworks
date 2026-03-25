@@ -37,12 +37,14 @@ object NetworkDiscovery {
     }
 
     private fun snapshotNode(entity: NodeBlockEntity): NodeSnapshot {
-        val sides = mutableMapOf<Direction, NodeSideSnapshot>()
+        val sides = mutableMapOf<Direction, List<CardSnapshot>>()
 
         for (dir in Direction.entries) {
-            val capability = entity.getSideCapability(dir) ?: continue
-            val alias = entity.getCardAlias(dir)
-            sides[dir] = NodeSideSnapshot(capability, alias)
+            val capabilities = entity.getSideCapabilities(dir)
+            if (capabilities.isEmpty()) continue
+            sides[dir] = capabilities.map { info ->
+                CardSnapshot(info.capability, info.alias, info.slotIndex)
+            }
         }
 
         return NodeSnapshot(entity.blockPos, sides)
@@ -52,20 +54,26 @@ object NetworkDiscovery {
 data class NetworkSnapshot(val nodes: List<NodeSnapshot>) {
 
     /** Find a card by alias across the entire network. Returns null if not found or duplicate. */
-    fun findByAlias(alias: String): NodeSideSnapshot? {
+    fun findByAlias(alias: String): CardSnapshot? {
         val matches = nodes.flatMap { node ->
-            node.sides.values.filter { it.alias == alias }
+            node.sides.values.flatten().filter { it.alias == alias }
         }
         return matches.singleOrNull()
+    }
+
+    /** All cards across the entire network. */
+    fun allCards(): List<CardSnapshot> {
+        return nodes.flatMap { node -> node.sides.values.flatten() }
     }
 }
 
 data class NodeSnapshot(
     val pos: BlockPos,
-    val sides: Map<Direction, NodeSideSnapshot>
+    val sides: Map<Direction, List<CardSnapshot>>
 )
 
-data class NodeSideSnapshot(
+data class CardSnapshot(
     val capability: SideCapability,
-    val alias: String?
+    val alias: String?,
+    val slotIndex: Int
 )

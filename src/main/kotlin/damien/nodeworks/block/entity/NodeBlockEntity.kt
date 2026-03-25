@@ -84,28 +84,34 @@ class NodeBlockEntity(
 
     // --- Card access ---
 
-    /** Returns the card in slot 0 of the given side, or null if empty/not a card. */
-    fun getCard(side: Direction): NodeCard? {
-        return items[side.ordinal * SLOTS_PER_SIDE].item as? NodeCard
-    }
-
-    /** Returns the alias (custom name) of the card on this side, or null. */
-    fun getCardAlias(side: Direction): String? {
-        val stack = items[side.ordinal * SLOTS_PER_SIDE]
-        if (stack.item !is NodeCard) return null
-        if (!stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) return null
-        return stack.hoverName.string
-    }
-
-    /** Resolves the capability for this side based on the card type. */
-    fun getSideCapability(side: Direction): SideCapability? {
-        val card = getCard(side) ?: return null
-        val adjacentPos = worldPosition.relative(side)
-        return when (card) {
-            is damien.nodeworks.card.InventoryCard -> InventorySideCapability(adjacentPos)
-            else -> null
+    /** Returns all cards found in this side's 9 slots, with their alias if named. */
+    fun getCards(side: Direction): List<CardInfo> {
+        val offset = sideOffset(side)
+        val result = mutableListOf<CardInfo>()
+        for (i in 0 until SLOTS_PER_SIDE) {
+            val stack = items[offset + i]
+            val card = stack.item as? NodeCard ?: continue
+            val alias = if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME))
+                stack.hoverName.string else null
+            result.add(CardInfo(card, alias, i))
         }
+        return result
     }
+
+    /** Resolves all capabilities for this side based on inserted cards. */
+    fun getSideCapabilities(side: Direction): List<SideCapabilityInfo> {
+        val adjacentPos = worldPosition.relative(side)
+        return getCards(side).map { info ->
+            val capability = when (info.card) {
+                is damien.nodeworks.card.InventoryCard -> InventorySideCapability(adjacentPos)
+                else -> null
+            }
+            SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex)
+        }.filterNotNull()
+    }
+
+    data class CardInfo(val card: NodeCard, val alias: String?, val slotIndex: Int)
+    data class SideCapabilityInfo(val capability: SideCapability, val alias: String?, val slotIndex: Int)
 
     // --- Side-aware access ---
 
@@ -163,10 +169,7 @@ class NodeBlockEntity(
     override fun canPlaceItemThroughFace(slot: Int, stack: ItemStack, side: Direction?): Boolean {
         if (side == null) return false
         val offset = sideOffset(side)
-        if (slot !in offset until (offset + SLOTS_PER_SIDE)) return false
-        // Slot 0 of each side is the card slot — only accepts NodeCard items
-        val isCardSlot = slot == offset
-        return if (isCardSlot) stack.item is NodeCard else stack.item !is NodeCard
+        return slot in offset until (offset + SLOTS_PER_SIDE)
     }
 
     override fun canTakeItemThroughFace(slot: Int, stack: ItemStack, side: Direction): Boolean {
