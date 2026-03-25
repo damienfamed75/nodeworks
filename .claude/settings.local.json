@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find c:/Users/thedo/projects/java/nodeworks/src -name *.kt -o -name *.java)",
+      "Bash(./gradlew dependencies:*)",
+      "Bash(REMAPPED=~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-common/1.21.11-loom.mappings.1_21_11.layered+hash.2198-v2/minecraft-common-1.21.11-loom.mappings.1_21_11.layered+hash.2198-v2.jar)",
+      "Bash(javap -cp $REMAPPED net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket)",
+      "Bash(./gradlew build:*)"
+    ]
+  }
+}
