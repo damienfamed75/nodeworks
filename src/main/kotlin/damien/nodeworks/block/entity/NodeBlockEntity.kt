@@ -5,6 +5,7 @@ import damien.nodeworks.card.NodeCard
 import damien.nodeworks.card.SideCapability
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
+import org.slf4j.LoggerFactory
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.HolderLookup
@@ -38,6 +39,7 @@ class NodeBlockEntity(
 ) : BlockEntity(ModBlockEntities.NODE, pos, state), WorldlyContainer {
 
     companion object {
+        private val logger = LoggerFactory.getLogger("nodeworks-node")
         const val SLOTS_PER_SIDE = 9
         const val TOTAL_SLOTS = SLOTS_PER_SIDE * 6 // 54 total
 
@@ -182,7 +184,9 @@ class NodeBlockEntity(
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
         ContainerHelper.saveAllItems(output, items)
-        output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+        if (connections.isNotEmpty()) {
+            output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+        }
     }
 
     override fun loadAdditional(input: ValueInput) {
@@ -203,11 +207,16 @@ class NodeBlockEntity(
         }
     }
 
+    /** Set to true by NodeBlock when the block is actually being destroyed. */
+    var blockDestroyed: Boolean = false
+
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
-            NodeConnectionHelper.removeAllConnectionsOf(currentLevel, this)
+            if (blockDestroyed) {
+                NodeConnectionHelper.removeAllConnectionsOf(currentLevel, this)
+            }
             NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
         }
         super.setRemoved()

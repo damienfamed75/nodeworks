@@ -1,6 +1,7 @@
 package damien.nodeworks.registry
 
 import damien.nodeworks.block.NodeBlock
+import damien.nodeworks.block.TerminalBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
@@ -19,6 +20,13 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .strength(2.0f, 6.0f)
             .noOcclusion()
+    )
+
+    val TERMINAL: Block = register(
+        "terminal",
+        ::TerminalBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
     )
 
     private fun register(

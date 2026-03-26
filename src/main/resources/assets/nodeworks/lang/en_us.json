@@ -10,5 +10,7 @@
   "message.nodeworks.connected": "Nodes connected.",
   "message.nodeworks.disconnected": "Nodes disconnected.",
   "item.nodeworks.inventory_card": "Inventory Card",
-  "container.nodeworks.node_side": "Node — %s"
+  "container.nodeworks.node_side": "Node — %s",
+  "block.nodeworks.terminal": "Script Terminal",
+  "message.nodeworks.terminal_no_network": "Terminal is not connected to a node network. Place next to a node."
 }

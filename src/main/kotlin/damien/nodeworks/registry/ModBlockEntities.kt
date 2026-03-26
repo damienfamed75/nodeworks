@@ -1,6 +1,7 @@
 package damien.nodeworks.registry
 
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.block.entity.TerminalBlockEntity
 import net.fabricmc.fabric.api.`object`.builder.v1.block.entity.FabricBlockEntityTypeBuilder
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -15,6 +16,11 @@ object ModBlockEntities {
     val NODE: BlockEntityType<NodeBlockEntity> = register(
         "node",
         FabricBlockEntityTypeBuilder.create(::NodeBlockEntity, ModBlocks.NODE).build()
+    )
+
+    val TERMINAL: BlockEntityType<TerminalBlockEntity> = register(
+        "terminal",
+        FabricBlockEntityTypeBuilder.create(::TerminalBlockEntity, ModBlocks.TERMINAL).build()
     )
 
     private fun <T : BlockEntity> register(

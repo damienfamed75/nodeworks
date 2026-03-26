@@ -126,8 +126,6 @@ object NodeConnectionHelper {
         val cx = changedPos.x shr 4
         val cz = changedPos.z shr 4
 
-        // Check 3x3 chunk columns around the changed block.
-        // MAX_DISTANCE=8 < 16 (chunk width), so 1 chunk radius is sufficient.
         for (dx in -1..1) {
             for (dz in -1..1) {
                 val nodes = chunks[chunkKey(cx + dx, cz + dz)] ?: continue
@@ -138,21 +136,14 @@ object NodeConnectionHelper {
         }
     }
 
-    /**
-     * For a single node, checks if any of its connections are affected by a block
-     * change at [changedPos], and disconnects only those that lost line-of-sight.
-     */
     private fun checkNodeConnections(level: ServerLevel, nodePos: BlockPos, changedPos: BlockPos) {
         val entity = getNodeEntity(level, nodePos) ?: return
         val connections = entity.getConnections()
         if (connections.isEmpty()) return
 
         for (targetPos in connections) {
-            // Only check from the "lesser" side to avoid double-raycasting A↔B
             if (!isLessThan(nodePos, targetPos)) continue
-            // Cheap AABB test: is the changed block within the connection's bounding box?
             if (!isInsideConnectionBounds(nodePos, targetPos, changedPos)) continue
-            // Expensive: raycast to verify LOS is actually broken
             if (!checkLineOfSight(level, nodePos, targetPos)) {
                 disconnect(level, nodePos, targetPos)
             }
