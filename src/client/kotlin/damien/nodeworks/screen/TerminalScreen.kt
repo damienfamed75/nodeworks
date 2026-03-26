@@ -39,6 +39,10 @@ class TerminalScreen(
     private var editorX = 0
     private var editorY = 0
 
+    // Log scroll state
+    private var logScrollOffset = 0
+    private var logAutoScroll = true
+
     init {
         imageWidth = 320
         imageHeight = 220
@@ -56,7 +60,7 @@ class TerminalScreen(
             .setX(editorX)
             .setY(editorY)
             .setShowBackground(true)
-            .setShowDecorations(true)
+            .setShowDecorations(false)
             .setTextColor(0x00000000) // Fully transparent — syntax highlighter draws colored text on top
             .setTextShadow(false)
             .setCursorColor(0x00000000) // Hidden — we draw our own cursor on top of syntax highlighting
@@ -140,25 +144,37 @@ class TerminalScreen(
         val logX = leftPos + cardPanelWidth + editorPadding
         val logY = topPos + imageHeight - logPanelHeight
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
+        val logContentHeight = logPanelHeight - editorPadding
         // Log background (slightly darker)
-        graphics.fill(logX, logY, logX + logW, topPos + imageHeight - editorPadding, 0xFF1E1E1E.toInt())
+        graphics.fill(logX, logY, logX + logW, logY + logContentHeight, 0xFF1E1E1E.toInt())
         // Log separator
         graphics.fill(logX, logY, logX + logW, logY + 1, 0xFF555555.toInt())
         // Log label
         graphics.drawString(font, "Output:", logX + 3, logY + 3, 0xFF888888.toInt())
 
-        // Log entries (show most recent, scrolled to bottom)
+        // Log entries with scrolling
         val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
         val logLineHeight = font.lineHeight + 1
-        val maxLogLines = (logPanelHeight - 14) / logLineHeight
-        val startIdx = maxOf(0, logs.size - maxLogLines)
-        for (i in startIdx until logs.size) {
-            val entry = logs[i]
-            val entryY = logY + 13 + (i - startIdx) * logLineHeight
-            val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
-            val prefix = if (entry.isError) "> " else "> "
-            graphics.drawString(font, prefix + entry.message, logX + 3, entryY, color)
+        val logTextAreaY = logY + 13
+        val logTextAreaHeight = logContentHeight - 14
+        val maxVisibleLines = logTextAreaHeight / logLineHeight
+
+        // Auto-scroll to bottom when new logs arrive
+        if (logAutoScroll && logs.isNotEmpty()) {
+            logScrollOffset = maxOf(0, logs.size - maxVisibleLines)
         }
+
+        // Clip log entries to the panel
+        graphics.enableScissor(logX, logTextAreaY, logX + logW, logY + logContentHeight)
+        for (i in 0 until maxVisibleLines) {
+            val logIdx = logScrollOffset + i
+            if (logIdx >= logs.size) break
+            val entry = logs[logIdx]
+            val entryY = logTextAreaY + i * logLineHeight
+            val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
+            graphics.drawString(font, "> " + entry.message, logX + 3, entryY, color)
+        }
+        graphics.disableScissor()
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -302,6 +318,29 @@ class TerminalScreen(
             return handled
         }
         return super.charTyped(charEvent)
+    }
+
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        // Check if mouse is over the log panel
+        val logX = leftPos + cardPanelWidth + editorPadding
+        val logY = topPos + imageHeight - logPanelHeight
+        val logW = imageWidth - cardPanelWidth - editorPadding * 2
+        if (mouseX >= logX && mouseX <= logX + logW && mouseY >= logY && mouseY <= topPos + imageHeight) {
+            val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
+            val logLineHeight = font.lineHeight + 1
+            val maxVisibleLines = (logPanelHeight - 14) / logLineHeight
+            val maxScroll = maxOf(0, logs.size - maxVisibleLines)
+
+            logScrollOffset -= scrollY.toInt()
+            logScrollOffset = logScrollOffset.coerceIn(0, maxScroll)
+            logAutoScroll = logScrollOffset >= maxScroll
+            return true
+        }
+        // Forward to editor widget
+        if (editor.isMouseOver(mouseX, mouseY)) {
+            return editor.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
     override fun renderLabels(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
