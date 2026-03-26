@@ -11,7 +11,10 @@
       "Bash(curl -s \"https://raw.githubusercontent.com/mezz/JustEnoughItems/1.21.11/build.gradle.kts\")",
       "Bash(curl -s \"https://raw.githubusercontent.com/mezz/JustEnoughItems/1.21.11/settings.gradle.kts\")",
       "Bash(python3:*)",
-      "Bash(./gradlew :common:compileKotlin)"
+      "Bash(./gradlew :common:compileKotlin)",
+      "Bash(find /c/Users/thedo/projects/java/nodeworks/fabric/src -name \"*.kt\" -exec wc -l {} +)",
+      "Bash(find /c/Users/thedo/projects/java/nodeworks/neoforge/src -name \"*.kt\" -exec wc -l {} +)",
+      "Bash(find /c/Users/thedo/projects/java/nodeworks/common/src -name \"*.kt\" -exec wc -l {} +)"
     ]
   }
 }
