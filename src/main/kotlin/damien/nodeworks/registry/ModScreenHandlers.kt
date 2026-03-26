@@ -1,6 +1,8 @@
 package damien.nodeworks.registry
 
 import damien.nodeworks.screen.NodeSideScreenHandler
+import damien.nodeworks.screen.TerminalOpenData
+import damien.nodeworks.screen.TerminalScreenHandler
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -11,6 +13,16 @@ import net.minecraft.resources.ResourceKey
 import net.minecraft.world.inventory.MenuType
 
 object ModScreenHandlers {
+
+    val TERMINAL: MenuType<TerminalScreenHandler> = register(
+        "terminal",
+        ExtendedScreenHandlerType(
+            { syncId, playerInventory, data ->
+                TerminalScreenHandler.clientFactory(syncId, playerInventory, data)
+            },
+            TerminalOpenData.STREAM_CODEC
+        )
+    )
 
     val NODE_SIDE: MenuType<NodeSideScreenHandler> = register(
         "node_side",

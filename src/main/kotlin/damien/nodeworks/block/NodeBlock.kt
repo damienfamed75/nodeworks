@@ -92,6 +92,10 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         return InteractionResult.SUCCESS
     }
 
-    // Connection cleanup happens in NodeBlockEntity.setRemoved() where the entity
-    // still has its data. By the time affectNeighborsAfterRemoval runs, the BE is gone.
+    override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
+        // Mark the block entity so setRemoved knows this is a real destruction, not a chunk unload
+        val entity = level.getBlockEntity(pos) as? NodeBlockEntity
+        entity?.blockDestroyed = true
+        return super.playerWillDestroy(level, pos, state, player)
+    }
 }
