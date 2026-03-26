@@ -6,7 +6,15 @@
       "Bash(REMAPPED=~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-common/1.21.11-loom.mappings.1_21_11.layered+hash.2198-v2/minecraft-common-1.21.11-loom.mappings.1_21_11.layered+hash.2198-v2.jar)",
       "Bash(javap -cp $REMAPPED net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket)",
       "Bash(./gradlew build:*)",
-      "Bash(jar tf:*)"
+      "Bash(jar tf:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/mezz/JustEnoughItems/1.21.11/build.gradle.kts\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/mezz/JustEnoughItems/1.21.11/settings.gradle.kts\")",
+      "Bash(python3:*)",
+      "Bash(./gradlew :common:compileKotlin)",
+      "Bash(find /c/Users/thedo/projects/java/nodeworks/fabric/src -name \"*.kt\" -exec wc -l {} +)",
+      "Bash(find /c/Users/thedo/projects/java/nodeworks/neoforge/src -name \"*.kt\" -exec wc -l {} +)",
+      "Bash(find /c/Users/thedo/projects/java/nodeworks/common/src -name \"*.kt\" -exec wc -l {} +)"
     ]
   }
 }

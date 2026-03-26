@@ -1,0 +1,108 @@
+package damien.nodeworks.platform
+
+import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
+import net.minecraft.network.chat.Component
+import net.minecraft.server.level.ServerLevel
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.entity.player.Player
+import net.minecraft.world.inventory.AbstractContainerMenu
+import net.minecraft.world.inventory.MenuType
+import net.minecraft.world.item.ItemStack
+import net.minecraft.world.level.block.entity.BlockEntity
+import net.minecraft.world.level.block.entity.BlockEntityType
+import net.minecraft.world.level.block.state.BlockState
+
+/**
+ * Platform service locator — set by the loader-specific module at init time.
+ */
+object PlatformServices {
+    lateinit var storage: StorageService
+    lateinit var menu: MenuService
+    lateinit var blockEntity: BlockEntityService
+    lateinit var modState: ModStateService
+    lateinit var clientNetworking: ClientNetworkingService
+    lateinit var clientEvents: ClientEventService
+}
+
+/**
+ * Abstracts client-side packet sending.
+ */
+interface ClientNetworkingService {
+    fun sendToServer(payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload)
+}
+
+/**
+ * Abstracts client-side event registration (render events, etc.).
+ */
+interface ClientEventService {
+    fun onWorldRender(handler: (poseStack: com.mojang.blaze3d.vertex.PoseStack?, consumers: net.minecraft.client.renderer.MultiBufferSource?, camera: net.minecraft.world.phys.Vec3) -> Unit)
+}
+
+/**
+ * Abstracts item storage access (Fabric Transfer API vs NeoForge IItemHandler).
+ */
+interface StorageService {
+    /** Get an item storage handle for a block at [pos] accessed from [face]. Returns null if not available. */
+    fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle?
+
+    /** Move items between storages. Returns number moved. */
+    fun moveItems(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
+
+    /** Count items matching filter in a storage. */
+    fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long
+
+    /** Get a slotted view of the storage, or null if not slotted. */
+    fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle?
+}
+
+/** Opaque handle to an item storage — platform-specific implementation. */
+interface ItemStorageHandle
+
+/** Opaque handle to a slotted item storage. */
+interface SlottedItemStorageHandle : ItemStorageHandle {
+    val slotCount: Int
+    fun filteredBySlots(slots: Set<Int>): ItemStorageHandle
+}
+
+/**
+ * Abstracts extended menu type registration and opening.
+ */
+interface MenuService {
+    /** Open an extended menu with custom data sent to the client. */
+    fun <D : Any> openExtendedMenu(
+        player: ServerPlayer,
+        title: Component,
+        data: D,
+        codec: net.minecraft.network.codec.StreamCodec<in net.minecraft.network.FriendlyByteBuf, D>,
+        menuFactory: (syncId: Int, playerInventory: Inventory, player: Player) -> AbstractContainerMenu
+    )
+}
+
+/**
+ * Abstracts block entity type creation.
+ */
+interface BlockEntityService {
+    fun <T : BlockEntity> createBlockEntityType(
+        factory: (BlockPos, BlockState) -> T,
+        vararg blocks: net.minecraft.world.level.block.Block
+    ): BlockEntityType<T>
+}
+
+/**
+ * Abstracts mod-level state that lives in the loader-specific module.
+ */
+interface ModStateService {
+    /** Current server tick count. */
+    val tickCount: Long
+
+    /** Check if a script engine is running at the given terminal position. */
+    fun isScriptRunning(level: ServerLevel, pos: BlockPos): Boolean
+
+    /** Stop the script engine at the given terminal position. */
+    fun stopScript(level: ServerLevel, pos: BlockPos)
+
+    /** Register a terminal for auto-run on world startup. */
+    fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos)
+}
