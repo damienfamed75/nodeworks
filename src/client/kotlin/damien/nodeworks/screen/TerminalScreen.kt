@@ -417,13 +417,16 @@ class TerminalScreen(
 
             val handled = editor.keyPressed(keyEvent)
             // Update autocomplete only for keys that modify text, not navigation
-            val isNavKey = keyEvent.key() in setOf(
+            val isNavOrModifierKey = keyEvent.key() in setOf(
                 InputConstants.KEY_UP, InputConstants.KEY_DOWN,
                 InputConstants.KEY_LEFT, InputConstants.KEY_RIGHT,
                 InputConstants.KEY_HOME, InputConstants.KEY_END,
-                InputConstants.KEY_PAGEUP, InputConstants.KEY_PAGEDOWN
+                InputConstants.KEY_PAGEUP, InputConstants.KEY_PAGEDOWN,
+                InputConstants.KEY_LSHIFT, InputConstants.KEY_RSHIFT,
+                InputConstants.KEY_LCONTROL, InputConstants.KEY_RCONTROL,
+                InputConstants.KEY_LALT, InputConstants.KEY_RALT
             )
-            if (!isNavKey) {
+            if (!isNavOrModifierKey) {
                 autocomplete.update(editor, editorX, editorY)
             }
             return handled

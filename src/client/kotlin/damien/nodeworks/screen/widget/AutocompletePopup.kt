@@ -14,9 +14,11 @@ class AutocompletePopup(
     private val font: Font,
     private val cards: List<CardSnapshot>
 ) {
+    data class Suggestion(val insertText: String, val displayText: String)
+
     var visible: Boolean = false
         private set
-    var suggestions: List<String> = emptyList()
+    var suggestions: List<Suggestion> = emptyList()
         private set
     var selectedIndex: Int = 0
         private set
@@ -92,6 +94,8 @@ class AutocompletePopup(
         selectedIndex = 0
     }
 
+    private fun suggest(insertText: String, displayText: String = insertText) = Suggestion(insertText, displayText)
+
     fun moveUp() {
         if (suggestions.isNotEmpty()) {
             selectedIndex = (selectedIndex - 1 + suggestions.size) % suggestions.size
@@ -121,7 +125,7 @@ class AutocompletePopup(
         if (!visible || suggestions.isEmpty()) return null
         val suggestion = suggestions[selectedIndex]
         // Insert only the part after what's already typed
-        val toInsert = suggestion.removePrefix(prefix)
+        val toInsert = suggestion.insertText.removePrefix(prefix)
         hide()
         return toInsert
     }
@@ -131,7 +135,7 @@ class AutocompletePopup(
 
         val itemHeight = font.lineHeight + 2
         val visibleCount = minOf(suggestions.size, maxVisible)
-        val popupWidth = suggestions.maxOf { font.width(it) } + 8
+        val popupWidth = suggestions.maxOf { font.width(it.displayText) } + 8
         val actualHeight = visibleCount * itemHeight + 4
 
         // Background
@@ -156,18 +160,26 @@ class AutocompletePopup(
             if (suggestionIndex == selectedIndex) {
                 graphics.fill(popupX + 1, y, popupX + popupWidth - 1, y + itemHeight, 0xFF3A5FCD.toInt())
             }
-            val color = if (suggestionIndex == selectedIndex) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt()
-            graphics.drawString(font, suggestions[suggestionIndex], popupX + 4, y + 1, color)
+            val s = suggestions[suggestionIndex]
+            val nameColor = if (suggestionIndex == selectedIndex) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt()
+            val hintColor = if (suggestionIndex == selectedIndex) 0xFFBBBBBB.toInt() else 0xFF888888.toInt()
+            // Draw insert text in bright color, parameter hint in dimmer color
+            val nameWidth = font.width(s.insertText)
+            graphics.drawString(font, s.insertText, popupX + 4, y + 1, nameColor)
+            if (s.displayText != s.insertText) {
+                val hint = s.displayText.removePrefix(s.insertText)
+                graphics.drawString(font, hint, popupX + 4 + nameWidth, y + 1, hintColor)
+            }
         }
     }
 
-    private fun computeSuggestions(beforeCursor: String, forced: Boolean = false): List<String> {
+    private fun computeSuggestions(beforeCursor: String, forced: Boolean = false): List<Suggestion> {
         val trimmed = beforeCursor.trimEnd()
         val fullText = lastFullText
 
         // After card(" → suggest card types
         if (trimmed.endsWith("card(\"") || trimmed.endsWith("card( \"")) {
-            return listOf("inventory", "energy", "fluid")
+            return listOf(suggest("inventory"), suggest("energy"), suggest("fluid"))
         }
 
         // After card("inventory", " → suggest aliases
@@ -177,19 +189,25 @@ class AutocompletePopup(
             return cards.filter { it.capability.type == type }
                 .mapNotNull { it.alias }
                 .distinct()
+                .map { suggest(it) }
         }
 
-        // After :face(" → suggest face names (check before generic `:`)
+        // After :face(" → suggest face names
         if (trimmed.endsWith(":face(\"") || trimmed.endsWith(":face( \"")) {
-            return listOf("top", "bottom", "north", "south", "east", "west", "side")
+            return listOf("top", "bottom", "north", "south", "east", "west", "side").map { suggest(it) }
         }
 
         // After scheduler: or scheduler:partial → suggest scheduler methods
         val schedulerMatch = Regex("""scheduler:(\w*)$""").find(trimmed)
         if (schedulerMatch != null) {
             val partial = schedulerMatch.groupValues[1]
-            val methods = listOf("tick(", "second(", "delay(", "cancel(")
-            return if (partial.isEmpty()) methods else methods.filter { it.startsWith(partial) }
+            val methods = listOf(
+                suggest("tick(", "tick(fn: function) → number"),
+                suggest("second(", "second(fn: function) → number"),
+                suggest("delay(", "delay(ticks: number, fn: function) → number"),
+                suggest("cancel(", "cancel(id: number)")
+            )
+            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
         }
 
         // After cardVar: or cardVar:partial → suggest card handle methods
@@ -199,8 +217,12 @@ class AutocompletePopup(
             val partial = methodMatch.groupValues[2]
             val cardVars = extractCardVariables(fullText)
             if (varName in cardVars) {
-                val methods = listOf("move(", "count(", "face(")
-                return if (partial.isEmpty()) methods else methods.filter { it.startsWith(partial) }
+                val methods = listOf(
+                    suggest("move(", "move(dest: CardHandle, itemId: string, count: number) → number"),
+                    suggest("count(", "count(itemId: string) → number"),
+                    suggest("face(", "face(side: string) → CardHandle")
+                )
+                return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
             }
             return emptyList()
         }
@@ -212,13 +234,18 @@ class AutocompletePopup(
 
         val lastWord = extractPrefix(beforeCursor)
         if (lastWord.length >= 2 || forced) {
-            val apiFunctions = listOf("card", "scheduler", "print")
+            val apiFunctions = listOf(
+                suggest("card", "card(type: string, alias: string) → CardHandle"),
+                suggest("scheduler", "scheduler"),
+                suggest("print", "print(message: any)"),
+                suggest("clock", "clock() → number")
+            )
             val keywords = listOf("local", "function", "end",
                 "if", "then", "else", "elseif", "for", "while", "do", "return",
-                "true", "false", "nil", "not", "and", "or")
-            val userVars = extractVariableNames(fullText)
-            val all = (apiFunctions + keywords + userVars).distinct()
-            val matches = all.filter { it.startsWith(lastWord) && it != lastWord }
+                "true", "false", "nil", "not", "and", "or").map { suggest(it) }
+            val userVars = extractVariableNames(fullText).map { suggest(it) }
+            val all = (apiFunctions + keywords + userVars).distinctBy { it.insertText }
+            val matches = all.filter { it.insertText.startsWith(lastWord) && it.insertText != lastWord }
             if (matches.isNotEmpty()) return matches
         }
 
