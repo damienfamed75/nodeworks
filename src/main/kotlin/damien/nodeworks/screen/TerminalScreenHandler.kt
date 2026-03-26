@@ -33,7 +33,7 @@ class TerminalScreenHandler(
                 snapshot.allCards()
             } else emptyList()
 
-            val isRunning = TerminalPackets.getEngine(terminal.blockPos)?.isRunning() == true
+            val isRunning = if (level != null) TerminalPackets.getEngine(level, terminal.blockPos)?.isRunning() == true else false
 
             val tags = if (level != null) {
                 net.minecraft.core.registries.BuiltInRegistries.ITEM.tags
