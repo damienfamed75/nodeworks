@@ -11,6 +11,8 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.MultiLineEditBox
+import net.minecraft.client.gui.components.SpriteIconButton
+import net.minecraft.resources.Identifier
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.network.chat.Component
@@ -42,19 +44,48 @@ class TerminalScreen(
     // Log scroll state
     private var logScrollOffset = 0
     private var logAutoScroll = true
+    private var logCollapsed = false
+    private val logCollapsedHeight = 12 // just enough for the toggle bar
+
+    // Used to preserve editor text across layout changes
+    private var rebuildWithText: String? = null
+
+    private fun rebind() {
+        clearWidgets()
+        init()
+    }
+
+    // Layout presets
+    enum class TerminalLayout(val w: Int, val h: Int, val spriteName: String) {
+        SMALL(320, 220, "layout_small"),
+        WIDE(480, 220, "layout_wide"),
+        TALL(320, 300, "layout_tall"),
+        LARGE(480, 300, "layout_large")
+    }
+
+    private var currentLayout = TerminalLayout.entries.getOrElse(menu.getLayoutIndex()) { TerminalLayout.SMALL }
 
     init {
-        imageWidth = 320
-        imageHeight = 220
+        imageWidth = currentLayout.w
+        imageHeight = currentLayout.h
     }
 
     override fun init() {
         super.init()
 
+        imageWidth = currentLayout.w
+        imageHeight = currentLayout.h
+        // Clamp to screen bounds
+        if (imageWidth > width - 10) imageWidth = width - 10
+        if (imageHeight > height - 10) imageHeight = height - 10
+        leftPos = (width - imageWidth) / 2
+        topPos = (height - imageHeight) / 2
+
         editorX = leftPos + cardPanelWidth + editorPadding
         editorY = topPos + topBarHeight
         val editorW = imageWidth - cardPanelWidth - editorPadding * 2
-        val editorH = imageHeight - topBarHeight - logPanelHeight - editorPadding
+        val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
+        val editorH = imageHeight - topBarHeight - effectiveLogHeight - editorPadding
 
         editor = MultiLineEditBox.builder()
             .setX(editorX)
@@ -66,8 +97,10 @@ class TerminalScreen(
             .setCursorColor(0x00000000) // Hidden — we draw our own cursor on top of syntax highlighting
             .build(font, editorW, editorH, Component.literal("Script"))
 
-        editor.setValue(menu.getScriptText())
+        editor.setValue(rebuildWithText ?: menu.getScriptText())
+        rebuildWithText = null
         editor.setCharacterLimit(32767)
+
         editor.setValueListener { _ ->
             // Update autocomplete whenever text changes (typing, paste, delete)
             autocomplete.update(editor, editorX, editorY)
@@ -76,17 +109,38 @@ class TerminalScreen(
 
         autocomplete = AutocompletePopup(font, cards)
 
+        // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
+        val btnY = topPos + 2
+        val stopX = leftPos + imageWidth - 44
+        val runX = stopX - 44
+        val layoutX = runX - 24
+
+        // Layout cycle button (icon, standard MC button look)
+        val layoutBtn = SpriteIconButton.builder(Component.literal("Layout"), { _ ->
+            val savedText = editor.value
+            currentLayout = TerminalLayout.entries[(currentLayout.ordinal + 1) % TerminalLayout.entries.size]
+            ClientPlayNetworking.send(TerminalPackets.SetLayoutPayload(menu.getTerminalPos(), currentLayout.ordinal))
+            rebuildWithText = savedText
+            rebind()
+        }, true)
+            .sprite(Identifier.fromNamespaceAndPath("nodeworks", currentLayout.spriteName), 16, 16)
+            .size(20, buttonHeight)
+            .build()
+        layoutBtn.x = layoutX
+        layoutBtn.y = btnY
+        addRenderableWidget(layoutBtn)
+
         // Run button
         addRenderableWidget(Button.builder(Component.literal("Run")) { _ ->
             ClientPlayNetworking.send(TerminalPackets.RunScriptPayload(menu.getTerminalPos(), editor.value))
             scriptRunning = true
-        }.bounds(leftPos + imageWidth - 90, topPos + 2, 40, buttonHeight).build())
+        }.bounds(runX, btnY, 40, buttonHeight).build())
 
         // Stop button
         addRenderableWidget(Button.builder(Component.literal("Stop")) { _ ->
             ClientPlayNetworking.send(TerminalPackets.StopScriptPayload(menu.getTerminalPos()))
             scriptRunning = false
-        }.bounds(leftPos + imageWidth - 46, topPos + 2, 40, buttonHeight).build())
+        }.bounds(stopX, btnY, 40, buttonHeight).build())
 
         // Auto-run toggle
         addRenderableWidget(Button.builder(autoRunLabel()) { btn ->
@@ -112,8 +166,8 @@ class TerminalScreen(
         // Title in top bar
         graphics.drawString(font, title, leftPos + 6, topPos + 7, 0xFFFFFFFF.toInt())
 
-        // Status indicator
-        val statusX = leftPos + imageWidth - 150
+        // Status indicator — positioned left of the layout button
+        val statusX = leftPos + imageWidth - 170
         val statusY = topPos + 7
         val circleColor = if (scriptRunning) 0xFF55FF55.toInt() else 0xFF666666.toInt()
         val statusText = if (scriptRunning) "Running" else "Stopped"
@@ -141,40 +195,46 @@ class TerminalScreen(
         }
 
         // Log panel
+        val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
         val logX = leftPos + cardPanelWidth + editorPadding
-        val logY = topPos + imageHeight - logPanelHeight
+        val logY = topPos + imageHeight - effectiveLogHeight
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
-        val logContentHeight = logPanelHeight - editorPadding
-        // Log background (slightly darker)
-        graphics.fill(logX, logY, logX + logW, logY + logContentHeight, 0xFF1E1E1E.toInt())
-        // Log separator
+
+        // Toggle bar background
+        graphics.fill(logX, logY, logX + logW, logY + logCollapsedHeight, 0xFF1E1E1E.toInt())
+        // Separator line
         graphics.fill(logX, logY, logX + logW, logY + 1, 0xFF555555.toInt())
-        // Log label
-        graphics.drawString(font, "Output:", logX + 3, logY + 3, 0xFF888888.toInt())
+        // Toggle label with arrow
+        val arrow = if (logCollapsed) "\u25B6" else "\u25BC"
+        graphics.drawString(font, "$arrow Output", logX + 3, logY + 2, 0xFF888888.toInt())
 
-        // Log entries with scrolling
-        val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
-        val logLineHeight = font.lineHeight + 1
-        val logTextAreaY = logY + 13
-        val logTextAreaHeight = logContentHeight - 14
-        val maxVisibleLines = logTextAreaHeight / logLineHeight
+        if (!logCollapsed) {
+            // Log content area
+            val logContentTop = logY + logCollapsedHeight
+            val logContentBottom = logY + logPanelHeight - editorPadding
+            graphics.fill(logX, logContentTop, logX + logW, logContentBottom, 0xFF1E1E1E.toInt())
 
-        // Auto-scroll to bottom when new logs arrive
-        if (logAutoScroll && logs.isNotEmpty()) {
-            logScrollOffset = maxOf(0, logs.size - maxVisibleLines)
+            // Log entries with scrolling
+            val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
+            val logLineHeight = font.lineHeight + 1
+            val logTextAreaHeight = logContentBottom - logContentTop
+            val maxVisibleLines = logTextAreaHeight / logLineHeight
+
+            if (logAutoScroll && logs.isNotEmpty()) {
+                logScrollOffset = maxOf(0, logs.size - maxVisibleLines)
+            }
+
+            graphics.enableScissor(logX, logContentTop, logX + logW, logContentBottom)
+            for (i in 0 until maxVisibleLines) {
+                val logIdx = logScrollOffset + i
+                if (logIdx >= logs.size) break
+                val entry = logs[logIdx]
+                val entryY = logContentTop + i * logLineHeight
+                val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
+                graphics.drawString(font, "> " + entry.message, logX + 3, entryY, color)
+            }
+            graphics.disableScissor()
         }
-
-        // Clip log entries to the panel
-        graphics.enableScissor(logX, logTextAreaY, logX + logW, logY + logContentHeight)
-        for (i in 0 until maxVisibleLines) {
-            val logIdx = logScrollOffset + i
-            if (logIdx >= logs.size) break
-            val entry = logs[logIdx]
-            val entryY = logTextAreaY + i * logLineHeight
-            val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
-            graphics.drawString(font, "> " + entry.message, logX + 3, entryY, color)
-        }
-        graphics.disableScissor()
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -300,8 +360,16 @@ class TerminalScreen(
             }
 
             val handled = editor.keyPressed(keyEvent)
-            // Update autocomplete after any key that modifies text
-            autocomplete.update(editor, editorX, editorY)
+            // Update autocomplete only for keys that modify text, not navigation
+            val isNavKey = keyEvent.key() in setOf(
+                InputConstants.KEY_UP, InputConstants.KEY_DOWN,
+                InputConstants.KEY_LEFT, InputConstants.KEY_RIGHT,
+                InputConstants.KEY_HOME, InputConstants.KEY_END,
+                InputConstants.KEY_PAGEUP, InputConstants.KEY_PAGEDOWN
+            )
+            if (!isNavKey) {
+                autocomplete.update(editor, editorX, editorY)
+            }
             return handled
         }
         return super.keyPressed(keyEvent)
@@ -320,8 +388,29 @@ class TerminalScreen(
         return super.charTyped(charEvent)
     }
 
+    override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
+        // Check if click is on the log toggle bar
+        val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
+        val logX = leftPos + cardPanelWidth + editorPadding
+        val logY = topPos + imageHeight - effectiveLogHeight
+        val logW = imageWidth - cardPanelWidth - editorPadding * 2
+        if (event.x() >= logX && event.x() <= logX + logW && event.y() >= logY && event.y() <= logY + logCollapsedHeight) {
+            logCollapsed = !logCollapsed
+            // Rebuild to resize the editor
+            rebuildWithText = editor.value
+            rebind()
+            return true
+        }
+        return super.mouseClicked(event, flag)
+    }
+
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        // Forward to editor if mouse is over it
+        if (editor.isMouseOver(mouseX, mouseY)) {
+            return editor.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+        }
         // Check if mouse is over the log panel
+        if (logCollapsed) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
         val logX = leftPos + cardPanelWidth + editorPadding
         val logY = topPos + imageHeight - logPanelHeight
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
@@ -335,10 +424,6 @@ class TerminalScreen(
             logScrollOffset = logScrollOffset.coerceIn(0, maxScroll)
             logAutoScroll = logScrollOffset >= maxScroll
             return true
-        }
-        // Forward to editor widget
-        if (editor.isMouseOver(mouseX, mouseY)) {
-            return editor.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }

@@ -31,6 +31,10 @@ class TerminalBlockEntity(
     var autoRun: Boolean = false
         private set
 
+    /** Terminal screen layout index (0=small, 1=wide, 2=tall, 3=large). */
+    var layoutIndex: Int = 0
+        private set
+
     fun setScriptText(text: String) {
         scriptText = text
         setChanged()
@@ -38,6 +42,11 @@ class TerminalBlockEntity(
 
     fun setAutoRun(enabled: Boolean) {
         autoRun = enabled
+        setChanged()
+    }
+
+    fun setLayoutIndex(index: Int) {
+        layoutIndex = index.coerceIn(0, 3)
         setChanged()
     }
 
@@ -56,12 +65,14 @@ class TerminalBlockEntity(
         super.saveAdditional(output)
         output.putString("scriptText", scriptText)
         output.putBoolean("autoRun", autoRun)
+        output.putInt("layoutIndex", layoutIndex)
     }
 
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
         scriptText = input.getString("scriptText").orElse("")
         autoRun = input.getBooleanOr("autoRun", false)
+        layoutIndex = input.getIntOr("layoutIndex", 0)
     }
 
     override fun setLevel(newLevel: net.minecraft.world.level.Level) {
