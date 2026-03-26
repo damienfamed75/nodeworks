@@ -7,6 +7,7 @@ import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.inventory.Slot
 
 class RecipeCardScreen(
     menu: RecipeCardScreenHandler,
@@ -34,6 +35,16 @@ class RecipeCardScreen(
             256, 256
         )
 
+    }
+
+    override fun renderSlot(graphics: GuiGraphics, slot: Slot, p2: Int, p3: Int) {
+        super.renderSlot(graphics, slot, p2, p3)
+        // Draw a semi-transparent overlay on ghost slots to make items appear faded
+        if (slot.index in 0..8 && slot.hasItem()) {
+            val x = slot.x
+            val y = slot.y
+            graphics.fill(x, y, x + 16, y + 16, 0x808B8B8B.toInt())
+        }
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
