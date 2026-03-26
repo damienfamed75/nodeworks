@@ -1,7 +1,7 @@
 package damien.nodeworks.registry
 
 import damien.nodeworks.card.IOCard
-import damien.nodeworks.card.RecipeCard
+import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
@@ -31,9 +31,9 @@ object ModItems {
         Item.Properties().stacksTo(1)
     )
 
-    val RECIPE_CARD: Item = register(
-        "recipe_card",
-        ::RecipeCard,
+    val INSTRUCTION_SET: Item = register(
+        "instruction_set",
+        ::InstructionSet,
         Item.Properties().stacksTo(1)
     )
 

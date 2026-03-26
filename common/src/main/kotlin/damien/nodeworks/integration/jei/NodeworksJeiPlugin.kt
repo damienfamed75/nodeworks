@@ -1,9 +1,9 @@
 package damien.nodeworks.integration.jei
 
-import damien.nodeworks.network.SetRecipeGridPayload
+import damien.nodeworks.network.SetInstructionGridPayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
-import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.screen.InstructionSetScreenHandler
 import mezz.jei.api.IModPlugin
 import mezz.jei.api.JeiPlugin
 import mezz.jei.api.constants.RecipeTypes
@@ -30,25 +30,25 @@ class NodeworksJeiPlugin : IModPlugin {
 
     override fun registerRecipeTransferHandlers(registration: IRecipeTransferRegistration) {
         registration.addRecipeTransferHandler(
-            RecipeCardTransferHandler(),
+            InstructionSetTransferHandler(),
             RecipeTypes.CRAFTING
         )
     }
 }
 
-class RecipeCardTransferHandler : IRecipeTransferHandler<RecipeCardScreenHandler, RecipeHolder<CraftingRecipe>> {
+class InstructionSetTransferHandler : IRecipeTransferHandler<InstructionSetScreenHandler, RecipeHolder<CraftingRecipe>> {
 
-    override fun getContainerClass(): Class<out RecipeCardScreenHandler> =
-        RecipeCardScreenHandler::class.java
+    override fun getContainerClass(): Class<out InstructionSetScreenHandler> =
+        InstructionSetScreenHandler::class.java
 
-    override fun getMenuType(): Optional<MenuType<RecipeCardScreenHandler>> =
-        Optional.of(ModScreenHandlers.RECIPE_CARD)
+    override fun getMenuType(): Optional<MenuType<InstructionSetScreenHandler>> =
+        Optional.of(ModScreenHandlers.INSTRUCTION_SET)
 
     override fun getRecipeType(): IRecipeType<RecipeHolder<CraftingRecipe>> =
         RecipeTypes.CRAFTING
 
     override fun transferRecipe(
-        container: RecipeCardScreenHandler,
+        container: InstructionSetScreenHandler,
         recipe: RecipeHolder<CraftingRecipe>,
         recipeSlots: IRecipeSlotsView,
         player: Player,
@@ -71,7 +71,7 @@ class RecipeCardTransferHandler : IRecipeTransferHandler<RecipeCardScreenHandler
             }
 
             PlatformServices.clientNetworking.sendToServer(
-                SetRecipeGridPayload(container.containerId, grid.toList())
+                SetInstructionGridPayload(container.containerId, grid.toList())
             )
         }
 

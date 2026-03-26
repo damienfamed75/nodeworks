@@ -2,12 +2,12 @@ package damien.nodeworks.network
 
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
-import damien.nodeworks.card.RecipeCard
+import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.platform.MenuService
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.screen.RecipeCardOpenData
-import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.screen.InstructionSetOpenData
+import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.script.ScriptEngine
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking
@@ -50,8 +50,8 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
-        PayloadTypeRegistry.playC2S().register(OpenRecipeCardPayload.TYPE, OpenRecipeCardPayload.CODEC)
-        PayloadTypeRegistry.playC2S().register(SetRecipeGridPayload.TYPE, SetRecipeGridPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
     }
 
@@ -98,23 +98,23 @@ object TerminalPackets {
             terminal.setScriptText(payload.scriptText)
         }
 
-        ServerPlayNetworking.registerGlobalReceiver(OpenRecipeCardPayload.TYPE) { payload, context ->
+        ServerPlayNetworking.registerGlobalReceiver(OpenInstructionSetPayload.TYPE) { payload, context ->
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@registerGlobalReceiver
             val side = Direction.entries[payload.sideOrdinal]
             val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
             val cardStack = nodeEntity.getItem(globalSlot)
-            if (cardStack.item !is RecipeCard) return@registerGlobalReceiver
-            val recipe = RecipeCard.getRecipe(cardStack)
+            if (cardStack.item !is InstructionSet) return@registerGlobalReceiver
+            val recipe = InstructionSet.getRecipe(cardStack)
 
             PlatformServices.menu.openExtendedMenu(
                 player,
-                Component.translatable("container.nodeworks.recipe_card"),
-                RecipeCardOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe),
-                RecipeCardOpenData.STREAM_CODEC
+                Component.translatable("container.nodeworks.instruction_set"),
+                InstructionSetOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe),
+                InstructionSetOpenData.STREAM_CODEC
             ) { syncId, inv, p ->
-                RecipeCardScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
+                InstructionSetScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
             }
         }
 
@@ -146,10 +146,10 @@ object TerminalPackets {
             logger.info("[Terminal {}] Auto-run {}", payload.terminalPos, if (payload.enabled) "enabled" else "disabled")
         }
 
-        ServerPlayNetworking.registerGlobalReceiver(SetRecipeGridPayload.TYPE) { payload, context ->
+        ServerPlayNetworking.registerGlobalReceiver(SetInstructionGridPayload.TYPE) { payload, context ->
             val player = context.player()
             val menu = player.containerMenu
-            if (menu is RecipeCardScreenHandler && menu.containerId == payload.containerId) {
+            if (menu is InstructionSetScreenHandler && menu.containerId == payload.containerId) {
                 menu.setRecipeFromIds(payload.items)
             }
         }

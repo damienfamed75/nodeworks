@@ -6,7 +6,7 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.screen.NodeSideScreen
-import damien.nodeworks.screen.RecipeCardScreen
+import damien.nodeworks.screen.InstructionSetScreen
 import damien.nodeworks.screen.TerminalScreen
 import com.mojang.blaze3d.vertex.PoseStack
 import net.minecraft.client.Minecraft
@@ -41,8 +41,8 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)
         }
-        event.register(ModScreenHandlers.RECIPE_CARD) { menu, inventory, title ->
-            RecipeCardScreen(menu, inventory, title)
+        event.register(ModScreenHandlers.INSTRUCTION_SET) { menu, inventory, title ->
+            InstructionSetScreen(menu, inventory, title)
         }
         event.register(ModScreenHandlers.TERMINAL) { menu, inventory, title ->
             TerminalScreen(menu, inventory, title)

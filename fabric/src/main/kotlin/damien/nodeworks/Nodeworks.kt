@@ -41,10 +41,10 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "terminal")),
             ExtendedScreenHandlerType({ syncId, inv, data -> TerminalScreenHandler.clientFactory(syncId, inv, data) }, TerminalOpenData.STREAM_CODEC)
         )
-        ModScreenHandlers.RECIPE_CARD = Registry.register(
+        ModScreenHandlers.INSTRUCTION_SET = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "recipe_card")),
-            ExtendedScreenHandlerType({ syncId, inv, data -> RecipeCardScreenHandler.clientFactory(syncId, inv, data) }, RecipeCardOpenData.STREAM_CODEC)
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> InstructionSetScreenHandler.clientFactory(syncId, inv, data) }, InstructionSetOpenData.STREAM_CODEC)
         )
         ModScreenHandlers.NODE_SIDE = Registry.register(
             BuiltInRegistries.MENU,

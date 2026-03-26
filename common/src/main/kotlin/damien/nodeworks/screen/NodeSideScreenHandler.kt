@@ -1,6 +1,7 @@
 package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.card.NodeCard
 import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -36,7 +37,7 @@ class NodeSideScreenHandler(
         for (row in 0..2) {
             for (col in 0..2) {
                 val slotIndex = offset + row * 3 + col
-                addSlot(Slot(nodeInventory, slotIndex, 62 + col * 18, 17 + row * 18))
+                addSlot(CardOnlySlot(nodeInventory, slotIndex, 62 + col * 18, 17 + row * 18))
             }
         }
 
@@ -64,6 +65,10 @@ class NodeSideScreenHandler(
 
     override fun stillValid(player: Player): Boolean {
         return nodeInventory.stillValid(player)
+    }
+
+    private class CardOnlySlot(container: Container, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
+        override fun mayPlace(stack: ItemStack): Boolean = stack.item is NodeCard
     }
 
     fun getSide(): Direction = side
