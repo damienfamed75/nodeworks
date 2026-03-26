@@ -19,8 +19,11 @@ class SchedulerImpl {
 
     private val tasks = mutableListOf<ScheduledTask>()
     private var nextId = 1
+    var currentTick: Long = 0
+        private set
 
     fun tick(tickCount: Long) {
+        currentTick = tickCount
         val toRun = tasks.filter { tickCount >= it.nextRun }
         val toRemove = mutableListOf<Int>()
 
@@ -42,9 +45,14 @@ class SchedulerImpl {
 
     fun hasActiveTasks(): Boolean = tasks.isNotEmpty()
 
+    fun initialize(startTick: Long) {
+        currentTick = startTick
+    }
+
     fun clear() {
         tasks.clear()
         nextId = 1
+        currentTick = 0
     }
 
     fun createLuaTable(): LuaTable {
@@ -69,12 +77,12 @@ class SchedulerImpl {
             }
         })
 
-        // scheduler:delay(ticks, fn) — runs once after N ticks
+        // scheduler:delay(ticks, fn) — runs once after N ticks from now
         table.set("delay", object : ThreeArgFunction() {
             override fun call(selfArg: LuaValue, ticksArg: LuaValue, fn: LuaValue): LuaValue {
                 val id = nextId++
                 val delayTicks = ticksArg.checkint()
-                tasks.add(ScheduledTask(id, fn.checkfunction(), 0, delayTicks.toLong(), false))
+                tasks.add(ScheduledTask(id, fn.checkfunction(), 0, currentTick + delayTicks, false))
                 return LuaValue.valueOf(id)
             }
         })

@@ -14,7 +14,8 @@ import org.slf4j.LoggerFactory
 object Nodeworks : ModInitializer {
     const val MOD_ID = "nodeworks"
     private val logger = LoggerFactory.getLogger(MOD_ID)
-    private var tickCount = 0L
+    var tickCount = 0L
+        private set
 
     override fun onInitialize() {
         ModBlocks.initialize()

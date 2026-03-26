@@ -5,6 +5,7 @@ import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NetworkSnapshot
 import net.minecraft.core.BlockPos
 import net.minecraft.server.level.ServerLevel
+import damien.nodeworks.Nodeworks
 import org.luaj.vm2.*
 import org.luaj.vm2.compiler.LuaC
 import org.luaj.vm2.lib.*
@@ -26,9 +27,6 @@ class ScriptEngine(
     private var globals: Globals? = null
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl()
-
-    /** Max instructions per tick to prevent infinite loops. */
-    private val maxInstructionsPerTick = 50_000
 
     fun start(scriptText: String): Boolean {
         stop()
@@ -56,16 +54,8 @@ class ScriptEngine(
         g.set("os", LuaValue.NIL)
         g.set("luajava", LuaValue.NIL)
 
-        // Install instruction budget hook
-        g.load(DebugLib())
-        val hookFunc = object : ZeroArgFunction() {
-            override fun call(): LuaValue {
-                throw LuaError("Script exceeded instruction limit")
-            }
-        }
-        g.get("debug").get("sethook").call(hookFunc, LuaValue.EMPTYSTRING, LuaValue.valueOf(maxInstructionsPerTick))
-        // Remove debug lib from script access after setting hook
-        g.set("debug", LuaValue.NIL)
+        // Initialize scheduler with the current server tick
+        scheduler.initialize(Nodeworks.tickCount)
 
         // Inject Nodeworks API
         injectApi(g)
@@ -96,24 +86,17 @@ class ScriptEngine(
 
     /** Called each server tick. Runs scheduler callbacks within the instruction budget. */
     fun tick(tickCount: Long) {
-        val g = globals ?: return
-        // Reset instruction count for this tick
-        val hookFunc = object : ZeroArgFunction() {
-            override fun call(): LuaValue {
-                throw LuaError("Script exceeded instruction limit")
-            }
-        }
-        g.get("debug")?.let {
-            // debug was removed, re-add temporarily for hook reset
-        }
-        // The hook is persistent from start(), so instruction count resets aren't easy with LuaJ.
-        // For now, rely on the initial hook. Future: use a custom debug hook that resets per tick.
+        if (globals == null) return
 
         try {
             scheduler.tick(tickCount)
         } catch (e: LuaError) {
             logCallback("Runtime error: ${e.message}", true)
             logger.warn("Script runtime error: {}", e.message)
+            stop()
+        } catch (e: Exception) {
+            logCallback("Runtime error: ${e.message}", true)
+            logger.warn("Script runtime exception: {}", e.message, e)
             stop()
         }
     }
@@ -135,6 +118,15 @@ class ScriptEngine(
 
         // scheduler object
         g.set("scheduler", scheduler.createLuaTable())
+
+        // clock() -> seconds since script started (as a decimal)
+        val startTime = System.currentTimeMillis()
+        g.set("clock", object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+                val elapsed = (System.currentTimeMillis() - startTime) / 1000.0
+                return LuaValue.valueOf(elapsed)
+            }
+        })
 
         // print(message)
         g.set("print", object : OneArgFunction() {
