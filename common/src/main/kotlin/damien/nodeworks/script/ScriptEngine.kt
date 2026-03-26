@@ -104,25 +104,36 @@ class ScriptEngine(
     private fun injectApi(g: Globals) {
         val snapshot = networkSnapshot!!
 
-        // card(type, alias) -> CardHandle
-        g.set("card", object : TwoArgFunction() {
-            override fun call(typeArg: LuaValue, aliasArg: LuaValue): LuaValue {
-                val type = typeArg.checkjstring()
+        // scheduler object
+        g.set("scheduler", scheduler.createLuaTable())
+
+        // network object
+        val networkTable = LuaTable()
+
+        // network:get(alias) → CardHandle or error
+        networkTable.set("get", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
                 val alias = aliasArg.checkjstring()
-                val card = snapshot.allCards().find {
-                    it.capability.type == type && it.alias == alias
-                } ?: throw LuaError("Card not found: $type '$alias'")
+                val card = snapshot.findByAlias(alias)
+                    ?: throw LuaError("Not found on network: '$alias'")
                 return CardHandle.create(card, level)
             }
         })
 
-        // scheduler object
-        g.set("scheduler", scheduler.createLuaTable())
+        // network:find(type) → list of CardHandles matching that type
+        networkTable.set("find", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
+                val type = typeArg.checkjstring()
+                val cards = snapshot.allCards().filter { it.capability.type == type }
+                val result = LuaTable()
+                for ((i, card) in cards.withIndex()) {
+                    result.set(i + 1, CardHandle.create(card, level))
+                }
+                return result
+            }
+        })
 
-        // network object — queries across all Storage Cards
-        val networkTable = LuaTable()
-
-        // network:count(filter) → number
+        // network:count(filter) → number (across all Storage Cards)
         networkTable.set("count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
@@ -131,13 +142,29 @@ class ScriptEngine(
             }
         })
 
-        // network:find(filter) → CardHandle or nil
-        networkTable.set("find", object : TwoArgFunction() {
-            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
-                val filter = filterArg.checkjstring()
-                val found = NetworkStorageHelper.findItem(level, snapshot, filter)
-                    ?: return LuaValue.NIL
-                return CardHandle.create(found, level)
+        // network:insert(itemsHandle, count?) → number moved into network storage
+        networkTable.set("insert", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val itemsTable = args.checktable(2)
+                val maxCount = if (args.narg() >= 3 && !args.arg(3).isnil()) {
+                    args.checklong(3)
+                } else {
+                    Long.MAX_VALUE
+                }
+
+                val ref = itemsTable.get("_itemsHandle")
+                if (ref.isnil() || ref !is ItemsHandle.ItemsHandleRef) {
+                    throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
+                }
+                val itemsHandle = ref.handle
+
+                val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
+
+                val moved = NetworkStorageHelper.insertItems(
+                    level, snapshot, sourceStorage, itemsHandle.filter,
+                    minOf(maxCount, itemsHandle.count.toLong())
+                )
+                return LuaValue.valueOf(moved.toInt())
             }
         })
 

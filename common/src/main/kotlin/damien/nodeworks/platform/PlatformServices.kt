@@ -53,6 +53,9 @@ interface StorageService {
     /** Count items matching filter in a storage. */
     fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long
 
+    /** Find the first item ID in storage matching the filter. Returns null if none found. */
+    fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String?
+
     /** Get a slotted view of the storage, or null if not slotted. */
     fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle?
 }

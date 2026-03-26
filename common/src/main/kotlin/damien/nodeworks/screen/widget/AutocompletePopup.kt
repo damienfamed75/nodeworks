@@ -180,26 +180,25 @@ class AutocompletePopup(
         val trimmed = beforeCursor.trimEnd()
         val fullText = lastFullText
 
-        // After card("partial → suggest card types
-        val cardTypeMatch = Regex("""card\(\s*"(\w*)$""").find(trimmed)
-        if (cardTypeMatch != null) {
-            val partial = cardTypeMatch.groupValues[1]
+        // After network:get("partial → suggest aliases with type hints
+        val getAliasMatch = Regex("""network:get\(\s*"(\w*)$""").find(trimmed)
+        if (getAliasMatch != null) {
+            val partial = getAliasMatch.groupValues[1]
             customPrefix = partial
-            val types = listOf("io", "storage", "recipe", "energy", "fluid")
-            return types.filter { it.startsWith(partial) }.map { suggest(it) }
+            return cards
+                .mapNotNull { card -> card.alias?.let { alias -> alias to card.capability.type } }
+                .distinct()
+                .filter { it.first.startsWith(partial) }
+                .map { suggest(it.first, "${it.first} (${it.second})") }
         }
 
-        // After card("inventory", "partial → suggest aliases
-        val cardAliasPattern = Regex("""card\(\s*"(\w+)"\s*,\s*"(\w*)$""")
-        cardAliasPattern.find(trimmed)?.let { match ->
-            val type = match.groupValues[1]
-            val partial = match.groupValues[2]
+        // After network:find("partial → suggest types
+        val findTypeMatch = Regex("""network:find\(\s*"(\w*)$""").find(trimmed)
+        if (findTypeMatch != null) {
+            val partial = findTypeMatch.groupValues[1]
             customPrefix = partial
-            return cards.filter { it.capability.type == type }
-                .mapNotNull { it.alias }
-                .distinct()
-                .filter { it.startsWith(partial) }
-                .map { suggest(it) }
+            val types = listOf("io", "storage")
+            return types.filter { it.startsWith(partial) }.map { suggest(it) }
         }
 
         // After :face("partial → suggest face names
@@ -216,8 +215,10 @@ class AutocompletePopup(
         if (networkMatch != null) {
             val partial = networkMatch.groupValues[1]
             val methods = listOf(
-                suggest("count(", "count(itemFilter: string) → number"),
-                suggest("find(", "find(itemFilter: string) → CardHandle?")
+                suggest("get(", "get(alias: string) → CardHandle"),
+                suggest("find(", "find(type: string) → CardHandle[]"),
+                suggest("count(", "count(filter: string) → number"),
+                suggest("insert(", "insert(items: ItemsHandle, count?: number) → number")
             )
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
         }
@@ -326,9 +327,8 @@ class AutocompletePopup(
         val lastWord = extractPrefix(beforeCursor)
         if (lastWord.length >= 2 || forced) {
             val apiFunctions = listOf(
-                suggest("card", "card(type: string, alias: string) → CardHandle"),
                 suggest("scheduler", "scheduler"),
-                suggest("network", "network storage"),
+                suggest("network", "network"),
                 suggest("print", "print(message: any)"),
                 suggest("clock", "clock() → number"),
                 suggest("string", "string library"),
@@ -356,8 +356,9 @@ class AutocompletePopup(
 
     private fun cardHandleMethods(partial: String): List<Suggestion> {
         val methods = listOf(
-            suggest("move(", "move(dest: CardHandle, itemId: string, count: number) → number"),
-            suggest("count(", "count(itemId: string) → number"),
+            suggest("find(", "find(filter: string) → ItemsHandle?"),
+            suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
+            suggest("count(", "count(filter: string) → number"),
             suggest("face(", "face(side: string) → CardHandle"),
             suggest("slots(", "slots(...: number) → CardHandle")
         )
@@ -370,15 +371,18 @@ class AutocompletePopup(
         return pattern.findAll(text).map { it.groupValues[1] }.distinct().toList()
     }
 
-    /** Extracts variable names that are assigned from card() or :face() calls. */
+    /** Extracts variable names that are assigned from network:get() or :face() calls. */
     private fun extractCardVariables(text: String): Set<String> {
         val result = mutableSetOf<String>()
-        // local X = card(...)
-        val cardPattern = Regex("""local\s+(\w+)\s*=\s*card\s*\(""")
-        cardPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:get(...)
+        val getPattern = Regex("""local\s+(\w+)\s*=\s*network:get\s*\(""")
+        getPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         // local X = something:face(...)
         val facePattern = Regex("""local\s+(\w+)\s*=\s*\w+:face\s*\(""")
         facePattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = something:slots(...)
+        val slotsPattern = Regex("""local\s+(\w+)\s*=\s*\w+:slots\s*\(""")
+        slotsPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         return result
     }
 

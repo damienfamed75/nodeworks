@@ -45,6 +45,17 @@ class FabricStorageService : StorageService {
         return total
     }
 
+    override fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String? {
+        val src = (storage as FabricItemStorageHandle).storage
+        for (view in src) {
+            if (!view.isResourceBlank && view.amount > 0) {
+                val itemId = BuiltInRegistries.ITEM.getKey(view.resource.item)?.toString() ?: continue
+                if (filter(itemId)) return itemId
+            }
+        }
+        return null
+    }
+
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {
         val storage = ItemStorage.SIDED.find(level, pos, face) ?: return null
         if (storage !is SlottedStorage<*>) return null

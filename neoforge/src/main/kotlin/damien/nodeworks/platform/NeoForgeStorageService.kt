@@ -47,6 +47,19 @@ class NeoForgeStorageService : StorageService {
         return total
     }
 
+    override fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String? {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        for (index in 0 until handler.size()) {
+            val resource = handler.getResource(index)
+            val amount = handler.getAmountAsLong(index)
+            if (!resource.isEmpty && amount > 0) {
+                val itemId = BuiltInRegistries.ITEM.getKey(resource.item)?.toString() ?: continue
+                if (filter(itemId)) return itemId
+            }
+        }
+        return null
+    }
+
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {
         val handler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
         return NeoForgeSlottedStorageHandle(handler)
