@@ -1,0 +1,100 @@
+package damien.nodeworks.network
+
+import net.minecraft.core.BlockPos
+import net.minecraft.network.FriendlyByteBuf
+import net.minecraft.network.codec.StreamCodec
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload
+import net.minecraft.resources.Identifier
+
+/**
+ * All custom packet payloads used by Nodeworks.
+ * These are platform-agnostic data classes — registration and handling is in the platform module.
+ */
+
+data class RunScriptPayload(val terminalPos: BlockPos, val scriptText: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<RunScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "run_script"))
+        val CODEC: StreamCodec<FriendlyByteBuf, RunScriptPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptText, 32767) },
+            { buf -> RunScriptPayload(buf.readBlockPos(), buf.readUtf(32767)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class StopScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<StopScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "stop_script"))
+        val CODEC: StreamCodec<FriendlyByteBuf, StopScriptPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos) },
+            { buf -> StopScriptPayload(buf.readBlockPos()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class SaveScriptPayload(val terminalPos: BlockPos, val scriptText: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SaveScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "save_script"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SaveScriptPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptText, 32767) },
+            { buf -> SaveScriptPayload(buf.readBlockPos(), buf.readUtf(32767)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class SetLayoutPayload(val terminalPos: BlockPos, val layoutIndex: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetLayoutPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_layout"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetLayoutPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeVarInt(p.layoutIndex) },
+            { buf -> SetLayoutPayload(buf.readBlockPos(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class ToggleAutoRunPayload(val terminalPos: BlockPos, val enabled: Boolean) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ToggleAutoRunPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "toggle_autorun"))
+        val CODEC: StreamCodec<FriendlyByteBuf, ToggleAutoRunPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeBoolean(p.enabled) },
+            { buf -> ToggleAutoRunPayload(buf.readBlockPos(), buf.readBoolean()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class SetStoragePriorityPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int, val priority: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetStoragePriorityPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_storage_priority"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetStoragePriorityPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.nodePos); buf.writeVarInt(p.sideOrdinal); buf.writeVarInt(p.slotIndex); buf.writeVarInt(p.priority) },
+            { buf -> SetStoragePriorityPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class OpenRecipeCardPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<OpenRecipeCardPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "open_recipe_card"))
+        val CODEC: StreamCodec<FriendlyByteBuf, OpenRecipeCardPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.nodePos); buf.writeVarInt(p.sideOrdinal); buf.writeVarInt(p.slotIndex) },
+            { buf -> OpenRecipeCardPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, val isError: Boolean) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "terminal_log"))
+        val CODEC: StreamCodec<FriendlyByteBuf, TerminalLogPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.message, 1024); buf.writeBoolean(p.isError) },
+            { buf -> TerminalLogPayload(buf.readBlockPos(), buf.readUtf(1024), buf.readBoolean()) }
+        )
+    }
+    override fun type() = TYPE
+}
