@@ -79,12 +79,12 @@ class Nodeworks(modBus: IEventBus) {
                     TerminalScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
-            ModScreenHandlers.RECIPE_CARD = Registry.register(
+            ModScreenHandlers.INSTRUCTION_SET = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "recipe_card")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
-                    val data = RecipeCardOpenData.STREAM_CODEC.decode(buf)
-                    RecipeCardScreenHandler.clientFactory(syncId, inv, data)
+                    val data = InstructionSetOpenData.STREAM_CODEC.decode(buf)
+                    InstructionSetScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
             ModScreenHandlers.NODE_SIDE = Registry.register(
@@ -109,8 +109,8 @@ class Nodeworks(modBus: IEventBus) {
         registrar.playToServer(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC, NeoForgeTerminalPackets::handleToggleAutoRun)
         registrar.playToServer(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC, NeoForgeTerminalPackets::handleSetLayout)
         registrar.playToServer(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC, NeoForgeTerminalPackets::handleSetStoragePriority)
-        registrar.playToServer(OpenRecipeCardPayload.TYPE, OpenRecipeCardPayload.CODEC, NeoForgeTerminalPackets::handleOpenRecipeCard)
-        registrar.playToServer(SetRecipeGridPayload.TYPE, SetRecipeGridPayload.CODEC, NeoForgeTerminalPackets::handleSetRecipeGrid)
+        registrar.playToServer(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC, NeoForgeTerminalPackets::handleOpenInstructionSet)
+        registrar.playToServer(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC, NeoForgeTerminalPackets::handleSetInstructionGrid)
 
         // S2C payloads
         registrar.playToClient(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC) { payload, context ->

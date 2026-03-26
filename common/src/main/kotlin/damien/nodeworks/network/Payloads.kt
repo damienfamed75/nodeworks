@@ -77,21 +77,21 @@ data class SetStoragePriorityPayload(val nodePos: BlockPos, val sideOrdinal: Int
     override fun type() = TYPE
 }
 
-data class OpenRecipeCardPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int) : CustomPacketPayload {
+data class OpenInstructionSetPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<OpenRecipeCardPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "open_recipe_card"))
-        val CODEC: StreamCodec<FriendlyByteBuf, OpenRecipeCardPayload> = CustomPacketPayload.codec(
+        val TYPE: CustomPacketPayload.Type<OpenInstructionSetPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "open_instruction_set"))
+        val CODEC: StreamCodec<FriendlyByteBuf, OpenInstructionSetPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.nodePos); buf.writeVarInt(p.sideOrdinal); buf.writeVarInt(p.slotIndex) },
-            { buf -> OpenRecipeCardPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt()) }
+            { buf -> OpenInstructionSetPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt()) }
         )
     }
     override fun type() = TYPE
 }
 
-data class SetRecipeGridPayload(val containerId: Int, val items: List<String>) : CustomPacketPayload {
+data class SetInstructionGridPayload(val containerId: Int, val items: List<String>) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<SetRecipeGridPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_recipe_grid"))
-        val CODEC: StreamCodec<FriendlyByteBuf, SetRecipeGridPayload> = CustomPacketPayload.codec(
+        val TYPE: CustomPacketPayload.Type<SetInstructionGridPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_instruction_grid"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetInstructionGridPayload> = CustomPacketPayload.codec(
             { p, buf ->
                 buf.writeVarInt(p.containerId)
                 buf.writeVarInt(p.items.size)
@@ -101,7 +101,7 @@ data class SetRecipeGridPayload(val containerId: Int, val items: List<String>) :
                 val id = buf.readVarInt()
                 val count = buf.readVarInt()
                 val items = (0 until count).map { buf.readUtf(256) }
-                SetRecipeGridPayload(id, items)
+                SetInstructionGridPayload(id, items)
             }
         )
     }

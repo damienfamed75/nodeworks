@@ -1,7 +1,6 @@
 package damien.nodeworks.block.entity
 
 import damien.nodeworks.card.IOSideCapability
-import damien.nodeworks.card.RecipeSideCapability
 import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.card.NodeCard
 import damien.nodeworks.card.SideCapability
@@ -109,11 +108,6 @@ class NodeBlockEntity(
         return getCards(side).map { info ->
             val capability = when (info.card) {
                 is damien.nodeworks.card.IOCard -> IOSideCapability(adjacentPos, accessFace)
-                is damien.nodeworks.card.RecipeCard -> {
-                    val stack = items[sideOffset(side) + info.slotIndex]
-                    val recipe = damien.nodeworks.card.RecipeCard.getRecipe(stack)
-                    RecipeSideCapability(adjacentPos, recipe)
-                }
                 is damien.nodeworks.card.StorageCard -> {
                     val stack = items[sideOffset(side) + info.slotIndex]
                     val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
@@ -181,8 +175,13 @@ class NodeBlockEntity(
         return SLOTS_BY_FACE[side.ordinal]
     }
 
+    override fun canPlaceItem(slot: Int, stack: ItemStack): Boolean {
+        return stack.item is NodeCard
+    }
+
     override fun canPlaceItemThroughFace(slot: Int, stack: ItemStack, side: Direction?): Boolean {
         if (side == null) return false
+        if (stack.item !is NodeCard) return false
         val offset = sideOffset(side)
         return slot in offset until (offset + SLOTS_PER_SIDE)
     }

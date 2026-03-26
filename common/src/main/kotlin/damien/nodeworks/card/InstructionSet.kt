@@ -1,7 +1,7 @@
 package damien.nodeworks.card
 
-import damien.nodeworks.screen.RecipeCardOpenData
-import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.screen.InstructionSetOpenData
+import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.ChatFormatting
 import net.minecraft.core.BlockPos
@@ -15,9 +15,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
-import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
-import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.TooltipFlag
@@ -27,11 +25,11 @@ import net.minecraft.world.level.Level
 import java.util.function.Consumer
 
 /**
- * Recipe Card — stores a 3x3 crafting grid template.
+ * Instruction Set — stores a 3x3 crafting grid template.
  * Right-click while holding to open the recipe editor.
+ * Not a NodeCard — cannot be placed in node slots.
  */
-class RecipeCard(properties: Properties) : NodeCard(properties) {
-    override val cardType: String = "recipe"
+class InstructionSet(properties: Properties) : Item(properties) {
 
     override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
         if (level.isClientSide) return InteractionResult.SUCCESS
@@ -42,10 +40,10 @@ class RecipeCard(properties: Properties) : NodeCard(properties) {
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
-            Component.translatable("container.nodeworks.recipe_card"),
-            RecipeCardOpenData(BlockPos.ZERO, -1, -1, recipe),
-            RecipeCardOpenData.STREAM_CODEC,
-            { syncId, inv, p -> RecipeCardScreenHandler.createHandheld(syncId, inv, hand, stack) }
+            Component.translatable("container.nodeworks.instruction_set"),
+            InstructionSetOpenData(BlockPos.ZERO, -1, -1, recipe),
+            InstructionSetOpenData.STREAM_CODEC,
+            { syncId, inv, p -> InstructionSetScreenHandler.createHandheld(syncId, inv, hand, stack) }
         )
 
         return InteractionResult.SUCCESS
@@ -60,7 +58,7 @@ class RecipeCard(properties: Properties) : NodeCard(properties) {
         }.distinct()
 
         if (ingredients.isNotEmpty()) {
-            adder.accept(Component.translatable("tooltip.nodeworks.recipe_card.input")
+            adder.accept(Component.translatable("tooltip.nodeworks.instruction_set.input")
                 .withStyle(ChatFormatting.GRAY))
             for (item in ingredients) {
                 adder.accept(Component.literal("  ").append(item.getName(ItemStack(item))).withStyle(ChatFormatting.DARK_GRAY))
@@ -72,7 +70,7 @@ class RecipeCard(properties: Properties) : NodeCard(properties) {
                 if (outputIdentifier != null) {
                     val outputItem = BuiltInRegistries.ITEM.getValue(outputIdentifier)
                     if (outputItem != null) {
-                        adder.accept(Component.translatable("tooltip.nodeworks.recipe_card.output")
+                        adder.accept(Component.translatable("tooltip.nodeworks.instruction_set.output")
                             .withStyle(ChatFormatting.GRAY))
                         adder.accept(Component.literal("  ").append(outputItem.getName(ItemStack(outputItem))).withStyle(ChatFormatting.DARK_GRAY))
                     }

@@ -1,7 +1,7 @@
 package damien.nodeworks.registry
 
 import damien.nodeworks.screen.NodeSideScreenHandler
-import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.screen.TerminalScreenHandler
 import net.minecraft.world.inventory.MenuType
 
@@ -12,7 +12,7 @@ import net.minecraft.world.inventory.MenuType
 object ModScreenHandlers {
 
     lateinit var TERMINAL: MenuType<TerminalScreenHandler>
-    lateinit var RECIPE_CARD: MenuType<RecipeCardScreenHandler>
+    lateinit var INSTRUCTION_SET: MenuType<InstructionSetScreenHandler>
     lateinit var NODE_SIDE: MenuType<NodeSideScreenHandler>
 
     fun initialize() {

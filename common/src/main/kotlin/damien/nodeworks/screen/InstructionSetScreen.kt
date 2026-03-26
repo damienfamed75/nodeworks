@@ -1,6 +1,6 @@
 package damien.nodeworks.screen
 
-import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.screen.InstructionSetScreenHandler
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.renderer.RenderPipelines
@@ -9,14 +9,14 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.inventory.Slot
 
-class RecipeCardScreen(
-    menu: RecipeCardScreenHandler,
+class InstructionSetScreen(
+    menu: InstructionSetScreenHandler,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<RecipeCardScreenHandler>(menu, playerInventory, title) {
+) : AbstractContainerScreen<InstructionSetScreenHandler>(menu, playerInventory, title) {
 
     companion object {
-        private val BACKGROUND = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/recipe_card.png")
+        private val BACKGROUND = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/instruction_set.png")
     }
 
     init {
