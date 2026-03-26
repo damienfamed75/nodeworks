@@ -17,6 +17,7 @@ object LuaSyntaxHighlighter {
     private const val NUMBER_COLOR = 0xFFB5CEA8.toInt()
     private const val FUNCTION_COLOR = 0xFFDCDCAA.toInt()
     private const val DEFAULT_COLOR = 0xFFD4D4D4.toInt()
+    private const val SELECTION_COLOR = 0x0000FFFF.toInt()
 
     private val KEYWORDS = setOf(
         "and", "break", "do", "else", "elseif", "end", "false", "for",
@@ -63,6 +64,19 @@ object LuaSyntaxHighlighter {
         val textLeft = getInnerLeft(editor)
         val textTop = getInnerTop(editor)
 
+        // Get selection range
+        val hasSelection = textField.hasSelection()
+        var selStart = 0
+        var selEnd = 0
+        if (hasSelection) {
+            val selected = textField.getSelected()
+            selStart = selected.javaClass.getMethod("beginIndex").invoke(selected) as Int
+            selEnd = selected.javaClass.getMethod("endIndex").invoke(selected) as Int
+            if (selStart > selEnd) {
+                val tmp = selStart; selStart = selEnd; selEnd = tmp
+            }
+        }
+
         // Get line ranges
         val lines = mutableListOf<Pair<Int, Int>>()
         for (view in textField.iterateLines()) {
@@ -95,11 +109,24 @@ object LuaSyntaxHighlighter {
             // Skip lines outside visible area (after tracking state)
             if (y + font.lineHeight < clipTop || y > clipBottom) continue
 
-            // Draw colored text
+            // Draw colored text — selected characters render in blue
             var x = textLeft
+            var charIdx = begin
             for (token in tokens) {
-                graphics.drawString(font, token.text, x, y, token.color, false)
-                x += font.width(token.text)
+                if (hasSelection && selStart < charIdx + token.text.length && selEnd > charIdx) {
+                    // Token overlaps selection — draw char by char
+                    for (ch in token.text) {
+                        val color = if (hasSelection && charIdx >= selStart && charIdx < selEnd)
+                            SELECTION_COLOR else token.color
+                        graphics.drawString(font, ch.toString(), x, y, color, false)
+                        x += font.width(ch.toString())
+                        charIdx++
+                    }
+                } else {
+                    graphics.drawString(font, token.text, x, y, token.color, false)
+                    x += font.width(token.text)
+                    charIdx += token.text.length
+                }
             }
         }
 
@@ -194,7 +221,9 @@ object LuaSyntaxHighlighter {
     private fun findStringEnd(line: String, start: Int, quote: Char): Int {
         var i = start
         while (i < line.length) {
-            if (line[i] == '\\') { i += 2; continue }
+            if (line[i] == '\\') {
+                i += 2; continue
+            }
             if (line[i] == quote) return i + 1
             i++
         }
