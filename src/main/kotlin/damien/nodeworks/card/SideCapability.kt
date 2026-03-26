@@ -14,12 +14,36 @@ sealed interface SideCapability {
 }
 
 /**
- * Exposes item storage on the adjacent block via Fabric Transfer API or vanilla Container fallback.
- * [defaultFace] is the face of the target block that faces the node (used when script doesn't specify a face).
+ * IO Card capability — direct scriptable access to an adjacent block's item storage.
+ * [defaultFace] is the face of the target block that faces the node.
  */
-data class InventorySideCapability(
+data class IOSideCapability(
     override val adjacentPos: BlockPos,
     val defaultFace: Direction
 ) : SideCapability {
-    override val type: String = "inventory"
+    override val type: String = "io"
+}
+
+/**
+ * Storage Card capability — passive network storage. Items are discoverable
+ * by the network for crafting and network:count()/find() queries.
+ * [priority] determines search order (higher = checked first, default 0).
+ */
+/**
+ * Recipe Card capability — stores a crafting pattern for virtual crafting.
+ * [recipe] is a list of 9 item IDs (empty string = empty slot).
+ */
+data class RecipeSideCapability(
+    override val adjacentPos: BlockPos,
+    val recipe: List<String>
+) : SideCapability {
+    override val type: String = "recipe"
+}
+
+data class StorageSideCapability(
+    override val adjacentPos: BlockPos,
+    val defaultFace: Direction,
+    val priority: Int = 0
+) : SideCapability {
+    override val type: String = "storage"
 }

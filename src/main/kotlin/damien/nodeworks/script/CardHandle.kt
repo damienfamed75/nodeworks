@@ -1,6 +1,6 @@
 package damien.nodeworks.script
 
-import damien.nodeworks.card.InventorySideCapability
+import damien.nodeworks.card.IOSideCapability
 import damien.nodeworks.network.CardSnapshot
 import org.slf4j.LoggerFactory
 import net.fabricmc.fabric.api.transfer.v1.item.ItemStorage
@@ -52,7 +52,7 @@ class CardHandle private constructor(
     private fun getItemStorage(): Storage<ItemVariant>? {
         val cap = card.capability
         val targetPos = cap.adjacentPos
-        val face = accessFace ?: (cap as? InventorySideCapability)?.defaultFace ?: Direction.UP
+        val face = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
         val storage = ItemStorage.SIDED.find(level, targetPos, face) ?: return null
 
         // If slot filter is set, wrap to only expose those slots
@@ -129,7 +129,7 @@ class CardHandle private constructor(
                 val sourceStorage = self.getItemStorage()
                 if (sourceStorage == null) {
                     logger.warn("move: source storage is null for {} (pos={}, face={})",
-                        card.alias, card.capability.adjacentPos, accessFace ?: (card.capability as? InventorySideCapability)?.defaultFace)
+                        card.alias, card.capability.adjacentPos, accessFace ?: (card.capability as? IOSideCapability)?.defaultFace)
                     return LuaValue.valueOf(0)
                 }
 

@@ -119,6 +119,30 @@ class ScriptEngine(
         // scheduler object
         g.set("scheduler", scheduler.createLuaTable())
 
+        // network object — queries across all Storage Cards
+        val networkTable = LuaTable()
+
+        // network:count(filter) → number
+        networkTable.set("count", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val count = NetworkStorageHelper.countItems(level, snapshot, filter)
+                return LuaValue.valueOf(count.toInt())
+            }
+        })
+
+        // network:find(filter) → CardHandle or nil
+        networkTable.set("find", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val found = NetworkStorageHelper.findItem(level, snapshot, filter)
+                    ?: return LuaValue.NIL
+                return CardHandle.create(found, level)
+            }
+        })
+
+        g.set("network", networkTable)
+
         // clock() -> seconds since script started (as a decimal)
         val startTime = System.currentTimeMillis()
         g.set("clock", object : ZeroArgFunction() {

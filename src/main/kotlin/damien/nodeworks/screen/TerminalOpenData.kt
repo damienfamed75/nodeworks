@@ -1,6 +1,7 @@
 package damien.nodeworks.screen
 
-import damien.nodeworks.card.InventorySideCapability
+import damien.nodeworks.card.IOSideCapability
+import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.network.CardSnapshot
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -31,8 +32,12 @@ data class TerminalOpenData(
                     val adjacentPos = buf.readBlockPos()
                     val defaultFace = Direction.entries[buf.readVarInt()]
                     val slotIndex = buf.readVarInt()
+                    val capability = when (type) {
+                        "storage" -> StorageSideCapability(adjacentPos, defaultFace)
+                        else -> IOSideCapability(adjacentPos, defaultFace)
+                    }
                     CardSnapshot(
-                        capability = InventorySideCapability(adjacentPos, defaultFace),
+                        capability = capability,
                         alias = alias,
                         slotIndex = slotIndex
                     )
@@ -53,7 +58,12 @@ data class TerminalOpenData(
                     buf.writeUtf(card.alias ?: "", 256)
                     buf.writeUtf(card.capability.type, 64)
                     buf.writeBlockPos(card.capability.adjacentPos)
-                    buf.writeVarInt((card.capability as InventorySideCapability).defaultFace.ordinal)
+                    val defaultFace = when (val cap = card.capability) {
+                        is IOSideCapability -> cap.defaultFace
+                        is StorageSideCapability -> cap.defaultFace
+                        else -> Direction.UP
+                    }
+                    buf.writeVarInt(defaultFace.ordinal)
                     buf.writeVarInt(card.slotIndex)
                 }
                 buf.writeVarInt(data.itemTags.size)

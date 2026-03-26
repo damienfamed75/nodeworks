@@ -1,6 +1,8 @@
 package damien.nodeworks.registry
 
-import damien.nodeworks.card.InventoryCard
+import damien.nodeworks.card.IOCard
+import damien.nodeworks.card.RecipeCard
+import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -17,9 +19,21 @@ object ModItems {
         Item.Properties().stacksTo(1)
     )
 
-    val INVENTORY_CARD: Item = register(
-        "inventory_card",
-        ::InventoryCard,
+    val IO_CARD: Item = register(
+        "io_card",
+        ::IOCard,
+        Item.Properties().stacksTo(1)
+    )
+
+    val STORAGE_CARD: Item = register(
+        "storage_card",
+        ::StorageCard,
+        Item.Properties().stacksTo(1)
+    )
+
+    val RECIPE_CARD: Item = register(
+        "recipe_card",
+        ::RecipeCard,
         Item.Properties().stacksTo(1)
     )
 

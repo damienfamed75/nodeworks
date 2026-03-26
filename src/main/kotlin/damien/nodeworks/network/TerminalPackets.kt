@@ -56,6 +56,37 @@ object TerminalPackets {
         override fun type() = TYPE
     }
 
+    data class OpenRecipeCardPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int) : CustomPacketPayload {
+        companion object {
+            val TYPE: CustomPacketPayload.Type<OpenRecipeCardPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "open_recipe_card"))
+            val CODEC: StreamCodec<FriendlyByteBuf, OpenRecipeCardPayload> = CustomPacketPayload.codec(
+                { payload, buf ->
+                    buf.writeBlockPos(payload.nodePos)
+                    buf.writeVarInt(payload.sideOrdinal)
+                    buf.writeVarInt(payload.slotIndex)
+                },
+                { buf -> OpenRecipeCardPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt()) }
+            )
+        }
+        override fun type() = TYPE
+    }
+
+    data class SetStoragePriorityPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int, val priority: Int) : CustomPacketPayload {
+        companion object {
+            val TYPE: CustomPacketPayload.Type<SetStoragePriorityPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_storage_priority"))
+            val CODEC: StreamCodec<FriendlyByteBuf, SetStoragePriorityPayload> = CustomPacketPayload.codec(
+                { payload, buf ->
+                    buf.writeBlockPos(payload.nodePos)
+                    buf.writeVarInt(payload.sideOrdinal)
+                    buf.writeVarInt(payload.slotIndex)
+                    buf.writeVarInt(payload.priority)
+                },
+                { buf -> SetStoragePriorityPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt()) }
+            )
+        }
+        override fun type() = TYPE
+    }
+
     data class SetLayoutPayload(val terminalPos: BlockPos, val layoutIndex: Int) : CustomPacketPayload {
         companion object {
             val TYPE: CustomPacketPayload.Type<SetLayoutPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_layout"))
@@ -115,6 +146,8 @@ object TerminalPackets {
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(SaveScriptPayload.TYPE, SaveScriptPayload.CODEC)
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(OpenRecipeCardPayload.TYPE, OpenRecipeCardPayload.CODEC)
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
     }
 
@@ -161,6 +194,41 @@ object TerminalPackets {
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
             terminal.setScriptText(payload.scriptText)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(OpenRecipeCardPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val nodeEntity = level.getBlockEntity(payload.nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity ?: return@registerGlobalReceiver
+            val side = net.minecraft.core.Direction.entries[payload.sideOrdinal]
+            val globalSlot = side.ordinal * damien.nodeworks.block.entity.NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
+            val cardStack = nodeEntity.getItem(globalSlot)
+            if (cardStack.item !is damien.nodeworks.card.RecipeCard) return@registerGlobalReceiver
+            val recipe = damien.nodeworks.card.RecipeCard.getRecipe(cardStack)
+
+            player.openMenu(object : net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory<damien.nodeworks.screen.RecipeCardOpenData> {
+                override fun getScreenOpeningData(p: net.minecraft.server.level.ServerPlayer) =
+                    damien.nodeworks.screen.RecipeCardOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe)
+                override fun getDisplayName() = net.minecraft.network.chat.Component.translatable("container.nodeworks.recipe_card")
+                override fun createMenu(syncId: Int, inv: net.minecraft.world.entity.player.Inventory, p: net.minecraft.world.entity.player.Player) =
+                    damien.nodeworks.screen.RecipeCardScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
+            })
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetStoragePriorityPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val node = level.getBlockEntity(payload.nodePos) as? TerminalBlockEntity
+            // Actually this is a NodeBlockEntity, not TerminalBlockEntity
+            val nodeEntity = level.getBlockEntity(payload.nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity ?: return@registerGlobalReceiver
+            val side = net.minecraft.core.Direction.entries[payload.sideOrdinal]
+            val slotIndex = payload.slotIndex
+            val globalSlot = side.ordinal * damien.nodeworks.block.entity.NodeBlockEntity.SLOTS_PER_SIDE + slotIndex
+            val stack = nodeEntity.getItem(globalSlot)
+            if (stack.item is damien.nodeworks.card.StorageCard) {
+                damien.nodeworks.card.StorageCard.setPriority(stack, payload.priority)
+                nodeEntity.setChanged()
+            }
         }
 
         ServerPlayNetworking.registerGlobalReceiver(SetLayoutPayload.TYPE) { payload, context ->
