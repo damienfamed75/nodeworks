@@ -51,6 +51,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(OpenRecipeCardPayload.TYPE, OpenRecipeCardPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetRecipeGridPayload.TYPE, SetRecipeGridPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
     }
 
@@ -143,6 +144,14 @@ object TerminalPackets {
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
             terminal.setAutoRun(payload.enabled)
             logger.info("[Terminal {}] Auto-run {}", payload.terminalPos, if (payload.enabled) "enabled" else "disabled")
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetRecipeGridPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is RecipeCardScreenHandler && menu.containerId == payload.containerId) {
+                menu.setRecipeFromIds(payload.items)
+            }
         }
     }
 

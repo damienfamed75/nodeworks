@@ -146,6 +146,16 @@ object NeoForgeTerminalPackets {
         }
     }
 
+    fun handleSetRecipeGrid(payload: SetRecipeGridPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is RecipeCardScreenHandler && menu.containerId == payload.containerId) {
+                menu.setRecipeFromIds(payload.items)
+            }
+        }
+    }
+
     // --- Auto-run ---
 
     private val pendingAutoRun = mutableSetOf<GlobalPos>()

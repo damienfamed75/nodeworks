@@ -110,6 +110,7 @@ class Nodeworks(modBus: IEventBus) {
         registrar.playToServer(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC, NeoForgeTerminalPackets::handleSetLayout)
         registrar.playToServer(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC, NeoForgeTerminalPackets::handleSetStoragePriority)
         registrar.playToServer(OpenRecipeCardPayload.TYPE, OpenRecipeCardPayload.CODEC, NeoForgeTerminalPackets::handleOpenRecipeCard)
+        registrar.playToServer(SetRecipeGridPayload.TYPE, SetRecipeGridPayload.CODEC, NeoForgeTerminalPackets::handleSetRecipeGrid)
 
         // S2C payloads
         registrar.playToClient(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC) { payload, context ->
