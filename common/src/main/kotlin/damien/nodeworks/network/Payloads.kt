@@ -88,6 +88,26 @@ data class OpenRecipeCardPayload(val nodePos: BlockPos, val sideOrdinal: Int, va
     override fun type() = TYPE
 }
 
+data class SetRecipeGridPayload(val containerId: Int, val items: List<String>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetRecipeGridPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_recipe_grid"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetRecipeGridPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                buf.writeVarInt(p.items.size)
+                for (item in p.items) buf.writeUtf(item, 256)
+            },
+            { buf ->
+                val id = buf.readVarInt()
+                val count = buf.readVarInt()
+                val items = (0 until count).map { buf.readUtf(256) }
+                SetRecipeGridPayload(id, items)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
 data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, val isError: Boolean) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "terminal_log"))

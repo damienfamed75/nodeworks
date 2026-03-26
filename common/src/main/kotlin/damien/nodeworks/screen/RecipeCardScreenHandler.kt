@@ -182,4 +182,19 @@ class RecipeCardScreenHandler(
     override fun stillValid(player: Player): Boolean = true
 
     fun getRecipeGrid(): Container = recipeGrid
+
+    /** Sets the 3x3 recipe grid from a list of item ID strings (used by JEI integration). */
+    fun setRecipeFromIds(items: List<String>) {
+        for (i in 0 until minOf(9, items.size)) {
+            if (items[i].isEmpty()) {
+                recipeGrid.setItem(i, ItemStack.EMPTY)
+            } else {
+                val id = Identifier.tryParse(items[i]) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
+                recipeGrid.setItem(i, ItemStack(item, 1))
+            }
+        }
+        updateResult()
+        broadcastChanges()
+    }
 }
