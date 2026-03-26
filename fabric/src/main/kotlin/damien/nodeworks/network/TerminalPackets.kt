@@ -1,0 +1,206 @@
+package damien.nodeworks.network
+
+import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.block.entity.TerminalBlockEntity
+import damien.nodeworks.card.RecipeCard
+import damien.nodeworks.card.StorageCard
+import damien.nodeworks.platform.MenuService
+import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.screen.RecipeCardOpenData
+import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.script.ScriptEngine
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking
+import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
+import net.minecraft.core.GlobalPos
+import net.minecraft.network.chat.Component
+import net.minecraft.resources.ResourceKey
+import net.minecraft.server.MinecraftServer
+import net.minecraft.server.level.ServerLevel
+import net.minecraft.world.level.Level
+import org.slf4j.LoggerFactory
+
+object TerminalPackets {
+
+    private val logger = LoggerFactory.getLogger("nodeworks-packets")
+
+    // --- Active script engines per terminal (keyed by dimension + position) ---
+
+    private val activeEngines = mutableMapOf<GlobalPos, ScriptEngine>()
+
+    fun getEngine(level: ServerLevel, pos: BlockPos): ScriptEngine? =
+        activeEngines[GlobalPos.of(level.dimension(), pos)]
+
+    fun getEngine(dimKey: ResourceKey<Level>, pos: BlockPos): ScriptEngine? =
+        activeEngines[GlobalPos.of(dimKey, pos)]
+
+    /** Stop and remove the engine for a terminal. Called when the block entity is removed. */
+    fun stopEngine(level: ServerLevel, pos: BlockPos) {
+        val gp = GlobalPos.of(level.dimension(), pos)
+        activeEngines.remove(gp)?.stop()
+    }
+
+    // --- Registration ---
+
+    fun registerPayloads() {
+        PayloadTypeRegistry.playC2S().register(RunScriptPayload.TYPE, RunScriptPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(StopScriptPayload.TYPE, StopScriptPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SaveScriptPayload.TYPE, SaveScriptPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(OpenRecipeCardPayload.TYPE, OpenRecipeCardPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
+    }
+
+    fun registerServerHandlers() {
+        ServerPlayNetworking.registerGlobalReceiver(RunScriptPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+
+            terminal.setScriptText(payload.scriptText)
+            val nodePos = terminal.getConnectedNodePos() ?: return@registerGlobalReceiver
+
+            val globalPos = GlobalPos.of(level.dimension(), payload.terminalPos)
+            activeEngines.remove(globalPos)?.stop()
+
+            val terminalPos = payload.terminalPos
+            val engine = ScriptEngine(level, nodePos) { message, isError ->
+                val logPayload = TerminalLogPayload(terminalPos, message, isError)
+                for (p in level.players()) {
+                    if (p.distanceToSqr(terminalPos.x + 0.5, terminalPos.y + 0.5, terminalPos.z + 0.5) <= 64.0 * 64.0) {
+                        ServerPlayNetworking.send(p, logPayload)
+                    }
+                }
+                if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
+            }
+
+            if (engine.start(payload.scriptText)) {
+                activeEngines[globalPos] = engine
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(StopScriptPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val gp = GlobalPos.of(level.dimension(), payload.terminalPos)
+            activeEngines.remove(gp)?.stop()
+            logger.info("[Terminal {}] Script stopped", payload.terminalPos)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SaveScriptPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+            terminal.setScriptText(payload.scriptText)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(OpenRecipeCardPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@registerGlobalReceiver
+            val side = Direction.entries[payload.sideOrdinal]
+            val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
+            val cardStack = nodeEntity.getItem(globalSlot)
+            if (cardStack.item !is RecipeCard) return@registerGlobalReceiver
+            val recipe = RecipeCard.getRecipe(cardStack)
+
+            PlatformServices.menu.openExtendedMenu(
+                player,
+                Component.translatable("container.nodeworks.recipe_card"),
+                RecipeCardOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe),
+                RecipeCardOpenData.STREAM_CODEC
+            ) { syncId, inv, p ->
+                RecipeCardScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetStoragePriorityPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@registerGlobalReceiver
+            val side = Direction.entries[payload.sideOrdinal]
+            val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
+            val stack = nodeEntity.getItem(globalSlot)
+            if (stack.item is StorageCard) {
+                StorageCard.setPriority(stack, payload.priority)
+                nodeEntity.setChanged()
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetLayoutPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+            terminal.setLayoutIndex(payload.layoutIndex)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(ToggleAutoRunPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+            terminal.setAutoRun(payload.enabled)
+            logger.info("[Terminal {}] Auto-run {}", payload.terminalPos, if (payload.enabled) "enabled" else "disabled")
+        }
+    }
+
+    /** Terminals pending auto-start after world load. Populated by TerminalBlockEntity.setLevel. */
+    private val pendingAutoRun = mutableSetOf<GlobalPos>()
+
+    fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos) {
+        pendingAutoRun.add(GlobalPos.of(level.dimension(), pos))
+    }
+
+    /** Called each tick -- starts any pending auto-run terminals once chunks are ready. */
+    private fun processPendingAutoRun(server: MinecraftServer, tickCount: Long) {
+        if (pendingAutoRun.isEmpty()) return
+        if (tickCount < 20) return
+
+        val toStart = pendingAutoRun.toList()
+        pendingAutoRun.clear()
+
+        for (gp in toStart) {
+            val level = server.getLevel(gp.dimension()) ?: continue
+            val pos = gp.pos()
+            if (!level.isLoaded(pos)) continue
+            val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
+            if (!terminal.autoRun || terminal.scriptText.isBlank()) continue
+            val nodePos = terminal.getConnectedNodePos() ?: continue
+
+            if (activeEngines.containsKey(gp)) continue
+
+            val engine = ScriptEngine(level, nodePos) { message, isError ->
+                val logPayload = TerminalLogPayload(pos, message, isError)
+                for (p in level.players()) {
+                    if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
+                        ServerPlayNetworking.send(p, logPayload)
+                    }
+                }
+                if (isError) logger.warn("[Terminal {}] {}", pos, message)
+            }
+            if (engine.start(terminal.scriptText)) {
+                activeEngines[gp] = engine
+                logger.info("[Terminal {}] Auto-run started", pos)
+            }
+        }
+    }
+
+    /** Called from a server tick event to drive all active script schedulers. */
+    fun tickAll(server: MinecraftServer, tickCount: Long) {
+        processPendingAutoRun(server, tickCount)
+        val toRemove = mutableListOf<GlobalPos>()
+        for ((gp, engine) in activeEngines) {
+            if (!engine.isRunning()) {
+                toRemove.add(gp)
+                continue
+            }
+            engine.tick(tickCount)
+            if (!engine.scheduler.hasActiveTasks()) {
+                toRemove.add(gp)
+            }
+        }
+        toRemove.forEach { activeEngines.remove(it)?.stop() }
+    }
+}

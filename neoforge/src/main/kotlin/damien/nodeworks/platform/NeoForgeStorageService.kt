@@ -1,0 +1,108 @@
+package damien.nodeworks.platform
+
+import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
+import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.server.level.ServerLevel
+import net.neoforged.neoforge.capabilities.Capabilities
+import net.neoforged.neoforge.transfer.ResourceHandler
+import net.neoforged.neoforge.transfer.ResourceHandlerUtil
+import net.neoforged.neoforge.transfer.item.ItemResource
+import net.neoforged.neoforge.transfer.transaction.Transaction
+
+class NeoForgeStorageService : StorageService {
+
+    override fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle? {
+        val handler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
+        return NeoForgeItemStorageHandle(handler)
+    }
+
+    override fun moveItems(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
+        val src = (source as NeoForgeItemStorageHandle).handler
+        val dst = (dest as NeoForgeItemStorageHandle).handler
+        return try {
+            ResourceHandlerUtil.moveStacking(src, dst, { resource ->
+                if (resource.isEmpty) return@moveStacking false
+                val itemId = BuiltInRegistries.ITEM.getKey(resource.item)?.toString() ?: return@moveStacking false
+                filter(itemId)
+            }, minOf(maxCount, Int.MAX_VALUE.toLong()).toInt(), null).toLong()
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    override fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        var total = 0L
+        for (index in 0 until handler.size()) {
+            val resource = handler.getResource(index)
+            val amount = handler.getAmountAsLong(index)
+            if (!resource.isEmpty && amount > 0) {
+                val itemId = BuiltInRegistries.ITEM.getKey(resource.item)?.toString() ?: continue
+                if (filter(itemId)) {
+                    total += amount
+                }
+            }
+        }
+        return total
+    }
+
+    override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {
+        val handler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
+        return NeoForgeSlottedStorageHandle(handler)
+    }
+}
+
+class NeoForgeItemStorageHandle(val handler: ResourceHandler<ItemResource>) : ItemStorageHandle
+
+class NeoForgeSlottedStorageHandle(
+    val handler: ResourceHandler<ItemResource>
+) : SlottedItemStorageHandle {
+    override val slotCount: Int get() = handler.size()
+
+    override fun filteredBySlots(slots: Set<Int>): ItemStorageHandle {
+        return NeoForgeItemStorageHandle(SlotFilteredResourceHandler(handler, slots))
+    }
+}
+
+/**
+ * Wraps a ResourceHandler to only expose specific indices.
+ */
+private class SlotFilteredResourceHandler(
+    private val backing: ResourceHandler<ItemResource>,
+    private val allowedSlots: Set<Int>
+) : ResourceHandler<ItemResource> {
+    private val slotList = allowedSlots.filter { it in 0 until backing.size() }.sorted()
+
+    override fun size(): Int = slotList.size
+
+    override fun getResource(index: Int): ItemResource {
+        if (index < 0 || index >= slotList.size) return ItemResource.EMPTY
+        return backing.getResource(slotList[index])
+    }
+
+    override fun getAmountAsLong(index: Int): Long {
+        if (index < 0 || index >= slotList.size) return 0
+        return backing.getAmountAsLong(slotList[index])
+    }
+
+    override fun getCapacityAsLong(index: Int, resource: ItemResource): Long {
+        if (index < 0 || index >= slotList.size) return 0
+        return backing.getCapacityAsLong(slotList[index], resource)
+    }
+
+    override fun isValid(index: Int, resource: ItemResource): Boolean {
+        if (index < 0 || index >= slotList.size) return false
+        return backing.isValid(slotList[index], resource)
+    }
+
+    override fun insert(index: Int, resource: ItemResource, amount: Int, transaction: net.neoforged.neoforge.transfer.transaction.TransactionContext): Int {
+        if (index < 0 || index >= slotList.size) return 0
+        return backing.insert(slotList[index], resource, amount, transaction)
+    }
+
+    override fun extract(index: Int, resource: ItemResource, amount: Int, transaction: net.neoforged.neoforge.transfer.transaction.TransactionContext): Int {
+        if (index < 0 || index >= slotList.size) return 0
+        return backing.extract(slotList[index], resource, amount, transaction)
+    }
+}
