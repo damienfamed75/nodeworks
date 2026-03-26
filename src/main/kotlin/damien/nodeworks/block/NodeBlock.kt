@@ -3,6 +3,7 @@ package damien.nodeworks.block
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.item.NetworkWrenchItem
+import damien.nodeworks.screen.NodeSideOpenData
 import damien.nodeworks.screen.NodeSideScreenHandler
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory
 import net.minecraft.core.BlockPos
@@ -73,8 +74,9 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         val side = hitResult.direction
         val serverPlayer = player as ServerPlayer
 
-        serverPlayer.openMenu(object : ExtendedScreenHandlerFactory<Int> {
-            override fun getScreenOpeningData(player: ServerPlayer): Int = side.ordinal
+        serverPlayer.openMenu(object : ExtendedScreenHandlerFactory<NodeSideOpenData> {
+            override fun getScreenOpeningData(player: ServerPlayer): NodeSideOpenData =
+                NodeSideOpenData(pos, side.ordinal)
 
             override fun getDisplayName(): Component {
                 val sideName = side.name.replaceFirstChar { it.uppercase() }
@@ -83,7 +85,7 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
             override fun createMenu(syncId: Int, playerInventory: Inventory, player: Player): AbstractContainerMenu {
                 return NodeSideScreenHandler(
-                    syncId, playerInventory, blockEntity, side,
+                    syncId, playerInventory, blockEntity, side, pos,
                     ContainerLevelAccess.create(level, pos)
                 )
             }

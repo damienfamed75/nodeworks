@@ -2,6 +2,7 @@ package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.registry.ModScreenHandlers
+import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.world.Container
 import net.minecraft.world.entity.player.Inventory
@@ -16,14 +17,15 @@ class NodeSideScreenHandler(
     playerInventory: Inventory,
     private val nodeInventory: Container,
     private val side: Direction,
+    private val nodePos: BlockPos,
     private val access: ContainerLevelAccess
 ) : AbstractContainerMenu(ModScreenHandlers.NODE_SIDE, syncId) {
 
     companion object {
-        fun clientFactory(syncId: Int, playerInventory: Inventory, sideOrdinal: Int): NodeSideScreenHandler {
+        fun clientFactory(syncId: Int, playerInventory: Inventory, data: NodeSideOpenData): NodeSideScreenHandler {
             val dummyInventory = net.minecraft.world.SimpleContainer(NodeBlockEntity.TOTAL_SLOTS)
-            val side = Direction.entries[sideOrdinal]
-            return NodeSideScreenHandler(syncId, playerInventory, dummyInventory, side, ContainerLevelAccess.NULL)
+            val side = Direction.entries[data.sideOrdinal]
+            return NodeSideScreenHandler(syncId, playerInventory, dummyInventory, side, data.nodePos, ContainerLevelAccess.NULL)
         }
     }
 
@@ -65,4 +67,5 @@ class NodeSideScreenHandler(
     }
 
     fun getSide(): Direction = side
+    fun getNodePos(): BlockPos = nodePos
 }

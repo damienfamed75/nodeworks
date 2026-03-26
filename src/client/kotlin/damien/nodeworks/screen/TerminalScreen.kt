@@ -214,7 +214,9 @@ class TerminalScreen(
             if (y + 11 > topPos + imageHeight - 28) break
             val alias = card.alias ?: "${card.capability.type}#${i + 1}"
             val color = when (card.capability.type) {
-                "inventory" -> 0xFF83E086.toInt()
+                "io" -> 0xFF83E086.toInt()
+                "storage" -> 0xFFAA83E0.toInt()
+                "recipe" -> 0xFFE0AA83.toInt()
                 "energy" -> 0xFFFFD700.toInt()
                 "fluid" -> 0xFF55AAFF.toInt()
                 else -> 0xFFAAAAAA.toInt()

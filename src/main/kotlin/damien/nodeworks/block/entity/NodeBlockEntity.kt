@@ -1,6 +1,8 @@
 package damien.nodeworks.block.entity
 
-import damien.nodeworks.card.InventorySideCapability
+import damien.nodeworks.card.IOSideCapability
+import damien.nodeworks.card.RecipeSideCapability
+import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.card.NodeCard
 import damien.nodeworks.card.SideCapability
 import damien.nodeworks.network.NodeConnectionHelper
@@ -106,7 +108,17 @@ class NodeBlockEntity(
         val accessFace = side.opposite // face of the target block that faces the node
         return getCards(side).map { info ->
             val capability = when (info.card) {
-                is damien.nodeworks.card.InventoryCard -> InventorySideCapability(adjacentPos, accessFace)
+                is damien.nodeworks.card.IOCard -> IOSideCapability(adjacentPos, accessFace)
+                is damien.nodeworks.card.RecipeCard -> {
+                    val stack = items[sideOffset(side) + info.slotIndex]
+                    val recipe = damien.nodeworks.card.RecipeCard.getRecipe(stack)
+                    RecipeSideCapability(adjacentPos, recipe)
+                }
+                is damien.nodeworks.card.StorageCard -> {
+                    val stack = items[sideOffset(side) + info.slotIndex]
+                    val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
+                    StorageSideCapability(adjacentPos, accessFace, priority)
+                }
                 else -> null
             }
             SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex)

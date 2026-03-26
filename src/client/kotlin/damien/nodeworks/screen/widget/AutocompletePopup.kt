@@ -185,7 +185,7 @@ class AutocompletePopup(
         if (cardTypeMatch != null) {
             val partial = cardTypeMatch.groupValues[1]
             customPrefix = partial
-            val types = listOf("inventory", "energy", "fluid")
+            val types = listOf("io", "storage", "recipe", "energy", "fluid")
             return types.filter { it.startsWith(partial) }.map { suggest(it) }
         }
 
@@ -209,6 +209,17 @@ class AutocompletePopup(
             customPrefix = partial
             val faces = listOf("top", "bottom", "north", "south", "east", "west", "side")
             return faces.filter { it.startsWith(partial) }.map { suggest(it) }
+        }
+
+        // After network: or network:partial → suggest network methods
+        val networkMatch = Regex("""network:(\w*)$""").find(trimmed)
+        if (networkMatch != null) {
+            val partial = networkMatch.groupValues[1]
+            val methods = listOf(
+                suggest("count(", "count(itemFilter: string) → number"),
+                suggest("find(", "find(itemFilter: string) → CardHandle?")
+            )
+            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
         }
 
         // After scheduler: or scheduler:partial → suggest scheduler methods
@@ -317,6 +328,7 @@ class AutocompletePopup(
             val apiFunctions = listOf(
                 suggest("card", "card(type: string, alias: string) → CardHandle"),
                 suggest("scheduler", "scheduler"),
+                suggest("network", "network storage"),
                 suggest("print", "print(message: any)"),
                 suggest("clock", "clock() → number"),
                 suggest("string", "string library"),

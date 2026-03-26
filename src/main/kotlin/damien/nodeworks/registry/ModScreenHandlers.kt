@@ -1,13 +1,15 @@
 package damien.nodeworks.registry
 
+import damien.nodeworks.screen.NodeSideOpenData
 import damien.nodeworks.screen.NodeSideScreenHandler
+import damien.nodeworks.screen.RecipeCardOpenData
+import damien.nodeworks.screen.RecipeCardScreenHandler
 import damien.nodeworks.screen.TerminalOpenData
 import damien.nodeworks.screen.TerminalScreenHandler
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.network.codec.ByteBufCodecs
 import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.inventory.MenuType
@@ -24,13 +26,23 @@ object ModScreenHandlers {
         )
     )
 
+    val RECIPE_CARD: MenuType<RecipeCardScreenHandler> = register(
+        "recipe_card",
+        ExtendedScreenHandlerType(
+            { syncId, playerInventory, data ->
+                RecipeCardScreenHandler.clientFactory(syncId, playerInventory, data)
+            },
+            RecipeCardOpenData.STREAM_CODEC
+        )
+    )
+
     val NODE_SIDE: MenuType<NodeSideScreenHandler> = register(
         "node_side",
         ExtendedScreenHandlerType(
-            { syncId, playerInventory, sideOrdinal ->
-                NodeSideScreenHandler.clientFactory(syncId, playerInventory, sideOrdinal)
+            { syncId, playerInventory, data ->
+                NodeSideScreenHandler.clientFactory(syncId, playerInventory, data)
             },
-            ByteBufCodecs.INT
+            NodeSideOpenData.STREAM_CODEC
         )
     )
 
