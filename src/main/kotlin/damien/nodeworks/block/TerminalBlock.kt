@@ -17,16 +17,22 @@ import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.level.Level
+import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.block.BaseEntityBlock
+import net.minecraft.world.level.block.Block
+import net.minecraft.world.level.block.HorizontalDirectionalBlock
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
 class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     companion object {
         val CODEC: MapCodec<TerminalBlock> = simpleCodec(::TerminalBlock)
+        val FACING = BlockStateProperties.HORIZONTAL_FACING
 
         /** Scans adjacent blocks for a node to connect to. */
         fun findAdjacentNode(level: Level, terminalPos: BlockPos): BlockPos? {
@@ -38,6 +44,18 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
             }
             return null
         }
+    }
+
+    init {
+        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH))
+    }
+
+    override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
+        builder.add(FACING)
+    }
+
+    override fun getStateForPlacement(context: BlockPlaceContext): BlockState {
+        return defaultBlockState().setValue(FACING, context.horizontalDirection.opposite)
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
