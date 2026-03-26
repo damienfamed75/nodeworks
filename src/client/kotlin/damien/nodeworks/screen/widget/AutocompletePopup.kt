@@ -227,6 +227,62 @@ class AutocompletePopup(
             return emptyList()
         }
 
+        // After string. or string.partial → suggest string library methods
+        val stringMatch = Regex("""string\.(\w*)$""").find(trimmed)
+        if (stringMatch != null) {
+            val partial = stringMatch.groupValues[1]
+            val methods = listOf(
+                suggest("format(", "format(fmt: string, ...) → string"),
+                suggest("len(", "len(s: string) → number"),
+                suggest("sub(", "sub(s: string, i: number, j?: number) → string"),
+                suggest("find(", "find(s: string, pattern: string) → number?"),
+                suggest("match(", "match(s: string, pattern: string) → string?"),
+                suggest("gmatch(", "gmatch(s: string, pattern: string) → function"),
+                suggest("gsub(", "gsub(s: string, pattern: string, repl: string) → string"),
+                suggest("rep(", "rep(s: string, n: number) → string"),
+                suggest("reverse(", "reverse(s: string) → string"),
+                suggest("upper(", "upper(s: string) → string"),
+                suggest("lower(", "lower(s: string) → string"),
+                suggest("byte(", "byte(s: string, i?: number) → number"),
+                suggest("char(", "char(...: number) → string")
+            )
+            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+        }
+
+        // After math. or math.partial → suggest math library methods
+        val mathMatch = Regex("""math\.(\w*)$""").find(trimmed)
+        if (mathMatch != null) {
+            val partial = mathMatch.groupValues[1]
+            val methods = listOf(
+                suggest("floor(", "floor(x: number) → number"),
+                suggest("ceil(", "ceil(x: number) → number"),
+                suggest("abs(", "abs(x: number) → number"),
+                suggest("max(", "max(x: number, ...) → number"),
+                suggest("min(", "min(x: number, ...) → number"),
+                suggest("sqrt(", "sqrt(x: number) → number"),
+                suggest("random(", "random(m?: number, n?: number) → number"),
+                suggest("pi", "pi: number"),
+                suggest("huge", "huge: number"),
+                suggest("sin(", "sin(x: number) → number"),
+                suggest("cos(", "cos(x: number) → number"),
+                suggest("fmod(", "fmod(x: number, y: number) → number")
+            )
+            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+        }
+
+        // After table. or table.partial → suggest table library methods
+        val tableMatch = Regex("""table\.(\w*)$""").find(trimmed)
+        if (tableMatch != null) {
+            val partial = tableMatch.groupValues[1]
+            val methods = listOf(
+                suggest("insert(", "insert(t: table, value: any)"),
+                suggest("remove(", "remove(t: table, pos?: number) → any"),
+                suggest("sort(", "sort(t: table, comp?: function)"),
+                suggest("concat(", "concat(t: table, sep?: string) → string")
+            )
+            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+        }
+
         // Don't autocomplete after `local ` — user is declaring a new variable name
         if (Regex("""local\s+\w*$""").containsMatchIn(trimmed)) {
             return emptyList()
@@ -238,7 +294,17 @@ class AutocompletePopup(
                 suggest("card", "card(type: string, alias: string) → CardHandle"),
                 suggest("scheduler", "scheduler"),
                 suggest("print", "print(message: any)"),
-                suggest("clock", "clock() → number")
+                suggest("clock", "clock() → number"),
+                suggest("string", "string library"),
+                suggest("math", "math library"),
+                suggest("table", "table library"),
+                suggest("tostring", "tostring(value: any) → string"),
+                suggest("tonumber", "tonumber(value: any) → number?"),
+                suggest("type", "type(value: any) → string"),
+                suggest("pairs", "pairs(t: table) → function"),
+                suggest("ipairs", "ipairs(t: table) → function"),
+                suggest("select", "select(index: number, ...) → any"),
+                suggest("unpack", "unpack(t: table) → ...")
             )
             val keywords = listOf("local", "function", "end",
                 "if", "then", "else", "elseif", "for", "while", "do", "return",
