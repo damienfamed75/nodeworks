@@ -70,6 +70,23 @@ object TerminalPackets {
         override fun type() = TYPE
     }
 
+    // --- Server → Client: log messages ---
+
+    data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, val isError: Boolean) : CustomPacketPayload {
+        companion object {
+            val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "terminal_log"))
+            val CODEC: StreamCodec<FriendlyByteBuf, TerminalLogPayload> = CustomPacketPayload.codec(
+                { payload, buf ->
+                    buf.writeBlockPos(payload.terminalPos)
+                    buf.writeUtf(payload.message, 1024)
+                    buf.writeBoolean(payload.isError)
+                },
+                { buf -> TerminalLogPayload(buf.readBlockPos(), buf.readUtf(1024), buf.readBoolean()) }
+            )
+        }
+        override fun type() = TYPE
+    }
+
     // --- Active script engines per terminal ---
 
     private val activeEngines = mutableMapOf<BlockPos, ScriptEngine>()
@@ -83,6 +100,7 @@ object TerminalPackets {
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(StopScriptPayload.TYPE, StopScriptPayload.CODEC)
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(SaveScriptPayload.TYPE, SaveScriptPayload.CODEC)
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
     }
 
     fun registerServerHandlers() {
@@ -101,13 +119,16 @@ object TerminalPackets {
             activeEngines.remove(payload.terminalPos)?.stop()
 
             // Create and start new engine
+            val terminalPos = payload.terminalPos
             val engine = ScriptEngine(level, nodePos) { message, isError ->
-                // TODO: send log back to client via packet
-                if (isError) {
-                    logger.warn("[Terminal {}] {}", payload.terminalPos, message)
-                } else {
-                    logger.info("[Terminal {}] {}", payload.terminalPos, message)
+                // Send log to all nearby players
+                val logPayload = TerminalLogPayload(terminalPos, message, isError)
+                for (p in level.players()) {
+                    if (p.distanceToSqr(terminalPos.x + 0.5, terminalPos.y + 0.5, terminalPos.z + 0.5) <= 64.0 * 64.0) {
+                        ServerPlayNetworking.send(p, logPayload)
+                    }
                 }
+                if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
             if (engine.start(payload.scriptText)) {
@@ -162,9 +183,16 @@ object TerminalPackets {
                 // Don't restart if already running
                 if (activeEngines.containsKey(pos)) continue
 
+                val autoRunPos = pos
+                val autoRunLevel = level
                 val engine = ScriptEngine(level, nodePos) { message, isError ->
-                    if (isError) logger.warn("[Terminal {}] {}", pos, message)
-                    else logger.info("[Terminal {}] {}", pos, message)
+                    val logPayload = TerminalLogPayload(autoRunPos, message, isError)
+                    for (p in autoRunLevel.players()) {
+                        if (p.distanceToSqr(autoRunPos.x + 0.5, autoRunPos.y + 0.5, autoRunPos.z + 0.5) <= 64.0 * 64.0) {
+                            ServerPlayNetworking.send(p, logPayload)
+                        }
+                    }
+                    if (isError) logger.warn("[Terminal {}] {}", autoRunPos, message)
                 }
                 if (engine.start(terminal.scriptText)) {
                     activeEngines[pos] = engine
