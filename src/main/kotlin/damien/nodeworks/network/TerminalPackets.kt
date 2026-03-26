@@ -308,9 +308,9 @@ object TerminalPackets {
                 continue
             }
             engine.tick(tickCount)
-            if (!engine.scheduler.hasActiveTasks() && engine.isRunning()) {
-                // Script ran but registered no recurring tasks — stop it
-                // (keeps one-shot scripts from lingering)
+            if (!engine.scheduler.hasActiveTasks()) {
+                // No recurring tasks left — script finished, clean up
+                toRemove.add(gp)
             }
         }
         toRemove.forEach { activeEngines.remove(it)?.stop() }
