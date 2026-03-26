@@ -177,24 +177,32 @@ class AutocompletePopup(
         val trimmed = beforeCursor.trimEnd()
         val fullText = lastFullText
 
-        // After card(" → suggest card types
-        if (trimmed.endsWith("card(\"") || trimmed.endsWith("card( \"")) {
-            return listOf(suggest("inventory"), suggest("energy"), suggest("fluid"))
+        // After card("partial → suggest card types
+        val cardTypeMatch = Regex("""card\(\s*"(\w*)$""").find(trimmed)
+        if (cardTypeMatch != null) {
+            val partial = cardTypeMatch.groupValues[1]
+            val types = listOf("inventory", "energy", "fluid")
+            return types.filter { it.startsWith(partial) }.map { suggest(it) }
         }
 
-        // After card("inventory", " → suggest aliases
-        val cardAliasPattern = Regex("""card\(\s*"(\w+)"\s*,\s*"$""")
+        // After card("inventory", "partial → suggest aliases
+        val cardAliasPattern = Regex("""card\(\s*"(\w+)"\s*,\s*"(\w*)$""")
         cardAliasPattern.find(trimmed)?.let { match ->
             val type = match.groupValues[1]
+            val partial = match.groupValues[2]
             return cards.filter { it.capability.type == type }
                 .mapNotNull { it.alias }
                 .distinct()
+                .filter { it.startsWith(partial) }
                 .map { suggest(it) }
         }
 
-        // After :face(" → suggest face names
-        if (trimmed.endsWith(":face(\"") || trimmed.endsWith(":face( \"")) {
-            return listOf("top", "bottom", "north", "south", "east", "west", "side").map { suggest(it) }
+        // After :face("partial → suggest face names
+        val faceMatch = Regex(""":face\(\s*"(\w*)$""").find(trimmed)
+        if (faceMatch != null) {
+            val partial = faceMatch.groupValues[1]
+            val faces = listOf("top", "bottom", "north", "south", "east", "west", "side")
+            return faces.filter { it.startsWith(partial) }.map { suggest(it) }
         }
 
         // After scheduler: or scheduler:partial → suggest scheduler methods
