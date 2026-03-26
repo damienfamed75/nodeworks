@@ -210,6 +210,13 @@ class AutocompletePopup(
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
         }
 
+        // After :face("..."):partial or :slots(...):partial → suggest card handle methods (chained call)
+        val chainedMatch = Regex(""":(face\(\s*"[^"]*"\s*\)|slots\([^)]*\))\s*:(\w*)$""").find(trimmed)
+        if (chainedMatch != null) {
+            val partial = chainedMatch.groupValues[2]
+            return cardHandleMethods(partial)
+        }
+
         // After cardVar: or cardVar:partial → suggest card handle methods
         val methodMatch = Regex("""(\w+):(\w*)$""").find(trimmed)
         if (methodMatch != null) {
@@ -217,12 +224,7 @@ class AutocompletePopup(
             val partial = methodMatch.groupValues[2]
             val cardVars = extractCardVariables(fullText)
             if (varName in cardVars) {
-                val methods = listOf(
-                    suggest("move(", "move(dest: CardHandle, itemId: string, count: number) → number"),
-                    suggest("count(", "count(itemId: string) → number"),
-                    suggest("face(", "face(side: string) → CardHandle")
-                )
-                return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+                return cardHandleMethods(partial)
             }
             return emptyList()
         }
@@ -316,6 +318,16 @@ class AutocompletePopup(
         }
 
         return emptyList()
+    }
+
+    private fun cardHandleMethods(partial: String): List<Suggestion> {
+        val methods = listOf(
+            suggest("move(", "move(dest: CardHandle, itemId: string, count: number) → number"),
+            suggest("count(", "count(itemId: string) → number"),
+            suggest("face(", "face(side: string) → CardHandle"),
+            suggest("slots(", "slots(...: number) → CardHandle")
+        )
+        return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
     }
 
     /** Extracts all variable names from `local X = ...` declarations in the script. */
