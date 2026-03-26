@@ -1,7 +1,13 @@
 package damien.nodeworks.block.entity
 
+import damien.nodeworks.card.IOSideCapability
+import damien.nodeworks.card.RecipeSideCapability
+import damien.nodeworks.card.StorageSideCapability
+import damien.nodeworks.card.NodeCard
+import damien.nodeworks.card.SideCapability
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
+import org.slf4j.LoggerFactory
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.HolderLookup
@@ -35,6 +41,7 @@ class NodeBlockEntity(
 ) : BlockEntity(ModBlockEntities.NODE, pos, state), WorldlyContainer {
 
     companion object {
+        private val logger = LoggerFactory.getLogger("nodeworks-node")
         const val SLOTS_PER_SIDE = 9
         const val TOTAL_SLOTS = SLOTS_PER_SIDE * 6 // 54 total
 
@@ -78,6 +85,48 @@ class NodeBlockEntity(
         setChanged()
         level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_CLIENTS)
     }
+
+    // --- Card access ---
+
+    /** Returns all cards found in this side's 9 slots, with their alias if named. */
+    fun getCards(side: Direction): List<CardInfo> {
+        val offset = sideOffset(side)
+        val result = mutableListOf<CardInfo>()
+        for (i in 0 until SLOTS_PER_SIDE) {
+            val stack = items[offset + i]
+            val card = stack.item as? NodeCard ?: continue
+            val alias = if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME))
+                stack.hoverName.string else null
+            result.add(CardInfo(card, alias, i))
+        }
+        return result
+    }
+
+    /** Resolves all capabilities for this side based on inserted cards. */
+    fun getSideCapabilities(side: Direction): List<SideCapabilityInfo> {
+        val adjacentPos = worldPosition.relative(side)
+        val accessFace = side.opposite // face of the target block that faces the node
+        return getCards(side).map { info ->
+            val capability = when (info.card) {
+                is damien.nodeworks.card.IOCard -> IOSideCapability(adjacentPos, accessFace)
+                is damien.nodeworks.card.RecipeCard -> {
+                    val stack = items[sideOffset(side) + info.slotIndex]
+                    val recipe = damien.nodeworks.card.RecipeCard.getRecipe(stack)
+                    RecipeSideCapability(adjacentPos, recipe)
+                }
+                is damien.nodeworks.card.StorageCard -> {
+                    val stack = items[sideOffset(side) + info.slotIndex]
+                    val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
+                    StorageSideCapability(adjacentPos, accessFace, priority)
+                }
+                else -> null
+            }
+            SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex)
+        }.filterNotNull()
+    }
+
+    data class CardInfo(val card: NodeCard, val alias: String?, val slotIndex: Int)
+    data class SideCapabilityInfo(val capability: SideCapability, val alias: String?, val slotIndex: Int)
 
     // --- Side-aware access ---
 
@@ -148,7 +197,9 @@ class NodeBlockEntity(
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
         ContainerHelper.saveAllItems(output, items)
-        output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+        if (connections.isNotEmpty()) {
+            output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+        }
     }
 
     override fun loadAdditional(input: ValueInput) {
@@ -169,11 +220,16 @@ class NodeBlockEntity(
         }
     }
 
+    /** Set to true by NodeBlock when the block is actually being destroyed. */
+    var blockDestroyed: Boolean = false
+
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
-            NodeConnectionHelper.removeAllConnectionsOf(currentLevel, this)
+            if (blockDestroyed) {
+                NodeConnectionHelper.removeAllConnectionsOf(currentLevel, this)
+            }
             NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
         }
         super.setRemoved()
