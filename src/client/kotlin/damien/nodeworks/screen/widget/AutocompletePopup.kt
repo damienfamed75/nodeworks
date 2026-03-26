@@ -25,6 +25,8 @@ class AutocompletePopup(
     private var popupY: Int = 0
     private var prefix: String = ""
     private var lastFullText: String = ""
+    private var scrollOffset: Int = 0
+    private val maxVisible: Int = 8
 
     // Access the inner MultilineTextField via reflection (cached)
     private var textFieldAccessor: java.lang.reflect.Field? = null
@@ -61,6 +63,7 @@ class AutocompletePopup(
 
         suggestions = newSuggestions
         selectedIndex = 0
+        scrollOffset = 0
         visible = true
         prefix = extractPrefix(beforeCursor)
 
@@ -79,12 +82,22 @@ class AutocompletePopup(
     fun moveUp() {
         if (suggestions.isNotEmpty()) {
             selectedIndex = (selectedIndex - 1 + suggestions.size) % suggestions.size
+            ensureVisible()
         }
     }
 
     fun moveDown() {
         if (suggestions.isNotEmpty()) {
             selectedIndex = (selectedIndex + 1) % suggestions.size
+            ensureVisible()
+        }
+    }
+
+    private fun ensureVisible() {
+        if (selectedIndex < scrollOffset) {
+            scrollOffset = selectedIndex
+        } else if (selectedIndex >= scrollOffset + maxVisible) {
+            scrollOffset = selectedIndex - maxVisible + 1
         }
     }
 
@@ -104,10 +117,9 @@ class AutocompletePopup(
         if (!visible || suggestions.isEmpty()) return
 
         val itemHeight = font.lineHeight + 2
+        val visibleCount = minOf(suggestions.size, maxVisible)
         val popupWidth = suggestions.maxOf { font.width(it) } + 8
-        val popupHeight = suggestions.size * itemHeight + 4
-        val maxVisible = minOf(suggestions.size, 8)
-        val actualHeight = maxVisible * itemHeight + 4
+        val actualHeight = visibleCount * itemHeight + 4
 
         // Background
         graphics.fill(popupX, popupY, popupX + popupWidth, popupY + actualHeight, 0xEE1E1E1E.toInt())
@@ -117,13 +129,22 @@ class AutocompletePopup(
         graphics.fill(popupX, popupY, popupX + 1, popupY + actualHeight, 0xFF555555.toInt())
         graphics.fill(popupX + popupWidth - 1, popupY, popupX + popupWidth, popupY + actualHeight, 0xFF555555.toInt())
 
-        for (i in 0 until maxVisible) {
+        // Scroll indicators
+        if (scrollOffset > 0) {
+            graphics.drawString(font, "\u25B2", popupX + popupWidth - 10, popupY + 1, 0xFF888888.toInt())
+        }
+        if (scrollOffset + visibleCount < suggestions.size) {
+            graphics.drawString(font, "\u25BC", popupX + popupWidth - 10, popupY + actualHeight - font.lineHeight - 1, 0xFF888888.toInt())
+        }
+
+        for (i in 0 until visibleCount) {
+            val suggestionIndex = scrollOffset + i
             val y = popupY + 2 + i * itemHeight
-            if (i == selectedIndex) {
+            if (suggestionIndex == selectedIndex) {
                 graphics.fill(popupX + 1, y, popupX + popupWidth - 1, y + itemHeight, 0xFF3A5FCD.toInt())
             }
-            val color = if (i == selectedIndex) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt()
-            graphics.drawString(font, suggestions[i], popupX + 4, y + 1, color)
+            val color = if (suggestionIndex == selectedIndex) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt()
+            graphics.drawString(font, suggestions[suggestionIndex], popupX + 4, y + 1, color)
         }
     }
 
