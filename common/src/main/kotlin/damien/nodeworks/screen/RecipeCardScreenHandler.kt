@@ -156,12 +156,14 @@ class RecipeCardScreenHandler(
             val stack = recipeGrid.getItem(i)
             if (stack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: ""
         }
+        val resultStack = resultContainer.getItem(0)
+        val output = if (resultStack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(resultStack.item)?.toString() ?: ""
 
         when (val mode = saveMode) {
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is RecipeCard) {
-                    RecipeCard.setRecipe(stack, recipe)
+                    RecipeCard.setRecipe(stack, recipe, output)
                 }
             }
             is SaveMode.InNode -> {
@@ -171,7 +173,7 @@ class RecipeCardScreenHandler(
                 val globalSlot = side.ordinal * damien.nodeworks.block.entity.NodeBlockEntity.SLOTS_PER_SIDE + mode.slotIndex
                 val cardStack = nodeEntity.getItem(globalSlot)
                 if (cardStack.item is RecipeCard) {
-                    RecipeCard.setRecipe(cardStack, recipe)
+                    RecipeCard.setRecipe(cardStack, recipe, output)
                     nodeEntity.setChanged()
                 }
             }
