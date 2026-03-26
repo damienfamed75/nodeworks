@@ -41,4 +41,32 @@ object NetworkStorageHelper {
         }
         return null
     }
+
+    /** Move items from a source storage into the network's Storage Cards (highest priority first). */
+    fun insertItems(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        source: ItemStorageHandle,
+        filter: String,
+        maxCount: Long
+    ): Long {
+        var totalMoved = 0L
+        var remaining = maxCount
+        for (card in getStorageCards(snapshot)) {
+            if (remaining <= 0) break
+            val destStorage = getStorage(level, card) ?: continue
+            val moved = try {
+                PlatformServices.storage.moveItems(
+                    source, destStorage,
+                    { CardHandle.matchesFilter(it, filter) },
+                    remaining
+                )
+            } catch (_: Exception) {
+                0L
+            }
+            totalMoved += moved
+            remaining -= moved
+        }
+        return totalMoved
+    }
 }
