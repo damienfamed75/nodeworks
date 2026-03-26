@@ -13,6 +13,9 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.core.registries.Registries
+import net.minecraft.resources.Identifier
+import net.minecraft.tags.TagKey
 import net.minecraft.server.level.ServerLevel
 import org.luaj.vm2.*
 import org.luaj.vm2.lib.*
@@ -195,9 +198,35 @@ class CardHandle private constructor(
         }
     }
 
+    /** Compiled regex cache to avoid recompiling on every tick. */
+    private val regexCache = HashMap<String, java.util.regex.Pattern>()
+
     private fun matchesFilter(variant: ItemVariant, filter: String): Boolean {
         if (filter == "*") return true
         val itemId = BuiltInRegistries.ITEM.getKey(variant.item)?.toString() ?: return false
+
+        // #tag — match items in a tag (e.g. #minecraft:coals, #c:ores)
+        if (filter.startsWith("#")) {
+            val tagId = filter.substring(1)
+            val identifier = Identifier.tryParse(tagId) ?: return false
+            val tagKey = TagKey.create(Registries.ITEM, identifier)
+            return variant.item.builtInRegistryHolder().`is`(tagKey)
+        }
+
+        // /pattern/ — regex match against full item ID
+        if (filter.startsWith("/") && filter.endsWith("/") && filter.length > 2) {
+            val patternStr = filter.substring(1, filter.length - 1)
+            val pattern = regexCache.getOrPut(patternStr) { java.util.regex.Pattern.compile(patternStr) }
+            return pattern.matcher(itemId).matches()
+        }
+
+        // namespace:* — namespace wildcard
+        if (filter.endsWith(":*")) {
+            val namespace = filter.removeSuffix(":*")
+            return itemId.startsWith("$namespace:")
+        }
+
+        // Exact match
         return itemId == filter
     }
 
