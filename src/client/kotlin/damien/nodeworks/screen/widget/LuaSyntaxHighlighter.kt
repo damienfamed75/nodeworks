@@ -11,13 +11,13 @@ import net.minecraft.client.gui.components.MultilineTextField
  */
 object LuaSyntaxHighlighter {
 
-    private const val KEYWORD_COLOR = 0xFF569CD6.toInt()
-    private const val STRING_COLOR = 0xFFCE9178.toInt()
-    private const val COMMENT_COLOR = 0xFF6A9955.toInt()
-    private const val NUMBER_COLOR = 0xFFB5CEA8.toInt()
-    private const val FUNCTION_COLOR = 0xFFDCDCAA.toInt()
-    private const val DEFAULT_COLOR = 0xFFD4D4D4.toInt()
-    private const val SELECTION_COLOR = 0x0000FFFF.toInt()
+    private const val KEYWORD_COLOR = 0xFFC678DD.toInt()     // purple
+    private const val STRING_COLOR = 0xFF98C379.toInt()     // green
+    private const val COMMENT_COLOR = 0xFF5C6370.toInt()    // grey
+    private const val NUMBER_COLOR = 0xFFD19A66.toInt()     // orange
+    private const val FUNCTION_COLOR = 0xFF61AFEF.toInt()   // blue
+    private const val DEFAULT_COLOR = 0xFFABB2BF.toInt()    // light grey
+    private const val SELECTION_COLOR = 0xFF0000FF.toInt()
 
     private val KEYWORDS = setOf(
         "and", "break", "do", "else", "elseif", "end", "false", "for",

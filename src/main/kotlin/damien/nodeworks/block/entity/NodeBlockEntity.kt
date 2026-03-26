@@ -103,9 +103,10 @@ class NodeBlockEntity(
     /** Resolves all capabilities for this side based on inserted cards. */
     fun getSideCapabilities(side: Direction): List<SideCapabilityInfo> {
         val adjacentPos = worldPosition.relative(side)
+        val accessFace = side.opposite // face of the target block that faces the node
         return getCards(side).map { info ->
             val capability = when (info.card) {
-                is damien.nodeworks.card.InventoryCard -> InventorySideCapability(adjacentPos)
+                is damien.nodeworks.card.InventoryCard -> InventorySideCapability(adjacentPos, accessFace)
                 else -> null
             }
             SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex)

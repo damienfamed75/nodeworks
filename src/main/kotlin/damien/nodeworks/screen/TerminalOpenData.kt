@@ -3,6 +3,7 @@ package damien.nodeworks.screen
 import damien.nodeworks.card.InventorySideCapability
 import damien.nodeworks.network.CardSnapshot
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 
@@ -25,9 +26,10 @@ data class TerminalOpenData(
                     val alias = buf.readUtf(256).ifEmpty { null }
                     val type = buf.readUtf(64)
                     val adjacentPos = buf.readBlockPos()
+                    val defaultFace = Direction.entries[buf.readVarInt()]
                     val slotIndex = buf.readVarInt()
                     CardSnapshot(
-                        capability = InventorySideCapability(adjacentPos),
+                        capability = InventorySideCapability(adjacentPos, defaultFace),
                         alias = alias,
                         slotIndex = slotIndex
                     )
@@ -45,6 +47,7 @@ data class TerminalOpenData(
                     buf.writeUtf(card.alias ?: "", 256)
                     buf.writeUtf(card.capability.type, 64)
                     buf.writeBlockPos(card.capability.adjacentPos)
+                    buf.writeVarInt((card.capability as InventorySideCapability).defaultFace.ordinal)
                     buf.writeVarInt(card.slotIndex)
                 }
             }
