@@ -89,10 +89,16 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, nodePos)
         val allCards = snapshot.allCards()
 
+        // Collect all item tags from the registry
+        val itemTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.tags
+            .map { it.key().location().toString() }
+            .sorted()
+            .toList()
+
         serverPlayer.openMenu(object : ExtendedScreenHandlerFactory<TerminalOpenData> {
             override fun getScreenOpeningData(player: ServerPlayer): TerminalOpenData {
                 val isRunning = TerminalPackets.getEngine(terminal.blockPos)?.isRunning() == true
-                return TerminalOpenData(terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, allCards)
+                return TerminalOpenData(terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags)
             }
 
             override fun getDisplayName(): Component = Component.translatable("block.nodeworks.terminal")

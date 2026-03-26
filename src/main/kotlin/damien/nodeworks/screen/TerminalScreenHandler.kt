@@ -19,7 +19,8 @@ class TerminalScreenHandler(
     private val running: Boolean,
     private val autoRun: Boolean,
     private val layoutIndex: Int,
-    private val cards: List<CardSnapshot>
+    private val cards: List<CardSnapshot>,
+    private val itemTags: List<String>
 ) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
 
     companion object {
@@ -34,11 +35,18 @@ class TerminalScreenHandler(
 
             val isRunning = TerminalPackets.getEngine(terminal.blockPos)?.isRunning() == true
 
-            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, cards)
+            val tags = if (level != null) {
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.tags
+                    .map { it.key().location().toString() }
+                    .sorted()
+                    .toList()
+            } else emptyList()
+
+            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {
-            return TerminalScreenHandler(syncId, data.terminalPos, data.scriptText, data.running, data.autoRun, data.layoutIndex, data.cards)
+            return TerminalScreenHandler(syncId, data.terminalPos, data.scriptText, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags)
         }
     }
 
@@ -48,6 +56,7 @@ class TerminalScreenHandler(
     fun isAutoRun(): Boolean = autoRun
     fun getLayoutIndex(): Int = layoutIndex
     fun getCards(): List<CardSnapshot> = cards
+    fun getItemTags(): List<String> = itemTags
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY
 

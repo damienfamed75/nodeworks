@@ -12,7 +12,8 @@ import net.minecraft.client.gui.components.MultilineTextField
  */
 class AutocompletePopup(
     private val font: Font,
-    private val cards: List<CardSnapshot>
+    private val cards: List<CardSnapshot>,
+    private val itemTags: List<String> = emptyList()
 ) {
     data class Suggestion(val insertText: String, val displayText: String)
 
@@ -27,6 +28,7 @@ class AutocompletePopup(
     private var popupY: Int = 0
     private var prefix: String = ""
     private var lastFullText: String = ""
+    private var customPrefix: String? = null
     private var scrollOffset: Int = 0
     private val maxVisible: Int = 8
 
@@ -67,7 +69,8 @@ class AutocompletePopup(
         selectedIndex = 0
         scrollOffset = 0
         visible = true
-        prefix = extractPrefix(beforeCursor)
+        prefix = customPrefix ?: extractPrefix(beforeCursor)
+        customPrefix = null
 
         // Position popup at the cursor's actual position
         val lineAtCursor = textField.getLineAtCursor()
@@ -181,6 +184,7 @@ class AutocompletePopup(
         val cardTypeMatch = Regex("""card\(\s*"(\w*)$""").find(trimmed)
         if (cardTypeMatch != null) {
             val partial = cardTypeMatch.groupValues[1]
+            customPrefix = partial
             val types = listOf("inventory", "energy", "fluid")
             return types.filter { it.startsWith(partial) }.map { suggest(it) }
         }
@@ -190,6 +194,7 @@ class AutocompletePopup(
         cardAliasPattern.find(trimmed)?.let { match ->
             val type = match.groupValues[1]
             val partial = match.groupValues[2]
+            customPrefix = partial
             return cards.filter { it.capability.type == type }
                 .mapNotNull { it.alias }
                 .distinct()
@@ -201,6 +206,7 @@ class AutocompletePopup(
         val faceMatch = Regex(""":face\(\s*"(\w*)$""").find(trimmed)
         if (faceMatch != null) {
             val partial = faceMatch.groupValues[1]
+            customPrefix = partial
             val faces = listOf("top", "bottom", "north", "south", "east", "west", "side")
             return faces.filter { it.startsWith(partial) }.map { suggest(it) }
         }
@@ -291,6 +297,14 @@ class AutocompletePopup(
                 suggest("concat(", "concat(t: table, sep?: string) → string")
             )
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+        }
+
+        // After # or #partial → suggest item tags
+        val tagMatch = Regex("""#([\w:./]*)$""").find(trimmed)
+        if (tagMatch != null) {
+            val partial = tagMatch.groupValues[1]
+            customPrefix = partial
+            return itemTags.filter { it.startsWith(partial) }.take(20).map { suggest(it) }
         }
 
         // Don't autocomplete after `local ` — user is declaring a new variable name

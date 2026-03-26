@@ -13,7 +13,8 @@ data class TerminalOpenData(
     val running: Boolean,
     val autoRun: Boolean,
     val layoutIndex: Int,
-    val cards: List<CardSnapshot>
+    val cards: List<CardSnapshot>,
+    val itemTags: List<String>
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, TerminalOpenData> = object : StreamCodec<FriendlyByteBuf, TerminalOpenData> {
@@ -36,7 +37,9 @@ data class TerminalOpenData(
                         slotIndex = slotIndex
                     )
                 }
-                return TerminalOpenData(pos, script, running, autoRun, layoutIndex, cards)
+                val tagCount = buf.readVarInt()
+                val itemTags = (0 until tagCount).map { buf.readUtf(256) }
+                return TerminalOpenData(pos, script, running, autoRun, layoutIndex, cards, itemTags)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: TerminalOpenData) {
@@ -52,6 +55,10 @@ data class TerminalOpenData(
                     buf.writeBlockPos(card.capability.adjacentPos)
                     buf.writeVarInt((card.capability as InventorySideCapability).defaultFace.ordinal)
                     buf.writeVarInt(card.slotIndex)
+                }
+                buf.writeVarInt(data.itemTags.size)
+                for (tag in data.itemTags) {
+                    buf.writeUtf(tag, 256)
                 }
             }
         }
