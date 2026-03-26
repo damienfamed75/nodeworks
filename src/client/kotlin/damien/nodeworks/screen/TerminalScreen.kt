@@ -33,6 +33,7 @@ class TerminalScreen(
     private val editorPadding = 4
     private val buttonHeight = 20
     private val topBarHeight = 24
+    private val logPanelHeight = 50
 
     // Editor position (stored for autocomplete positioning)
     private var editorX = 0
@@ -49,7 +50,7 @@ class TerminalScreen(
         editorX = leftPos + cardPanelWidth + editorPadding
         editorY = topPos + topBarHeight
         val editorW = imageWidth - cardPanelWidth - editorPadding * 2
-        val editorH = imageHeight - topBarHeight - editorPadding
+        val editorH = imageHeight - topBarHeight - logPanelHeight - editorPadding
 
         editor = MultiLineEditBox.builder()
             .setX(editorX)
@@ -133,6 +134,30 @@ class TerminalScreen(
                 else -> 0xFFAAAAAA.toInt()
             }
             graphics.drawString(font, alias, leftPos + 6, y, color)
+        }
+
+        // Log panel
+        val logX = leftPos + cardPanelWidth + editorPadding
+        val logY = topPos + imageHeight - logPanelHeight
+        val logW = imageWidth - cardPanelWidth - editorPadding * 2
+        // Log background (slightly darker)
+        graphics.fill(logX, logY, logX + logW, topPos + imageHeight - editorPadding, 0xFF1E1E1E.toInt())
+        // Log separator
+        graphics.fill(logX, logY, logX + logW, logY + 1, 0xFF555555.toInt())
+        // Log label
+        graphics.drawString(font, "Output:", logX + 3, logY + 3, 0xFF888888.toInt())
+
+        // Log entries (show most recent, scrolled to bottom)
+        val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
+        val logLineHeight = font.lineHeight + 1
+        val maxLogLines = (logPanelHeight - 14) / logLineHeight
+        val startIdx = maxOf(0, logs.size - maxLogLines)
+        for (i in startIdx until logs.size) {
+            val entry = logs[i]
+            val entryY = logY + 13 + (i - startIdx) * logLineHeight
+            val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
+            val prefix = if (entry.isError) "> " else "> "
+            graphics.drawString(font, prefix + entry.message, logX + 3, entryY, color)
         }
     }
 
