@@ -1,6 +1,12 @@
 {
-  "parent": "minecraft:block/cube_all",
+  "parent": "minecraft:block/cube",
   "textures": {
-    "all": "nodeworks:block/terminal"
+    "up": "nodeworks:block/terminal_top",
+    "down": "nodeworks:block/terminal_bottom",
+    "north": "nodeworks:block/terminal_front",
+    "south": "nodeworks:block/terminal_back",
+    "east": "nodeworks:block/terminal_side",
+    "west": "nodeworks:block/terminal_side",
+    "particle": "nodeworks:block/terminal_side"
   }
 }
