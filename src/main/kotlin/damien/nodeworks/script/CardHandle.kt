@@ -33,6 +33,12 @@ class CardHandle private constructor(
     companion object {
         private val logger = LoggerFactory.getLogger("nodeworks-cardhandle")
 
+        /** Max characters allowed in a regex item filter pattern. */
+        const val MAX_REGEX_LENGTH = 200
+
+        /** Max cached compiled regex patterns (LRU eviction). */
+        const val MAX_REGEX_CACHE_SIZE = 64
+
         fun create(card: CardSnapshot, level: ServerLevel): LuaTable {
             return CardHandle(card, level, null, null).toLuaTable()
         }
@@ -198,8 +204,12 @@ class CardHandle private constructor(
         }
     }
 
-    /** Compiled regex cache to avoid recompiling on every tick. */
-    private val regexCache = HashMap<String, java.util.regex.Pattern>()
+    /** Compiled regex cache — bounded LRU to prevent unbounded memory growth. */
+    private val regexCache = object : LinkedHashMap<String, java.util.regex.Pattern>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, java.util.regex.Pattern>?): Boolean {
+            return size > MAX_REGEX_CACHE_SIZE
+        }
+    }
 
     private fun matchesFilter(variant: ItemVariant, filter: String): Boolean {
         if (filter == "*") return true
@@ -216,7 +226,10 @@ class CardHandle private constructor(
         // /pattern/ — regex match against full item ID
         if (filter.startsWith("/") && filter.endsWith("/") && filter.length > 2) {
             val patternStr = filter.substring(1, filter.length - 1)
-            val pattern = regexCache.getOrPut(patternStr) { java.util.regex.Pattern.compile(patternStr) }
+            if (patternStr.length > MAX_REGEX_LENGTH) return false
+            val pattern = regexCache.getOrPut(patternStr) {
+                try { java.util.regex.Pattern.compile(patternStr) } catch (_: Exception) { return false }
+            }
             return pattern.matcher(itemId).matches()
         }
 
