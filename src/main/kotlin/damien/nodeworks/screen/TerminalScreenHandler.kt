@@ -18,6 +18,7 @@ class TerminalScreenHandler(
     private val scriptText: String,
     private val running: Boolean,
     private val autoRun: Boolean,
+    private val layoutIndex: Int,
     private val cards: List<CardSnapshot>
 ) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
 
@@ -33,11 +34,11 @@ class TerminalScreenHandler(
 
             val isRunning = TerminalPackets.getEngine(terminal.blockPos)?.isRunning() == true
 
-            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, cards)
+            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, cards)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {
-            return TerminalScreenHandler(syncId, data.terminalPos, data.scriptText, data.running, data.autoRun, data.cards)
+            return TerminalScreenHandler(syncId, data.terminalPos, data.scriptText, data.running, data.autoRun, data.layoutIndex, data.cards)
         }
     }
 
@@ -45,6 +46,7 @@ class TerminalScreenHandler(
     fun getScriptText(): String = scriptText
     fun isRunning(): Boolean = running
     fun isAutoRun(): Boolean = autoRun
+    fun getLayoutIndex(): Int = layoutIndex
     fun getCards(): List<CardSnapshot> = cards
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY

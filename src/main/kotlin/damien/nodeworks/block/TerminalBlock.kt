@@ -74,7 +74,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         serverPlayer.openMenu(object : ExtendedScreenHandlerFactory<TerminalOpenData> {
             override fun getScreenOpeningData(player: ServerPlayer): TerminalOpenData {
                 val isRunning = TerminalPackets.getEngine(terminal.blockPos)?.isRunning() == true
-                return TerminalOpenData(terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, allCards)
+                return TerminalOpenData(terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, allCards)
             }
 
             override fun getDisplayName(): Component = Component.translatable("block.nodeworks.terminal")

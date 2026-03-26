@@ -12,6 +12,7 @@ data class TerminalOpenData(
     val scriptText: String,
     val running: Boolean,
     val autoRun: Boolean,
+    val layoutIndex: Int,
     val cards: List<CardSnapshot>
 ) {
     companion object {
@@ -21,6 +22,7 @@ data class TerminalOpenData(
                 val script = buf.readUtf(32767)
                 val running = buf.readBoolean()
                 val autoRun = buf.readBoolean()
+                val layoutIndex = buf.readVarInt()
                 val cardCount = buf.readVarInt()
                 val cards = (0 until cardCount).map {
                     val alias = buf.readUtf(256).ifEmpty { null }
@@ -34,7 +36,7 @@ data class TerminalOpenData(
                         slotIndex = slotIndex
                     )
                 }
-                return TerminalOpenData(pos, script, running, autoRun, cards)
+                return TerminalOpenData(pos, script, running, autoRun, layoutIndex, cards)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: TerminalOpenData) {
@@ -42,6 +44,7 @@ data class TerminalOpenData(
                 buf.writeUtf(data.scriptText, 32767)
                 buf.writeBoolean(data.running)
                 buf.writeBoolean(data.autoRun)
+                buf.writeVarInt(data.layoutIndex)
                 buf.writeVarInt(data.cards.size)
                 for (card in data.cards) {
                     buf.writeUtf(card.alias ?: "", 256)

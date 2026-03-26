@@ -56,6 +56,20 @@ object TerminalPackets {
         override fun type() = TYPE
     }
 
+    data class SetLayoutPayload(val terminalPos: BlockPos, val layoutIndex: Int) : CustomPacketPayload {
+        companion object {
+            val TYPE: CustomPacketPayload.Type<SetLayoutPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_layout"))
+            val CODEC: StreamCodec<FriendlyByteBuf, SetLayoutPayload> = CustomPacketPayload.codec(
+                { payload, buf ->
+                    buf.writeBlockPos(payload.terminalPos)
+                    buf.writeVarInt(payload.layoutIndex)
+                },
+                { buf -> SetLayoutPayload(buf.readBlockPos(), buf.readVarInt()) }
+            )
+        }
+        override fun type() = TYPE
+    }
+
     data class ToggleAutoRunPayload(val terminalPos: BlockPos, val enabled: Boolean) : CustomPacketPayload {
         companion object {
             val TYPE: CustomPacketPayload.Type<ToggleAutoRunPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "toggle_autorun"))
@@ -100,6 +114,7 @@ object TerminalPackets {
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(StopScriptPayload.TYPE, StopScriptPayload.CODEC)
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(SaveScriptPayload.TYPE, SaveScriptPayload.CODEC)
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
     }
 
@@ -146,6 +161,13 @@ object TerminalPackets {
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
             terminal.setScriptText(payload.scriptText)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetLayoutPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+            terminal.setLayoutIndex(payload.layoutIndex)
         }
 
         ServerPlayNetworking.registerGlobalReceiver(ToggleAutoRunPayload.TYPE) { payload, context ->
