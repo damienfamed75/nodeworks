@@ -35,6 +35,10 @@ repositories {
         name = "KotlinForForge"
         url = uri("https://thedarkcolour.github.io/KotlinForForge/")
     }
+    maven {
+        name = "Jared"
+        url = uri("https://maven.blamejared.com/")
+    }
 }
 
 dependencies {
@@ -46,6 +50,9 @@ dependencies {
 
     // Lua scripting engine
     jarJar(implementation("org.luaj:luaj-jse:3.0")!!)
+
+    // Dev-only testing mods (not bundled in release)
+    runtimeOnly("mezz.jei:jei-1.21.11-neoforge:27.4.0.17")
 }
 
 // Copy common resources alongside neoforge resources

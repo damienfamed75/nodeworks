@@ -17,6 +17,13 @@ loom {
     }
 }
 
+repositories {
+    maven {
+        name = "Jared"
+        url = uri("https://maven.blamejared.com/")
+    }
+}
+
 dependencies {
     minecraft("com.mojang:minecraft:${providers.gradleProperty("minecraft_version").get()}")
     mappings(loom.officialMojangMappings())
@@ -29,6 +36,9 @@ dependencies {
 
     // Lua scripting engine
     include(implementation("org.luaj:luaj-jse:3.0")!!)
+
+    // Dev-only testing mods (not bundled in release)
+    modLocalRuntime("mezz.jei:jei-1.21.11-fabric:27.4.0.17")
 }
 
 tasks.processResources {
