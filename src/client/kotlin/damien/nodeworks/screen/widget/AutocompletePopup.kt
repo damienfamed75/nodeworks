@@ -70,7 +70,7 @@ class AutocompletePopup(
         // Position popup near the cursor
         val lineAtCursor = textField.getLineAtCursor()
         popupX = editorX + 4
-        popupY = editorY + (lineAtCursor + 1) * (font.lineHeight + 1) + 4
+        popupY = editorY + (lineAtCursor + 1) * font.lineHeight + 4
     }
 
     fun hide() {
@@ -171,21 +171,24 @@ class AutocompletePopup(
             return listOf("top", "bottom", "north", "south", "east", "west", "side")
         }
 
-        // After scheduler: → suggest scheduler methods (check before generic `:`)
-        if (trimmed.endsWith("scheduler:")) {
-            return listOf("tick(", "second(", "delay(", "cancel(")
+        // After scheduler: or scheduler:partial → suggest scheduler methods
+        val schedulerMatch = Regex("""scheduler:(\w*)$""").find(trimmed)
+        if (schedulerMatch != null) {
+            val partial = schedulerMatch.groupValues[1]
+            val methods = listOf("tick(", "second(", "delay(", "cancel(")
+            return if (partial.isEmpty()) methods else methods.filter { it.startsWith(partial) }
         }
 
-        // After variable: → suggest methods only if the variable is a card handle
-        if (trimmed.endsWith(":")) {
-            val varName = Regex("""(\w+):$""").find(trimmed)?.groupValues?.get(1)
-            if (varName != null) {
-                val cardVars = extractCardVariables(fullText)
-                if (varName in cardVars) {
-                    return listOf("move(", "count(", "face(")
-                }
+        // After cardVar: or cardVar:partial → suggest card handle methods
+        val methodMatch = Regex("""(\w+):(\w*)$""").find(trimmed)
+        if (methodMatch != null) {
+            val varName = methodMatch.groupValues[1]
+            val partial = methodMatch.groupValues[2]
+            val cardVars = extractCardVariables(fullText)
+            if (varName in cardVars) {
+                val methods = listOf("move(", "count(", "face(")
+                return if (partial.isEmpty()) methods else methods.filter { it.startsWith(partial) }
             }
-            // Not a known card handle — no suggestions
             return emptyList()
         }
 

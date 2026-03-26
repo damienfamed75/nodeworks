@@ -5,6 +5,8 @@ import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.TerminalPackets
 import damien.nodeworks.screen.TerminalScreenHandler
 import damien.nodeworks.screen.widget.AutocompletePopup
+import damien.nodeworks.screen.widget.LuaSyntaxHighlighter
+import net.minecraft.client.gui.components.MultilineTextField
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.Button
@@ -54,6 +56,9 @@ class TerminalScreen(
             .setY(editorY)
             .setShowBackground(true)
             .setShowDecorations(true)
+            .setTextColor(0x00000000) // Fully transparent — syntax highlighter draws colored text on top
+            .setTextShadow(false)
+            .setCursorColor(0x00000000) // Hidden — we draw our own cursor on top of syntax highlighting
             .build(font, editorW, editorH, Component.literal("Script"))
 
         editor.setValue(menu.getScriptText())
@@ -133,12 +138,85 @@ class TerminalScreen(
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.render(graphics, mouseX, mouseY, partialTick)
+
+        // Syntax highlighting draws colored text over the editor's transparent text
+        LuaSyntaxHighlighter.render(graphics, font, editor, getTextField(), editorX, editorY)
+
+        // Redraw cursor on top of highlighted text
+        if (editor.isFocused) {
+            renderCursor(graphics)
+        }
+
         // Autocomplete popup renders on top of everything
         autocomplete.render(graphics, mouseX, mouseY)
         renderTooltip(graphics, mouseX, mouseY)
     }
 
+    private fun renderCursor(graphics: GuiGraphics) {
+        val textField = getTextField() ?: return
+        val text = textField.value()
+        val cursor = textField.cursor()
+
+        // Blink: visible for 300ms, hidden for 300ms
+        val elapsed = net.minecraft.util.Util.getMillis() - cursorBlinkStart
+        if ((elapsed / 300) % 2 != 0L) return
+
+        val scrollOffset = editor.scrollAmount().toInt()
+        val innerLeft = try {
+            val m = editor.javaClass.superclass?.getDeclaredMethod("getInnerLeft")
+            m?.isAccessible = true
+            m?.invoke(editor) as? Int ?: (editor.x + 4)
+        } catch (_: Exception) { editor.x + 4 }
+
+        val innerTop = try {
+            val m = editor.javaClass.superclass?.getDeclaredMethod("getInnerTop")
+            m?.isAccessible = true
+            m?.invoke(editor) as? Int ?: (editor.y + 4)
+        } catch (_: Exception) { editor.y + 4 }
+
+        // Find which line the cursor is on and the x offset
+        var charsSoFar = 0
+        var cursorLine = 0
+        var cursorCol = 0
+        for (view in textField.iterateLines()) {
+            val begin = view.javaClass.getMethod("beginIndex").invoke(view) as Int
+            val end = view.javaClass.getMethod("endIndex").invoke(view) as Int
+            if (cursor >= begin && cursor <= end) {
+                cursorCol = cursor - begin
+                break
+            }
+            cursorLine++
+        }
+
+        val lineText = if (cursorLine < textField.getLineCount()) {
+            val view = textField.getLineView(cursorLine)
+            val begin = view.javaClass.getMethod("beginIndex").invoke(view) as Int
+            val end = view.javaClass.getMethod("endIndex").invoke(view) as Int
+            text.substring(begin, minOf(begin + cursorCol, end))
+        } else ""
+
+        val cursorX = innerLeft + font.width(lineText)
+        val cursorY = innerTop + cursorLine * font.lineHeight - scrollOffset
+
+        // Draw cursor line
+        graphics.enableScissor(editor.x, editor.y, editor.x + editor.width, editor.y + editor.height)
+        graphics.fill(cursorX, cursorY - 1, cursorX + 1, cursorY + font.lineHeight + 1, 0xFFD4D4D4.toInt())
+        graphics.disableScissor()
+    }
+
+    private var cursorBlinkStart = net.minecraft.util.Util.getMillis()
+
+    private var textFieldAccessor: java.lang.reflect.Field? = null
+    private fun getTextField(): MultilineTextField? {
+        if (textFieldAccessor == null) {
+            textFieldAccessor = MultiLineEditBox::class.java.getDeclaredField("textField")
+            textFieldAccessor!!.isAccessible = true
+        }
+        return textFieldAccessor?.get(editor) as? MultilineTextField
+    }
+
     override fun keyPressed(keyEvent: KeyEvent): Boolean {
+        cursorBlinkStart = net.minecraft.util.Util.getMillis()
         if (editor.isFocused) {
             if (keyEvent.key() == InputConstants.KEY_ESCAPE) {
                 if (autocomplete.visible) {
