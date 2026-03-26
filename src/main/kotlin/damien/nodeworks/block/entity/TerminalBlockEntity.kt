@@ -78,7 +78,7 @@ class TerminalBlockEntity(
     override fun setLevel(newLevel: net.minecraft.world.level.Level) {
         super.setLevel(newLevel)
         if (!newLevel.isClientSide && autoRun && scriptText.isNotBlank()) {
-            TerminalPackets.registerPendingAutoRun(worldPosition)
+            TerminalPackets.registerPendingAutoRun(newLevel as net.minecraft.server.level.ServerLevel, worldPosition)
         }
     }
 

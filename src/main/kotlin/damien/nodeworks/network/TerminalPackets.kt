@@ -132,11 +132,15 @@ object TerminalPackets {
         override fun type() = TYPE
     }
 
-    // --- Active script engines per terminal ---
+    // --- Active script engines per terminal (keyed by dimension + position) ---
 
-    private val activeEngines = mutableMapOf<BlockPos, ScriptEngine>()
+    private val activeEngines = mutableMapOf<net.minecraft.core.GlobalPos, ScriptEngine>()
 
-    fun getEngine(pos: BlockPos): ScriptEngine? = activeEngines[pos]
+    fun getEngine(level: net.minecraft.server.level.ServerLevel, pos: BlockPos): ScriptEngine? =
+        activeEngines[net.minecraft.core.GlobalPos.of(level.dimension(), pos)]
+
+    fun getEngine(dimKey: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, pos: BlockPos): ScriptEngine? =
+        activeEngines[net.minecraft.core.GlobalPos.of(dimKey, pos)]
 
     // --- Registration ---
 
@@ -164,7 +168,8 @@ object TerminalPackets {
             val nodePos = terminal.getConnectedNodePos() ?: return@registerGlobalReceiver
 
             // Stop any existing engine
-            activeEngines.remove(payload.terminalPos)?.stop()
+            val globalPos = net.minecraft.core.GlobalPos.of(level.dimension(), payload.terminalPos)
+            activeEngines.remove(globalPos)?.stop()
 
             // Create and start new engine
             val terminalPos = payload.terminalPos
@@ -180,12 +185,15 @@ object TerminalPackets {
             }
 
             if (engine.start(payload.scriptText)) {
-                activeEngines[payload.terminalPos] = engine
+                activeEngines[globalPos] = engine
             }
         }
 
         ServerPlayNetworking.registerGlobalReceiver(StopScriptPayload.TYPE) { payload, context ->
-            activeEngines.remove(payload.terminalPos)?.stop()
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val gp = net.minecraft.core.GlobalPos.of(level.dimension(), payload.terminalPos)
+            activeEngines.remove(gp)?.stop()
             logger.info("[Terminal {}] Script stopped", payload.terminalPos)
         }
 
@@ -248,10 +256,10 @@ object TerminalPackets {
     }
 
     /** Terminals pending auto-start after world load. Populated by TerminalBlockEntity.setLevel. */
-    private val pendingAutoRun = mutableSetOf<BlockPos>()
+    private val pendingAutoRun = mutableSetOf<net.minecraft.core.GlobalPos>()
 
-    fun registerPendingAutoRun(pos: BlockPos) {
-        pendingAutoRun.add(pos)
+    fun registerPendingAutoRun(level: net.minecraft.server.level.ServerLevel, pos: BlockPos) {
+        pendingAutoRun.add(net.minecraft.core.GlobalPos.of(level.dimension(), pos))
     }
 
     /** Called each tick — starts any pending auto-run terminals once chunks are ready. */
@@ -263,32 +271,29 @@ object TerminalPackets {
         val toStart = pendingAutoRun.toList()
         pendingAutoRun.clear()
 
-        for (pos in toStart) {
-            for (level in server.allLevels) {
-                if (!level.isLoaded(pos)) continue
-                val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
-                if (!terminal.autoRun || terminal.scriptText.isBlank()) continue
-                val nodePos = terminal.getConnectedNodePos() ?: continue
+        for (gp in toStart) {
+            val level = server.getLevel(gp.dimension()) ?: continue
+            val pos = gp.pos()
+            if (!level.isLoaded(pos)) continue
+            val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
+            if (!terminal.autoRun || terminal.scriptText.isBlank()) continue
+            val nodePos = terminal.getConnectedNodePos() ?: continue
 
-                // Don't restart if already running
-                if (activeEngines.containsKey(pos)) continue
+            // Don't restart if already running
+            if (activeEngines.containsKey(gp)) continue
 
-                val autoRunPos = pos
-                val autoRunLevel = level
-                val engine = ScriptEngine(level, nodePos) { message, isError ->
-                    val logPayload = TerminalLogPayload(autoRunPos, message, isError)
-                    for (p in autoRunLevel.players()) {
-                        if (p.distanceToSqr(autoRunPos.x + 0.5, autoRunPos.y + 0.5, autoRunPos.z + 0.5) <= 64.0 * 64.0) {
-                            ServerPlayNetworking.send(p, logPayload)
-                        }
+            val engine = ScriptEngine(level, nodePos) { message, isError ->
+                val logPayload = TerminalLogPayload(pos, message, isError)
+                for (p in level.players()) {
+                    if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
+                        ServerPlayNetworking.send(p, logPayload)
                     }
-                    if (isError) logger.warn("[Terminal {}] {}", autoRunPos, message)
                 }
-                if (engine.start(terminal.scriptText)) {
-                    activeEngines[pos] = engine
-                    logger.info("[Terminal {}] Auto-run started", pos)
-                }
-                break
+                if (isError) logger.warn("[Terminal {}] {}", pos, message)
+            }
+            if (engine.start(terminal.scriptText)) {
+                activeEngines[gp] = engine
+                logger.info("[Terminal {}] Auto-run started", pos)
             }
         }
     }
@@ -296,10 +301,10 @@ object TerminalPackets {
     /** Called from a server tick event to drive all active script schedulers. */
     fun tickAll(server: net.minecraft.server.MinecraftServer, tickCount: Long) {
         processPendingAutoRun(server, tickCount)
-        val toRemove = mutableListOf<BlockPos>()
-        for ((pos, engine) in activeEngines) {
+        val toRemove = mutableListOf<net.minecraft.core.GlobalPos>()
+        for ((gp, engine) in activeEngines) {
             if (!engine.isRunning()) {
-                toRemove.add(pos)
+                toRemove.add(gp)
                 continue
             }
             engine.tick(tickCount)

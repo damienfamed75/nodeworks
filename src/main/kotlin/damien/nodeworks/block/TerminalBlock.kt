@@ -97,7 +97,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
         serverPlayer.openMenu(object : ExtendedScreenHandlerFactory<TerminalOpenData> {
             override fun getScreenOpeningData(player: ServerPlayer): TerminalOpenData {
-                val isRunning = TerminalPackets.getEngine(terminal.blockPos)?.isRunning() == true
+                val isRunning = TerminalPackets.getEngine(level as ServerLevel, terminal.blockPos)?.isRunning() == true
                 return TerminalOpenData(terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags)
             }
 
