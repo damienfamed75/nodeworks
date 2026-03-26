@@ -67,10 +67,23 @@ class AutocompletePopup(
         visible = true
         prefix = extractPrefix(beforeCursor)
 
-        // Position popup near the cursor
+        // Position popup at the cursor's actual position
         val lineAtCursor = textField.getLineAtCursor()
-        popupX = editorX + 4
-        popupY = editorY + (lineAtCursor + 1) * font.lineHeight + 4
+
+        // Find the text on the current line before the cursor to calculate X offset
+        var cursorXOffset = 0
+        try {
+            val lineView = textField.getLineView(lineAtCursor)
+            val lineBegin = lineView.javaClass.getMethod("beginIndex").invoke(lineView) as Int
+            val lineEnd = lineView.javaClass.getMethod("endIndex").invoke(lineView) as Int
+            val cursorCol = (cursor - lineBegin).coerceIn(0, lineEnd - lineBegin)
+            val lineTextBeforeCursor = text.substring(lineBegin, lineBegin + cursorCol)
+            cursorXOffset = font.width(lineTextBeforeCursor)
+        } catch (_: Exception) {}
+
+        val scrollOffset = editor.scrollAmount().toInt()
+        popupX = editorX + 4 + cursorXOffset
+        popupY = editorY + (lineAtCursor + 1) * font.lineHeight + 4 - scrollOffset
     }
 
     fun hide() {

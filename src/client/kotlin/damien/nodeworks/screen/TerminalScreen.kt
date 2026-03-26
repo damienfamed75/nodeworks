@@ -50,6 +50,24 @@ class TerminalScreen(
     // Used to preserve editor text across layout changes
     private var rebuildWithText: String? = null
 
+    // Undo/redo stacks
+    private data class UndoState(val text: String, val cursor: Int)
+    private val undoStack = ArrayDeque<UndoState>(50)
+    private val redoStack = ArrayDeque<UndoState>(50)
+    private var lastSavedText = ""
+    private var undoInProgress = false
+
+    private fun applyUndoState(state: UndoState, previousScroll: Double) {
+        editor.setValue(state.text)
+        val tf = getTextField()
+        if (tf != null) {
+            tf.seekCursor(net.minecraft.client.gui.components.Whence.ABSOLUTE, state.cursor.coerceIn(0, state.text.length))
+        }
+        // Restore scroll position — setValue resets it, so set it back
+        editor.setScrollAmount(previousScroll.coerceAtMost(editor.maxScrollAmount().toDouble()))
+        lastSavedText = state.text
+    }
+
     private fun rebind() {
         clearWidgets()
         init()
@@ -101,8 +119,17 @@ class TerminalScreen(
         rebuildWithText = null
         editor.setCharacterLimit(32767)
 
-        editor.setValueListener { _ ->
-            // Update autocomplete whenever text changes (typing, paste, delete)
+        lastSavedText = editor.value
+        editor.setValueListener { newText ->
+            // Push undo state when text changes (but not during undo/redo itself)
+            if (!undoInProgress && newText != lastSavedText) {
+                val cursorPos = getTextField()?.cursor() ?: 0
+                undoStack.addLast(UndoState(lastSavedText, cursorPos))
+                if (undoStack.size > 50) undoStack.removeFirst()
+                redoStack.clear()
+                lastSavedText = newText
+            }
+            // Update autocomplete whenever text changes
             autocomplete.update(editor, editorX, editorY)
         }
         addRenderableWidget(editor)
@@ -325,6 +352,35 @@ class TerminalScreen(
                     return true
                 }
                 return super.keyPressed(keyEvent)
+            }
+
+            // Ctrl+Z = undo
+            if (keyEvent.key() == InputConstants.KEY_Z && (keyEvent.modifiers() and 2) != 0 && (keyEvent.modifiers() and 1) == 0) {
+                if (undoStack.isNotEmpty()) {
+                    undoInProgress = true
+                    val cursorPos = getTextField()?.cursor() ?: 0
+                    val scrollPos = editor.scrollAmount()
+                    redoStack.addLast(UndoState(editor.value, cursorPos))
+                    val prev = undoStack.removeLast()
+                    applyUndoState(prev, scrollPos)
+                    undoInProgress = false
+                }
+                return true
+            }
+
+            // Ctrl+Shift+Z or Ctrl+Y = redo
+            if ((keyEvent.key() == InputConstants.KEY_Z && (keyEvent.modifiers() and 3) == 3) ||
+                (keyEvent.key() == InputConstants.KEY_Y && (keyEvent.modifiers() and 2) != 0)) {
+                if (redoStack.isNotEmpty()) {
+                    undoInProgress = true
+                    val cursorPos = getTextField()?.cursor() ?: 0
+                    val scrollPos = editor.scrollAmount()
+                    undoStack.addLast(UndoState(editor.value, cursorPos))
+                    val next = redoStack.removeLast()
+                    applyUndoState(next, scrollPos)
+                    undoInProgress = false
+                }
+                return true
             }
 
             // Ctrl+Space triggers autocomplete
