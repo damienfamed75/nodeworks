@@ -8,5 +8,12 @@
   "message.nodeworks.too_far": "Nodes are too far apart (max 8 blocks).",
   "message.nodeworks.no_line_of_sight": "No line of sight between nodes.",
   "message.nodeworks.connected": "Nodes connected.",
-  "message.nodeworks.disconnected": "Nodes disconnected."
+  "message.nodeworks.disconnected": "Nodes disconnected.",
+  "item.nodeworks.io_card": "IO Card",
+  "item.nodeworks.storage_card": "Storage Card",
+  "item.nodeworks.recipe_card": "Recipe Card",
+  "container.nodeworks.recipe_card": "Recipe Card",
+  "container.nodeworks.node_side": "Node — %s",
+  "block.nodeworks.terminal": "Script Terminal",
+  "message.nodeworks.terminal_no_network": "Terminal is not connected to a node network. Place next to a node."
 }
