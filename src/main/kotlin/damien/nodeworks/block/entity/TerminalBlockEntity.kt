@@ -82,6 +82,14 @@ class TerminalBlockEntity(
         }
     }
 
+    override fun setRemoved() {
+        val currentLevel = level
+        if (currentLevel is net.minecraft.server.level.ServerLevel) {
+            TerminalPackets.stopEngine(currentLevel, worldPosition)
+        }
+        super.setRemoved()
+    }
+
     // --- Client sync ---
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

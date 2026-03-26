@@ -142,6 +142,12 @@ object TerminalPackets {
     fun getEngine(dimKey: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, pos: BlockPos): ScriptEngine? =
         activeEngines[net.minecraft.core.GlobalPos.of(dimKey, pos)]
 
+    /** Stop and remove the engine for a terminal. Called when the block entity is removed. */
+    fun stopEngine(level: ServerLevel, pos: BlockPos) {
+        val gp = net.minecraft.core.GlobalPos.of(level.dimension(), pos)
+        activeEngines.remove(gp)?.stop()
+    }
+
     // --- Registration ---
 
     fun registerPayloads() {
