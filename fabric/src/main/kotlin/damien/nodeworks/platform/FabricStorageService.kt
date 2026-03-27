@@ -31,6 +31,20 @@ class FabricStorageService : StorageService {
         }
     }
 
+    override fun moveItemsVariant(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String, Boolean) -> Boolean, maxCount: Long): Long {
+        val src = (source as FabricItemStorageHandle).storage
+        val dst = (dest as FabricItemStorageHandle).storage
+        return try {
+            StorageUtil.move(src, dst, { variant ->
+                val itemId = BuiltInRegistries.ITEM.getKey(variant.item)?.toString() ?: return@move false
+                val hasData = variant.toStack().componentsPatch.size() > 0
+                filter(itemId, hasData)
+            }, maxCount, null)
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     override fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long {
         val src = (storage as FabricItemStorageHandle).storage
         var total = 0L

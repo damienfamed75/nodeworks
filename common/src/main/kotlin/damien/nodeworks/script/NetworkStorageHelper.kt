@@ -134,9 +134,12 @@ object NetworkStorageHelper {
                 CardHandle.matchesFilter(it, filter) && it !in processedItems
             } ?: break
             val itemId = itemInfo.itemId
+            val hasData = itemInfo.hasData
+            val variantKey = "$itemId:$hasData"
 
             processedItems.add(itemId)
 
+            val variantFilter: (String, Boolean) -> Boolean = { id, data -> id == itemId && data == hasData }
             val count = PlatformServices.storage.countItems(source) { it == itemId }
             val toMove = minOf(remaining, count)
 
@@ -144,12 +147,11 @@ object NetworkStorageHelper {
             val routeTarget = routeTable?.findRouteTarget(itemInfo)
             if (routeTarget != null) {
                 val moved = try {
-                    PlatformServices.storage.moveItems(source, routeTarget, { it == itemId }, toMove)
+                    PlatformServices.storage.moveItemsVariant(source, routeTarget, variantFilter, toMove)
                 } catch (_: Exception) { 0L }
                 totalMoved += moved
                 remaining -= moved
                 if (moved < toMove && routeTable != null) {
-                    // Route target full — fall to open storages
                     val overflow = routeTable.insertDefault(source, itemId, toMove - moved)
                     totalMoved += overflow
                     remaining -= overflow
@@ -161,7 +163,7 @@ object NetworkStorageHelper {
             val callbackTarget = onInsertCallback?.invoke(itemId, toMove)
             if (callbackTarget != null) {
                 val moved = try {
-                    PlatformServices.storage.moveItems(source, callbackTarget, { it == itemId }, toMove)
+                    PlatformServices.storage.moveItemsVariant(source, callbackTarget, variantFilter, toMove)
                 } catch (_: Exception) { 0L }
                 totalMoved += moved
                 remaining -= moved
