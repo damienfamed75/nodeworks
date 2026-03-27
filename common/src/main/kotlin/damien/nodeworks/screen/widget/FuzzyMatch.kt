@@ -89,7 +89,9 @@ object FuzzyMatch {
     fun filter(query: String, suggestions: List<AutocompletePopup.Suggestion>): List<AutocompletePopup.Suggestion> {
         if (query.isEmpty()) return suggestions
 
+        val queryLower = query.lowercase()
         return suggestions
+            .filter { it.insertText.removeSuffix("(").lowercase() != queryLower } // exclude exact matches
             .map { it to score(query, it.insertText.removeSuffix("(")) }
             .filter { it.second > 0 }
             .sortedByDescending { it.second }
