@@ -64,8 +64,81 @@ object NetworkStorageHelper {
         return stack.count - remaining
     }
 
-    /** Move items from a source storage into the network's Storage Cards (highest priority first). */
+    /**
+     * Move items from a source storage into the network's Storage Cards.
+     * If a routingCallback is provided, each unique item type is routed individually.
+     * Falls back to default priority-based routing if callback returns null or no callback is set.
+     */
     fun insertItems(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        source: ItemStorageHandle,
+        filter: String,
+        maxCount: Long,
+        routingCallback: ((String, Long) -> ItemStorageHandle?)? = null
+    ): Long {
+        if (routingCallback != null) {
+            return insertItemsWithRouting(level, snapshot, source, filter, maxCount, routingCallback)
+        }
+        return insertItemsDefault(level, snapshot, source, filter, maxCount)
+    }
+
+    /**
+     * Routes each unique item type through the callback individually.
+     * Items the callback returns null for fall through to default priority routing.
+     */
+    private fun insertItemsWithRouting(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        source: ItemStorageHandle,
+        filter: String,
+        maxCount: Long,
+        routingCallback: (String, Long) -> ItemStorageHandle?
+    ): Long {
+        var totalMoved = 0L
+        var remaining = maxCount
+        val processedItems = mutableSetOf<String>()
+
+        // Keep finding and routing items until source is empty or maxCount reached
+        while (remaining > 0) {
+            // Find the next unprocessed item type in the source
+            val itemId = PlatformServices.storage.findFirstItem(source) {
+                CardHandle.matchesFilter(it, filter) && it !in processedItems
+            } ?: break
+
+            processedItems.add(itemId)
+
+            // Ask the callback where this item should go
+            val count = PlatformServices.storage.countItems(source) { it == itemId }
+            val toMove = minOf(remaining, count)
+            val targetStorage = routingCallback(itemId, toMove)
+
+            if (targetStorage != null) {
+                // Route to the callback's target
+                val moved = try {
+                    PlatformServices.storage.moveItems(source, targetStorage, { it == itemId }, toMove)
+                } catch (_: Exception) { 0L }
+                totalMoved += moved
+                remaining -= moved
+                // If target was full, fall through to default for this item
+                if (moved < toMove) {
+                    val defaultMoved = insertItemsDefault(level, snapshot, source, itemId, toMove - moved)
+                    totalMoved += defaultMoved
+                    remaining -= defaultMoved
+                }
+            } else {
+                // Callback returned nil — use default routing for this item
+                val moved = insertItemsDefault(level, snapshot, source, itemId, toMove)
+                totalMoved += moved
+                remaining -= moved
+            }
+        }
+
+        return totalMoved
+    }
+
+    /** Default priority-based routing across all storage cards. */
+    private fun insertItemsDefault(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         source: ItemStorageHandle,
