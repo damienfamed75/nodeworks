@@ -158,6 +158,9 @@ class Nodeworks(modBus: IEventBus) {
     private fun onServerTick(event: ServerTickEvent.Post) {
         tickCount++
         NeoForgeTerminalPackets.tickAll(event.server, tickCount)
+        for (cache in damien.nodeworks.script.NetworkInventoryCache.getAll()) {
+            cache.tick()
+        }
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }

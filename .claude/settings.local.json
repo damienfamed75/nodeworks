@@ -18,7 +18,9 @@
       "Bash(mv items/recipe_card.json items/instruction_set.json)",
       "Bash(mv models/item/recipe_card.json models/item/instruction_set.json)",
       "Bash(mv textures/item/recipe_card.png textures/item/instruction_set.png)",
-      "Bash(mv textures/gui/recipe_card.png textures/gui/instruction_set.png)"
+      "Bash(mv textures/gui/recipe_card.png textures/gui/instruction_set.png)",
+      "Bash(cd /tmp)",
+      "Bash(gh api:*)"
     ]
   }
 }

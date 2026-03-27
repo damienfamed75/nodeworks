@@ -51,7 +51,7 @@ class ScriptEngine(
 
         // Discover network
         networkSnapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
-        inventoryCache = NetworkInventoryCache(level, networkSnapshot!!)
+        inventoryCache = NetworkInventoryCache.getOrCreate(level, networkEntryNode)
 
         // Create sandboxed globals
         val g = Globals()
@@ -123,7 +123,7 @@ class ScriptEngine(
     fun stop() {
         onInsertCallback = null
         routeTable = null
-        inventoryCache = null
+        inventoryCache = null // clear local reference, cache lives in global registry
         scheduler.clear()
         globals = null
         networkSnapshot = null

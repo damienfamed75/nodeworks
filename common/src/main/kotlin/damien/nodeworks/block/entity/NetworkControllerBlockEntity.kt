@@ -4,7 +4,6 @@ import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
-import net.minecraft.core.Direction
 import net.minecraft.core.HolderLookup
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.network.protocol.Packet
@@ -16,18 +15,24 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
+import java.util.UUID
 
 /**
- * Block entity for the Instruction Crafter. Connects to the node network via lasers.
- * Scans adjacent blocks for InstructionStorageBlockEntity to find available recipes.
+ * Block entity for the Network Controller — the heart of every network.
+ * Stores a UUID that defines the network's identity.
+ * Generated on first placement, persists through world save/load.
  */
-class InstructionCrafterBlockEntity(
+class NetworkControllerBlockEntity(
     pos: BlockPos,
     state: BlockState
-) : BlockEntity(ModBlockEntities.INSTRUCTION_CRAFTER, pos, state), Connectable {
+) : BlockEntity(ModBlockEntities.NETWORK_CONTROLLER, pos, state), Connectable {
 
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
+
+    /** The network's unique identity. Generated on first placement. */
+    var networkId: UUID = UUID.randomUUID()
+        private set
 
     // --- Connectable ---
 
@@ -49,20 +54,6 @@ class InstructionCrafterBlockEntity(
 
     override fun hasConnection(pos: BlockPos): Boolean = connections.contains(pos)
 
-    // --- Adjacent Instruction Storage scanning ---
-
-    /** Returns all Instruction Sets from all adjacent Instruction Storage blocks. */
-    fun getAllInstructionSets(): List<InstructionStorageBlockEntity.InstructionSetInfo> {
-        val level = this.level ?: return emptyList()
-        val result = mutableListOf<InstructionStorageBlockEntity.InstructionSetInfo>()
-        for (dir in Direction.entries) {
-            val adjacentPos = worldPosition.relative(dir)
-            val entity = level.getBlockEntity(adjacentPos) as? InstructionStorageBlockEntity ?: continue
-            result.addAll(entity.getInstructionSets())
-        }
-        return result
-    }
-
     // --- Lifecycle ---
 
     override fun setLevel(level: net.minecraft.world.level.Level) {
@@ -79,6 +70,7 @@ class InstructionCrafterBlockEntity(
         if (blockDestroyed && lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
+            damien.nodeworks.script.NetworkInventoryCache.removeByUUID(networkId)
         }
         super.setRemoved()
     }
@@ -87,6 +79,7 @@ class InstructionCrafterBlockEntity(
 
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
+        output.putString("networkId", networkId.toString())
         if (connections.isNotEmpty()) {
             output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
         }
@@ -94,15 +87,20 @@ class InstructionCrafterBlockEntity(
 
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
+        val idStr = input.getString("networkId").orElse("")
+        if (idStr.isNotEmpty()) {
+            try {
+                networkId = UUID.fromString(idStr)
+            } catch (_: IllegalArgumentException) {
+                networkId = UUID.randomUUID()
+            }
+        }
         connections.clear()
         input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {
-        val tag = CompoundTag()
-        val connectionLongs = connections.map { it.asLong() }.toLongArray()
-        tag.putLongArray("connections", connectionLongs)
-        return tag
+        return saveWithoutMetadata(registries)
     }
 
     override fun getUpdatePacket(): Packet<ClientGamePacketListener> {

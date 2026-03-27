@@ -2,11 +2,13 @@ package damien.nodeworks.network
 
 import damien.nodeworks.block.entity.InstructionCrafterBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
+import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.card.SideCapability
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.server.level.ServerLevel
+import java.util.UUID
 
 /**
  * Discovers all reachable nodes and crafters from a starting position
@@ -19,6 +21,7 @@ object NetworkDiscovery {
         val queue = ArrayDeque<BlockPos>()
         val nodes = mutableListOf<NodeSnapshot>()
         val crafters = mutableListOf<CrafterSnapshot>()
+        var controller: ControllerSnapshot? = null
 
         queue.add(startPos)
         visited.add(startPos)
@@ -30,6 +33,7 @@ object NetworkDiscovery {
             when (connectable) {
                 is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
                 is InstructionCrafterBlockEntity -> crafters.add(snapshotCrafter(connectable))
+                is NetworkControllerBlockEntity -> controller = ControllerSnapshot(connectable.blockPos, connectable.networkId)
             }
 
             for (connection in connectable.getConnections()) {
@@ -42,7 +46,7 @@ object NetworkDiscovery {
         // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1)
         assignAutoAliases(nodes)
 
-        return NetworkSnapshot(nodes, crafters)
+        return NetworkSnapshot(nodes, crafters, controller)
     }
 
     private fun assignAutoAliases(nodes: List<NodeSnapshot>) {
@@ -81,10 +85,21 @@ object NetworkDiscovery {
     }
 }
 
+data class ControllerSnapshot(
+    val pos: BlockPos,
+    val networkId: UUID
+)
+
 data class NetworkSnapshot(
     val nodes: List<NodeSnapshot>,
-    val crafters: List<CrafterSnapshot> = emptyList()
+    val crafters: List<CrafterSnapshot> = emptyList(),
+    val controller: ControllerSnapshot? = null
 ) {
+    /** Whether this network has a controller and is online. */
+    val isOnline: Boolean get() = controller != null
+
+    /** The network's UUID, or null if no controller. */
+    val networkId: UUID? get() = controller?.networkId
 
     /** Find a card by alias (custom or auto-generated) across the entire network. */
     fun findByAlias(alias: String): CardSnapshot? {

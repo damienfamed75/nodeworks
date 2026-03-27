@@ -1,0 +1,22 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "all": "nodeworks:block/network_controller",
+    "particle": "nodeworks:block/network_controller"
+  },
+  "elements": [
+    {
+      "from": [3, 3, 3],
+      "to": [13, 13, 13],
+      "shade": false,
+      "faces": {
+        "north": { "texture": "#all" },
+        "south": { "texture": "#all" },
+        "east":  { "texture": "#all" },
+        "west":  { "texture": "#all" },
+        "up":    { "texture": "#all" },
+        "down":  { "texture": "#all" }
+      }
+    }
+  ]
+}
