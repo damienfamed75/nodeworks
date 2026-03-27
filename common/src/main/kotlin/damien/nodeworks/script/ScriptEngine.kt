@@ -32,6 +32,10 @@ class ScriptEngine(
     var onInsertCallback: LuaFunction? = null
         private set
 
+    /** Precomputed route table set by network:route(). */
+    var routeTable: RouteTable? = null
+        private set
+
     fun start(scripts: Map<String, String>): Boolean {
         stop()
 
@@ -113,6 +117,7 @@ class ScriptEngine(
 
     fun stop() {
         onInsertCallback = null
+        routeTable = null
         scheduler.clear()
         globals = null
         networkSnapshot = null
@@ -299,11 +304,11 @@ class ScriptEngine(
 
                 val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
 
-                val routingFn = createRoutingCallback(snapshot)
                 val moved = NetworkStorageHelper.insertItems(
                     level, snapshot, sourceStorage, itemsHandle.filter,
                     minOf(maxCount, itemsHandle.count.toLong()),
-                    routingFn
+                    routeTable,
+                    createRoutingCallback(snapshot)
                 )
                 return LuaValue.valueOf(moved.toInt())
             }
@@ -342,6 +347,18 @@ class ScriptEngine(
                     sourceStorage = sourceStorage,
                     level = level
                 ))
+            }
+        })
+
+        // network:route(filter, alias) — register a declarative storage route
+        // Items matching filter go to that storage; that storage rejects non-matching items
+        routeTable = RouteTable(level, snapshot)
+        networkTable.set("route", object : ThreeArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue, aliasArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val alias = aliasArg.checkjstring()
+                routeTable?.addRoute(filter, alias)
+                return LuaValue.NIL
             }
         })
 
