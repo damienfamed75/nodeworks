@@ -48,7 +48,7 @@ object NeoForgeClientSetup {
 
     @SubscribeEvent
     fun onRegisterBlockColors(event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.Block) {
-        event.register({ _, _, _, tintIndex -> if (tintIndex == 0) 0x83E086 else -1 },
+        event.register({ _, _, _, tintIndex -> if (tintIndex == 0) NodeConnectionRenderer.DEFAULT_NETWORK_COLOR else -1 },
             damien.nodeworks.registry.ModBlocks.NODE)
     }
 

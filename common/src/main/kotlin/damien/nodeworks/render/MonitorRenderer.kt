@@ -1,29 +1,48 @@
 package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
+import com.mojang.blaze3d.vertex.VertexConsumer
 import damien.nodeworks.block.entity.NodeBlockEntity
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.Font
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.item.ItemStackRenderState
+import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.CameraRenderState
+import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.world.item.ItemDisplayContext
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
- * Renders item icons and counts on node monitor faces.
+ * Renders item icons and counts on node monitor faces,
+ * and beacon-style laser beams to connected nodes.
  */
 class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntityRenderer<NodeBlockEntity, MonitorRenderer.MonitorRenderState> {
+
+    companion object {
+        private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+
+        /** Beam width in blocks. */
+        var beamWidth = 1.0f / 16f
+
+        /** UV scroll speed (units per second). */
+        var beamScrollSpeed = 0.8f
+
+        /** Rotation speed (radians per second). */
+        var beamRotationSpeed = 1.0f
+    }
 
     data class MonitorFace(
         val direction: Direction,
@@ -32,8 +51,11 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         val itemRenderState: ItemStackRenderState? = null
     )
 
+    data class BeamTarget(val dx: Float, val dy: Float, val dz: Float)
+
     class MonitorRenderState : BlockEntityRenderState() {
         var faces: List<MonitorFace> = emptyList()
+        var beamTargets: List<BeamTarget> = emptyList()
     }
 
     override fun createRenderState(): MonitorRenderState = MonitorRenderState()
@@ -63,7 +85,23 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
 
             MonitorFace(face, itemId, monitor?.displayCount ?: 0L, itemRenderState)
         }
+
+        // Collect beam connection targets (relative positions)
+        if (NodeConnectionRenderer.beamEffectEnabled) {
+            val thisPos = entity.blockPos
+            state.beamTargets = entity.getConnections().map { targetPos ->
+                BeamTarget(
+                    (targetPos.x - thisPos.x).toFloat(),
+                    (targetPos.y - thisPos.y).toFloat(),
+                    (targetPos.z - thisPos.z).toFloat()
+                )
+            }
+        } else {
+            state.beamTargets = emptyList()
+        }
     }
+
+    override fun shouldRenderOffScreen(): Boolean = true
 
     override fun submit(
         state: MonitorRenderState,
@@ -72,6 +110,11 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         camera: CameraRenderState
     ) {
         val mc = Minecraft.getInstance()
+
+        // Render beacon-style laser beams to connected blocks
+        if (state.beamTargets.isNotEmpty()) {
+            renderBeams(state.beamTargets, poseStack, collector)
+        }
 
         for (face in state.faces) {
 
@@ -91,16 +134,16 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
                 val hw = 0.375f  // half-width (12/16 / 2)
                 val hh = 0.375f  // half-height
                 val depth = 0.125f // 2/16
-                val overlay = net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY
+                val overlay = OverlayTexture.NO_OVERLAY
                 val light = 15728880
 
-                val faceTex = net.minecraft.client.renderer.rendertype.RenderTypes.entityCutoutNoCull(
+                val faceTex = RenderTypes.entityCutoutNoCull(
                     Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_face.png")
                 )
-                val sideTex = net.minecraft.client.renderer.rendertype.RenderTypes.entityCutoutNoCull(
+                val sideTex = RenderTypes.entityCutoutNoCull(
                     Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_side.png")
                 )
-                val backTex = net.minecraft.client.renderer.rendertype.RenderTypes.entityCutoutNoCull(
+                val backTex = RenderTypes.entityCutoutNoCull(
                     Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_back.png")
                 )
 
@@ -149,18 +192,150 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
                 poseStack.pushPose()
                 poseStack.translate(0.0, 0.02, -0.02)
                 poseStack.scale(0.3f, 0.3f, 0.001f)
-                itemRS.submit(poseStack, collector, 0xF000F0, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, 0)
+                itemRS.submit(poseStack, collector, 0xF000F0, OverlayTexture.NO_OVERLAY, 0)
                 poseStack.popPose()
             }
-
-            // Render count text as a colored quad with the count baked into a texture
-            // Since submitText doesn't work in BlockEntityRenderer, render text
-            // using the world render event hook instead (NodeConnectionRenderer)
-            // For now, store the data — the render hook will draw it
 
             poseStack.popPose()
         }
     }
+
+    // --- Beam rendering ---
+
+    private fun renderBeams(targets: List<BeamTarget>, poseStack: PoseStack, collector: SubmitNodeCollector) {
+        val time = (System.currentTimeMillis() % 100000) / 1000f
+        val color = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+
+        // Opaque core beam
+        val opaqueType = RenderTypes.beaconBeam(LASER_TEXTURE, false)
+        // Translucent glow
+        val translucentType = RenderTypes.beaconBeam(LASER_TEXTURE, true)
+
+        for (target in targets) {
+            renderSingleBeam(poseStack, collector, opaqueType, target, time, r, g, b, 255, beamWidth)
+            renderSingleBeam(poseStack, collector, translucentType, target, time, r, g, b, 40, beamWidth * 2.5f)
+        }
+    }
+
+    private fun renderSingleBeam(
+        poseStack: PoseStack,
+        collector: SubmitNodeCollector,
+        renderType: net.minecraft.client.renderer.rendertype.RenderType,
+        target: BeamTarget,
+        time: Float,
+        r: Int, g: Int, b: Int, a: Int,
+        width: Float
+    ) {
+        // Beam from block center (0.5, 0.5, 0.5) to target center
+        val fromX = 0.5f; val fromY = 0.5f; val fromZ = 0.5f
+        val toX = target.dx + 0.5f; val toY = target.dy + 0.5f; val toZ = target.dz + 0.5f
+
+        val dx = toX - fromX
+        val dy = toY - fromY
+        val dz = toZ - fromZ
+        val len = sqrt(dx * dx + dy * dy + dz * dz)
+        if (len < 0.01f) return
+
+        // Normalized beam direction
+        val dirX = dx / len; val dirY = dy / len; val dirZ = dz / len
+
+        // Find two perpendicular axes
+        val refX: Float; val refY: Float; val refZ: Float
+        if (abs(dirY) < 0.9f) {
+            refX = 0f; refY = 1f; refZ = 0f
+        } else {
+            refX = 1f; refY = 0f; refZ = 0f
+        }
+
+        // axis1 = cross(dir, ref)
+        var a1x = dirY * refZ - dirZ * refY
+        var a1y = dirZ * refX - dirX * refZ
+        var a1z = dirX * refY - dirY * refX
+        val a1len = sqrt(a1x * a1x + a1y * a1y + a1z * a1z)
+        a1x /= a1len; a1y /= a1len; a1z /= a1len
+
+        // axis2 = cross(dir, axis1)
+        var a2x = dirY * a1z - dirZ * a1y
+        var a2y = dirZ * a1x - dirX * a1z
+        var a2z = dirX * a1y - dirY * a1x
+        val a2len = sqrt(a2x * a2x + a2y * a2y + a2z * a2z)
+        a2x /= a2len; a2y /= a2len; a2z /= a2len
+
+        // Rotate axes around beam direction for animation
+        val angle = time * beamRotationSpeed
+        val cosA = cos(angle); val sinA = sin(angle)
+        val r1x = a1x * cosA + a2x * sinA
+        val r1y = a1y * cosA + a2y * sinA
+        val r1z = a1z * cosA + a2z * sinA
+        val r2x = -a1x * sinA + a2x * cosA
+        val r2y = -a1y * sinA + a2y * cosA
+        val r2z = -a1z * sinA + a2z * cosA
+
+        val hw = width / 2f
+
+        // UV mapping: beam occupies first 5px of 16px wide texture
+        val uMax = 5f / 16f
+        val uvScroll = time * beamScrollSpeed
+        val v0 = uvScroll
+        val v1 = uvScroll + len * 0.5f  // less tiling for a less squished look
+
+        val light = 15728880
+        val overlay = OverlayTexture.NO_OVERLAY
+
+        // 4 corners of the rectangular cross-section
+        val c0x = r1x * hw + r2x * hw; val c0y = r1y * hw + r2y * hw; val c0z = r1z * hw + r2z * hw
+        val c1x = -r1x * hw + r2x * hw; val c1y = -r1y * hw + r2y * hw; val c1z = -r1z * hw + r2z * hw
+        val c2x = -r1x * hw - r2x * hw; val c2y = -r1y * hw - r2y * hw; val c2z = -r1z * hw - r2z * hw
+        val c3x = r1x * hw - r2x * hw; val c3y = r1y * hw - r2y * hw; val c3z = r1z * hw - r2z * hw
+
+        // Render 4 faces of a rectangular prism (never goes invisible)
+        collector.submitCustomGeometry(poseStack, renderType) { pose, vc ->
+            // Face 1: +axis1 side (c0 -> c3)
+            vc.addVertex(pose, fromX + c3x, fromY + c3y, fromZ + c3z)
+                .setUv(0f, v0).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, r1x, r1y, r1z)
+            vc.addVertex(pose, fromX + c0x, fromY + c0y, fromZ + c0z)
+                .setUv(uMax, v0).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, r1x, r1y, r1z)
+            vc.addVertex(pose, toX + c0x, toY + c0y, toZ + c0z)
+                .setUv(uMax, v1).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, r1x, r1y, r1z)
+            vc.addVertex(pose, toX + c3x, toY + c3y, toZ + c3z)
+                .setUv(0f, v1).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, r1x, r1y, r1z)
+
+            // Face 2: -axis1 side (c1 -> c2, reversed winding)
+            vc.addVertex(pose, fromX + c1x, fromY + c1y, fromZ + c1z)
+                .setUv(0f, v0).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, -r1x, -r1y, -r1z)
+            vc.addVertex(pose, fromX + c2x, fromY + c2y, fromZ + c2z)
+                .setUv(uMax, v0).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, -r1x, -r1y, -r1z)
+            vc.addVertex(pose, toX + c2x, toY + c2y, toZ + c2z)
+                .setUv(uMax, v1).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, -r1x, -r1y, -r1z)
+            vc.addVertex(pose, toX + c1x, toY + c1y, toZ + c1z)
+                .setUv(0f, v1).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, -r1x, -r1y, -r1z)
+
+            // Face 3: +axis2 side (c0 -> c1)
+            vc.addVertex(pose, fromX + c0x, fromY + c0y, fromZ + c0z)
+                .setUv(0f, v0).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, r2x, r2y, r2z)
+            vc.addVertex(pose, fromX + c1x, fromY + c1y, fromZ + c1z)
+                .setUv(uMax, v0).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, r2x, r2y, r2z)
+            vc.addVertex(pose, toX + c1x, toY + c1y, toZ + c1z)
+                .setUv(uMax, v1).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, r2x, r2y, r2z)
+            vc.addVertex(pose, toX + c0x, toY + c0y, toZ + c0z)
+                .setUv(0f, v1).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, r2x, r2y, r2z)
+
+            // Face 4: -axis2 side (c2 -> c3)
+            vc.addVertex(pose, fromX + c2x, fromY + c2y, fromZ + c2z)
+                .setUv(0f, v0).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, -r2x, -r2y, -r2z)
+            vc.addVertex(pose, fromX + c3x, fromY + c3y, fromZ + c3z)
+                .setUv(uMax, v0).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, -r2x, -r2y, -r2z)
+            vc.addVertex(pose, toX + c3x, toY + c3y, toZ + c3z)
+                .setUv(uMax, v1).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, -r2x, -r2y, -r2z)
+            vc.addVertex(pose, toX + c2x, toY + c2y, toZ + c2z)
+                .setUv(0f, v1).setColor(r, g, b, a).setLight(light).setOverlay(overlay).setNormal(pose, -r2x, -r2y, -r2z)
+        }
+    }
+
+    // --- Monitor helpers ---
 
     private fun rotateToFace(poseStack: PoseStack, face: Direction) {
         when (face) {
