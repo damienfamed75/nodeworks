@@ -65,6 +65,8 @@ class TerminalScreen(
 
     // Used to preserve editor text across layout changes
     private var rebuildWithText: String? = null
+    // Suppresses autocomplete updates during programmatic text insertion
+    private var suppressAutocomplete = false
 
     // Undo/redo stacks
     private data class UndoState(val text: String, val cursor: Int)
@@ -145,8 +147,10 @@ class TerminalScreen(
                 redoStack.clear()
                 lastSavedText = newText
             }
-            // Update autocomplete whenever text changes
-            autocomplete.update(editor, editorX, editorY)
+            // Update autocomplete whenever text changes (unless suppressed during programmatic insertion)
+            if (!suppressAutocomplete) {
+                autocomplete.update(editor, editorX, editorY)
+            }
         }
         addRenderableWidget(editor)
 
@@ -559,6 +563,8 @@ class TerminalScreen(
                         if (result != null) {
                             val tf = getTextField()
                             if (tf != null) {
+                                // Suppress autocomplete updates during insertion
+                                suppressAutocomplete = true
                                 // Delete the typed prefix
                                 for (i in 0 until result.deleteCount) {
                                     tf.deleteText(-1)
@@ -567,6 +573,8 @@ class TerminalScreen(
                                 for (ch in result.insertText) {
                                     editor.charTyped(net.minecraft.client.input.CharacterEvent(ch.code, 0))
                                 }
+                                suppressAutocomplete = false
+                                autocomplete.hide()
                             }
                             return true
                         }
