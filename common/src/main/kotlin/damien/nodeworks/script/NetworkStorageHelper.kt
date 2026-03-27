@@ -3,6 +3,7 @@ package damien.nodeworks.script
 import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.NetworkSnapshot
+import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.server.level.ServerLevel
@@ -41,6 +42,33 @@ object NetworkStorageHelper {
             if (itemId != null) return itemId
         }
         return null
+    }
+
+    /** Find the first item info across all Storage Cards matching the filter, with its source card. */
+    fun findFirstItemInfoAcrossNetwork(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Pair<ItemInfo, CardSnapshot>? {
+        for (card in getStorageCards(snapshot)) {
+            val storage = getStorage(level, card) ?: continue
+            val info = PlatformServices.storage.findFirstItemInfo(storage) { CardHandle.matchesFilter(it, filter) }
+            if (info != null) return Pair(info, card)
+        }
+        return null
+    }
+
+    /** Find all unique item types across all Storage Cards matching the filter, with their source cards. */
+    fun findAllItemInfoAcrossNetwork(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): List<Pair<ItemInfo, CardSnapshot>> {
+        val results = mutableListOf<Pair<ItemInfo, CardSnapshot>>()
+        val seen = mutableSetOf<String>()
+        for (card in getStorageCards(snapshot)) {
+            val storage = getStorage(level, card) ?: continue
+            val items = PlatformServices.storage.findAllItemInfo(storage) { CardHandle.matchesFilter(it, filter) }
+            for (info in items) {
+                val key = "${info.itemId}:${info.hasData}"
+                if (seen.add(key)) {
+                    results.add(Pair(info, card))
+                }
+            }
+        }
+        return results
     }
 
     fun findItem(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): CardSnapshot? {
@@ -102,9 +130,10 @@ object NetworkStorageHelper {
         val processedItems = mutableSetOf<String>()
 
         while (remaining > 0) {
-            val itemId = PlatformServices.storage.findFirstItem(source) {
+            val itemInfo = PlatformServices.storage.findFirstItemInfo(source) {
                 CardHandle.matchesFilter(it, filter) && it !in processedItems
             } ?: break
+            val itemId = itemInfo.itemId
 
             processedItems.add(itemId)
 
@@ -112,7 +141,7 @@ object NetworkStorageHelper {
             val toMove = minOf(remaining, count)
 
             // 1. Check routes first (precomputed, fast)
-            val routeTarget = routeTable?.findRouteTarget(itemId)
+            val routeTarget = routeTable?.findRouteTarget(itemInfo)
             if (routeTarget != null) {
                 val moved = try {
                     PlatformServices.storage.moveItems(source, routeTarget, { it == itemId }, toMove)

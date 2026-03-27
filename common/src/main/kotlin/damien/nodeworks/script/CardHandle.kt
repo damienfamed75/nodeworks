@@ -126,27 +126,29 @@ class CardHandle private constructor(
                 val filter = filterArg.checkjstring()
                 val storage = self.getItemStorage() ?: return LuaValue.NIL
 
-                val count = PlatformServices.storage.countItems(storage) { matchesFilter(it, filter) }
-                if (count <= 0) return LuaValue.NIL
-
-                // Find the first matching item ID for display
-                val itemId = PlatformServices.storage.findFirstItem(storage) { matchesFilter(it, filter) }
+                val info = PlatformServices.storage.findFirstItemInfo(storage) { matchesFilter(it, filter) }
                     ?: return LuaValue.NIL
 
-                val identifier = Identifier.tryParse(itemId)
-                val itemName = if (identifier != null) {
-                    val item = BuiltInRegistries.ITEM.getValue(identifier)
-                    item?.getName(net.minecraft.world.item.ItemStack(item))?.string ?: itemId
-                } else itemId
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
+                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(info, filter, sourceStorage, level))
+            }
+        })
 
-                return ItemsHandle.toLuaTable(ItemsHandle(
-                    itemId = itemId,
-                    itemName = itemName,
-                    count = count.toInt(),
-                    filter = filter,
-                    sourceStorage = { self.getItemStorage() },
-                    level = level
-                ))
+        // :findAll(filter) -> table of ItemsHandles
+        // Returns all unique item types matching the filter
+        table.set("findAll", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val storage = self.getItemStorage() ?: return LuaTable()
+
+                val items = PlatformServices.storage.findAllItemInfo(storage) { matchesFilter(it, filter) }
+                val result = LuaTable()
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
+                for ((i, info) in items.withIndex()) {
+                    val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                    result.set(i + 1, ItemsHandle.toLuaTable(handle))
+                }
+                return result
             }
         })
 

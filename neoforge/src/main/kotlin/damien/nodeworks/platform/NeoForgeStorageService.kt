@@ -93,6 +93,57 @@ class NeoForgeStorageService : StorageService {
         return null
     }
 
+    override fun findFirstItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): ItemInfo? {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        for (index in 0 until handler.size()) {
+            val resource = handler.getResource(index)
+            val amount = handler.getAmountAsLong(index)
+            if (!resource.isEmpty && amount > 0) {
+                val item = resource.item
+                val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                if (filter(itemId)) {
+                    val stack = resource.toStack()
+                    return ItemInfo(
+                        itemId = itemId,
+                        name = item.getName(stack).string,
+                        count = amount,
+                        maxStackSize = item.defaultMaxStackSize,
+                        hasData = stack.componentsPatch.size() > 0
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        val seen = mutableSetOf<String>()
+        val results = mutableListOf<ItemInfo>()
+        for (index in 0 until handler.size()) {
+            val resource = handler.getResource(index)
+            val amount = handler.getAmountAsLong(index)
+            if (!resource.isEmpty && amount > 0) {
+                val item = resource.item
+                val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                val stack = resource.toStack()
+                val hasData = stack.componentsPatch.size() > 0
+                val cacheKey = "$itemId:$hasData"
+                if (cacheKey in seen) continue
+                if (!filter(itemId)) continue
+                seen.add(cacheKey)
+                results.add(ItemInfo(
+                    itemId = itemId,
+                    name = item.getName(stack).string,
+                    count = amount,
+                    maxStackSize = item.defaultMaxStackSize,
+                    hasData = hasData
+                ))
+            }
+        }
+        return results
+    }
+
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {
         val handler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
         return NeoForgeSlottedStorageHandle(handler)

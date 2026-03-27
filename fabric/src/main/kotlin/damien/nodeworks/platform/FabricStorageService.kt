@@ -86,6 +86,53 @@ class FabricStorageService : StorageService {
         return null
     }
 
+    override fun findFirstItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): ItemInfo? {
+        val src = (storage as FabricItemStorageHandle).storage
+        for (view in src) {
+            if (!view.isResourceBlank && view.amount > 0) {
+                val item = view.resource.item
+                val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                if (filter(itemId)) {
+                    val stack = view.resource.toStack()
+                    return ItemInfo(
+                        itemId = itemId,
+                        name = item.getName(stack).string,
+                        count = view.amount,
+                        maxStackSize = item.defaultMaxStackSize,
+                        hasData = stack.componentsPatch.size() > 0
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
+        val src = (storage as FabricItemStorageHandle).storage
+        val seen = mutableSetOf<String>()
+        val results = mutableListOf<ItemInfo>()
+        for (view in src) {
+            if (!view.isResourceBlank && view.amount > 0) {
+                val item = view.resource.item
+                val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                val stack = view.resource.toStack()
+                val hasData = stack.componentsPatch.size() > 0
+                val cacheKey = "$itemId:$hasData"
+                if (cacheKey in seen) continue
+                if (!filter(itemId)) continue
+                seen.add(cacheKey)
+                results.add(ItemInfo(
+                    itemId = itemId,
+                    name = item.getName(stack).string,
+                    count = view.amount,
+                    maxStackSize = item.defaultMaxStackSize,
+                    hasData = hasData
+                ))
+            }
+        }
+        return results
+    }
+
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {
         val storage = ItemStorage.SIDED.find(level, pos, face) ?: return null
         if (storage !is SlottedStorage<*>) return null

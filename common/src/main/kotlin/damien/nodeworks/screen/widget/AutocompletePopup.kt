@@ -201,10 +201,10 @@ class AutocompletePopup(
             return knownTypes
         }
 
-        // After network:get("partial → suggest aliases with type hints
-        val getAliasMatch = Regex("""network:get\(\s*"(\w*)$""").find(trimmed)
-        if (getAliasMatch != null) {
-            val partial = getAliasMatch.groupValues[1]
+        // After network:get("partial or network:route("partial → suggest aliases with type hints
+        val aliasContextMatch = Regex("""network:(?:get|route)\(\s*"(\w*)$""").find(trimmed)
+        if (aliasContextMatch != null) {
+            val partial = aliasContextMatch.groupValues[1]
             customPrefix = partial
             return cards
                 .map { card -> card.effectiveAlias to card.capability.type }
@@ -239,11 +239,12 @@ class AutocompletePopup(
                 suggest("get(", "get(alias: string) → CardHandle"),
                 suggest("getAll(", "getAll(type: string) → CardHandle[]"),
                 suggest("find(", "find(filter: string) → ItemsHandle?"),
+                suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
                 suggest("count(", "count(filter: string) → number"),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
                 suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?"),
                 suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
-                suggest("route(", "route(filter: string, alias: string)"),
+                suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
                 suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)")
             )
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
@@ -267,6 +268,14 @@ class AutocompletePopup(
         if (chainedMatch != null) {
             val partial = chainedMatch.groupValues[2]
             return cardHandleMethods(partial)
+        }
+
+        // After # or #partial → suggest item tags (must be before method match since #c: looks like a method call)
+        val tagMatch = Regex("""#([\w:./]*)$""").find(trimmed)
+        if (tagMatch != null) {
+            val partial = tagMatch.groupValues[1]
+            customPrefix = partial
+            return itemTags.filter { it.startsWith(partial) }.take(20).map { suggest(it) }
         }
 
         // After someVar: or someVar:partial → suggest methods based on variable type
@@ -370,14 +379,6 @@ class AutocompletePopup(
             }
         }
 
-        // After # or #partial → suggest item tags
-        val tagMatch = Regex("""#([\w:./]*)$""").find(trimmed)
-        if (tagMatch != null) {
-            val partial = tagMatch.groupValues[1]
-            customPrefix = partial
-            return itemTags.filter { it.startsWith(partial) }.take(20).map { suggest(it) }
-        }
-
         // Don't autocomplete after `local ` — user is declaring a new variable name
         if (Regex("""local\s+\w*$""").containsMatchIn(trimmed)) {
             return emptyList()
@@ -475,6 +476,7 @@ class AutocompletePopup(
     private fun cardHandleMethods(partial: String): List<Suggestion> {
         val methods = listOf(
             suggest("find(", "find(filter: string) → ItemsHandle?"),
+            suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
             suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
             suggest("count(", "count(filter: string) → number"),
             suggest("face(", "face(side: string) → CardHandle"),
@@ -495,7 +497,10 @@ class AutocompletePopup(
         val props = listOf(
             suggest("id", "id: string"),
             suggest("name", "name: string"),
-            suggest("count", "count: number")
+            suggest("count", "count: number"),
+            suggest("stackable", "stackable: boolean"),
+            suggest("maxStackSize", "maxStackSize: number"),
+            suggest("hasData", "hasData: boolean")
         )
         return if (partial.isEmpty()) props else props.filter { it.insertText.startsWith(partial) }
     }
@@ -524,7 +529,7 @@ class AutocompletePopup(
     /** Extracts variable names assigned from find(), craft(), or shapeless() — these are ItemsHandle. */
     private fun extractItemsHandleVariables(text: String): Set<String> {
         val result = mutableSetOf<String>()
-        // local X = something:find(...)
+        // local X = something:find(...) — but NOT findAll
         val findPattern = Regex("""local\s+(\w+)\s*=\s*\w+:find\s*\(""")
         findPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         // local X = network:find(...)
