@@ -215,8 +215,8 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         val translucentType = RenderTypes.beaconBeam(LASER_TEXTURE, true)
 
         for (target in targets) {
-            renderSingleBeam(poseStack, collector, opaqueType, target, time, r, g, b, 255, beamWidth)
-            renderSingleBeam(poseStack, collector, translucentType, target, time, r, g, b, 40, beamWidth * 2.5f)
+            renderSingleBeam(poseStack, collector, opaqueType, target, time, 255, 255, 255, 255, beamWidth, 0f)
+            renderSingleBeam(poseStack, collector, translucentType, target, time, r, g, b, 120, beamWidth * 3.5f, Math.PI.toFloat() / 4f)
         }
     }
 
@@ -227,7 +227,8 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         target: BeamTarget,
         time: Float,
         r: Int, g: Int, b: Int, a: Int,
-        width: Float
+        width: Float,
+        angleOffset: Float
     ) {
         // Beam from block center (0.5, 0.5, 0.5) to target center
         val fromX = 0.5f; val fromY = 0.5f; val fromZ = 0.5f
@@ -265,7 +266,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         a2x /= a2len; a2y /= a2len; a2z /= a2len
 
         // Rotate axes around beam direction for animation
-        val angle = time * beamRotationSpeed
+        val angle = time * beamRotationSpeed + angleOffset
         val cosA = cos(angle); val sinA = sin(angle)
         val r1x = a1x * cosA + a2x * sinA
         val r1y = a1y * cosA + a2y * sinA
