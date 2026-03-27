@@ -47,7 +47,6 @@ object NeoForgeTerminalPackets {
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
 
-            terminal.setScriptText(payload.scriptText)
             val nodePos = terminal.getConnectedNodePos() ?: return@enqueueWork
 
             val globalPos = GlobalPos.of(level.dimension(), payload.terminalPos)
@@ -64,7 +63,7 @@ object NeoForgeTerminalPackets {
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(payload.scriptText)) {
+            if (engine.start(terminal.getScripts())) {
                 activeEngines[globalPos] = engine
             }
         }
@@ -85,7 +84,25 @@ object NeoForgeTerminalPackets {
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-            terminal.setScriptText(payload.scriptText)
+            terminal.setScript(payload.scriptName, payload.scriptText)
+        }
+    }
+
+    fun handleCreateScriptTab(payload: CreateScriptTabPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@enqueueWork
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
+            terminal.createScript(payload.scriptName)
+        }
+    }
+
+    fun handleDeleteScriptTab(payload: DeleteScriptTabPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@enqueueWork
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
+            terminal.deleteScript(payload.scriptName)
         }
     }
 
@@ -190,7 +207,7 @@ object NeoForgeTerminalPackets {
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
-            if (engine.start(terminal.scriptText)) {
+            if (engine.start(terminal.getScripts())) {
                 activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
             }

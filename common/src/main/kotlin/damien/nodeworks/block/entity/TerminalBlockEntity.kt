@@ -15,7 +15,7 @@ import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
 
 /**
- * Block entity for the Script Terminal. Stores script text and auto-run setting.
+ * Block entity for the Script Terminal. Stores multiple named scripts and settings.
  * Network connection is derived lazily from adjacent blocks — not persisted.
  */
 class TerminalBlockEntity(
@@ -23,9 +23,13 @@ class TerminalBlockEntity(
     state: BlockState
 ) : BlockEntity(ModBlockEntities.TERMINAL, pos, state) {
 
-    /** The Lua script source code. */
-    var scriptText: String = ""
-        private set
+    companion object {
+        const val MAX_TABS = 8
+        val SCRIPT_NAME_REGEX = Regex("^[a-z0-9_]+$")
+    }
+
+    /** All scripts stored in this terminal. Always contains "main". */
+    private val scripts: LinkedHashMap<String, String> = linkedMapOf("main" to "")
 
     /** Whether the script should auto-run on world startup. */
     var autoRun: Boolean = false
@@ -35,9 +39,40 @@ class TerminalBlockEntity(
     var layoutIndex: Int = 0
         private set
 
-    fun setScriptText(text: String) {
-        scriptText = text
+    // --- Script access ---
+
+    fun getScripts(): Map<String, String> = scripts.toMap()
+
+    fun getScriptNames(): List<String> = scripts.keys.toList()
+
+    fun getScript(name: String): String = scripts[name] ?: ""
+
+    /** For backwards compatibility and auto-run checks. */
+    val scriptText: String get() = scripts["main"] ?: ""
+
+    fun setScript(name: String, text: String) {
+        if (name in scripts) {
+            scripts[name] = text
+            setChanged()
+        }
+    }
+
+    fun createScript(name: String): Boolean {
+        if (scripts.size >= MAX_TABS) return false
+        if (!SCRIPT_NAME_REGEX.matches(name)) return false
+        if (name in scripts) return false
+        scripts[name] = ""
         setChanged()
+        return true
+    }
+
+    fun deleteScript(name: String): Boolean {
+        if (name == "main") return false
+        if (scripts.remove(name) != null) {
+            setChanged()
+            return true
+        }
+        return false
     }
 
     fun setAutoRun(enabled: Boolean) {
@@ -63,14 +98,32 @@ class TerminalBlockEntity(
 
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
-        output.putString("scriptText", scriptText)
+        // Save scripts as parallel lists of names and texts
+        val names = scripts.keys.toList()
+        output.putInt("scriptCount", names.size)
+        for ((i, name) in names.withIndex()) {
+            output.putString("scriptName_$i", name)
+            output.putString("scriptText_$i", scripts[name] ?: "")
+        }
         output.putBoolean("autoRun", autoRun)
         output.putInt("layoutIndex", layoutIndex)
     }
 
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
-        scriptText = input.getString("scriptText").orElse("")
+        scripts.clear()
+        val count = input.getIntOr("scriptCount", 0)
+        for (i in 0 until count) {
+            val name = input.getString("scriptName_$i").orElse("")
+            val text = input.getString("scriptText_$i").orElse("")
+            if (name.isNotEmpty()) {
+                scripts[name] = text
+            }
+        }
+        // Ensure main always exists
+        if ("main" !in scripts) {
+            scripts["main"] = ""
+        }
         autoRun = input.getBooleanOr("autoRun", false)
         layoutIndex = input.getIntOr("layoutIndex", 0)
     }

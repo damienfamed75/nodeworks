@@ -10,7 +10,7 @@ import net.minecraft.network.codec.StreamCodec
 
 data class TerminalOpenData(
     val terminalPos: BlockPos,
-    val scriptText: String,
+    val scripts: Map<String, String>,
     val running: Boolean,
     val autoRun: Boolean,
     val layoutIndex: Int,
@@ -21,7 +21,13 @@ data class TerminalOpenData(
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, TerminalOpenData> = object : StreamCodec<FriendlyByteBuf, TerminalOpenData> {
             override fun decode(buf: FriendlyByteBuf): TerminalOpenData {
                 val pos = buf.readBlockPos()
-                val script = buf.readUtf(32767)
+                val scriptCount = buf.readVarInt()
+                val scripts = linkedMapOf<String, String>()
+                for (i in 0 until scriptCount) {
+                    val name = buf.readUtf(64)
+                    val text = buf.readUtf(32767)
+                    scripts[name] = text
+                }
                 val running = buf.readBoolean()
                 val autoRun = buf.readBoolean()
                 val layoutIndex = buf.readVarInt()
@@ -44,12 +50,16 @@ data class TerminalOpenData(
                 }
                 val tagCount = buf.readVarInt()
                 val itemTags = (0 until tagCount).map { buf.readUtf(256) }
-                return TerminalOpenData(pos, script, running, autoRun, layoutIndex, cards, itemTags)
+                return TerminalOpenData(pos, scripts, running, autoRun, layoutIndex, cards, itemTags)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: TerminalOpenData) {
                 buf.writeBlockPos(data.terminalPos)
-                buf.writeUtf(data.scriptText, 32767)
+                buf.writeVarInt(data.scripts.size)
+                for ((name, text) in data.scripts) {
+                    buf.writeUtf(name, 64)
+                    buf.writeUtf(text, 32767)
+                }
                 buf.writeBoolean(data.running)
                 buf.writeBoolean(data.autoRun)
                 buf.writeVarInt(data.layoutIndex)

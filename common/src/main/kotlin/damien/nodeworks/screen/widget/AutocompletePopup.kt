@@ -13,7 +13,8 @@ import net.minecraft.client.gui.components.MultilineTextField
 class AutocompletePopup(
     private val font: Font,
     private val cards: List<CardSnapshot>,
-    private val itemTags: List<String> = emptyList()
+    private val itemTags: List<String> = emptyList(),
+    private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     data class Suggestion(val insertText: String, val displayText: String)
 
@@ -312,6 +313,27 @@ class AutocompletePopup(
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
         }
 
+        // After require("partial → suggest available script names
+        val requireMatch = Regex("""require\(\s*"(\w*)$""").find(trimmed)
+        if (requireMatch != null) {
+            val partial = requireMatch.groupValues[1]
+            customPrefix = partial
+            val scriptNames = scripts().keys.filter { it != "main" && it.startsWith(partial) }
+            return scriptNames.map { suggest(it) }
+        }
+
+        // After moduleVar.partial → suggest exports from the required module
+        val moduleDotMatch = Regex("""(\w+)\.(\w*)$""").find(trimmed)
+        if (moduleDotMatch != null) {
+            val varName = moduleDotMatch.groupValues[1]
+            val partial = moduleDotMatch.groupValues[2]
+            val moduleExports = getModuleExports(fullText, varName)
+            if (moduleExports.isNotEmpty()) {
+                val matches = moduleExports.filter { it.insertText.startsWith(partial) }
+                return if (partial.isEmpty()) moduleExports else matches
+            }
+        }
+
         // After # or #partial → suggest item tags
         val tagMatch = Regex("""#([\w:./]*)$""").find(trimmed)
         if (tagMatch != null) {
@@ -347,7 +369,9 @@ class AutocompletePopup(
                 "if", "then", "else", "elseif", "for", "while", "do", "return",
                 "true", "false", "nil", "not", "and", "or").map { suggest(it) }
             val userVars = extractVariableNames(fullText).map { suggest(it) }
-            val all = (apiFunctions + keywords + userVars).distinctBy { it.insertText }
+            val userFuncs = extractFunctionNames(fullText).map { suggest("$it(", "$it(...)") }
+            val requireSuggest = if (scripts().size > 1) listOf(suggest("require", "require(module: string) → table")) else emptyList()
+            val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs).distinctBy { it.insertText }
             val matches = all.filter { it.insertText.startsWith(lastWord) && it.insertText != lastWord }
             if (matches.isNotEmpty()) return matches
         }
@@ -385,6 +409,60 @@ class AutocompletePopup(
         val slotsPattern = Regex("""local\s+(\w+)\s*=\s*\w+:slots\s*\(""")
         slotsPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         return result
+    }
+
+    /** Extracts top-level and local function names from the script. */
+    private fun extractFunctionNames(text: String): List<String> {
+        val result = mutableListOf<String>()
+        // function myFunc(...)
+        val globalPattern = Regex("""^function\s+(\w+)\s*\(""", RegexOption.MULTILINE)
+        globalPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local function myFunc(...)
+        val localPattern = Regex("""local\s+function\s+(\w+)\s*\(""")
+        localPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        return result.distinct()
+    }
+
+    /**
+     * Gets exported functions/fields from a required module.
+     * Looks for `local varName = require("module")` in the current script,
+     * then parses the module script for `function m.foo()` and `m.bar = ...` patterns.
+     */
+    private fun getModuleExports(currentText: String, varName: String): List<Suggestion> {
+        // Find which module this variable requires
+        val requirePattern = Regex("""local\s+${Regex.escape(varName)}\s*=\s*require\(\s*"(\w+)"\s*\)""")
+        val match = requirePattern.find(currentText) ?: return emptyList()
+        val moduleName = match.groupValues[1]
+
+        val moduleText = scripts()[moduleName] ?: return emptyList()
+
+        val exports = mutableListOf<Suggestion>()
+
+        // Find the table variable name: local m = {} or local M = {}
+        val tableVarPattern = Regex("""local\s+(\w+)\s*=\s*\{\s*\}""")
+        val tableVars = tableVarPattern.findAll(moduleText).map { it.groupValues[1] }.toSet()
+
+        for (tableVar in tableVars) {
+            // function m.foo(...)
+            val funcPattern = Regex("""function\s+${Regex.escape(tableVar)}\.(\w+)\s*\(([^)]*)\)""")
+            funcPattern.findAll(moduleText).forEach { m ->
+                val funcName = m.groupValues[1]
+                val params = m.groupValues[2].trim()
+                exports.add(suggest("$funcName(", "$funcName($params)"))
+            }
+
+            // m.foo = value
+            val fieldPattern = Regex("""${Regex.escape(tableVar)}\.(\w+)\s*=""")
+            fieldPattern.findAll(moduleText).forEach { m ->
+                val fieldName = m.groupValues[1]
+                // Don't duplicate if already found as a function
+                if (exports.none { it.insertText.startsWith("$fieldName(") }) {
+                    exports.add(suggest(fieldName))
+                }
+            }
+        }
+
+        return exports.distinctBy { it.insertText }
     }
 
     private fun extractPrefix(beforeCursor: String): String {
