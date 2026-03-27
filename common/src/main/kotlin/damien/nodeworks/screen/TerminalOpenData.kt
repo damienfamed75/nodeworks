@@ -55,7 +55,7 @@ data class TerminalOpenData(
                 buf.writeVarInt(data.layoutIndex)
                 buf.writeVarInt(data.cards.size)
                 for (card in data.cards) {
-                    buf.writeUtf(card.alias ?: "", 256)
+                    buf.writeUtf(card.effectiveAlias, 256)
                     buf.writeUtf(card.capability.type, 64)
                     buf.writeBlockPos(card.capability.adjacentPos)
                     val defaultFace = when (val cap = card.capability) {
