@@ -38,7 +38,7 @@ class InventoryTerminalMenu(
         fun createServer(syncId: Int, inv: Inventory, level: ServerLevel, nodePos: BlockPos): InventoryTerminalMenu {
             val menu = InventoryTerminalMenu(syncId, inv, level, nodePos)
             menu.snapshot = NetworkDiscovery.discoverNetwork(level, nodePos)
-            menu.cache = NetworkInventoryCache(level, menu.snapshot!!)
+            menu.cache = NetworkInventoryCache.getOrCreate(level, nodePos)
             return menu
         }
 

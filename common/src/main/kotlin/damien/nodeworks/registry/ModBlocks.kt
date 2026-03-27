@@ -3,6 +3,7 @@ package damien.nodeworks.registry
 import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.InstructionStorageBlock
 import damien.nodeworks.block.InventoryTerminalBlock
+import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
 import net.minecraft.core.Registry
@@ -46,6 +47,15 @@ object ModBlocks {
         ::InstructionStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+    )
+
+    val NETWORK_CONTROLLER: Block = register(
+        "network_controller",
+        ::NetworkControllerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(4.0f, 8.0f)
+            .noOcclusion()
+            .lightLevel { 10 }
     )
 
     val INVENTORY_TERMINAL: Block = register(

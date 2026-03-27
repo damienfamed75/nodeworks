@@ -1,7 +1,10 @@
 package damien.nodeworks.item
 
 import damien.nodeworks.block.InstructionCrafterBlock
+import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
+import damien.nodeworks.block.entity.NetworkControllerBlockEntity
+import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NodeConnectionHelper
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
@@ -35,9 +38,9 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         val pos = context.clickedPos
         val player = context.player ?: return InteractionResult.PASS
 
-        // Must click a connectable block (node or instruction crafter)
+        // Must click a connectable block (node, instruction crafter, or network controller)
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is InstructionCrafterBlock) return InteractionResult.PASS
+        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock) return InteractionResult.PASS
 
         // Client side: track selection for highlight rendering
         if (level.isClientSide) {
@@ -106,6 +109,21 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
                 Component.translatable("message.nodeworks.no_line_of_sight"), false
             )
             return InteractionResult.SUCCESS
+        }
+
+        // Check for duplicate controllers before connecting
+        val entityA = NodeConnectionHelper.getConnectable(level, selectedPos)
+        val entityB = NodeConnectionHelper.getConnectable(level, pos)
+        if (entityA != null && entityB != null && !entityA.hasConnection(pos)) {
+            // About to connect — check if both networks already have controllers
+            val snapshotA = NetworkDiscovery.discoverNetwork(serverLevel, selectedPos)
+            val snapshotB = NetworkDiscovery.discoverNetwork(serverLevel, pos)
+            if (snapshotA.controller != null && snapshotB.controller != null) {
+                player.displayClientMessage(
+                    Component.translatable("message.nodeworks.duplicate_controller"), false
+                )
+                return InteractionResult.SUCCESS
+            }
         }
 
         val connected = NodeConnectionHelper.toggleConnection(serverLevel, selectedPos, pos)

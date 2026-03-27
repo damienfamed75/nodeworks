@@ -62,6 +62,13 @@ class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(propertie
         val serverPlayer = player as ServerPlayer
         val serverLevel = level as ServerLevel
 
+        // Check for controller
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, nodePos)
+        if (!snapshot.isOnline) {
+            player.displayClientMessage(Component.translatable("message.nodeworks.no_controller"), false)
+            return InteractionResult.SUCCESS
+        }
+
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.inventory_terminal"),

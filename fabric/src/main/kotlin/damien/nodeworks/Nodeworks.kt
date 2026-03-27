@@ -77,6 +77,9 @@ object Nodeworks : ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register { server ->
             tickCount++
             TerminalPackets.tickAll(server, tickCount)
+            for (cache in damien.nodeworks.script.NetworkInventoryCache.getAll()) {
+                cache.tick()
+            }
             for (level in server.allLevels) {
                 damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
             }

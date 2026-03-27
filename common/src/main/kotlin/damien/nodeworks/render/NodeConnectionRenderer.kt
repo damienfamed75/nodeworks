@@ -27,9 +27,14 @@ object NodeConnectionRenderer {
     private const val MIN = 5f / 16f
     private const val MAX = 11f / 16f
 
+    /** Global tracker — any Connectable block entity can register/unregister here. */
+    fun trackConnectable(pos: BlockPos, loaded: Boolean) {
+        if (loaded) knownNodes.add(pos) else knownNodes.remove(pos)
+    }
+
     fun register() {
         NodeBlockEntity.nodeTracker = NodeBlockEntity.NodeTracker { pos, loaded ->
-            if (loaded) knownNodes.add(pos) else knownNodes.remove(pos)
+            trackConnectable(pos, loaded)
         }
 
         PlatformServices.clientEvents.onWorldRender { poseStack, consumers, cameraPos ->
@@ -49,12 +54,12 @@ object NodeConnectionRenderer {
 
         val pose = poseStack.last()
 
-        // Draw connection lines
+        // Draw connection lines for all connectable block entities
         for (nodePos in knownNodes) {
             if (!level.isLoaded(nodePos)) continue
-            val blockEntity = level.getBlockEntity(nodePos) as? NodeBlockEntity ?: continue
+            val connectable = level.getBlockEntity(nodePos) as? damien.nodeworks.network.Connectable ?: continue
 
-            for (targetPos in blockEntity.getConnections()) {
+            for (targetPos in connectable.getConnections()) {
                 if (!isLessThan(nodePos, targetPos)) continue
                 if (!level.isLoaded(targetPos)) continue
 
@@ -85,7 +90,7 @@ object NodeConnectionRenderer {
         val selectedPos = NetworkWrenchItem.clientSelectedNode
         val player = mc.player
         if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
-            if (level.getBlockEntity(selectedPos) is NodeBlockEntity) {
+            if (level.getBlockEntity(selectedPos) is damien.nodeworks.network.Connectable) {
                 renderSelectionHighlight(poseStack, buffer, selectedPos)
             } else {
                 NetworkWrenchItem.clientSelectedNode = null

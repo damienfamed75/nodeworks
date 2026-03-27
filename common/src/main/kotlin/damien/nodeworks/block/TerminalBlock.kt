@@ -86,6 +86,12 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val nodePos = terminal.getConnectedNodePos()!!
         val serverLevel = level as ServerLevel
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, nodePos)
+
+        if (!snapshot.isOnline) {
+            player.displayClientMessage(Component.translatable("message.nodeworks.no_controller"), false)
+            return InteractionResult.SUCCESS
+        }
+
         val allCards = snapshot.allCards()
 
         // Collect all item tags from the registry

@@ -1,22 +1,18 @@
 package damien.nodeworks.script
 
 import damien.nodeworks.block.entity.NodeBlockEntity
-import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NodeConnectionHelper
-import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Updates monitor display counts independently of the script engine.
- * Scans only the specific items being monitored, not the entire inventory.
- * Runs every 100 ticks (5 seconds) for each node that has monitors.
+ * Updates monitor display counts from the shared NetworkInventoryCache.
+ * Runs every 20 ticks (1 second) for each node that has monitors.
  */
 object MonitorUpdateHelper {
 
-    /** Tracks which nodes have monitors and need periodic updates. */
     private val monitoredNodes = ConcurrentHashMap.newKeySet<BlockPos>()
 
     fun trackNode(pos: BlockPos) {
@@ -27,9 +23,8 @@ object MonitorUpdateHelper {
         monitoredNodes.remove(pos)
     }
 
-    /** Called every server tick. Updates monitors every 100 ticks (5 seconds). */
     fun tick(level: ServerLevel, tickCount: Long) {
-        if (tickCount % 100 != 0L) return
+        if (tickCount % 20 != 0L) return
         if (monitoredNodes.isEmpty()) return
 
         val toRemove = mutableListOf<BlockPos>()
@@ -48,29 +43,14 @@ object MonitorUpdateHelper {
                 continue
             }
 
-            // Collect which items need counting
-            val itemsToCount = mutableSetOf<String>()
-            for (face in monitorFaces) {
-                val monitor = entity.getMonitor(face) ?: continue
-                val itemId = monitor.trackedItemId ?: continue
-                itemsToCount.add(itemId)
-            }
+            // Get or create the shared cache for this node's network
+            val cache = NetworkInventoryCache.getOrCreate(level, nodePos)
 
-            if (itemsToCount.isEmpty()) continue
-
-            // Discover network from this node and count the specific items
-            val snapshot = NetworkDiscovery.discoverNetwork(level, nodePos)
-            val counts = mutableMapOf<String, Long>()
-            for (itemId in itemsToCount) {
-                counts[itemId] = NetworkStorageHelper.countItems(level, snapshot, itemId)
-            }
-
-            // Update monitors
             var changed = false
             for (face in monitorFaces) {
                 val monitor = entity.getMonitor(face) ?: continue
                 val itemId = monitor.trackedItemId ?: continue
-                val count = counts[itemId] ?: 0L
+                val count = cache.count(itemId)
                 if (count != monitor.displayCount) {
                     entity.updateMonitorCount(face, count)
                     changed = true
