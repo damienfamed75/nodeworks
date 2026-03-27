@@ -157,11 +157,10 @@ class ScriptEngine(
                 } else itemId
 
                 // Create an ItemsHandle for the callback
-                val itemsTable = ItemsHandle.toLuaTable(ItemsHandle(
+                val itemsTable = ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
                     itemId = itemId,
                     itemName = itemName,
                     count = count.toInt(),
-                    filter = itemId,
                     sourceStorage = { null }, // source doesn't matter for routing decision
                     level = level
                 ))
@@ -241,19 +240,9 @@ class ScriptEngine(
         networkTable.set("find", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
-                val count = NetworkStorageHelper.countItems(level, snapshot, filter)
-                if (count <= 0) return LuaValue.NIL
-
-                val itemId = NetworkStorageHelper.findFirstItemId(level, snapshot, filter)
+                val (info, sourceCard) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
                     ?: return LuaValue.NIL
 
-                val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
-                val itemName = if (identifier != null) {
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier)
-                    item?.getName(net.minecraft.world.item.ItemStack(item))?.string ?: itemId
-                } else itemId
-
-                // Source storage: find across all storage cards
                 val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
                     NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
                         val storage = NetworkStorageHelper.getStorage(level, card)
@@ -266,14 +255,33 @@ class ScriptEngine(
                     }
                 }
 
-                return ItemsHandle.toLuaTable(ItemsHandle(
-                    itemId = itemId,
-                    itemName = itemName,
-                    count = count.toInt(),
-                    filter = filter,
-                    sourceStorage = sourceStorage,
-                    level = level
-                ))
+                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(info, filter, sourceStorage, level))
+            }
+        })
+
+        // network:findAll(filter) → table of ItemsHandles (one per unique item type across all Storage Cards)
+        networkTable.set("findAll", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot, filter)
+                val result = LuaTable()
+                for ((i, pair) in allItems.withIndex()) {
+                    val (info, _) = pair
+                    val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                        NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                            val storage = NetworkStorageHelper.getStorage(level, card)
+                            if (storage != null) {
+                                val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                    it == info.itemId
+                                }
+                                if (has > 0) storage else null
+                            } else null
+                        }
+                    }
+                    val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                    result.set(i + 1, ItemsHandle.toLuaTable(handle))
+                }
+                return result
             }
         })
 
@@ -324,10 +332,8 @@ class ScriptEngine(
                     ?: return LuaValue.NIL
 
                 // Return an ItemsHandle pointing to the crafted items in network storage
-                // The items are already in storage, so find them there
                 val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
                 val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
-                    // Find the first storage card that has the crafted item
                     storageCards.firstNotNullOfOrNull { card ->
                         val storage = NetworkStorageHelper.getStorage(level, card)
                         if (storage != null) {
@@ -339,25 +345,24 @@ class ScriptEngine(
                     }
                 }
 
-                return ItemsHandle.toLuaTable(ItemsHandle(
+                return ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
                     itemId = result.outputItemId,
                     itemName = result.outputName,
                     count = result.count,
-                    filter = result.outputItemId,
                     sourceStorage = sourceStorage,
                     level = level
                 ))
             }
         })
 
-        // network:route(filter, alias) — register a declarative storage route
-        // Items matching filter go to that storage; that storage rejects non-matching items
+        // network:route(alias, predicate) — register a declarative storage route
+        // Items where predicate(itemsHandle) returns true go to that storage
         routeTable = RouteTable(level, snapshot)
         networkTable.set("route", object : ThreeArgFunction() {
-            override fun call(selfArg: LuaValue, filterArg: LuaValue, aliasArg: LuaValue): LuaValue {
-                val filter = filterArg.checkjstring()
+            override fun call(selfArg: LuaValue, aliasArg: LuaValue, predicateArg: LuaValue): LuaValue {
                 val alias = aliasArg.checkjstring()
-                routeTable?.addRoute(filter, alias)
+                val predicate = predicateArg.checkfunction()
+                routeTable?.addRoute(alias, predicate)
                 return LuaValue.NIL
             }
         })
@@ -395,9 +400,9 @@ class ScriptEngine(
                 val result = ShapelessCraftHelper.craft(ingredients, level, snapshot)
                     ?: return LuaValue.NIL
 
-                val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
-                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
-                    storageCards.firstNotNullOfOrNull { card ->
+                val storageCards2 = NetworkStorageHelper.getStorageCards(snapshot)
+                val sourceStorage2: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                    storageCards2.firstNotNullOfOrNull { card ->
                         val storage = NetworkStorageHelper.getStorage(level, card)
                         if (storage != null) {
                             val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
@@ -408,12 +413,11 @@ class ScriptEngine(
                     }
                 }
 
-                return ItemsHandle.toLuaTable(ItemsHandle(
+                return ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
                     itemId = result.outputItemId,
                     itemName = result.outputName,
                     count = result.count,
-                    filter = result.outputItemId,
-                    sourceStorage = sourceStorage,
+                    sourceStorage = sourceStorage2,
                     level = level
                 ))
             }

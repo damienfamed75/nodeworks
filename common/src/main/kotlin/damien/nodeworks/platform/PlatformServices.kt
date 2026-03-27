@@ -56,6 +56,12 @@ interface StorageService {
     /** Find the first item ID in storage matching the filter. Returns null if none found. */
     fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String?
 
+    /** Find the first item in storage matching the filter, with full metadata. */
+    fun findFirstItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): ItemInfo?
+
+    /** Find ALL unique item types in storage matching the filter, with full metadata. */
+    fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo>
+
     /** Extract (remove) items from storage matching the filter. Returns count actually removed. */
     fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
 
@@ -64,6 +70,17 @@ interface StorageService {
 
     /** Get a slotted view of the storage, or null if not slotted. */
     fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle?
+}
+
+/** Metadata for an item found in storage. */
+data class ItemInfo(
+    val itemId: String,
+    val name: String,
+    val count: Long,
+    val maxStackSize: Int,
+    val hasData: Boolean
+) {
+    val stackable: Boolean get() = maxStackSize > 1
 }
 
 /** Opaque handle to an item storage — platform-specific implementation. */
