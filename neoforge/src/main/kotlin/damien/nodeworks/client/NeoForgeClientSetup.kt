@@ -7,6 +7,7 @@ import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.screen.NodeSideScreen
 import damien.nodeworks.screen.InstructionSetScreen
+import damien.nodeworks.screen.InstructionStorageScreen
 import damien.nodeworks.screen.TerminalScreen
 import com.mojang.blaze3d.vertex.PoseStack
 import net.minecraft.client.Minecraft
@@ -43,6 +44,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.INSTRUCTION_SET) { menu, inventory, title ->
             InstructionSetScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.INSTRUCTION_STORAGE) { menu, inventory, title ->
+            InstructionStorageScreen(menu, inventory, title)
         }
         event.register(ModScreenHandlers.TERMINAL) { menu, inventory, title ->
             TerminalScreen(menu, inventory, title)

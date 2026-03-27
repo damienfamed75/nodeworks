@@ -56,6 +56,12 @@ interface StorageService {
     /** Find the first item ID in storage matching the filter. Returns null if none found. */
     fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String?
 
+    /** Extract (remove) items from storage matching the filter. Returns count actually removed. */
+    fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
+
+    /** Insert an ItemStack into storage. Returns count actually inserted. */
+    fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int
+
     /** Get a slotted view of the storage, or null if not slotted. */
     fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle?
 }

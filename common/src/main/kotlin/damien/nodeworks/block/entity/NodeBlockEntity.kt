@@ -37,7 +37,7 @@ import net.minecraft.world.level.storage.ValueOutput
 class NodeBlockEntity(
     pos: BlockPos,
     state: BlockState
-) : BlockEntity(ModBlockEntities.NODE, pos, state), WorldlyContainer {
+) : BlockEntity(ModBlockEntities.NODE, pos, state), WorldlyContainer, damien.nodeworks.network.Connectable {
 
     companion object {
         private val logger = LoggerFactory.getLogger("nodeworks-node")
@@ -64,17 +64,17 @@ class NodeBlockEntity(
 
     // --- Network connections ---
 
-    fun getConnections(): List<BlockPos> = connections.toList()
+    override fun getConnections(): List<BlockPos> = connections.toList()
 
-    fun hasConnection(pos: BlockPos): Boolean = pos in connections
+    override fun hasConnection(pos: BlockPos): Boolean = pos in connections
 
-    fun addConnection(pos: BlockPos): Boolean {
+    override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
         markDirtyAndSync()
         return true
     }
 
-    fun removeConnection(pos: BlockPos): Boolean {
+    override fun removeConnection(pos: BlockPos): Boolean {
         if (!connections.remove(pos)) return false
         markDirtyAndSync()
         return true
@@ -220,14 +220,14 @@ class NodeBlockEntity(
     }
 
     /** Set to true by NodeBlock when the block is actually being destroyed. */
-    var blockDestroyed: Boolean = false
+    override var blockDestroyed: Boolean = false
 
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
             if (blockDestroyed) {
-                NodeConnectionHelper.removeAllConnectionsOf(currentLevel, this)
+                NodeConnectionHelper.removeAllConnections(currentLevel, this)
             }
             NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
         }

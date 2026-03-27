@@ -168,6 +168,42 @@ class ScriptEngine(
             }
         })
 
+        // network:craft(identifier, count?) → ItemsHandle or nil
+        networkTable.set("craft", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val identifier = args.checkjstring(2)
+                val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
+
+                val result = CraftingHelper.craft(identifier, count, level, snapshot)
+                    ?: return LuaValue.NIL
+
+                // Return an ItemsHandle pointing to the crafted items in network storage
+                // The items are already in storage, so find them there
+                val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                    // Find the first storage card that has the crafted item
+                    storageCards.firstNotNullOfOrNull { card ->
+                        val storage = NetworkStorageHelper.getStorage(level, card)
+                        if (storage != null) {
+                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                CardHandle.matchesFilter(it, result.outputItemId)
+                            }
+                            if (has > 0) storage else null
+                        } else null
+                    }
+                }
+
+                return ItemsHandle.toLuaTable(ItemsHandle(
+                    itemId = result.outputItemId,
+                    itemName = result.outputName,
+                    count = result.count,
+                    filter = result.outputItemId,
+                    sourceStorage = sourceStorage,
+                    level = level
+                ))
+            }
+        })
+
         g.set("network", networkTable)
 
         // clock() -> seconds since script started (as a decimal)

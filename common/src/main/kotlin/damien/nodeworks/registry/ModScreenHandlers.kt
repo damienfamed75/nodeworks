@@ -1,5 +1,6 @@
 package damien.nodeworks.registry
 
+import damien.nodeworks.screen.InstructionStorageScreenHandler
 import damien.nodeworks.screen.NodeSideScreenHandler
 import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.screen.TerminalScreenHandler
@@ -13,6 +14,7 @@ object ModScreenHandlers {
 
     lateinit var TERMINAL: MenuType<TerminalScreenHandler>
     lateinit var INSTRUCTION_SET: MenuType<InstructionSetScreenHandler>
+    lateinit var INSTRUCTION_STORAGE: MenuType<InstructionStorageScreenHandler>
     lateinit var NODE_SIDE: MenuType<NodeSideScreenHandler>
 
     fun initialize() {

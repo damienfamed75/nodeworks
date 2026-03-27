@@ -1,5 +1,6 @@
 package damien.nodeworks.item
 
+import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.network.NodeConnectionHelper
 import net.minecraft.core.BlockPos
@@ -34,8 +35,9 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         val pos = context.clickedPos
         val player = context.player ?: return InteractionResult.PASS
 
-        // Must click a node block
-        if (level.getBlockState(pos).block !is NodeBlock) return InteractionResult.PASS
+        // Must click a connectable block (node or instruction crafter)
+        val block = level.getBlockState(pos).block
+        if (block !is NodeBlock && block !is InstructionCrafterBlock) return InteractionResult.PASS
 
         // Client side: track selection for highlight rendering
         if (level.isClientSide) {
@@ -84,7 +86,7 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
             return InteractionResult.SUCCESS
         }
 
-        if (NodeConnectionHelper.getNodeEntity(level, selectedPos) == null) {
+        if (NodeConnectionHelper.getConnectable(level, selectedPos) == null) {
             selectedNodes.remove(player.uuid)
             player.displayClientMessage(
                 Component.translatable("message.nodeworks.selection_invalid"), false

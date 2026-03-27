@@ -3,6 +3,7 @@ package damien.nodeworks.registry
 import damien.nodeworks.card.IOCard
 import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.StorageCard
+import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -35,6 +36,12 @@ object ModItems {
         "instruction_set",
         ::InstructionSet,
         Item.Properties().stacksTo(1)
+    )
+
+    val MEMORY_UPGRADE: Item = register(
+        "memory_upgrade",
+        ::MemoryUpgradeItem,
+        Item.Properties().stacksTo(4)
     )
 
     private fun register(

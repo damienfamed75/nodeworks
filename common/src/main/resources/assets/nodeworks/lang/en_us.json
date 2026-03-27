@@ -17,5 +17,9 @@
   "block.nodeworks.terminal": "Script Terminal",
   "message.nodeworks.terminal_no_network": "Terminal is not connected to a node network. Place next to a node.",
   "tooltip.nodeworks.instruction_set.input": "Input:",
-  "tooltip.nodeworks.instruction_set.output": "Output:"
+  "tooltip.nodeworks.instruction_set.output": "Output:",
+  "block.nodeworks.instruction_crafter": "Instruction Crafter",
+  "block.nodeworks.instruction_storage": "Instruction Storage",
+  "container.nodeworks.instruction_storage": "Instruction Storage",
+  "item.nodeworks.memory_upgrade": "Memory Upgrade"
 }
