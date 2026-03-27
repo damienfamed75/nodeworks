@@ -555,11 +555,18 @@ class TerminalScreen(
                     InputConstants.KEY_UP -> { autocomplete.moveUp(); return true }
                     InputConstants.KEY_DOWN -> { autocomplete.moveDown(); return true }
                     InputConstants.KEY_RETURN, InputConstants.KEY_TAB -> {
-                        val insert = autocomplete.accept()
-                        if (insert != null) {
-                            // Insert the completion text
-                            for (ch in insert) {
-                                editor.charTyped(net.minecraft.client.input.CharacterEvent(ch.code, 0))
+                        val result = autocomplete.accept()
+                        if (result != null) {
+                            val tf = getTextField()
+                            if (tf != null) {
+                                // Delete the typed prefix
+                                for (i in 0 until result.deleteCount) {
+                                    tf.deleteText(-1)
+                                }
+                                // Insert the full suggestion
+                                for (ch in result.insertText) {
+                                    editor.charTyped(net.minecraft.client.input.CharacterEvent(ch.code, 0))
+                                }
                             }
                             return true
                         }
