@@ -37,6 +37,7 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .noOcclusion()
+            .lightLevel { 15 }
     )
 
     val INSTRUCTION_STORAGE: Block = register(

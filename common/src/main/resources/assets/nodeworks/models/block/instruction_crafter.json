@@ -7,9 +7,10 @@
   },
   "elements": [
     {
-      "comment": "Inner cube",
+      "comment": "Inner cube — shade:false makes it render at full brightness (glowing)",
       "from": [4, 4, 4],
       "to": [12, 12, 12],
+      "shade": false,
       "faces": {
         "north": { "texture": "#core" },
         "south": { "texture": "#core" },
