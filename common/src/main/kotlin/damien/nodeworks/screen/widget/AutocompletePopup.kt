@@ -186,7 +186,7 @@ class AutocompletePopup(
             val partial = getAliasMatch.groupValues[1]
             customPrefix = partial
             return cards
-                .mapNotNull { card -> card.alias?.let { alias -> alias to card.capability.type } }
+                .map { card -> card.effectiveAlias to card.capability.type }
                 .distinct()
                 .filter { it.first.startsWith(partial) }
                 .map { suggest(it.first, "${it.first} (${it.second})") }

@@ -39,7 +39,26 @@ object NetworkDiscovery {
             }
         }
 
+        // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1)
+        assignAutoAliases(nodes)
+
         return NetworkSnapshot(nodes, crafters)
+    }
+
+    private fun assignAutoAliases(nodes: List<NodeSnapshot>) {
+        val counters = mutableMapOf<String, Int>()
+        for (node in nodes) {
+            for ((_, cards) in node.sides) {
+                for (card in cards) {
+                    if (card.alias == null) {
+                        val type = card.capability.type
+                        val count = counters.getOrDefault(type, 0) + 1
+                        counters[type] = count
+                        card.autoAlias = "${type}_$count"
+                    }
+                }
+            }
+        }
     }
 
     private fun snapshotNode(entity: NodeBlockEntity): NodeSnapshot {
@@ -67,10 +86,10 @@ data class NetworkSnapshot(
     val crafters: List<CrafterSnapshot> = emptyList()
 ) {
 
-    /** Find a card by alias across the entire network. */
+    /** Find a card by alias (custom or auto-generated) across the entire network. */
     fun findByAlias(alias: String): CardSnapshot? {
         val matches = nodes.flatMap { node ->
-            node.sides.values.flatten().filter { it.alias == alias }
+            node.sides.values.flatten().filter { it.effectiveAlias == alias }
         }
         return matches.singleOrNull()
     }
@@ -134,4 +153,10 @@ data class CardSnapshot(
     val capability: SideCapability,
     val alias: String?,
     val slotIndex: Int
-)
+) {
+    /** Auto-generated alias for unnamed cards (e.g., io_1, storage_2). */
+    var autoAlias: String? = null
+
+    /** The effective alias — custom name if set, otherwise auto-generated. */
+    val effectiveAlias: String get() = alias ?: autoAlias ?: capability.type
+}
