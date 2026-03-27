@@ -28,8 +28,14 @@ class ScriptEngine(
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl()
 
-    fun start(scriptText: String): Boolean {
+    fun start(scripts: Map<String, String>): Boolean {
         stop()
+
+        val mainScript = scripts["main"]
+        if (mainScript.isNullOrBlank()) {
+            logCallback("Error: no 'main' script found.", true)
+            return false
+        }
 
         // Discover network
         networkSnapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
@@ -49,10 +55,35 @@ class ScriptEngine(
         // Remove dangerous globals
         g.set("dofile", LuaValue.NIL)
         g.set("loadfile", LuaValue.NIL)
-        g.set("require", LuaValue.NIL)
         g.set("io", LuaValue.NIL)
         g.set("os", LuaValue.NIL)
         g.set("luajava", LuaValue.NIL)
+
+        // Custom require() that resolves modules from the scripts map
+        val loaded = LuaTable()
+        g.set("require", object : OneArgFunction() {
+            override fun call(arg: LuaValue): LuaValue {
+                val modName = arg.checkjstring()
+
+                // Return cached module if already loaded
+                val cached = loaded.get(modName)
+                if (!cached.isnil()) return cached
+
+                val source = scripts[modName]
+                    ?: throw LuaError("module '$modName' not found")
+
+                // Mark as loading (prevents circular require)
+                loaded.set(modName, LuaValue.TRUE)
+
+                val chunk = g.load(source, modName)
+                val result = chunk.call()
+
+                // If the module returned a value, cache that; otherwise cache true
+                val moduleValue = if (result.isnil()) LuaValue.TRUE else result
+                loaded.set(modName, moduleValue)
+                return moduleValue
+            }
+        })
 
         // Initialize scheduler with the current server tick
         scheduler.initialize(PlatformServices.modState.tickCount)
@@ -62,9 +93,9 @@ class ScriptEngine(
 
         globals = g
 
-        // Compile and run the script (top-level code: variable setup, scheduler registrations)
+        // Compile and run the main script (top-level code: variable setup, scheduler registrations)
         return try {
-            val chunk = g.load(scriptText, "terminal")
+            val chunk = g.load(mainScript, "main")
             chunk.call()
             logCallback("Script started.", false)
             true

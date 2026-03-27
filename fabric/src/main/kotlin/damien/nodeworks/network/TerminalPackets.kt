@@ -47,6 +47,8 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(RunScriptPayload.TYPE, RunScriptPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(StopScriptPayload.TYPE, StopScriptPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SaveScriptPayload.TYPE, SaveScriptPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(CreateScriptTabPayload.TYPE, CreateScriptTabPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(DeleteScriptTabPayload.TYPE, DeleteScriptTabPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
@@ -61,7 +63,6 @@ object TerminalPackets {
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
 
-            terminal.setScriptText(payload.scriptText)
             val nodePos = terminal.getConnectedNodePos() ?: return@registerGlobalReceiver
 
             val globalPos = GlobalPos.of(level.dimension(), payload.terminalPos)
@@ -78,7 +79,7 @@ object TerminalPackets {
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(payload.scriptText)) {
+            if (engine.start(terminal.getScripts())) {
                 activeEngines[globalPos] = engine
             }
         }
@@ -95,7 +96,21 @@ object TerminalPackets {
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
-            terminal.setScriptText(payload.scriptText)
+            terminal.setScript(payload.scriptName, payload.scriptText)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(CreateScriptTabPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+            terminal.createScript(payload.scriptName)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(DeleteScriptTabPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+            terminal.deleteScript(payload.scriptName)
         }
 
         ServerPlayNetworking.registerGlobalReceiver(OpenInstructionSetPayload.TYPE) { payload, context ->
@@ -189,7 +204,7 @@ object TerminalPackets {
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
-            if (engine.start(terminal.scriptText)) {
+            if (engine.start(terminal.getScripts())) {
                 activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
             }

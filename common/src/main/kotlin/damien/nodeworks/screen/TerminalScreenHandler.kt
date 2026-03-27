@@ -15,7 +15,7 @@ import net.minecraft.world.item.ItemStack
 class TerminalScreenHandler(
     syncId: Int,
     private val terminalPos: BlockPos,
-    private val scriptText: String,
+    private val scripts: Map<String, String>,
     private val running: Boolean,
     private val autoRun: Boolean,
     private val layoutIndex: Int,
@@ -42,16 +42,17 @@ class TerminalScreenHandler(
                     .toList()
             } else emptyList()
 
-            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags)
+            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScripts(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {
-            return TerminalScreenHandler(syncId, data.terminalPos, data.scriptText, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags)
+            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags)
         }
     }
 
     fun getTerminalPos(): BlockPos = terminalPos
-    fun getScriptText(): String = scriptText
+    fun getScripts(): Map<String, String> = scripts
+    fun getScriptText(): String = scripts["main"] ?: ""
     fun isRunning(): Boolean = running
     fun isAutoRun(): Boolean = autoRun
     fun getLayoutIndex(): Int = layoutIndex

@@ -1,6 +1,7 @@
 package damien.nodeworks.screen
 
 import com.mojang.blaze3d.platform.InputConstants
+import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.*
 import damien.nodeworks.platform.PlatformServices
@@ -32,12 +33,21 @@ class TerminalScreen(
     private var scriptRunning: Boolean = menu.isRunning()
     private var autoRun: Boolean = menu.isAutoRun()
 
+    // Multi-script state — scripts map keyed by name, activeTab tracks which is shown in editor
+    private val scripts: MutableMap<String, String> = menu.getScripts().toMutableMap()
+    private var activeTab: String = "main"
+
     // Layout constants
     private val cardPanelWidth = 80
     private val editorPadding = 4
     private val buttonHeight = 20
     private val topBarHeight = 24
+    private val tabBarHeight = 18
     private val logPanelHeight = 50
+
+    // New tab input state
+    private var showNewTabInput = false
+    private var newTabName = ""
 
     // Editor position (stored for autocomplete positioning)
     private var editorX = 0
@@ -106,10 +116,10 @@ class TerminalScreen(
         topPos = (height - imageHeight) / 2
 
         editorX = leftPos + cardPanelWidth + editorPadding + lineNumberWidth
-        editorY = topPos + topBarHeight
+        editorY = topPos + topBarHeight + tabBarHeight
         val editorW = imageWidth - cardPanelWidth - editorPadding * 2 - lineNumberWidth
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
-        val editorH = imageHeight - topBarHeight - effectiveLogHeight - editorPadding
+        val editorH = imageHeight - topBarHeight - tabBarHeight - effectiveLogHeight - editorPadding
 
         editor = MultiLineEditBox.builder()
             .setX(editorX)
@@ -121,7 +131,7 @@ class TerminalScreen(
             .setCursorColor(0x00000000) // Hidden — we draw our own cursor on top of syntax highlighting
             .build(font, editorW, editorH, Component.literal("Script"))
 
-        editor.setValue(rebuildWithText ?: menu.getScriptText())
+        editor.setValue(rebuildWithText ?: scripts[activeTab] ?: "")
         rebuildWithText = null
         editor.setCharacterLimit(32767)
 
@@ -140,7 +150,7 @@ class TerminalScreen(
         }
         addRenderableWidget(editor)
 
-        autocomplete = AutocompletePopup(font, cards, itemTags)
+        autocomplete = AutocompletePopup(font, cards, itemTags) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 2
@@ -163,9 +173,11 @@ class TerminalScreen(
         layoutBtn.y = btnY
         addRenderableWidget(layoutBtn)
 
-        // Run button
+        // Run button — save current tab text first, then tell server to run
         addRenderableWidget(Button.builder(Component.literal("Run")) { _ ->
-            PlatformServices.clientNetworking.sendToServer(RunScriptPayload(menu.getTerminalPos(), editor.value))
+            scripts[activeTab] = editor.value
+            PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
+            PlatformServices.clientNetworking.sendToServer(RunScriptPayload(menu.getTerminalPos()))
             scriptRunning = true
         }.bounds(runX, btnY, 40, buttonHeight).build())
 
@@ -189,6 +201,44 @@ class TerminalScreen(
 
         // Top bar
         graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + topBarHeight, 0xFF3C3C3C.toInt())
+
+        // Tab bar background
+        val tabBarY = topPos + topBarHeight
+        val tabBarStartX = leftPos + cardPanelWidth + 1
+        graphics.fill(tabBarStartX, tabBarY, leftPos + imageWidth, tabBarY + tabBarHeight, 0xFF252525.toInt())
+        // Tab bar separator
+        graphics.fill(tabBarStartX, tabBarY + tabBarHeight - 1, leftPos + imageWidth, tabBarY + tabBarHeight, 0xFF444444.toInt())
+
+        // Draw tabs
+        var tabX = tabBarStartX + 2
+        for (name in scripts.keys) {
+            val tabWidth = font.width(name) + 12 + if (name != "main") 10 else 0 // extra space for ✕
+            val isActive = name == activeTab
+            val tabBg = if (isActive) 0xFF3C3C3C.toInt() else 0xFF2B2B2B.toInt()
+            val textColor = if (isActive) 0xFFFFFFFF.toInt() else 0xFF888888.toInt()
+
+            graphics.fill(tabX, tabBarY + 1, tabX + tabWidth, tabBarY + tabBarHeight - 1, tabBg)
+            if (isActive) {
+                // Active tab hides the bottom separator
+                graphics.fill(tabX, tabBarY + tabBarHeight - 1, tabX + tabWidth, tabBarY + tabBarHeight, tabBg)
+            }
+            graphics.drawString(font, name, tabX + 4, tabBarY + 4, textColor, false)
+
+            // Draw ✕ for non-main tabs
+            if (name != "main") {
+                val closeX = tabX + tabWidth - 10
+                graphics.drawString(font, "\u00D7", closeX, tabBarY + 4, 0xFF666666.toInt(), false)
+            }
+
+            tabX += tabWidth + 2
+        }
+
+        // [+] button if under max tabs
+        if (scripts.size < 8) {
+            val plusWidth = font.width("+") + 8
+            graphics.fill(tabX, tabBarY + 1, tabX + plusWidth, tabBarY + tabBarHeight - 1, 0xFF2B2B2B.toInt())
+            graphics.drawString(font, "+", tabX + 4, tabBarY + 4, 0xFF888888.toInt(), false)
+        }
 
         // Card panel background
         graphics.fill(leftPos, topPos + topBarHeight, leftPos + cardPanelWidth, topPos + imageHeight, 0xFF333333.toInt())
@@ -304,6 +354,23 @@ class TerminalScreen(
 
         // Autocomplete popup renders on top of everything
         autocomplete.render(graphics, mouseX, mouseY)
+        // New tab name input overlay — render on top of everything
+        if (showNewTabInput) {
+            val inputW = 120
+            val inputH = 20
+            val inputX = leftPos + imageWidth / 2 - inputW / 2
+            val inputY = topPos + imageHeight / 2 - inputH / 2
+            graphics.fill(inputX - 2, inputY - 2, inputX + inputW + 2, inputY + inputH + 2, 0xFF555555.toInt())
+            graphics.fill(inputX, inputY, inputX + inputW, inputY + inputH, 0xFF1E1E1E.toInt())
+            val displayText = if (newTabName.isEmpty()) "enter name..." else newTabName
+            val displayColor = if (newTabName.isEmpty()) 0xFF666666.toInt() else 0xFFFFFFFF.toInt()
+            graphics.drawString(font, displayText, inputX + 4, inputY + 6, displayColor, false)
+            if (newTabName.isNotEmpty() || (net.minecraft.util.Util.getMillis() / 500) % 2 == 0L) {
+                val cursorX = inputX + 4 + font.width(newTabName)
+                graphics.fill(cursorX, inputY + 4, cursorX + 1, inputY + inputH - 4, 0xFFFFFFFF.toInt())
+            }
+        }
+
         renderTooltip(graphics, mouseX, mouseY)
     }
 
@@ -409,6 +476,35 @@ class TerminalScreen(
 
     override fun keyPressed(keyEvent: KeyEvent): Boolean {
         cursorBlinkStart = net.minecraft.util.Util.getMillis()
+
+        // Handle new tab name input
+        if (showNewTabInput) {
+            when (keyEvent.key()) {
+                InputConstants.KEY_ESCAPE -> {
+                    showNewTabInput = false
+                    newTabName = ""
+                }
+                InputConstants.KEY_RETURN -> {
+                    if (newTabName.isNotEmpty() && newTabName !in scripts) {
+                        scripts[newTabName] = ""
+                        PlatformServices.clientNetworking.sendToServer(CreateScriptTabPayload(menu.getTerminalPos(), newTabName))
+                        showNewTabInput = false
+                        switchTab(newTabName)
+                        newTabName = ""
+                    }
+                }
+                InputConstants.KEY_BACKSPACE -> {
+                    if (newTabName.isNotEmpty()) {
+                        newTabName = newTabName.dropLast(1)
+                    }
+                }
+                else -> {
+                    // charTyped handles actual character input
+                }
+            }
+            return true
+        }
+
         if (editor.isFocused) {
             if (keyEvent.key() == InputConstants.KEY_ESCAPE) {
                 if (autocomplete.visible) {
@@ -499,6 +595,16 @@ class TerminalScreen(
     }
 
     override fun charTyped(charEvent: net.minecraft.client.input.CharacterEvent): Boolean {
+        if (showNewTabInput) {
+            val c = charEvent.codepoint().toChar()
+            if (c.isLetterOrDigit() || c == '_') {
+                val candidate = newTabName + c.lowercaseChar()
+                if (candidate.length <= 20 && TerminalBlockEntity.SCRIPT_NAME_REGEX.matches(candidate)) {
+                    newTabName = candidate
+                }
+            }
+            return true
+        }
         if (editor.isFocused) {
             // Block the space from Ctrl+Space — it was already handled in keyPressed
             if (charEvent.codepoint() == ' '.code && (charEvent.modifiers() and 2) != 0) {
@@ -512,19 +618,97 @@ class TerminalScreen(
     }
 
     override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
-        // Check if click is on the log toggle bar
+        // event.x()/y() are already in scaled GUI coordinates
+        val mx = event.x().toInt()
+        val my = event.y().toInt()
+
+
+        // Handle new tab input dialog — intercept all clicks
+        if (showNewTabInput) {
+            val inputW = 120
+            val inputH = 20
+            val inputX = leftPos + imageWidth / 2 - inputW / 2
+            val inputY = topPos + imageHeight / 2 - inputH / 2
+            if (mx < inputX - 2 || mx > inputX + inputW + 2 || my < inputY - 2 || my > inputY + inputH + 2) {
+                showNewTabInput = false
+                newTabName = ""
+            }
+            return true
+        }
+
+        // Check tab bar BEFORE widgets get the click
+        val tabBarY = topPos + topBarHeight
+        val tabBarStartX = leftPos + cardPanelWidth + 1
+        if (my >= tabBarY && my < tabBarY + tabBarHeight && mx >= tabBarStartX) {
+            handleTabBarClick(mx, tabBarY, tabBarStartX)
+            return true
+        }
+
+        // Check log toggle bar BEFORE widgets get the click
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
         val logX = leftPos + cardPanelWidth + editorPadding
         val logY = topPos + imageHeight - effectiveLogHeight
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
-        if (event.x() >= logX && event.x() <= logX + logW && event.y() >= logY && event.y() <= logY + logCollapsedHeight) {
+        if (mx >= logX && mx <= logX + logW && my >= logY && my <= logY + logCollapsedHeight) {
             logCollapsed = !logCollapsed
-            // Rebuild to resize the editor
             rebuildWithText = editor.value
             rebind()
             return true
         }
+
+        // Also check if click is in the line number gutter area (don't let editor capture it)
+        val gutterX = editorX - lineNumberWidth
+        if (mx >= gutterX && mx < editorX && my >= editorY && my < editorY + editor.height) {
+            return true
+        }
+
         return super.mouseClicked(event, flag)
+    }
+
+    private fun handleTabBarClick(mx: Int, tabBarY: Int, tabBarStartX: Int): Boolean {
+        var tabX = tabBarStartX + 2
+        for (name in scripts.keys.toList()) {
+            val tabWidth = font.width(name) + 12 + if (name != "main") 10 else 0
+            if (mx >= tabX && mx < tabX + tabWidth) {
+                if (name != "main" && mx >= tabX + tabWidth - 10) {
+                    scripts[activeTab] = editor.value
+                    PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
+                    scripts.remove(name)
+                    PlatformServices.clientNetworking.sendToServer(DeleteScriptTabPayload(menu.getTerminalPos(), name))
+                    if (activeTab == name) {
+                        activeTab = "main"
+                        rebuildWithText = scripts["main"] ?: ""
+                        rebind()
+                    }
+                } else {
+                    switchTab(name)
+                }
+                return true
+            }
+            tabX += tabWidth + 2
+        }
+        if (scripts.size < 8) {
+            val plusWidth = font.width("+") + 8
+            if (mx >= tabX && mx < tabX + plusWidth) {
+                showNewTabInput = true
+                newTabName = ""
+                return true
+            }
+        }
+        return true
+    }
+
+    private fun switchTab(name: String) {
+        if (name == activeTab) return
+        // Save current tab
+        scripts[activeTab] = editor.value
+        PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
+        // Switch
+        activeTab = name
+        undoStack.clear()
+        redoStack.clear()
+        rebuildWithText = scripts[name] ?: ""
+        rebind()
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
@@ -568,7 +752,8 @@ class TerminalScreen(
     }
 
     override fun onClose() {
-        PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), editor.value))
+        scripts[activeTab] = editor.value
+        PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
         super.onClose()
     }
 

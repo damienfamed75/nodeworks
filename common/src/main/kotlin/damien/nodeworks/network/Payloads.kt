@@ -11,12 +11,12 @@ import net.minecraft.resources.Identifier
  * These are platform-agnostic data classes — registration and handling is in the platform module.
  */
 
-data class RunScriptPayload(val terminalPos: BlockPos, val scriptText: String) : CustomPacketPayload {
+data class RunScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<RunScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "run_script"))
         val CODEC: StreamCodec<FriendlyByteBuf, RunScriptPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptText, 32767) },
-            { buf -> RunScriptPayload(buf.readBlockPos(), buf.readUtf(32767)) }
+            { p, buf -> buf.writeBlockPos(p.terminalPos) },
+            { buf -> RunScriptPayload(buf.readBlockPos()) }
         )
     }
     override fun type() = TYPE
@@ -33,12 +33,34 @@ data class StopScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
     override fun type() = TYPE
 }
 
-data class SaveScriptPayload(val terminalPos: BlockPos, val scriptText: String) : CustomPacketPayload {
+data class SaveScriptPayload(val terminalPos: BlockPos, val scriptName: String, val scriptText: String) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<SaveScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "save_script"))
         val CODEC: StreamCodec<FriendlyByteBuf, SaveScriptPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptText, 32767) },
-            { buf -> SaveScriptPayload(buf.readBlockPos(), buf.readUtf(32767)) }
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64); buf.writeUtf(p.scriptText, 32767) },
+            { buf -> SaveScriptPayload(buf.readBlockPos(), buf.readUtf(64), buf.readUtf(32767)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class CreateScriptTabPayload(val terminalPos: BlockPos, val scriptName: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CreateScriptTabPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "create_script_tab"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CreateScriptTabPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64) },
+            { buf -> CreateScriptTabPayload(buf.readBlockPos(), buf.readUtf(64)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class DeleteScriptTabPayload(val terminalPos: BlockPos, val scriptName: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<DeleteScriptTabPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "delete_script_tab"))
+        val CODEC: StreamCodec<FriendlyByteBuf, DeleteScriptTabPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64) },
+            { buf -> DeleteScriptTabPayload(buf.readBlockPos(), buf.readUtf(64)) }
         )
     }
     override fun type() = TYPE
