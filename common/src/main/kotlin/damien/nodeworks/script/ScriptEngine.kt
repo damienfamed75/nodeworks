@@ -131,6 +131,7 @@ class ScriptEngine(
 
     fun isRunning(): Boolean = globals != null
 
+
     /** Called each server tick. Runs scheduler callbacks within the instruction budget. */
     fun tick(tickCount: Long) {
         if (globals == null) return

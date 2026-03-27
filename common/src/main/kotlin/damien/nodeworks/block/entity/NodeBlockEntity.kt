@@ -77,12 +77,19 @@ class NodeBlockEntity(
         if (!monitors.containsKey(face)) {
             monitors[face] = MonitorData(null)
             markDirtyAndSync()
+            val lvl = level
+            if (lvl is net.minecraft.server.level.ServerLevel) {
+                damien.nodeworks.script.MonitorUpdateHelper.trackNode(worldPosition)
+            }
         }
     }
 
     fun removeMonitor(face: Direction): Boolean {
         if (monitors.remove(face) != null) {
             markDirtyAndSync()
+            if (monitors.isEmpty()) {
+                damien.nodeworks.script.MonitorUpdateHelper.untrackNode(worldPosition)
+            }
             return true
         }
         return false
@@ -243,6 +250,7 @@ class NodeBlockEntity(
         for ((face, data) in monitors) {
             output.putInt("monitorFace_$idx", face.ordinal)
             output.putString("monitorItem_$idx", data.trackedItemId ?: "")
+            output.putLong("monitorCount_$idx", data.displayCount)
             idx++
         }
     }
@@ -261,17 +269,19 @@ class NodeBlockEntity(
             if (faceOrdinal < 0 || faceOrdinal >= Direction.entries.size) continue
             val face = Direction.entries[faceOrdinal]
             val itemId = input.getString("monitorItem_$i").orElse("").ifEmpty { null }
-            monitors[face] = MonitorData(itemId)
+            val displayCount = input.getLongOr("monitorCount_$i", 0L)
+            monitors[face] = MonitorData(itemId, displayCount)
         }
         nodeTracker?.onNodeChanged(worldPosition, true)
     }
 
     override fun setLevel(newLevel: net.minecraft.world.level.Level) {
         super.setLevel(newLevel)
-        // Track in spatial index now that we know the dimension.
-        // setLevel is called after loadAdditional, so connections are already loaded.
         if (newLevel is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
+            if (monitors.isNotEmpty()) {
+                damien.nodeworks.script.MonitorUpdateHelper.trackNode(worldPosition)
+            }
         }
     }
 
