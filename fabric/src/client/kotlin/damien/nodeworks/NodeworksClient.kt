@@ -30,9 +30,9 @@ object NodeworksClient : ClientModInitializer {
         NodeConnectionRenderer.register()
         BlockEntityRendererRegistry.register(ModBlockEntities.NODE, ::MonitorRenderer)
 
-        // Node tint color — default green, will later read from controller
+        // Node tint color — uses shared network color
         net.fabricmc.fabric.api.client.rendering.v1.ColorProviderRegistry.BLOCK.register(
-            { _, _, _, tintIndex -> if (tintIndex == 0) 0x83E086 else -1 },
+            { _, _, _, tintIndex -> if (tintIndex == 0) NodeConnectionRenderer.DEFAULT_NETWORK_COLOR else -1 },
             damien.nodeworks.registry.ModBlocks.NODE
         )
 

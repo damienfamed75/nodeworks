@@ -99,10 +99,7 @@ class InstructionCrafterBlockEntity(
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {
-        val tag = CompoundTag()
-        val connectionLongs = connections.map { it.asLong() }.toLongArray()
-        tag.putLongArray("connections", connectionLongs)
-        return tag
+        return saveWithoutMetadata(registries)
     }
 
     override fun getUpdatePacket(): Packet<ClientGamePacketListener> {
