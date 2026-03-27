@@ -103,6 +103,14 @@ class Nodeworks(modBus: IEventBus) {
                     NodeSideScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.INVENTORY_TERMINAL = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = InventoryTerminalOpenData.STREAM_CODEC.decode(buf)
+                    InventoryTerminalMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -121,11 +129,28 @@ class Nodeworks(modBus: IEventBus) {
         registrar.playToServer(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC, NeoForgeTerminalPackets::handleSetStoragePriority)
         registrar.playToServer(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC, NeoForgeTerminalPackets::handleOpenInstructionSet)
         registrar.playToServer(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC, NeoForgeTerminalPackets::handleSetInstructionGrid)
+        registrar.playToServer(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleGridClick(player, payload.itemId, payload.action)
+                }
+            }
+        }
 
         // S2C payloads
         registrar.playToClient(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 TerminalLogBuffer.addLog(payload.terminalPos, payload.message, payload.isError)
+            }
+        }
+        registrar.playToClient(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val screen = net.minecraft.client.Minecraft.getInstance().screen
+                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
+                    screen.repo.handleUpdate(payload)
+                }
             }
         }
     }

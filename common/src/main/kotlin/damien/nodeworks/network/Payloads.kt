@@ -130,6 +130,21 @@ data class SetInstructionGridPayload(val containerId: Int, val items: List<Strin
     override fun type() = TYPE
 }
 
+/**
+ * C2S: Click on the inventory terminal grid.
+ * action: 0 = extract stack (left click), 1 = insert carried item, 2 = extract half (right click)
+ */
+data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val action: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalClickPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_click"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalClickPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.itemId, 256); buf.writeVarInt(p.action) },
+            { buf -> InvTerminalClickPayload(buf.readVarInt(), buf.readUtf(256), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, val isError: Boolean) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "terminal_log"))

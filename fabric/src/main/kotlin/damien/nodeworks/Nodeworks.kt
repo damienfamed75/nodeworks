@@ -56,6 +56,11 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "node_side")),
             ExtendedScreenHandlerType({ syncId, inv, data -> NodeSideScreenHandler.clientFactory(syncId, inv, data) }, NodeSideOpenData.STREAM_CODEC)
         )
+        ModScreenHandlers.INVENTORY_TERMINAL = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> InventoryTerminalMenu.clientFactory(syncId, inv, data) }, InventoryTerminalOpenData.STREAM_CODEC)
+        )
 
         ModBlocks.initialize()
         ModBlockEntities.initialize()
