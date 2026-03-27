@@ -98,6 +98,11 @@ class AutocompletePopup(
         selectedIndex = 0
     }
 
+    private val knownTypes = listOf(
+        Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
+        Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get")
+    )
+
     private fun suggest(insertText: String, displayText: String = insertText) = Suggestion(insertText, displayText)
 
     fun moveUp() {
@@ -181,6 +186,21 @@ class AutocompletePopup(
         val trimmed = beforeCursor.trimEnd()
         val fullText = lastFullText
 
+        // Type annotation context: after `:` or `: ` in function params or local declarations
+        // Matches: (param: Partial, (param:Partial, local x: Partial, ): Partial
+        val typeAnnotationMatch = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|local\s+\w+\s*:\s*|\)\s*:\s*)([A-Z]\w*)$""").find(trimmed)
+        if (typeAnnotationMatch != null) {
+            val partial = typeAnnotationMatch.groupValues[1]
+            customPrefix = partial
+            return knownTypes.filter { it.insertText.startsWith(partial) }
+        }
+        // Also match when just the colon was typed with no partial yet
+        val typeAnnotationEmpty = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\)\s*:\s*)$""").find(trimmed)
+        if (typeAnnotationEmpty != null) {
+            customPrefix = ""
+            return knownTypes
+        }
+
         // After network:get("partial → suggest aliases with type hints
         val getAliasMatch = Regex("""network:get\(\s*"(\w*)$""").find(trimmed)
         if (getAliasMatch != null) {
@@ -222,7 +242,8 @@ class AutocompletePopup(
                 suggest("count(", "count(filter: string) → number"),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
                 suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?"),
-                suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?")
+                suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
+                suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)")
             )
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
         }
@@ -247,16 +268,28 @@ class AutocompletePopup(
             return cardHandleMethods(partial)
         }
 
-        // After cardVar: or cardVar:partial → suggest card handle methods
+        // After someVar: or someVar:partial → suggest methods based on variable type
         val methodMatch = Regex("""(\w+):(\w*)$""").find(trimmed)
         if (methodMatch != null) {
             val varName = methodMatch.groupValues[1]
             val partial = methodMatch.groupValues[2]
-            val cardVars = extractCardVariables(fullText)
-            if (varName in cardVars) {
-                return cardHandleMethods(partial)
+            val type = resolveVariableType(varName, fullText)
+            if (type != null) {
+                return methodsForType(type, partial)
             }
             return emptyList()
+        }
+
+        // After someVar.partial → suggest properties based on variable type
+        val propMatch = Regex("""(\w+)\.(\w*)$""").find(trimmed)
+        if (propMatch != null) {
+            val varName = propMatch.groupValues[1]
+            val partial = propMatch.groupValues[2]
+            val type = resolveVariableType(varName, fullText)
+            if (type != null) {
+                return propertiesForType(type, partial)
+            }
+            // Check if it's a require'd module (handled elsewhere, but don't fall through to empty)
         }
 
         // After string. or string.partial → suggest string library methods
@@ -381,6 +414,63 @@ class AutocompletePopup(
         return emptyList()
     }
 
+    /**
+     * Resolves the type of a variable by checking:
+     * 1. Explicit type annotations (Luau-style)
+     * 2. Inference from assignment context (network:get, :find, etc.)
+     * 3. Function return type annotations for call results
+     */
+    private fun resolveVariableType(varName: String, text: String): String? {
+        // 1. Explicit annotation: local x: TypeName = ...
+        val localAnnotation = Regex("""local\s+${Regex.escape(varName)}\s*:\s*(\w+)\??\s*=""").find(text)
+        if (localAnnotation != null) return localAnnotation.groupValues[1]
+
+        // 2. Function parameter annotation: function foo(varName: TypeName)
+        val paramAnnotation = Regex("""\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*${Regex.escape(varName)}\s*:\s*(\w+)\??""").find(text)
+        if (paramAnnotation != null) return paramAnnotation.groupValues[1]
+
+        // 3. Assignment from a function with a known return type: local x = myFunc(...)
+        val funcCallMatch = Regex("""local\s+${Regex.escape(varName)}\s*=\s*(\w+)\s*\(""").find(text)
+        if (funcCallMatch != null) {
+            val funcName = funcCallMatch.groupValues[1]
+            val returnType = extractFunctionReturnType(funcName, text)
+            if (returnType != null) return returnType
+        }
+
+        // 4. Inference from assignment context
+        if (varName in extractCardVariables(text)) return "CardHandle"
+        if (varName in extractItemsHandleVariables(text)) return "ItemsHandle"
+
+        return null
+    }
+
+    /** Extracts the return type annotation from a function definition. */
+    private fun extractFunctionReturnType(funcName: String, text: String): String? {
+        // function funcName(...): ReturnType
+        val pattern = Regex("""function\s+${Regex.escape(funcName)}\s*\([^)]*\)\s*:\s*(\w+)\??""")
+        val match = pattern.find(text)
+        return match?.groupValues?.get(1)
+    }
+
+    /** Returns method suggestions for a known type. */
+    private fun methodsForType(type: String, partial: String): List<Suggestion> {
+        val methods = when (type) {
+            "CardHandle" -> cardHandleMethods("")
+            "ItemsHandle" -> itemsHandleMethods("")
+            else -> emptyList()
+        }
+        return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+    }
+
+    /** Returns property suggestions for a known type. */
+    private fun propertiesForType(type: String, partial: String): List<Suggestion> {
+        val props = when (type) {
+            "ItemsHandle" -> itemsHandleProperties("")
+            else -> emptyList()
+        }
+        return if (partial.isEmpty()) props else props.filter { it.insertText.startsWith(partial) }
+    }
+
     private fun cardHandleMethods(partial: String): List<Suggestion> {
         val methods = listOf(
             suggest("find(", "find(filter: string) → ItemsHandle?"),
@@ -390,6 +480,23 @@ class AutocompletePopup(
             suggest("slots(", "slots(...: number) → CardHandle")
         )
         return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+    }
+
+    private fun itemsHandleMethods(partial: String): List<Suggestion> {
+        val methods = listOf(
+            suggest("hasTag(", "hasTag(tag: string) → boolean"),
+            suggest("matches(", "matches(filter: string) → boolean")
+        )
+        return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+    }
+
+    private fun itemsHandleProperties(partial: String): List<Suggestion> {
+        val props = listOf(
+            suggest("id", "id: string"),
+            suggest("name", "name: string"),
+            suggest("count", "count: number")
+        )
+        return if (partial.isEmpty()) props else props.filter { it.insertText.startsWith(partial) }
     }
 
     /** Extracts all variable names from `local X = ...` declarations in the script. */
@@ -410,6 +517,24 @@ class AutocompletePopup(
         // local X = something:slots(...)
         val slotsPattern = Regex("""local\s+(\w+)\s*=\s*\w+:slots\s*\(""")
         slotsPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        return result
+    }
+
+    /** Extracts variable names assigned from find(), craft(), or shapeless() — these are ItemsHandle. */
+    private fun extractItemsHandleVariables(text: String): Set<String> {
+        val result = mutableSetOf<String>()
+        // local X = something:find(...)
+        val findPattern = Regex("""local\s+(\w+)\s*=\s*\w+:find\s*\(""")
+        findPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:find(...)
+        val netFindPattern = Regex("""local\s+(\w+)\s*=\s*network:find\s*\(""")
+        netFindPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:craft(...)
+        val craftPattern = Regex("""local\s+(\w+)\s*=\s*network:craft\s*\(""")
+        craftPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:shapeless(...)
+        val shapelessPattern = Regex("""local\s+(\w+)\s*=\s*network:shapeless\s*\(""")
+        shapelessPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         return result
     }
 

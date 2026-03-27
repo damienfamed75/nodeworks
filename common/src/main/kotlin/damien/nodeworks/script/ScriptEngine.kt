@@ -28,6 +28,10 @@ class ScriptEngine(
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl()
 
+    /** Routing callback set by network:onInsert(). Called when items enter network storage. */
+    var onInsertCallback: LuaFunction? = null
+        private set
+
     fun start(scripts: Map<String, String>): Boolean {
         stop()
 
@@ -75,7 +79,7 @@ class ScriptEngine(
                 // Mark as loading (prevents circular require)
                 loaded.set(modName, LuaValue.TRUE)
 
-                val chunk = g.load(source, modName)
+                val chunk = g.load(stripTypeAnnotations(source), modName)
                 val result = chunk.call()
 
                 // If the module returned a value, cache that; otherwise cache true
@@ -95,7 +99,7 @@ class ScriptEngine(
 
         // Compile and run the main script (top-level code: variable setup, scheduler registrations)
         return try {
-            val chunk = g.load(mainScript, "main")
+            val chunk = g.load(stripTypeAnnotations(mainScript), "main")
             chunk.call()
             logCallback("Script started.", false)
             true
@@ -108,6 +112,7 @@ class ScriptEngine(
     }
 
     fun stop() {
+        onInsertCallback = null
         scheduler.clear()
         globals = null
         networkSnapshot = null
@@ -129,6 +134,69 @@ class ScriptEngine(
             logCallback("Runtime error: ${e.message}", true)
             logger.warn("Script runtime exception: {}", e.message, e)
             stop()
+        }
+    }
+
+    /**
+     * Creates a routing callback for NetworkStorageHelper.insertItems().
+     * Invokes the Lua onInsert callback and extracts the target storage from the returned CardHandle.
+     */
+    private fun createRoutingCallback(snapshot: NetworkSnapshot): ((String, Long) -> damien.nodeworks.platform.ItemStorageHandle?)? {
+        val callback = onInsertCallback ?: return null
+        return { itemId, count ->
+            try {
+                val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+                val itemName = if (identifier != null) {
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier)
+                    item?.getName(net.minecraft.world.item.ItemStack(item))?.string ?: itemId
+                } else itemId
+
+                // Create an ItemsHandle for the callback
+                val itemsTable = ItemsHandle.toLuaTable(ItemsHandle(
+                    itemId = itemId,
+                    itemName = itemName,
+                    count = count.toInt(),
+                    filter = itemId,
+                    sourceStorage = { null }, // source doesn't matter for routing decision
+                    level = level
+                ))
+
+                val result = callback.call(itemsTable)
+
+                // If callback returned a CardHandle table, extract its storage
+                if (!result.isnil() && result.istable()) {
+                    val storageGetter = result.get("_getStorage")
+                    if (storageGetter is CardHandle.StorageGetter) {
+                        storageGetter.getStorage()
+                    } else null
+                } else null
+            } catch (e: LuaError) {
+                logCallback("onInsert error: ${e.message}", true)
+                null
+            }
+        }
+    }
+
+    companion object {
+        /**
+         * Strips Luau-style type annotations from script text before Lua compilation.
+         * Handles: function params `(x: Type)`, return types `): Type`, local vars `local x: Type =`
+         */
+        fun stripTypeAnnotations(source: String): String {
+            var result = source
+
+            // Function parameter types: (param:Type) or (param: Type) or (param :Type)
+            // Also handles optional: (param: Type?)
+            // Match `: TypeName?` after a word inside parentheses context
+            result = result.replace(Regex("""\b(\w+)\s*:\s*([A-Z]\w*\??)""")) { match ->
+                // Only strip if it looks like a type annotation (type starts with uppercase)
+                match.groupValues[1]
+            }
+
+            // Return type annotations: ): TypeName or ): TypeName?
+            result = result.replace(Regex("""\)\s*:\s*([A-Z]\w*\??)""")) { ")" }
+
+            return result
         }
     }
 
@@ -231,9 +299,11 @@ class ScriptEngine(
 
                 val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
 
+                val routingFn = createRoutingCallback(snapshot)
                 val moved = NetworkStorageHelper.insertItems(
                     level, snapshot, sourceStorage, itemsHandle.filter,
-                    minOf(maxCount, itemsHandle.count.toLong())
+                    minOf(maxCount, itemsHandle.count.toLong()),
+                    routingFn
                 )
                 return LuaValue.valueOf(moved.toInt())
             }
@@ -272,6 +342,15 @@ class ScriptEngine(
                     sourceStorage = sourceStorage,
                     level = level
                 ))
+            }
+        })
+
+        // network:onInsert(fn) — register a routing callback for items entering network storage
+        networkTable.set("onInsert", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
+                if (!fnArg.isfunction()) throw LuaError("onInsert expects a function")
+                onInsertCallback = fnArg.checkfunction()
+                return LuaValue.NIL
             }
         })
 
