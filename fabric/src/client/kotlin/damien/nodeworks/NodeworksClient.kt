@@ -5,8 +5,11 @@ import damien.nodeworks.platform.FabricClientEventService
 import damien.nodeworks.platform.FabricClientNetworkingService
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
+import damien.nodeworks.registry.ModBlockEntities
+import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.screen.NodeSideScreen
+import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry
 import damien.nodeworks.screen.InstructionSetScreen
 import damien.nodeworks.screen.InstructionStorageScreen
 import damien.nodeworks.screen.TerminalLogBuffer
@@ -22,6 +25,7 @@ object NodeworksClient : ClientModInitializer {
         PlatformServices.clientEvents = FabricClientEventService()
 
         NodeConnectionRenderer.register()
+        BlockEntityRendererRegistry.register(ModBlockEntities.NODE, ::MonitorRenderer)
 
         MenuScreens.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)

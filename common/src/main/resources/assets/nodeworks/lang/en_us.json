@@ -21,5 +21,6 @@
   "block.nodeworks.instruction_crafter": "Instruction Crafter",
   "block.nodeworks.instruction_storage": "Instruction Storage",
   "container.nodeworks.instruction_storage": "Instruction Storage",
-  "item.nodeworks.memory_upgrade": "Memory Upgrade"
+  "item.nodeworks.memory_upgrade": "Memory Upgrade",
+  "item.nodeworks.monitor": "Monitor"
 }

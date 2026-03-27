@@ -4,6 +4,7 @@ import damien.nodeworks.card.IOCard
 import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.MemoryUpgradeItem
+import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -42,6 +43,12 @@ object ModItems {
         "memory_upgrade",
         ::MemoryUpgradeItem,
         Item.Properties().stacksTo(4)
+    )
+
+    val MONITOR: Item = register(
+        "monitor",
+        ::MonitorItem,
+        Item.Properties().stacksTo(16)
     )
 
     private fun register(
