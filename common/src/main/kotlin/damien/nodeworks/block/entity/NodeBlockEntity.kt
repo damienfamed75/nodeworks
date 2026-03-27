@@ -62,6 +62,43 @@ class NodeBlockEntity(
     private val items: NonNullList<ItemStack> = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
     private val connections: LinkedHashSet<BlockPos> = linkedSetOf()
 
+    // --- Monitors ---
+
+    /** Per-face monitor data. Null = no monitor on that face. */
+    data class MonitorData(val trackedItemId: String?, var displayCount: Long = 0L)
+
+    private val monitors = java.util.EnumMap<Direction, MonitorData>(Direction::class.java)
+
+    fun hasMonitor(face: Direction): Boolean = monitors.containsKey(face)
+    fun getMonitor(face: Direction): MonitorData? = monitors[face]
+    fun getMonitorFaces(): Set<Direction> = monitors.keys.toSet()
+
+    fun attachMonitor(face: Direction) {
+        if (!monitors.containsKey(face)) {
+            monitors[face] = MonitorData(null)
+            markDirtyAndSync()
+        }
+    }
+
+    fun removeMonitor(face: Direction): Boolean {
+        if (monitors.remove(face) != null) {
+            markDirtyAndSync()
+            return true
+        }
+        return false
+    }
+
+    fun setMonitorItem(face: Direction, itemId: String?) {
+        val monitor = monitors[face] ?: return
+        monitors[face] = monitor.copy(trackedItemId = itemId)
+        markDirtyAndSync()
+    }
+
+    fun updateMonitorCount(face: Direction, count: Long) {
+        val monitor = monitors[face] ?: return
+        monitor.displayCount = count
+    }
+
     // --- Network connections ---
 
     override fun getConnections(): List<BlockPos> = connections.toList()
@@ -199,6 +236,15 @@ class NodeBlockEntity(
         if (connections.isNotEmpty()) {
             output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
         }
+        // Save monitors
+        val monitorCount = monitors.size
+        output.putInt("monitorCount", monitorCount)
+        var idx = 0
+        for ((face, data) in monitors) {
+            output.putInt("monitorFace_$idx", face.ordinal)
+            output.putString("monitorItem_$idx", data.trackedItemId ?: "")
+            idx++
+        }
     }
 
     override fun loadAdditional(input: ValueInput) {
@@ -207,6 +253,16 @@ class NodeBlockEntity(
         ContainerHelper.loadAllItems(input, items)
         connections.clear()
         input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        // Load monitors
+        monitors.clear()
+        val monitorCount = input.getIntOr("monitorCount", 0)
+        for (i in 0 until monitorCount) {
+            val faceOrdinal = input.getIntOr("monitorFace_$i", -1)
+            if (faceOrdinal < 0 || faceOrdinal >= Direction.entries.size) continue
+            val face = Direction.entries[faceOrdinal]
+            val itemId = input.getString("monitorItem_$i").orElse("").ifEmpty { null }
+            monitors[face] = MonitorData(itemId)
+        }
         nodeTracker?.onNodeChanged(worldPosition, true)
     }
 

@@ -4,7 +4,10 @@ import damien.nodeworks.platform.ClientEventService
 import damien.nodeworks.platform.ClientNetworkingService
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
+import damien.nodeworks.registry.ModBlockEntities
+import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import net.neoforged.neoforge.client.event.EntityRenderersEvent
 import damien.nodeworks.screen.NodeSideScreen
 import damien.nodeworks.screen.InstructionSetScreen
 import damien.nodeworks.screen.InstructionStorageScreen
@@ -35,6 +38,11 @@ object NeoForgeClientSetup {
 
             NodeConnectionRenderer.register()
         }
+    }
+
+    @SubscribeEvent
+    fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
+        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::MonitorRenderer)
     }
 
     @SubscribeEvent
