@@ -151,8 +151,8 @@ class ScriptEngine(
             }
         })
 
-        // network:find(type) → list of CardHandles matching that type
-        networkTable.set("find", object : TwoArgFunction() {
+        // network:getAll(type) → list of CardHandles matching that type
+        networkTable.set("getAll", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
                 val type = typeArg.checkjstring()
                 val cards = snapshot.allCards().filter { it.capability.type == type }
@@ -161,6 +161,46 @@ class ScriptEngine(
                     result.set(i + 1, CardHandle.create(card, level))
                 }
                 return result
+            }
+        })
+
+        // network:find(filter) → ItemsHandle or nil (searches across all Storage Cards)
+        networkTable.set("find", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val count = NetworkStorageHelper.countItems(level, snapshot, filter)
+                if (count <= 0) return LuaValue.NIL
+
+                val itemId = NetworkStorageHelper.findFirstItemId(level, snapshot, filter)
+                    ?: return LuaValue.NIL
+
+                val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+                val itemName = if (identifier != null) {
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier)
+                    item?.getName(net.minecraft.world.item.ItemStack(item))?.string ?: itemId
+                } else itemId
+
+                // Source storage: find across all storage cards
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                    NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                        val storage = NetworkStorageHelper.getStorage(level, card)
+                        if (storage != null) {
+                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                CardHandle.matchesFilter(it, filter)
+                            }
+                            if (has > 0) storage else null
+                        } else null
+                    }
+                }
+
+                return ItemsHandle.toLuaTable(ItemsHandle(
+                    itemId = itemId,
+                    itemName = itemName,
+                    count = count.toInt(),
+                    filter = filter,
+                    sourceStorage = sourceStorage,
+                    level = level
+                ))
             }
         })
 
@@ -213,6 +253,54 @@ class ScriptEngine(
                 val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
                 val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
                     // Find the first storage card that has the crafted item
+                    storageCards.firstNotNullOfOrNull { card ->
+                        val storage = NetworkStorageHelper.getStorage(level, card)
+                        if (storage != null) {
+                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                CardHandle.matchesFilter(it, result.outputItemId)
+                            }
+                            if (has > 0) storage else null
+                        } else null
+                    }
+                }
+
+                return ItemsHandle.toLuaTable(ItemsHandle(
+                    itemId = result.outputItemId,
+                    itemName = result.outputName,
+                    count = result.count,
+                    filter = result.outputItemId,
+                    sourceStorage = sourceStorage,
+                    level = level
+                ))
+            }
+        })
+
+        // network:shapeless(item1, count1, item2?, count2?, ...) → ItemsHandle or nil
+        // Crafts using vanilla shapeless recipes. Inputs are item/count pairs.
+        networkTable.set("shapeless", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                // Parse item/count pairs from varargs (self is arg1)
+                val ingredients = mutableMapOf<String, Int>()
+                var i = 2
+                while (i <= args.narg()) {
+                    val itemId = args.checkjstring(i)
+                    val count = if (i + 1 <= args.narg() && !args.arg(i + 1).isnil() && args.arg(i + 1).isnumber()) {
+                        i++
+                        args.checkint(i)
+                    } else {
+                        1
+                    }
+                    ingredients[itemId] = (ingredients[itemId] ?: 0) + count
+                    i++
+                }
+
+                if (ingredients.isEmpty()) throw LuaError("shapeless requires at least one item")
+
+                val result = ShapelessCraftHelper.craft(ingredients, level, snapshot)
+                    ?: return LuaValue.NIL
+
+                val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
                     storageCards.firstNotNullOfOrNull { card ->
                         val storage = NetworkStorageHelper.getStorage(level, card)
                         if (storage != null) {

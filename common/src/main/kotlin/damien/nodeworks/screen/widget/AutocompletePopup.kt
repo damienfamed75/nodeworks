@@ -193,10 +193,10 @@ class AutocompletePopup(
                 .map { suggest(it.first, "${it.first} (${it.second})") }
         }
 
-        // After network:find("partial → suggest types
-        val findTypeMatch = Regex("""network:find\(\s*"(\w*)$""").find(trimmed)
-        if (findTypeMatch != null) {
-            val partial = findTypeMatch.groupValues[1]
+        // After network:getAll("partial → suggest types
+        val getAllTypeMatch = Regex("""network:getAll\(\s*"(\w*)$""").find(trimmed)
+        if (getAllTypeMatch != null) {
+            val partial = getAllTypeMatch.groupValues[1]
             customPrefix = partial
             val types = listOf("io", "storage")
             return types.filter { it.startsWith(partial) }.map { suggest(it) }
@@ -217,10 +217,12 @@ class AutocompletePopup(
             val partial = networkMatch.groupValues[1]
             val methods = listOf(
                 suggest("get(", "get(alias: string) → CardHandle"),
-                suggest("find(", "find(type: string) → CardHandle[]"),
+                suggest("getAll(", "getAll(type: string) → CardHandle[]"),
+                suggest("find(", "find(filter: string) → ItemsHandle?"),
                 suggest("count(", "count(filter: string) → number"),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
-                suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?")
+                suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?"),
+                suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?")
             )
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
         }
