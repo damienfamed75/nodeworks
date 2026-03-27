@@ -1,5 +1,7 @@
 package damien.nodeworks.registry
 
+import damien.nodeworks.block.InstructionCrafterBlock
+import damien.nodeworks.block.InstructionStorageBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
 import net.minecraft.core.Registry
@@ -25,6 +27,21 @@ object ModBlocks {
     val TERMINAL: Block = register(
         "terminal",
         ::TerminalBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+    )
+
+    val INSTRUCTION_CRAFTER: Block = register(
+        "instruction_crafter",
+        ::InstructionCrafterBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .noOcclusion()
+    )
+
+    val INSTRUCTION_STORAGE: Block = register(
+        "instruction_storage",
+        ::InstructionStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
     )

@@ -45,6 +45,36 @@ class FabricStorageService : StorageService {
         return total
     }
 
+    override fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
+        val src = (storage as FabricItemStorageHandle).storage
+        var total = 0L
+        var remaining = maxCount
+        net.fabricmc.fabric.api.transfer.v1.transaction.Transaction.openOuter().use { transaction ->
+            for (view in src) {
+                if (remaining <= 0) break
+                if (view.isResourceBlank || view.amount <= 0) continue
+                val itemId = BuiltInRegistries.ITEM.getKey(view.resource.item)?.toString() ?: continue
+                if (!filter(itemId)) continue
+                val extracted = view.extract(view.resource, minOf(remaining, view.amount), transaction)
+                total += extracted
+                remaining -= extracted
+            }
+            transaction.commit()
+        }
+        return total
+    }
+
+    override fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int {
+        if (stack.isEmpty) return 0
+        val dst = (storage as FabricItemStorageHandle).storage
+        val variant = ItemVariant.of(stack)
+        net.fabricmc.fabric.api.transfer.v1.transaction.Transaction.openOuter().use { transaction ->
+            val inserted = dst.insert(variant, stack.count.toLong(), transaction)
+            transaction.commit()
+            return inserted.toInt()
+        }
+    }
+
     override fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String? {
         val src = (storage as FabricItemStorageHandle).storage
         for (view in src) {

@@ -42,6 +42,18 @@ object NetworkStorageHelper {
         return null
     }
 
+    /** Insert an ItemStack into the network's Storage Cards (highest priority first). Returns count inserted. */
+    fun insertItemStack(level: ServerLevel, snapshot: NetworkSnapshot, stack: net.minecraft.world.item.ItemStack): Int {
+        var remaining = stack.count
+        for (card in getStorageCards(snapshot)) {
+            if (remaining <= 0) break
+            val storage = getStorage(level, card) ?: continue
+            val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
+            remaining -= inserted
+        }
+        return stack.count - remaining
+    }
+
     /** Move items from a source storage into the network's Storage Cards (highest priority first). */
     fun insertItems(
         level: ServerLevel,

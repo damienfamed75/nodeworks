@@ -87,6 +87,14 @@ class Nodeworks(modBus: IEventBus) {
                     InstructionSetScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.INSTRUCTION_STORAGE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_storage")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = InstructionStorageOpenData.STREAM_CODEC.decode(buf)
+                    InstructionStorageScreenHandler.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.NODE_SIDE = Registry.register(
                 BuiltInRegistries.MENU,
                 ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "node_side")),

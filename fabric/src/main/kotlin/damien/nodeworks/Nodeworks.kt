@@ -46,6 +46,11 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
             ExtendedScreenHandlerType({ syncId, inv, data -> InstructionSetScreenHandler.clientFactory(syncId, inv, data) }, InstructionSetOpenData.STREAM_CODEC)
         )
+        ModScreenHandlers.INSTRUCTION_STORAGE = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_storage")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> InstructionStorageScreenHandler.clientFactory(syncId, inv, data) }, InstructionStorageOpenData.STREAM_CODEC)
+        )
         ModScreenHandlers.NODE_SIDE = Registry.register(
             BuiltInRegistries.MENU,
             ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "node_side")),

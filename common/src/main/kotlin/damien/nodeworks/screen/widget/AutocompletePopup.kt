@@ -218,7 +218,8 @@ class AutocompletePopup(
                 suggest("get(", "get(alias: string) → CardHandle"),
                 suggest("find(", "find(type: string) → CardHandle[]"),
                 suggest("count(", "count(filter: string) → number"),
-                suggest("insert(", "insert(items: ItemsHandle, count?: number) → number")
+                suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
+                suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?")
             )
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
         }
