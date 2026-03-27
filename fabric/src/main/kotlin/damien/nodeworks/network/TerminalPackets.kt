@@ -54,7 +54,9 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
     }
 
     fun registerServerHandlers() {
@@ -166,6 +168,14 @@ object TerminalPackets {
             val menu = player.containerMenu
             if (menu is InstructionSetScreenHandler && menu.containerId == payload.containerId) {
                 menu.setRecipeFromIds(payload.items)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalClickPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleGridClick(player, payload.itemId, payload.action)
             }
         }
     }

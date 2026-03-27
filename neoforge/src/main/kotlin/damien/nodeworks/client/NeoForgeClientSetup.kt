@@ -11,6 +11,7 @@ import net.neoforged.neoforge.client.event.EntityRenderersEvent
 import damien.nodeworks.screen.NodeSideScreen
 import damien.nodeworks.screen.InstructionSetScreen
 import damien.nodeworks.screen.InstructionStorageScreen
+import damien.nodeworks.screen.InventoryTerminalScreen
 import damien.nodeworks.screen.TerminalScreen
 import com.mojang.blaze3d.vertex.PoseStack
 import net.minecraft.client.Minecraft
@@ -58,6 +59,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.TERMINAL) { menu, inventory, title ->
             TerminalScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.INVENTORY_TERMINAL) { menu, inventory, title ->
+            InventoryTerminalScreen(menu, inventory, title)
         }
     }
 }

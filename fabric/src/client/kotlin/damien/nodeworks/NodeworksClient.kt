@@ -12,8 +12,11 @@ import damien.nodeworks.screen.NodeSideScreen
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry
 import damien.nodeworks.screen.InstructionSetScreen
 import damien.nodeworks.screen.InstructionStorageScreen
+import damien.nodeworks.screen.InventoryTerminalScreen
 import damien.nodeworks.screen.TerminalLogBuffer
 import damien.nodeworks.screen.TerminalScreen
+import damien.nodeworks.network.InventorySyncPayload
+import net.minecraft.client.Minecraft
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
 import net.minecraft.client.gui.screens.MenuScreens
@@ -39,10 +42,20 @@ object NodeworksClient : ClientModInitializer {
         MenuScreens.register(ModScreenHandlers.TERMINAL) { menu, inventory, title ->
             TerminalScreen(menu, inventory, title)
         }
+        MenuScreens.register(ModScreenHandlers.INVENTORY_TERMINAL) { menu, inventory, title ->
+            InventoryTerminalScreen(menu, inventory, title)
+        }
 
         // Receive log messages from the server
         ClientPlayNetworking.registerGlobalReceiver(TerminalLogPayload.TYPE) { payload, context ->
             TerminalLogBuffer.addLog(payload.terminalPos, payload.message, payload.isError)
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(InventorySyncPayload.TYPE) { payload, context ->
+            val screen = Minecraft.getInstance().screen
+            if (screen is InventoryTerminalScreen) {
+                screen.repo.handleUpdate(payload)
+            }
         }
     }
 }
