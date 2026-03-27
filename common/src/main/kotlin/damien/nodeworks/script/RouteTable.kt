@@ -63,11 +63,10 @@ class RouteTable(
             return NetworkStorageHelper.getStorage(level, route.card)
         }
 
-        // Create an ItemsHandle to pass to predicates
-        val itemsHandle = ItemsHandle.forCraftResult(
-            itemId = itemInfo.itemId,
-            itemName = itemInfo.name,
-            count = itemInfo.count.toInt(),
+        // Create an ItemsHandle to pass to predicates — use actual item metadata
+        val itemsHandle = ItemsHandle.fromItemInfo(
+            info = itemInfo,
+            filter = itemInfo.itemId,
             sourceStorage = { null },
             level = level
         )

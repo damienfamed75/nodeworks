@@ -31,6 +31,21 @@ class NeoForgeStorageService : StorageService {
         }
     }
 
+    override fun moveItemsVariant(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String, Boolean) -> Boolean, maxCount: Long): Long {
+        val src = (source as NeoForgeItemStorageHandle).handler
+        val dst = (dest as NeoForgeItemStorageHandle).handler
+        return try {
+            ResourceHandlerUtil.moveStacking(src, dst, { resource ->
+                if (resource.isEmpty) return@moveStacking false
+                val itemId = BuiltInRegistries.ITEM.getKey(resource.item)?.toString() ?: return@moveStacking false
+                val hasData = resource.toStack().componentsPatch.size() > 0
+                filter(itemId, hasData)
+            }, minOf(maxCount, Int.MAX_VALUE.toLong()).toInt(), null).toLong()
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     override fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long {
         val handler = (storage as NeoForgeItemStorageHandle).handler
         var total = 0L

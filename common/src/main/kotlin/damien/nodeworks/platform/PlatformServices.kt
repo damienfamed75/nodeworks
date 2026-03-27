@@ -50,6 +50,12 @@ interface StorageService {
     /** Move items between storages. Returns number moved. */
     fun moveItems(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
 
+    /** Move items with data-aware filter. Filter receives (itemId, hasData). */
+    fun moveItemsVariant(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String, Boolean) -> Boolean, maxCount: Long): Long {
+        // Default: ignore hasData, delegate to string-only version
+        return moveItems(source, dest, { filter(it, false) }, maxCount)
+    }
+
     /** Count items matching filter in a storage. */
     fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long
 
