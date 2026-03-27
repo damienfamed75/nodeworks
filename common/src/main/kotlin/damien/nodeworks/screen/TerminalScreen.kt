@@ -42,6 +42,7 @@ class TerminalScreen(
     // Editor position (stored for autocomplete positioning)
     private var editorX = 0
     private var editorY = 0
+    private val lineNumberWidth = 28 // gutter width for line numbers
 
     // Log scroll state
     private var logScrollOffset = 0
@@ -101,9 +102,9 @@ class TerminalScreen(
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
-        editorX = leftPos + cardPanelWidth + editorPadding
+        editorX = leftPos + cardPanelWidth + editorPadding + lineNumberWidth
         editorY = topPos + topBarHeight
-        val editorW = imageWidth - cardPanelWidth - editorPadding * 2
+        val editorW = imageWidth - cardPanelWidth - editorPadding * 2 - lineNumberWidth
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
         val editorH = imageHeight - topBarHeight - effectiveLogHeight - editorPadding
 
@@ -271,6 +272,9 @@ class TerminalScreen(
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.render(graphics, mouseX, mouseY, partialTick)
 
+        // Line number gutter
+        renderLineNumbers(graphics)
+
         // Syntax highlighting draws colored text over the editor's transparent text
         LuaSyntaxHighlighter.render(graphics, font, editor, getTextField(), editorX, editorY)
 
@@ -282,6 +286,43 @@ class TerminalScreen(
         // Autocomplete popup renders on top of everything
         autocomplete.render(graphics, mouseX, mouseY)
         renderTooltip(graphics, mouseX, mouseY)
+    }
+
+    private fun renderLineNumbers(graphics: GuiGraphics) {
+        val textField = getTextField() ?: return
+        val text = textField.value()
+        val scrollPixels = editor.scrollAmount().toInt()
+        val lineHeight = font.lineHeight
+
+        val gutterX = editorX - lineNumberWidth
+        val gutterTop = editorY
+        val gutterBottom = editorY + editor.height
+
+        // Gutter background
+        graphics.fill(gutterX, gutterTop, editorX - 1, gutterBottom, 0xFF1E1E1E.toInt())
+        // Separator line
+        graphics.fill(editorX - 1, gutterTop, editorX, gutterBottom, 0xFF3C3C3C.toInt())
+
+        // Count total lines
+        val totalLines = text.count { it == '\n' } + 1
+
+        // Inner top of the editor (accounts for padding)
+        val innerTop = try {
+            val m = editor.javaClass.superclass?.getDeclaredMethod("getInnerTop")
+            m?.isAccessible = true
+            m?.invoke(editor) as? Int ?: (editor.y + 4)
+        } catch (_: Exception) { editor.y + 4 }
+
+        graphics.enableScissor(gutterX, gutterTop, editorX - 1, gutterBottom)
+        for (line in 1..totalLines) {
+            val y = innerTop + (line - 1) * lineHeight - scrollPixels
+            if (y + lineHeight < gutterTop) continue
+            if (y > gutterBottom) break
+            val numStr = line.toString()
+            val numWidth = font.width(numStr)
+            graphics.drawString(font, numStr, editorX - 4 - numWidth, y, 0xFF555555.toInt(), false)
+        }
+        graphics.disableScissor()
     }
 
     private fun renderCursor(graphics: GuiGraphics) {
