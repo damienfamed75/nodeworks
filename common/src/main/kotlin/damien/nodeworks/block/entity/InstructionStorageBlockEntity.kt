@@ -16,7 +16,7 @@ import net.minecraft.world.level.storage.ValueOutput
 
 /**
  * Block entity for Instruction Storage. Holds Instruction Sets and an upgrade slot.
- * Base capacity: 12 slots. Upgradeable to 24 then 36.
+ * Base capacity: 12 slots. Each Memory Upgrade (up to 4) adds 6 slots: 12 → 18 → 24 → 30 → 36.
  */
 class InstructionStorageBlockEntity(
     pos: BlockPos,
@@ -37,7 +37,7 @@ class InstructionStorageBlockEntity(
 
     private val items = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
 
-    /** Current upgrade level: 0 = base (12), 1 = upgraded (24), 2 = max (36). */
+    /** Current upgrade level: 0 = base (12), 1 = 18, 2 = 24, 3 = 30, 4 = max (36). */
     var upgradeLevel: Int = 0
         private set
 
