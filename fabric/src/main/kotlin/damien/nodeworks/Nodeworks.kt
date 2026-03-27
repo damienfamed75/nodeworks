@@ -72,6 +72,9 @@ object Nodeworks : ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register { server ->
             tickCount++
             TerminalPackets.tickAll(server, tickCount)
+            for (level in server.allLevels) {
+                damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
+            }
         }
 
         logger.info("Nodeworks initialized")
