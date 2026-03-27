@@ -47,6 +47,12 @@ object NeoForgeClientSetup {
     }
 
     @SubscribeEvent
+    fun onRegisterBlockColors(event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.Block) {
+        event.register({ _, _, _, tintIndex -> if (tintIndex == 0) 0x83E086 else -1 },
+            damien.nodeworks.registry.ModBlocks.NODE)
+    }
+
+    @SubscribeEvent
     fun onRegisterMenuScreens(event: RegisterMenuScreensEvent) {
         event.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)

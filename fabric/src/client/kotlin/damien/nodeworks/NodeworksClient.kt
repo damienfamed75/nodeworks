@@ -30,6 +30,12 @@ object NodeworksClient : ClientModInitializer {
         NodeConnectionRenderer.register()
         BlockEntityRendererRegistry.register(ModBlockEntities.NODE, ::MonitorRenderer)
 
+        // Node tint color — default green, will later read from controller
+        net.fabricmc.fabric.api.client.rendering.v1.ColorProviderRegistry.BLOCK.register(
+            { _, _, _, tintIndex -> if (tintIndex == 0) 0x83E086 else -1 },
+            damien.nodeworks.registry.ModBlocks.NODE
+        )
+
         MenuScreens.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)
         }

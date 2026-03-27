@@ -36,8 +36,8 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
     companion object {
         val CODEC: MapCodec<NodeBlock> = simpleCodec(::NodeBlock)
 
-        // 6x6x6 pixel centered cube (5..11 on each axis)
-        val NODE_SHAPE: VoxelShape = Block.box(5.0, 5.0, 5.0, 11.0, 11.0, 11.0)
+        // 4x4x4 pixel centered cube (6..10 on each axis)
+        val NODE_SHAPE: VoxelShape = Block.box(6.0, 6.0, 6.0, 10.0, 10.0, 10.0)
 
         // Monitor panel shapes per face (2 pixels thick, extends from node to block edge)
         val MONITOR_SHAPES: Map<Direction, VoxelShape> = mapOf(
