@@ -66,8 +66,7 @@ object NetworkStorageHelper {
 
     /**
      * Move items from a source storage into the network's Storage Cards.
-     * If a routingCallback is provided, each unique item type is routed individually.
-     * Falls back to default priority-based routing if callback returns null or no callback is set.
+     * Resolution order: routes → onInsert callback → default (open storages only if routes exist).
      */
     fun insertItems(
         level: ServerLevel,
@@ -75,69 +74,95 @@ object NetworkStorageHelper {
         source: ItemStorageHandle,
         filter: String,
         maxCount: Long,
-        routingCallback: ((String, Long) -> ItemStorageHandle?)? = null
+        routeTable: RouteTable? = null,
+        onInsertCallback: ((String, Long) -> ItemStorageHandle?)? = null
     ): Long {
-        if (routingCallback != null) {
-            return insertItemsWithRouting(level, snapshot, source, filter, maxCount, routingCallback)
+        if (routeTable == null && onInsertCallback == null) {
+            // No routing — fast path, use all storages
+            return insertItemsDefault(level, snapshot, source, filter, maxCount)
         }
-        return insertItemsDefault(level, snapshot, source, filter, maxCount)
+        return insertItemsRouted(level, snapshot, source, filter, maxCount, routeTable, onInsertCallback)
     }
 
     /**
-     * Routes each unique item type through the callback individually.
-     * Items the callback returns null for fall through to default priority routing.
+     * Routes each unique item type through routes/callback individually.
+     * Unmatched items go to open (unrouted) storages only.
      */
-    private fun insertItemsWithRouting(
+    private fun insertItemsRouted(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         source: ItemStorageHandle,
         filter: String,
         maxCount: Long,
-        routingCallback: (String, Long) -> ItemStorageHandle?
+        routeTable: RouteTable?,
+        onInsertCallback: ((String, Long) -> ItemStorageHandle?)?
     ): Long {
         var totalMoved = 0L
         var remaining = maxCount
         val processedItems = mutableSetOf<String>()
 
-        // Keep finding and routing items until source is empty or maxCount reached
         while (remaining > 0) {
-            // Find the next unprocessed item type in the source
             val itemId = PlatformServices.storage.findFirstItem(source) {
                 CardHandle.matchesFilter(it, filter) && it !in processedItems
             } ?: break
 
             processedItems.add(itemId)
 
-            // Ask the callback where this item should go
             val count = PlatformServices.storage.countItems(source) { it == itemId }
             val toMove = minOf(remaining, count)
-            val targetStorage = routingCallback(itemId, toMove)
 
-            if (targetStorage != null) {
-                // Route to the callback's target
+            // 1. Check routes first (precomputed, fast)
+            val routeTarget = routeTable?.findRouteTarget(itemId)
+            if (routeTarget != null) {
                 val moved = try {
-                    PlatformServices.storage.moveItems(source, targetStorage, { it == itemId }, toMove)
+                    PlatformServices.storage.moveItems(source, routeTarget, { it == itemId }, toMove)
                 } catch (_: Exception) { 0L }
                 totalMoved += moved
                 remaining -= moved
-                // If target was full, fall through to default for this item
-                if (moved < toMove) {
-                    val defaultMoved = insertItemsDefault(level, snapshot, source, itemId, toMove - moved)
-                    totalMoved += defaultMoved
-                    remaining -= defaultMoved
+                if (moved < toMove && routeTable != null) {
+                    // Route target full — fall to open storages
+                    val overflow = routeTable.insertDefault(source, itemId, toMove - moved)
+                    totalMoved += overflow
+                    remaining -= overflow
                 }
-            } else {
-                // Callback returned nil — use default routing for this item
-                val moved = insertItemsDefault(level, snapshot, source, itemId, toMove)
+                continue
+            }
+
+            // 2. Check onInsert callback
+            val callbackTarget = onInsertCallback?.invoke(itemId, toMove)
+            if (callbackTarget != null) {
+                val moved = try {
+                    PlatformServices.storage.moveItems(source, callbackTarget, { it == itemId }, toMove)
+                } catch (_: Exception) { 0L }
                 totalMoved += moved
                 remaining -= moved
+                if (moved < toMove) {
+                    // Callback target full — fall to open storages or all storages
+                    val fallbackMoved = if (routeTable != null) {
+                        routeTable.insertDefault(source, itemId, toMove - moved)
+                    } else {
+                        insertItemsDefault(level, snapshot, source, itemId, toMove - moved)
+                    }
+                    totalMoved += fallbackMoved
+                    remaining -= fallbackMoved
+                }
+                continue
             }
+
+            // 3. No route or callback match — use open storages (or all if no routes)
+            val defaultMoved = if (routeTable != null) {
+                routeTable.insertDefault(source, itemId, toMove)
+            } else {
+                insertItemsDefault(level, snapshot, source, itemId, toMove)
+            }
+            totalMoved += defaultMoved
+            remaining -= defaultMoved
         }
 
         return totalMoved
     }
 
-    /** Default priority-based routing across all storage cards. */
+    /** Default priority-based routing across ALL storage cards (no route filtering). */
     private fun insertItemsDefault(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
@@ -156,9 +181,7 @@ object NetworkStorageHelper {
                     { CardHandle.matchesFilter(it, filter) },
                     remaining
                 )
-            } catch (_: Exception) {
-                0L
-            }
+            } catch (_: Exception) { 0L }
             totalMoved += moved
             remaining -= moved
         }

@@ -243,6 +243,7 @@ class AutocompletePopup(
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
                 suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?"),
                 suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
+                suggest("route(", "route(filter: string, alias: string)"),
                 suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)")
             )
             return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
