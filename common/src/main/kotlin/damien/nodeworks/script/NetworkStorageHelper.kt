@@ -33,6 +33,16 @@ object NetworkStorageHelper {
         return total
     }
 
+    /** Find the first item ID across all Storage Cards matching the filter. */
+    fun findFirstItemId(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): String? {
+        for (card in getStorageCards(snapshot)) {
+            val storage = getStorage(level, card) ?: continue
+            val itemId = PlatformServices.storage.findFirstItem(storage) { CardHandle.matchesFilter(it, filter) }
+            if (itemId != null) return itemId
+        }
+        return null
+    }
+
     fun findItem(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): CardSnapshot? {
         for (card in getStorageCards(snapshot)) {
             val storage = getStorage(level, card) ?: continue
