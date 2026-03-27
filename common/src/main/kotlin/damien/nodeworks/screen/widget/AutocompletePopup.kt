@@ -105,6 +105,17 @@ class AutocompletePopup(
 
     private fun suggest(insertText: String, displayText: String = insertText) = Suggestion(insertText, displayText)
 
+    /** Filter suggestions using fuzzy matching, or return all if query is empty. */
+    private fun fuzzy(query: String, suggestions: List<Suggestion>): List<Suggestion> {
+        return if (query.isEmpty()) suggestions else FuzzyMatch.filter(query, suggestions)
+    }
+
+    /** Filter simple string list using fuzzy matching, return as suggestions. */
+    private fun fuzzyStrings(query: String, items: List<String>): List<Suggestion> {
+        return if (query.isEmpty()) items.map { suggest(it) }
+        else items.map { suggest(it) }.let { FuzzyMatch.filter(query, it) }
+    }
+
     fun moveUp() {
         if (suggestions.isNotEmpty()) {
             selectedIndex = (selectedIndex - 1 + suggestions.size) % suggestions.size
@@ -127,16 +138,18 @@ class AutocompletePopup(
         }
     }
 
+    data class AcceptResult(val deleteCount: Int, val insertText: String)
+
     /**
-     * Accept the current suggestion. Returns the text to insert, or null if nothing selected.
+     * Accept the current suggestion. Returns how many characters to delete (the typed prefix)
+     * and the full text to insert, or null if nothing selected.
      */
-    fun accept(): String? {
+    fun accept(): AcceptResult? {
         if (!visible || suggestions.isEmpty()) return null
         val suggestion = suggestions[selectedIndex]
-        // Insert only the part after what's already typed
-        val toInsert = suggestion.insertText.removePrefix(prefix)
+        val deleteCount = prefix.length
         hide()
-        return toInsert
+        return AcceptResult(deleteCount, suggestion.insertText)
     }
 
     fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
@@ -192,7 +205,7 @@ class AutocompletePopup(
         if (typeAnnotationMatch != null) {
             val partial = typeAnnotationMatch.groupValues[1]
             customPrefix = partial
-            return knownTypes.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, knownTypes)
         }
         // Also match when just the colon was typed with no partial yet
         val typeAnnotationEmpty = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\)\s*:\s*)$""").find(trimmed)
@@ -209,8 +222,8 @@ class AutocompletePopup(
             return cards
                 .map { card -> card.effectiveAlias to card.capability.type }
                 .distinct()
-                .filter { it.first.startsWith(partial) }
                 .map { suggest(it.first, "${it.first} (${it.second})") }
+                .let { FuzzyMatch.filter(partial, it) }
         }
 
         // After network:getAll("partial → suggest types
@@ -219,7 +232,7 @@ class AutocompletePopup(
             val partial = getAllTypeMatch.groupValues[1]
             customPrefix = partial
             val types = listOf("io", "storage")
-            return types.filter { it.startsWith(partial) }.map { suggest(it) }
+            return fuzzyStrings(partial, types)
         }
 
         // After :face("partial → suggest face names
@@ -228,7 +241,7 @@ class AutocompletePopup(
             val partial = faceMatch.groupValues[1]
             customPrefix = partial
             val faces = listOf("top", "bottom", "north", "south", "east", "west", "side")
-            return faces.filter { it.startsWith(partial) }.map { suggest(it) }
+            return fuzzyStrings(partial, faces)
         }
 
         // After network: or network:partial → suggest network methods
@@ -247,7 +260,7 @@ class AutocompletePopup(
                 suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
                 suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After scheduler: or scheduler:partial → suggest scheduler methods
@@ -260,7 +273,7 @@ class AutocompletePopup(
                 suggest("delay(", "delay(ticks: number, fn: function) → number"),
                 suggest("cancel(", "cancel(id: number)")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After :face("..."):partial or :slots(...):partial → suggest card handle methods (chained call)
@@ -275,7 +288,7 @@ class AutocompletePopup(
         if (tagMatch != null) {
             val partial = tagMatch.groupValues[1]
             customPrefix = partial
-            return itemTags.filter { it.startsWith(partial) }.take(20).map { suggest(it) }
+            return fuzzyStrings(partial, itemTags).take(20)
         }
 
         // After someVar: or someVar:partial → suggest methods based on variable type
@@ -321,7 +334,7 @@ class AutocompletePopup(
                 suggest("byte(", "byte(s: string, i?: number) → number"),
                 suggest("char(", "char(...: number) → string")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After math. or math.partial → suggest math library methods
@@ -342,7 +355,7 @@ class AutocompletePopup(
                 suggest("cos(", "cos(x: number) → number"),
                 suggest("fmod(", "fmod(x: number, y: number) → number")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After table. or table.partial → suggest table library methods
@@ -355,7 +368,7 @@ class AutocompletePopup(
                 suggest("sort(", "sort(t: table, comp?: function)"),
                 suggest("concat(", "concat(t: table, sep?: string) → string")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After require("partial → suggest available script names
@@ -363,8 +376,8 @@ class AutocompletePopup(
         if (requireMatch != null) {
             val partial = requireMatch.groupValues[1]
             customPrefix = partial
-            val scriptNames = scripts().keys.filter { it != "main" && it.startsWith(partial) }
-            return scriptNames.map { suggest(it) }
+            val scriptNames = scripts().keys.filter { it != "main" }.toList()
+            return fuzzyStrings(partial, scriptNames)
         }
 
         // After moduleVar.partial → suggest exports from the required module
@@ -374,8 +387,7 @@ class AutocompletePopup(
             val partial = moduleDotMatch.groupValues[2]
             val moduleExports = getModuleExports(fullText, varName)
             if (moduleExports.isNotEmpty()) {
-                val matches = moduleExports.filter { it.insertText.startsWith(partial) }
-                return if (partial.isEmpty()) moduleExports else matches
+                return fuzzy(partial, moduleExports)
             }
         }
 
@@ -409,7 +421,7 @@ class AutocompletePopup(
             val userFuncs = extractFunctionNames(fullText).map { suggest("$it(", "$it(...)") }
             val requireSuggest = if (scripts().size > 1) listOf(suggest("require", "require(module: string) → table")) else emptyList()
             val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs).distinctBy { it.insertText }
-            val matches = all.filter { it.insertText.startsWith(lastWord) && it.insertText != lastWord }
+            val matches = FuzzyMatch.filter(lastWord, all).filter { it.insertText != lastWord }
             if (matches.isNotEmpty()) return matches
         }
 
@@ -461,7 +473,7 @@ class AutocompletePopup(
             "ItemsHandle" -> itemsHandleMethods("")
             else -> emptyList()
         }
-        return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+        return fuzzy(partial, methods)
     }
 
     /** Returns property suggestions for a known type. */
@@ -470,7 +482,7 @@ class AutocompletePopup(
             "ItemsHandle" -> itemsHandleProperties("")
             else -> emptyList()
         }
-        return if (partial.isEmpty()) props else props.filter { it.insertText.startsWith(partial) }
+        return fuzzy(partial, props)
     }
 
     private fun cardHandleMethods(partial: String): List<Suggestion> {
@@ -482,7 +494,7 @@ class AutocompletePopup(
             suggest("face(", "face(side: string) → CardHandle"),
             suggest("slots(", "slots(...: number) → CardHandle")
         )
-        return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+        return fuzzy(partial, methods)
     }
 
     private fun itemsHandleMethods(partial: String): List<Suggestion> {
@@ -490,7 +502,7 @@ class AutocompletePopup(
             suggest("hasTag(", "hasTag(tag: string) → boolean"),
             suggest("matches(", "matches(filter: string) → boolean")
         )
-        return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+        return fuzzy(partial, methods)
     }
 
     private fun itemsHandleProperties(partial: String): List<Suggestion> {
@@ -502,7 +514,7 @@ class AutocompletePopup(
             suggest("maxStackSize", "maxStackSize: number"),
             suggest("hasData", "hasData: boolean")
         )
-        return if (partial.isEmpty()) props else props.filter { it.insertText.startsWith(partial) }
+        return fuzzy(partial, props)
     }
 
     /** Extracts all variable names from `local X = ...` declarations in the script. */
