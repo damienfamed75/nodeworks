@@ -44,6 +44,9 @@ class TerminalScreen(
     private var editorY = 0
     private val lineNumberWidth = 28 // gutter width for line numbers
 
+    // Card panel scroll state
+    private var cardScrollOffset = 0
+
     // Log scroll state
     private var logScrollOffset = 0
     private var logAutoScroll = true
@@ -210,20 +213,36 @@ class TerminalScreen(
         val cardStartY = topPos + topBarHeight + 6
         graphics.drawString(font, "Cards:", leftPos + 6, cardStartY, 0xFFAAAAAA.toInt())
 
-        // Card entries
+        // Card entries (scrollable)
+        val cardListTop = cardStartY + 12
+        val cardListBottom = topPos + imageHeight - 28
+        val cardLineHeight = 11
+
+        graphics.enableScissor(leftPos, cardListTop, leftPos + cardPanelWidth, cardListBottom)
         for ((i, card) in cards.withIndex()) {
-            val y = cardStartY + 12 + i * 11
-            if (y + 11 > topPos + imageHeight - 28) break
-            val alias = card.alias ?: "${card.capability.type}#${i + 1}"
+            val y = cardListTop + i * cardLineHeight - cardScrollOffset
+            if (y + cardLineHeight < cardListTop) continue
+            if (y > cardListBottom) break
+            val alias = card.effectiveAlias
             val color = when (card.capability.type) {
                 "io" -> 0xFF83E086.toInt()
                 "storage" -> 0xFFAA83E0.toInt()
-                "recipe" -> 0xFFE0AA83.toInt()
                 "energy" -> 0xFFFFD700.toInt()
                 "fluid" -> 0xFF55AAFF.toInt()
                 else -> 0xFFAAAAAA.toInt()
             }
             graphics.drawString(font, alias, leftPos + 6, y, color)
+        }
+        graphics.disableScissor()
+
+        // Scroll indicator if there are more cards
+        val maxVisibleCards = (cardListBottom - cardListTop) / cardLineHeight
+        if (cards.size > maxVisibleCards) {
+            val scrollbarHeight = cardListBottom - cardListTop
+            val thumbHeight = maxOf(8, scrollbarHeight * maxVisibleCards / cards.size)
+            val maxCardScroll = maxOf(1, (cards.size - maxVisibleCards) * cardLineHeight)
+            val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
+            graphics.fill(leftPos + cardPanelWidth - 3, thumbY.toInt(), leftPos + cardPanelWidth - 1, (thumbY + thumbHeight).toInt(), 0xFF555555.toInt())
         }
 
         // Log panel
@@ -509,6 +528,18 @@ class TerminalScreen(
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        // Check if mouse is over the card panel
+        if (mouseX >= leftPos && mouseX <= leftPos + cardPanelWidth &&
+            mouseY >= topPos + topBarHeight && mouseY <= topPos + imageHeight - 28) {
+            val cardListTop = topPos + topBarHeight + 18
+            val cardListBottom = topPos + imageHeight - 28
+            val cardLineHeight = 11
+            val maxVisibleCards = (cardListBottom - cardListTop) / cardLineHeight
+            val maxScroll = maxOf(0, (cards.size - maxVisibleCards) * cardLineHeight)
+            cardScrollOffset -= (scrollY * cardLineHeight).toInt()
+            cardScrollOffset = cardScrollOffset.coerceIn(0, maxScroll)
+            return true
+        }
         // Forward to editor if mouse is over it
         if (editor.isMouseOver(mouseX, mouseY)) {
             return editor.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
