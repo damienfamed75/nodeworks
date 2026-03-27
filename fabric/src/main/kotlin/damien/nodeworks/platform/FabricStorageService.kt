@@ -123,28 +123,30 @@ class FabricStorageService : StorageService {
 
     override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
         val src = (storage as FabricItemStorageHandle).storage
-        val seen = mutableSetOf<String>()
-        val results = mutableListOf<ItemInfo>()
+        val aggregated = LinkedHashMap<String, ItemInfo>()
         for (view in src) {
             if (!view.isResourceBlank && view.amount > 0) {
                 val item = view.resource.item
                 val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                if (!filter(itemId)) continue
                 val stack = view.resource.toStack()
                 val hasData = stack.componentsPatch.size() > 0
                 val cacheKey = "$itemId:$hasData"
-                if (cacheKey in seen) continue
-                if (!filter(itemId)) continue
-                seen.add(cacheKey)
-                results.add(ItemInfo(
-                    itemId = itemId,
-                    name = item.getName(stack).string,
-                    count = view.amount,
-                    maxStackSize = item.defaultMaxStackSize,
-                    hasData = hasData
-                ))
+                val existing = aggregated[cacheKey]
+                if (existing != null) {
+                    aggregated[cacheKey] = existing.copy(count = existing.count + view.amount)
+                } else {
+                    aggregated[cacheKey] = ItemInfo(
+                        itemId = itemId,
+                        name = item.getName(stack).string,
+                        count = view.amount,
+                        maxStackSize = item.defaultMaxStackSize,
+                        hasData = hasData
+                    )
+                }
             }
         }
-        return results
+        return aggregated.values.toList()
     }
 
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {

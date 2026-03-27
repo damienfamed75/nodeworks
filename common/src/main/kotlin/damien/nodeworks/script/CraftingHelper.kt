@@ -43,7 +43,8 @@ object CraftingHelper {
         count: Int,
         level: ServerLevel,
         snapshot: NetworkSnapshot,
-        depth: Int = 0
+        depth: Int = 0,
+        cache: NetworkInventoryCache? = null
     ): CraftResult? {
         if (depth > 20) {
             logger.warn("Crafting recursion depth exceeded for '{}'", identifier)
@@ -55,7 +56,7 @@ object CraftingHelper {
 
         var totalCrafted = 0
         for (i in 0 until count) {
-            if (!craftOnce(recipe, match, level, snapshot, depth)) break
+            if (!craftOnce(recipe, match, level, snapshot, depth, cache)) break
             totalCrafted++
         }
 
@@ -80,7 +81,8 @@ object CraftingHelper {
         match: InstructionSetMatch,
         level: ServerLevel,
         snapshot: NetworkSnapshot,
-        depth: Int
+        depth: Int,
+        cache: NetworkInventoryCache? = null
     ): Boolean {
         // Check each ingredient and ensure it's available (or can be crafted)
         val ingredientCounts = mutableMapOf<String, Int>()
@@ -95,7 +97,7 @@ object CraftingHelper {
             if (available < needed) {
                 val missing = needed - available.toInt()
                 // Try to recursively craft the missing ingredients
-                val subResult = craft(itemId, missing, level, snapshot, depth + 1)
+                val subResult = craft(itemId, missing, level, snapshot, depth + 1, cache)
                 if (subResult == null || subResult.count < missing) {
                     logger.debug("Cannot craft '{}': missing {} of '{}'", match.instructionSet.outputItemId, missing, itemId)
                     return false
@@ -154,6 +156,7 @@ object CraftingHelper {
                 val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
                 // Create a temporary destination that discards items (extract from source)
                 val removed = PlatformServices.storage.extractItems(storage, { CardHandle.matchesFilter(it, itemId) }, remaining)
+                if (removed > 0) cache?.onExtracted(itemId, false, removed)
                 remaining -= removed
             }
             if (remaining > 0) {
@@ -164,7 +167,7 @@ object CraftingHelper {
 
         // Insert crafted result into network storage
         val resultItemId = BuiltInRegistries.ITEM.getKey(result.item)?.toString() ?: return false
-        val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, result)
+        val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, result, cache)
         if (inserted == 0) {
             logger.debug("Network storage full, cannot insert crafted item")
             return false

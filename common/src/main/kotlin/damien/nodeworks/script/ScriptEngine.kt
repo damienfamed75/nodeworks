@@ -36,6 +36,10 @@ class ScriptEngine(
     var routeTable: RouteTable? = null
         private set
 
+    /** Cached inventory index across all network storage. */
+    var inventoryCache: NetworkInventoryCache? = null
+        private set
+
     fun start(scripts: Map<String, String>): Boolean {
         stop()
 
@@ -47,6 +51,7 @@ class ScriptEngine(
 
         // Discover network
         networkSnapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
+        inventoryCache = NetworkInventoryCache(level, networkSnapshot!!)
 
         // Create sandboxed globals
         val g = Globals()
@@ -118,6 +123,7 @@ class ScriptEngine(
     fun stop() {
         onInsertCallback = null
         routeTable = null
+        inventoryCache = null
         scheduler.clear()
         globals = null
         networkSnapshot = null
@@ -236,11 +242,38 @@ class ScriptEngine(
             }
         })
 
-        // network:find(filter) → ItemsHandle or nil (searches across all Storage Cards)
+        // network:find(filter) → ItemsHandle or nil (scans real storage, aggregated count)
         networkTable.set("find", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
-                val (info, sourceCard) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
+                // Get metadata from first match
+                val (info, _) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
+                    ?: return LuaValue.NIL
+                // Get total count across all storage
+                val totalCount = NetworkStorageHelper.countItems(level, snapshot, filter)
+                val aggregatedInfo = info.copy(count = totalCount)
+
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                    NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                        val storage = NetworkStorageHelper.getStorage(level, card)
+                        if (storage != null) {
+                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                CardHandle.matchesFilter(it, filter)
+                            }
+                            if (has > 0) storage else null
+                        } else null
+                    }
+                }
+
+                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
+            }
+        })
+
+        // network:findStack(filter) → ItemsHandle or nil (single stack from first storage card)
+        networkTable.set("findStack", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val (info, _) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
                     ?: return LuaValue.NIL
 
                 val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
@@ -259,7 +292,7 @@ class ScriptEngine(
             }
         })
 
-        // network:findAll(filter) → table of ItemsHandles (one per unique item type across all Storage Cards)
+        // network:findAll(filter) → table of ItemsHandles (scans real storage)
         networkTable.set("findAll", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
@@ -285,7 +318,7 @@ class ScriptEngine(
             }
         })
 
-        // network:count(filter) → number (across all Storage Cards)
+        // network:count(filter) → number (scans real storage)
         networkTable.set("count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
@@ -316,7 +349,8 @@ class ScriptEngine(
                     level, snapshot, sourceStorage, itemsHandle.filter,
                     minOf(maxCount, itemsHandle.count.toLong()),
                     routeTable,
-                    createRoutingCallback(snapshot)
+                    createRoutingCallback(snapshot),
+                    inventoryCache
                 )
                 return LuaValue.valueOf(moved.toInt())
             }
@@ -328,7 +362,7 @@ class ScriptEngine(
                 val identifier = args.checkjstring(2)
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
 
-                val result = CraftingHelper.craft(identifier, count, level, snapshot)
+                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache)
                     ?: return LuaValue.NIL
 
                 // Return an ItemsHandle pointing to the crafted items in network storage
@@ -397,7 +431,7 @@ class ScriptEngine(
 
                 if (ingredients.isEmpty()) throw LuaError("shapeless requires at least one item")
 
-                val result = ShapelessCraftHelper.craft(ingredients, level, snapshot)
+                val result = ShapelessCraftHelper.craft(ingredients, level, snapshot, cache = inventoryCache)
                     ?: return LuaValue.NIL
 
                 val storageCards2 = NetworkStorageHelper.getStorageCards(snapshot)

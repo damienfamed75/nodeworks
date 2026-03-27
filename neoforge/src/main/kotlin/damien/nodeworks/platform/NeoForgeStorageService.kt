@@ -133,30 +133,32 @@ class NeoForgeStorageService : StorageService {
 
     override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
         val handler = (storage as NeoForgeItemStorageHandle).handler
-        val seen = mutableSetOf<String>()
-        val results = mutableListOf<ItemInfo>()
+        val aggregated = LinkedHashMap<String, ItemInfo>()
         for (index in 0 until handler.size()) {
             val resource = handler.getResource(index)
             val amount = handler.getAmountAsLong(index)
             if (!resource.isEmpty && amount > 0) {
                 val item = resource.item
                 val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                if (!filter(itemId)) continue
                 val stack = resource.toStack()
                 val hasData = stack.componentsPatch.size() > 0
                 val cacheKey = "$itemId:$hasData"
-                if (cacheKey in seen) continue
-                if (!filter(itemId)) continue
-                seen.add(cacheKey)
-                results.add(ItemInfo(
-                    itemId = itemId,
-                    name = item.getName(stack).string,
-                    count = amount,
-                    maxStackSize = item.defaultMaxStackSize,
-                    hasData = hasData
-                ))
+                val existing = aggregated[cacheKey]
+                if (existing != null) {
+                    aggregated[cacheKey] = existing.copy(count = existing.count + amount)
+                } else {
+                    aggregated[cacheKey] = ItemInfo(
+                        itemId = itemId,
+                        name = item.getName(stack).string,
+                        count = amount,
+                        maxStackSize = item.defaultMaxStackSize,
+                        hasData = hasData
+                    )
+                }
             }
         }
-        return results
+        return aggregated.values.toList()
     }
 
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {
