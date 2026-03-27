@@ -81,7 +81,7 @@ object NetworkStorageHelper {
     }
 
     /** Insert an ItemStack into the network's Storage Cards (highest priority first). Returns count inserted. */
-    fun insertItemStack(level: ServerLevel, snapshot: NetworkSnapshot, stack: net.minecraft.world.item.ItemStack): Int {
+    fun insertItemStack(level: ServerLevel, snapshot: NetworkSnapshot, stack: net.minecraft.world.item.ItemStack, cache: NetworkInventoryCache? = null): Int {
         var remaining = stack.count
         for (card in getStorageCards(snapshot)) {
             if (remaining <= 0) break
@@ -89,7 +89,14 @@ object NetworkStorageHelper {
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
             remaining -= inserted
         }
-        return stack.count - remaining
+        val totalInserted = stack.count - remaining
+        if (totalInserted > 0 && cache != null) {
+            val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId != null) {
+                cache.onInserted(itemId, stack.componentsPatch.size() > 0, totalInserted.toLong())
+            }
+        }
+        return totalInserted
     }
 
     /**
@@ -103,13 +110,14 @@ object NetworkStorageHelper {
         filter: String,
         maxCount: Long,
         routeTable: RouteTable? = null,
-        onInsertCallback: ((String, Long) -> ItemStorageHandle?)? = null
+        onInsertCallback: ((String, Long) -> ItemStorageHandle?)? = null,
+        cache: NetworkInventoryCache? = null
     ): Long {
         if (routeTable == null && onInsertCallback == null) {
             // No routing — fast path, use all storages
-            return insertItemsDefault(level, snapshot, source, filter, maxCount)
+            return insertItemsDefault(level, snapshot, source, filter, maxCount, cache)
         }
-        return insertItemsRouted(level, snapshot, source, filter, maxCount, routeTable, onInsertCallback)
+        return insertItemsRouted(level, snapshot, source, filter, maxCount, routeTable, onInsertCallback, cache)
     }
 
     /**
@@ -123,7 +131,8 @@ object NetworkStorageHelper {
         filter: String,
         maxCount: Long,
         routeTable: RouteTable?,
-        onInsertCallback: ((String, Long) -> ItemStorageHandle?)?
+        onInsertCallback: ((String, Long) -> ItemStorageHandle?)?,
+        cache: NetworkInventoryCache? = null
     ): Long {
         var totalMoved = 0L
         var remaining = maxCount
@@ -149,10 +158,12 @@ object NetworkStorageHelper {
                 val moved = try {
                     PlatformServices.storage.moveItemsVariant(source, routeTarget, variantFilter, toMove)
                 } catch (_: Exception) { 0L }
+                if (moved > 0) cache?.onInserted(itemId, hasData, moved)
                 totalMoved += moved
                 remaining -= moved
                 if (moved < toMove && routeTable != null) {
                     val overflow = routeTable.insertDefault(source, itemId, toMove - moved)
+                    if (overflow > 0) cache?.onInserted(itemId, hasData, overflow)
                     totalMoved += overflow
                     remaining -= overflow
                 }
@@ -165,6 +176,7 @@ object NetworkStorageHelper {
                 val moved = try {
                     PlatformServices.storage.moveItemsVariant(source, callbackTarget, variantFilter, toMove)
                 } catch (_: Exception) { 0L }
+                if (moved > 0) cache?.onInserted(itemId, hasData, moved)
                 totalMoved += moved
                 remaining -= moved
                 if (moved < toMove) {
@@ -172,8 +184,9 @@ object NetworkStorageHelper {
                     val fallbackMoved = if (routeTable != null) {
                         routeTable.insertDefault(source, itemId, toMove - moved)
                     } else {
-                        insertItemsDefault(level, snapshot, source, itemId, toMove - moved)
+                        insertItemsDefault(level, snapshot, source, itemId, toMove - moved, cache)
                     }
+                    if (fallbackMoved > 0) cache?.onInserted(itemId, hasData, fallbackMoved)
                     totalMoved += fallbackMoved
                     remaining -= fallbackMoved
                 }
@@ -184,8 +197,9 @@ object NetworkStorageHelper {
             val defaultMoved = if (routeTable != null) {
                 routeTable.insertDefault(source, itemId, toMove)
             } else {
-                insertItemsDefault(level, snapshot, source, itemId, toMove)
+                insertItemsDefault(level, snapshot, source, itemId, toMove, cache)
             }
+            if (defaultMoved > 0) cache?.onInserted(itemId, hasData, defaultMoved)
             totalMoved += defaultMoved
             remaining -= defaultMoved
         }
@@ -199,7 +213,8 @@ object NetworkStorageHelper {
         snapshot: NetworkSnapshot,
         source: ItemStorageHandle,
         filter: String,
-        maxCount: Long
+        maxCount: Long,
+        cache: NetworkInventoryCache? = null
     ): Long {
         var totalMoved = 0L
         var remaining = maxCount

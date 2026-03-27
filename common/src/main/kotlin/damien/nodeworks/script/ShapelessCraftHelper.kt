@@ -33,7 +33,8 @@ object ShapelessCraftHelper {
     fun craft(
         ingredients: Map<String, Int>,
         level: ServerLevel,
-        snapshot: NetworkSnapshot
+        snapshot: NetworkSnapshot,
+        cache: NetworkInventoryCache? = null
     ): CraftResult? {
         val recipeManager = level.recipeAccess() as? RecipeManager ?: return null
 
@@ -69,11 +70,11 @@ object ShapelessCraftHelper {
                 logger.debug("No matching recipe found for ingredients: {}", ingredients)
                 return null
             }
-            return executeCraft(result.first, result.second, ingredients, level, snapshot)
+            return executeCraft(result.first, result.second, ingredients, level, snapshot, cache)
         }
 
         val resultStack = recipeResult.value().assemble(craftingInput, level.registryAccess())
-        return executeCraft(resultStack, craftingInput, ingredients, level, snapshot)
+        return executeCraft(resultStack, craftingInput, ingredients, level, snapshot, cache)
     }
 
     /**
@@ -127,7 +128,8 @@ object ShapelessCraftHelper {
         craftingInput: CraftingInput,
         ingredients: Map<String, Int>,
         level: ServerLevel,
-        snapshot: NetworkSnapshot
+        snapshot: NetworkSnapshot,
+        cache: NetworkInventoryCache? = null
     ): CraftResult? {
         if (resultStack.isEmpty) return null
 
@@ -147,6 +149,7 @@ object ShapelessCraftHelper {
                 if (remaining <= 0) break
                 val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
                 val removed = PlatformServices.storage.extractItems(storage, { CardHandle.matchesFilter(it, itemId) }, remaining)
+                if (removed > 0) cache?.onExtracted(itemId, false, removed)
                 remaining -= removed
             }
             if (remaining > 0) {
@@ -156,7 +159,7 @@ object ShapelessCraftHelper {
         }
 
         // Insert result into network storage
-        val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, resultStack)
+        val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, resultStack, cache)
         if (inserted == 0) {
             logger.debug("Network storage full, cannot insert crafted item")
             return null

@@ -252,6 +252,7 @@ class AutocompletePopup(
                 suggest("get(", "get(alias: string) → CardHandle"),
                 suggest("getAll(", "getAll(type: string) → CardHandle[]"),
                 suggest("find(", "find(filter: string) → ItemsHandle?"),
+                suggest("findStack(", "findStack(filter: string) → ItemsHandle?"),
                 suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
                 suggest("count(", "count(filter: string) → number"),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
@@ -488,6 +489,7 @@ class AutocompletePopup(
     private fun cardHandleMethods(partial: String): List<Suggestion> {
         val methods = listOf(
             suggest("find(", "find(filter: string) → ItemsHandle?"),
+            suggest("findStack(", "findStack(filter: string) → ItemsHandle?"),
             suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
             suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
             suggest("count(", "count(filter: string) → number"),
@@ -544,9 +546,15 @@ class AutocompletePopup(
         // local X = something:find(...) — but NOT findAll
         val findPattern = Regex("""local\s+(\w+)\s*=\s*\w+:find\s*\(""")
         findPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = something:findStack(...)
+        val findStackPattern = Regex("""local\s+(\w+)\s*=\s*\w+:findStack\s*\(""")
+        findStackPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         // local X = network:find(...)
         val netFindPattern = Regex("""local\s+(\w+)\s*=\s*network:find\s*\(""")
         netFindPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:findStack(...)
+        val netFindStackPattern = Regex("""local\s+(\w+)\s*=\s*network:findStack\s*\(""")
+        netFindStackPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         // local X = network:craft(...)
         val craftPattern = Regex("""local\s+(\w+)\s*=\s*network:craft\s*\(""")
         craftPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
