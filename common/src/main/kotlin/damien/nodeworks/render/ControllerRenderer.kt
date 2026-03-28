@@ -24,7 +24,9 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         private val EMISSIVE_TOP_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/network_controller_top_emissive.png")
     }
 
-    class ControllerRenderState : BlockEntityRenderState()
+    class ControllerRenderState : BlockEntityRenderState() {
+        var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+    }
 
     override fun createRenderState(): ControllerRenderState = ControllerRenderState()
 
@@ -36,6 +38,7 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         crumbling: ModelFeatureRenderer.CrumblingOverlay?
     ) {
         super.extractRenderState(entity, state, partialTick, cameraPos, crumbling)
+        state.networkColor = entity.networkColor
     }
 
     override fun submit(
@@ -44,7 +47,7 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         collector: SubmitNodeCollector,
         camera: CameraRenderState
     ) {
-        val color = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        val color = state.networkColor
         val r = (color shr 16) and 0xFF
         val g = (color shr 8) and 0xFF
         val b = color and 0xFF
