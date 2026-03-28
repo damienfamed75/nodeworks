@@ -21,7 +21,7 @@ class TerminalScreenHandler(
     private val layoutIndex: Int,
     private val cards: List<CardSnapshot>,
     private val itemTags: List<String>,
-    private val variableNames: List<String> = emptyList()
+    private val variables: List<Pair<String, Int>> = emptyList()
 ) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
 
     companion object {
@@ -31,7 +31,7 @@ class TerminalScreenHandler(
 
             val snapshot = if (level != null && nodePos != null) NetworkDiscovery.discoverNetwork(level, nodePos) else null
             val cards = snapshot?.allCards() ?: emptyList()
-            val varNames = snapshot?.variables?.map { it.name } ?: emptyList()
+            val varNames = snapshot?.variables?.map { it.name to it.type.ordinal } ?: emptyList()
 
             val isRunning = if (level != null) PlatformServices.modState.isScriptRunning(level, terminal.blockPos) else false
 
@@ -46,7 +46,7 @@ class TerminalScreenHandler(
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {
-            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags, data.variableNames)
+            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags, data.variables)
         }
     }
 
@@ -58,7 +58,7 @@ class TerminalScreenHandler(
     fun getLayoutIndex(): Int = layoutIndex
     fun getCards(): List<CardSnapshot> = cards
     fun getItemTags(): List<String> = itemTags
-    fun getVariableNames(): List<String> = variableNames
+    fun getVariables(): List<Pair<String, Int>> = variables
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY
 
