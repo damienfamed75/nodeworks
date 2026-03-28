@@ -1,6 +1,6 @@
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "2.3.10" apply false
-    id("net.fabricmc.fabric-loom-remap") apply false
+    id("org.jetbrains.kotlin.jvm") version "2.0.21" apply false
+    id("fabric-loom") apply false
     id("net.neoforged.moddev") apply false
 }
 

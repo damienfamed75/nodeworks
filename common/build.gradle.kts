@@ -21,5 +21,5 @@ dependencies {
     implementation("org.luaj:luaj-jse:3.0")
 
     // JEI API (compile-only — optional integration)
-    compileOnly("mezz.jei:jei-1.21.11-common-api:27.4.0.17")
+    compileOnly("mezz.jei:jei-1.21.1-common-api:19.21.0.247")
 }

@@ -46,13 +46,13 @@ dependencies {
     implementation(project(":common"))
 
     // KotlinForForge
-    implementation("thedarkcolour:kotlinforforge-neoforge:6.2.0")
+    implementation("thedarkcolour:kotlinforforge-neoforge:5.6.0")
 
     // Lua scripting engine
     jarJar(implementation("org.luaj:luaj-jse:3.0")!!)
 
     // Dev-only testing mods (not bundled in release)
-    runtimeOnly("mezz.jei:jei-1.21.11-neoforge:27.4.0.17")
+    runtimeOnly("mezz.jei:jei-1.21.1-neoforge:19.21.0.247")
 }
 
 // Copy common resources alongside neoforge resources
