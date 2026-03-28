@@ -27,9 +27,9 @@ class TerminalScreenHandler(
     companion object {
         fun createServer(syncId: Int, player: Player, terminal: TerminalBlockEntity): TerminalScreenHandler {
             val level = player.level() as? ServerLevel
-            val nodePos = terminal.getConnectedNodePos()
+            val startPos = terminal.getNetworkStartPos()
 
-            val snapshot = if (level != null && nodePos != null) NetworkDiscovery.discoverNetwork(level, nodePos) else null
+            val snapshot = if (level != null && startPos != null) NetworkDiscovery.discoverNetwork(level, startPos) else null
             val cards = snapshot?.allCards() ?: emptyList()
             val varNames = snapshot?.variables?.map { it.name to it.type.ordinal } ?: emptyList()
 
