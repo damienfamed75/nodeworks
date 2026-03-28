@@ -130,44 +130,44 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
                 run {
                     val vc = bufferSource.getBuffer(faceTex)
                     val pose = poseStack.last()
-                    vc.addVertex(pose,  hw, -hh, 0f).setUv(1f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
-                    vc.addVertex(pose,  hw,  hh, 0f).setUv(1f, 1f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
-                    vc.addVertex(pose, -hw,  hh, 0f).setUv(0f, 1f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
-                    vc.addVertex(pose, -hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
+                    vc.addVertex(pose,  hw, -hh, 0f).setUv(1f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose,  hw,  hh, 0f).setUv(1f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw,  hh, 0f).setUv(0f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
                 }
                 // Back face
                 run {
                     val vc = bufferSource.getBuffer(backTex)
                     val pose = poseStack.last()
-                    vc.addVertex(pose, -hw, -hh, depth).setUv(0f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-                    vc.addVertex(pose, -hw,  hh, depth).setUv(0f, 1f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-                    vc.addVertex(pose,  hw,  hh, depth).setUv(1f, 1f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-                    vc.addVertex(pose,  hw, -hh, depth).setUv(1f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
+                    vc.addVertex(pose, -hw, -hh, depth).setUv(0f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw,  hh, depth).setUv(0f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose,  hw,  hh, depth).setUv(1f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose,  hw, -hh, depth).setUv(1f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
                 }
                 // Top, bottom, left, right faces (sides)
                 run {
                     val vc = bufferSource.getBuffer(sideTex)
                     val pose = poseStack.last()
                     // Top
-                    vc.addVertex(pose,  hw, hh, 0f).setUv(1f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
-                    vc.addVertex(pose,  hw, hh, depth).setUv(1f, 0.125f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
-                    vc.addVertex(pose, -hw, hh, depth).setUv(0f, 0.125f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
-                    vc.addVertex(pose, -hw, hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose,  hw, hh, 0f).setUv(1f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose,  hw, hh, depth).setUv(1f, 0.125f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw, hh, depth).setUv(0f, 0.125f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw, hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
                     // Bottom
-                    vc.addVertex(pose, -hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
-                    vc.addVertex(pose, -hw, -hh, depth).setUv(0f, 0.125f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
-                    vc.addVertex(pose,  hw, -hh, depth).setUv(1f, 0.125f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
-                    vc.addVertex(pose,  hw, -hh, 0f).setUv(1f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
+                    vc.addVertex(pose, -hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw, -hh, depth).setUv(0f, 0.125f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose,  hw, -hh, depth).setUv(1f, 0.125f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose,  hw, -hh, 0f).setUv(1f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
                     // Right
-                    vc.addVertex(pose, hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
-                    vc.addVertex(pose, hw, -hh, depth).setUv(0.125f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
-                    vc.addVertex(pose, hw,  hh, depth).setUv(0.125f, 1f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
-                    vc.addVertex(pose, hw,  hh, 0f).setUv(0f, 1f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
+                    vc.addVertex(pose, hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, hw, -hh, depth).setUv(0.125f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, hw,  hh, depth).setUv(0.125f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, hw,  hh, 0f).setUv(0f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
                     // Left
-                    vc.addVertex(pose, -hw,  hh, 0f).setUv(0f, 1f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
-                    vc.addVertex(pose, -hw,  hh, depth).setUv(0.125f, 1f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
-                    vc.addVertex(pose, -hw, -hh, depth).setUv(0.125f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
-                    vc.addVertex(pose, -hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
+                    vc.addVertex(pose, -hw,  hh, 0f).setUv(0f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw,  hh, depth).setUv(0.125f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw, -hh, depth).setUv(0.125f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                    vc.addVertex(pose, -hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
                 }
             }
 
@@ -215,7 +215,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         val b = color and 0xFF
 
         val texIndex = glowStyle.coerceIn(0, GLOW_TEXTURES.size - 1)
-        val eyesType = RenderType.eyes(GLOW_TEXTURES[texIndex])
+        val eyesType = RenderType.entityTranslucentEmissive(GLOW_TEXTURES[texIndex])
         val light = 15728880
         val overlay = OverlayTexture.NO_OVERLAY
 
@@ -227,40 +227,40 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         val pose = poseStack.last()
 
         // South face (+Z)
-        vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
-        vc.addVertex(pose, max, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
-        vc.addVertex(pose, min, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
-        vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, min, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
 
         // North face (-Z)
-        vc.addVertex(pose, min, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-        vc.addVertex(pose, min, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-        vc.addVertex(pose, max, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-        vc.addVertex(pose, max, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
+        vc.addVertex(pose, min, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, min, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
 
         // East face (+X)
-        vc.addVertex(pose, max, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
-        vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
-        vc.addVertex(pose, max, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
-        vc.addVertex(pose, max, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
+        vc.addVertex(pose, max, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
 
         // West face (-X)
-        vc.addVertex(pose, min, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
-        vc.addVertex(pose, min, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
-        vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
-        vc.addVertex(pose, min, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
+        vc.addVertex(pose, min, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, min, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, min, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
 
         // Up face (+Y)
-        vc.addVertex(pose, min, max, max).setUv(0f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, min, max, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
 
         // Down face (-Y)
-        vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
-        vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
-        vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
-        vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
+        vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
     }
 
     // --- Beam rendering ---
@@ -354,43 +354,43 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
 
         // Quad 1 front: along axis1
         vc.addVertex(pose, fromX - r1x * hw, fromY - r1y * hw, fromZ - r1z * hw)
-            .setUv(0f, v0).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, r2x, r2y, r2z)
+            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, fromX + r1x * hw, fromY + r1y * hw, fromZ + r1z * hw)
-            .setUv(uMax, v0).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, r2x, r2y, r2z)
+            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX + r1x * hw, toY + r1y * hw, toZ + r1z * hw)
-            .setUv(uMax, v1).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, r2x, r2y, r2z)
+            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX - r1x * hw, toY - r1y * hw, toZ - r1z * hw)
-            .setUv(0f, v1).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, r2x, r2y, r2z)
+            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
 
         // Quad 1 back: reversed winding
         vc.addVertex(pose, fromX + r1x * hw, fromY + r1y * hw, fromZ + r1z * hw)
-            .setUv(uMax, v0).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -r2x, -r2y, -r2z)
+            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, fromX - r1x * hw, fromY - r1y * hw, fromZ - r1z * hw)
-            .setUv(0f, v0).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -r2x, -r2y, -r2z)
+            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX - r1x * hw, toY - r1y * hw, toZ - r1z * hw)
-            .setUv(0f, v1).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -r2x, -r2y, -r2z)
+            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX + r1x * hw, toY + r1y * hw, toZ + r1z * hw)
-            .setUv(uMax, v1).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -r2x, -r2y, -r2z)
+            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
 
         // Quad 2 front: along axis2
         vc.addVertex(pose, fromX - r2x * hw, fromY - r2y * hw, fromZ - r2z * hw)
-            .setUv(0f, v0).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, r1x, r1y, r1z)
+            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, fromX + r2x * hw, fromY + r2y * hw, fromZ + r2z * hw)
-            .setUv(uMax, v0).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, r1x, r1y, r1z)
+            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX + r2x * hw, toY + r2y * hw, toZ + r2z * hw)
-            .setUv(uMax, v1).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, r1x, r1y, r1z)
+            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX - r2x * hw, toY - r2y * hw, toZ - r2z * hw)
-            .setUv(0f, v1).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, r1x, r1y, r1z)
+            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
 
         // Quad 2 back: reversed winding
         vc.addVertex(pose, fromX + r2x * hw, fromY + r2y * hw, fromZ + r2z * hw)
-            .setUv(uMax, v0).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -r1x, -r1y, -r1z)
+            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, fromX - r2x * hw, fromY - r2y * hw, fromZ - r2z * hw)
-            .setUv(0f, v0).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -r1x, -r1y, -r1z)
+            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX - r2x * hw, toY - r2y * hw, toZ - r2z * hw)
-            .setUv(0f, v1).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -r1x, -r1y, -r1z)
+            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX + r2x * hw, toY + r2y * hw, toZ + r2z * hw)
-            .setUv(uMax, v1).setColor(r, g, b, a).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, -r1x, -r1y, -r1z)
+            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
     }
 
     // --- Monitor helpers ---

@@ -30,6 +30,11 @@ class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
         packedLight: Int,
         packedOverlay: Int
     ) {
+        // Emissive overlay is now handled by the block model via neoforge_data
+    }
+
+    @Suppress("unused")
+    private fun renderLegacy(entity: TerminalBlockEntity, poseStack: PoseStack, bufferSource: MultiBufferSource, packedLight: Int, packedOverlay: Int) {
         val facing = entity.blockState.getValue(BlockStateProperties.HORIZONTAL_FACING)
         val color = NodeConnectionRenderer.findNetworkColor(entity.level, entity.blockPos)
         val r = (color shr 16) and 0xFF
@@ -58,10 +63,10 @@ class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
 
         val vc = bufferSource.getBuffer(eyesType)
         val pose = poseStack.last()
-        vc.addVertex(pose, -h, -h, -o).setUv(1f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-        vc.addVertex(pose, -h, h, -o).setUv(1f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-        vc.addVertex(pose, h, h, -o).setUv(0f, 0f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-        vc.addVertex(pose, h, -h, -o).setUv(0f, 1f).setColor(r, g, b, 255).setUv2(light and 0xFFFF, (light shr 16) and 0xFFFF).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
+        vc.addVertex(pose, -h, -h, -o).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, -h, h, -o).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, h, h, -o).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
+        vc.addVertex(pose, h, -h, -o).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
 
         poseStack.popPose()
     }

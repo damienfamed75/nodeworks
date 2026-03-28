@@ -1,1 +1,1 @@
-{"parent": "nodeworks:item/storage_card"}
+{"parent": "minecraft:item/generated", "textures": {"layer0": "nodeworks:item/storage_card"}}
