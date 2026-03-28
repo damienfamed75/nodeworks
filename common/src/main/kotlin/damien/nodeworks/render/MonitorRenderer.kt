@@ -124,7 +124,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         }
 
         // Render glowing overlay cube (eyes render type for emissive effect)
-        if (state.nodeGlowStyle != 3) { // 3 = NONE
+        if (state.nodeGlowStyle != 5) { // 5 = NONE
             renderGlowingOverlay(poseStack, collector, state.networkColor, state.nodeGlowStyle)
         }
 
@@ -217,7 +217,9 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
     private val GLOW_TEXTURES = arrayOf(
         Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_square.png"),
         Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_circle.png"),
-        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_dot.png")
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_dot.png"),
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_creeper.png"),
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_spiral.png")
     )
 
     private fun renderGlowingOverlay(poseStack: PoseStack, collector: SubmitNodeCollector, networkColor: Int, glowStyle: Int = 0) {
