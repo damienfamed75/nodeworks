@@ -17,13 +17,14 @@ class NetworkControllerMenu(
 ) : AbstractContainerMenu(ModScreenHandlers.NETWORK_CONTROLLER, syncId) {
 
     companion object {
-        const val DATA_SLOTS = 3
+        const val DATA_SLOTS = 4
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: NetworkControllerOpenData): NetworkControllerMenu {
             val data = SimpleContainerData(DATA_SLOTS)
             data.set(0, (openData.networkColor shr 16) and 0xFF)
             data.set(1, openData.networkColor and 0xFFFF)
             data.set(2, openData.redstoneMode)
+            data.set(3, openData.nodeGlowStyle)
             return NetworkControllerMenu(syncId, openData.pos, data)
         }
 
@@ -37,6 +38,7 @@ class NetworkControllerMenu(
                     0 -> (entity.networkColor shr 16) and 0xFF
                     1 -> entity.networkColor and 0xFFFF
                     2 -> entity.redstoneMode
+                    3 -> entity.nodeGlowStyle
                     else -> 0
                 }
                 override fun set(index: Int, value: Int) {
@@ -44,6 +46,7 @@ class NetworkControllerMenu(
                         0 -> entity.networkColor = (value shl 16) or (entity.networkColor and 0xFFFF)
                         1 -> entity.networkColor = (entity.networkColor and 0xFF0000) or (value and 0xFFFF)
                         2 -> entity.redstoneMode = value
+                        3 -> entity.nodeGlowStyle = value
                     }
                 }
                 override fun getCount(): Int = DATA_SLOTS
@@ -54,6 +57,7 @@ class NetworkControllerMenu(
 
     val networkColor: Int get() = (data.get(0) shl 16) or (data.get(1) and 0xFFFF)
     val redstoneMode: Int get() = data.get(2)
+    val nodeGlowStyle: Int get() = data.get(3)
 
     init {
         addDataSlots(data)

@@ -62,7 +62,7 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.network_controller"),
-            NetworkControllerOpenData(pos, entity.networkColor, entity.networkName, entity.redstoneMode),
+            NetworkControllerOpenData(pos, entity.networkColor, entity.networkName, entity.redstoneMode, entity.nodeGlowStyle),
             NetworkControllerOpenData.STREAM_CODEC,
             { syncId, inv, _ -> NetworkControllerMenu.createServer(syncId, inv, entity) }
         )

@@ -57,6 +57,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         var faces: List<MonitorFace> = emptyList()
         var beamTargets: List<BeamTarget> = emptyList()
         var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        var nodeGlowStyle: Int = 0 // 0=square, 1=circle, 2=dot, 3=none
     }
 
     override fun createRenderState(): MonitorRenderState = MonitorRenderState()
@@ -87,8 +88,10 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
             MonitorFace(face, itemId, monitor?.displayCount ?: 0L, itemRenderState)
         }
 
-        // Find network color from the controller
-        state.networkColor = NodeConnectionRenderer.findNetworkColor(entity.level, entity.blockPos)
+        // Find network settings from the controller
+        val controller = NodeConnectionRenderer.findController(entity.level, entity.blockPos)
+        state.networkColor = controller?.networkColor ?: NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        state.nodeGlowStyle = controller?.nodeGlowStyle ?: 0
 
         // Collect beam connection targets (relative positions)
         if (NodeConnectionRenderer.beamEffectEnabled) {
@@ -121,7 +124,9 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         }
 
         // Render glowing overlay cube (eyes render type for emissive effect)
-        renderGlowingOverlay(poseStack, collector, state.networkColor)
+        if (state.nodeGlowStyle != 3) { // 3 = NONE
+            renderGlowingOverlay(poseStack, collector, state.networkColor, state.nodeGlowStyle)
+        }
 
         for (face in state.faces) {
 
@@ -209,15 +214,20 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
 
     // --- Glowing overlay ---
 
-    private val GLOW_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow.png")
+    private val GLOW_TEXTURES = arrayOf(
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_square.png"),
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_circle.png"),
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_dot.png")
+    )
 
-    private fun renderGlowingOverlay(poseStack: PoseStack, collector: SubmitNodeCollector, networkColor: Int) {
+    private fun renderGlowingOverlay(poseStack: PoseStack, collector: SubmitNodeCollector, networkColor: Int, glowStyle: Int = 0) {
         val color = networkColor
         val r = (color shr 16) and 0xFF
         val g = (color shr 8) and 0xFF
         val b = color and 0xFF
 
-        val eyesType = RenderTypes.eyes(GLOW_TEXTURE)
+        val texIndex = glowStyle.coerceIn(0, GLOW_TEXTURES.size - 1)
+        val eyesType = RenderTypes.eyes(GLOW_TEXTURES[texIndex])
         val light = 15728880
         val overlay = OverlayTexture.NO_OVERLAY
 

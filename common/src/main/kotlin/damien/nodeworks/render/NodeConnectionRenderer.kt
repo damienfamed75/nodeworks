@@ -50,36 +50,35 @@ object NodeConnectionRenderer {
     }
 
     /**
-     * Walks the connection graph from a position to find a NetworkController and return its color.
-     * BFS capped at 32 hops. Returns DEFAULT_NETWORK_COLOR if no controller found.
+     * Walks the connection graph to find the NetworkController for a given position.
+     * BFS capped at 32 hops. Returns null if no controller found.
      */
-    fun findNetworkColor(level: net.minecraft.world.level.Level?, startPos: BlockPos): Int {
-        if (level == null) return DEFAULT_NETWORK_COLOR
-        // Check if start IS a controller
+    fun findController(level: net.minecraft.world.level.Level?, startPos: BlockPos): damien.nodeworks.block.entity.NetworkControllerBlockEntity? {
+        if (level == null) return null
         val startEntity = level.getBlockEntity(startPos)
-        if (startEntity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
-            return startEntity.networkColor
-        }
-        // BFS through connections
+        if (startEntity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) return startEntity
         val visited = HashSet<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         visited.add(startPos)
-        val startConnectable = startEntity as? damien.nodeworks.network.Connectable ?: return DEFAULT_NETWORK_COLOR
+        val startConnectable = startEntity as? damien.nodeworks.network.Connectable ?: return null
         for (conn in startConnectable.getConnections()) {
             if (visited.add(conn)) queue.add(conn)
         }
         while (queue.isNotEmpty() && visited.size < 32) {
             val pos = queue.removeFirst()
             val entity = level.getBlockEntity(pos) ?: continue
-            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
-                return entity.networkColor
-            }
+            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) return entity
             val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
             for (conn in connectable.getConnections()) {
                 if (visited.add(conn)) queue.add(conn)
             }
         }
-        return DEFAULT_NETWORK_COLOR
+        return null
+    }
+
+    /** Convenience: find the network color for a position. */
+    fun findNetworkColor(level: net.minecraft.world.level.Level?, startPos: BlockPos): Int {
+        return findController(level, startPos)?.networkColor ?: DEFAULT_NETWORK_COLOR
     }
 
     fun register() {
