@@ -1,5 +1,5 @@
 plugins {
-    id("net.fabricmc.fabric-loom-remap")
+    id("fabric-loom")
 }
 
 base {
@@ -38,7 +38,7 @@ dependencies {
     include(implementation("org.luaj:luaj-jse:3.0")!!)
 
     // Dev-only testing mods (not bundled in release)
-    modLocalRuntime("mezz.jei:jei-1.21.11-fabric:27.4.0.17")
+    modLocalRuntime("mezz.jei:jei-1.21.1-fabric:19.21.0.247")
 }
 
 tasks.processResources {
