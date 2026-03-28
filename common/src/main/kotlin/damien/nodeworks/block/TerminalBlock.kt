@@ -77,16 +77,15 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
         val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return InteractionResult.PASS
 
-        if (terminal.getConnectedNodePos() == null) {
+        val startPos = terminal.getNetworkStartPos()
+        if (startPos == null) {
             player.displayClientMessage(Component.translatable("message.nodeworks.terminal_no_network"), false)
             return InteractionResult.SUCCESS
         }
 
         val serverPlayer = player as ServerPlayer
-
-        val nodePos = terminal.getConnectedNodePos()!!
         val serverLevel = level as ServerLevel
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, nodePos)
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, startPos)
 
         if (!snapshot.isOnline) {
             player.displayClientMessage(Component.translatable("message.nodeworks.no_controller"), false)

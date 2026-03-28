@@ -83,6 +83,15 @@ class TerminalBlockEntity(
         return TerminalBlock.findAdjacentNode(currentLevel, worldPosition)
     }
 
+    /**
+     * Returns the best starting position for network discovery.
+     * Prefers laser connections (own pos), falls back to adjacent node.
+     */
+    fun getNetworkStartPos(): BlockPos? {
+        if (connections.isNotEmpty()) return worldPosition
+        return getConnectedNodePos()
+    }
+
     // --- Connectable ---
 
     override fun getConnections(): Set<BlockPos> = connections.toSet()

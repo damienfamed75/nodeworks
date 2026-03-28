@@ -24,7 +24,7 @@ object NodeConnectionRenderer {
     private val knownNodes: MutableSet<BlockPos> = Collections.newSetFromMap(ConcurrentHashMap())
 
     /** Default network color (RGB, no alpha). Used as fallback when no controller is found. */
-    const val DEFAULT_NETWORK_COLOR = 0x83E086
+    const val DEFAULT_NETWORK_COLOR = 0x888888
 
     /** Beam effect toggle — disable for lower-end PCs. */
     var beamEffectEnabled = true

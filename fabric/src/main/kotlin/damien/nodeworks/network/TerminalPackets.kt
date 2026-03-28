@@ -67,7 +67,7 @@ object TerminalPackets {
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
 
-            val nodePos = terminal.getConnectedNodePos() ?: return@registerGlobalReceiver
+            val nodePos = terminal.getNetworkStartPos() ?: return@registerGlobalReceiver
 
             val globalPos = GlobalPos.of(level.dimension(), payload.terminalPos)
             activeEngines.remove(globalPos)?.stop()
@@ -229,7 +229,7 @@ object TerminalPackets {
             if (!level.isLoaded(pos)) continue
             val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
             if (!terminal.autoRun || terminal.scriptText.isBlank()) continue
-            val nodePos = terminal.getConnectedNodePos() ?: continue
+            val nodePos = terminal.getNetworkStartPos() ?: continue
 
             if (activeEngines.containsKey(gp)) continue
 
