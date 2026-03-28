@@ -41,7 +41,7 @@ class ScriptEditor(
     private val lines = mutableListOf("")
     var cursor = 0                      // absolute position in full text
     private var selectStart = -1       // -1 = no selection
-    private var scrollY = 0            // pixels scrolled
+    var scrollY = 0                    // pixels scrolled
     private var cursorBlinkTime = System.currentTimeMillis()
     private var characterLimit = 32767
 

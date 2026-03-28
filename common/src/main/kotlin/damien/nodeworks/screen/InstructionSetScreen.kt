@@ -35,18 +35,19 @@ class InstructionSetScreen(
 
     }
 
-    override fun renderSlot(graphics: GuiGraphics, slot: Slot) {
-        super.renderSlot(graphics, slot)
-        // Draw a semi-transparent overlay on ghost slots to make items appear faded
-        if (slot.index in 0..8 && slot.hasItem()) {
-            val x = slot.x
-            val y = slot.y
-            graphics.fill(x, y, x + 16, y + 16, 0x808B8B8B.toInt())
-        }
-    }
-
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.render(graphics, mouseX, mouseY, partialTick)
+
+        // Draw semi-transparent overlay on ghost/result slots using guiOverlay (renders above items)
+        for (slot in menu.slots) {
+            if (slot.index in 0..9 && slot.hasItem()) {
+                val x = leftPos + slot.x
+                val y = topPos + slot.y
+                val color = 0x808B8B8B.toInt()
+                graphics.fillGradient(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + 16, y + 16, color, color, 0)
+            }
+        }
+
         renderTooltip(graphics, mouseX, mouseY)
     }
 }
