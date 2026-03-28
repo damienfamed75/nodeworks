@@ -380,8 +380,8 @@ class TerminalScreen(
         // Count total lines
         val totalLines = text.count { it == '\n' } + 1
 
-        // Inner top of the editor (matches ScriptEditor's padding)
-        val innerTop = editor.y + 4
+        // Inner top of the editor, adjusted for scroll (matches ScriptEditor's padding)
+        val innerTop = editor.y + 4 - editor.scrollY
 
         graphics.enableScissor(gutterX, gutterTop, editorX - 1, gutterBottom)
         for (line in 1..totalLines) {
