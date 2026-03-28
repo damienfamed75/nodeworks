@@ -89,8 +89,13 @@ class ColorPickerScreen(
         pickerTextureId = null
     }
 
+    override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        // Override to prevent MC's default blur/darken background
+        // We draw our own dim overlay in render() instead
+    }
+
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        // Dim background
+        // Dim background (no blur)
         graphics.fill(0, 0, width, height, 0x88000000.toInt())
 
         // Dark panel background

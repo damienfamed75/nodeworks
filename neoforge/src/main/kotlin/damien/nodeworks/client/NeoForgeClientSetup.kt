@@ -36,6 +36,7 @@ object NeoForgeClientSetup {
         modBus.addListener(::onClientSetup)
         modBus.addListener(::onRegisterRenderers)
         modBus.addListener(::onRegisterMenuScreens)
+        modBus.addListener(::onRegisterBlockColors)
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
@@ -95,6 +96,30 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.VARIABLE) { menu, inventory, title ->
             VariableScreen(menu, inventory, title)
         }
+    }
+
+    private fun onRegisterBlockColors(event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.Block) {
+        // Tint emissive overlays (tintindex 0) with network color
+        val colorProvider = net.minecraft.client.color.block.BlockColor { _, blockGetter, pos, tintIndex ->
+            if (tintIndex == 0 && pos != null) {
+                // BlockAndTintGetter might be a Level — try to get the block entity
+                val entity = blockGetter?.getBlockEntity(pos)
+                when (entity) {
+                    is damien.nodeworks.block.entity.NetworkControllerBlockEntity -> entity.networkColor
+                    is damien.nodeworks.network.Connectable -> {
+                        // For other connectable blocks, find the controller via BFS
+                        val level = net.minecraft.client.Minecraft.getInstance().level
+                        if (level != null) NodeConnectionRenderer.findNetworkColor(level, pos) else -1
+                    }
+                    else -> -1
+                }
+            } else -1
+        }
+        event.register(colorProvider,
+            damien.nodeworks.registry.ModBlocks.NETWORK_CONTROLLER,
+            damien.nodeworks.registry.ModBlocks.VARIABLE,
+            damien.nodeworks.registry.ModBlocks.TERMINAL
+        )
     }
 }
 

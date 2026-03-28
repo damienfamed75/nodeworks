@@ -233,6 +233,7 @@ class ScriptEditor(
             264 -> { // DOWN
                 if (shift) startSelection()
                 if (line < lines.size - 1) cursor = lineColToCursor(line + 1, col)
+                else cursor = totalTextLength() // at last line, go to end
                 if (!shift) clearSelection()
                 ensureCursorVisible()
                 return true
@@ -320,14 +321,14 @@ class ScriptEditor(
     }
 
     override fun onClick(mouseX: Double, mouseY: Double) {
-        cursor = screenToCursor(mouseX, mouseY)
-        selectStart = -1
+        val clickPos = screenToCursor(mouseX, mouseY)
+        cursor = clickPos
+        selectStart = clickPos  // set anchor for potential drag
         cursorBlinkTime = System.currentTimeMillis()
         ensureCursorVisible()
     }
 
     override fun onDrag(mouseX: Double, mouseY: Double, dragX: Double, dragY: Double) {
-        if (selectStart < 0) selectStart = cursor
         cursor = screenToCursor(mouseX, mouseY)
         ensureCursorVisible()
     }

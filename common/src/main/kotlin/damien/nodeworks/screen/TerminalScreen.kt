@@ -624,6 +624,14 @@ class TerminalScreen(
         return true
     }
 
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        if (editor.isFocused && button == 0) {
+            editor.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+            return true
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+    }
+
     private fun switchTab(name: String) {
         if (name == activeTab) return
         // Save current tab

@@ -26,6 +26,7 @@ neoForge {
         register("nodeworks") {
             sourceSet(sourceSets.main.get())
             sourceSet(project(":common").sourceSets.main.get())
+            dependency("org.luaj:luaj-jse:3.0")
         }
     }
 }
@@ -49,7 +50,8 @@ dependencies {
     implementation("thedarkcolour:kotlinforforge-neoforge:5.5.0")
 
     // Lua scripting engine
-    jarJar(implementation("org.luaj:luaj-jse:3.0")!!)
+    implementation("org.luaj:luaj-jse:3.0")
+    jarJar("org.luaj:luaj-jse:3.0")
 
     // Dev-only testing mods (not bundled in release)
     runtimeOnly("mezz.jei:jei-1.21.1-neoforge:19.21.0.247")
