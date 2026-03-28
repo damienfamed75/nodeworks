@@ -116,6 +116,9 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
             renderBeams(state.beamTargets, poseStack, collector)
         }
 
+        // Render glowing overlay cube (eyes render type for emissive effect)
+        renderGlowingOverlay(poseStack, collector)
+
         for (face in state.faces) {
 
             poseStack.pushPose()
@@ -197,6 +200,63 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
             }
 
             poseStack.popPose()
+        }
+    }
+
+    // --- Glowing overlay ---
+
+    private val OVERLAY_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_color_overlay.png")
+
+    private fun renderGlowingOverlay(poseStack: PoseStack, collector: SubmitNodeCollector) {
+        val color = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+
+        val eyesType = RenderTypes.eyes(OVERLAY_TEXTURE)
+        val light = 15728880
+        val overlay = OverlayTexture.NO_OVERLAY
+
+        // Match the block model overlay cube: 5.5/16 to 10.5/16
+        val min = 5.5f / 16f
+        val max = 10.5f / 16f
+
+        collector.submitCustomGeometry(poseStack, eyesType) { pose, vc ->
+            // North face (z=min, facing -Z)
+            vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
+            vc.addVertex(pose, max, max, min).setUv(1f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
+            vc.addVertex(pose, min, max, min).setUv(0f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
+            vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
+
+            // South face (z=max, facing +Z)
+            vc.addVertex(pose, min, min, max).setUv(0f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
+            vc.addVertex(pose, min, max, max).setUv(0f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
+            vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
+            vc.addVertex(pose, max, min, max).setUv(1f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, 1f)
+
+            // West face (x=min, facing -X)
+            vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
+            vc.addVertex(pose, min, max, min).setUv(0f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
+            vc.addVertex(pose, min, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
+            vc.addVertex(pose, min, min, max).setUv(1f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, -1f, 0f, 0f)
+
+            // East face (x=max, facing +X)
+            vc.addVertex(pose, max, min, max).setUv(1f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
+            vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
+            vc.addVertex(pose, max, max, min).setUv(0f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
+            vc.addVertex(pose, max, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 1f, 0f, 0f)
+
+            // Down face (y=min, facing -Y)
+            vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
+            vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
+            vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
+            vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, -1f, 0f)
+
+            // Up face (y=max, facing +Y)
+            vc.addVertex(pose, min, max, max).setUv(0f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 1f, 0f)
         }
     }
 

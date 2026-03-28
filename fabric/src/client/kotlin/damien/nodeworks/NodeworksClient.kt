@@ -7,6 +7,7 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.MonitorRenderer
+import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.screen.NodeSideScreen
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry
@@ -29,6 +30,7 @@ object NodeworksClient : ClientModInitializer {
 
         NodeConnectionRenderer.register()
         BlockEntityRendererRegistry.register(ModBlockEntities.NODE, ::MonitorRenderer)
+        BlockEntityRendererRegistry.register(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
 
         // Node tint color — uses shared network color
         net.fabricmc.fabric.api.client.rendering.v1.ColorProviderRegistry.BLOCK.register(

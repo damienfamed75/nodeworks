@@ -392,7 +392,7 @@ object NodeConnectionRenderer {
                     true,
                     poseStack.last().pose(),
                     bufferSource,
-                    Font.DisplayMode.SEE_THROUGH,
+                    Font.DisplayMode.POLYGON_OFFSET,
                     0,
                     15728880
                 )
