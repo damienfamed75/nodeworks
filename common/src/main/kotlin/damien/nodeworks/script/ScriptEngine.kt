@@ -458,6 +458,15 @@ class ScriptEngine(
             }
         })
 
+        networkTable.set("var", object : TwoArgFunction() {
+            override fun call(self: LuaValue, nameArg: LuaValue): LuaValue {
+                val name = nameArg.checkjstring()
+                val varSnapshot = snapshot.findVariable(name)
+                    ?: throw LuaError("Variable not found on network: '$name'")
+                return VariableHandle.create(varSnapshot, level)
+            }
+        })
+
         g.set("network", networkTable)
 
         // clock() -> seconds since script started (as a decimal)

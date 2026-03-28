@@ -56,6 +56,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
     }
@@ -190,6 +191,19 @@ object TerminalPackets {
                 "redstone" -> entity.redstoneMode = payload.intValue
                 "glow" -> entity.nodeGlowStyle = payload.intValue
                 "name" -> entity.networkName = payload.strValue
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(VariableSettingsPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.VariableBlockEntity ?: return@registerGlobalReceiver
+            if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
+            when (payload.key) {
+                "name" -> entity.variableName = payload.strValue
+                "type" -> entity.setType(damien.nodeworks.block.entity.VariableType.fromOrdinal(payload.intValue))
+                "value" -> entity.setValue(payload.strValue)
+                "toggle" -> entity.toggleValue()
             }
         }
     }

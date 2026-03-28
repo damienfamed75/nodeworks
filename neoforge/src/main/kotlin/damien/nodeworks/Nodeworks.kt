@@ -119,6 +119,14 @@ class Nodeworks(modBus: IEventBus) {
                     NetworkControllerMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.VARIABLE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "variable")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = VariableOpenData.STREAM_CODEC.decode(buf)
+                    VariableMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -158,6 +166,21 @@ class Nodeworks(modBus: IEventBus) {
                     "redstone" -> entity.redstoneMode = payload.intValue
                     "glow" -> entity.nodeGlowStyle = payload.intValue
                     "name" -> entity.networkName = payload.strValue
+                }
+            }
+        }
+
+        registrar.playToServer(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.VariableBlockEntity ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                when (payload.key) {
+                    "name" -> entity.variableName = payload.strValue
+                    "type" -> entity.setType(damien.nodeworks.block.entity.VariableType.fromOrdinal(payload.intValue))
+                    "value" -> entity.setValue(payload.strValue)
+                    "toggle" -> entity.toggleValue()
                 }
             }
         }

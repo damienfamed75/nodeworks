@@ -14,6 +14,7 @@ class AutocompletePopup(
     private val font: Font,
     private val cards: List<CardSnapshot>,
     private val itemTags: List<String> = emptyList(),
+    private val variableNames: List<String> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     data class Suggestion(val insertText: String, val displayText: String)
@@ -100,7 +101,8 @@ class AutocompletePopup(
 
     private val knownTypes = listOf(
         Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
-        Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get")
+        Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
+        Suggestion("VariableHandle", "VariableHandle — network variable from network:var")
     )
 
     private fun suggest(insertText: String, displayText: String = insertText) = Suggestion(insertText, displayText)
@@ -235,6 +237,14 @@ class AutocompletePopup(
             return fuzzyStrings(partial, types)
         }
 
+        // After network:var("partial → suggest variable names
+        val varMatch = Regex("""network:var\(\s*"(\w*)$""").find(trimmed)
+        if (varMatch != null) {
+            val partial = varMatch.groupValues[1]
+            customPrefix = partial
+            return fuzzyStrings(partial, variableNames)
+        }
+
         // After :face("partial → suggest face names
         val faceMatch = Regex(""":face\(\s*"(\w*)$""").find(trimmed)
         if (faceMatch != null) {
@@ -259,7 +269,8 @@ class AutocompletePopup(
                 suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?"),
                 suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
                 suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
-                suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)")
+                suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)"),
+                suggest("var(", "var(name: string) → VariableHandle")
             )
             return fuzzy(partial, methods)
         }
@@ -455,6 +466,7 @@ class AutocompletePopup(
         // 4. Inference from assignment context
         if (varName in extractCardVariables(text)) return "CardHandle"
         if (varName in extractItemsHandleVariables(text)) return "ItemsHandle"
+        if (varName in extractVariableHandleVariables(text)) return "VariableHandle"
 
         return null
     }
@@ -472,6 +484,7 @@ class AutocompletePopup(
         val methods = when (type) {
             "CardHandle" -> cardHandleMethods("")
             "ItemsHandle" -> itemsHandleMethods("")
+            "VariableHandle" -> variableHandleMethods("")
             else -> emptyList()
         }
         return fuzzy(partial, methods)
@@ -519,6 +532,31 @@ class AutocompletePopup(
         return fuzzy(partial, props)
     }
 
+    private fun variableHandleMethods(partial: String): List<Suggestion> {
+        val methods = listOf(
+            // Universal
+            suggest("get(", "get() → value"),
+            suggest("set(", "set(value) — set variable value"),
+            suggest("cas(", "cas(expected, new) → boolean"),
+            suggest("type(", "type() → string"),
+            suggest("name(", "name() → string"),
+            // Number
+            suggest("increment(", "increment(n: number) → number"),
+            suggest("decrement(", "decrement(n: number) → number"),
+            suggest("min(", "min(n: number) → number"),
+            suggest("max(", "max(n: number) → number"),
+            // String
+            suggest("append(", "append(s: string) → string"),
+            suggest("length(", "length() → number"),
+            suggest("clear(", "clear()"),
+            // Bool
+            suggest("toggle(", "toggle() → boolean"),
+            suggest("tryLock(", "tryLock() → boolean"),
+            suggest("unlock(", "unlock()")
+        )
+        return fuzzy(partial, methods)
+    }
+
     /** Extracts all variable names from `local X = ...` declarations in the script. */
     private fun extractVariableNames(text: String): List<String> {
         val pattern = Regex("""local\s+(\w+)""")
@@ -561,6 +599,14 @@ class AutocompletePopup(
         // local X = network:shapeless(...)
         val shapelessPattern = Regex("""local\s+(\w+)\s*=\s*network:shapeless\s*\(""")
         shapelessPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        return result
+    }
+
+    /** Extracts variable names assigned from network:var() calls. */
+    private fun extractVariableHandleVariables(text: String): Set<String> {
+        val result = mutableSetOf<String>()
+        val pattern = Regex("""local\s+(\w+)\s*=\s*network:var\s*\(""")
+        pattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         return result
     }
 

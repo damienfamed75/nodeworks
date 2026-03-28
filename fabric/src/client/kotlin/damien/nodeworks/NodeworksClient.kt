@@ -9,12 +9,14 @@ import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import damien.nodeworks.render.VariableRenderer
 import damien.nodeworks.screen.NodeSideScreen
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry
 import damien.nodeworks.screen.InstructionSetScreen
 import damien.nodeworks.screen.InstructionStorageScreen
 import damien.nodeworks.screen.InventoryTerminalScreen
 import damien.nodeworks.screen.NetworkControllerScreen
+import damien.nodeworks.screen.VariableScreen
 import damien.nodeworks.screen.TerminalLogBuffer
 import damien.nodeworks.screen.TerminalScreen
 import damien.nodeworks.network.InventorySyncPayload
@@ -32,6 +34,7 @@ object NodeworksClient : ClientModInitializer {
         NodeConnectionRenderer.register()
         BlockEntityRendererRegistry.register(ModBlockEntities.NODE, ::MonitorRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
+        BlockEntityRendererRegistry.register(ModBlockEntities.VARIABLE, ::VariableRenderer)
 
         MenuScreens.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)
@@ -50,6 +53,9 @@ object NodeworksClient : ClientModInitializer {
         }
         MenuScreens.register(ModScreenHandlers.NETWORK_CONTROLLER) { menu, inventory, title ->
             NetworkControllerScreen(menu, inventory, title)
+        }
+        MenuScreens.register(ModScreenHandlers.VARIABLE) { menu, inventory, title ->
+            VariableScreen(menu, inventory, title)
         }
 
         // Receive log messages from the server

@@ -101,7 +101,8 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
             .toList()
 
         val isRunning = PlatformServices.modState.isScriptRunning(serverLevel, terminal.blockPos)
-        val openData = TerminalOpenData(terminal.blockPos, terminal.getScripts(), isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags)
+        val varNames = snapshot.variables.map { it.name }
+        val openData = TerminalOpenData(terminal.blockPos, terminal.getScripts(), isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags, varNames)
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
