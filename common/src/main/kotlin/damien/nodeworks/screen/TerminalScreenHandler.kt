@@ -15,23 +15,23 @@ import net.minecraft.world.item.ItemStack
 class TerminalScreenHandler(
     syncId: Int,
     private val terminalPos: BlockPos,
-    private val scriptText: String,
+    private val scripts: Map<String, String>,
     private val running: Boolean,
     private val autoRun: Boolean,
     private val layoutIndex: Int,
     private val cards: List<CardSnapshot>,
-    private val itemTags: List<String>
+    private val itemTags: List<String>,
+    private val variables: List<Pair<String, Int>> = emptyList()
 ) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
 
     companion object {
         fun createServer(syncId: Int, player: Player, terminal: TerminalBlockEntity): TerminalScreenHandler {
             val level = player.level() as? ServerLevel
-            val nodePos = terminal.getConnectedNodePos()
+            val startPos = terminal.getNetworkStartPos()
 
-            val cards = if (level != null && nodePos != null) {
-                val snapshot = NetworkDiscovery.discoverNetwork(level, nodePos)
-                snapshot.allCards()
-            } else emptyList()
+            val snapshot = if (level != null && startPos != null) NetworkDiscovery.discoverNetwork(level, startPos) else null
+            val cards = snapshot?.allCards() ?: emptyList()
+            val varNames = snapshot?.variables?.map { it.name to it.type.ordinal } ?: emptyList()
 
             val isRunning = if (level != null) PlatformServices.modState.isScriptRunning(level, terminal.blockPos) else false
 
@@ -42,21 +42,23 @@ class TerminalScreenHandler(
                     .toList()
             } else emptyList()
 
-            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags)
+            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags, varNames)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {
-            return TerminalScreenHandler(syncId, data.terminalPos, data.scriptText, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags)
+            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags, data.variables)
         }
     }
 
     fun getTerminalPos(): BlockPos = terminalPos
-    fun getScriptText(): String = scriptText
+    fun getScripts(): Map<String, String> = scripts
+    fun getScriptText(): String = scripts["main"] ?: ""
     fun isRunning(): Boolean = running
     fun isAutoRun(): Boolean = autoRun
     fun getLayoutIndex(): Int = layoutIndex
     fun getCards(): List<CardSnapshot> = cards
     fun getItemTags(): List<String> = itemTags
+    fun getVariables(): List<Pair<String, Int>> = variables
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY
 

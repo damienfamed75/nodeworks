@@ -1,6 +1,6 @@
 package damien.nodeworks.screen
 
-import damien.nodeworks.card.RecipeCard
+import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -18,15 +18,15 @@ import net.minecraft.world.inventory.Slot
 import net.minecraft.world.item.ItemStack
 
 /**
- * Screen handler for the Recipe Card's 3x3 crafting template editor.
+ * Screen handler for the Instruction Set's 3x3 crafting template editor.
  * Supports two modes: handheld (card in player's hand) or node-based (card in a node slot).
  */
-class RecipeCardScreenHandler(
+class InstructionSetScreenHandler(
     syncId: Int,
     private val playerInventory: Inventory,
     private val recipeGrid: SimpleContainer,
     private val saveMode: SaveMode
-) : AbstractContainerMenu(ModScreenHandlers.RECIPE_CARD, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.INSTRUCTION_SET, syncId) {
 
     private val resultContainer = SimpleContainer(1)
 
@@ -49,18 +49,18 @@ class RecipeCardScreenHandler(
             return grid
         }
 
-        fun createHandheld(syncId: Int, playerInventory: Inventory, hand: InteractionHand, stack: ItemStack): RecipeCardScreenHandler {
-            val recipe = RecipeCard.getRecipe(stack)
-            return RecipeCardScreenHandler(syncId, playerInventory, recipeToGrid(recipe), SaveMode.Handheld(hand))
+        fun createHandheld(syncId: Int, playerInventory: Inventory, hand: InteractionHand, stack: ItemStack): InstructionSetScreenHandler {
+            val recipe = InstructionSet.getRecipe(stack)
+            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(recipe), SaveMode.Handheld(hand))
         }
 
-        fun createServer(syncId: Int, playerInventory: Inventory, nodePos: BlockPos, side: Direction, slotIndex: Int, stack: ItemStack): RecipeCardScreenHandler {
-            val recipe = RecipeCard.getRecipe(stack)
-            return RecipeCardScreenHandler(syncId, playerInventory, recipeToGrid(recipe), SaveMode.InNode(nodePos, side.ordinal, slotIndex))
+        fun createServer(syncId: Int, playerInventory: Inventory, nodePos: BlockPos, side: Direction, slotIndex: Int, stack: ItemStack): InstructionSetScreenHandler {
+            val recipe = InstructionSet.getRecipe(stack)
+            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(recipe), SaveMode.InNode(nodePos, side.ordinal, slotIndex))
         }
 
-        fun clientFactory(syncId: Int, playerInventory: Inventory, data: RecipeCardOpenData): RecipeCardScreenHandler {
-            return RecipeCardScreenHandler(syncId, playerInventory, recipeToGrid(data.recipe), SaveMode.ClientDummy)
+        fun clientFactory(syncId: Int, playerInventory: Inventory, data: InstructionSetOpenData): InstructionSetScreenHandler {
+            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(data.recipe), SaveMode.ClientDummy)
         }
     }
 
@@ -156,12 +156,14 @@ class RecipeCardScreenHandler(
             val stack = recipeGrid.getItem(i)
             if (stack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: ""
         }
+        val resultStack = resultContainer.getItem(0)
+        val output = if (resultStack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(resultStack.item)?.toString() ?: ""
 
         when (val mode = saveMode) {
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
-                if (stack.item is RecipeCard) {
-                    RecipeCard.setRecipe(stack, recipe)
+                if (stack.item is InstructionSet) {
+                    InstructionSet.setRecipe(stack, recipe, output)
                 }
             }
             is SaveMode.InNode -> {
@@ -170,8 +172,8 @@ class RecipeCardScreenHandler(
                 val side = Direction.entries[mode.sideOrdinal]
                 val globalSlot = side.ordinal * damien.nodeworks.block.entity.NodeBlockEntity.SLOTS_PER_SIDE + mode.slotIndex
                 val cardStack = nodeEntity.getItem(globalSlot)
-                if (cardStack.item is RecipeCard) {
-                    RecipeCard.setRecipe(cardStack, recipe)
+                if (cardStack.item is InstructionSet) {
+                    InstructionSet.setRecipe(cardStack, recipe, output)
                     nodeEntity.setChanged()
                 }
             }
@@ -182,4 +184,19 @@ class RecipeCardScreenHandler(
     override fun stillValid(player: Player): Boolean = true
 
     fun getRecipeGrid(): Container = recipeGrid
+
+    /** Sets the 3x3 recipe grid from a list of item ID strings (used by JEI integration). */
+    fun setRecipeFromIds(items: List<String>) {
+        for (i in 0 until minOf(9, items.size)) {
+            if (items[i].isEmpty()) {
+                recipeGrid.setItem(i, ItemStack.EMPTY)
+            } else {
+                val id = Identifier.tryParse(items[i]) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
+                recipeGrid.setItem(i, ItemStack(item, 1))
+            }
+        }
+        updateResult()
+        broadcastChanges()
+    }
 }

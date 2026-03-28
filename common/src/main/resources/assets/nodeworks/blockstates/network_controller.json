@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "nodeworks:block/network_controller" }
+  }
+}

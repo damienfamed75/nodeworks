@@ -26,6 +26,9 @@
 				"value": "damien.nodeworks.NodeworksClient",
 				"adapter": "kotlin"
 			}
+		],
+		"jei_mod_plugin": [
+			"damien.nodeworks.integration.jei.NodeworksJeiPlugin"
 		]
 	},
 	"mixins": [

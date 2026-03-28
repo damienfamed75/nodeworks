@@ -14,7 +14,13 @@
       "Bash(./gradlew :common:compileKotlin)",
       "Bash(find /c/Users/thedo/projects/java/nodeworks/fabric/src -name \"*.kt\" -exec wc -l {} +)",
       "Bash(find /c/Users/thedo/projects/java/nodeworks/neoforge/src -name \"*.kt\" -exec wc -l {} +)",
-      "Bash(find /c/Users/thedo/projects/java/nodeworks/common/src -name \"*.kt\" -exec wc -l {} +)"
+      "Bash(find /c/Users/thedo/projects/java/nodeworks/common/src -name \"*.kt\" -exec wc -l {} +)",
+      "Bash(mv items/recipe_card.json items/instruction_set.json)",
+      "Bash(mv models/item/recipe_card.json models/item/instruction_set.json)",
+      "Bash(mv textures/item/recipe_card.png textures/item/instruction_set.png)",
+      "Bash(mv textures/gui/recipe_card.png textures/gui/instruction_set.png)",
+      "Bash(cd /tmp)",
+      "Bash(gh api:*)"
     ]
   }
 }

@@ -31,6 +31,20 @@ class FabricStorageService : StorageService {
         }
     }
 
+    override fun moveItemsVariant(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String, Boolean) -> Boolean, maxCount: Long): Long {
+        val src = (source as FabricItemStorageHandle).storage
+        val dst = (dest as FabricItemStorageHandle).storage
+        return try {
+            StorageUtil.move(src, dst, { variant ->
+                val itemId = BuiltInRegistries.ITEM.getKey(variant.item)?.toString() ?: return@move false
+                val hasData = variant.toStack().componentsPatch.size() > 0
+                filter(itemId, hasData)
+            }, maxCount, null)
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     override fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long {
         val src = (storage as FabricItemStorageHandle).storage
         var total = 0L
@@ -43,6 +57,96 @@ class FabricStorageService : StorageService {
             }
         }
         return total
+    }
+
+    override fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
+        val src = (storage as FabricItemStorageHandle).storage
+        var total = 0L
+        var remaining = maxCount
+        net.fabricmc.fabric.api.transfer.v1.transaction.Transaction.openOuter().use { transaction ->
+            for (view in src) {
+                if (remaining <= 0) break
+                if (view.isResourceBlank || view.amount <= 0) continue
+                val itemId = BuiltInRegistries.ITEM.getKey(view.resource.item)?.toString() ?: continue
+                if (!filter(itemId)) continue
+                val extracted = view.extract(view.resource, minOf(remaining, view.amount), transaction)
+                total += extracted
+                remaining -= extracted
+            }
+            transaction.commit()
+        }
+        return total
+    }
+
+    override fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int {
+        if (stack.isEmpty) return 0
+        val dst = (storage as FabricItemStorageHandle).storage
+        val variant = ItemVariant.of(stack)
+        net.fabricmc.fabric.api.transfer.v1.transaction.Transaction.openOuter().use { transaction ->
+            val inserted = dst.insert(variant, stack.count.toLong(), transaction)
+            transaction.commit()
+            return inserted.toInt()
+        }
+    }
+
+    override fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String? {
+        val src = (storage as FabricItemStorageHandle).storage
+        for (view in src) {
+            if (!view.isResourceBlank && view.amount > 0) {
+                val itemId = BuiltInRegistries.ITEM.getKey(view.resource.item)?.toString() ?: continue
+                if (filter(itemId)) return itemId
+            }
+        }
+        return null
+    }
+
+    override fun findFirstItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): ItemInfo? {
+        val src = (storage as FabricItemStorageHandle).storage
+        for (view in src) {
+            if (!view.isResourceBlank && view.amount > 0) {
+                val item = view.resource.item
+                val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                if (filter(itemId)) {
+                    val stack = view.resource.toStack()
+                    return ItemInfo(
+                        itemId = itemId,
+                        name = item.getName(stack).string,
+                        count = view.amount,
+                        maxStackSize = item.defaultMaxStackSize,
+                        hasData = stack.componentsPatch.size() > 0
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
+        val src = (storage as FabricItemStorageHandle).storage
+        val aggregated = LinkedHashMap<String, ItemInfo>()
+        for (view in src) {
+            if (!view.isResourceBlank && view.amount > 0) {
+                val item = view.resource.item
+                val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                if (!filter(itemId)) continue
+                val stack = view.resource.toStack()
+                val hasData = stack.componentsPatch.size() > 0
+                val cacheKey = "$itemId:$hasData"
+                val existing = aggregated[cacheKey]
+                if (existing != null) {
+                    aggregated[cacheKey] = existing.copy(count = existing.count + view.amount)
+                } else {
+                    aggregated[cacheKey] = ItemInfo(
+                        itemId = itemId,
+                        name = item.getName(stack).string,
+                        count = view.amount,
+                        maxStackSize = item.defaultMaxStackSize,
+                        hasData = hasData
+                    )
+                }
+            }
+        }
+        return aggregated.values.toList()
     }
 
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {

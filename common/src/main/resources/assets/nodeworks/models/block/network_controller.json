@@ -1,0 +1,9 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "side": "nodeworks:block/network_controller",
+    "top": "nodeworks:block/network_controller_top",
+    "bottom": "nodeworks:block/network_controller_bottom",
+    "particle": "nodeworks:block/network_controller"
+  }
+}

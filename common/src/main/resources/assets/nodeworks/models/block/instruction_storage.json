@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "nodeworks:block/instruction_storage_top",
+    "bottom": "nodeworks:block/instruction_storage_bottom",
+    "side": "nodeworks:block/instruction_storage_side"
+  }
+}

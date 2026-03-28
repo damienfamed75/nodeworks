@@ -41,15 +41,36 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "terminal")),
             ExtendedScreenHandlerType({ syncId, inv, data -> TerminalScreenHandler.clientFactory(syncId, inv, data) }, TerminalOpenData.STREAM_CODEC)
         )
-        ModScreenHandlers.RECIPE_CARD = Registry.register(
+        ModScreenHandlers.INSTRUCTION_SET = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "recipe_card")),
-            ExtendedScreenHandlerType({ syncId, inv, data -> RecipeCardScreenHandler.clientFactory(syncId, inv, data) }, RecipeCardOpenData.STREAM_CODEC)
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> InstructionSetScreenHandler.clientFactory(syncId, inv, data) }, InstructionSetOpenData.STREAM_CODEC)
+        )
+        ModScreenHandlers.INSTRUCTION_STORAGE = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_storage")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> InstructionStorageScreenHandler.clientFactory(syncId, inv, data) }, InstructionStorageOpenData.STREAM_CODEC)
         )
         ModScreenHandlers.NODE_SIDE = Registry.register(
             BuiltInRegistries.MENU,
             ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "node_side")),
             ExtendedScreenHandlerType({ syncId, inv, data -> NodeSideScreenHandler.clientFactory(syncId, inv, data) }, NodeSideOpenData.STREAM_CODEC)
+        )
+        ModScreenHandlers.INVENTORY_TERMINAL = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> InventoryTerminalMenu.clientFactory(syncId, inv, data) }, InventoryTerminalOpenData.STREAM_CODEC)
+        )
+        ModScreenHandlers.NETWORK_CONTROLLER = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "network_controller")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> NetworkControllerMenu.clientFactory(syncId, inv, data) }, NetworkControllerOpenData.STREAM_CODEC)
+        )
+
+        ModScreenHandlers.VARIABLE = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "variable")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> VariableMenu.clientFactory(syncId, inv, data) }, VariableOpenData.STREAM_CODEC)
         )
 
         ModBlocks.initialize()
@@ -67,6 +88,12 @@ object Nodeworks : ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register { server ->
             tickCount++
             TerminalPackets.tickAll(server, tickCount)
+            for (cache in damien.nodeworks.script.NetworkInventoryCache.getAll()) {
+                cache.tick()
+            }
+            for (level in server.allLevels) {
+                damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
+            }
         }
 
         logger.info("Nodeworks initialized")

@@ -50,11 +50,43 @@ interface StorageService {
     /** Move items between storages. Returns number moved. */
     fun moveItems(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
 
+    /** Move items with data-aware filter. Filter receives (itemId, hasData). */
+    fun moveItemsVariant(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String, Boolean) -> Boolean, maxCount: Long): Long {
+        // Default: ignore hasData, delegate to string-only version
+        return moveItems(source, dest, { filter(it, false) }, maxCount)
+    }
+
     /** Count items matching filter in a storage. */
     fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long
 
+    /** Find the first item ID in storage matching the filter. Returns null if none found. */
+    fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String?
+
+    /** Find the first item in storage matching the filter, with full metadata. */
+    fun findFirstItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): ItemInfo?
+
+    /** Find ALL unique item types in storage matching the filter, with full metadata. */
+    fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo>
+
+    /** Extract (remove) items from storage matching the filter. Returns count actually removed. */
+    fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
+
+    /** Insert an ItemStack into storage. Returns count actually inserted. */
+    fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int
+
     /** Get a slotted view of the storage, or null if not slotted. */
     fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle?
+}
+
+/** Metadata for an item found in storage. */
+data class ItemInfo(
+    val itemId: String,
+    val name: String,
+    val count: Long,
+    val maxStackSize: Int,
+    val hasData: Boolean
+) {
+    val stackable: Boolean get() = maxStackSize > 1
 }
 
 /** Opaque handle to an item storage — platform-specific implementation. */

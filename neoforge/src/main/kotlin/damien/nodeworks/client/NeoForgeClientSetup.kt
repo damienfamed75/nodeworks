@@ -4,9 +4,19 @@ import damien.nodeworks.platform.ClientEventService
 import damien.nodeworks.platform.ClientNetworkingService
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
+import damien.nodeworks.registry.ModBlockEntities
+import damien.nodeworks.render.ControllerRenderer
+import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import damien.nodeworks.render.TerminalRenderer
+import damien.nodeworks.render.VariableRenderer
+import net.neoforged.neoforge.client.event.EntityRenderersEvent
 import damien.nodeworks.screen.NodeSideScreen
-import damien.nodeworks.screen.RecipeCardScreen
+import damien.nodeworks.screen.InstructionSetScreen
+import damien.nodeworks.screen.InstructionStorageScreen
+import damien.nodeworks.screen.InventoryTerminalScreen
+import damien.nodeworks.screen.NetworkControllerScreen
+import damien.nodeworks.screen.VariableScreen
 import damien.nodeworks.screen.TerminalScreen
 import com.mojang.blaze3d.vertex.PoseStack
 import net.minecraft.client.Minecraft
@@ -37,15 +47,35 @@ object NeoForgeClientSetup {
     }
 
     @SubscribeEvent
+    fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
+        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::MonitorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
+    }
+
+    @SubscribeEvent
     fun onRegisterMenuScreens(event: RegisterMenuScreensEvent) {
         event.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)
         }
-        event.register(ModScreenHandlers.RECIPE_CARD) { menu, inventory, title ->
-            RecipeCardScreen(menu, inventory, title)
+        event.register(ModScreenHandlers.INSTRUCTION_SET) { menu, inventory, title ->
+            InstructionSetScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.INSTRUCTION_STORAGE) { menu, inventory, title ->
+            InstructionStorageScreen(menu, inventory, title)
         }
         event.register(ModScreenHandlers.TERMINAL) { menu, inventory, title ->
             TerminalScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.INVENTORY_TERMINAL) { menu, inventory, title ->
+            InventoryTerminalScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.NETWORK_CONTROLLER) { menu, inventory, title ->
+            NetworkControllerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.VARIABLE) { menu, inventory, title ->
+            VariableScreen(menu, inventory, title)
         }
     }
 }

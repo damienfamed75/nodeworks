@@ -1,21 +1,22 @@
 package damien.nodeworks.screen
 
-import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.screen.InstructionSetScreenHandler
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.inventory.Slot
 
-class RecipeCardScreen(
-    menu: RecipeCardScreenHandler,
+class InstructionSetScreen(
+    menu: InstructionSetScreenHandler,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<RecipeCardScreenHandler>(menu, playerInventory, title) {
+) : AbstractContainerScreen<InstructionSetScreenHandler>(menu, playerInventory, title) {
 
     companion object {
-        private val BACKGROUND = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/recipe_card.png")
+        private val BACKGROUND = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/instruction_set.png")
     }
 
     init {
@@ -34,6 +35,16 @@ class RecipeCardScreen(
             256, 256
         )
 
+    }
+
+    override fun renderSlot(graphics: GuiGraphics, slot: Slot, p2: Int, p3: Int) {
+        super.renderSlot(graphics, slot, p2, p3)
+        // Draw a semi-transparent overlay on ghost slots to make items appear faded
+        if (slot.index in 0..8 && slot.hasItem()) {
+            val x = slot.x
+            val y = slot.y
+            graphics.fill(x, y, x + 16, y + 16, 0x808B8B8B.toInt())
+        }
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {

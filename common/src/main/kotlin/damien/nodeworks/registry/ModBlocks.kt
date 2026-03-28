@@ -1,7 +1,12 @@
 package damien.nodeworks.registry
 
+import damien.nodeworks.block.InstructionCrafterBlock
+import damien.nodeworks.block.InstructionStorageBlock
+import damien.nodeworks.block.InventoryTerminalBlock
+import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
+import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
@@ -25,6 +30,45 @@ object ModBlocks {
     val TERMINAL: Block = register(
         "terminal",
         ::TerminalBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+    )
+
+    val INSTRUCTION_CRAFTER: Block = register(
+        "instruction_crafter",
+        ::InstructionCrafterBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .noOcclusion()
+            .lightLevel { 15 }
+    )
+
+    val INSTRUCTION_STORAGE: Block = register(
+        "instruction_storage",
+        ::InstructionStorageBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+    )
+
+    val NETWORK_CONTROLLER: Block = register(
+        "network_controller",
+        ::NetworkControllerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(4.0f, 8.0f)
+            .noOcclusion()
+            .lightLevel { 10 }
+    )
+
+    val VARIABLE: Block = register(
+        "variable",
+        ::VariableBlock,
+        BlockBehaviour.Properties.of()
+            .strength(2.0f, 6.0f)
+    )
+
+    val INVENTORY_TERMINAL: Block = register(
+        "inventory_terminal",
+        ::InventoryTerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
     )
