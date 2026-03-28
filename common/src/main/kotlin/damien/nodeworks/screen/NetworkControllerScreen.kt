@@ -1,0 +1,301 @@
+package damien.nodeworks.screen
+
+import damien.nodeworks.block.entity.NetworkControllerBlockEntity
+import damien.nodeworks.platform.PlatformServices
+import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.components.EditBox
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.network.chat.Component
+import net.minecraft.resources.Identifier
+import net.minecraft.world.entity.player.Inventory
+
+class NetworkControllerScreen(
+    menu: NetworkControllerMenu,
+    playerInventory: Inventory,
+    title: Component
+) : AbstractContainerScreen<NetworkControllerMenu>(menu, playerInventory, title) {
+
+    companion object {
+        private const val DEFAULT_COLOR = 0x83E086
+        private val REDSTONE_LABELS = arrayOf("Ignored", "Active Low", "Active High")
+
+        // Layout
+        private const val TOP_BAR_H = 20
+        private const val ROW_H = 24
+        private const val SCROLL_BAR_W = 6
+        private const val LABEL_W = 60
+    }
+
+    // Property definitions
+    private data class Property(val label: String, val type: PropertyType)
+    private enum class PropertyType { NAME, COLOR, REDSTONE }
+
+    private val properties = listOf(
+        Property("Name", PropertyType.NAME),
+        Property("Color", PropertyType.COLOR),
+        Property("Redstone", PropertyType.REDSTONE)
+    )
+
+    private lateinit var nameField: EditBox
+    private var scrollOffset = 0
+    private var maxScroll = 0
+    private var listTop = 0
+    private var listBottom = 0
+    private var listLeft = 0
+    private var listRight = 0
+    private var draggingScrollbar = false
+
+    init {
+        imageWidth = 220
+        imageHeight = 180
+        // Hide default labels — we draw our own title in the top bar
+        inventoryLabelY = -9999
+        titleLabelY = -9999
+    }
+
+    override fun init() {
+        super.init()
+        leftPos = (width - imageWidth) / 2
+        topPos = (height - imageHeight) / 2
+
+        listLeft = leftPos + 4
+        listRight = leftPos + imageWidth - 4 - SCROLL_BAR_W
+        listTop = topPos + TOP_BAR_H
+        listBottom = topPos + imageHeight - 4
+
+        maxScroll = maxOf(0, properties.size * ROW_H - (listBottom - listTop))
+
+        // Name field — will be positioned dynamically in render
+        nameField = EditBox(font, listLeft + LABEL_W + 4, listTop, 100, 16, Component.literal("Name"))
+        nameField.setMaxLength(32)
+        nameField.value = ""
+        nameField.setBordered(true)
+        addRenderableWidget(nameField)
+    }
+
+    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+        // Main background (matches Terminal)
+        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFF2B2B2B.toInt())
+
+        // Top bar
+        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + TOP_BAR_H, 0xFF3C3C3C.toInt())
+        graphics.fill(leftPos, topPos + TOP_BAR_H - 1, leftPos + imageWidth, topPos + TOP_BAR_H, 0xFF555555.toInt())
+        graphics.drawString(font, title, leftPos + 6, topPos + 6, 0xFFFFFFFF.toInt())
+
+        // List area background
+        graphics.fill(listLeft, listTop, listRight, listBottom, 0xFF1E1E1E.toInt())
+
+        // Render scrollable property rows
+        graphics.enableScissor(listLeft, listTop, listRight, listBottom)
+
+        for (i in properties.indices) {
+            val rowY = listTop + i * ROW_H - scrollOffset
+            if (rowY + ROW_H < listTop) continue
+            if (rowY > listBottom) break
+
+            val prop = properties[i]
+
+            // Alternating row background
+            if (i % 2 == 0) {
+                graphics.fill(listLeft, rowY, listRight, rowY + ROW_H, 0xFF252525.toInt())
+            }
+
+            // Row separator
+            graphics.fill(listLeft, rowY + ROW_H - 1, listRight, rowY + ROW_H, 0xFF3C3C3C.toInt())
+
+            // Label
+            graphics.drawString(font, prop.label, listLeft + 6, rowY + (ROW_H - 8) / 2, 0xFFAAAAAA.toInt())
+
+            val controlX = listLeft + LABEL_W + 4
+            val controlY = rowY + (ROW_H - 16) / 2
+
+            when (prop.type) {
+                PropertyType.NAME -> {
+                    // Position the EditBox to match the current scroll
+                    nameField.setX(controlX)
+                    nameField.setY(controlY)
+                    nameField.visible = rowY + ROW_H > listTop && rowY < listBottom
+                }
+                PropertyType.COLOR -> {
+                    // Color swatch
+                    val swX = controlX
+                    val swY = controlY
+                    graphics.fill(swX, swY, swX + 16, swY + 16, menu.networkColor or 0xFF000000.toInt())
+                    // Border
+                    graphics.fill(swX - 1, swY - 1, swX + 17, swY, 0xFF555555.toInt())
+                    graphics.fill(swX - 1, swY - 1, swX, swY + 17, 0xFF555555.toInt())
+                    graphics.fill(swX + 16, swY - 1, swX + 17, swY + 17, 0xFF888888.toInt())
+                    graphics.fill(swX - 1, swY + 16, swX + 17, swY + 17, 0xFF888888.toInt())
+                    // Hex text next to swatch
+                    graphics.drawString(font, "#${String.format("%06X", menu.networkColor)}", swX + 20, swY + 4, 0xFF888888.toInt())
+                }
+                PropertyType.REDSTONE -> {
+                    renderRedstoneControl(graphics, controlX, controlY, mouseX, mouseY)
+                }
+                else -> {}
+            }
+        }
+
+        graphics.disableScissor()
+
+        // Scrollbar
+        renderScrollbar(graphics, mouseX, mouseY)
+
+        // Player inventory area
+        val invY = topPos + imageHeight
+        // No player inventory rendered — this is a settings-only screen
+    }
+
+    private fun renderRedstoneControl(graphics: GuiGraphics, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
+        val mode = menu.redstoneMode
+        val bw = 20
+        val bh = 16
+        val hovered = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + bh
+
+        // Button bg
+        val bg = if (hovered) 0xFF444444.toInt() else 0xFF333333.toInt()
+        graphics.fill(bx, by, bx + bw, by + bh, bg)
+        graphics.fill(bx, by, bx + bw, by + 1, 0xFF4A4A4A.toInt())
+        graphics.fill(bx, by + bh - 1, bx + bw, by + bh, 0xFF1E1E1E.toInt())
+
+        when (mode) {
+            0 -> { // Ignored — grey X
+                val cx = bx + bw / 2; val cy = by + bh / 2
+                for (i in -3..3) {
+                    graphics.fill(cx + i, cy - i, cx + i + 1, cy - i + 1, 0xFFCC3333.toInt())
+                    graphics.fill(cx + i, cy + i, cx + i + 1, cy + i + 1, 0xFF888888.toInt())
+                }
+            }
+            1 -> { // Active Low — dim torch
+                val tx = bx + bw / 2; val ty = by + 1
+                graphics.fill(tx, ty + 4, tx + 1, ty + 12, 0xFF7B6B4B.toInt())
+                graphics.fill(tx - 2, ty, tx + 3, ty + 4, 0xFF662222.toInt())
+            }
+            2 -> { // Active High — bright torch
+                val tx = bx + bw / 2; val ty = by + 1
+                graphics.fill(tx, ty + 4, tx + 1, ty + 12, 0xFF7B6B4B.toInt())
+                graphics.fill(tx - 2, ty, tx + 3, ty + 4, 0xFFFF4433.toInt())
+                graphics.fill(tx - 3, ty - 1, tx + 4, ty + 1, 0x33FF2200.toInt())
+            }
+        }
+
+        // Label
+        graphics.drawString(font, REDSTONE_LABELS[mode], bx + bw + 4, by + 4, 0xFF888888.toInt())
+    }
+
+    private fun renderScrollbar(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+        val sbX = listRight
+        val sbW = SCROLL_BAR_W
+        val trackH = listBottom - listTop
+        val totalH = properties.size * ROW_H
+
+        // Track
+        graphics.fill(sbX, listTop, sbX + sbW, listBottom, 0xFF1A1A1A.toInt())
+
+        if (totalH > trackH) {
+            val thumbH = maxOf(12, trackH * trackH / totalH)
+            val thumbY = listTop + (trackH - thumbH) * scrollOffset / maxScroll
+            val hovered = mouseX >= sbX && mouseX < sbX + sbW && mouseY >= listTop && mouseY < listBottom
+            val color = if (hovered || draggingScrollbar) 0xFF666666.toInt() else 0xFF444444.toInt()
+            graphics.fill(sbX + 1, thumbY, sbX + sbW - 1, thumbY + thumbH, color)
+        }
+    }
+
+    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.render(graphics, mouseX, mouseY, partialTick)
+        // No tooltip rendering needed (no inventory slots visible)
+    }
+
+    override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
+        val mx = event.x()
+        val my = event.y()
+
+        // Scrollbar drag start
+        if (mx >= listRight && mx < listRight + SCROLL_BAR_W && my >= listTop && my < listBottom && maxScroll > 0) {
+            draggingScrollbar = true
+            return true
+        }
+
+        // Check property row clicks
+        for (i in properties.indices) {
+            val rowY = listTop + i * ROW_H - scrollOffset
+            if (rowY + ROW_H < listTop || rowY > listBottom) continue
+
+            val controlX = listLeft + LABEL_W + 4
+            val controlY = rowY + (ROW_H - 16) / 2
+            val prop = properties[i]
+
+            when (prop.type) {
+                PropertyType.COLOR -> {
+                    if (mx >= controlX && mx < controlX + 16 && my >= controlY && my < controlY + 16) {
+                        minecraft?.setScreen(ColorPickerScreen(this, menu.networkColor, DEFAULT_COLOR) { color ->
+                            sendColorUpdate(color)
+                        })
+                        return true
+                    }
+                }
+                PropertyType.REDSTONE -> {
+                    val bw = 20; val bh = 16
+                    if (mx >= controlX && mx < controlX + bw && my >= controlY && my < controlY + bh) {
+                        sendRedstoneUpdate((menu.redstoneMode + 1) % 3)
+                        return true
+                    }
+                }
+                else -> {}
+            }
+        }
+
+        return super.mouseClicked(event, flag)
+    }
+
+    override fun mouseDragged(event: net.minecraft.client.input.MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        if (draggingScrollbar && maxScroll > 0) {
+            val trackH = listBottom - listTop
+            val totalH = properties.size * ROW_H
+            val thumbH = maxOf(12, trackH * trackH / totalH)
+            val scrollRange = trackH - thumbH
+            if (scrollRange > 0) {
+                val relY = (event.y() - listTop - thumbH / 2).toFloat() / scrollRange
+                scrollOffset = (relY * maxScroll).toInt().coerceIn(0, maxScroll)
+            }
+            return true
+        }
+        return super.mouseDragged(event, dragX, dragY)
+    }
+
+    override fun mouseReleased(event: net.minecraft.client.input.MouseButtonEvent): Boolean {
+        draggingScrollbar = false
+        return super.mouseReleased(event)
+    }
+
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        if (mouseX >= listLeft && mouseX < listRight + SCROLL_BAR_W && mouseY >= listTop && mouseY < listBottom) {
+            scrollOffset = (scrollOffset - (scrollY * 12).toInt()).coerceIn(0, maxScroll)
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+    }
+
+    override fun removed() {
+        super.removed()
+        sendNameUpdate(nameField.value)
+    }
+
+    private fun sendColorUpdate(color: Int) {
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.ControllerSettingsPayload(menu.controllerPos, "color", color, "")
+        )
+    }
+
+    private fun sendRedstoneUpdate(mode: Int) {
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.ControllerSettingsPayload(menu.controllerPos, "redstone", mode, "")
+        )
+    }
+
+    private fun sendNameUpdate(name: String) {
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.ControllerSettingsPayload(menu.controllerPos, "name", 0, name)
+        )
+    }
+}

@@ -111,6 +111,14 @@ class Nodeworks(modBus: IEventBus) {
                     InventoryTerminalMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.NETWORK_CONTROLLER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "network_controller")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = NetworkControllerOpenData.STREAM_CODEC.decode(buf)
+                    NetworkControllerMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -135,6 +143,20 @@ class Nodeworks(modBus: IEventBus) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
                     menu.handleGridClick(player, payload.itemId, payload.action)
+                }
+            }
+        }
+
+        registrar.playToServer(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.NetworkControllerBlockEntity ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                when (payload.key) {
+                    "color" -> entity.networkColor = payload.intValue
+                    "redstone" -> entity.redstoneMode = payload.intValue
+                    "name" -> entity.networkName = payload.strValue
                 }
             }
         }

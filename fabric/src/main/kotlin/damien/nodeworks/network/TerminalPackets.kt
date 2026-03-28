@@ -55,6 +55,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
     }
@@ -176,6 +177,18 @@ object TerminalPackets {
             val menu = player.containerMenu
             if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
                 menu.handleGridClick(player, payload.itemId, payload.action)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(ControllerSettingsPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.NetworkControllerBlockEntity ?: return@registerGlobalReceiver
+            if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
+            when (payload.key) {
+                "color" -> entity.networkColor = payload.intValue
+                "redstone" -> entity.redstoneMode = payload.intValue
+                "name" -> entity.networkName = payload.strValue
             }
         }
     }
