@@ -79,12 +79,20 @@ class Nodeworks(modBus: IEventBus) {
                     TerminalScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
-            ModScreenHandlers.RECIPE_CARD = Registry.register(
+            ModScreenHandlers.INSTRUCTION_SET = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "recipe_card")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
-                    val data = RecipeCardOpenData.STREAM_CODEC.decode(buf)
-                    RecipeCardScreenHandler.clientFactory(syncId, inv, data)
+                    val data = InstructionSetOpenData.STREAM_CODEC.decode(buf)
+                    InstructionSetScreenHandler.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.INSTRUCTION_STORAGE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_storage")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = InstructionStorageOpenData.STREAM_CODEC.decode(buf)
+                    InstructionStorageScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
             ModScreenHandlers.NODE_SIDE = Registry.register(
@@ -93,6 +101,30 @@ class Nodeworks(modBus: IEventBus) {
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = NodeSideOpenData.STREAM_CODEC.decode(buf)
                     NodeSideScreenHandler.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.INVENTORY_TERMINAL = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = InventoryTerminalOpenData.STREAM_CODEC.decode(buf)
+                    InventoryTerminalMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.NETWORK_CONTROLLER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "network_controller")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = NetworkControllerOpenData.STREAM_CODEC.decode(buf)
+                    NetworkControllerMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.VARIABLE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "variable")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = VariableOpenData.STREAM_CODEC.decode(buf)
+                    VariableMenu.clientFactory(syncId, inv, data)
                 }
             )
             ModScreenHandlers.initialize()
@@ -106,10 +138,52 @@ class Nodeworks(modBus: IEventBus) {
         registrar.playToServer(RunScriptPayload.TYPE, RunScriptPayload.CODEC, NeoForgeTerminalPackets::handleRunScript)
         registrar.playToServer(StopScriptPayload.TYPE, StopScriptPayload.CODEC, NeoForgeTerminalPackets::handleStopScript)
         registrar.playToServer(SaveScriptPayload.TYPE, SaveScriptPayload.CODEC, NeoForgeTerminalPackets::handleSaveScript)
+        registrar.playToServer(CreateScriptTabPayload.TYPE, CreateScriptTabPayload.CODEC, NeoForgeTerminalPackets::handleCreateScriptTab)
+        registrar.playToServer(DeleteScriptTabPayload.TYPE, DeleteScriptTabPayload.CODEC, NeoForgeTerminalPackets::handleDeleteScriptTab)
         registrar.playToServer(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC, NeoForgeTerminalPackets::handleToggleAutoRun)
         registrar.playToServer(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC, NeoForgeTerminalPackets::handleSetLayout)
         registrar.playToServer(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC, NeoForgeTerminalPackets::handleSetStoragePriority)
-        registrar.playToServer(OpenRecipeCardPayload.TYPE, OpenRecipeCardPayload.CODEC, NeoForgeTerminalPackets::handleOpenRecipeCard)
+        registrar.playToServer(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC, NeoForgeTerminalPackets::handleOpenInstructionSet)
+        registrar.playToServer(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC, NeoForgeTerminalPackets::handleSetInstructionGrid)
+        registrar.playToServer(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleGridClick(player, payload.itemId, payload.action)
+                }
+            }
+        }
+
+        registrar.playToServer(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.NetworkControllerBlockEntity ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                when (payload.key) {
+                    "color" -> entity.networkColor = payload.intValue
+                    "redstone" -> entity.redstoneMode = payload.intValue
+                    "glow" -> entity.nodeGlowStyle = payload.intValue
+                    "name" -> entity.networkName = payload.strValue
+                }
+            }
+        }
+
+        registrar.playToServer(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.VariableBlockEntity ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                when (payload.key) {
+                    "name" -> entity.variableName = payload.strValue
+                    "type" -> entity.setType(damien.nodeworks.block.entity.VariableType.fromOrdinal(payload.intValue))
+                    "value" -> entity.setValue(payload.strValue)
+                    "toggle" -> entity.toggleValue()
+                }
+            }
+        }
 
         // S2C payloads
         registrar.playToClient(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC) { payload, context ->
@@ -117,11 +191,25 @@ class Nodeworks(modBus: IEventBus) {
                 TerminalLogBuffer.addLog(payload.terminalPos, payload.message, payload.isError)
             }
         }
+        registrar.playToClient(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val screen = net.minecraft.client.Minecraft.getInstance().screen
+                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
+                    screen.repo.handleUpdate(payload)
+                }
+            }
+        }
     }
 
     private fun onServerTick(event: ServerTickEvent.Post) {
         tickCount++
         NeoForgeTerminalPackets.tickAll(event.server, tickCount)
+        for (cache in damien.nodeworks.script.NetworkInventoryCache.getAll()) {
+            cache.tick()
+        }
+        for (level in event.server.allLevels) {
+            damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
+        }
     }
 
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {

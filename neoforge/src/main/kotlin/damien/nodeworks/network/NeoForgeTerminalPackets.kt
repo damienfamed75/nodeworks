@@ -2,11 +2,11 @@ package damien.nodeworks.network
 
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
-import damien.nodeworks.card.RecipeCard
+import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.screen.RecipeCardOpenData
-import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.screen.InstructionSetOpenData
+import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.script.ScriptEngine
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -47,8 +47,7 @@ object NeoForgeTerminalPackets {
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
 
-            terminal.setScriptText(payload.scriptText)
-            val nodePos = terminal.getConnectedNodePos() ?: return@enqueueWork
+            val nodePos = terminal.getNetworkStartPos() ?: return@enqueueWork
 
             val globalPos = GlobalPos.of(level.dimension(), payload.terminalPos)
             activeEngines.remove(globalPos)?.stop()
@@ -64,7 +63,7 @@ object NeoForgeTerminalPackets {
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(payload.scriptText)) {
+            if (engine.start(terminal.getScriptsCopy())) {
                 activeEngines[globalPos] = engine
             }
         }
@@ -85,11 +84,29 @@ object NeoForgeTerminalPackets {
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-            terminal.setScriptText(payload.scriptText)
+            terminal.setScript(payload.scriptName, payload.scriptText)
         }
     }
 
-    fun handleOpenRecipeCard(payload: OpenRecipeCardPayload, context: IPayloadContext) {
+    fun handleCreateScriptTab(payload: CreateScriptTabPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@enqueueWork
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
+            terminal.createScript(payload.scriptName)
+        }
+    }
+
+    fun handleDeleteScriptTab(payload: DeleteScriptTabPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@enqueueWork
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
+            terminal.deleteScript(payload.scriptName)
+        }
+    }
+
+    fun handleOpenInstructionSet(payload: OpenInstructionSetPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@enqueueWork
@@ -98,16 +115,16 @@ object NeoForgeTerminalPackets {
             val side = Direction.entries[payload.sideOrdinal]
             val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
             val cardStack = nodeEntity.getItem(globalSlot)
-            if (cardStack.item !is RecipeCard) return@enqueueWork
-            val recipe = RecipeCard.getRecipe(cardStack)
+            if (cardStack.item !is InstructionSet) return@enqueueWork
+            val recipe = InstructionSet.getRecipe(cardStack)
 
             PlatformServices.menu.openExtendedMenu(
                 serverPlayer,
-                Component.translatable("container.nodeworks.recipe_card"),
-                RecipeCardOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe),
-                RecipeCardOpenData.STREAM_CODEC
+                Component.translatable("container.nodeworks.instruction_set"),
+                InstructionSetOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe),
+                InstructionSetOpenData.STREAM_CODEC
             ) { syncId, inv, p ->
-                RecipeCardScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
+                InstructionSetScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
             }
         }
     }
@@ -146,6 +163,16 @@ object NeoForgeTerminalPackets {
         }
     }
 
+    fun handleSetInstructionGrid(payload: SetInstructionGridPayload, context: IPayloadContext) {
+        context.enqueueWork {
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is InstructionSetScreenHandler && menu.containerId == payload.containerId) {
+                menu.setRecipeFromIds(payload.items)
+            }
+        }
+    }
+
     // --- Auto-run ---
 
     private val pendingAutoRun = mutableSetOf<GlobalPos>()
@@ -167,7 +194,7 @@ object NeoForgeTerminalPackets {
             if (!level.isLoaded(pos)) continue
             val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
             if (!terminal.autoRun || terminal.scriptText.isBlank()) continue
-            val nodePos = terminal.getConnectedNodePos() ?: continue
+            val nodePos = terminal.getNetworkStartPos() ?: continue
 
             if (activeEngines.containsKey(gp)) continue
 
@@ -180,7 +207,7 @@ object NeoForgeTerminalPackets {
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
-            if (engine.start(terminal.scriptText)) {
+            if (engine.start(terminal.getScriptsCopy())) {
                 activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
             }

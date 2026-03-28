@@ -2,19 +2,23 @@ package damien.nodeworks.block
 
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
+import damien.nodeworks.registry.ModItems
 import damien.nodeworks.screen.NodeSideOpenData
 import damien.nodeworks.screen.NodeSideScreenHandler
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.Containers
 import net.minecraft.world.InteractionResult
-import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
-import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.inventory.ContainerLevelAccess
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.BaseEntityBlock
@@ -24,6 +28,7 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
+import net.minecraft.world.phys.shapes.Shapes
 import net.minecraft.world.phys.shapes.VoxelShape
 
 class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
@@ -31,9 +36,18 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
     companion object {
         val CODEC: MapCodec<NodeBlock> = simpleCodec(::NodeBlock)
 
-        // 6x6x6 pixel centered cube (5..11 on each axis out of 16)
-        // Small enough to easily click individual faces, like LaserIO nodes
-        val SHAPE: VoxelShape = Block.box(5.0, 5.0, 5.0, 11.0, 11.0, 11.0)
+        // 6x6x6 pixel centered cube (5..11 on each axis)
+        val NODE_SHAPE: VoxelShape = Block.box(5.0, 5.0, 5.0, 11.0, 11.0, 11.0)
+
+        // Monitor panel shapes per face (2 pixels thick, extends from node to block edge)
+        val MONITOR_SHAPES: Map<Direction, VoxelShape> = mapOf(
+            Direction.NORTH to Block.box(2.0, 2.0, 0.0, 14.0, 14.0, 2.0),
+            Direction.SOUTH to Block.box(2.0, 2.0, 14.0, 14.0, 14.0, 16.0),
+            Direction.WEST  to Block.box(0.0, 2.0, 2.0, 2.0, 14.0, 14.0),
+            Direction.EAST  to Block.box(14.0, 2.0, 2.0, 16.0, 14.0, 14.0),
+            Direction.DOWN  to Block.box(2.0, 0.0, 2.0, 14.0, 2.0, 14.0),
+            Direction.UP    to Block.box(2.0, 14.0, 2.0, 14.0, 16.0, 14.0)
+        )
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
@@ -43,14 +57,21 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         level: BlockGetter,
         pos: BlockPos,
         context: CollisionContext
-    ): VoxelShape = SHAPE
+    ): VoxelShape {
+        val entity = level.getBlockEntity(pos) as? NodeBlockEntity ?: return NODE_SHAPE
+        var shape = NODE_SHAPE
+        for (face in entity.getMonitorFaces()) {
+            MONITOR_SHAPES[face]?.let { shape = Shapes.or(shape, it) }
+        }
+        return shape
+    }
 
     override fun getCollisionShape(
         state: BlockState,
         level: BlockGetter,
         pos: BlockPos,
         context: CollisionContext
-    ): VoxelShape = SHAPE
+    ): VoxelShape = getShape(state, level, pos, context)
 
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
 
@@ -65,15 +86,40 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        // Don't open GUI if player is holding the wrench (wrench handles its own interaction)
         if (player.mainHandItem.item is NetworkWrenchItem) return InteractionResult.PASS
-
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val blockEntity = level.getBlockEntity(pos) as? NodeBlockEntity ?: return InteractionResult.PASS
         val side = hitResult.direction
-        val serverPlayer = player as ServerPlayer
 
+        // If this face has a monitor, right-click with empty hand clears the tracked item
+        if (blockEntity.hasMonitor(side) && player.mainHandItem.isEmpty) {
+            blockEntity.setMonitorItem(side, null)
+            return InteractionResult.SUCCESS
+        }
+
+        // If holding a monitor item, attach it to this face
+        if (player.mainHandItem.item is MonitorItem) {
+            if (!blockEntity.hasMonitor(side)) {
+                blockEntity.attachMonitor(side)
+                if (!player.abilities.instabuild) {
+                    player.mainHandItem.shrink(1)
+                }
+            }
+            return InteractionResult.SUCCESS
+        }
+
+        // If this face has a monitor, right-click with an item sets the tracked item
+        if (blockEntity.hasMonitor(side) && !player.mainHandItem.isEmpty) {
+            val itemId = BuiltInRegistries.ITEM.getKey(player.mainHandItem.item)?.toString()
+            if (itemId != null) {
+                blockEntity.setMonitorItem(side, itemId)
+            }
+            return InteractionResult.SUCCESS
+        }
+
+        // Default: open node side inventory
+        val serverPlayer = player as ServerPlayer
         val sideName = side.name.replaceFirstChar { it.uppercase() }
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
@@ -86,10 +132,35 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         return InteractionResult.SUCCESS
     }
 
+    override fun attack(state: BlockState, level: Level, pos: BlockPos, player: Player) {
+        if (level.isClientSide) return
+
+        val entity = level.getBlockEntity(pos) as? NodeBlockEntity ?: return
+
+        // Determine which face the player is looking at
+        val hitResult = player.pick(5.0, 0f, false)
+        if (hitResult is BlockHitResult && hitResult.blockPos == pos) {
+            val face = hitResult.direction
+            if (entity.hasMonitor(face)) {
+                // Pop off the monitor
+                entity.removeMonitor(face)
+                Containers.dropItemStack(level, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, ItemStack(ModItems.MONITOR))
+                return
+            }
+        }
+    }
+
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
-        // Mark the block entity so setRemoved knows this is a real destruction, not a chunk unload
         val entity = level.getBlockEntity(pos) as? NodeBlockEntity
-        entity?.blockDestroyed = true
+        if (entity != null) {
+            entity.blockDestroyed = true
+            // Drop all monitors
+            if (!level.isClientSide) {
+                for (face in entity.getMonitorFaces()) {
+                    Containers.dropItemStack(level, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, ItemStack(ModItems.MONITOR))
+                }
+            }
+        }
         return super.playerWillDestroy(level, pos, state, player)
     }
 }

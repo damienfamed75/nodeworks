@@ -28,11 +28,30 @@ class ScriptEngine(
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl()
 
-    fun start(scriptText: String): Boolean {
+    /** Routing callback set by network:onInsert(). Called when items enter network storage. */
+    var onInsertCallback: LuaFunction? = null
+        private set
+
+    /** Precomputed route table set by network:route(). */
+    var routeTable: RouteTable? = null
+        private set
+
+    /** Cached inventory index across all network storage. */
+    var inventoryCache: NetworkInventoryCache? = null
+        private set
+
+    fun start(scripts: Map<String, String>): Boolean {
         stop()
+
+        val mainScript = scripts["main"]
+        if (mainScript.isNullOrBlank()) {
+            logCallback("Error: no 'main' script found.", true)
+            return false
+        }
 
         // Discover network
         networkSnapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
+        inventoryCache = NetworkInventoryCache.getOrCreate(level, networkEntryNode)
 
         // Create sandboxed globals
         val g = Globals()
@@ -49,10 +68,35 @@ class ScriptEngine(
         // Remove dangerous globals
         g.set("dofile", LuaValue.NIL)
         g.set("loadfile", LuaValue.NIL)
-        g.set("require", LuaValue.NIL)
         g.set("io", LuaValue.NIL)
         g.set("os", LuaValue.NIL)
         g.set("luajava", LuaValue.NIL)
+
+        // Custom require() that resolves modules from the scripts map
+        val loaded = LuaTable()
+        g.set("require", object : OneArgFunction() {
+            override fun call(arg: LuaValue): LuaValue {
+                val modName = arg.checkjstring()
+
+                // Return cached module if already loaded
+                val cached = loaded.get(modName)
+                if (!cached.isnil()) return cached
+
+                val source = scripts[modName]
+                    ?: throw LuaError("module '$modName' not found")
+
+                // Mark as loading (prevents circular require)
+                loaded.set(modName, LuaValue.TRUE)
+
+                val chunk = g.load(stripTypeAnnotations(source), modName)
+                val result = chunk.call()
+
+                // If the module returned a value, cache that; otherwise cache true
+                val moduleValue = if (result.isnil()) LuaValue.TRUE else result
+                loaded.set(modName, moduleValue)
+                return moduleValue
+            }
+        })
 
         // Initialize scheduler with the current server tick
         scheduler.initialize(PlatformServices.modState.tickCount)
@@ -62,9 +106,9 @@ class ScriptEngine(
 
         globals = g
 
-        // Compile and run the script (top-level code: variable setup, scheduler registrations)
+        // Compile and run the main script (top-level code: variable setup, scheduler registrations)
         return try {
-            val chunk = g.load(scriptText, "terminal")
+            val chunk = g.load(stripTypeAnnotations(mainScript), "main")
             chunk.call()
             logCallback("Script started.", false)
             true
@@ -77,12 +121,16 @@ class ScriptEngine(
     }
 
     fun stop() {
+        onInsertCallback = null
+        routeTable = null
+        inventoryCache = null // clear local reference, cache lives in global registry
         scheduler.clear()
         globals = null
         networkSnapshot = null
     }
 
     fun isRunning(): Boolean = globals != null
+
 
     /** Called each server tick. Runs scheduler callbacks within the instruction budget. */
     fun tick(tickCount: Long) {
@@ -101,28 +149,177 @@ class ScriptEngine(
         }
     }
 
+    /**
+     * Creates a routing callback for NetworkStorageHelper.insertItems().
+     * Invokes the Lua onInsert callback and extracts the target storage from the returned CardHandle.
+     */
+    private fun createRoutingCallback(snapshot: NetworkSnapshot): ((String, Long) -> damien.nodeworks.platform.ItemStorageHandle?)? {
+        val callback = onInsertCallback ?: return null
+        return { itemId, count ->
+            try {
+                val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+                val itemName = if (identifier != null) {
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier)
+                    item?.getName(net.minecraft.world.item.ItemStack(item))?.string ?: itemId
+                } else itemId
+
+                // Create an ItemsHandle for the callback
+                val itemsTable = ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
+                    itemId = itemId,
+                    itemName = itemName,
+                    count = count.toInt(),
+                    sourceStorage = { null }, // source doesn't matter for routing decision
+                    level = level
+                ))
+
+                val result = callback.call(itemsTable)
+
+                // If callback returned a CardHandle table, extract its storage
+                if (!result.isnil() && result.istable()) {
+                    val storageGetter = result.get("_getStorage")
+                    if (storageGetter is CardHandle.StorageGetter) {
+                        storageGetter.getStorage()
+                    } else null
+                } else null
+            } catch (e: LuaError) {
+                logCallback("onInsert error: ${e.message}", true)
+                null
+            }
+        }
+    }
+
+    companion object {
+        /**
+         * Strips Luau-style type annotations from script text before Lua compilation.
+         * Handles: function params `(x: Type)`, return types `): Type`, local vars `local x: Type =`
+         */
+        fun stripTypeAnnotations(source: String): String {
+            var result = source
+
+            // Function parameter types: (param:Type) or (param: Type) or (param :Type)
+            // Also handles optional: (param: Type?)
+            // Match `: TypeName?` after a word inside parentheses context
+            result = result.replace(Regex("""\b(\w+)\s*:\s*([A-Z]\w*\??)""")) { match ->
+                // Only strip if it looks like a type annotation (type starts with uppercase)
+                match.groupValues[1]
+            }
+
+            // Return type annotations: ): TypeName or ): TypeName?
+            result = result.replace(Regex("""\)\s*:\s*([A-Z]\w*\??)""")) { ")" }
+
+            return result
+        }
+    }
+
     private fun injectApi(g: Globals) {
         val snapshot = networkSnapshot!!
-
-        // card(type, alias) -> CardHandle
-        g.set("card", object : TwoArgFunction() {
-            override fun call(typeArg: LuaValue, aliasArg: LuaValue): LuaValue {
-                val type = typeArg.checkjstring()
-                val alias = aliasArg.checkjstring()
-                val card = snapshot.allCards().find {
-                    it.capability.type == type && it.alias == alias
-                } ?: throw LuaError("Card not found: $type '$alias'")
-                return CardHandle.create(card, level)
-            }
-        })
 
         // scheduler object
         g.set("scheduler", scheduler.createLuaTable())
 
-        // network object — queries across all Storage Cards
+        // network object
         val networkTable = LuaTable()
 
-        // network:count(filter) → number
+        // network:get(alias) → CardHandle or error
+        networkTable.set("get", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
+                val alias = aliasArg.checkjstring()
+                val card = snapshot.findByAlias(alias)
+                    ?: throw LuaError("Not found on network: '$alias'")
+                return CardHandle.create(card, level)
+            }
+        })
+
+        // network:getAll(type) → list of CardHandles matching that type
+        networkTable.set("getAll", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
+                val type = typeArg.checkjstring()
+                val cards = snapshot.allCards().filter { it.capability.type == type }
+                val result = LuaTable()
+                for ((i, card) in cards.withIndex()) {
+                    result.set(i + 1, CardHandle.create(card, level))
+                }
+                return result
+            }
+        })
+
+        // network:find(filter) → ItemsHandle or nil (scans real storage, aggregated count)
+        networkTable.set("find", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                // Get metadata from first match
+                val (info, _) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
+                    ?: return LuaValue.NIL
+                // Get total count across all storage
+                val totalCount = NetworkStorageHelper.countItems(level, snapshot, filter)
+                val aggregatedInfo = info.copy(count = totalCount)
+
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                    NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                        val storage = NetworkStorageHelper.getStorage(level, card)
+                        if (storage != null) {
+                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                CardHandle.matchesFilter(it, filter)
+                            }
+                            if (has > 0) storage else null
+                        } else null
+                    }
+                }
+
+                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
+            }
+        })
+
+        // network:findStack(filter) → ItemsHandle or nil (single stack from first storage card)
+        networkTable.set("findStack", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val (info, _) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
+                    ?: return LuaValue.NIL
+
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                    NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                        val storage = NetworkStorageHelper.getStorage(level, card)
+                        if (storage != null) {
+                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                CardHandle.matchesFilter(it, filter)
+                            }
+                            if (has > 0) storage else null
+                        } else null
+                    }
+                }
+
+                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(info, filter, sourceStorage, level))
+            }
+        })
+
+        // network:findAll(filter) → table of ItemsHandles (scans real storage)
+        networkTable.set("findAll", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot, filter)
+                val result = LuaTable()
+                for ((i, pair) in allItems.withIndex()) {
+                    val (info, _) = pair
+                    val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                        NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                            val storage = NetworkStorageHelper.getStorage(level, card)
+                            if (storage != null) {
+                                val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                    it == info.itemId
+                                }
+                                if (has > 0) storage else null
+                            } else null
+                        }
+                    }
+                    val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                    result.set(i + 1, ItemsHandle.toLuaTable(handle))
+                }
+                return result
+            }
+        })
+
+        // network:count(filter) → number (scans real storage)
         networkTable.set("count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
@@ -131,13 +328,142 @@ class ScriptEngine(
             }
         })
 
-        // network:find(filter) → CardHandle or nil
-        networkTable.set("find", object : TwoArgFunction() {
-            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
-                val filter = filterArg.checkjstring()
-                val found = NetworkStorageHelper.findItem(level, snapshot, filter)
+        // network:insert(itemsHandle, count?) → number moved into network storage
+        networkTable.set("insert", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val itemsTable = args.checktable(2)
+                val maxCount = if (args.narg() >= 3 && !args.arg(3).isnil()) {
+                    args.checklong(3)
+                } else {
+                    Long.MAX_VALUE
+                }
+
+                val ref = itemsTable.get("_itemsHandle")
+                if (ref.isnil() || ref !is ItemsHandle.ItemsHandleRef) {
+                    throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
+                }
+                val itemsHandle = ref.handle
+
+                val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
+
+                val moved = NetworkStorageHelper.insertItems(
+                    level, snapshot, sourceStorage, itemsHandle.filter,
+                    minOf(maxCount, itemsHandle.count.toLong()),
+                    routeTable,
+                    createRoutingCallback(snapshot),
+                    inventoryCache
+                )
+                return LuaValue.valueOf(moved.toInt())
+            }
+        })
+
+        // network:craft(identifier, count?) → ItemsHandle or nil
+        networkTable.set("craft", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val identifier = args.checkjstring(2)
+                val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
+
+                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache)
                     ?: return LuaValue.NIL
-                return CardHandle.create(found, level)
+
+                // Return an ItemsHandle pointing to the crafted items in network storage
+                val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                    storageCards.firstNotNullOfOrNull { card ->
+                        val storage = NetworkStorageHelper.getStorage(level, card)
+                        if (storage != null) {
+                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                CardHandle.matchesFilter(it, result.outputItemId)
+                            }
+                            if (has > 0) storage else null
+                        } else null
+                    }
+                }
+
+                return ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
+                    itemId = result.outputItemId,
+                    itemName = result.outputName,
+                    count = result.count,
+                    sourceStorage = sourceStorage,
+                    level = level
+                ))
+            }
+        })
+
+        // network:route(alias, predicate) — register a declarative storage route
+        // Items where predicate(itemsHandle) returns true go to that storage
+        routeTable = RouteTable(level, snapshot)
+        networkTable.set("route", object : ThreeArgFunction() {
+            override fun call(selfArg: LuaValue, aliasArg: LuaValue, predicateArg: LuaValue): LuaValue {
+                val alias = aliasArg.checkjstring()
+                val predicate = predicateArg.checkfunction()
+                routeTable?.addRoute(alias, predicate)
+                return LuaValue.NIL
+            }
+        })
+
+        // network:onInsert(fn) — register a routing callback for items entering network storage
+        networkTable.set("onInsert", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
+                if (!fnArg.isfunction()) throw LuaError("onInsert expects a function")
+                onInsertCallback = fnArg.checkfunction()
+                return LuaValue.NIL
+            }
+        })
+
+        // network:shapeless(item1, count1, item2?, count2?, ...) → ItemsHandle or nil
+        // Crafts using vanilla shapeless recipes. Inputs are item/count pairs.
+        networkTable.set("shapeless", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                // Parse item/count pairs from varargs (self is arg1)
+                val ingredients = mutableMapOf<String, Int>()
+                var i = 2
+                while (i <= args.narg()) {
+                    val itemId = args.checkjstring(i)
+                    val count = if (i + 1 <= args.narg() && !args.arg(i + 1).isnil() && args.arg(i + 1).isnumber()) {
+                        i++
+                        args.checkint(i)
+                    } else {
+                        1
+                    }
+                    ingredients[itemId] = (ingredients[itemId] ?: 0) + count
+                    i++
+                }
+
+                if (ingredients.isEmpty()) throw LuaError("shapeless requires at least one item")
+
+                val result = ShapelessCraftHelper.craft(ingredients, level, snapshot, cache = inventoryCache)
+                    ?: return LuaValue.NIL
+
+                val storageCards2 = NetworkStorageHelper.getStorageCards(snapshot)
+                val sourceStorage2: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                    storageCards2.firstNotNullOfOrNull { card ->
+                        val storage = NetworkStorageHelper.getStorage(level, card)
+                        if (storage != null) {
+                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                CardHandle.matchesFilter(it, result.outputItemId)
+                            }
+                            if (has > 0) storage else null
+                        } else null
+                    }
+                }
+
+                return ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
+                    itemId = result.outputItemId,
+                    itemName = result.outputName,
+                    count = result.count,
+                    sourceStorage = sourceStorage2,
+                    level = level
+                ))
+            }
+        })
+
+        networkTable.set("var", object : TwoArgFunction() {
+            override fun call(self: LuaValue, nameArg: LuaValue): LuaValue {
+                val name = nameArg.checkjstring()
+                val varSnapshot = snapshot.findVariable(name)
+                    ?: throw LuaError("Variable not found on network: '$name'")
+                return VariableHandle.create(varSnapshot, level)
             }
         })
 

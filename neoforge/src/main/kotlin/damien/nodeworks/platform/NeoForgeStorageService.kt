@@ -31,6 +31,21 @@ class NeoForgeStorageService : StorageService {
         }
     }
 
+    override fun moveItemsVariant(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String, Boolean) -> Boolean, maxCount: Long): Long {
+        val src = (source as NeoForgeItemStorageHandle).handler
+        val dst = (dest as NeoForgeItemStorageHandle).handler
+        return try {
+            ResourceHandlerUtil.moveStacking(src, dst, { resource ->
+                if (resource.isEmpty) return@moveStacking false
+                val itemId = BuiltInRegistries.ITEM.getKey(resource.item)?.toString() ?: return@moveStacking false
+                val hasData = resource.toStack().componentsPatch.size() > 0
+                filter(itemId, hasData)
+            }, minOf(maxCount, Int.MAX_VALUE.toLong()).toInt(), null).toLong()
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     override fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long {
         val handler = (storage as NeoForgeItemStorageHandle).handler
         var total = 0L
@@ -45,6 +60,105 @@ class NeoForgeStorageService : StorageService {
             }
         }
         return total
+    }
+
+    override fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        var total = 0L
+        var remaining = maxCount
+        net.neoforged.neoforge.transfer.transaction.Transaction.open(null).use { transaction ->
+            for (index in 0 until handler.size()) {
+                if (remaining <= 0) break
+                val resource = handler.getResource(index)
+                val amount = handler.getAmountAsLong(index)
+                if (resource.isEmpty || amount <= 0) continue
+                val itemId = BuiltInRegistries.ITEM.getKey(resource.item)?.toString() ?: continue
+                if (!filter(itemId)) continue
+                val toExtract = minOf(remaining, amount).toInt()
+                val extracted = handler.extract(index, resource, toExtract, transaction)
+                total += extracted
+                remaining -= extracted
+            }
+            transaction.commit()
+        }
+        return total
+    }
+
+    override fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int {
+        if (stack.isEmpty) return 0
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        val resource = net.neoforged.neoforge.transfer.item.ItemResource.of(stack)
+        net.neoforged.neoforge.transfer.transaction.Transaction.open(null).use { transaction ->
+            val inserted = handler.insert(resource, stack.count, transaction)
+            transaction.commit()
+            return inserted
+        }
+    }
+
+    override fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String? {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        for (index in 0 until handler.size()) {
+            val resource = handler.getResource(index)
+            val amount = handler.getAmountAsLong(index)
+            if (!resource.isEmpty && amount > 0) {
+                val itemId = BuiltInRegistries.ITEM.getKey(resource.item)?.toString() ?: continue
+                if (filter(itemId)) return itemId
+            }
+        }
+        return null
+    }
+
+    override fun findFirstItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): ItemInfo? {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        for (index in 0 until handler.size()) {
+            val resource = handler.getResource(index)
+            val amount = handler.getAmountAsLong(index)
+            if (!resource.isEmpty && amount > 0) {
+                val item = resource.item
+                val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                if (filter(itemId)) {
+                    val stack = resource.toStack()
+                    return ItemInfo(
+                        itemId = itemId,
+                        name = item.getName(stack).string,
+                        count = amount,
+                        maxStackSize = item.defaultMaxStackSize,
+                        hasData = stack.componentsPatch.size() > 0
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        val aggregated = LinkedHashMap<String, ItemInfo>()
+        for (index in 0 until handler.size()) {
+            val resource = handler.getResource(index)
+            val amount = handler.getAmountAsLong(index)
+            if (!resource.isEmpty && amount > 0) {
+                val item = resource.item
+                val itemId = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+                if (!filter(itemId)) continue
+                val stack = resource.toStack()
+                val hasData = stack.componentsPatch.size() > 0
+                val cacheKey = "$itemId:$hasData"
+                val existing = aggregated[cacheKey]
+                if (existing != null) {
+                    aggregated[cacheKey] = existing.copy(count = existing.count + amount)
+                } else {
+                    aggregated[cacheKey] = ItemInfo(
+                        itemId = itemId,
+                        name = item.getName(stack).string,
+                        count = amount,
+                        maxStackSize = item.defaultMaxStackSize,
+                        hasData = hasData
+                    )
+                }
+            }
+        }
+        return aggregated.values.toList()
     }
 
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {

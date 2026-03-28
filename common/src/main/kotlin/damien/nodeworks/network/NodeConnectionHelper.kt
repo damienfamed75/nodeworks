@@ -1,6 +1,10 @@
 package damien.nodeworks.network
 
+import damien.nodeworks.block.InstructionCrafterBlock
+import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
+import damien.nodeworks.block.TerminalBlock
+import damien.nodeworks.block.VariableBlock
 import damien.nodeworks.block.entity.NodeBlockEntity
 import net.minecraft.core.BlockPos
 import net.minecraft.resources.ResourceKey
@@ -16,10 +20,6 @@ object NodeConnectionHelper {
     const val MAX_DISTANCE = 8.0
     private const val MAX_DISTANCE_SQ = MAX_DISTANCE * MAX_DISTANCE
 
-    /**
-     * Per-dimension spatial index: dimension -> (chunk column key -> set of node positions).
-     * Keeps dimensions fully isolated — a block change in the overworld never touches nether nodes.
-     */
     private val nodesByDimension = ConcurrentHashMap<ResourceKey<Level>, ConcurrentHashMap<Long, MutableSet<BlockPos>>>()
 
     private fun chunkKey(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
@@ -49,21 +49,32 @@ object NodeConnectionHelper {
     }
 
     fun checkLineOfSight(level: Level, posA: BlockPos, posB: BlockPos): Boolean {
+        // Adjacent blocks can always see each other — skip raycast
+        val dx = Math.abs(posA.x - posB.x)
+        val dy = Math.abs(posA.y - posB.y)
+        val dz = Math.abs(posA.z - posB.z)
+        if (dx <= 1 && dy <= 1 && dz <= 1) return true
+
         val from = posA.center
         val to = posB.center
         val direction = to.subtract(from).normalize()
-        // Offset past the node collision shapes (nodes are 0.375 blocks wide from center)
-        // so the ray only checks blocks *between* the two nodes
-        val offsetFrom = from.add(direction.scale(0.4))
-        val offsetTo = to.subtract(direction.scale(0.4))
-        // VISUAL uses the occlusion shape — empty for transparent blocks (glass, ice, etc.)
-        // so lasers pass through them, but solid for opaque blocks
+        // Offset must clear full-block shapes (0.5 from center) — use 0.87 for diagonal safety
+        val offsetFrom = from.add(direction.scale(0.87))
+        val offsetTo = to.subtract(direction.scale(0.87))
         val result = level.clip(
             ClipContext(offsetFrom, offsetTo, ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, CollisionContext.empty())
         )
         return result.type == HitResult.Type.MISS
     }
 
+    /** Get a Connectable block entity at the given position. */
+    fun getConnectable(level: Level, pos: BlockPos): Connectable? {
+        val block = level.getBlockState(pos).block
+        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock) return null
+        return level.getBlockEntity(pos) as? Connectable
+    }
+
+    /** Get a NodeBlockEntity specifically (for legacy code that needs node-specific access). */
     fun getNodeEntity(level: Level, pos: BlockPos): NodeBlockEntity? {
         if (level.getBlockState(pos).block !is NodeBlock) return null
         return level.getBlockEntity(pos) as? NodeBlockEntity
@@ -72,7 +83,7 @@ object NodeConnectionHelper {
     // --- Connection operations ---
 
     fun toggleConnection(level: ServerLevel, posA: BlockPos, posB: BlockPos): Boolean {
-        val entityA = getNodeEntity(level, posA) ?: return false
+        val entityA = getConnectable(level, posA) ?: return false
         return if (entityA.hasConnection(posB)) {
             disconnect(level, posA, posB)
             false
@@ -83,30 +94,26 @@ object NodeConnectionHelper {
     }
 
     fun connect(level: ServerLevel, posA: BlockPos, posB: BlockPos): Boolean {
-        val entityA = getNodeEntity(level, posA) ?: return false
-        val entityB = getNodeEntity(level, posB) ?: return false
+        val entityA = getConnectable(level, posA) ?: return false
+        val entityB = getConnectable(level, posB) ?: return false
         entityA.addConnection(posB)
         entityB.addConnection(posA)
         return true
     }
 
     fun disconnect(level: ServerLevel, posA: BlockPos, posB: BlockPos): Boolean {
-        val entityA = getNodeEntity(level, posA)
-        val entityB = getNodeEntity(level, posB)
+        val entityA = getConnectable(level, posA)
+        val entityB = getConnectable(level, posB)
         entityA?.removeConnection(posB)
         entityB?.removeConnection(posA)
         return entityA != null || entityB != null
     }
 
-    /**
-     * Removes all connections from the given entity. Called during block entity removal
-     * when the block state may already be air.
-     */
-    fun removeAllConnectionsOf(level: ServerLevel, entity: NodeBlockEntity) {
-        val pos = entity.blockPos
-        val neighbors = entity.getConnections()
+    fun removeAllConnections(level: ServerLevel, entity: Connectable) {
+        val pos = entity.getBlockPos()
+        val neighbors = entity.getConnections().toList()
         for (neighborPos in neighbors) {
-            getNodeEntity(level, neighborPos)?.removeConnection(pos)
+            getConnectable(level, neighborPos)?.removeConnection(pos)
         }
         for (neighborPos in neighbors) {
             entity.removeConnection(neighborPos)
@@ -115,11 +122,6 @@ object NodeConnectionHelper {
 
     // --- Block change handling ---
 
-    /**
-     * Called when a block changes at [changedPos]. Uses the per-dimension spatial index
-     * to find only nearby nodes in the same dimension, then checks only connections whose
-     * bounding box contains the changed position.
-     */
     fun onBlockChanged(level: ServerLevel, changedPos: BlockPos) {
         val chunks = nodesByDimension[level.dimension()] ?: return
 
@@ -137,7 +139,7 @@ object NodeConnectionHelper {
     }
 
     private fun checkNodeConnections(level: ServerLevel, nodePos: BlockPos, changedPos: BlockPos) {
-        val entity = getNodeEntity(level, nodePos) ?: return
+        val entity = getConnectable(level, nodePos) ?: return
         val connections = entity.getConnections()
         if (connections.isEmpty()) return
 
@@ -150,10 +152,6 @@ object NodeConnectionHelper {
         }
     }
 
-    /**
-     * Returns true if [point] is inside the axis-aligned bounding box between [a] and [b],
-     * expanded by 1 block margin to account for block size.
-     */
     private fun isInsideConnectionBounds(a: BlockPos, b: BlockPos, point: BlockPos): Boolean {
         return point.x in (minOf(a.x, b.x) - 1)..(maxOf(a.x, b.x) + 1)
             && point.y in (minOf(a.y, b.y) - 1)..(maxOf(a.y, b.y) + 1)

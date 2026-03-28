@@ -2,12 +2,12 @@ package damien.nodeworks.network
 
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
-import damien.nodeworks.card.RecipeCard
+import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.platform.MenuService
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.screen.RecipeCardOpenData
-import damien.nodeworks.screen.RecipeCardScreenHandler
+import damien.nodeworks.screen.InstructionSetOpenData
+import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.script.ScriptEngine
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking
@@ -47,11 +47,18 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(RunScriptPayload.TYPE, RunScriptPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(StopScriptPayload.TYPE, StopScriptPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SaveScriptPayload.TYPE, SaveScriptPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(CreateScriptTabPayload.TYPE, CreateScriptTabPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(DeleteScriptTabPayload.TYPE, DeleteScriptTabPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
-        PayloadTypeRegistry.playC2S().register(OpenRecipeCardPayload.TYPE, OpenRecipeCardPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
     }
 
     fun registerServerHandlers() {
@@ -60,8 +67,7 @@ object TerminalPackets {
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
 
-            terminal.setScriptText(payload.scriptText)
-            val nodePos = terminal.getConnectedNodePos() ?: return@registerGlobalReceiver
+            val nodePos = terminal.getNetworkStartPos() ?: return@registerGlobalReceiver
 
             val globalPos = GlobalPos.of(level.dimension(), payload.terminalPos)
             activeEngines.remove(globalPos)?.stop()
@@ -77,7 +83,7 @@ object TerminalPackets {
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(payload.scriptText)) {
+            if (engine.start(terminal.getScriptsCopy())) {
                 activeEngines[globalPos] = engine
             }
         }
@@ -94,26 +100,40 @@ object TerminalPackets {
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
-            terminal.setScriptText(payload.scriptText)
+            terminal.setScript(payload.scriptName, payload.scriptText)
         }
 
-        ServerPlayNetworking.registerGlobalReceiver(OpenRecipeCardPayload.TYPE) { payload, context ->
+        ServerPlayNetworking.registerGlobalReceiver(CreateScriptTabPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+            terminal.createScript(payload.scriptName)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(DeleteScriptTabPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
+            terminal.deleteScript(payload.scriptName)
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(OpenInstructionSetPayload.TYPE) { payload, context ->
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
             val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@registerGlobalReceiver
             val side = Direction.entries[payload.sideOrdinal]
             val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
             val cardStack = nodeEntity.getItem(globalSlot)
-            if (cardStack.item !is RecipeCard) return@registerGlobalReceiver
-            val recipe = RecipeCard.getRecipe(cardStack)
+            if (cardStack.item !is InstructionSet) return@registerGlobalReceiver
+            val recipe = InstructionSet.getRecipe(cardStack)
 
             PlatformServices.menu.openExtendedMenu(
                 player,
-                Component.translatable("container.nodeworks.recipe_card"),
-                RecipeCardOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe),
-                RecipeCardOpenData.STREAM_CODEC
+                Component.translatable("container.nodeworks.instruction_set"),
+                InstructionSetOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe),
+                InstructionSetOpenData.STREAM_CODEC
             ) { syncId, inv, p ->
-                RecipeCardScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
+                InstructionSetScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
             }
         }
 
@@ -144,6 +164,48 @@ object TerminalPackets {
             terminal.setAutoRun(payload.enabled)
             logger.info("[Terminal {}] Auto-run {}", payload.terminalPos, if (payload.enabled) "enabled" else "disabled")
         }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetInstructionGridPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is InstructionSetScreenHandler && menu.containerId == payload.containerId) {
+                menu.setRecipeFromIds(payload.items)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalClickPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleGridClick(player, payload.itemId, payload.action)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(ControllerSettingsPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.NetworkControllerBlockEntity ?: return@registerGlobalReceiver
+            if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
+            when (payload.key) {
+                "color" -> entity.networkColor = payload.intValue
+                "redstone" -> entity.redstoneMode = payload.intValue
+                "glow" -> entity.nodeGlowStyle = payload.intValue
+                "name" -> entity.networkName = payload.strValue
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(VariableSettingsPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.VariableBlockEntity ?: return@registerGlobalReceiver
+            if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
+            when (payload.key) {
+                "name" -> entity.variableName = payload.strValue
+                "type" -> entity.setType(damien.nodeworks.block.entity.VariableType.fromOrdinal(payload.intValue))
+                "value" -> entity.setValue(payload.strValue)
+                "toggle" -> entity.toggleValue()
+            }
+        }
     }
 
     /** Terminals pending auto-start after world load. Populated by TerminalBlockEntity.setLevel. */
@@ -167,7 +229,7 @@ object TerminalPackets {
             if (!level.isLoaded(pos)) continue
             val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
             if (!terminal.autoRun || terminal.scriptText.isBlank()) continue
-            val nodePos = terminal.getConnectedNodePos() ?: continue
+            val nodePos = terminal.getNetworkStartPos() ?: continue
 
             if (activeEngines.containsKey(gp)) continue
 
@@ -180,7 +242,7 @@ object TerminalPackets {
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
-            if (engine.start(terminal.scriptText)) {
+            if (engine.start(terminal.getScriptsCopy())) {
                 activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
             }

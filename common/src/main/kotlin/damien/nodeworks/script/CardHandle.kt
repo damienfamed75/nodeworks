@@ -17,25 +17,21 @@ import org.luaj.vm2.*
 import org.luaj.vm2.lib.*
 
 /**
- * Lua-side handle for a card on the network. Exposes :move(), :count(), :face() methods.
- * Lua's `:` method call passes `self` as the first arg, so we use VarArgFunction where needed.
+ * Lua-side handle for a card on the network. Exposes :find(), :insert(), :count(), :face(), :slots().
+ * Lua's `:` method call passes `self` as the first arg.
  */
 class CardHandle private constructor(
     private val card: CardSnapshot,
     private val level: ServerLevel,
     private val accessFace: Direction?,
-    private val slotFilter: Set<Int>? // null = all slots, otherwise 0-indexed slot numbers
+    private val slotFilter: Set<Int>?
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger("nodeworks-cardhandle")
 
-        /** Max characters allowed in a regex item filter pattern. */
         const val MAX_REGEX_LENGTH = 200
-
-        /** Max cached compiled regex patterns (LRU eviction). */
         const val MAX_REGEX_CACHE_SIZE = 64
 
-        /** Compiled regex cache — bounded LRU to prevent unbounded memory growth. */
         private val regexCache = object : LinkedHashMap<String, java.util.regex.Pattern>(16, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, java.util.regex.Pattern>?): Boolean {
                 return size > MAX_REGEX_CACHE_SIZE
@@ -104,7 +100,6 @@ class CardHandle private constructor(
         val self = this
 
         // :face(name) -> new CardHandle with specific access face
-        // Lua `:` call: self is arg1, name is arg2
         table.set("face", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
@@ -113,41 +108,7 @@ class CardHandle private constructor(
             }
         })
 
-        // :move(dest, itemFilter, count) -> number moved
-        // Lua `:` call: self=arg1, dest=arg2, filter=arg3, count=arg4
-        table.set("move", object : VarArgFunction() {
-            override fun invoke(args: Varargs): Varargs {
-                val destTable = args.checktable(2)
-                val filter = args.checkjstring(3)
-                val maxCount = args.checklong(4)
-
-                val sourceStorage = self.getItemStorage()
-                if (sourceStorage == null) {
-                    logger.warn("move: source storage is null for {} (pos={}, face={})",
-                        card.alias, card.capability.adjacentPos, accessFace ?: (card.capability as? IOSideCapability)?.defaultFace)
-                    return LuaValue.valueOf(0)
-                }
-
-                val destGetStorage = destTable.get("_getStorage")
-                if (destGetStorage.isnil() || destGetStorage !is StorageGetter) {
-                    throw LuaError("Invalid destination — expected a card handle")
-                }
-                val destStorage = destGetStorage.getStorage()
-                if (destStorage == null) {
-                    logger.warn("move: dest storage is null")
-                    return LuaValue.valueOf(0)
-                }
-
-                val moved = moveItems(sourceStorage, destStorage, filter, maxCount)
-                if (moved == 0L) {
-                    logger.debug("move: 0 items moved from {} to dest (filter={}, max={})", card.alias, filter, maxCount)
-                }
-                return LuaValue.valueOf(moved.toInt())
-            }
-        })
-
         // :slots(...) -> new CardHandle filtered to specific slots
-        // Lua `:` call: self=arg1, slot numbers as remaining args (1-indexed)
         table.set("slots", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val slots = mutableSetOf<Int>()
@@ -158,8 +119,96 @@ class CardHandle private constructor(
             }
         })
 
-        // :count(itemFilter) -> number
-        // Lua `:` call: self=arg1, filter=arg2
+        // :find(filter) -> ItemsHandle or nil (aggregated count across all slots)
+        table.set("find", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val storage = self.getItemStorage() ?: return LuaValue.NIL
+
+                val info = PlatformServices.storage.findFirstItemInfo(storage) { matchesFilter(it, filter) }
+                    ?: return LuaValue.NIL
+
+                // Get the aggregated count across all slots
+                val totalCount = PlatformServices.storage.countItems(storage) { matchesFilter(it, filter) }
+                val aggregatedInfo = damien.nodeworks.platform.ItemInfo(
+                    itemId = info.itemId,
+                    name = info.name,
+                    count = totalCount,
+                    maxStackSize = info.maxStackSize,
+                    hasData = info.hasData
+                )
+
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
+                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
+            }
+        })
+
+        // :findStack(filter) -> ItemsHandle or nil (single slot info, NOT aggregated)
+        table.set("findStack", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val storage = self.getItemStorage() ?: return LuaValue.NIL
+
+                val info = PlatformServices.storage.findFirstItemInfo(storage) { matchesFilter(it, filter) }
+                    ?: return LuaValue.NIL
+
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
+                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(info, filter, sourceStorage, level))
+            }
+        })
+
+        // :findAll(filter) -> table of ItemsHandles
+        // Returns all unique item types matching the filter
+        table.set("findAll", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val storage = self.getItemStorage() ?: return LuaTable()
+
+                val items = PlatformServices.storage.findAllItemInfo(storage) { matchesFilter(it, filter) }
+                val result = LuaTable()
+                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
+                for ((i, info) in items.withIndex()) {
+                    val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                    result.set(i + 1, ItemsHandle.toLuaTable(handle))
+                }
+                return result
+            }
+        })
+
+        // :insert(itemsHandle, count?) -> number moved
+        // Moves items from the ItemsHandle's source into this card's storage
+        table.set("insert", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val itemsTable = args.checktable(2)
+                val maxCount = if (args.narg() >= 3 && !args.arg(3).isnil()) {
+                    args.checklong(3)
+                } else {
+                    Long.MAX_VALUE
+                }
+
+                val ref = itemsTable.get("_itemsHandle")
+                if (ref.isnil() || ref !is ItemsHandle.ItemsHandleRef) {
+                    throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
+                }
+                val itemsHandle = ref.handle
+
+                val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
+                val destStorage = self.getItemStorage() ?: return LuaValue.valueOf(0)
+
+                val moved = try {
+                    PlatformServices.storage.moveItems(
+                        sourceStorage, destStorage,
+                        { matchesFilter(it, itemsHandle.filter) },
+                        minOf(maxCount, itemsHandle.count.toLong())
+                    )
+                } catch (_: Exception) {
+                    0L
+                }
+                return LuaValue.valueOf(moved.toInt())
+            }
+        })
+
+        // :count(filter) -> number
         table.set("count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
@@ -169,23 +218,10 @@ class CardHandle private constructor(
             }
         })
 
-        // Internal: allows dest CardHandle to expose its storage
+        // Internal: allows insert() to access this handle's storage as a destination
         table.set("_getStorage", StorageGetter { self.getItemStorage() })
 
         return table
-    }
-
-    private fun moveItems(
-        source: ItemStorageHandle,
-        dest: ItemStorageHandle,
-        filter: String,
-        maxCount: Long
-    ): Long {
-        return try {
-            PlatformServices.storage.moveItems(source, dest, { matchesFilter(it, filter) }, maxCount)
-        } catch (_: Exception) {
-            0L
-        }
     }
 
     /** Internal LuaValue subclass to pass storage getter between CardHandles. */

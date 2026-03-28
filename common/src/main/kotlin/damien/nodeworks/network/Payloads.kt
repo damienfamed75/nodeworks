@@ -11,12 +11,12 @@ import net.minecraft.resources.Identifier
  * These are platform-agnostic data classes — registration and handling is in the platform module.
  */
 
-data class RunScriptPayload(val terminalPos: BlockPos, val scriptText: String) : CustomPacketPayload {
+data class RunScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<RunScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "run_script"))
         val CODEC: StreamCodec<FriendlyByteBuf, RunScriptPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptText, 32767) },
-            { buf -> RunScriptPayload(buf.readBlockPos(), buf.readUtf(32767)) }
+            { p, buf -> buf.writeBlockPos(p.terminalPos) },
+            { buf -> RunScriptPayload(buf.readBlockPos()) }
         )
     }
     override fun type() = TYPE
@@ -33,12 +33,34 @@ data class StopScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
     override fun type() = TYPE
 }
 
-data class SaveScriptPayload(val terminalPos: BlockPos, val scriptText: String) : CustomPacketPayload {
+data class SaveScriptPayload(val terminalPos: BlockPos, val scriptName: String, val scriptText: String) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<SaveScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "save_script"))
         val CODEC: StreamCodec<FriendlyByteBuf, SaveScriptPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptText, 32767) },
-            { buf -> SaveScriptPayload(buf.readBlockPos(), buf.readUtf(32767)) }
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64); buf.writeUtf(p.scriptText, 32767) },
+            { buf -> SaveScriptPayload(buf.readBlockPos(), buf.readUtf(64), buf.readUtf(32767)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class CreateScriptTabPayload(val terminalPos: BlockPos, val scriptName: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CreateScriptTabPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "create_script_tab"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CreateScriptTabPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64) },
+            { buf -> CreateScriptTabPayload(buf.readBlockPos(), buf.readUtf(64)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class DeleteScriptTabPayload(val terminalPos: BlockPos, val scriptName: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<DeleteScriptTabPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "delete_script_tab"))
+        val CODEC: StreamCodec<FriendlyByteBuf, DeleteScriptTabPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64) },
+            { buf -> DeleteScriptTabPayload(buf.readBlockPos(), buf.readUtf(64)) }
         )
     }
     override fun type() = TYPE
@@ -77,12 +99,71 @@ data class SetStoragePriorityPayload(val nodePos: BlockPos, val sideOrdinal: Int
     override fun type() = TYPE
 }
 
-data class OpenRecipeCardPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int) : CustomPacketPayload {
+data class OpenInstructionSetPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<OpenRecipeCardPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "open_recipe_card"))
-        val CODEC: StreamCodec<FriendlyByteBuf, OpenRecipeCardPayload> = CustomPacketPayload.codec(
+        val TYPE: CustomPacketPayload.Type<OpenInstructionSetPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "open_instruction_set"))
+        val CODEC: StreamCodec<FriendlyByteBuf, OpenInstructionSetPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.nodePos); buf.writeVarInt(p.sideOrdinal); buf.writeVarInt(p.slotIndex) },
-            { buf -> OpenRecipeCardPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt()) }
+            { buf -> OpenInstructionSetPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+data class SetInstructionGridPayload(val containerId: Int, val items: List<String>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetInstructionGridPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_instruction_grid"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetInstructionGridPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                buf.writeVarInt(p.items.size)
+                for (item in p.items) buf.writeUtf(item, 256)
+            },
+            { buf ->
+                val id = buf.readVarInt()
+                val count = buf.readVarInt()
+                val items = (0 until count).map { buf.readUtf(256) }
+                SetInstructionGridPayload(id, items)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * C2S: Click on the inventory terminal grid.
+ * action: 0 = extract stack (left click), 1 = insert carried item, 2 = extract half (right click)
+ */
+data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val action: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalClickPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_click"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalClickPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.itemId, 256); buf.writeVarInt(p.action) },
+            { buf -> InvTerminalClickPayload(buf.readVarInt(), buf.readUtf(256), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: Update a network controller setting (color, name, redstone mode). */
+data class ControllerSettingsPayload(val pos: BlockPos, val key: String, val intValue: Int, val strValue: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ControllerSettingsPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "controller_settings"))
+        val CODEC: StreamCodec<FriendlyByteBuf, ControllerSettingsPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.key, 16); buf.writeVarInt(p.intValue); buf.writeUtf(p.strValue, 32) },
+            { buf -> ControllerSettingsPayload(buf.readBlockPos(), buf.readUtf(16), buf.readVarInt(), buf.readUtf(32)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: Update a variable block setting (name, type, value). */
+data class VariableSettingsPayload(val pos: BlockPos, val key: String, val intValue: Int, val strValue: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<VariableSettingsPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "variable_settings"))
+        val CODEC: StreamCodec<FriendlyByteBuf, VariableSettingsPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.key, 16); buf.writeVarInt(p.intValue); buf.writeUtf(p.strValue, 256) },
+            { buf -> VariableSettingsPayload(buf.readBlockPos(), buf.readUtf(16), buf.readVarInt(), buf.readUtf(256)) }
         )
     }
     override fun type() = TYPE

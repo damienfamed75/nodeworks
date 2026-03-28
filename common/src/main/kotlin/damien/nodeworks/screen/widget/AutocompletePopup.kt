@@ -13,7 +13,9 @@ import net.minecraft.client.gui.components.MultilineTextField
 class AutocompletePopup(
     private val font: Font,
     private val cards: List<CardSnapshot>,
-    private val itemTags: List<String> = emptyList()
+    private val itemTags: List<String> = emptyList(),
+    private val variables: List<Pair<String, Int>> = emptyList(), // name to type ordinal (0=number, 1=string, 2=bool)
+    private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     data class Suggestion(val insertText: String, val displayText: String)
 
@@ -97,7 +99,26 @@ class AutocompletePopup(
         selectedIndex = 0
     }
 
+    private val knownTypes = listOf(
+        Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
+        Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
+        Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var"),
+        Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:var"),
+        Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:var")
+    )
+
     private fun suggest(insertText: String, displayText: String = insertText) = Suggestion(insertText, displayText)
+
+    /** Filter suggestions using fuzzy matching, or return all if query is empty. */
+    private fun fuzzy(query: String, suggestions: List<Suggestion>): List<Suggestion> {
+        return if (query.isEmpty()) suggestions else FuzzyMatch.filter(query, suggestions)
+    }
+
+    /** Filter simple string list using fuzzy matching, return as suggestions. */
+    private fun fuzzyStrings(query: String, items: List<String>): List<Suggestion> {
+        return if (query.isEmpty()) items.map { suggest(it) }
+        else items.map { suggest(it) }.let { FuzzyMatch.filter(query, it) }
+    }
 
     fun moveUp() {
         if (suggestions.isNotEmpty()) {
@@ -121,16 +142,18 @@ class AutocompletePopup(
         }
     }
 
+    data class AcceptResult(val deleteCount: Int, val insertText: String)
+
     /**
-     * Accept the current suggestion. Returns the text to insert, or null if nothing selected.
+     * Accept the current suggestion. Returns how many characters to delete (the typed prefix)
+     * and the full text to insert, or null if nothing selected.
      */
-    fun accept(): String? {
+    fun accept(): AcceptResult? {
         if (!visible || suggestions.isEmpty()) return null
         val suggestion = suggestions[selectedIndex]
-        // Insert only the part after what's already typed
-        val toInsert = suggestion.insertText.removePrefix(prefix)
+        val deleteCount = prefix.length
         hide()
-        return toInsert
+        return AcceptResult(deleteCount, suggestion.insertText)
     }
 
     fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
@@ -180,26 +203,53 @@ class AutocompletePopup(
         val trimmed = beforeCursor.trimEnd()
         val fullText = lastFullText
 
-        // After card("partial → suggest card types
-        val cardTypeMatch = Regex("""card\(\s*"(\w*)$""").find(trimmed)
-        if (cardTypeMatch != null) {
-            val partial = cardTypeMatch.groupValues[1]
+        // Type annotation context: after `:` or `: ` in function params or local declarations
+        // Matches: (param: Partial, (param:Partial, local x: Partial, ): Partial
+        val typeAnnotationMatch = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|local\s+\w+\s*:\s*|\)\s*:\s*)([A-Z]\w*)$""").find(trimmed)
+        if (typeAnnotationMatch != null) {
+            val partial = typeAnnotationMatch.groupValues[1]
             customPrefix = partial
-            val types = listOf("io", "storage", "recipe", "energy", "fluid")
-            return types.filter { it.startsWith(partial) }.map { suggest(it) }
+            return fuzzy(partial, knownTypes)
+        }
+        // Also match when just the colon was typed with no partial yet
+        val typeAnnotationEmpty = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\)\s*:\s*)$""").find(trimmed)
+        if (typeAnnotationEmpty != null) {
+            customPrefix = ""
+            return knownTypes
         }
 
-        // After card("inventory", "partial → suggest aliases
-        val cardAliasPattern = Regex("""card\(\s*"(\w+)"\s*,\s*"(\w*)$""")
-        cardAliasPattern.find(trimmed)?.let { match ->
-            val type = match.groupValues[1]
-            val partial = match.groupValues[2]
+        // After network:get("partial or network:route("partial → suggest aliases with type hints
+        val aliasContextMatch = Regex("""network:(?:get|route)\(\s*"(\w*)$""").find(trimmed)
+        if (aliasContextMatch != null) {
+            val partial = aliasContextMatch.groupValues[1]
             customPrefix = partial
-            return cards.filter { it.capability.type == type }
-                .mapNotNull { it.alias }
+            return cards
+                .map { card -> card.effectiveAlias to card.capability.type }
                 .distinct()
-                .filter { it.startsWith(partial) }
-                .map { suggest(it) }
+                .map { suggest(it.first, "${it.first} (${it.second})") }
+                .let { FuzzyMatch.filter(partial, it) }
+        }
+
+        // After network:getAll("partial → suggest types
+        val getAllTypeMatch = Regex("""network:getAll\(\s*"(\w*)$""").find(trimmed)
+        if (getAllTypeMatch != null) {
+            val partial = getAllTypeMatch.groupValues[1]
+            customPrefix = partial
+            val types = listOf("io", "storage")
+            return fuzzyStrings(partial, types)
+        }
+
+        // After network:var("partial → suggest variable names with type hints
+        val varMatch = Regex("""network:var\(\s*"(\w*)$""").find(trimmed)
+        if (varMatch != null) {
+            val partial = varMatch.groupValues[1]
+            customPrefix = partial
+            val typeLabels = arrayOf("number", "string", "bool")
+            val suggestions = variables.map { (name, typeOrd) ->
+                val typeLabel = typeLabels.getOrElse(typeOrd) { "unknown" }
+                suggest(name, "$name ($typeLabel)")
+            }
+            return FuzzyMatch.filter(partial, suggestions)
         }
 
         // After :face("partial → suggest face names
@@ -208,7 +258,7 @@ class AutocompletePopup(
             val partial = faceMatch.groupValues[1]
             customPrefix = partial
             val faces = listOf("top", "bottom", "north", "south", "east", "west", "side")
-            return faces.filter { it.startsWith(partial) }.map { suggest(it) }
+            return fuzzyStrings(partial, faces)
         }
 
         // After network: or network:partial → suggest network methods
@@ -216,10 +266,20 @@ class AutocompletePopup(
         if (networkMatch != null) {
             val partial = networkMatch.groupValues[1]
             val methods = listOf(
-                suggest("count(", "count(itemFilter: string) → number"),
-                suggest("find(", "find(itemFilter: string) → CardHandle?")
+                suggest("get(", "get(alias: string) → CardHandle"),
+                suggest("getAll(", "getAll(type: string) → CardHandle[]"),
+                suggest("find(", "find(filter: string) → ItemsHandle?"),
+                suggest("findStack(", "findStack(filter: string) → ItemsHandle?"),
+                suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
+                suggest("count(", "count(filter: string) → number"),
+                suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
+                suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?"),
+                suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
+                suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
+                suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)"),
+                suggest("var(", "var(name: string) → VariableHandle")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After scheduler: or scheduler:partial → suggest scheduler methods
@@ -232,7 +292,7 @@ class AutocompletePopup(
                 suggest("delay(", "delay(ticks: number, fn: function) → number"),
                 suggest("cancel(", "cancel(id: number)")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After :face("..."):partial or :slots(...):partial → suggest card handle methods (chained call)
@@ -242,16 +302,36 @@ class AutocompletePopup(
             return cardHandleMethods(partial)
         }
 
-        // After cardVar: or cardVar:partial → suggest card handle methods
+        // After # or #partial → suggest item tags (must be before method match since #c: looks like a method call)
+        val tagMatch = Regex("""#([\w:./]*)$""").find(trimmed)
+        if (tagMatch != null) {
+            val partial = tagMatch.groupValues[1]
+            customPrefix = partial
+            return fuzzyStrings(partial, itemTags).take(20)
+        }
+
+        // After someVar: or someVar:partial → suggest methods based on variable type
         val methodMatch = Regex("""(\w+):(\w*)$""").find(trimmed)
         if (methodMatch != null) {
             val varName = methodMatch.groupValues[1]
             val partial = methodMatch.groupValues[2]
-            val cardVars = extractCardVariables(fullText)
-            if (varName in cardVars) {
-                return cardHandleMethods(partial)
+            val type = resolveVariableType(varName, fullText)
+            if (type != null) {
+                return methodsForType(type, partial)
             }
             return emptyList()
+        }
+
+        // After someVar.partial → suggest properties based on variable type
+        val propMatch = Regex("""(\w+)\.(\w*)$""").find(trimmed)
+        if (propMatch != null) {
+            val varName = propMatch.groupValues[1]
+            val partial = propMatch.groupValues[2]
+            val type = resolveVariableType(varName, fullText)
+            if (type != null) {
+                return propertiesForType(type, partial)
+            }
+            // Check if it's a require'd module (handled elsewhere, but don't fall through to empty)
         }
 
         // After string. or string.partial → suggest string library methods
@@ -273,7 +353,7 @@ class AutocompletePopup(
                 suggest("byte(", "byte(s: string, i?: number) → number"),
                 suggest("char(", "char(...: number) → string")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After math. or math.partial → suggest math library methods
@@ -294,7 +374,7 @@ class AutocompletePopup(
                 suggest("cos(", "cos(x: number) → number"),
                 suggest("fmod(", "fmod(x: number, y: number) → number")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
         // After table. or table.partial → suggest table library methods
@@ -307,15 +387,27 @@ class AutocompletePopup(
                 suggest("sort(", "sort(t: table, comp?: function)"),
                 suggest("concat(", "concat(t: table, sep?: string) → string")
             )
-            return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+            return fuzzy(partial, methods)
         }
 
-        // After # or #partial → suggest item tags
-        val tagMatch = Regex("""#([\w:./]*)$""").find(trimmed)
-        if (tagMatch != null) {
-            val partial = tagMatch.groupValues[1]
+        // After require("partial → suggest available script names
+        val requireMatch = Regex("""require\(\s*"(\w*)$""").find(trimmed)
+        if (requireMatch != null) {
+            val partial = requireMatch.groupValues[1]
             customPrefix = partial
-            return itemTags.filter { it.startsWith(partial) }.take(20).map { suggest(it) }
+            val scriptNames = scripts().keys.filter { it != "main" }.toList()
+            return fuzzyStrings(partial, scriptNames)
+        }
+
+        // After moduleVar.partial → suggest exports from the required module
+        val moduleDotMatch = Regex("""(\w+)\.(\w*)$""").find(trimmed)
+        if (moduleDotMatch != null) {
+            val varName = moduleDotMatch.groupValues[1]
+            val partial = moduleDotMatch.groupValues[2]
+            val moduleExports = getModuleExports(fullText, varName)
+            if (moduleExports.isNotEmpty()) {
+                return fuzzy(partial, moduleExports)
+            }
         }
 
         // Don't autocomplete after `local ` — user is declaring a new variable name
@@ -326,9 +418,8 @@ class AutocompletePopup(
         val lastWord = extractPrefix(beforeCursor)
         if (lastWord.length >= 2 || forced) {
             val apiFunctions = listOf(
-                suggest("card", "card(type: string, alias: string) → CardHandle"),
                 suggest("scheduler", "scheduler"),
-                suggest("network", "network storage"),
+                suggest("network", "network"),
                 suggest("print", "print(message: any)"),
                 suggest("clock", "clock() → number"),
                 suggest("string", "string library"),
@@ -346,22 +437,164 @@ class AutocompletePopup(
                 "if", "then", "else", "elseif", "for", "while", "do", "return",
                 "true", "false", "nil", "not", "and", "or").map { suggest(it) }
             val userVars = extractVariableNames(fullText).map { suggest(it) }
-            val all = (apiFunctions + keywords + userVars).distinctBy { it.insertText }
-            val matches = all.filter { it.insertText.startsWith(lastWord) && it.insertText != lastWord }
+            val userFuncs = extractFunctionNames(fullText).map { suggest("$it(", "$it(...)") }
+            val requireSuggest = if (scripts().size > 1) listOf(suggest("require", "require(module: string) → table")) else emptyList()
+            val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs).distinctBy { it.insertText }
+            val matches = FuzzyMatch.filter(lastWord, all).filter { it.insertText != lastWord }
             if (matches.isNotEmpty()) return matches
         }
 
         return emptyList()
     }
 
+    /**
+     * Resolves the type of a variable by checking:
+     * 1. Explicit type annotations (Luau-style)
+     * 2. Inference from assignment context (network:get, :find, etc.)
+     * 3. Function return type annotations for call results
+     */
+    private fun resolveVariableType(varName: String, text: String): String? {
+        // 1. Explicit annotation: local x: TypeName = ...
+        val localAnnotation = Regex("""local\s+${Regex.escape(varName)}\s*:\s*(\w+)\??\s*=""").find(text)
+        if (localAnnotation != null) return localAnnotation.groupValues[1]
+
+        // 2. Function parameter annotation: function foo(varName: TypeName)
+        val paramAnnotation = Regex("""\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*${Regex.escape(varName)}\s*:\s*(\w+)\??""").find(text)
+        if (paramAnnotation != null) return paramAnnotation.groupValues[1]
+
+        // 3. Assignment from a function with a known return type: local x = myFunc(...)
+        val funcCallMatch = Regex("""local\s+${Regex.escape(varName)}\s*=\s*(\w+)\s*\(""").find(text)
+        if (funcCallMatch != null) {
+            val funcName = funcCallMatch.groupValues[1]
+            val returnType = extractFunctionReturnType(funcName, text)
+            if (returnType != null) return returnType
+        }
+
+        // 4. Inference from assignment context
+        if (varName in extractCardVariables(text)) return "CardHandle"
+        if (varName in extractItemsHandleVariables(text)) return "ItemsHandle"
+        val varType = resolveVariableHandleType(varName, text)
+        if (varType != null) return varType
+
+        return null
+    }
+
+    /** Extracts the return type annotation from a function definition. */
+    private fun extractFunctionReturnType(funcName: String, text: String): String? {
+        // function funcName(...): ReturnType
+        val pattern = Regex("""function\s+${Regex.escape(funcName)}\s*\([^)]*\)\s*:\s*(\w+)\??""")
+        val match = pattern.find(text)
+        return match?.groupValues?.get(1)
+    }
+
+    /** Returns method suggestions for a known type. */
+    private fun methodsForType(type: String, partial: String): List<Suggestion> {
+        val methods = when (type) {
+            "CardHandle" -> cardHandleMethods("")
+            "ItemsHandle" -> itemsHandleMethods("")
+            "VariableHandle" -> variableHandleMethods("")
+            "NumberVariableHandle" -> numberVariableHandleMethods("")
+            "StringVariableHandle" -> stringVariableHandleMethods("")
+            "BoolVariableHandle" -> boolVariableHandleMethods("")
+            else -> emptyList()
+        }
+        return fuzzy(partial, methods)
+    }
+
+    /** Returns property suggestions for a known type. */
+    private fun propertiesForType(type: String, partial: String): List<Suggestion> {
+        val props = when (type) {
+            "ItemsHandle" -> itemsHandleProperties("")
+            else -> emptyList()
+        }
+        return fuzzy(partial, props)
+    }
+
     private fun cardHandleMethods(partial: String): List<Suggestion> {
         val methods = listOf(
-            suggest("move(", "move(dest: CardHandle, itemId: string, count: number) → number"),
-            suggest("count(", "count(itemId: string) → number"),
+            suggest("find(", "find(filter: string) → ItemsHandle?"),
+            suggest("findStack(", "findStack(filter: string) → ItemsHandle?"),
+            suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
+            suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
+            suggest("count(", "count(filter: string) → number"),
             suggest("face(", "face(side: string) → CardHandle"),
             suggest("slots(", "slots(...: number) → CardHandle")
         )
-        return if (partial.isEmpty()) methods else methods.filter { it.insertText.startsWith(partial) }
+        return fuzzy(partial, methods)
+    }
+
+    private fun itemsHandleMethods(partial: String): List<Suggestion> {
+        val methods = listOf(
+            suggest("hasTag(", "hasTag(tag: string) → boolean"),
+            suggest("matches(", "matches(filter: string) → boolean")
+        )
+        return fuzzy(partial, methods)
+    }
+
+    private fun itemsHandleProperties(partial: String): List<Suggestion> {
+        val props = listOf(
+            suggest("id", "id: string"),
+            suggest("name", "name: string"),
+            suggest("count", "count: number"),
+            suggest("stackable", "stackable: boolean"),
+            suggest("maxStackSize", "maxStackSize: number"),
+            suggest("hasData", "hasData: boolean")
+        )
+        return fuzzy(partial, props)
+    }
+
+    private val baseVariableMethods = listOf(
+        "get(" to "get() → value",
+        "set(" to "set(value) — set variable value",
+        "cas(" to "cas(expected, new) → boolean",
+        "type(" to "type() → string",
+        "name(" to "name() → string"
+    )
+
+    private fun variableHandleMethods(partial: String): List<Suggestion> {
+        // Fallback: show all methods when type is unknown
+        val methods = baseVariableMethods.map { suggest(it.first, it.second) } +
+            listOf(
+                suggest("increment(", "increment(n: number) → number"),
+                suggest("decrement(", "decrement(n: number) → number"),
+                suggest("min(", "min(n: number) → number"),
+                suggest("max(", "max(n: number) → number"),
+                suggest("append(", "append(s: string) → string"),
+                suggest("length(", "length() → number"),
+                suggest("clear(", "clear()"),
+                suggest("toggle(", "toggle() → boolean"),
+                suggest("tryLock(", "tryLock() → boolean"),
+                suggest("unlock(", "unlock()")
+            )
+        return fuzzy(partial, methods)
+    }
+
+    private fun numberVariableHandleMethods(partial: String): List<Suggestion> {
+        val methods = baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
+            suggest("increment(", "increment(n: number) → number"),
+            suggest("decrement(", "decrement(n: number) → number"),
+            suggest("min(", "min(n: number) → number"),
+            suggest("max(", "max(n: number) → number")
+        )
+        return fuzzy(partial, methods)
+    }
+
+    private fun stringVariableHandleMethods(partial: String): List<Suggestion> {
+        val methods = baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
+            suggest("append(", "append(s: string) → string"),
+            suggest("length(", "length() → number"),
+            suggest("clear(", "clear()")
+        )
+        return fuzzy(partial, methods)
+    }
+
+    private fun boolVariableHandleMethods(partial: String): List<Suggestion> {
+        val methods = baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
+            suggest("toggle(", "toggle() → boolean"),
+            suggest("tryLock(", "tryLock() → boolean"),
+            suggest("unlock(", "unlock()")
+        )
+        return fuzzy(partial, methods)
     }
 
     /** Extracts all variable names from `local X = ...` declarations in the script. */
@@ -370,16 +603,116 @@ class AutocompletePopup(
         return pattern.findAll(text).map { it.groupValues[1] }.distinct().toList()
     }
 
-    /** Extracts variable names that are assigned from card() or :face() calls. */
+    /** Extracts variable names that are assigned from network:get() or :face() calls. */
     private fun extractCardVariables(text: String): Set<String> {
         val result = mutableSetOf<String>()
-        // local X = card(...)
-        val cardPattern = Regex("""local\s+(\w+)\s*=\s*card\s*\(""")
-        cardPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:get(...)
+        val getPattern = Regex("""local\s+(\w+)\s*=\s*network:get\s*\(""")
+        getPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         // local X = something:face(...)
         val facePattern = Regex("""local\s+(\w+)\s*=\s*\w+:face\s*\(""")
         facePattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = something:slots(...)
+        val slotsPattern = Regex("""local\s+(\w+)\s*=\s*\w+:slots\s*\(""")
+        slotsPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         return result
+    }
+
+    /** Extracts variable names assigned from find(), craft(), or shapeless() — these are ItemsHandle. */
+    private fun extractItemsHandleVariables(text: String): Set<String> {
+        val result = mutableSetOf<String>()
+        // local X = something:find(...) — but NOT findAll
+        val findPattern = Regex("""local\s+(\w+)\s*=\s*\w+:find\s*\(""")
+        findPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = something:findStack(...)
+        val findStackPattern = Regex("""local\s+(\w+)\s*=\s*\w+:findStack\s*\(""")
+        findStackPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:find(...)
+        val netFindPattern = Regex("""local\s+(\w+)\s*=\s*network:find\s*\(""")
+        netFindPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:findStack(...)
+        val netFindStackPattern = Regex("""local\s+(\w+)\s*=\s*network:findStack\s*\(""")
+        netFindStackPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:craft(...)
+        val craftPattern = Regex("""local\s+(\w+)\s*=\s*network:craft\s*\(""")
+        craftPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local X = network:shapeless(...)
+        val shapelessPattern = Regex("""local\s+(\w+)\s*=\s*network:shapeless\s*\(""")
+        shapelessPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        return result
+    }
+
+    /**
+     * Resolves a variable assigned from network:var("name") to its typed handle.
+     * Returns "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle", or null.
+     */
+    private fun resolveVariableHandleType(varName: String, text: String): String? {
+        // Match: local varName = network:var("someName")
+        val pattern = Regex("""local\s+${Regex.escape(varName)}\s*=\s*network:var\s*\(\s*"(\w+)"\s*\)""")
+        val match = pattern.find(text) ?: return null
+        val netVarName = match.groupValues[1]
+        // Look up the variable's type from the known variables list
+        val typeOrd = variables.firstOrNull { it.first == netVarName }?.second
+        return when (typeOrd) {
+            0 -> "NumberVariableHandle"
+            1 -> "StringVariableHandle"
+            2 -> "BoolVariableHandle"
+            else -> "VariableHandle" // fallback: show all methods
+        }
+    }
+
+    /** Extracts top-level and local function names from the script. */
+    private fun extractFunctionNames(text: String): List<String> {
+        val result = mutableListOf<String>()
+        // function myFunc(...)
+        val globalPattern = Regex("""^function\s+(\w+)\s*\(""", RegexOption.MULTILINE)
+        globalPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // local function myFunc(...)
+        val localPattern = Regex("""local\s+function\s+(\w+)\s*\(""")
+        localPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        return result.distinct()
+    }
+
+    /**
+     * Gets exported functions/fields from a required module.
+     * Looks for `local varName = require("module")` in the current script,
+     * then parses the module script for `function m.foo()` and `m.bar = ...` patterns.
+     */
+    private fun getModuleExports(currentText: String, varName: String): List<Suggestion> {
+        // Find which module this variable requires
+        val requirePattern = Regex("""local\s+${Regex.escape(varName)}\s*=\s*require\(\s*"(\w+)"\s*\)""")
+        val match = requirePattern.find(currentText) ?: return emptyList()
+        val moduleName = match.groupValues[1]
+
+        val moduleText = scripts()[moduleName] ?: return emptyList()
+
+        val exports = mutableListOf<Suggestion>()
+
+        // Find the table variable name: local m = {} or local M = {}
+        val tableVarPattern = Regex("""local\s+(\w+)\s*=\s*\{\s*\}""")
+        val tableVars = tableVarPattern.findAll(moduleText).map { it.groupValues[1] }.toSet()
+
+        for (tableVar in tableVars) {
+            // function m.foo(...)
+            val funcPattern = Regex("""function\s+${Regex.escape(tableVar)}\.(\w+)\s*\(([^)]*)\)""")
+            funcPattern.findAll(moduleText).forEach { m ->
+                val funcName = m.groupValues[1]
+                val params = m.groupValues[2].trim()
+                exports.add(suggest("$funcName(", "$funcName($params)"))
+            }
+
+            // m.foo = value
+            val fieldPattern = Regex("""${Regex.escape(tableVar)}\.(\w+)\s*=""")
+            fieldPattern.findAll(moduleText).forEach { m ->
+                val fieldName = m.groupValues[1]
+                // Don't duplicate if already found as a function
+                if (exports.none { it.insertText.startsWith("$fieldName(") }) {
+                    exports.add(suggest(fieldName))
+                }
+            }
+        }
+
+        return exports.distinctBy { it.insertText }
     }
 
     private fun extractPrefix(beforeCursor: String): String {

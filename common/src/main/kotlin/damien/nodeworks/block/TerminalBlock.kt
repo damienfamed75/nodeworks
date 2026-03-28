@@ -72,20 +72,26 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
+        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return InteractionResult.PASS
 
-        if (terminal.getConnectedNodePos() == null) {
+        val startPos = terminal.getNetworkStartPos()
+        if (startPos == null) {
             player.displayClientMessage(Component.translatable("message.nodeworks.terminal_no_network"), false)
             return InteractionResult.SUCCESS
         }
 
         val serverPlayer = player as ServerPlayer
-
-        val nodePos = terminal.getConnectedNodePos()!!
         val serverLevel = level as ServerLevel
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, nodePos)
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, startPos)
+
+        if (!snapshot.isOnline) {
+            player.displayClientMessage(Component.translatable("message.nodeworks.no_controller"), false)
+            return InteractionResult.SUCCESS
+        }
+
         val allCards = snapshot.allCards()
 
         // Collect all item tags from the registry
@@ -95,7 +101,8 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
             .toList()
 
         val isRunning = PlatformServices.modState.isScriptRunning(serverLevel, terminal.blockPos)
-        val openData = TerminalOpenData(terminal.blockPos, terminal.scriptText, isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags)
+        val varNames = snapshot.variables.map { it.name to it.type.ordinal }
+        val openData = TerminalOpenData(terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags, varNames)
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
@@ -106,5 +113,11 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         )
 
         return InteractionResult.SUCCESS
+    }
+
+    override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
+        val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
+        entity?.blockDestroyed = true
+        return super.playerWillDestroy(level, pos, state, player)
     }
 }

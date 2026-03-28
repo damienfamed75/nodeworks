@@ -1,7 +1,6 @@
 package damien.nodeworks.block.entity
 
 import damien.nodeworks.card.IOSideCapability
-import damien.nodeworks.card.RecipeSideCapability
 import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.card.NodeCard
 import damien.nodeworks.card.SideCapability
@@ -38,7 +37,7 @@ import net.minecraft.world.level.storage.ValueOutput
 class NodeBlockEntity(
     pos: BlockPos,
     state: BlockState
-) : BlockEntity(ModBlockEntities.NODE, pos, state), WorldlyContainer {
+) : BlockEntity(ModBlockEntities.NODE, pos, state), WorldlyContainer, damien.nodeworks.network.Connectable {
 
     companion object {
         private val logger = LoggerFactory.getLogger("nodeworks-node")
@@ -63,19 +62,63 @@ class NodeBlockEntity(
     private val items: NonNullList<ItemStack> = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
     private val connections: LinkedHashSet<BlockPos> = linkedSetOf()
 
+    // --- Monitors ---
+
+    /** Per-face monitor data. Null = no monitor on that face. */
+    data class MonitorData(val trackedItemId: String?, var displayCount: Long = 0L)
+
+    private val monitors = java.util.EnumMap<Direction, MonitorData>(Direction::class.java)
+
+    fun hasMonitor(face: Direction): Boolean = monitors.containsKey(face)
+    fun getMonitor(face: Direction): MonitorData? = monitors[face]
+    fun getMonitorFaces(): Set<Direction> = monitors.keys.toSet()
+
+    fun attachMonitor(face: Direction) {
+        if (!monitors.containsKey(face)) {
+            monitors[face] = MonitorData(null)
+            markDirtyAndSync()
+            val lvl = level
+            if (lvl is net.minecraft.server.level.ServerLevel) {
+                damien.nodeworks.script.MonitorUpdateHelper.trackNode(worldPosition)
+            }
+        }
+    }
+
+    fun removeMonitor(face: Direction): Boolean {
+        if (monitors.remove(face) != null) {
+            markDirtyAndSync()
+            if (monitors.isEmpty()) {
+                damien.nodeworks.script.MonitorUpdateHelper.untrackNode(worldPosition)
+            }
+            return true
+        }
+        return false
+    }
+
+    fun setMonitorItem(face: Direction, itemId: String?) {
+        val monitor = monitors[face] ?: return
+        monitors[face] = monitor.copy(trackedItemId = itemId)
+        markDirtyAndSync()
+    }
+
+    fun updateMonitorCount(face: Direction, count: Long) {
+        val monitor = monitors[face] ?: return
+        monitor.displayCount = count
+    }
+
     // --- Network connections ---
 
-    fun getConnections(): List<BlockPos> = connections.toList()
+    override fun getConnections(): List<BlockPos> = connections.toList()
 
-    fun hasConnection(pos: BlockPos): Boolean = pos in connections
+    override fun hasConnection(pos: BlockPos): Boolean = pos in connections
 
-    fun addConnection(pos: BlockPos): Boolean {
+    override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
         markDirtyAndSync()
         return true
     }
 
-    fun removeConnection(pos: BlockPos): Boolean {
+    override fun removeConnection(pos: BlockPos): Boolean {
         if (!connections.remove(pos)) return false
         markDirtyAndSync()
         return true
@@ -109,11 +152,6 @@ class NodeBlockEntity(
         return getCards(side).map { info ->
             val capability = when (info.card) {
                 is damien.nodeworks.card.IOCard -> IOSideCapability(adjacentPos, accessFace)
-                is damien.nodeworks.card.RecipeCard -> {
-                    val stack = items[sideOffset(side) + info.slotIndex]
-                    val recipe = damien.nodeworks.card.RecipeCard.getRecipe(stack)
-                    RecipeSideCapability(adjacentPos, recipe)
-                }
                 is damien.nodeworks.card.StorageCard -> {
                     val stack = items[sideOffset(side) + info.slotIndex]
                     val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
@@ -181,8 +219,13 @@ class NodeBlockEntity(
         return SLOTS_BY_FACE[side.ordinal]
     }
 
+    override fun canPlaceItem(slot: Int, stack: ItemStack): Boolean {
+        return stack.item is NodeCard
+    }
+
     override fun canPlaceItemThroughFace(slot: Int, stack: ItemStack, side: Direction?): Boolean {
         if (side == null) return false
+        if (stack.item !is NodeCard) return false
         val offset = sideOffset(side)
         return slot in offset until (offset + SLOTS_PER_SIDE)
     }
@@ -200,6 +243,16 @@ class NodeBlockEntity(
         if (connections.isNotEmpty()) {
             output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
         }
+        // Save monitors
+        val monitorCount = monitors.size
+        output.putInt("monitorCount", monitorCount)
+        var idx = 0
+        for ((face, data) in monitors) {
+            output.putInt("monitorFace_$idx", face.ordinal)
+            output.putString("monitorItem_$idx", data.trackedItemId ?: "")
+            output.putLong("monitorCount_$idx", data.displayCount)
+            idx++
+        }
     }
 
     override fun loadAdditional(input: ValueInput) {
@@ -208,27 +261,39 @@ class NodeBlockEntity(
         ContainerHelper.loadAllItems(input, items)
         connections.clear()
         input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        // Load monitors
+        monitors.clear()
+        val monitorCount = input.getIntOr("monitorCount", 0)
+        for (i in 0 until monitorCount) {
+            val faceOrdinal = input.getIntOr("monitorFace_$i", -1)
+            if (faceOrdinal < 0 || faceOrdinal >= Direction.entries.size) continue
+            val face = Direction.entries[faceOrdinal]
+            val itemId = input.getString("monitorItem_$i").orElse("").ifEmpty { null }
+            val displayCount = input.getLongOr("monitorCount_$i", 0L)
+            monitors[face] = MonitorData(itemId, displayCount)
+        }
         nodeTracker?.onNodeChanged(worldPosition, true)
     }
 
     override fun setLevel(newLevel: net.minecraft.world.level.Level) {
         super.setLevel(newLevel)
-        // Track in spatial index now that we know the dimension.
-        // setLevel is called after loadAdditional, so connections are already loaded.
         if (newLevel is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
+            if (monitors.isNotEmpty()) {
+                damien.nodeworks.script.MonitorUpdateHelper.trackNode(worldPosition)
+            }
         }
     }
 
     /** Set to true by NodeBlock when the block is actually being destroyed. */
-    var blockDestroyed: Boolean = false
+    override var blockDestroyed: Boolean = false
 
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
             if (blockDestroyed) {
-                NodeConnectionHelper.removeAllConnectionsOf(currentLevel, this)
+                NodeConnectionHelper.removeAllConnections(currentLevel, this)
             }
             NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
         }

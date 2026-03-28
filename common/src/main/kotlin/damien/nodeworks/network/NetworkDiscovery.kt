@@ -1,14 +1,20 @@
 package damien.nodeworks.network
 
+import damien.nodeworks.block.entity.InstructionCrafterBlockEntity
+import damien.nodeworks.block.entity.InstructionStorageBlockEntity
+import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.block.entity.VariableBlockEntity
+import damien.nodeworks.block.entity.VariableType
 import damien.nodeworks.card.SideCapability
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.server.level.ServerLevel
+import java.util.UUID
 
 /**
- * Discovers all reachable nodes from a starting position by walking the connection graph.
- * Returns a snapshot of the network's current state — ephemeral, never stored.
+ * Discovers all reachable nodes and crafters from a starting position
+ * by walking the connection graph. Returns an ephemeral network snapshot.
  */
 object NetworkDiscovery {
 
@@ -16,24 +22,53 @@ object NetworkDiscovery {
         val visited = mutableSetOf<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         val nodes = mutableListOf<NodeSnapshot>()
+        val crafters = mutableListOf<CrafterSnapshot>()
+        val variables = mutableListOf<VariableSnapshot>()
+        var controller: ControllerSnapshot? = null
 
         queue.add(startPos)
         visited.add(startPos)
 
         while (queue.isNotEmpty()) {
             val pos = queue.removeFirst()
-            val entity = NodeConnectionHelper.getNodeEntity(level, pos) ?: continue
+            val connectable = NodeConnectionHelper.getConnectable(level, pos) ?: continue
 
-            nodes.add(snapshotNode(entity))
+            when (connectable) {
+                is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
+                is InstructionCrafterBlockEntity -> crafters.add(snapshotCrafter(connectable))
+                is NetworkControllerBlockEntity -> controller = ControllerSnapshot(connectable.blockPos, connectable.networkId)
+                is VariableBlockEntity -> if (connectable.variableName.isNotEmpty()) {
+                    variables.add(VariableSnapshot(connectable.blockPos, connectable.variableName, connectable.variableType))
+                }
+            }
 
-            for (connection in entity.getConnections()) {
+            for (connection in connectable.getConnections()) {
                 if (visited.add(connection)) {
                     queue.add(connection)
                 }
             }
         }
 
-        return NetworkSnapshot(nodes)
+        // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1)
+        assignAutoAliases(nodes)
+
+        return NetworkSnapshot(nodes, crafters, variables, controller)
+    }
+
+    private fun assignAutoAliases(nodes: List<NodeSnapshot>) {
+        val counters = mutableMapOf<String, Int>()
+        for (node in nodes) {
+            for ((_, cards) in node.sides) {
+                for (card in cards) {
+                    if (card.alias == null) {
+                        val type = card.capability.type
+                        val count = counters.getOrDefault(type, 0) + 1
+                        counters[type] = count
+                        card.autoAlias = "${type}_$count"
+                    }
+                }
+            }
+        }
     }
 
     private fun snapshotNode(entity: NodeBlockEntity): NodeSnapshot {
@@ -49,14 +84,43 @@ object NetworkDiscovery {
 
         return NodeSnapshot(entity.blockPos, sides)
     }
+
+    private fun snapshotCrafter(entity: InstructionCrafterBlockEntity): CrafterSnapshot {
+        val instructionSets = entity.getAllInstructionSets()
+        return CrafterSnapshot(entity.blockPos, instructionSets)
+    }
 }
 
-data class NetworkSnapshot(val nodes: List<NodeSnapshot>) {
+data class ControllerSnapshot(
+    val pos: BlockPos,
+    val networkId: UUID
+)
 
-    /** Find a card by alias across the entire network. Returns null if not found or duplicate. */
+data class VariableSnapshot(
+    val pos: BlockPos,
+    val name: String,
+    val type: VariableType
+)
+
+data class NetworkSnapshot(
+    val nodes: List<NodeSnapshot>,
+    val crafters: List<CrafterSnapshot> = emptyList(),
+    val variables: List<VariableSnapshot> = emptyList(),
+    val controller: ControllerSnapshot? = null
+) {
+    /** Whether this network has a controller and is online. */
+    val isOnline: Boolean get() = controller != null
+
+    /** The network's UUID, or null if no controller. */
+    val networkId: UUID? get() = controller?.networkId
+
+    /** Find a variable by name. */
+    fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
+
+    /** Find a card by alias (custom or auto-generated) across the entire network. */
     fun findByAlias(alias: String): CardSnapshot? {
         val matches = nodes.flatMap { node ->
-            node.sides.values.flatten().filter { it.alias == alias }
+            node.sides.values.flatten().filter { it.effectiveAlias == alias }
         }
         return matches.singleOrNull()
     }
@@ -65,6 +129,40 @@ data class NetworkSnapshot(val nodes: List<NodeSnapshot>) {
     fun allCards(): List<CardSnapshot> {
         return nodes.flatMap { node -> node.sides.values.flatten() }
     }
+
+    /** Find an Instruction Set by alias or output item ID across all crafters. */
+    fun findInstructionSet(identifier: String): InstructionSetMatch? {
+        // Check alias first
+        for (crafter in crafters) {
+            for (info in crafter.instructionSets) {
+                if (info.alias == identifier) {
+                    return InstructionSetMatch(crafter, info)
+                }
+            }
+        }
+        // Then check output item ID
+        for (crafter in crafters) {
+            for (info in crafter.instructionSets) {
+                if (info.outputItemId == identifier) {
+                    return InstructionSetMatch(crafter, info)
+                }
+            }
+        }
+        return null
+    }
+
+    /** Find all Instruction Sets that output a specific item ID. */
+    fun findInstructionSetsByOutput(outputItemId: String): List<InstructionSetMatch> {
+        val results = mutableListOf<InstructionSetMatch>()
+        for (crafter in crafters) {
+            for (info in crafter.instructionSets) {
+                if (info.outputItemId == outputItemId) {
+                    results.add(InstructionSetMatch(crafter, info))
+                }
+            }
+        }
+        return results
+    }
 }
 
 data class NodeSnapshot(
@@ -72,8 +170,24 @@ data class NodeSnapshot(
     val sides: Map<Direction, List<CardSnapshot>>
 )
 
+data class CrafterSnapshot(
+    val pos: BlockPos,
+    val instructionSets: List<InstructionStorageBlockEntity.InstructionSetInfo>
+)
+
+data class InstructionSetMatch(
+    val crafter: CrafterSnapshot,
+    val instructionSet: InstructionStorageBlockEntity.InstructionSetInfo
+)
+
 data class CardSnapshot(
     val capability: SideCapability,
     val alias: String?,
     val slotIndex: Int
-)
+) {
+    /** Auto-generated alias for unnamed cards (e.g., io_1, storage_2). */
+    var autoAlias: String? = null
+
+    /** The effective alias — custom name if set, otherwise auto-generated. */
+    val effectiveAlias: String get() = alias ?: autoAlias ?: capability.type
+}
