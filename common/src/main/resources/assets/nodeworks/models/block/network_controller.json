@@ -1,22 +1,9 @@
 {
-  "parent": "minecraft:block/block",
+  "parent": "minecraft:block/cube_bottom_top",
   "textures": {
-    "all": "nodeworks:block/network_controller",
+    "side": "nodeworks:block/network_controller",
+    "top": "nodeworks:block/network_controller_top",
+    "bottom": "nodeworks:block/network_controller_bottom",
     "particle": "nodeworks:block/network_controller"
-  },
-  "elements": [
-    {
-      "from": [3, 3, 3],
-      "to": [13, 13, 13],
-      "shade": false,
-      "faces": {
-        "north": { "texture": "#all" },
-        "south": { "texture": "#all" },
-        "east":  { "texture": "#all" },
-        "west":  { "texture": "#all" },
-        "up":    { "texture": "#all" },
-        "down":  { "texture": "#all" }
-      }
-    }
-  ]
+  }
 }

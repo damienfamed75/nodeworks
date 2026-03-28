@@ -5,6 +5,7 @@ import damien.nodeworks.platform.ClientNetworkingService
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.registry.ModBlockEntities
+import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import net.neoforged.neoforge.client.event.EntityRenderersEvent
@@ -44,6 +45,7 @@ object NeoForgeClientSetup {
     @SubscribeEvent
     fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
         event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::MonitorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
     }
 
     @SubscribeEvent

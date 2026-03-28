@@ -26,8 +26,7 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
     companion object {
         val CODEC: MapCodec<NetworkControllerBlock> = simpleCodec(::NetworkControllerBlock)
 
-        // 10x10x10 pixel centered cube — larger than a node, smaller than full block
-        val SHAPE: VoxelShape = Block.box(3.0, 3.0, 3.0, 13.0, 13.0, 13.0)
+        val SHAPE: VoxelShape = Block.box(0.0, 0.0, 0.0, 16.0, 16.0, 16.0)
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
