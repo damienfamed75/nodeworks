@@ -3,11 +3,10 @@ package damien.nodeworks.screen
 import com.mojang.blaze3d.platform.NativeImage
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
-import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.sounds.SoundEvents
 import java.awt.Color
 
@@ -35,7 +34,7 @@ class ColorPickerScreen(
 
     private var selectedColor: Int = initialColor
     private lateinit var hexField: EditBox
-    private var pickerTextureId: Identifier? = null
+    private var pickerTextureId: ResourceLocation? = null
     private var panelX = 0
     private var panelY = 0
     private var updatingField = false
@@ -64,7 +63,7 @@ class ColorPickerScreen(
         addRenderableWidget(hexField)
     }
 
-    private fun createPickerTexture(): Identifier {
+    private fun createPickerTexture(): ResourceLocation {
         val image = NativeImage(PICKER_W, PICKER_H, false)
         for (x in 0 until PICKER_W) {
             val hue = x.toFloat() / PICKER_W
@@ -75,11 +74,11 @@ class ColorPickerScreen(
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                image.setPixel(x, y, (0xFF shl 24) or (b shl 16) or (g shl 8) or r)
+                image.setPixelRGBA(x, y, (0xFF shl 24) or (b shl 16) or (g shl 8) or r)
             }
         }
-        val texture = DynamicTexture({ "nodeworks_color_picker" }, image)
-        val id = Identifier.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")
+        val texture = DynamicTexture(image)
+        val id = ResourceLocation.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")
         minecraft?.textureManager?.register(id, texture)
         return id
     }
@@ -106,7 +105,7 @@ class ColorPickerScreen(
         val px = panelX + PICKER_X
         val py = panelY + PICKER_Y
         pickerTextureId?.let { texId ->
-            graphics.blit(RenderPipelines.GUI_TEXTURED, texId, px, py, 0f, 0f, PICKER_W, PICKER_H, PICKER_W, PICKER_H)
+            graphics.blit(texId, px, py, 0f, 0f, PICKER_W, PICKER_H, PICKER_W, PICKER_H)
         }
         // Inset border
         graphics.fill(px - 1, py - 1, px + PICKER_W + 1, py, 0xFF555555.toInt())
@@ -160,9 +159,9 @@ class ColorPickerScreen(
         graphics.drawString(font, label, bx + (bw - font.width(label)) / 2, by + (bh - 8) / 2, textColor)
     }
 
-    override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
-        val mx = event.x()
-        val my = event.y()
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
 
         // Color picker click
         val px = panelX + PICKER_X
@@ -193,19 +192,19 @@ class ColorPickerScreen(
             return true
         }
 
-        return super.mouseClicked(event, flag)
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(event: net.minecraft.client.input.MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
-        val mx = event.x()
-        val my = event.y()
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
         val px = panelX + PICKER_X
         val py = panelY + PICKER_Y
-        if (event.button() == 0 && mx >= px && mx < px + PICKER_W && my >= py && my < py + PICKER_H) {
+        if (button == 0 && mx >= px && mx < px + PICKER_W && my >= py && my < py + PICKER_H) {
             pickColorAt((mx - px).toDouble(), (my - py).toDouble())
             return true
         }
-        return super.mouseDragged(event, dragX, dragY)
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
     }
 
     private fun pickColorAt(relX: Double, relY: Double) {

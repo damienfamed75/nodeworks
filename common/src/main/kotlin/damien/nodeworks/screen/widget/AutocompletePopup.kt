@@ -3,8 +3,6 @@ package damien.nodeworks.screen.widget
 import damien.nodeworks.network.CardSnapshot
 import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.client.gui.components.MultiLineEditBox
-import net.minecraft.client.gui.components.MultilineTextField
 
 /**
  * Context-aware autocompletion popup for the Lua script editor.
@@ -34,27 +32,14 @@ class AutocompletePopup(
     private var scrollOffset: Int = 0
     private val maxVisible: Int = 8
 
-    // Access the inner MultilineTextField via reflection (cached)
-    private var textFieldAccessor: java.lang.reflect.Field? = null
-
-    private fun getTextField(editor: MultiLineEditBox): MultilineTextField? {
-        if (textFieldAccessor == null) {
-            textFieldAccessor = MultiLineEditBox::class.java.getDeclaredField("textField")
-            textFieldAccessor!!.isAccessible = true
-        }
-        return textFieldAccessor?.get(editor) as? MultilineTextField
-    }
-
     /**
      * Update suggestions based on current editor state.
      * [forced] = true when triggered by Ctrl+Space (shows word completions).
      * [forced] = false on normal typing (only shows context completions like after `:` or `"`).
      */
-    fun update(editor: MultiLineEditBox, editorX: Int, editorY: Int, forced: Boolean = false) {
-        val textField = getTextField(editor) ?: run { hide(); return }
-        val text = textField.value()
-        // Use cursor position, but clamp to text length in case it's stale
-        val cursor = minOf(textField.cursor(), text.length)
+    fun update(text: String, cursorPos: Int, editorX: Int, editorY: Int, forced: Boolean = false) {
+        // Clamp cursor to text length in case it's stale
+        val cursor = minOf(cursorPos, text.length)
         lastFullText = text
 
         if (cursor <= 0) { hide(); return }
@@ -74,23 +59,16 @@ class AutocompletePopup(
         prefix = customPrefix ?: extractPrefix(beforeCursor)
         customPrefix = null
 
-        // Position popup at the cursor's actual position
-        val lineAtCursor = textField.getLineAtCursor()
+        // Find which line and column the cursor is on
+        val textBeforeCursor = text.substring(0, cursor)
+        val lineAtCursor = textBeforeCursor.count { it == '\n' }
+        val lastNewline = textBeforeCursor.lastIndexOf('\n')
+        val colAtCursor = if (lastNewline >= 0) cursor - lastNewline - 1 else cursor
+        val lineText = textBeforeCursor.substring(lastNewline + 1)
+        val cursorXOffset = font.width(lineText)
 
-        // Find the text on the current line before the cursor to calculate X offset
-        var cursorXOffset = 0
-        try {
-            val lineView = textField.getLineView(lineAtCursor)
-            val lineBegin = lineView.javaClass.getMethod("beginIndex").invoke(lineView) as Int
-            val lineEnd = lineView.javaClass.getMethod("endIndex").invoke(lineView) as Int
-            val cursorCol = (cursor - lineBegin).coerceIn(0, lineEnd - lineBegin)
-            val lineTextBeforeCursor = text.substring(lineBegin, lineBegin + cursorCol)
-            cursorXOffset = font.width(lineTextBeforeCursor)
-        } catch (_: Exception) {}
-
-        val scrollOffset = editor.scrollAmount().toInt()
         popupX = editorX + 4 + cursorXOffset
-        popupY = editorY + (lineAtCursor + 1) * font.lineHeight + 4 - scrollOffset
+        popupY = editorY + (lineAtCursor + 1) * font.lineHeight + 4
     }
 
     fun hide() {

@@ -27,23 +27,20 @@ object LuaSyntaxHighlighter {
 
     private val BUILTINS = setOf("card", "scheduler", "print")
 
-    private var innerLeftMethod: java.lang.reflect.Method? = null
-    private var innerTopMethod: java.lang.reflect.Method? = null
-
     private fun getInnerLeft(editor: MultiLineEditBox): Int {
-        if (innerLeftMethod == null) {
-            innerLeftMethod = editor.javaClass.superclass?.getDeclaredMethod("getInnerLeft")
-            innerLeftMethod?.isAccessible = true
-        }
-        return innerLeftMethod?.invoke(editor) as? Int ?: (editor.x + 4)
+        return try {
+            val m = editor.javaClass.superclass?.getDeclaredMethod("getInnerLeft")
+            m?.isAccessible = true
+            m?.invoke(editor) as? Int ?: (editor.x + 4)
+        } catch (_: Exception) { editor.x + 4 }
     }
 
     private fun getInnerTop(editor: MultiLineEditBox): Int {
-        if (innerTopMethod == null) {
-            innerTopMethod = editor.javaClass.superclass?.getDeclaredMethod("getInnerTop")
-            innerTopMethod?.isAccessible = true
-        }
-        return innerTopMethod?.invoke(editor) as? Int ?: (editor.y + 4)
+        return try {
+            val m = editor.javaClass.superclass?.getDeclaredMethod("getInnerTop")
+            m?.isAccessible = true
+            m?.invoke(editor) as? Int ?: (editor.y + 4)
+        } catch (_: Exception) { editor.y + 4 }
     }
 
     fun render(
@@ -60,7 +57,7 @@ object LuaSyntaxHighlighter {
         if (text.isEmpty()) return
 
         val lineHeight = font.lineHeight
-        val scrollOffset = editor.scrollAmount().toInt()
+        val scrollOffset = 0.0.toInt()
         val textLeft = getInnerLeft(editor)
         val textTop = getInnerTop(editor)
 

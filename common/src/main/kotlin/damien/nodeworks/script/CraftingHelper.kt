@@ -5,7 +5,7 @@ import damien.nodeworks.network.InstructionSetMatch
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.crafting.CraftingInput
@@ -63,9 +63,9 @@ object CraftingHelper {
         if (totalCrafted == 0) return null
 
         val outputId = match.instructionSet.outputItemId
-        val outputIdentifier = Identifier.tryParse(outputId) ?: return null
-        val outputItem = BuiltInRegistries.ITEM.getValue(outputIdentifier) ?: return null
-        val outputName = outputItem.getName(ItemStack(outputItem)).string
+        val outputIdentifier = ResourceLocation.tryParse(outputId) ?: return null
+        val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier) ?: return null
+        val outputName = ItemStack(outputItem).hoverName.string
 
         // Get the actual output count per craft from the recipe manager
         val outputPerCraft = getRecipeOutputCount(recipe, level)
@@ -130,14 +130,14 @@ object CraftingHelper {
         val items = recipe.map { itemId ->
             if (itemId.isEmpty()) ItemStack.EMPTY
             else {
-                val id = Identifier.tryParse(itemId) ?: return false
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: return false
+                val id = ResourceLocation.tryParse(itemId) ?: return false
+                val item = BuiltInRegistries.ITEM.get(id) ?: return false
                 ItemStack(item, 1)
             }
         }
         val craftingInput = CraftingInput.of(3, 3, items)
 
-        val recipeManager = level.recipeAccess() as? RecipeManager ?: return false
+        val recipeManager = level.getRecipeManager() ?: return false
         val result = recipeManager
             .getRecipeFor(RecipeType.CRAFTING, craftingInput, level)
             .map { it.value().assemble(craftingInput, level.registryAccess()) }
@@ -180,13 +180,13 @@ object CraftingHelper {
         val items = recipe.map { itemId ->
             if (itemId.isEmpty()) ItemStack.EMPTY
             else {
-                val id = Identifier.tryParse(itemId) ?: return 1
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: return 1
+                val id = ResourceLocation.tryParse(itemId) ?: return 1
+                val item = BuiltInRegistries.ITEM.get(id) ?: return 1
                 ItemStack(item, 1)
             }
         }
         val input = CraftingInput.of(3, 3, items)
-        val recipeManager = level.recipeAccess() as? RecipeManager ?: return 1
+        val recipeManager = level.getRecipeManager() ?: return 1
         return recipeManager
             .getRecipeFor(RecipeType.CRAFTING, input, level)
             .map { it.value().assemble(input, level.registryAccess()).count }

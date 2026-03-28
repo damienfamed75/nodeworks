@@ -7,11 +7,9 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
-import net.minecraft.client.input.KeyEvent
-import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.ItemStack
 
@@ -26,7 +24,7 @@ class InventoryTerminalScreen(
 ) : AbstractContainerScreen<InventoryTerminalMenu>(menu, playerInventory, title) {
 
     companion object {
-        private val BACKGROUND = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/inventory_terminal.png")
+        private val BACKGROUND = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/inventory_terminal.png")
         private const val COLS = 9
         private const val ROWS = 6
         private const val SLOT_SIZE = 18
@@ -54,7 +52,7 @@ class InventoryTerminalScreen(
         searchBox.setMaxLength(50)
         searchBox.setBordered(true)
         searchBox.setTextColor(0xFFE0E0E0.toInt())
-        searchBox.setTextShadow(true)
+        // searchBox.setTextShadow(true) — not available in 1.21.1
         searchBox.isFocused = true
         searchBox.active = true
         searchBox.visible = true
@@ -64,7 +62,6 @@ class InventoryTerminalScreen(
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
         graphics.blit(
-            RenderPipelines.GUI_TEXTURED,
             BACKGROUND,
             leftPos, topPos,
             0f, 0f,
@@ -98,8 +95,8 @@ class InventoryTerminalScreen(
                 val sy = topPos + GRID_Y + row * SLOT_SIZE + 1
 
                 // Render item icon with count
-                val identifier = Identifier.tryParse(entry.info.itemId) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(identifier) ?: continue
+                val identifier = ResourceLocation.tryParse(entry.info.itemId) ?: continue
+                val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
                 val stack = ItemStack(item, minOf(entry.info.count, 64).toInt())
                 graphics.renderItem(stack, sx, sy)
                 // Use MC's built-in count renderer, but with our custom text for large numbers
@@ -124,15 +121,13 @@ class InventoryTerminalScreen(
         // Render network item tooltip using MC's native tooltip system
         val hovered = this.hoveredNetworkEntry
         if (hovered != null) {
-            val identifier = Identifier.tryParse(hovered.info.itemId)
-            val item = if (identifier != null) BuiltInRegistries.ITEM.getValue(identifier) else null
+            val identifier = ResourceLocation.tryParse(hovered.info.itemId)
+            val item = if (identifier != null) BuiltInRegistries.ITEM.get(identifier) else null
             if (item != null) {
                 val stack = ItemStack(item, 1)
-                val tooltipLines = getTooltipFromItem(Minecraft.getInstance(), stack)
-                    .map { it.visualOrderText }
-                    .toMutableList()
-                tooltipLines.add(Component.literal("Network: ${hovered.info.count}").withStyle { it.withColor(0xAAAAAA) }.visualOrderText)
-                graphics.setTooltipForNextFrame(font, tooltipLines, net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner.INSTANCE, mouseX, mouseY, false)
+                val tooltipLines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
+                tooltipLines.add(Component.literal("Network: ${hovered.info.count}").withStyle { it.withColor(0xAAAAAA) })
+                graphics.renderTooltip(font, tooltipLines, java.util.Optional.empty(), mouseX, mouseY)
             }
         }
     }
@@ -142,10 +137,9 @@ class InventoryTerminalScreen(
         graphics.drawString(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, 0x404040, false)
     }
 
-    override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
-        val mx = event.x().toInt()
-        val my = event.y().toInt()
-        val button = event.button()
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
 
         // Check if click is on the network grid
         val gridLeft = leftPos + GRID_X + 1
@@ -161,7 +155,7 @@ class InventoryTerminalScreen(
 
             if (menu.carried.isEmpty && entry != null) {
                 // Extract from network
-                val isShift = (event.modifiers() and 1) != 0 // shift modifier
+                val isShift = hasShiftDown()
                 val action = when {
                     isShift -> 3          // shift-click: extract to inventory
                     button == 1 -> 2      // right-click: half stack
@@ -180,7 +174,7 @@ class InventoryTerminalScreen(
             }
         }
 
-        return super.mouseClicked(event, flag)
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
@@ -188,22 +182,22 @@ class InventoryTerminalScreen(
         return true
     }
 
-    override fun keyPressed(keyEvent: KeyEvent): Boolean {
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
         if (searchBox.isFocused) {
-            if (keyEvent.key() == InputConstants.KEY_ESCAPE) {
+            if (keyCode == InputConstants.KEY_ESCAPE) {
                 searchBox.isFocused = false
                 return true
             }
-            return searchBox.keyPressed(keyEvent)
+            return searchBox.keyPressed(keyCode, scanCode, modifiers)
         }
-        return super.keyPressed(keyEvent)
+        return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
-    override fun charTyped(charEvent: net.minecraft.client.input.CharacterEvent): Boolean {
+    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
         if (searchBox.isFocused) {
-            return searchBox.charTyped(charEvent)
+            return searchBox.charTyped(codePoint, modifiers)
         }
-        return super.charTyped(charEvent)
+        return super.charTyped(codePoint, modifiers)
     }
 
     private fun formatCount(count: Long): String {

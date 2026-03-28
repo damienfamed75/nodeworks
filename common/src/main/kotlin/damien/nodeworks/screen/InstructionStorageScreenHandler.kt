@@ -61,7 +61,16 @@ class InstructionStorageScreenHandler(
         addSlot(UpgradeSlot(storageInventory, UPGRADE_SLOT_INDEX, 152, 90))
 
         // Player inventory (starts at y=114 to leave room for 4 rows + upgrade area)
-        addStandardInventorySlots(playerInventory, 8, 114)
+        // Player inventory (3 rows)
+        for (row in 0 until 3) {
+            for (col in 0 until 9) {
+                addSlot(net.minecraft.world.inventory.Slot(playerInventory, col + row * 9 + 9, 8 + col * 18, 114 + row * 18))
+            }
+        }
+        // Player hotbar
+        for (col in 0 until 9) {
+            addSlot(net.minecraft.world.inventory.Slot(playerInventory, col, 8 + col * 18, 114 + 58))
+        }
 
         addDataSlots(data)
     }

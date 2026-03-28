@@ -13,8 +13,6 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
 import java.util.UUID
 
 /**
@@ -124,21 +122,21 @@ class NetworkControllerBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(output: ValueOutput) {
-        super.saveAdditional(output)
-        output.putString("networkId", networkId.toString())
-        output.putInt("networkColor", networkColor)
-        output.putString("networkName", networkName)
-        output.putInt("redstoneMode", redstoneMode)
-        output.putInt("nodeGlowStyle", nodeGlowStyle)
+    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.saveAdditional(tag, registries)
+        tag.putString("networkId", networkId.toString())
+        tag.putInt("networkColor", networkColor)
+        tag.putString("networkName", networkName)
+        tag.putInt("redstoneMode", redstoneMode)
+        tag.putInt("nodeGlowStyle", nodeGlowStyle)
         if (connections.isNotEmpty()) {
-            output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
     }
 
-    override fun loadAdditional(input: ValueInput) {
-        super.loadAdditional(input)
-        val idStr = input.getString("networkId").orElse("")
+    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.loadAdditional(tag, registries)
+        val idStr = tag.getString("networkId")
         if (idStr.isNotEmpty()) {
             try {
                 networkId = UUID.fromString(idStr)
@@ -146,12 +144,14 @@ class NetworkControllerBlockEntity(
                 networkId = UUID.randomUUID()
             }
         }
-        networkColor = input.getInt("networkColor").orElse(0x83E086)
-        networkName = input.getString("networkName").orElse("")
-        redstoneMode = input.getInt("redstoneMode").orElse(0)
-        nodeGlowStyle = input.getInt("nodeGlowStyle").orElse(GLOW_SQUARE)
+        networkColor = if (tag.contains("networkColor")) tag.getInt("networkColor") else 0x83E086
+        networkName = tag.getString("networkName")
+        redstoneMode = if (tag.contains("redstoneMode")) tag.getInt("redstoneMode") else 0
+        nodeGlowStyle = if (tag.contains("nodeGlowStyle")) tag.getInt("nodeGlowStyle") else GLOW_SQUARE
         connections.clear()
-        input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        if (tag.contains("connections")) {
+            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
+        }
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

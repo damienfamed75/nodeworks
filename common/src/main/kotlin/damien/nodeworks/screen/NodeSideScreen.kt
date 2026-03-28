@@ -8,9 +8,8 @@ import damien.nodeworks.screen.NodeSideScreenHandler
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
-import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.entity.player.Inventory
 
 class NodeSideScreen(
@@ -20,7 +19,7 @@ class NodeSideScreen(
 ) : AbstractContainerScreen<NodeSideScreenHandler>(menu, playerInventory, title) {
 
     companion object {
-        private val BACKGROUND = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/node_side.png")
+        private val BACKGROUND = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/node_side.png")
     }
 
     private var priorityValue = 0
@@ -94,7 +93,6 @@ class NodeSideScreen(
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
         graphics.blit(
-            RenderPipelines.GUI_TEXTURED,
             BACKGROUND,
             leftPos, topPos,
             0f, 0f,

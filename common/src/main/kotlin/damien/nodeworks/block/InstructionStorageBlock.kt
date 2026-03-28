@@ -55,7 +55,10 @@ class InstructionStorageBlock(properties: Properties) : BaseEntityBlock(properti
         return InteractionResult.SUCCESS
     }
 
-    override fun affectNeighborsAfterRemoval(state: BlockState, level: ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
-        Containers.dropContents(level, pos, level.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: return)
+    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
+        if (!state.`is`(newState.block)) {
+            Containers.dropContents(level, pos, level.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: return)
+        }
+        super.onRemove(state, level, pos, newState, movedByPiston)
     }
 }

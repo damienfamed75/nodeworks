@@ -95,8 +95,8 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val allCards = snapshot.allCards()
 
         // Collect all item tags from the registry
-        val itemTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.tags
-            .map { it.key().location().toString() }
+        val itemTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTagNames()
+            .map { it.location().toString() }
             .sorted()
             .toList()
 

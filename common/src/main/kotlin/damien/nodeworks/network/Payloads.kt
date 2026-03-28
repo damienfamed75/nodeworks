@@ -4,7 +4,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 
 /**
  * All custom packet payloads used by Nodeworks.
@@ -13,7 +13,7 @@ import net.minecraft.resources.Identifier
 
 data class RunScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<RunScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "run_script"))
+        val TYPE: CustomPacketPayload.Type<RunScriptPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "run_script"))
         val CODEC: StreamCodec<FriendlyByteBuf, RunScriptPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.terminalPos) },
             { buf -> RunScriptPayload(buf.readBlockPos()) }
@@ -24,7 +24,7 @@ data class RunScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
 
 data class StopScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<StopScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "stop_script"))
+        val TYPE: CustomPacketPayload.Type<StopScriptPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "stop_script"))
         val CODEC: StreamCodec<FriendlyByteBuf, StopScriptPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.terminalPos) },
             { buf -> StopScriptPayload(buf.readBlockPos()) }
@@ -35,7 +35,7 @@ data class StopScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
 
 data class SaveScriptPayload(val terminalPos: BlockPos, val scriptName: String, val scriptText: String) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<SaveScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "save_script"))
+        val TYPE: CustomPacketPayload.Type<SaveScriptPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "save_script"))
         val CODEC: StreamCodec<FriendlyByteBuf, SaveScriptPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64); buf.writeUtf(p.scriptText, 32767) },
             { buf -> SaveScriptPayload(buf.readBlockPos(), buf.readUtf(64), buf.readUtf(32767)) }
@@ -46,7 +46,7 @@ data class SaveScriptPayload(val terminalPos: BlockPos, val scriptName: String, 
 
 data class CreateScriptTabPayload(val terminalPos: BlockPos, val scriptName: String) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<CreateScriptTabPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "create_script_tab"))
+        val TYPE: CustomPacketPayload.Type<CreateScriptTabPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "create_script_tab"))
         val CODEC: StreamCodec<FriendlyByteBuf, CreateScriptTabPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64) },
             { buf -> CreateScriptTabPayload(buf.readBlockPos(), buf.readUtf(64)) }
@@ -57,7 +57,7 @@ data class CreateScriptTabPayload(val terminalPos: BlockPos, val scriptName: Str
 
 data class DeleteScriptTabPayload(val terminalPos: BlockPos, val scriptName: String) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<DeleteScriptTabPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "delete_script_tab"))
+        val TYPE: CustomPacketPayload.Type<DeleteScriptTabPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "delete_script_tab"))
         val CODEC: StreamCodec<FriendlyByteBuf, DeleteScriptTabPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.scriptName, 64) },
             { buf -> DeleteScriptTabPayload(buf.readBlockPos(), buf.readUtf(64)) }
@@ -68,7 +68,7 @@ data class DeleteScriptTabPayload(val terminalPos: BlockPos, val scriptName: Str
 
 data class SetLayoutPayload(val terminalPos: BlockPos, val layoutIndex: Int) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<SetLayoutPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_layout"))
+        val TYPE: CustomPacketPayload.Type<SetLayoutPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "set_layout"))
         val CODEC: StreamCodec<FriendlyByteBuf, SetLayoutPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeVarInt(p.layoutIndex) },
             { buf -> SetLayoutPayload(buf.readBlockPos(), buf.readVarInt()) }
@@ -79,7 +79,7 @@ data class SetLayoutPayload(val terminalPos: BlockPos, val layoutIndex: Int) : C
 
 data class ToggleAutoRunPayload(val terminalPos: BlockPos, val enabled: Boolean) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<ToggleAutoRunPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "toggle_autorun"))
+        val TYPE: CustomPacketPayload.Type<ToggleAutoRunPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "toggle_autorun"))
         val CODEC: StreamCodec<FriendlyByteBuf, ToggleAutoRunPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeBoolean(p.enabled) },
             { buf -> ToggleAutoRunPayload(buf.readBlockPos(), buf.readBoolean()) }
@@ -90,7 +90,7 @@ data class ToggleAutoRunPayload(val terminalPos: BlockPos, val enabled: Boolean)
 
 data class SetStoragePriorityPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int, val priority: Int) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<SetStoragePriorityPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_storage_priority"))
+        val TYPE: CustomPacketPayload.Type<SetStoragePriorityPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "set_storage_priority"))
         val CODEC: StreamCodec<FriendlyByteBuf, SetStoragePriorityPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.nodePos); buf.writeVarInt(p.sideOrdinal); buf.writeVarInt(p.slotIndex); buf.writeVarInt(p.priority) },
             { buf -> SetStoragePriorityPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt()) }
@@ -101,7 +101,7 @@ data class SetStoragePriorityPayload(val nodePos: BlockPos, val sideOrdinal: Int
 
 data class OpenInstructionSetPayload(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<OpenInstructionSetPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "open_instruction_set"))
+        val TYPE: CustomPacketPayload.Type<OpenInstructionSetPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "open_instruction_set"))
         val CODEC: StreamCodec<FriendlyByteBuf, OpenInstructionSetPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.nodePos); buf.writeVarInt(p.sideOrdinal); buf.writeVarInt(p.slotIndex) },
             { buf -> OpenInstructionSetPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt()) }
@@ -112,7 +112,7 @@ data class OpenInstructionSetPayload(val nodePos: BlockPos, val sideOrdinal: Int
 
 data class SetInstructionGridPayload(val containerId: Int, val items: List<String>) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<SetInstructionGridPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_instruction_grid"))
+        val TYPE: CustomPacketPayload.Type<SetInstructionGridPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "set_instruction_grid"))
         val CODEC: StreamCodec<FriendlyByteBuf, SetInstructionGridPayload> = CustomPacketPayload.codec(
             { p, buf ->
                 buf.writeVarInt(p.containerId)
@@ -136,7 +136,7 @@ data class SetInstructionGridPayload(val containerId: Int, val items: List<Strin
  */
 data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val action: Int) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<InvTerminalClickPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_click"))
+        val TYPE: CustomPacketPayload.Type<InvTerminalClickPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "inv_terminal_click"))
         val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalClickPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.itemId, 256); buf.writeVarInt(p.action) },
             { buf -> InvTerminalClickPayload(buf.readVarInt(), buf.readUtf(256), buf.readVarInt()) }
@@ -148,7 +148,7 @@ data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val
 /** C2S: Update a network controller setting (color, name, redstone mode). */
 data class ControllerSettingsPayload(val pos: BlockPos, val key: String, val intValue: Int, val strValue: String) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<ControllerSettingsPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "controller_settings"))
+        val TYPE: CustomPacketPayload.Type<ControllerSettingsPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "controller_settings"))
         val CODEC: StreamCodec<FriendlyByteBuf, ControllerSettingsPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.key, 16); buf.writeVarInt(p.intValue); buf.writeUtf(p.strValue, 32) },
             { buf -> ControllerSettingsPayload(buf.readBlockPos(), buf.readUtf(16), buf.readVarInt(), buf.readUtf(32)) }
@@ -160,7 +160,7 @@ data class ControllerSettingsPayload(val pos: BlockPos, val key: String, val int
 /** C2S: Update a variable block setting (name, type, value). */
 data class VariableSettingsPayload(val pos: BlockPos, val key: String, val intValue: Int, val strValue: String) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<VariableSettingsPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "variable_settings"))
+        val TYPE: CustomPacketPayload.Type<VariableSettingsPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "variable_settings"))
         val CODEC: StreamCodec<FriendlyByteBuf, VariableSettingsPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.key, 16); buf.writeVarInt(p.intValue); buf.writeUtf(p.strValue, 256) },
             { buf -> VariableSettingsPayload(buf.readBlockPos(), buf.readUtf(16), buf.readVarInt(), buf.readUtf(256)) }
@@ -171,7 +171,7 @@ data class VariableSettingsPayload(val pos: BlockPos, val key: String, val intVa
 
 data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, val isError: Boolean) : CustomPacketPayload {
     companion object {
-        val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "terminal_log"))
+        val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "terminal_log"))
         val CODEC: StreamCodec<FriendlyByteBuf, TerminalLogPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.message, 1024); buf.writeBoolean(p.isError) },
             { buf -> TerminalLogPayload(buf.readBlockPos(), buf.readUtf(1024), buf.readBoolean()) }

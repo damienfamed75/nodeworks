@@ -46,7 +46,7 @@ dependencies {
     implementation(project(":common"))
 
     // KotlinForForge
-    implementation("thedarkcolour:kotlinforforge-neoforge:5.6.0")
+    implementation("thedarkcolour:kotlinforforge-neoforge:5.5.0")
 
     // Lua scripting engine
     jarJar(implementation("org.luaj:luaj-jse:3.0")!!)

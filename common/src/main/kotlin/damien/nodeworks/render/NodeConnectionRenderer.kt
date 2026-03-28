@@ -9,12 +9,12 @@ import damien.nodeworks.platform.PlatformServices
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
 import net.minecraft.client.renderer.MultiBufferSource
-import net.minecraft.client.renderer.rendertype.RenderTypes
+import net.minecraft.client.renderer.RenderType
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import org.joml.Quaternionf
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -38,7 +38,7 @@ object NodeConnectionRenderer {
     /** Beam pulse speed (cycles per second). */
     var beamPulseSpeed = 1.0f
 
-    private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+    private val LASER_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
 
     // Node shape bounds (5/16 to 11/16)
     private const val MIN = 5f / 16f
@@ -129,7 +129,7 @@ object NodeConnectionRenderer {
             // Nothing to do here.
         } else {
             // Fallback: thin lines
-            val lineBuffer = consumers.getBuffer(RenderTypes.linesTranslucent())
+            val lineBuffer = consumers.getBuffer(RenderType.lines())
             for (conn in connections) {
                 val from = conn.from
                 val to = conn.to
@@ -147,12 +147,10 @@ object NodeConnectionRenderer {
                 lineBuffer.addVertex(pose, from.x.toFloat(), from.y.toFloat(), from.z.toFloat())
                     .setColor(lr, lg, lb, 200)
                     .setNormal(pose, nx, ny, nz)
-                    .setLineWidth(2.0f)
 
                 lineBuffer.addVertex(pose, to.x.toFloat(), to.y.toFloat(), to.z.toFloat())
                     .setColor(lr, lg, lb, 200)
                     .setNormal(pose, nx, ny, nz)
-                    .setLineWidth(2.0f)
             }
         }
 
@@ -161,7 +159,7 @@ object NodeConnectionRenderer {
         val player = mc.player
         if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
             if (level.getBlockEntity(selectedPos) is damien.nodeworks.network.Connectable) {
-                val highlightBuffer = consumers.getBuffer(RenderTypes.linesTranslucent())
+                val highlightBuffer = consumers.getBuffer(RenderType.lines())
                 hlColor = findNetworkColor(level, selectedPos)
                 renderSelectionHighlight(poseStack, highlightBuffer, selectedPos)
             } else {
@@ -230,12 +228,10 @@ object NodeConnectionRenderer {
         buffer.addVertex(pose, x0, y0, z0)
             .setColor(lr, lg, lb, 255)
             .setNormal(pose, nx, ny, nz)
-            .setLineWidth(3.0f)
 
         buffer.addVertex(pose, x1, y1, z1)
             .setColor(lr, lg, lb, 255)
             .setNormal(pose, nx, ny, nz)
-            .setLineWidth(3.0f)
     }
 
     private fun renderMonitorText(

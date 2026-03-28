@@ -11,8 +11,8 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
+import net.minecraft.core.HolderLookup
+import net.minecraft.nbt.CompoundTag
 
 /**
  * Block entity for Instruction Storage. Holds Instruction Sets and an upgrade slot.
@@ -123,15 +123,15 @@ class InstructionStorageBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(output: ValueOutput) {
-        super.saveAdditional(output)
-        ContainerHelper.saveAllItems(output, items)
+    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.saveAdditional(tag, registries)
+        ContainerHelper.saveAllItems(tag, items, registries)
     }
 
-    override fun loadAdditional(input: ValueInput) {
-        super.loadAdditional(input)
+    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.loadAdditional(tag, registries)
         items.clear()
-        ContainerHelper.loadAllItems(input, items)
+        ContainerHelper.loadAllItems(tag, items, registries)
         recalculateUpgradeLevel()
     }
 }

@@ -4,10 +4,9 @@ import damien.nodeworks.block.entity.VariableType
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
-import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.entity.player.Inventory
 
 class VariableScreen(
@@ -27,7 +26,7 @@ class VariableScreen(
         private const val SET_BTN_H = 16
 
         // Icon atlas (256x256, 16x16 icons)
-        private val ICONS = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+        private val ICONS = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
         // Icon positions in atlas (column, row)
         const val ICON_CHECKMARK = 0
         const val ICON_CROSS = 1
@@ -132,7 +131,7 @@ class VariableScreen(
                 val iconY = by
                 val u = (ICON_CHECKMARK * 16).toFloat()
                 val v = 0f
-                graphics.blit(RenderPipelines.GUI_TEXTURED, ICONS, iconX, iconY, u, v, 16, 16, 256, 256)
+                graphics.blit(ICONS, iconX, iconY, u, v, 16, 16, 256, 256)
             } else {
                 checkmarkId = null
             }
@@ -194,9 +193,9 @@ class VariableScreen(
         super.render(graphics, mouseX, mouseY, partialTick)
     }
 
-    override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
-        val mx = event.x()
-        val my = event.y()
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
         val listLeft = leftPos + 4
         val controlX = listLeft + LABEL_W + 4
 
@@ -243,7 +242,7 @@ class VariableScreen(
             }
         }
 
-        return super.mouseClicked(event, flag)
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 
     override fun removed() {

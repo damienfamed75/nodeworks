@@ -10,7 +10,7 @@ import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.item.BlockItem
 import net.minecraft.world.item.Item
@@ -78,14 +78,12 @@ object ModBlocks {
         factory: (BlockBehaviour.Properties) -> Block,
         properties: BlockBehaviour.Properties
     ): Block {
-        val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        val blockKey = ResourceKey.create(Registries.BLOCK, identifier)
-        val block = factory(properties.setId(blockKey))
-        Registry.register(BuiltInRegistries.BLOCK, blockKey, block)
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val block = factory(properties)
+        Registry.register(BuiltInRegistries.BLOCK, identifier, block)
 
-        val itemKey = ResourceKey.create(Registries.ITEM, identifier)
-        val item = BlockItem(block, Item.Properties().setId(itemKey).useBlockDescriptionPrefix())
-        Registry.register(BuiltInRegistries.ITEM, itemKey, item)
+        val item = BlockItem(block, Item.Properties())
+        Registry.register(BuiltInRegistries.ITEM, identifier, item)
 
         return block
     }

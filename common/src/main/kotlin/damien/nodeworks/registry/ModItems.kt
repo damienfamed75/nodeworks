@@ -9,7 +9,7 @@ import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.item.Item
 
@@ -56,10 +56,9 @@ object ModItems {
         factory: (Item.Properties) -> Item,
         properties: Item.Properties
     ): Item {
-        val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        val itemKey = ResourceKey.create(Registries.ITEM, identifier)
-        val item = factory(properties.setId(itemKey))
-        return Registry.register(BuiltInRegistries.ITEM, itemKey, item)
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val item = factory(properties)
+        return Registry.register(BuiltInRegistries.ITEM, identifier, item)
     }
 
     fun initialize() {

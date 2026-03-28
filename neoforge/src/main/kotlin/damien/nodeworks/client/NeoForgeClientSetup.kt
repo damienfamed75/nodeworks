@@ -23,20 +23,40 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.MultiBufferSource
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.world.phys.Vec3
-import net.neoforged.api.distmarker.Dist
-import net.neoforged.bus.api.SubscribeEvent
-import net.neoforged.fml.common.EventBusSubscriber
+import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent
-import net.neoforged.neoforge.client.network.ClientPacketDistributor
+import net.neoforged.neoforge.network.PacketDistributor
 import net.neoforged.neoforge.common.NeoForge
 
-@EventBusSubscriber(modid = "nodeworks", value = [Dist.CLIENT])
 object NeoForgeClientSetup {
 
-    @SubscribeEvent
-    fun onClientSetup(event: FMLClientSetupEvent) {
+    fun register(modBus: IEventBus) {
+        modBus.addListener(::onClientSetup)
+        modBus.addListener(::onRegisterRenderers)
+        modBus.addListener(::onRegisterMenuScreens)
+
+        // Block other mods (JEI) from stealing key events when our terminal editor is active.
+        // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
+        // We cancel the event to prevent JEI from seeing it, then manually forward to our screen.
+        NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST) { event: net.neoforged.neoforge.client.event.ScreenEvent.KeyPressed.Pre ->
+            val screen = event.screen
+            if (screen is damien.nodeworks.screen.TerminalScreen && screen.isEditorFocused()) {
+                screen.keyPressed(event.keyCode, event.scanCode, event.modifiers)
+                event.isCanceled = true
+            }
+        }
+        NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST) { event: net.neoforged.neoforge.client.event.ScreenEvent.CharacterTyped.Pre ->
+            val screen = event.screen
+            if (screen is damien.nodeworks.screen.TerminalScreen && screen.isEditorFocused()) {
+                screen.charTyped(event.codePoint, event.modifiers)
+                event.isCanceled = true
+            }
+        }
+    }
+
+    private fun onClientSetup(event: FMLClientSetupEvent) {
         event.enqueueWork {
             // Initialize client platform services
             PlatformServices.clientNetworking = NeoForgeClientNetworkingService()
@@ -46,16 +66,14 @@ object NeoForgeClientSetup {
         }
     }
 
-    @SubscribeEvent
-    fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
+    private fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
         event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::MonitorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
     }
 
-    @SubscribeEvent
-    fun onRegisterMenuScreens(event: RegisterMenuScreensEvent) {
+    private fun onRegisterMenuScreens(event: RegisterMenuScreensEvent) {
         event.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)
         }
@@ -82,7 +100,7 @@ object NeoForgeClientSetup {
 
 class NeoForgeClientNetworkingService : ClientNetworkingService {
     override fun sendToServer(payload: CustomPacketPayload) {
-        ClientPacketDistributor.sendToServer(payload)
+        PacketDistributor.sendToServer(payload)
     }
 }
 
@@ -96,9 +114,10 @@ class NeoForgeClientEventService : ClientEventService {
         }
     }
 
-    private fun onRenderAfterTranslucent(event: RenderLevelStageEvent.AfterTranslucentBlocks) {
+    private fun onRenderAfterTranslucent(event: RenderLevelStageEvent) {
+        if (event.stage != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return
         val mc = Minecraft.getInstance()
-        val cameraPos = mc.gameRenderer.mainCamera.position()
+        val cameraPos = mc.gameRenderer.mainCamera.getPosition()
         val bufferSource = mc.renderBuffers().bufferSource()
         for (handler in handlers) {
             handler(event.poseStack, bufferSource, cameraPos)
