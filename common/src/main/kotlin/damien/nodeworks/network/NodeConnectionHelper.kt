@@ -3,6 +3,7 @@ package damien.nodeworks.network
 import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
+import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.VariableBlock
 import damien.nodeworks.block.entity.NodeBlockEntity
 import net.minecraft.core.BlockPos
@@ -48,6 +49,12 @@ object NodeConnectionHelper {
     }
 
     fun checkLineOfSight(level: Level, posA: BlockPos, posB: BlockPos): Boolean {
+        // Adjacent blocks can always see each other — skip raycast
+        val dx = Math.abs(posA.x - posB.x)
+        val dy = Math.abs(posA.y - posB.y)
+        val dz = Math.abs(posA.z - posB.z)
+        if (dx <= 1 && dy <= 1 && dz <= 1) return true
+
         val from = posA.center
         val to = posB.center
         val direction = to.subtract(from).normalize()
@@ -63,7 +70,7 @@ object NodeConnectionHelper {
     /** Get a Connectable block entity at the given position. */
     fun getConnectable(level: Level, pos: BlockPos): Connectable? {
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock) return null
+        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock) return null
         return level.getBlockEntity(pos) as? Connectable
     }
 

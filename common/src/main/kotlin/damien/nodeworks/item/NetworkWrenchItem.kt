@@ -3,6 +3,7 @@ package damien.nodeworks.item
 import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
+import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.VariableBlock
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.network.NetworkDiscovery
@@ -41,7 +42,7 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
 
         // Must click a connectable block (node, instruction crafter, or network controller)
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock) return InteractionResult.PASS
+        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock) return InteractionResult.PASS
 
         // Client side: track selection for highlight rendering
         if (level.isClientSide) {

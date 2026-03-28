@@ -9,6 +9,7 @@ import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import damien.nodeworks.render.TerminalRenderer
 import damien.nodeworks.render.VariableRenderer
 import damien.nodeworks.screen.NodeSideScreen
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry
@@ -35,6 +36,7 @@ object NodeworksClient : ClientModInitializer {
         BlockEntityRendererRegistry.register(ModBlockEntities.NODE, ::MonitorRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.VARIABLE, ::VariableRenderer)
+        BlockEntityRendererRegistry.register(ModBlockEntities.TERMINAL, ::TerminalRenderer)
 
         MenuScreens.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)
