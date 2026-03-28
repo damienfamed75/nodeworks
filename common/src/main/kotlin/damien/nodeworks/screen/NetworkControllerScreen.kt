@@ -6,7 +6,7 @@ import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.entity.player.Inventory
 
 class NetworkControllerScreen(
@@ -299,9 +299,9 @@ class NetworkControllerScreen(
         }
     }
 
-    override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
-        val mx = event.x()
-        val my = event.y()
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
 
         // Scrollbar drag start
         if (mx >= listRight && mx < listRight + SCROLL_BAR_W && my >= listTop && my < listBottom && maxScroll > 0) {
@@ -348,27 +348,27 @@ class NetworkControllerScreen(
             }
         }
 
-        return super.mouseClicked(event, flag)
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(event: net.minecraft.client.input.MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
         if (draggingScrollbar && maxScroll > 0) {
             val trackH = listBottom - listTop
             val totalH = properties.size * ROW_H
             val thumbH = maxOf(12, trackH * trackH / totalH)
             val scrollRange = trackH - thumbH
             if (scrollRange > 0) {
-                val relY = (event.y() - listTop - thumbH / 2).toFloat() / scrollRange
+                val relY = (mouseY.toInt() - listTop - thumbH / 2).toFloat() / scrollRange
                 scrollOffset = (relY * maxScroll).toInt().coerceIn(0, maxScroll)
             }
             return true
         }
-        return super.mouseDragged(event, dragX, dragY)
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
     }
 
-    override fun mouseReleased(event: net.minecraft.client.input.MouseButtonEvent): Boolean {
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
         draggingScrollbar = false
-        return super.mouseReleased(event)
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {

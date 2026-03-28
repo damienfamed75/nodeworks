@@ -157,10 +157,10 @@ class ScriptEngine(
         val callback = onInsertCallback ?: return null
         return { itemId, count ->
             try {
-                val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+                val identifier = net.minecraft.resources.ResourceLocation.tryParse(itemId)
                 val itemName = if (identifier != null) {
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier)
-                    item?.getName(net.minecraft.world.item.ItemStack(item))?.string ?: itemId
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier)
+                    net.minecraft.world.item.ItemStack(item).hoverName.string ?: itemId
                 } else itemId
 
                 // Create an ItemsHandle for the callback

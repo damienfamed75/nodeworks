@@ -11,7 +11,7 @@ import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.entity.BlockEntityType
@@ -57,11 +57,8 @@ object ModBlockEntities {
         id: String,
         type: BlockEntityType<T>
     ): BlockEntityType<T> {
-        val key = ResourceKey.create(
-            Registries.BLOCK_ENTITY_TYPE,
-            Identifier.fromNamespaceAndPath("nodeworks", id)
-        )
-        return Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, key, type)
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        return Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, identifier, type)
     }
 
     fun initialize() {

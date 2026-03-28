@@ -4,7 +4,7 @@ import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.tags.TagKey
 import org.luaj.vm2.*
@@ -44,13 +44,13 @@ class ItemsHandle(
 
         /** Create an ItemsHandle for crafting results (no stack in storage yet). */
         fun forCraftResult(itemId: String, itemName: String, count: Int, sourceStorage: () -> ItemStorageHandle?, level: ServerLevel): ItemsHandle {
-            val identifier = Identifier.tryParse(itemId)
-            val item = if (identifier != null) BuiltInRegistries.ITEM.getValue(identifier) else null
+            val identifier = ResourceLocation.tryParse(itemId)
+            val item = if (identifier != null) BuiltInRegistries.ITEM.get(identifier) else null
             return ItemsHandle(
                 itemId = itemId,
                 itemName = itemName,
                 count = count,
-                maxStackSize = item?.defaultMaxStackSize ?: 64,
+                maxStackSize = item?.getDefaultMaxStackSize() ?: 64,
                 hasData = false,
                 filter = itemId,
                 sourceStorage = sourceStorage,
@@ -73,10 +73,10 @@ class ItemsHandle(
                 override fun call(selfArg: LuaValue, tagArg: LuaValue): LuaValue {
                     val tag = tagArg.checkjstring()
                     val tagId = if (tag.startsWith("#")) tag.substring(1) else tag
-                    val identifier = Identifier.tryParse(tagId) ?: return LuaValue.FALSE
+                    val identifier = ResourceLocation.tryParse(tagId) ?: return LuaValue.FALSE
                     val tagKey = TagKey.create(Registries.ITEM, identifier)
-                    val itemIdentifier = Identifier.tryParse(handle.itemId) ?: return LuaValue.FALSE
-                    val item = BuiltInRegistries.ITEM.getValue(itemIdentifier) ?: return LuaValue.FALSE
+                    val itemIdentifier = ResourceLocation.tryParse(handle.itemId) ?: return LuaValue.FALSE
+                    val item = BuiltInRegistries.ITEM.get(itemIdentifier) ?: return LuaValue.FALSE
                     return LuaValue.valueOf(item.builtInRegistryHolder().`is`(tagKey))
                 }
             })

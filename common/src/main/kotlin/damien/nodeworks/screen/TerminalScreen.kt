@@ -7,16 +7,13 @@ import damien.nodeworks.network.*
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.TerminalScreenHandler
 import damien.nodeworks.screen.widget.AutocompletePopup
-import damien.nodeworks.screen.widget.LuaSyntaxHighlighter
-import net.minecraft.client.gui.components.MultilineTextField
+import damien.nodeworks.screen.widget.ScriptEditor
 
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.Button
-import net.minecraft.client.gui.components.MultiLineEditBox
 import net.minecraft.client.gui.components.SpriteIconButton
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
-import net.minecraft.client.input.KeyEvent
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
 
@@ -26,7 +23,10 @@ class TerminalScreen(
     title: Component
 ) : AbstractContainerScreen<TerminalScreenHandler>(menu, playerInventory, title) {
 
-    private lateinit var editor: MultiLineEditBox
+    private lateinit var editor: ScriptEditor
+
+    /** Exposed for platform-specific input suppression (e.g., blocking JEI keybinds). */
+    fun isEditorFocused(): Boolean = ::editor.isInitialized && editor.isFocused
     private lateinit var autocomplete: AutocompletePopup
     private val cards: List<CardSnapshot> = menu.getCards()
     private val itemTags: List<String> = menu.getItemTags()
@@ -76,14 +76,9 @@ class TerminalScreen(
     private var lastSavedText = ""
     private var undoInProgress = false
 
-    private fun applyUndoState(state: UndoState, previousScroll: Double) {
-        editor.setValue(state.text)
-        val tf = getTextField()
-        if (tf != null) {
-            tf.seekCursor(net.minecraft.client.gui.components.Whence.ABSOLUTE, state.cursor.coerceIn(0, state.text.length))
-        }
-        // Restore scroll position — setValue resets it, so set it back
-        editor.setScrollAmount(previousScroll.coerceAtMost(editor.maxScrollAmount().toDouble()))
+    private fun applyUndoState(state: UndoState) {
+        editor.value = state.text
+        editor.cursor = state.cursor.coerceIn(0, state.text.length)
         lastSavedText = state.text
     }
 
@@ -124,17 +119,15 @@ class TerminalScreen(
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
         val editorH = imageHeight - topBarHeight - tabBarHeight - effectiveLogHeight - editorPadding
 
-        editor = MultiLineEditBox.builder()
-            .setX(editorX)
-            .setY(editorY)
-            .setShowBackground(true)
-            .setShowDecorations(false)
-            .setTextColor(0x00000000) // Fully transparent — syntax highlighter draws colored text on top
-            .setTextShadow(false)
-            .setCursorColor(0x00000000) // Hidden — we draw our own cursor on top of syntax highlighting
-            .build(font, editorW, editorH, Component.literal("Script"))
+        editor = ScriptEditor(font, editorX, editorY, editorW, editorH)
 
-        editor.setValue(rebuildWithText ?: scripts[activeTab] ?: "")
+        // Hidden EditBox to signal to JEI and other mods that we have an active text input.
+        // JEI checks if the focused element is an EditBox before stealing key events.
+        val dummyInput = net.minecraft.client.gui.components.EditBox(font, -9999, -9999, 1, 1, Component.empty())
+        dummyInput.isFocused = true
+        addRenderableWidget(dummyInput)
+
+        editor.value = rebuildWithText ?: scripts[activeTab] ?: ""
         rebuildWithText = null
         editor.setCharacterLimit(32767)
 
@@ -142,7 +135,7 @@ class TerminalScreen(
         editor.setValueListener { newText ->
             // Push undo state when text changes (but not during undo/redo itself)
             if (!undoInProgress && newText != lastSavedText) {
-                val cursorPos = getTextField()?.cursor() ?: 0
+                val cursorPos = editor.getCursorPosition()
                 undoStack.addLast(UndoState(lastSavedText, cursorPos))
                 if (undoStack.size > 50) undoStack.removeFirst()
                 redoStack.clear()
@@ -150,7 +143,7 @@ class TerminalScreen(
             }
             // Update autocomplete whenever text changes (unless suppressed during programmatic insertion)
             if (!suppressAutocomplete) {
-                autocomplete.update(editor, editorX, editorY)
+                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY)
             }
         }
         addRenderableWidget(editor)
@@ -171,7 +164,7 @@ class TerminalScreen(
             rebuildWithText = savedText
             rebind()
         }, true)
-            .sprite(Identifier.fromNamespaceAndPath("nodeworks", currentLayout.spriteName), 16, 16)
+            .sprite(ResourceLocation.fromNamespaceAndPath("nodeworks", currentLayout.spriteName), 16, 16)
             .size(20, buttonHeight)
             .build()
         layoutBtn.x = layoutX
@@ -349,14 +342,6 @@ class TerminalScreen(
         // Line number gutter
         renderLineNumbers(graphics)
 
-        // Syntax highlighting draws colored text over the editor's transparent text
-        LuaSyntaxHighlighter.render(graphics, font, editor, getTextField(), editorX, editorY)
-
-        // Redraw cursor on top of highlighted text
-        if (editor.isFocused) {
-            renderCursor(graphics)
-        }
-
         // Autocomplete popup renders on top of everything
         autocomplete.render(graphics, mouseX, mouseY)
         // New tab name input overlay — render on top of everything
@@ -370,7 +355,7 @@ class TerminalScreen(
             val displayText = if (newTabName.isEmpty()) "enter name..." else newTabName
             val displayColor = if (newTabName.isEmpty()) 0xFF666666.toInt() else 0xFFFFFFFF.toInt()
             graphics.drawString(font, displayText, inputX + 4, inputY + 6, displayColor, false)
-            if (newTabName.isNotEmpty() || (net.minecraft.util.Util.getMillis() / 500) % 2 == 0L) {
+            if (newTabName.isNotEmpty() || (net.minecraft.Util.getMillis() / 500) % 2 == 0L) {
                 val cursorX = inputX + 4 + font.width(newTabName)
                 graphics.fill(cursorX, inputY + 4, cursorX + 1, inputY + inputH - 4, 0xFFFFFFFF.toInt())
             }
@@ -380,9 +365,7 @@ class TerminalScreen(
     }
 
     private fun renderLineNumbers(graphics: GuiGraphics) {
-        val textField = getTextField() ?: return
-        val text = textField.value()
-        val scrollPixels = editor.scrollAmount().toInt()
+        val text = editor.value
         val lineHeight = font.lineHeight
 
         val gutterX = editorX - lineNumberWidth
@@ -397,16 +380,12 @@ class TerminalScreen(
         // Count total lines
         val totalLines = text.count { it == '\n' } + 1
 
-        // Inner top of the editor (accounts for padding)
-        val innerTop = try {
-            val m = editor.javaClass.superclass?.getDeclaredMethod("getInnerTop")
-            m?.isAccessible = true
-            m?.invoke(editor) as? Int ?: (editor.y + 4)
-        } catch (_: Exception) { editor.y + 4 }
+        // Inner top of the editor (matches ScriptEditor's padding)
+        val innerTop = editor.y + 4
 
         graphics.enableScissor(gutterX, gutterTop, editorX - 1, gutterBottom)
         for (line in 1..totalLines) {
-            val y = innerTop + (line - 1) * lineHeight - scrollPixels
+            val y = innerTop + (line - 1) * lineHeight
             if (y + lineHeight < gutterTop) continue
             if (y > gutterBottom) break
             val numStr = line.toString()
@@ -416,75 +395,10 @@ class TerminalScreen(
         graphics.disableScissor()
     }
 
-    private fun renderCursor(graphics: GuiGraphics) {
-        val textField = getTextField() ?: return
-        val text = textField.value()
-        val cursor = textField.cursor()
-
-        // Blink: visible for 300ms, hidden for 300ms
-        val elapsed = net.minecraft.util.Util.getMillis() - cursorBlinkStart
-        if ((elapsed / 300) % 2 != 0L) return
-
-        val scrollOffset = editor.scrollAmount().toInt()
-        val innerLeft = try {
-            val m = editor.javaClass.superclass?.getDeclaredMethod("getInnerLeft")
-            m?.isAccessible = true
-            m?.invoke(editor) as? Int ?: (editor.x + 4)
-        } catch (_: Exception) { editor.x + 4 }
-
-        val innerTop = try {
-            val m = editor.javaClass.superclass?.getDeclaredMethod("getInnerTop")
-            m?.isAccessible = true
-            m?.invoke(editor) as? Int ?: (editor.y + 4)
-        } catch (_: Exception) { editor.y + 4 }
-
-        // Find which line the cursor is on and the x offset
-        var charsSoFar = 0
-        var cursorLine = 0
-        var cursorCol = 0
-        for (view in textField.iterateLines()) {
-            val begin = view.javaClass.getMethod("beginIndex").invoke(view) as Int
-            val end = view.javaClass.getMethod("endIndex").invoke(view) as Int
-            if (cursor >= begin && cursor <= end) {
-                cursorCol = cursor - begin
-                break
-            }
-            cursorLine++
-        }
-
-        val lineText = if (cursorLine < textField.getLineCount()) {
-            val view = textField.getLineView(cursorLine)
-            val begin = view.javaClass.getMethod("beginIndex").invoke(view) as Int
-            val end = view.javaClass.getMethod("endIndex").invoke(view) as Int
-            text.substring(begin, minOf(begin + cursorCol, end))
-        } else ""
-
-        val cursorX = innerLeft + font.width(lineText)
-        val cursorY = innerTop + cursorLine * font.lineHeight - scrollOffset
-
-        // Draw cursor line
-        graphics.enableScissor(editor.x, editor.y, editor.x + editor.width, editor.y + editor.height)
-        graphics.fill(cursorX, cursorY - 1, cursorX + 1, cursorY + font.lineHeight + 1, 0xFFD4D4D4.toInt())
-        graphics.disableScissor()
-    }
-
-    private var cursorBlinkStart = net.minecraft.util.Util.getMillis()
-
-    private var textFieldAccessor: java.lang.reflect.Field? = null
-    private fun getTextField(): MultilineTextField? {
-        if (textFieldAccessor == null) {
-            textFieldAccessor = MultiLineEditBox::class.java.getDeclaredField("textField")
-            textFieldAccessor!!.isAccessible = true
-        }
-        return textFieldAccessor?.get(editor) as? MultilineTextField
-    }
-
-    override fun keyPressed(keyEvent: KeyEvent): Boolean {
-        cursorBlinkStart = net.minecraft.util.Util.getMillis()
-
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
         // Handle new tab name input
         if (showNewTabInput) {
-            when (keyEvent.key()) {
+            when (keyCode) {
                 InputConstants.KEY_ESCAPE -> {
                     showNewTabInput = false
                     newTabName = ""
@@ -511,89 +425,84 @@ class TerminalScreen(
         }
 
         if (editor.isFocused) {
-            if (keyEvent.key() == InputConstants.KEY_ESCAPE) {
+            if (keyCode == InputConstants.KEY_ESCAPE) {
                 if (autocomplete.visible) {
                     autocomplete.hide()
                     return true
                 }
-                return super.keyPressed(keyEvent)
+                return super.keyPressed(keyCode, scanCode, modifiers)
             }
 
             // Ctrl+Z = undo
-            if (keyEvent.key() == InputConstants.KEY_Z && (keyEvent.modifiers() and 2) != 0 && (keyEvent.modifiers() and 1) == 0) {
+            if (keyCode == InputConstants.KEY_Z && (modifiers and 2) != 0 && (modifiers and 1) == 0) {
                 if (undoStack.isNotEmpty()) {
                     undoInProgress = true
-                    val cursorPos = getTextField()?.cursor() ?: 0
-                    val scrollPos = editor.scrollAmount()
+                    val cursorPos = editor.getCursorPosition()
                     redoStack.addLast(UndoState(editor.value, cursorPos))
                     val prev = undoStack.removeLast()
-                    applyUndoState(prev, scrollPos)
+                    applyUndoState(prev)
                     undoInProgress = false
                 }
                 return true
             }
 
             // Ctrl+Shift+Z or Ctrl+Y = redo
-            if ((keyEvent.key() == InputConstants.KEY_Z && (keyEvent.modifiers() and 3) == 3) ||
-                (keyEvent.key() == InputConstants.KEY_Y && (keyEvent.modifiers() and 2) != 0)) {
+            if ((keyCode == InputConstants.KEY_Z && (modifiers and 3) == 3) ||
+                (keyCode == InputConstants.KEY_Y && (modifiers and 2) != 0)) {
                 if (redoStack.isNotEmpty()) {
                     undoInProgress = true
-                    val cursorPos = getTextField()?.cursor() ?: 0
-                    val scrollPos = editor.scrollAmount()
+                    val cursorPos = editor.getCursorPosition()
                     undoStack.addLast(UndoState(editor.value, cursorPos))
                     val next = redoStack.removeLast()
-                    applyUndoState(next, scrollPos)
+                    applyUndoState(next)
                     undoInProgress = false
                 }
                 return true
             }
 
             // Ctrl+Space triggers autocomplete
-            if (keyEvent.key() == InputConstants.KEY_SPACE && (keyEvent.modifiers() and 2) != 0) {
-                autocomplete.update(editor, editorX, editorY, forced = true)
+            if (keyCode == InputConstants.KEY_SPACE && (modifiers and 2) != 0) {
+                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, forced = true)
                 return true
             }
 
             // Autocomplete navigation
             if (autocomplete.visible) {
-                when (keyEvent.key()) {
+                when (keyCode) {
                     InputConstants.KEY_UP -> { autocomplete.moveUp(); return true }
                     InputConstants.KEY_DOWN -> { autocomplete.moveDown(); return true }
                     InputConstants.KEY_RETURN, InputConstants.KEY_TAB -> {
                         val result = autocomplete.accept()
                         if (result != null) {
-                            val tf = getTextField()
-                            if (tf != null) {
-                                // Suppress autocomplete updates during insertion
-                                suppressAutocomplete = true
-                                // Delete the typed prefix
-                                for (i in 0 until result.deleteCount) {
-                                    tf.deleteText(-1)
-                                }
-                                // Insert the full suggestion
-                                for (ch in result.insertText) {
-                                    editor.charTyped(net.minecraft.client.input.CharacterEvent(ch.code, 0))
-                                }
-                                suppressAutocomplete = false
-                                autocomplete.hide()
-                            }
+                            // Suppress autocomplete updates during insertion
+                            suppressAutocomplete = true
+                            // Delete the typed prefix by manipulating text directly
+                            val text = editor.value
+                            val cursorPos = editor.getCursorPosition()
+                            val deleteStart = cursorPos - result.deleteCount
+                            val newText = text.substring(0, deleteStart) + result.insertText + text.substring(cursorPos)
+                            editor.value = newText
+                            editor.cursor = deleteStart + result.insertText.length
+                            suppressAutocomplete = false
+                            autocomplete.hide()
                             return true
                         }
                     }
                 }
             }
 
-            // Tab inserts 4 spaces (when autocomplete not visible)
-            if (keyEvent.key() == InputConstants.KEY_TAB && !autocomplete.visible) {
+            // Tab inserts 2 spaces (when autocomplete not visible) — ScriptEditor handles Tab internally,
+            // but we override here to keep consistent behavior with the old 4-space tab
+            if (keyCode == InputConstants.KEY_TAB && !autocomplete.visible) {
                 for (i in 0..3) {
-                    editor.charTyped(net.minecraft.client.input.CharacterEvent(' '.code, 0))
+                    editor.charTyped(' ', 0)
                 }
                 return true
             }
 
-            val handled = editor.keyPressed(keyEvent)
+            editor.keyPressed(keyCode, scanCode, modifiers)
             // Update autocomplete only for keys that modify text, not navigation
-            val isNavOrModifierKey = keyEvent.key() in setOf(
+            val isNavOrModifierKey = keyCode in setOf(
                 InputConstants.KEY_UP, InputConstants.KEY_DOWN,
                 InputConstants.KEY_LEFT, InputConstants.KEY_RIGHT,
                 InputConstants.KEY_HOME, InputConstants.KEY_END,
@@ -603,16 +512,17 @@ class TerminalScreen(
                 InputConstants.KEY_LALT, InputConstants.KEY_RALT
             )
             if (!isNavOrModifierKey) {
-                autocomplete.update(editor, editorX, editorY)
+                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY)
             }
-            return handled
+            // Always consume key events when editor is focused to prevent other mods from stealing them
+            return true
         }
-        return super.keyPressed(keyEvent)
+        return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
-    override fun charTyped(charEvent: net.minecraft.client.input.CharacterEvent): Boolean {
+    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
         if (showNewTabInput) {
-            val c = charEvent.codepoint().toChar()
+            val c = codePoint
             if (c.isLetterOrDigit() || c == '_') {
                 val candidate = newTabName + c.lowercaseChar()
                 if (candidate.length <= 20 && TerminalBlockEntity.SCRIPT_NAME_REGEX.matches(candidate)) {
@@ -623,20 +533,20 @@ class TerminalScreen(
         }
         if (editor.isFocused) {
             // Block the space from Ctrl+Space — it was already handled in keyPressed
-            if (charEvent.codepoint() == ' '.code && (charEvent.modifiers() and 2) != 0) {
+            if (codePoint == ' ' && (modifiers and 2) != 0) {
                 return true
             }
-            val handled = editor.charTyped(charEvent)
-            autocomplete.update(editor, editorX, editorY)
-            return handled
+            editor.charTyped(codePoint, modifiers)
+            autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY)
+            // Always consume when editor is focused to prevent other mods stealing input
+            return true
         }
-        return super.charTyped(charEvent)
+        return super.charTyped(codePoint, modifiers)
     }
 
-    override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
-        // event.x()/y() are already in scaled GUI coordinates
-        val mx = event.x().toInt()
-        val my = event.y().toInt()
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
 
 
         // Handle new tab input dialog — intercept all clicks
@@ -678,7 +588,7 @@ class TerminalScreen(
             return true
         }
 
-        return super.mouseClicked(event, flag)
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 
     private fun handleTabBarClick(mx: Int, tabBarY: Int, tabBarStartX: Int): Boolean {

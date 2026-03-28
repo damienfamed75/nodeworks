@@ -42,7 +42,16 @@ class NodeSideScreenHandler(
         }
 
         // Player inventory
-        addStandardInventorySlots(playerInventory, 8, 84)
+        // Player inventory (3 rows)
+        for (row in 0 until 3) {
+            for (col in 0 until 9) {
+                addSlot(net.minecraft.world.inventory.Slot(playerInventory, col + row * 9 + 9, 8 + col * 18, 84 + row * 18))
+            }
+        }
+        // Player hotbar
+        for (col in 0 until 9) {
+            addSlot(net.minecraft.world.inventory.Slot(playerInventory, col, 8 + col * 18, 84 + 58))
+        }
     }
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {

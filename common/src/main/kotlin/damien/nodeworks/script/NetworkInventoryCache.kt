@@ -222,14 +222,14 @@ class NetworkInventoryCache(
             entries[key] = existing.copy(info = existing.info.copy(count = existing.info.count + amount))
             changedSerials.add(existing.serial)
         } else {
-            val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+            val identifier = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: return
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
             val serial = nextSerial++
             entries[key] = SerialEntry(serial, ItemInfo(
                 itemId = itemId,
-                name = item.getName(net.minecraft.world.item.ItemStack(item)).string,
+                name = net.minecraft.world.item.ItemStack(item).hoverName.string,
                 count = amount,
-                maxStackSize = item.defaultMaxStackSize,
+                maxStackSize = item.getDefaultMaxStackSize(),
                 hasData = hasData
             ))
             changedSerials.add(serial)

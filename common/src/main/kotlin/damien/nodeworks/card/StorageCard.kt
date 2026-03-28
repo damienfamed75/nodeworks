@@ -16,7 +16,7 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
     companion object {
         fun getPriority(stack: ItemStack): Int {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
-            return customData.copyTag().getInt("priority").orElse(0)
+            return customData.copyTag().getInt("priority")
         }
 
         fun setPriority(stack: ItemStack, priority: Int) {

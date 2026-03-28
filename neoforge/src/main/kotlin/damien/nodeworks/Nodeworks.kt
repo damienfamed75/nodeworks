@@ -13,7 +13,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
 import net.neoforged.bus.api.IEventBus
@@ -53,6 +53,9 @@ class Nodeworks(modBus: IEventBus) {
         NeoForge.EVENT_BUS.addListener(::onServerTick)
         NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
 
+        // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber)
+        damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
+
         logger.info("Nodeworks initialized")
     }
 
@@ -73,7 +76,7 @@ class Nodeworks(modBus: IEventBus) {
         event.register(Registries.MENU) {
             ModScreenHandlers.TERMINAL = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "terminal")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "terminal")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = TerminalOpenData.STREAM_CODEC.decode(buf)
                     TerminalScreenHandler.clientFactory(syncId, inv, data)
@@ -81,7 +84,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INSTRUCTION_SET = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "instruction_set")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InstructionSetOpenData.STREAM_CODEC.decode(buf)
                     InstructionSetScreenHandler.clientFactory(syncId, inv, data)
@@ -89,7 +92,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INSTRUCTION_STORAGE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_storage")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "instruction_storage")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InstructionStorageOpenData.STREAM_CODEC.decode(buf)
                     InstructionStorageScreenHandler.clientFactory(syncId, inv, data)
@@ -97,7 +100,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.NODE_SIDE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "node_side")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "node_side")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = NodeSideOpenData.STREAM_CODEC.decode(buf)
                     NodeSideScreenHandler.clientFactory(syncId, inv, data)
@@ -105,7 +108,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INVENTORY_TERMINAL = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InventoryTerminalOpenData.STREAM_CODEC.decode(buf)
                     InventoryTerminalMenu.clientFactory(syncId, inv, data)
@@ -113,7 +116,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.NETWORK_CONTROLLER = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "network_controller")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "network_controller")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = NetworkControllerOpenData.STREAM_CODEC.decode(buf)
                     NetworkControllerMenu.clientFactory(syncId, inv, data)
@@ -121,7 +124,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.VARIABLE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "variable")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "variable")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = VariableOpenData.STREAM_CODEC.decode(buf)
                     VariableMenu.clientFactory(syncId, inv, data)

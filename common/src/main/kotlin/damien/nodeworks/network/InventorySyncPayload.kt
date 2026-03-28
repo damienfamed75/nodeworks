@@ -3,7 +3,7 @@ package damien.nodeworks.network
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 
 /**
  * Server → Client: Syncs inventory terminal data.
@@ -27,7 +27,7 @@ data class InventorySyncPayload(
 
     companion object {
         val TYPE: CustomPacketPayload.Type<InventorySyncPayload> = CustomPacketPayload.Type(
-            Identifier.fromNamespaceAndPath("nodeworks", "inventory_sync")
+            ResourceLocation.fromNamespaceAndPath("nodeworks", "inventory_sync")
         )
         val CODEC: StreamCodec<FriendlyByteBuf, InventorySyncPayload> = CustomPacketPayload.codec(
             { p, buf ->

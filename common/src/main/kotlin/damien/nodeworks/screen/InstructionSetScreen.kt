@@ -3,9 +3,8 @@ package damien.nodeworks.screen
 import damien.nodeworks.screen.InstructionSetScreenHandler
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
-import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.inventory.Slot
 
@@ -16,7 +15,7 @@ class InstructionSetScreen(
 ) : AbstractContainerScreen<InstructionSetScreenHandler>(menu, playerInventory, title) {
 
     companion object {
-        private val BACKGROUND = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/instruction_set.png")
+        private val BACKGROUND = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/instruction_set.png")
     }
 
     init {
@@ -27,7 +26,6 @@ class InstructionSetScreen(
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
         graphics.blit(
-            RenderPipelines.GUI_TEXTURED,
             BACKGROUND,
             leftPos, topPos,
             0f, 0f,
@@ -37,8 +35,8 @@ class InstructionSetScreen(
 
     }
 
-    override fun renderSlot(graphics: GuiGraphics, slot: Slot, p2: Int, p3: Int) {
-        super.renderSlot(graphics, slot, p2, p3)
+    override fun renderSlot(graphics: GuiGraphics, slot: Slot) {
+        super.renderSlot(graphics, slot)
         // Draw a semi-transparent overlay on ghost slots to make items appear faded
         if (slot.index in 0..8 && slot.hasItem()) {
             val x = slot.x

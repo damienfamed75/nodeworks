@@ -15,8 +15,6 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
 
 /**
  * Block entity for the Script Terminal. Stores multiple named scripts and settings.
@@ -140,28 +138,28 @@ class TerminalBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(output: ValueOutput) {
-        super.saveAdditional(output)
+    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.saveAdditional(tag, registries)
         val names = scripts.keys.toList()
-        output.putInt("scriptCount", names.size)
+        tag.putInt("scriptCount", names.size)
         for ((i, name) in names.withIndex()) {
-            output.putString("scriptName_$i", name)
-            output.putString("scriptText_$i", scripts[name] ?: "")
+            tag.putString("scriptName_$i", name)
+            tag.putString("scriptText_$i", scripts[name] ?: "")
         }
-        output.putBoolean("autoRun", autoRun)
-        output.putInt("layoutIndex", layoutIndex)
+        tag.putBoolean("autoRun", autoRun)
+        tag.putInt("layoutIndex", layoutIndex)
         if (connections.isNotEmpty()) {
-            output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
     }
 
-    override fun loadAdditional(input: ValueInput) {
-        super.loadAdditional(input)
+    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.loadAdditional(tag, registries)
         scripts.clear()
-        val count = input.getIntOr("scriptCount", 0)
+        val count = if (tag.contains("scriptCount")) tag.getInt("scriptCount") else 0
         for (i in 0 until count) {
-            val name = input.getString("scriptName_$i").orElse("")
-            val text = input.getString("scriptText_$i").orElse("")
+            val name = tag.getString("scriptName_$i")
+            val text = tag.getString("scriptText_$i")
             if (name.isNotEmpty()) {
                 scripts[name] = text
             }
@@ -169,10 +167,12 @@ class TerminalBlockEntity(
         if ("main" !in scripts) {
             scripts["main"] = ""
         }
-        autoRun = input.getBooleanOr("autoRun", false)
-        layoutIndex = input.getIntOr("layoutIndex", 0)
+        autoRun = tag.getBoolean("autoRun")
+        layoutIndex = if (tag.contains("layoutIndex")) tag.getInt("layoutIndex") else 0
         connections.clear()
-        input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        if (tag.contains("connections")) {
+            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
+        }
     }
 
     // --- Client sync ---

@@ -1,6 +1,1 @@
-{
-  "parent": "minecraft:item/handheld",
-  "textures": {
-    "layer0": "nodeworks:item/network_wrench"
-  }
-}
+{"parent": "nodeworks:item/network_wrench"}

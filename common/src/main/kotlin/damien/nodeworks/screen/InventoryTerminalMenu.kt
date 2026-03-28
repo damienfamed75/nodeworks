@@ -94,14 +94,14 @@ class InventoryTerminalMenu(
         when (action) {
             0, 2, 3 -> {
                 // Extract from network: 0=full stack, 2=half of available, 3=shift-click (full stack to inventory)
-                val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+                val identifier = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: return
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
 
                 // Count how many are available
                 val available = if (c != null) c.count(itemId) else {
                     NetworkStorageHelper.countItems(lvl, snap, itemId)
                 }
-                val maxStack = item.defaultMaxStackSize.toLong()
+                val maxStack = item.getDefaultMaxStackSize().toLong()
                 val toExtract = when (action) {
                     2 -> maxOf(1L, minOf(available, maxStack) / 2) // half of available (capped at stack)
                     else -> minOf(available, maxStack) // full stack

@@ -17,7 +17,7 @@ import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
 import net.minecraft.network.codec.ByteBufCodecs
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
 import org.slf4j.LoggerFactory
@@ -38,38 +38,38 @@ object Nodeworks : ModInitializer {
         // Register screen handler types (Fabric-specific ExtendedScreenHandlerType)
         ModScreenHandlers.TERMINAL = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "terminal")),
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "terminal")),
             ExtendedScreenHandlerType({ syncId, inv, data -> TerminalScreenHandler.clientFactory(syncId, inv, data) }, TerminalOpenData.STREAM_CODEC)
         )
         ModScreenHandlers.INSTRUCTION_SET = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "instruction_set")),
             ExtendedScreenHandlerType({ syncId, inv, data -> InstructionSetScreenHandler.clientFactory(syncId, inv, data) }, InstructionSetOpenData.STREAM_CODEC)
         )
         ModScreenHandlers.INSTRUCTION_STORAGE = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_storage")),
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "instruction_storage")),
             ExtendedScreenHandlerType({ syncId, inv, data -> InstructionStorageScreenHandler.clientFactory(syncId, inv, data) }, InstructionStorageOpenData.STREAM_CODEC)
         )
         ModScreenHandlers.NODE_SIDE = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "node_side")),
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "node_side")),
             ExtendedScreenHandlerType({ syncId, inv, data -> NodeSideScreenHandler.clientFactory(syncId, inv, data) }, NodeSideOpenData.STREAM_CODEC)
         )
         ModScreenHandlers.INVENTORY_TERMINAL = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
             ExtendedScreenHandlerType({ syncId, inv, data -> InventoryTerminalMenu.clientFactory(syncId, inv, data) }, InventoryTerminalOpenData.STREAM_CODEC)
         )
         ModScreenHandlers.NETWORK_CONTROLLER = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "network_controller")),
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "network_controller")),
             ExtendedScreenHandlerType({ syncId, inv, data -> NetworkControllerMenu.clientFactory(syncId, inv, data) }, NetworkControllerOpenData.STREAM_CODEC)
         )
 
         ModScreenHandlers.VARIABLE = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "variable")),
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "variable")),
             ExtendedScreenHandlerType({ syncId, inv, data -> VariableMenu.clientFactory(syncId, inv, data) }, VariableOpenData.STREAM_CODEC)
         )
 

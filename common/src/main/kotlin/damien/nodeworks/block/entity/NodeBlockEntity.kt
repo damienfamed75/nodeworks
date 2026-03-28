@@ -23,8 +23,6 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
 
 /**
  * Block entity for the Node block. Stores a separate inventory for each of the 6 faces.
@@ -237,39 +235,40 @@ class NodeBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(output: ValueOutput) {
-        super.saveAdditional(output)
-        ContainerHelper.saveAllItems(output, items)
+    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.saveAdditional(tag, registries)
+        ContainerHelper.saveAllItems(tag, items, registries)
         if (connections.isNotEmpty()) {
-            output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
         // Save monitors
-        val monitorCount = monitors.size
-        output.putInt("monitorCount", monitorCount)
+        tag.putInt("monitorCount", monitors.size)
         var idx = 0
         for ((face, data) in monitors) {
-            output.putInt("monitorFace_$idx", face.ordinal)
-            output.putString("monitorItem_$idx", data.trackedItemId ?: "")
-            output.putLong("monitorCount_$idx", data.displayCount)
+            tag.putInt("monitorFace_$idx", face.ordinal)
+            tag.putString("monitorItem_$idx", data.trackedItemId ?: "")
+            tag.putLong("monitorCount_$idx", data.displayCount)
             idx++
         }
     }
 
-    override fun loadAdditional(input: ValueInput) {
-        super.loadAdditional(input)
+    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.loadAdditional(tag, registries)
         items.clear()
-        ContainerHelper.loadAllItems(input, items)
+        ContainerHelper.loadAllItems(tag, items, registries)
         connections.clear()
-        input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        if (tag.contains("connections")) {
+            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
+        }
         // Load monitors
         monitors.clear()
-        val monitorCount = input.getIntOr("monitorCount", 0)
+        val monitorCount = if (tag.contains("monitorCount")) tag.getInt("monitorCount") else 0
         for (i in 0 until monitorCount) {
-            val faceOrdinal = input.getIntOr("monitorFace_$i", -1)
+            val faceOrdinal = if (tag.contains("monitorFace_$i")) tag.getInt("monitorFace_$i") else -1
             if (faceOrdinal < 0 || faceOrdinal >= Direction.entries.size) continue
             val face = Direction.entries[faceOrdinal]
-            val itemId = input.getString("monitorItem_$i").orElse("").ifEmpty { null }
-            val displayCount = input.getLongOr("monitorCount_$i", 0L)
+            val itemId = tag.getString("monitorItem_$i").ifEmpty { null }
+            val displayCount = if (tag.contains("monitorCount_$i")) tag.getLong("monitorCount_$i") else 0L
             monitors[face] = MonitorData(itemId, displayCount)
         }
         nodeTracker?.onNodeChanged(worldPosition, true)

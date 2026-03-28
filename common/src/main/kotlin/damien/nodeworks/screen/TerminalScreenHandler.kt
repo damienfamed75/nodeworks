@@ -36,8 +36,8 @@ class TerminalScreenHandler(
             val isRunning = if (level != null) PlatformServices.modState.isScriptRunning(level, terminal.blockPos) else false
 
             val tags = if (level != null) {
-                net.minecraft.core.registries.BuiltInRegistries.ITEM.tags
-                    .map { it.key().location().toString() }
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.getTagNames()
+                    .map { it.location().toString() }
                     .sorted()
                     .toList()
             } else emptyList()

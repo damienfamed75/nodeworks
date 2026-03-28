@@ -11,6 +11,10 @@ class NeoForgeBlockEntityService : BlockEntityService {
         factory: (BlockPos, BlockState) -> T,
         vararg blocks: Block
     ): BlockEntityType<T> {
-        return BlockEntityType({ pos, state -> factory(pos, state) }, blocks.toSet())
+        val supplier = object : BlockEntityType.BlockEntitySupplier<T> {
+            override fun create(pos: BlockPos, state: BlockState): T = factory(pos, state)
+        }
+        @Suppress("NULLABILITY_MISMATCH_BASED_ON_JAVA_ANNOTATIONS")
+        return BlockEntityType.Builder.of(supplier, *blocks).build(null)
     }
 }
