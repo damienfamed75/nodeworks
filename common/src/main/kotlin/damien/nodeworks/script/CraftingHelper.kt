@@ -84,23 +84,28 @@ object CraftingHelper {
         depth: Int,
         cache: NetworkInventoryCache? = null
     ): Boolean {
-        // Check each ingredient and ensure it's available (or can be crafted)
+        // Check each recipe slot individually, crafting prerequisites as needed.
+        // This naturally handles leftovers — crafting 1 batch of logs→planks produces 4,
+        // so subsequent slots needing the same item find it already in storage.
         val ingredientCounts = mutableMapOf<String, Int>()
         for (itemId in recipe) {
             if (itemId.isEmpty()) continue
             ingredientCounts[itemId] = (ingredientCounts[itemId] ?: 0) + 1
         }
 
-        // For each ingredient, check availability and recursively craft if needed
         for ((itemId, needed) in ingredientCounts) {
             val available = NetworkStorageHelper.countItems(level, snapshot, itemId)
             if (available < needed) {
-                val missing = needed - available.toInt()
-                // Try to recursively craft the missing ingredients
-                val subResult = craft(itemId, missing, level, snapshot, depth + 1, cache)
-                if (subResult == null || subResult.count < missing) {
-                    logger.debug("Cannot craft '{}': missing {} of '{}'", match.instructionSet.outputItemId, missing, itemId)
-                    return false
+                // Craft prerequisites one batch at a time until we have enough
+                var have = available.toInt()
+                while (have < needed) {
+                    val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache)
+                    if (subResult == null || subResult.count == 0) {
+                        logger.debug("Cannot craft '{}': unable to craft prerequisite '{}'", match.instructionSet.outputItemId, itemId)
+                        return false
+                    }
+                    // Re-check how many we now have (craft inserts results into storage)
+                    have = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
                 }
             }
         }
