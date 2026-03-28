@@ -4,6 +4,8 @@ import damien.nodeworks.block.entity.InstructionCrafterBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.block.entity.VariableBlockEntity
+import damien.nodeworks.block.entity.VariableType
 import damien.nodeworks.card.SideCapability
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -21,6 +23,7 @@ object NetworkDiscovery {
         val queue = ArrayDeque<BlockPos>()
         val nodes = mutableListOf<NodeSnapshot>()
         val crafters = mutableListOf<CrafterSnapshot>()
+        val variables = mutableListOf<VariableSnapshot>()
         var controller: ControllerSnapshot? = null
 
         queue.add(startPos)
@@ -34,6 +37,9 @@ object NetworkDiscovery {
                 is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
                 is InstructionCrafterBlockEntity -> crafters.add(snapshotCrafter(connectable))
                 is NetworkControllerBlockEntity -> controller = ControllerSnapshot(connectable.blockPos, connectable.networkId)
+                is VariableBlockEntity -> if (connectable.variableName.isNotEmpty()) {
+                    variables.add(VariableSnapshot(connectable.blockPos, connectable.variableName, connectable.variableType))
+                }
             }
 
             for (connection in connectable.getConnections()) {
@@ -46,7 +52,7 @@ object NetworkDiscovery {
         // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1)
         assignAutoAliases(nodes)
 
-        return NetworkSnapshot(nodes, crafters, controller)
+        return NetworkSnapshot(nodes, crafters, variables, controller)
     }
 
     private fun assignAutoAliases(nodes: List<NodeSnapshot>) {
@@ -90,9 +96,16 @@ data class ControllerSnapshot(
     val networkId: UUID
 )
 
+data class VariableSnapshot(
+    val pos: BlockPos,
+    val name: String,
+    val type: VariableType
+)
+
 data class NetworkSnapshot(
     val nodes: List<NodeSnapshot>,
     val crafters: List<CrafterSnapshot> = emptyList(),
+    val variables: List<VariableSnapshot> = emptyList(),
     val controller: ControllerSnapshot? = null
 ) {
     /** Whether this network has a controller and is online. */
@@ -100,6 +113,9 @@ data class NetworkSnapshot(
 
     /** The network's UUID, or null if no controller. */
     val networkId: UUID? get() = controller?.networkId
+
+    /** Find a variable by name. */
+    fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
 
     /** Find a card by alias (custom or auto-generated) across the entire network. */
     fun findByAlias(alias: String): CardSnapshot? {

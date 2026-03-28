@@ -30,6 +30,7 @@ class TerminalScreen(
     private lateinit var autocomplete: AutocompletePopup
     private val cards: List<CardSnapshot> = menu.getCards()
     private val itemTags: List<String> = menu.getItemTags()
+    private val variableNames: List<String> = menu.getVariableNames()
     private var scriptRunning: Boolean = menu.isRunning()
     private var autoRun: Boolean = menu.isAutoRun()
 
@@ -154,7 +155,7 @@ class TerminalScreen(
         }
         addRenderableWidget(editor)
 
-        autocomplete = AutocompletePopup(font, cards, itemTags) { scripts }
+        autocomplete = AutocompletePopup(font, cards, itemTags, variableNames) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 2

@@ -20,7 +20,8 @@ class TerminalScreenHandler(
     private val autoRun: Boolean,
     private val layoutIndex: Int,
     private val cards: List<CardSnapshot>,
-    private val itemTags: List<String>
+    private val itemTags: List<String>,
+    private val variableNames: List<String> = emptyList()
 ) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
 
     companion object {
@@ -28,10 +29,9 @@ class TerminalScreenHandler(
             val level = player.level() as? ServerLevel
             val nodePos = terminal.getConnectedNodePos()
 
-            val cards = if (level != null && nodePos != null) {
-                val snapshot = NetworkDiscovery.discoverNetwork(level, nodePos)
-                snapshot.allCards()
-            } else emptyList()
+            val snapshot = if (level != null && nodePos != null) NetworkDiscovery.discoverNetwork(level, nodePos) else null
+            val cards = snapshot?.allCards() ?: emptyList()
+            val varNames = snapshot?.variables?.map { it.name } ?: emptyList()
 
             val isRunning = if (level != null) PlatformServices.modState.isScriptRunning(level, terminal.blockPos) else false
 
@@ -42,11 +42,11 @@ class TerminalScreenHandler(
                     .toList()
             } else emptyList()
 
-            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScripts(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags)
+            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScripts(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags, varNames)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {
-            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags)
+            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags, data.variableNames)
         }
     }
 
@@ -58,6 +58,7 @@ class TerminalScreenHandler(
     fun getLayoutIndex(): Int = layoutIndex
     fun getCards(): List<CardSnapshot> = cards
     fun getItemTags(): List<String> = itemTags
+    fun getVariableNames(): List<String> = variableNames
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY
 

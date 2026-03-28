@@ -28,5 +28,7 @@
   "block.nodeworks.network_controller": "Network Controller",
   "container.nodeworks.network_controller": "Network Controller",
   "message.nodeworks.duplicate_controller": "Network already has a controller.",
-  "message.nodeworks.no_controller": "Network has no controller."
+  "message.nodeworks.no_controller": "Network has no controller.",
+  "block.nodeworks.variable": "Variable",
+  "container.nodeworks.variable": "Variable Settings"
 }

@@ -3,6 +3,7 @@ package damien.nodeworks.network
 import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
+import damien.nodeworks.block.VariableBlock
 import damien.nodeworks.block.entity.NodeBlockEntity
 import net.minecraft.core.BlockPos
 import net.minecraft.resources.ResourceKey
@@ -59,10 +60,10 @@ object NodeConnectionHelper {
         return result.type == HitResult.Type.MISS
     }
 
-    /** Get a Connectable block entity (Node, Instruction Crafter, or Network Controller) at the given position. */
+    /** Get a Connectable block entity at the given position. */
     fun getConnectable(level: Level, pos: BlockPos): Connectable? {
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock) return null
+        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock) return null
         return level.getBlockEntity(pos) as? Connectable
     }
 

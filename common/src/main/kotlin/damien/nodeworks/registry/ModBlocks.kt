@@ -6,6 +6,7 @@ import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
+import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
@@ -56,6 +57,13 @@ object ModBlocks {
             .strength(4.0f, 8.0f)
             .noOcclusion()
             .lightLevel { 10 }
+    )
+
+    val VARIABLE: Block = register(
+        "variable",
+        ::VariableBlock,
+        BlockBehaviour.Properties.of()
+            .strength(2.0f, 6.0f)
     )
 
     val INVENTORY_TERMINAL: Block = register(

@@ -6,6 +6,7 @@ import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
+import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -40,6 +41,11 @@ object ModBlockEntities {
     val NETWORK_CONTROLLER: BlockEntityType<NetworkControllerBlockEntity> = register(
         "network_controller",
         PlatformServices.blockEntity.createBlockEntityType(::NetworkControllerBlockEntity, ModBlocks.NETWORK_CONTROLLER)
+    )
+
+    val VARIABLE: BlockEntityType<VariableBlockEntity> = register(
+        "variable",
+        PlatformServices.blockEntity.createBlockEntityType(::VariableBlockEntity, ModBlocks.VARIABLE)
     )
 
     val INVENTORY_TERMINAL: BlockEntityType<InventoryTerminalBlockEntity> = register(

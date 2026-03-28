@@ -8,12 +8,14 @@ import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import damien.nodeworks.render.VariableRenderer
 import net.neoforged.neoforge.client.event.EntityRenderersEvent
 import damien.nodeworks.screen.NodeSideScreen
 import damien.nodeworks.screen.InstructionSetScreen
 import damien.nodeworks.screen.InstructionStorageScreen
 import damien.nodeworks.screen.InventoryTerminalScreen
 import damien.nodeworks.screen.NetworkControllerScreen
+import damien.nodeworks.screen.VariableScreen
 import damien.nodeworks.screen.TerminalScreen
 import com.mojang.blaze3d.vertex.PoseStack
 import net.minecraft.client.Minecraft
@@ -47,6 +49,7 @@ object NeoForgeClientSetup {
     fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
         event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::MonitorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
     }
 
     @SubscribeEvent
@@ -68,6 +71,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.NETWORK_CONTROLLER) { menu, inventory, title ->
             NetworkControllerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.VARIABLE) { menu, inventory, title ->
+            VariableScreen(menu, inventory, title)
         }
     }
 }

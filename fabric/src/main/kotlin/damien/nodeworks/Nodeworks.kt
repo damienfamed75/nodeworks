@@ -67,6 +67,12 @@ object Nodeworks : ModInitializer {
             ExtendedScreenHandlerType({ syncId, inv, data -> NetworkControllerMenu.clientFactory(syncId, inv, data) }, NetworkControllerOpenData.STREAM_CODEC)
         )
 
+        ModScreenHandlers.VARIABLE = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "variable")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> VariableMenu.clientFactory(syncId, inv, data) }, VariableOpenData.STREAM_CODEC)
+        )
+
         ModBlocks.initialize()
         ModBlockEntities.initialize()
         ModItems.initialize()
