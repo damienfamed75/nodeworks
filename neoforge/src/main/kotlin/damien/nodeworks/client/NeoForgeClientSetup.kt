@@ -8,6 +8,7 @@ import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import damien.nodeworks.render.TerminalRenderer
 import damien.nodeworks.render.VariableRenderer
 import net.neoforged.neoforge.client.event.EntityRenderersEvent
 import damien.nodeworks.screen.NodeSideScreen
@@ -50,6 +51,7 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::MonitorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
     }
 
     @SubscribeEvent

@@ -42,7 +42,7 @@ class TerminalScreenHandler(
                     .toList()
             } else emptyList()
 
-            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScripts(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags, varNames)
+            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags, varNames)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {

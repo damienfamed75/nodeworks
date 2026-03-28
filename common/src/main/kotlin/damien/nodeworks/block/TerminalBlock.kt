@@ -72,6 +72,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
+        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return InteractionResult.PASS
@@ -102,7 +103,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
         val isRunning = PlatformServices.modState.isScriptRunning(serverLevel, terminal.blockPos)
         val varNames = snapshot.variables.map { it.name to it.type.ordinal }
-        val openData = TerminalOpenData(terminal.blockPos, terminal.getScripts(), isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags, varNames)
+        val openData = TerminalOpenData(terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags, varNames)
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
@@ -113,5 +114,11 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         )
 
         return InteractionResult.SUCCESS
+    }
+
+    override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
+        val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
+        entity?.blockDestroyed = true
+        return super.playerWillDestroy(level, pos, state, player)
     }
 }

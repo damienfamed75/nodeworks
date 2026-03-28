@@ -83,7 +83,7 @@ object TerminalPackets {
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(terminal.getScripts())) {
+            if (engine.start(terminal.getScriptsCopy())) {
                 activeEngines[globalPos] = engine
             }
         }
@@ -242,7 +242,7 @@ object TerminalPackets {
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
-            if (engine.start(terminal.getScripts())) {
+            if (engine.start(terminal.getScriptsCopy())) {
                 activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
             }
