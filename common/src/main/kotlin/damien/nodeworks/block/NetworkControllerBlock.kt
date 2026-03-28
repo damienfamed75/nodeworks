@@ -3,7 +3,13 @@ package damien.nodeworks.block
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.item.NetworkWrenchItem
+import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.screen.NetworkControllerMenu
+import damien.nodeworks.screen.NetworkControllerOpenData
 import net.minecraft.core.BlockPos
+import net.minecraft.network.chat.Component
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
@@ -12,6 +18,7 @@ import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
 import net.minecraft.world.phys.shapes.VoxelShape
 
@@ -37,6 +44,30 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity {
         return NetworkControllerBlockEntity(pos, state)
+    }
+
+    override fun useWithoutItem(
+        state: BlockState,
+        level: Level,
+        pos: BlockPos,
+        player: Player,
+        hitResult: BlockHitResult
+    ): InteractionResult {
+        if (player.mainHandItem.item is NetworkWrenchItem) return InteractionResult.PASS
+        if (level.isClientSide) return InteractionResult.SUCCESS
+
+        val entity = level.getBlockEntity(pos) as? NetworkControllerBlockEntity ?: return InteractionResult.PASS
+        val serverPlayer = player as ServerPlayer
+
+        PlatformServices.menu.openExtendedMenu(
+            serverPlayer,
+            Component.translatable("container.nodeworks.network_controller"),
+            NetworkControllerOpenData(pos, entity.networkColor, entity.networkName, entity.redstoneMode),
+            NetworkControllerOpenData.STREAM_CODEC,
+            { syncId, inv, _ -> NetworkControllerMenu.createServer(syncId, inv, entity) }
+        )
+
+        return InteractionResult.SUCCESS
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {

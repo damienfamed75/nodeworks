@@ -26,6 +26,7 @@
   "block.nodeworks.inventory_terminal": "Inventory Terminal",
   "container.nodeworks.inventory_terminal": "Inventory Terminal",
   "block.nodeworks.network_controller": "Network Controller",
+  "container.nodeworks.network_controller": "Network Controller",
   "message.nodeworks.duplicate_controller": "Network already has a controller.",
   "message.nodeworks.no_controller": "Network has no controller."
 }

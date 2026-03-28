@@ -34,6 +34,38 @@ class NetworkControllerBlockEntity(
     var networkId: UUID = UUID.randomUUID()
         private set
 
+    // --- Network Settings ---
+
+    /** Network color as RGB (no alpha). Default green. */
+    var networkColor: Int = 0x83E086
+        set(value) {
+            field = value and 0xFFFFFF
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
+    /** Custom network name. Empty = unnamed. */
+    var networkName: String = ""
+        set(value) {
+            field = value.take(32) // cap length
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
+    /** Redstone mode: 0 = Ignored, 1 = Active on Low, 2 = Active on High */
+    var redstoneMode: Int = 0
+        set(value) {
+            field = value.coerceIn(0, 2)
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
+    companion object {
+        const val REDSTONE_IGNORED = 0
+        const val REDSTONE_LOW = 1
+        const val REDSTONE_HIGH = 2
+    }
+
     // --- Connectable ---
 
     override fun getConnections(): Set<BlockPos> = connections.toSet()
@@ -80,6 +112,9 @@ class NetworkControllerBlockEntity(
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
         output.putString("networkId", networkId.toString())
+        output.putInt("networkColor", networkColor)
+        output.putString("networkName", networkName)
+        output.putInt("redstoneMode", redstoneMode)
         if (connections.isNotEmpty()) {
             output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
         }
@@ -95,6 +130,9 @@ class NetworkControllerBlockEntity(
                 networkId = UUID.randomUUID()
             }
         }
+        networkColor = input.getInt("networkColor").orElse(0x83E086)
+        networkName = input.getString("networkName").orElse("")
+        redstoneMode = input.getInt("redstoneMode").orElse(0)
         connections.clear()
         input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
     }

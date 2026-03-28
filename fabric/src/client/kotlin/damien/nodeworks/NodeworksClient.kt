@@ -14,6 +14,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry
 import damien.nodeworks.screen.InstructionSetScreen
 import damien.nodeworks.screen.InstructionStorageScreen
 import damien.nodeworks.screen.InventoryTerminalScreen
+import damien.nodeworks.screen.NetworkControllerScreen
 import damien.nodeworks.screen.TerminalLogBuffer
 import damien.nodeworks.screen.TerminalScreen
 import damien.nodeworks.network.InventorySyncPayload
@@ -52,6 +53,9 @@ object NodeworksClient : ClientModInitializer {
         }
         MenuScreens.register(ModScreenHandlers.INVENTORY_TERMINAL) { menu, inventory, title ->
             InventoryTerminalScreen(menu, inventory, title)
+        }
+        MenuScreens.register(ModScreenHandlers.NETWORK_CONTROLLER) { menu, inventory, title ->
+            NetworkControllerScreen(menu, inventory, title)
         }
 
         // Receive log messages from the server

@@ -50,8 +50,9 @@ object NodeConnectionHelper {
         val from = posA.center
         val to = posB.center
         val direction = to.subtract(from).normalize()
-        val offsetFrom = from.add(direction.scale(0.4))
-        val offsetTo = to.subtract(direction.scale(0.4))
+        // Offset must clear full-block shapes (0.5 from center) — use 0.87 for diagonal safety
+        val offsetFrom = from.add(direction.scale(0.87))
+        val offsetTo = to.subtract(direction.scale(0.87))
         val result = level.clip(
             ClipContext(offsetFrom, offsetTo, ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, CollisionContext.empty())
         )
