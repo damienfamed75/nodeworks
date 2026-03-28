@@ -65,10 +65,10 @@ class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
         // Move to block center, rotate to face direction, then push to front face
         poseStack.translate(0.5, 0.5, 0.5)
         when (state.facing) {
-            Direction.NORTH -> {} // default: front face is -Z
-            Direction.SOUTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat()))
-            Direction.EAST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI / 2).toFloat()))
-            Direction.WEST -> poseStack.mulPose(Quaternionf().rotateY((-Math.PI / 2).toFloat()))
+            Direction.NORTH -> {} // blockstate y=0
+            Direction.SOUTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat())) // y=180
+            Direction.EAST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI * 1.5).toFloat())) // y=270
+            Direction.WEST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI / 2).toFloat())) // y=90
             else -> {}
         }
 
