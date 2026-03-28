@@ -18,7 +18,8 @@ class NetworkControllerScreen(
     companion object {
         private const val DEFAULT_COLOR = 0x83E086
         private val REDSTONE_LABELS = arrayOf("Ignored", "Active Low", "Active High")
-        private val GLOW_LABELS = arrayOf("Square", "Circle", "Dot", "None")
+        private val GLOW_LABELS = arrayOf("Square", "Circle", "Dot", "Creeper", "Cat", "None")
+        private const val GLOW_COUNT = 6
 
         // Layout
         private const val TOP_BAR_H = 20
@@ -190,10 +191,10 @@ class NetworkControllerScreen(
 
     private fun renderGlowStyleControl(graphics: GuiGraphics, startX: Int, by: Int, mouseX: Int, mouseY: Int) {
         val style = menu.nodeGlowStyle
-        val btnW = 20
+        val btnW = 16
         val btnH = 16
 
-        for (i in 0 until 4) {
+        for (i in 0 until GLOW_COUNT) {
             val bx = startX + i * (btnW + 2)
             val selected = style == i
             val hovered = mouseX >= bx && mouseX < bx + btnW && mouseY >= by && mouseY < by + btnH
@@ -221,17 +222,37 @@ class NetworkControllerScreen(
             val cy = by + btnH / 2
             val col = menu.networkColor or 0xFF000000.toInt()
             when (i) {
-                0 -> { // Square — 6x6 filled square
+                0 -> { // Square
                     graphics.fill(cx - 3, cy - 3, cx + 3, cy + 3, col)
                 }
-                1 -> { // Circle — approximate circle
+                1 -> { // Circle
                     graphics.fill(cx - 2, cy - 3, cx + 2, cy + 3, col)
                     graphics.fill(cx - 3, cy - 2, cx + 3, cy + 2, col)
                 }
-                2 -> { // Dot — 2x2
+                2 -> { // Dot
                     graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, col)
                 }
-                3 -> { // None — X mark
+                3 -> { // Creeper face
+                    // Eyes
+                    graphics.fill(cx - 3, cy - 3, cx - 1, cy - 1, col)
+                    graphics.fill(cx + 1, cy - 3, cx + 3, cy - 1, col)
+                    // Nose/mouth
+                    graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, col)
+                    graphics.fill(cx - 2, cy + 1, cx + 2, cy + 3, col)
+                }
+                4 -> { // Cat face
+                    // Ears
+                    graphics.fill(cx - 3, cy - 4, cx - 2, cy - 2, col)
+                    graphics.fill(cx + 2, cy - 4, cx + 3, cy - 2, col)
+                    // Head
+                    graphics.fill(cx - 2, cy - 2, cx + 2, cy + 2, col)
+                    // Eyes
+                    graphics.fill(cx - 1, cy - 1, cx, cy, 0xFF1E1E1E.toInt())
+                    graphics.fill(cx + 1, cy - 1, cx + 2, cy, 0xFF1E1E1E.toInt())
+                    // Nose
+                    graphics.fill(cx, cy + 1, cx + 1, cy + 2, 0xFF1E1E1E.toInt())
+                }
+                5 -> { // None — X mark
                     for (j in -3..3) {
                         graphics.fill(cx + j, cy + j, cx + j + 1, cy + j + 1, 0xFF666666.toInt())
                         graphics.fill(cx + j, cy - j, cx + j + 1, cy - j + 1, 0xFF666666.toInt())
@@ -314,8 +335,8 @@ class NetworkControllerScreen(
                     }
                 }
                 PropertyType.GLOW_STYLE -> {
-                    val btnW = 20; val btnH = 16
-                    for (j in 0 until 4) {
+                    val btnW = 16; val btnH = 16
+                    for (j in 0 until GLOW_COUNT) {
                         val bx = controlX + j * (btnW + 2)
                         if (mx >= bx && mx < bx + btnW && my >= controlY && my < controlY + btnH) {
                             sendGlowStyleUpdate(j)

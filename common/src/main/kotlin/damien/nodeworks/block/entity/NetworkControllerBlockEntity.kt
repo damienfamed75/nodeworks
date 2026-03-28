@@ -60,10 +60,10 @@ class NetworkControllerBlockEntity(
             level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
 
-    /** Node glow style: 0=square, 1=circle, 2=dot, 3=none */
+    /** Node glow style: 0=square, 1=circle, 2=dot, 3=creeper, 4=spiral, 5=none */
     var nodeGlowStyle: Int = GLOW_SQUARE
         set(value) {
-            field = value.coerceIn(0, 3)
+            field = value.coerceIn(0, 5)
             setChanged()
             level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
@@ -76,7 +76,9 @@ class NetworkControllerBlockEntity(
         const val GLOW_SQUARE = 0
         const val GLOW_CIRCLE = 1
         const val GLOW_DOT = 2
-        const val GLOW_NONE = 3
+        const val GLOW_CREEPER = 3
+        const val GLOW_SPIRAL = 4
+        const val GLOW_NONE = 5
     }
 
     // --- Connectable ---
