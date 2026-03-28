@@ -14,7 +14,7 @@ class AutocompletePopup(
     private val font: Font,
     private val cards: List<CardSnapshot>,
     private val itemTags: List<String> = emptyList(),
-    private val variableNames: List<String> = emptyList(),
+    private val variables: List<Pair<String, Int>> = emptyList(), // name to type ordinal (0=number, 1=string, 2=bool)
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     data class Suggestion(val insertText: String, val displayText: String)
@@ -102,7 +102,9 @@ class AutocompletePopup(
     private val knownTypes = listOf(
         Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
-        Suggestion("VariableHandle", "VariableHandle — network variable from network:var")
+        Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var"),
+        Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:var"),
+        Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:var")
     )
 
     private fun suggest(insertText: String, displayText: String = insertText) = Suggestion(insertText, displayText)
@@ -237,12 +239,17 @@ class AutocompletePopup(
             return fuzzyStrings(partial, types)
         }
 
-        // After network:var("partial → suggest variable names
+        // After network:var("partial → suggest variable names with type hints
         val varMatch = Regex("""network:var\(\s*"(\w*)$""").find(trimmed)
         if (varMatch != null) {
             val partial = varMatch.groupValues[1]
             customPrefix = partial
-            return fuzzyStrings(partial, variableNames)
+            val typeLabels = arrayOf("number", "string", "bool")
+            val suggestions = variables.map { (name, typeOrd) ->
+                val typeLabel = typeLabels.getOrElse(typeOrd) { "unknown" }
+                suggest(name, "$name ($typeLabel)")
+            }
+            return FuzzyMatch.filter(partial, suggestions)
         }
 
         // After :face("partial → suggest face names
@@ -466,7 +473,8 @@ class AutocompletePopup(
         // 4. Inference from assignment context
         if (varName in extractCardVariables(text)) return "CardHandle"
         if (varName in extractItemsHandleVariables(text)) return "ItemsHandle"
-        if (varName in extractVariableHandleVariables(text)) return "VariableHandle"
+        val varType = resolveVariableHandleType(varName, text)
+        if (varType != null) return varType
 
         return null
     }
@@ -485,6 +493,9 @@ class AutocompletePopup(
             "CardHandle" -> cardHandleMethods("")
             "ItemsHandle" -> itemsHandleMethods("")
             "VariableHandle" -> variableHandleMethods("")
+            "NumberVariableHandle" -> numberVariableHandleMethods("")
+            "StringVariableHandle" -> stringVariableHandleMethods("")
+            "BoolVariableHandle" -> boolVariableHandleMethods("")
             else -> emptyList()
         }
         return fuzzy(partial, methods)
@@ -532,24 +543,53 @@ class AutocompletePopup(
         return fuzzy(partial, props)
     }
 
+    private val baseVariableMethods = listOf(
+        "get(" to "get() → value",
+        "set(" to "set(value) — set variable value",
+        "cas(" to "cas(expected, new) → boolean",
+        "type(" to "type() → string",
+        "name(" to "name() → string"
+    )
+
     private fun variableHandleMethods(partial: String): List<Suggestion> {
-        val methods = listOf(
-            // Universal
-            suggest("get(", "get() → value"),
-            suggest("set(", "set(value) — set variable value"),
-            suggest("cas(", "cas(expected, new) → boolean"),
-            suggest("type(", "type() → string"),
-            suggest("name(", "name() → string"),
-            // Number
+        // Fallback: show all methods when type is unknown
+        val methods = baseVariableMethods.map { suggest(it.first, it.second) } +
+            listOf(
+                suggest("increment(", "increment(n: number) → number"),
+                suggest("decrement(", "decrement(n: number) → number"),
+                suggest("min(", "min(n: number) → number"),
+                suggest("max(", "max(n: number) → number"),
+                suggest("append(", "append(s: string) → string"),
+                suggest("length(", "length() → number"),
+                suggest("clear(", "clear()"),
+                suggest("toggle(", "toggle() → boolean"),
+                suggest("tryLock(", "tryLock() → boolean"),
+                suggest("unlock(", "unlock()")
+            )
+        return fuzzy(partial, methods)
+    }
+
+    private fun numberVariableHandleMethods(partial: String): List<Suggestion> {
+        val methods = baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
             suggest("increment(", "increment(n: number) → number"),
             suggest("decrement(", "decrement(n: number) → number"),
             suggest("min(", "min(n: number) → number"),
-            suggest("max(", "max(n: number) → number"),
-            // String
+            suggest("max(", "max(n: number) → number")
+        )
+        return fuzzy(partial, methods)
+    }
+
+    private fun stringVariableHandleMethods(partial: String): List<Suggestion> {
+        val methods = baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
             suggest("append(", "append(s: string) → string"),
             suggest("length(", "length() → number"),
-            suggest("clear(", "clear()"),
-            // Bool
+            suggest("clear(", "clear()")
+        )
+        return fuzzy(partial, methods)
+    }
+
+    private fun boolVariableHandleMethods(partial: String): List<Suggestion> {
+        val methods = baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
             suggest("toggle(", "toggle() → boolean"),
             suggest("tryLock(", "tryLock() → boolean"),
             suggest("unlock(", "unlock()")
@@ -602,12 +642,23 @@ class AutocompletePopup(
         return result
     }
 
-    /** Extracts variable names assigned from network:var() calls. */
-    private fun extractVariableHandleVariables(text: String): Set<String> {
-        val result = mutableSetOf<String>()
-        val pattern = Regex("""local\s+(\w+)\s*=\s*network:var\s*\(""")
-        pattern.findAll(text).forEach { result.add(it.groupValues[1]) }
-        return result
+    /**
+     * Resolves a variable assigned from network:var("name") to its typed handle.
+     * Returns "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle", or null.
+     */
+    private fun resolveVariableHandleType(varName: String, text: String): String? {
+        // Match: local varName = network:var("someName")
+        val pattern = Regex("""local\s+${Regex.escape(varName)}\s*=\s*network:var\s*\(\s*"(\w+)"\s*\)""")
+        val match = pattern.find(text) ?: return null
+        val netVarName = match.groupValues[1]
+        // Look up the variable's type from the known variables list
+        val typeOrd = variables.firstOrNull { it.first == netVarName }?.second
+        return when (typeOrd) {
+            0 -> "NumberVariableHandle"
+            1 -> "StringVariableHandle"
+            2 -> "BoolVariableHandle"
+            else -> "VariableHandle" // fallback: show all methods
+        }
     }
 
     /** Extracts top-level and local function names from the script. */
