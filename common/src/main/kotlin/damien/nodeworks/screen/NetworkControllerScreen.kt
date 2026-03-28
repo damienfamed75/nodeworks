@@ -18,6 +18,7 @@ class NetworkControllerScreen(
     companion object {
         private const val DEFAULT_COLOR = 0x83E086
         private val REDSTONE_LABELS = arrayOf("Ignored", "Active Low", "Active High")
+        private val GLOW_LABELS = arrayOf("Square", "Circle", "Dot", "None")
 
         // Layout
         private const val TOP_BAR_H = 20
@@ -28,12 +29,13 @@ class NetworkControllerScreen(
 
     // Property definitions
     private data class Property(val label: String, val type: PropertyType)
-    private enum class PropertyType { NAME, COLOR, REDSTONE }
+    private enum class PropertyType { NAME, COLOR, REDSTONE, GLOW_STYLE }
 
     private val properties = listOf(
         Property("Name", PropertyType.NAME),
         Property("Color", PropertyType.COLOR),
-        Property("Redstone", PropertyType.REDSTONE)
+        Property("Redstone", PropertyType.REDSTONE),
+        Property("Node Glow", PropertyType.GLOW_STYLE)
     )
 
     private lateinit var nameField: EditBox
@@ -132,6 +134,9 @@ class NetworkControllerScreen(
                 PropertyType.REDSTONE -> {
                     renderRedstoneControl(graphics, controlX, controlY, mouseX, mouseY)
                 }
+                PropertyType.GLOW_STYLE -> {
+                    renderGlowStyleControl(graphics, controlX, controlY, mouseX, mouseY)
+                }
                 else -> {}
             }
         }
@@ -183,6 +188,70 @@ class NetworkControllerScreen(
         graphics.drawString(font, REDSTONE_LABELS[mode], bx + bw + 4, by + 4, 0xFF888888.toInt())
     }
 
+    private fun renderGlowStyleControl(graphics: GuiGraphics, startX: Int, by: Int, mouseX: Int, mouseY: Int) {
+        val style = menu.nodeGlowStyle
+        val btnW = 20
+        val btnH = 16
+
+        for (i in 0 until 4) {
+            val bx = startX + i * (btnW + 2)
+            val selected = style == i
+            val hovered = mouseX >= bx && mouseX < bx + btnW && mouseY >= by && mouseY < by + btnH
+
+            // Button background
+            val bg = when {
+                selected -> 0xFF4A4A4A.toInt()
+                hovered -> 0xFF3A3A3A.toInt()
+                else -> 0xFF333333.toInt()
+            }
+            graphics.fill(bx, by, bx + btnW, by + btnH, bg)
+            if (selected) {
+                // Selected border highlight
+                graphics.fill(bx, by, bx + btnW, by + 1, 0xFFAAAAAA.toInt())
+                graphics.fill(bx, by + btnH - 1, bx + btnW, by + btnH, 0xFFAAAAAA.toInt())
+                graphics.fill(bx, by, bx + 1, by + btnH, 0xFFAAAAAA.toInt())
+                graphics.fill(bx + btnW - 1, by, bx + btnW, by + btnH, 0xFFAAAAAA.toInt())
+            } else {
+                graphics.fill(bx, by, bx + btnW, by + 1, 0xFF4A4A4A.toInt())
+                graphics.fill(bx, by + btnH - 1, bx + btnW, by + btnH, 0xFF1E1E1E.toInt())
+            }
+
+            // Draw icon based on style
+            val cx = bx + btnW / 2
+            val cy = by + btnH / 2
+            val col = menu.networkColor or 0xFF000000.toInt()
+            when (i) {
+                0 -> { // Square — 6x6 filled square
+                    graphics.fill(cx - 3, cy - 3, cx + 3, cy + 3, col)
+                }
+                1 -> { // Circle — approximate circle
+                    graphics.fill(cx - 2, cy - 3, cx + 2, cy + 3, col)
+                    graphics.fill(cx - 3, cy - 2, cx + 3, cy + 2, col)
+                }
+                2 -> { // Dot — 2x2
+                    graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, col)
+                }
+                3 -> { // None — X mark
+                    for (j in -3..3) {
+                        graphics.fill(cx + j, cy + j, cx + j + 1, cy + j + 1, 0xFF666666.toInt())
+                        graphics.fill(cx + j, cy - j, cx + j + 1, cy - j + 1, 0xFF666666.toInt())
+                    }
+                }
+            }
+
+            // Tooltip on hover
+            if (hovered) {
+                glowTooltip = GLOW_LABELS[i]
+                glowTooltipX = mouseX
+                glowTooltipY = mouseY
+            }
+        }
+    }
+
+    private var glowTooltip: String? = null
+    private var glowTooltipX = 0
+    private var glowTooltipY = 0
+
     private fun renderScrollbar(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
         val sbX = listRight
         val sbW = SCROLL_BAR_W
@@ -202,8 +271,11 @@ class NetworkControllerScreen(
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        glowTooltip = null
         super.render(graphics, mouseX, mouseY, partialTick)
-        // No tooltip rendering needed (no inventory slots visible)
+        glowTooltip?.let { tip ->
+            graphics.drawString(font, tip, glowTooltipX + 8, glowTooltipY - 12, 0xFFFFFFFF.toInt())
+        }
     }
 
     override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
@@ -239,6 +311,16 @@ class NetworkControllerScreen(
                     if (mx >= controlX && mx < controlX + bw && my >= controlY && my < controlY + bh) {
                         sendRedstoneUpdate((menu.redstoneMode + 1) % 3)
                         return true
+                    }
+                }
+                PropertyType.GLOW_STYLE -> {
+                    val btnW = 20; val btnH = 16
+                    for (j in 0 until 4) {
+                        val bx = controlX + j * (btnW + 2)
+                        if (mx >= bx && mx < bx + btnW && my >= controlY && my < controlY + btnH) {
+                            sendGlowStyleUpdate(j)
+                            return true
+                        }
                     }
                 }
                 else -> {}
@@ -290,6 +372,12 @@ class NetworkControllerScreen(
     private fun sendRedstoneUpdate(mode: Int) {
         PlatformServices.clientNetworking.sendToServer(
             damien.nodeworks.network.ControllerSettingsPayload(menu.controllerPos, "redstone", mode, "")
+        )
+    }
+
+    private fun sendGlowStyleUpdate(style: Int) {
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.ControllerSettingsPayload(menu.controllerPos, "glow", style, "")
         )
     }
 

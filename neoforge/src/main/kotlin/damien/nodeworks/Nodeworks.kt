@@ -156,6 +156,7 @@ class Nodeworks(modBus: IEventBus) {
                 when (payload.key) {
                     "color" -> entity.networkColor = payload.intValue
                     "redstone" -> entity.redstoneMode = payload.intValue
+                    "glow" -> entity.nodeGlowStyle = payload.intValue
                     "name" -> entity.networkName = payload.strValue
                 }
             }

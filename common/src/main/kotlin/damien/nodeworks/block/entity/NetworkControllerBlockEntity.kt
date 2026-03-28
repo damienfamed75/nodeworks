@@ -60,10 +60,23 @@ class NetworkControllerBlockEntity(
             level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
 
+    /** Node glow style: 0=square, 1=circle, 2=dot, 3=none */
+    var nodeGlowStyle: Int = GLOW_SQUARE
+        set(value) {
+            field = value.coerceIn(0, 3)
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
     companion object {
         const val REDSTONE_IGNORED = 0
         const val REDSTONE_LOW = 1
         const val REDSTONE_HIGH = 2
+
+        const val GLOW_SQUARE = 0
+        const val GLOW_CIRCLE = 1
+        const val GLOW_DOT = 2
+        const val GLOW_NONE = 3
     }
 
     // --- Connectable ---
@@ -115,6 +128,7 @@ class NetworkControllerBlockEntity(
         output.putInt("networkColor", networkColor)
         output.putString("networkName", networkName)
         output.putInt("redstoneMode", redstoneMode)
+        output.putInt("nodeGlowStyle", nodeGlowStyle)
         if (connections.isNotEmpty()) {
             output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
         }
@@ -133,6 +147,7 @@ class NetworkControllerBlockEntity(
         networkColor = input.getInt("networkColor").orElse(0x83E086)
         networkName = input.getString("networkName").orElse("")
         redstoneMode = input.getInt("redstoneMode").orElse(0)
+        nodeGlowStyle = input.getInt("nodeGlowStyle").orElse(GLOW_SQUARE)
         connections.clear()
         input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
     }
