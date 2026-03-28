@@ -23,11 +23,8 @@ object NodeConnectionRenderer {
 
     private val knownNodes: MutableSet<BlockPos> = Collections.newSetFromMap(ConcurrentHashMap())
 
-    /** Default network color (RGB, no alpha). Later will read from the controller. */
+    /** Default network color (RGB, no alpha). Used as fallback when no controller is found. */
     const val DEFAULT_NETWORK_COLOR = 0x83E086
-    private val cr get() = (DEFAULT_NETWORK_COLOR shr 16) and 0xFF
-    private val cg get() = (DEFAULT_NETWORK_COLOR shr 8) and 0xFF
-    private val cb get() = DEFAULT_NETWORK_COLOR and 0xFF
 
     /** Beam effect toggle — disable for lower-end PCs. */
     var beamEffectEnabled = true
@@ -50,6 +47,39 @@ object NodeConnectionRenderer {
     /** Global tracker — any Connectable block entity can register/unregister here. */
     fun trackConnectable(pos: BlockPos, loaded: Boolean) {
         if (loaded) knownNodes.add(pos) else knownNodes.remove(pos)
+    }
+
+    /**
+     * Walks the connection graph from a position to find a NetworkController and return its color.
+     * BFS capped at 32 hops. Returns DEFAULT_NETWORK_COLOR if no controller found.
+     */
+    fun findNetworkColor(level: net.minecraft.world.level.Level?, startPos: BlockPos): Int {
+        if (level == null) return DEFAULT_NETWORK_COLOR
+        // Check if start IS a controller
+        val startEntity = level.getBlockEntity(startPos)
+        if (startEntity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
+            return startEntity.networkColor
+        }
+        // BFS through connections
+        val visited = HashSet<BlockPos>()
+        val queue = ArrayDeque<BlockPos>()
+        visited.add(startPos)
+        val startConnectable = startEntity as? damien.nodeworks.network.Connectable ?: return DEFAULT_NETWORK_COLOR
+        for (conn in startConnectable.getConnections()) {
+            if (visited.add(conn)) queue.add(conn)
+        }
+        while (queue.isNotEmpty() && visited.size < 32) {
+            val pos = queue.removeFirst()
+            val entity = level.getBlockEntity(pos) ?: continue
+            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
+                return entity.networkColor
+            }
+            val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
+            for (conn in connectable.getConnections()) {
+                if (visited.add(conn)) queue.add(conn)
+            }
+        }
+        return DEFAULT_NETWORK_COLOR
     }
 
     fun register() {
@@ -77,8 +107,8 @@ object NodeConnectionRenderer {
 
         val pose = poseStack.last()
 
-        // Collect all connection pairs
-        data class Connection(val from: net.minecraft.world.phys.Vec3, val to: net.minecraft.world.phys.Vec3)
+        // Collect all connection pairs with their network color
+        data class Connection(val from: net.minecraft.world.phys.Vec3, val to: net.minecraft.world.phys.Vec3, val color: Int)
 
         val connections = mutableListOf<Connection>()
 
@@ -89,7 +119,8 @@ object NodeConnectionRenderer {
             for (targetPos in connectable.getConnections()) {
                 if (!isLessThan(nodePos, targetPos)) continue
                 if (!level.isLoaded(targetPos)) continue
-                connections.add(Connection(nodePos.getCenter(), targetPos.getCenter()))
+                val color = findNetworkColor(level, nodePos)
+                connections.add(Connection(nodePos.getCenter(), targetPos.getCenter(), color))
             }
         }
 
@@ -103,6 +134,9 @@ object NodeConnectionRenderer {
             for (conn in connections) {
                 val from = conn.from
                 val to = conn.to
+                val lr = (conn.color shr 16) and 0xFF
+                val lg = (conn.color shr 8) and 0xFF
+                val lb = conn.color and 0xFF
                 val dx = (to.x - from.x).toFloat()
                 val dy = (to.y - from.y).toFloat()
                 val dz = (to.z - from.z).toFloat()
@@ -112,12 +146,12 @@ object NodeConnectionRenderer {
                 val nz = if (len > 0) dz / len else 0f
 
                 lineBuffer.addVertex(pose, from.x.toFloat(), from.y.toFloat(), from.z.toFloat())
-                    .setColor(cr, cg, cb, 200)
+                    .setColor(lr, lg, lb, 200)
                     .setNormal(pose, nx, ny, nz)
                     .setLineWidth(2.0f)
 
                 lineBuffer.addVertex(pose, to.x.toFloat(), to.y.toFloat(), to.z.toFloat())
-                    .setColor(cr, cg, cb, 200)
+                    .setColor(lr, lg, lb, 200)
                     .setNormal(pose, nx, ny, nz)
                     .setLineWidth(2.0f)
             }
@@ -129,6 +163,7 @@ object NodeConnectionRenderer {
         if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
             if (level.getBlockEntity(selectedPos) is damien.nodeworks.network.Connectable) {
                 val highlightBuffer = consumers.getBuffer(RenderTypes.linesTranslucent())
+                hlColor = findNetworkColor(level, selectedPos)
                 renderSelectionHighlight(poseStack, highlightBuffer, selectedPos)
             } else {
                 NetworkWrenchItem.clientSelectedNode = null
@@ -175,11 +210,16 @@ object NodeConnectionRenderer {
         drawLine(buffer, pose, x0, y0, z1, x0, y1, z1)
     }
 
+    private var hlColor = DEFAULT_NETWORK_COLOR
+
     private fun drawLine(
         buffer: VertexConsumer, pose: PoseStack.Pose,
         x0: Float, y0: Float, z0: Float,
         x1: Float, y1: Float, z1: Float
     ) {
+        val lr = (hlColor shr 16) and 0xFF
+        val lg = (hlColor shr 8) and 0xFF
+        val lb = hlColor and 0xFF
         val dx = x1 - x0
         val dy = y1 - y0
         val dz = z1 - z0
@@ -189,155 +229,14 @@ object NodeConnectionRenderer {
         val nz = if (len > 0) dz / len else 1f
 
         buffer.addVertex(pose, x0, y0, z0)
-            .setColor(cr, cg, cb, 255)
+            .setColor(lr, lg, lb, 255)
             .setNormal(pose, nx, ny, nz)
             .setLineWidth(3.0f)
 
         buffer.addVertex(pose, x1, y1, z1)
-            .setColor(cr, cg, cb, 255)
+            .setColor(lr, lg, lb, 255)
             .setNormal(pose, nx, ny, nz)
             .setLineWidth(3.0f)
-    }
-
-    /**
-     * Renders a textured billboard beam between two points.
-     * The quad faces the camera, UV scrolls for animation, brightness pulses.
-     */
-    private fun renderBeam(
-        buffer: VertexConsumer,
-        pose: PoseStack.Pose,
-        from: net.minecraft.world.phys.Vec3,
-        to: net.minecraft.world.phys.Vec3,
-        cameraPos: net.minecraft.world.phys.Vec3,
-        pulse: Float,
-        uvScroll: Float
-    ) {
-        val dx = (to.x - from.x).toFloat()
-        val dy = (to.y - from.y).toFloat()
-        val dz = (to.z - from.z).toFloat()
-        val len = Math.sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
-        if (len < 0.01f) return
-
-        // Direction along the beam
-        val dirX = dx / len
-        val dirY = dy / len
-        val dirZ = dz / len
-
-        // Camera to beam midpoint
-        val midX = ((from.x + to.x) / 2 - cameraPos.x).toFloat()
-        val midY = ((from.y + to.y) / 2 - cameraPos.y).toFloat()
-        val midZ = ((from.z + to.z) / 2 - cameraPos.z).toFloat()
-
-        // Cross product of beam direction and camera direction = perpendicular (billboard axis)
-        var perpX = dirY * midZ - dirZ * midY
-        var perpY = dirZ * midX - dirX * midZ
-        var perpZ = dirX * midY - dirY * midX
-        val perpLen = Math.sqrt((perpX * perpX + perpY * perpY + perpZ * perpZ).toDouble()).toFloat()
-        if (perpLen < 0.0001f) return
-        perpX /= perpLen
-        perpY /= perpLen
-        perpZ /= perpLen
-
-        // Half width of the beam
-        val hw = beamWidth / 2
-
-        // Beam quad corners
-        val fx = from.x.toFloat()
-        val fy = from.y.toFloat()
-        val fz = from.z.toFloat()
-        val tx = to.x.toFloat()
-        val ty = to.y.toFloat()
-        val tz = to.z.toFloat()
-
-        // 4 corners: from-left, from-right, to-right, to-left
-        val x0 = fx - perpX * hw;
-        val y0 = fy - perpY * hw;
-        val z0 = fz - perpZ * hw
-        val x1 = fx + perpX * hw;
-        val y1 = fy + perpY * hw;
-        val z1 = fz + perpZ * hw
-        val x2 = tx + perpX * hw;
-        val y2 = ty + perpY * hw;
-        val z2 = tz + perpZ * hw
-        val x3 = tx - perpX * hw;
-        val y3 = ty - perpY * hw;
-        val z3 = tz - perpZ * hw
-
-        // Use full white vertex color — let the texture provide the shape
-        // entityTranslucent with full bright light
-        val alpha = 255
-        val uMax = 5f / 16f
-        val vStart = uvScroll
-        val vEnd = uvScroll + len * 2f
-
-        buffer.addVertex(pose, x0, y0, z0).setUv(0f, vStart).setColor(255, 255, 255, alpha).setLight(15728880)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY).setNormal(pose, 0f, 1f, 0f)
-        buffer.addVertex(pose, x1, y1, z1).setUv(uMax, vStart).setColor(255, 255, 255, alpha).setLight(15728880)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY).setNormal(pose, 0f, 1f, 0f)
-        buffer.addVertex(pose, x2, y2, z2).setUv(uMax, vEnd).setColor(255, 255, 255, alpha).setLight(15728880)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY).setNormal(pose, 0f, 1f, 0f)
-        buffer.addVertex(pose, x3, y3, z3).setUv(0f, vEnd).setColor(255, 255, 255, alpha).setLight(15728880)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY).setNormal(pose, 0f, 1f, 0f)
-    }
-
-    /**
-     * Renders a colored glow beam — wider, semi-transparent, uses network color.
-     * Drawn behind the white beam to create a colored aura effect.
-     */
-    private fun renderBeamColored(
-        buffer: VertexConsumer,
-        pose: PoseStack.Pose,
-        from: net.minecraft.world.phys.Vec3,
-        to: net.minecraft.world.phys.Vec3,
-        cameraPos: net.minecraft.world.phys.Vec3,
-        uvScroll: Float
-    ) {
-        val dx = (to.x - from.x).toFloat()
-        val dy = (to.y - from.y).toFloat()
-        val dz = (to.z - from.z).toFloat()
-        val len = Math.sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
-        if (len < 0.01f) return
-
-        val dirX = dx / len
-        val dirY = dy / len
-        val dirZ = dz / len
-
-        val midX = ((from.x + to.x) / 2 - cameraPos.x).toFloat()
-        val midY = ((from.y + to.y) / 2 - cameraPos.y).toFloat()
-        val midZ = ((from.z + to.z) / 2 - cameraPos.z).toFloat()
-
-        var perpX = dirY * midZ - dirZ * midY
-        var perpY = dirZ * midX - dirX * midZ
-        var perpZ = dirX * midY - dirY * midX
-        val perpLen = Math.sqrt((perpX * perpX + perpY * perpY + perpZ * perpZ).toDouble()).toFloat()
-        if (perpLen < 0.0001f) return
-        perpX /= perpLen
-        perpY /= perpLen
-        perpZ /= perpLen
-
-        val hw = beamWidth / 2
-
-        val fx = from.x.toFloat(); val fy = from.y.toFloat(); val fz = from.z.toFloat()
-        val tx = to.x.toFloat(); val ty = to.y.toFloat(); val tz = to.z.toFloat()
-
-        val x0 = fx - perpX * hw; val y0 = fy - perpY * hw; val z0 = fz - perpZ * hw
-        val x1 = fx + perpX * hw; val y1 = fy + perpY * hw; val z1 = fz + perpZ * hw
-        val x2 = tx + perpX * hw; val y2 = ty + perpY * hw; val z2 = tz + perpZ * hw
-        val x3 = tx - perpX * hw; val y3 = ty - perpY * hw; val z3 = tz - perpZ * hw
-
-        val alpha = 120 // semi-transparent glow
-        val uMax = 5f / 16f
-        val vStart = uvScroll
-        val vEnd = uvScroll + len * 2f
-
-        buffer.addVertex(pose, x0, y0, z0).setUv(0f, vStart).setColor(cr, cg, cb, alpha).setLight(15728880)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY).setNormal(pose, 0f, 1f, 0f)
-        buffer.addVertex(pose, x1, y1, z1).setUv(uMax, vStart).setColor(cr, cg, cb, alpha).setLight(15728880)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY).setNormal(pose, 0f, 1f, 0f)
-        buffer.addVertex(pose, x2, y2, z2).setUv(uMax, vEnd).setColor(cr, cg, cb, alpha).setLight(15728880)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY).setNormal(pose, 0f, 1f, 0f)
-        buffer.addVertex(pose, x3, y3, z3).setUv(0f, vEnd).setColor(cr, cg, cb, alpha).setLight(15728880)
-            .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY).setNormal(pose, 0f, 1f, 0f)
     }
 
     private fun renderMonitorText(
