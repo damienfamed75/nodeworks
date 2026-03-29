@@ -40,7 +40,7 @@ class ScriptEngine(
     var inventoryCache: NetworkInventoryCache? = null
         private set
 
-    /** Processing handlers registered by network:handle(). Keyed by output item ID. */
+    /** Processing handlers registered by network:handle(). Keyed by card name. */
     val processingHandlers = mutableMapOf<String, LuaFunction>()
 
 
@@ -473,14 +473,15 @@ class ScriptEngine(
             }
         })
 
-        // network:handle(outputItemId, handlerFn) — register a processing handler
+        // network:handle(cardName, handlerFn) — register a processing handler
+        // cardName matches the name set on a Processing API Card in API Storage.
         // The handler function receives input items as arguments and should return
         // the result ItemsHandle from the processing machine's output.
         networkTable.set("handle", object : ThreeArgFunction() {
-            override fun call(selfArg: LuaValue, outputIdArg: LuaValue, handlerArg: LuaValue): LuaValue {
-                val outputId = outputIdArg.checkjstring()
+            override fun call(selfArg: LuaValue, nameArg: LuaValue, handlerArg: LuaValue): LuaValue {
+                val name = nameArg.checkjstring()
                 val handler = handlerArg.checkfunction()
-                processingHandlers[outputId] = handler
+                processingHandlers[name] = handler
                 return LuaValue.NIL
             }
         })

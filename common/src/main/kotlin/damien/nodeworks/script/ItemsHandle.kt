@@ -15,6 +15,24 @@ import org.luaj.vm2.lib.*
  * Created by CardHandle:find(), network:find(), network:craft(), network:shapeless().
  * Always represents one item type — use findAll() for multiple.
  */
+/**
+ * Opaque source for items held in a CPU buffer rather than real block storage.
+ * Used by processing handlers — items are extracted from here and inserted into destination.
+ */
+class BufferSource(
+    private val cpu: damien.nodeworks.block.entity.CraftingCoreBlockEntity,
+    val itemId: String,
+    private var remaining: Int
+) {
+    /** Extract up to [maxCount] items from the buffer. Returns actual count extracted. */
+    fun extract(maxCount: Int): Int {
+        val toExtract = minOf(maxCount, remaining)
+        val removed = cpu.removeFromBuffer(itemId, toExtract)
+        remaining -= removed
+        return removed
+    }
+}
+
 class ItemsHandle(
     val itemId: String,
     val itemName: String,
@@ -23,7 +41,8 @@ class ItemsHandle(
     val hasData: Boolean,
     val filter: String,
     val sourceStorage: () -> ItemStorageHandle?,
-    val level: ServerLevel
+    val level: ServerLevel,
+    val bufferSource: BufferSource? = null
 ) {
     val stackable: Boolean get() = maxStackSize > 1
 

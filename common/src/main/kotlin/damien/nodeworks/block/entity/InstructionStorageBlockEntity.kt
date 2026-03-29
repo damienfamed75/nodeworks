@@ -79,6 +79,7 @@ class InstructionStorageBlockEntity(
      * in the cluster (BFS through adjacent InstructionStorageBlockEntity blocks).
      */
     fun getAllInstructionSets(): List<InstructionSetInfo> {
+        val lvl = level ?: return getInstructionSets()
         val all = mutableListOf<InstructionSetInfo>()
         val visited = mutableSetOf(worldPosition)
         val queue = ArrayDeque<BlockPos>()
@@ -86,14 +87,14 @@ class InstructionStorageBlockEntity(
 
         while (queue.isNotEmpty()) {
             val pos = queue.removeFirst()
-            val entity = level?.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: continue
+            val entity = lvl.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: continue
             all.addAll(entity.getInstructionSets())
 
             for (dir in Direction.entries) {
                 val neighbor = pos.relative(dir)
                 if (neighbor in visited) continue
                 visited.add(neighbor)
-                if (level?.getBlockEntity(neighbor) is InstructionStorageBlockEntity) {
+                if (lvl.isLoaded(neighbor) && lvl.getBlockEntity(neighbor) is InstructionStorageBlockEntity) {
                     queue.add(neighbor)
                 }
             }

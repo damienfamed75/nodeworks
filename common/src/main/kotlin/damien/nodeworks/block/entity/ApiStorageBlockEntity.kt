@@ -43,6 +43,15 @@ class ApiStorageBlockEntity(
         const val MAX_SLOTS = UPGRADE_4_SLOTS
         const val UPGRADE_SLOT = MAX_SLOTS
         const val TOTAL_SLOTS = MAX_SLOTS + 1
+
+        /** Generate a name from outputs, e.g. "api_iron_ingot2_copper_ingot1" */
+        fun generateAutoName(outputs: List<Pair<String, Int>>): String {
+            val parts = outputs.map { (itemId, count) ->
+                val shortId = itemId.substringAfter(':')
+                "$shortId$count"
+            }
+            return "api_${parts.joinToString("_")}"
+        }
     }
 
     private val items = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
@@ -66,11 +75,13 @@ class ApiStorageBlockEntity(
         for (i in 0 until activeSlotCount) {
             val stack = items[i]
             if (stack.isEmpty || stack.item !is ProcessingApiCard) continue
+            val explicitName = ProcessingApiCard.getCardName(stack)
             val inputs = ProcessingApiCard.getInputs(stack)
             val outputs = ProcessingApiCard.getOutputs(stack)
             val timeout = ProcessingApiCard.getTimeout(stack)
             if (outputs.isEmpty()) continue
-            result.add(ProcessingApiInfo(inputs, outputs, timeout))
+            val name = explicitName.ifEmpty { generateAutoName(outputs) }
+            result.add(ProcessingApiInfo(name, inputs, outputs, timeout))
         }
         return result
     }
@@ -80,6 +91,7 @@ class ApiStorageBlockEntity(
      * in the cluster (BFS through adjacent ApiStorageBlockEntity blocks).
      */
     fun getAllProcessingApis(): List<ProcessingApiInfo> {
+        val lvl = level ?: return getProcessingApis()
         val all = mutableListOf<ProcessingApiInfo>()
         val visited = mutableSetOf(worldPosition)
         val queue = ArrayDeque<BlockPos>()
@@ -87,14 +99,14 @@ class ApiStorageBlockEntity(
 
         while (queue.isNotEmpty()) {
             val pos = queue.removeFirst()
-            val entity = level?.getBlockEntity(pos) as? ApiStorageBlockEntity ?: continue
+            val entity = lvl.getBlockEntity(pos) as? ApiStorageBlockEntity ?: continue
             all.addAll(entity.getProcessingApis())
 
             for (dir in Direction.entries) {
                 val neighbor = pos.relative(dir)
                 if (neighbor in visited) continue
                 visited.add(neighbor)
-                if (level?.getBlockEntity(neighbor) is ApiStorageBlockEntity) {
+                if (lvl.isLoaded(neighbor) && lvl.getBlockEntity(neighbor) is ApiStorageBlockEntity) {
                     queue.add(neighbor)
                 }
             }
@@ -103,13 +115,11 @@ class ApiStorageBlockEntity(
     }
 
     data class ProcessingApiInfo(
+        val name: String,
         val inputs: List<Pair<String, Int>>,
         val outputs: List<Pair<String, Int>>,
         val timeout: Int
     ) {
-        /** Primary output item ID (first output). */
-        val primaryOutputItemId: String get() = outputs.firstOrNull()?.first ?: ""
-
         /** All output item IDs. */
         val outputItemIds: List<String> get() = outputs.map { it.first }
     }

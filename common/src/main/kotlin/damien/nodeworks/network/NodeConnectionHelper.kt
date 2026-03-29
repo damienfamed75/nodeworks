@@ -67,8 +67,9 @@ object NodeConnectionHelper {
         return result.type == HitResult.Type.MISS
     }
 
-    /** Get a Connectable block entity at the given position. */
+    /** Get a Connectable block entity at the given position. Returns null if chunk is not loaded. */
     fun getConnectable(level: Level, pos: BlockPos): Connectable? {
+        if (!level.isLoaded(pos)) return null
         val block = level.getBlockState(pos).block
         if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is damien.nodeworks.block.CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ApiStorageBlock) return null
         return level.getBlockEntity(pos) as? Connectable
@@ -76,6 +77,7 @@ object NodeConnectionHelper {
 
     /** Get a NodeBlockEntity specifically (for legacy code that needs node-specific access). */
     fun getNodeEntity(level: Level, pos: BlockPos): NodeBlockEntity? {
+        if (!level.isLoaded(pos)) return null
         if (level.getBlockState(pos).block !is NodeBlock) return null
         return level.getBlockEntity(pos) as? NodeBlockEntity
     }

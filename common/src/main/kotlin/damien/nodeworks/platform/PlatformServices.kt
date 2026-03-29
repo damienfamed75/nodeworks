@@ -139,8 +139,8 @@ interface ModStateService {
     fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos)
 
     /**
-     * Find the ScriptEngine that has a processing handler for the given output item ID,
+     * Find the ScriptEngine that has a processing handler for the given card name,
      * scoped to the given terminal positions (i.e., only terminals on the same network).
      */
-    fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, outputItemId: String): Any? = null
+    fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? = null
 }

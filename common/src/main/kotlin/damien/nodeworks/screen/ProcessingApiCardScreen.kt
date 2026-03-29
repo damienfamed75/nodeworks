@@ -35,6 +35,7 @@ class ProcessingApiCardScreen(
     fun getLeft(): Int = leftPos
     fun getTop(): Int = topPos
 
+    private var nameBox: EditBox? = null
     private var timeoutBox: EditBox? = null
 
     init {
@@ -49,6 +50,14 @@ class ProcessingApiCardScreen(
         super.init()
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
+
+        // Name field
+        nameBox = EditBox(font, leftPos + 140, topPos + 4, 54, 14, Component.empty()).also {
+            it.setMaxLength(32)
+            it.setValue(menu.cardName)
+            it.setResponder { value -> menu.cardName = value }
+            addRenderableWidget(it)
+        }
 
         // Timeout field — dark-themed EditBox
         timeoutBox = EditBox(font, leftPos + 60, topPos + 94, 40, 14, Component.empty()).also {
@@ -77,6 +86,7 @@ class ProcessingApiCardScreen(
         graphics.fill(x, y, x + w, y + TOP_BAR_H, TOP_BAR_COLOR)
         graphics.fill(x, y + TOP_BAR_H - 1, x + w, y + TOP_BAR_H, TOP_BAR_LINE)
         graphics.drawString(font, title, x + 6, y + 6, WHITE)
+        graphics.drawString(font, "Name:", x + 112, y + 6, LABEL_COLOR)
 
         // === Input section ===
         graphics.drawString(font, "Inputs", x + 8, y + 24, LABEL_COLOR)

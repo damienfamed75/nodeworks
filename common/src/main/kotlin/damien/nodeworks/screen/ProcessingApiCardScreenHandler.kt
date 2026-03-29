@@ -38,6 +38,8 @@ class ProcessingApiCardScreenHandler(
         object ClientDummy : SaveMode()
     }
 
+    var cardName: String = ""
+
     val inputCounts: IntArray get() = IntArray(INPUT_SLOTS) { data.get(it) }
     val outputCounts: IntArray get() = IntArray(OUTPUT_SLOTS) { data.get(INPUT_SLOTS + it) }
     val timeout: Int get() = data.get(DATA_TIMEOUT)
@@ -88,7 +90,9 @@ class ProcessingApiCardScreenHandler(
                 override fun getCount(): Int = DATA_COUNT
             }
 
-            return ProcessingApiCardScreenHandler(syncId, playerInventory, inputGrid, outputGrid, data, SaveMode.Handheld(hand))
+            return ProcessingApiCardScreenHandler(syncId, playerInventory, inputGrid, outputGrid, data, SaveMode.Handheld(hand)).also {
+                it.cardName = ProcessingApiCard.getCardName(stack)
+            }
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: ProcessingApiCardOpenData): ProcessingApiCardScreenHandler {
@@ -119,7 +123,9 @@ class ProcessingApiCardScreenHandler(
             }
             data.set(DATA_TIMEOUT, openData.timeout)
 
-            return ProcessingApiCardScreenHandler(syncId, playerInventory, inputGrid, outputGrid, data, SaveMode.ClientDummy)
+            return ProcessingApiCardScreenHandler(syncId, playerInventory, inputGrid, outputGrid, data, SaveMode.ClientDummy).also {
+                it.cardName = openData.name
+            }
         }
     }
 
@@ -262,7 +268,7 @@ class ProcessingApiCardScreenHandler(
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is ProcessingApiCard) {
-                    ProcessingApiCard.setRecipe(stack, inputs, outputs, timeout)
+                    ProcessingApiCard.setRecipe(stack, cardName, inputs, outputs, timeout)
                 }
             }
             is SaveMode.ClientDummy -> {}
