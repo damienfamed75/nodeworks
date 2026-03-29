@@ -1,10 +1,12 @@
 package damien.nodeworks.network
 
+import damien.nodeworks.block.entity.ApiStorageBlockEntity
 import damien.nodeworks.block.entity.InstructionCrafterBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
+import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.block.entity.VariableType
 import damien.nodeworks.card.SideCapability
@@ -26,6 +28,8 @@ object NetworkDiscovery {
         val crafters = mutableListOf<CrafterSnapshot>()
         val cpus = mutableListOf<CpuSnapshot>()
         val variables = mutableListOf<VariableSnapshot>()
+        val processingApis = mutableListOf<ProcessingApiSnapshot>()
+        val terminalPositions = mutableListOf<BlockPos>()
         var controller: ControllerSnapshot? = null
 
         queue.add(startPos)
@@ -45,6 +49,13 @@ object NetworkDiscovery {
                         crafters.add(CrafterSnapshot(connectable.blockPos, clusterSets))
                     }
                 }
+                is ApiStorageBlockEntity -> {
+                    val clusterApis = connectable.getAllProcessingApis()
+                    if (clusterApis.isNotEmpty()) {
+                        processingApis.add(ProcessingApiSnapshot(connectable.blockPos, clusterApis))
+                    }
+                }
+                is TerminalBlockEntity -> terminalPositions.add(connectable.blockPos)
                 is NetworkControllerBlockEntity -> controller = ControllerSnapshot(connectable.blockPos, connectable.networkId)
                 is CraftingCoreBlockEntity -> cpus.add(CpuSnapshot(
                     connectable.blockPos, connectable.bufferUsed, connectable.bufferCapacity, connectable.isCrafting
@@ -64,7 +75,7 @@ object NetworkDiscovery {
         // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1)
         assignAutoAliases(nodes)
 
-        return NetworkSnapshot(nodes, crafters, variables, cpus, controller)
+        return NetworkSnapshot(nodes, crafters, variables, cpus, processingApis, terminalPositions, controller)
     }
 
     private fun assignAutoAliases(nodes: List<NodeSnapshot>) {
@@ -121,11 +132,18 @@ data class VariableSnapshot(
     val type: VariableType
 )
 
+data class ProcessingApiSnapshot(
+    val pos: BlockPos,
+    val apis: List<ApiStorageBlockEntity.ProcessingApiInfo>
+)
+
 data class NetworkSnapshot(
     val nodes: List<NodeSnapshot>,
     val crafters: List<CrafterSnapshot> = emptyList(),
     val variables: List<VariableSnapshot> = emptyList(),
     val cpus: List<CpuSnapshot> = emptyList(),
+    val processingApis: List<ProcessingApiSnapshot> = emptyList(),
+    val terminalPositions: List<BlockPos> = emptyList(),
     val controller: ControllerSnapshot? = null
 ) {
     /** Whether this network has a controller and is online. */
@@ -175,6 +193,23 @@ data class NetworkSnapshot(
         return null
     }
 
+    /** Find a Processing API Card that outputs a specific item ID (checks all outputs). */
+    fun findProcessingApi(outputItemId: String): ProcessingApiMatch? {
+        for (snapshot in processingApis) {
+            for (api in snapshot.apis) {
+                if (outputItemId in api.outputItemIds) {
+                    return ProcessingApiMatch(snapshot, api)
+                }
+            }
+        }
+        return null
+    }
+
+    /** Get all Processing API Cards across the entire network. */
+    fun allProcessingApis(): List<ApiStorageBlockEntity.ProcessingApiInfo> {
+        return processingApis.flatMap { it.apis }
+    }
+
     /** Find all Instruction Sets that output a specific item ID. */
     fun findInstructionSetsByOutput(outputItemId: String): List<InstructionSetMatch> {
         val results = mutableListOf<InstructionSetMatch>()
@@ -202,6 +237,11 @@ data class CrafterSnapshot(
 data class InstructionSetMatch(
     val crafter: CrafterSnapshot,
     val instructionSet: InstructionStorageBlockEntity.InstructionSetInfo
+)
+
+data class ProcessingApiMatch(
+    val apiStorage: ProcessingApiSnapshot,
+    val api: ApiStorageBlockEntity.ProcessingApiInfo
 )
 
 data class CardSnapshot(

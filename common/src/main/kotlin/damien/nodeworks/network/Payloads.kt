@@ -179,3 +179,33 @@ data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, va
     }
     override fun type() = TYPE
 }
+
+/**
+ * C2S: Update Processing API Card data.
+ * key: "input" (slotIndex=0-8, value=count), "output" (slotIndex=0-2, value=count), "timeout" (value=ticks)
+ */
+data class SetProcessingApiDataPayload(val containerId: Int, val key: String, val slotIndex: Int, val value: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetProcessingApiDataPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "set_processing_api_data"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetProcessingApiDataPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.key, 16); buf.writeVarInt(p.slotIndex); buf.writeVarInt(p.value) },
+            { buf -> SetProcessingApiDataPayload(buf.readVarInt(), buf.readUtf(16), buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * C2S: Set a single ghost slot on the Processing API Card by item ID.
+ * slotIndex 0-8 = input, 9-11 = output. Empty string = clear slot.
+ */
+data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int, val itemId: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetProcessingApiSlotPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "set_processing_api_slot"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetProcessingApiSlotPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.slotIndex); buf.writeUtf(p.itemId, 256) },
+            { buf -> SetProcessingApiSlotPayload(buf.readVarInt(), buf.readVarInt(), buf.readUtf(256)) }
+        )
+    }
+    override fun type() = TYPE
+}

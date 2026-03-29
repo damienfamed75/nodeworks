@@ -77,6 +77,16 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "crafting_core")),
             ExtendedScreenHandlerType({ syncId, inv, data -> CraftingCoreMenu.clientFactory(syncId, inv, data) }, CraftingCoreOpenData.STREAM_CODEC)
         )
+        ModScreenHandlers.PROCESSING_API_CARD = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_api_card")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ProcessingApiCardScreenHandler.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ProcessingApiCardOpenData.STREAM_CODEC)
+        )
+        ModScreenHandlers.API_STORAGE = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "api_storage")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ApiStorageScreenHandler.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ApiStorageOpenData.STREAM_CODEC)
+        )
 
         ModBlocks.initialize()
         ModBlockEntities.initialize()
@@ -118,5 +128,9 @@ class FabricModStateService : ModStateService {
 
     override fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos) {
         TerminalPackets.registerPendingAutoRun(level, pos)
+    }
+
+    override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, outputItemId: String): Any? {
+        return TerminalPackets.findEngineWithHandler(level, terminalPositions, outputItemId)
     }
 }

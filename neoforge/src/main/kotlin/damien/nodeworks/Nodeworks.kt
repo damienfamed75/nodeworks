@@ -9,6 +9,10 @@ import damien.nodeworks.registry.ModBlocks
 import damien.nodeworks.registry.ModItems
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.*
+import damien.nodeworks.screen.ProcessingApiCardOpenData
+import damien.nodeworks.screen.ProcessingApiCardScreenHandler
+import damien.nodeworks.screen.ApiStorageOpenData
+import damien.nodeworks.screen.ApiStorageScreenHandler
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -138,6 +142,22 @@ class Nodeworks(modBus: IEventBus) {
                     CraftingCoreMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.PROCESSING_API_CARD = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_api_card")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = ProcessingApiCardOpenData.STREAM_CODEC.decode(buf)
+                    ProcessingApiCardScreenHandler.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.API_STORAGE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "api_storage")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = ApiStorageOpenData.STREAM_CODEC.decode(buf)
+                    ApiStorageScreenHandler.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -196,6 +216,30 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToServer(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
+                    when (payload.key) {
+                        "input" -> menu.setInputCount(payload.slotIndex, payload.value)
+                        "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
+                        "timeout" -> menu.setTimeout(payload.value)
+                    }
+                }
+            }
+        }
+
+        registrar.playToServer(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
+                    menu.setSlotFromId(payload.slotIndex, payload.itemId)
+                }
+            }
+        }
+
         // S2C payloads
         registrar.playToClient(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC) { payload, context ->
             context.enqueueWork {
@@ -241,5 +285,9 @@ class NeoForgeModStateService : ModStateService {
 
     override fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos) {
         NeoForgeTerminalPackets.registerPendingAutoRun(level, pos)
+    }
+
+    override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, outputItemId: String): Any? {
+        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, outputItemId)
     }
 }

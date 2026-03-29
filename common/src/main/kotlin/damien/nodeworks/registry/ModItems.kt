@@ -2,6 +2,7 @@ package damien.nodeworks.registry
 
 import damien.nodeworks.card.IOCard
 import damien.nodeworks.card.InstructionSet
+import damien.nodeworks.card.ProcessingApiCard
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.item.MonitorItem
@@ -36,6 +37,12 @@ object ModItems {
     val INSTRUCTION_SET: Item = register(
         "instruction_set",
         ::InstructionSet,
+        Item.Properties().stacksTo(1)
+    )
+
+    val PROCESSING_API_CARD: Item = register(
+        "processing_api_card",
+        ::ProcessingApiCard,
         Item.Properties().stacksTo(1)
     )
 

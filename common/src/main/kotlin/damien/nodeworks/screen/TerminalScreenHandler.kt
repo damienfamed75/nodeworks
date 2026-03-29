@@ -21,7 +21,8 @@ class TerminalScreenHandler(
     private val layoutIndex: Int,
     private val cards: List<CardSnapshot>,
     private val itemTags: List<String>,
-    private val variables: List<Pair<String, Int>> = emptyList()
+    private val variables: List<Pair<String, Int>> = emptyList(),
+    private val processingOutputs: List<String> = emptyList()
 ) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
 
     companion object {
@@ -32,6 +33,7 @@ class TerminalScreenHandler(
             val snapshot = if (level != null && startPos != null) NetworkDiscovery.discoverNetwork(level, startPos) else null
             val cards = snapshot?.allCards() ?: emptyList()
             val varNames = snapshot?.variables?.map { it.name to it.type.ordinal } ?: emptyList()
+            val procOutputs = snapshot?.allProcessingApis()?.flatMap { it.outputItemIds }?.distinct() ?: emptyList()
 
             val isRunning = if (level != null) PlatformServices.modState.isScriptRunning(level, terminal.blockPos) else false
 
@@ -42,11 +44,11 @@ class TerminalScreenHandler(
                     .toList()
             } else emptyList()
 
-            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags, varNames)
+            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags, varNames, procOutputs)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {
-            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags, data.variables)
+            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags, data.variables, data.processingOutputs)
         }
     }
 
@@ -59,6 +61,7 @@ class TerminalScreenHandler(
     fun getCards(): List<CardSnapshot> = cards
     fun getItemTags(): List<String> = itemTags
     fun getVariables(): List<Pair<String, Int>> = variables
+    fun getProcessingOutputs(): List<String> = processingOutputs
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY
 

@@ -16,7 +16,8 @@ data class TerminalOpenData(
     val layoutIndex: Int,
     val cards: List<CardSnapshot>,
     val itemTags: List<String>,
-    val variables: List<Pair<String, Int>> = emptyList() // name to type ordinal
+    val variables: List<Pair<String, Int>> = emptyList(), // name to type ordinal
+    val processingOutputs: List<String> = emptyList() // output item IDs from Processing API Cards
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, TerminalOpenData> = object : StreamCodec<FriendlyByteBuf, TerminalOpenData> {
@@ -53,7 +54,9 @@ data class TerminalOpenData(
                 val itemTags = (0 until tagCount).map { buf.readUtf(256) }
                 val varCount = buf.readVarInt()
                 val variables = (0 until varCount).map { buf.readUtf(32) to buf.readVarInt() }
-                return TerminalOpenData(pos, scripts, running, autoRun, layoutIndex, cards, itemTags, variables)
+                val procCount = buf.readVarInt()
+                val processingOutputs = (0 until procCount).map { buf.readUtf(256) }
+                return TerminalOpenData(pos, scripts, running, autoRun, layoutIndex, cards, itemTags, variables, processingOutputs)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: TerminalOpenData) {
@@ -87,6 +90,10 @@ data class TerminalOpenData(
                 for ((name, type) in data.variables) {
                     buf.writeUtf(name, 32)
                     buf.writeVarInt(type)
+                }
+                buf.writeVarInt(data.processingOutputs.size)
+                for (output in data.processingOutputs) {
+                    buf.writeUtf(output, 256)
                 }
             }
         }

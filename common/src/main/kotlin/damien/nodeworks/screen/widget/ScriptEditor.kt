@@ -34,14 +34,15 @@ class ScriptEditor(
             "function", "if", "in", "local", "nil", "not", "or", "repeat",
             "return", "then", "true", "until", "while"
         )
-        private val BUILTINS = setOf("card", "scheduler", "print", "network", "clock", "require")
+        private val BUILTINS = setOf("card", "scheduler", "print", "network", "clock", "require", "coroutine")
     }
 
     // Text state
     private val lines = mutableListOf("")
     var cursor = 0                      // absolute position in full text
     private var selectStart = -1       // -1 = no selection
-    var scrollY = 0                    // pixels scrolled
+    var scrollY = 0                    // pixels scrolled vertically
+    var scrollX = 0                    // pixels scrolled horizontally
     private var cursorBlinkTime = System.currentTimeMillis()
     private var characterLimit = 32767
 
@@ -59,12 +60,21 @@ class ScriptEditor(
             cursor = cursor.coerceAtMost(text.length)
             selectStart = -1
             scrollY = 0
+            scrollX = 0
         }
 
     /** Update lines without resetting cursor/selection/scroll — for internal edits. */
     private fun rebuildLines(text: String) {
         lines.clear()
         lines.addAll(if (text.isEmpty()) listOf("") else text.split("\n"))
+    }
+
+    /** Set text and cursor without resetting scroll — for autocomplete insertion. */
+    fun setValueKeepScroll(text: String, newCursor: Int) {
+        rebuildLines(text)
+        cursor = newCursor.coerceIn(0, text.length)
+        selectStart = -1
+        ensureCursorVisible()
     }
 
 
@@ -111,7 +121,7 @@ class ScriptEditor(
         val relY = my - textTop + scrollY
         val lineIdx = (relY / lineHeight).toInt().coerceIn(0, lines.size - 1)
         val line = lines[lineIdx]
-        val relX = mx - textLeft
+        val relX = mx - textLeft + scrollX
 
         // Find column by measuring character widths
         var col = 0
@@ -167,15 +177,15 @@ class ScriptEditor(
                 if (selS < lineEnd && selE > lineStart) {
                     val hlStart = maxOf(selS - lineStart, 0)
                     val hlEnd = minOf(selE - lineStart, line.length)
-                    val x0 = textLeft + font.width(line.substring(0, hlStart))
-                    val x1 = textLeft + font.width(line.substring(0, hlEnd))
+                    val x0 = textLeft + font.width(line.substring(0, hlStart)) - scrollX
+                    val x1 = textLeft + font.width(line.substring(0, hlEnd)) - scrollX
                     graphics.fill(x0, lineY, x1, lineY + lineHeight, SELECTION_BG)
                 }
             }
 
             // Syntax-highlighted text
             val tokens = tokenize(line, inBlockComment)
-            var tx = textLeft
+            var tx = textLeft - scrollX
             for (token in tokens) {
                 if (token.type == TokenType.BLOCK_COMMENT_START) inBlockComment = true
                 if (token.type == TokenType.BLOCK_COMMENT_END) inBlockComment = false
@@ -189,7 +199,7 @@ class ScriptEditor(
             val elapsed = System.currentTimeMillis() - cursorBlinkTime
             if ((elapsed / CURSOR_BLINK_MS) % 2 == 0L) {
                 val cursorY = textTop + curLine * lineHeight - scrollY
-                val cursorX = textLeft + font.width(lines[curLine].substring(0, curCol))
+                val cursorX = textLeft + font.width(lines[curLine].substring(0, curCol)) - scrollX
                 graphics.fill(cursorX, cursorY, cursorX + 1, cursorY + lineHeight, CURSOR_COLOR)
             }
         }
@@ -411,14 +421,24 @@ class ScriptEditor(
     }
 
     private fun ensureCursorVisible() {
-        val (line, _) = cursorToLineCol(cursor)
+        val (line, col) = cursorToLineCol(cursor)
+
+        // Vertical
         val cursorY = line * lineHeight
         val viewTop = scrollY
         val viewBottom = scrollY + height - padding * 2 - lineHeight
-
         if (cursorY < viewTop) scrollY = cursorY
         if (cursorY > viewBottom) scrollY = cursorY - (height - padding * 2 - lineHeight)
         scrollY = scrollY.coerceAtLeast(0)
+
+        // Horizontal
+        val cursorPixelX = font.width(lines[line].substring(0, col))
+        val viewWidth = width - padding * 2
+        val viewLeft = scrollX
+        val viewRight = scrollX + viewWidth - 2 // small margin for cursor
+        if (cursorPixelX < viewLeft) scrollX = maxOf(0, cursorPixelX - 8)
+        if (cursorPixelX > viewRight) scrollX = cursorPixelX - viewWidth + 8
+        scrollX = scrollX.coerceAtLeast(0)
     }
 
     private fun onTextChanged() {

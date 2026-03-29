@@ -13,6 +13,7 @@ class AutocompletePopup(
     private val cards: List<CardSnapshot>,
     private val itemTags: List<String> = emptyList(),
     private val variables: List<Pair<String, Int>> = emptyList(), // name to type ordinal (0=number, 1=string, 2=bool)
+    private val processingOutputs: List<String> = emptyList(), // output item IDs from Processing API Cards
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     data class Suggestion(val insertText: String, val displayText: String)
@@ -37,7 +38,10 @@ class AutocompletePopup(
      * [forced] = true when triggered by Ctrl+Space (shows word completions).
      * [forced] = false on normal typing (only shows context completions like after `:` or `"`).
      */
-    fun update(text: String, cursorPos: Int, editorX: Int, editorY: Int, forced: Boolean = false) {
+    /**
+     * @param editorScrollY the editor's current scroll offset in pixels (subtracted from Y position)
+     */
+    fun update(text: String, cursorPos: Int, editorX: Int, editorY: Int, forced: Boolean = false, editorScrollY: Int = 0) {
         // Clamp cursor to text length in case it's stale
         val cursor = minOf(cursorPos, text.length)
         lastFullText = text
@@ -63,12 +67,11 @@ class AutocompletePopup(
         val textBeforeCursor = text.substring(0, cursor)
         val lineAtCursor = textBeforeCursor.count { it == '\n' }
         val lastNewline = textBeforeCursor.lastIndexOf('\n')
-        val colAtCursor = if (lastNewline >= 0) cursor - lastNewline - 1 else cursor
         val lineText = textBeforeCursor.substring(lastNewline + 1)
         val cursorXOffset = font.width(lineText)
 
         popupX = editorX + 4 + cursorXOffset
-        popupY = editorY + (lineAtCursor + 1) * font.lineHeight + 4
+        popupY = editorY + (lineAtCursor + 1) * font.lineHeight + 4 - editorScrollY
     }
 
     fun hide() {
@@ -217,6 +220,14 @@ class AutocompletePopup(
             return fuzzyStrings(partial, types)
         }
 
+        // After network:handle("partial → suggest processing API output item IDs
+        val handleMatch = Regex("""network:handle\(\s*"([\w:]*)$""").find(trimmed)
+        if (handleMatch != null) {
+            val partial = handleMatch.groupValues[1]
+            customPrefix = partial
+            return fuzzyStrings(partial, processingOutputs)
+        }
+
         // After network:var("partial → suggest variable names with type hints
         val varMatch = Regex("""network:var\(\s*"(\w*)$""").find(trimmed)
         if (varMatch != null) {
@@ -255,7 +266,8 @@ class AutocompletePopup(
                 suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
                 suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
                 suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)"),
-                suggest("var(", "var(name: string) → VariableHandle")
+                suggest("var(", "var(name: string) → VariableHandle"),
+                suggest("handle(", "handle(outputId: string, fn: function(...) → ItemsHandle?)")
             )
             return fuzzy(partial, methods)
         }
@@ -368,6 +380,21 @@ class AutocompletePopup(
             return fuzzy(partial, methods)
         }
 
+        // After coroutine. or coroutine.partial → suggest coroutine library methods
+        val coroutineMatch = Regex("""coroutine\.(\w*)$""").find(trimmed)
+        if (coroutineMatch != null) {
+            val partial = coroutineMatch.groupValues[1]
+            val methods = listOf(
+                suggest("create(", "create(fn: function) → thread"),
+                suggest("resume(", "resume(co: thread, ...) → boolean, ..."),
+                suggest("yield(", "yield(...) — pause coroutine"),
+                suggest("status(", "status(co: thread) → string"),
+                suggest("wrap(", "wrap(fn: function) → function"),
+                suggest("isyieldable(", "isyieldable() → boolean")
+            )
+            return fuzzy(partial, methods)
+        }
+
         // After require("partial → suggest available script names
         val requireMatch = Regex("""require\(\s*"(\w*)$""").find(trimmed)
         if (requireMatch != null) {
@@ -403,6 +430,7 @@ class AutocompletePopup(
                 suggest("string", "string library"),
                 suggest("math", "math library"),
                 suggest("table", "table library"),
+                suggest("coroutine", "coroutine library"),
                 suggest("tostring", "tostring(value: any) → string"),
                 suggest("tonumber", "tonumber(value: any) → number?"),
                 suggest("type", "type(value: any) → string"),

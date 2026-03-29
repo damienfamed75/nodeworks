@@ -6,6 +6,7 @@ import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
+import damien.nodeworks.block.entity.ApiStorageBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.CraftingStorageBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
@@ -58,6 +59,11 @@ object ModBlockEntities {
     val CRAFTING_STORAGE: BlockEntityType<CraftingStorageBlockEntity> = register(
         "crafting_storage",
         PlatformServices.blockEntity.createBlockEntityType(::CraftingStorageBlockEntity, ModBlocks.CRAFTING_STORAGE)
+    )
+
+    val API_STORAGE: BlockEntityType<ApiStorageBlockEntity> = register(
+        "api_storage",
+        PlatformServices.blockEntity.createBlockEntityType(::ApiStorageBlockEntity, ModBlocks.API_STORAGE)
     )
 
     val INVENTORY_TERMINAL: BlockEntityType<InventoryTerminalBlockEntity> = register(

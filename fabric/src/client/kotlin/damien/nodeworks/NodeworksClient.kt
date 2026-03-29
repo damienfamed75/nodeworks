@@ -62,6 +62,12 @@ object NodeworksClient : ClientModInitializer {
         MenuScreens.register(ModScreenHandlers.CRAFTING_CORE) { menu, inventory, title ->
             damien.nodeworks.screen.CraftingCoreScreen(menu, inventory, title)
         }
+        MenuScreens.register(ModScreenHandlers.PROCESSING_API_CARD) { menu, inventory, title ->
+            damien.nodeworks.screen.ProcessingApiCardScreen(menu, inventory, title)
+        }
+        MenuScreens.register(ModScreenHandlers.API_STORAGE) { menu, inventory, title ->
+            damien.nodeworks.screen.ApiStorageScreen(menu, inventory, title)
+        }
 
         // Receive log messages from the server
         ClientPlayNetworking.registerGlobalReceiver(TerminalLogPayload.TYPE) { payload, context ->
