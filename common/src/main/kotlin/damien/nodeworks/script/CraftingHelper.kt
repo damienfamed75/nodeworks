@@ -14,6 +14,7 @@ import net.minecraft.world.item.crafting.CraftingInput
 import net.minecraft.world.item.crafting.RecipeType
 import org.luaj.vm2.LuaFunction
 import org.luaj.vm2.LuaValue
+import org.luaj.vm2.Varargs
 import org.slf4j.LoggerFactory
 
 /**
@@ -34,6 +35,27 @@ object CraftingHelper {
     /** Reason why crafting failed — returned instead of null for diagnostics. */
     var lastFailReason: String? = null
         private set
+
+    /** Set when craftViaProcessing starts an async handler. The caller should wait on this. */
+    var currentPendingJob: PendingHandlerJob? = null
+
+    /**
+     * Represents a pending async handler invocation.
+     * CraftingHelper starts the coroutine, and the caller polls [isComplete].
+     */
+    class PendingHandlerJob {
+        @Volatile var isComplete = false
+            private set
+        @Volatile var success = false
+            private set
+        var onCompleteCallback: ((Boolean) -> Unit)? = null
+
+        fun complete(succeeded: Boolean) {
+            success = succeeded
+            isComplete = true
+            onCompleteCallback?.invoke(succeeded)
+        }
+    }
 
     /**
      * Craft items matching the given identifier.
@@ -115,25 +137,33 @@ object CraftingHelper {
             val cardName = apiMatch.api.name
             // Look for handler by card name: first in local engine, then across network terminals
             var handler = processingHandlers?.get(cardName)
+            var handlerEngine: ScriptEngine? = null
             if (handler == null) {
-                // If the API came through a receiver antenna, search the remote network's terminals
                 val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
-                val remoteEngine = PlatformServices.modState.findProcessingEngine(
+                handlerEngine = PlatformServices.modState.findProcessingEngine(
                     level, searchPositions, cardName
                 ) as? ScriptEngine
-                if (remoteEngine != null) {
-                    handler = remoteEngine.processingHandlers[cardName]
+                if (handlerEngine != null) {
+                    handler = handlerEngine.processingHandlers[cardName]
                 }
             }
 
             if (handler != null) {
                 var totalCrafted = 0
                 for (i in 0 until count) {
-                    if (!craftViaProcessing(apiMatch, handler, level, snapshot, depth, cache, cpu, processingHandlers)) break
+                    if (!craftViaProcessing(apiMatch, handler, handlerEngine, level, snapshot, depth, cache, cpu, processingHandlers)) break
                     totalCrafted++
                 }
 
-                if (cpuPos == null) finishCrafting(cpu, level, snapshot, cache)
+                val pending = currentPendingJob
+                if (pending != null && !pending.isComplete && cpuPos == null) {
+                    // Defer finishCrafting until the handler coroutine completes
+                    pending.onCompleteCallback = {
+                        finishCrafting(cpu, level, snapshot, cache)
+                    }
+                } else if (cpuPos == null) {
+                    finishCrafting(cpu, level, snapshot, cache)
+                }
                 if (totalCrafted == 0) return null
 
                 // Return result for the matched output (the one the caller asked for)
@@ -305,6 +335,7 @@ object CraftingHelper {
     private fun craftViaProcessing(
         apiMatch: ProcessingApiMatch,
         handler: LuaFunction,
+        handlerEngine: ScriptEngine?,
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         depth: Int,
@@ -323,8 +354,7 @@ object CraftingHelper {
             while (have < needed) {
                 val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers)
                 if (subResult == null || subResult.count == 0) {
-                    logger.debug("Cannot process '{}': unable to obtain prerequisite '{}'",
-                        api.name, itemId)
+                    logger.debug("Cannot process '{}': unable to obtain prerequisite '{}'", api.name, itemId)
                     return false
                 }
                 have = cpu.getBufferCount(itemId) + NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
@@ -357,26 +387,32 @@ object CraftingHelper {
             }
         }
 
-        // Consume from buffer — items stay in buffer, handler gets buffer-backed ItemsHandles
+        // Verify buffer has all required inputs
         for ((itemId, needed) in api.inputs) {
-            val has = cpu.getBufferCount(itemId)
-            if (has < needed) {
-                logger.warn("Buffer underflow: needed {} of '{}' but only had {}", needed, itemId, has)
+            if (cpu.getBufferCount(itemId) < needed) {
+                logger.warn("Buffer underflow: needed {} of '{}' but only had {}", needed, itemId, cpu.getBufferCount(itemId))
                 return false
             }
         }
 
-        // Build buffer-backed ItemsHandles for each input
+        // Run the handler as a coroutine on the handler engine's scheduler.
+        // The handler calls job:pull() which yields if outputs aren't ready yet.
+        // The scheduler resumes the coroutine each tick until job:pull() succeeds.
         try {
-            val luaArgs = mutableListOf<LuaValue>()
+            val engine = handlerEngine ?: return false
+            val scheduler = engine.scheduler
+
+            val pending = PendingHandlerJob()
+            val job = ProcessingJob(api, cpu, level, scheduler, pending)
+            val jobTable = job.toLuaTable()
+
+            val luaArgs = mutableListOf<LuaValue>(jobTable)
             for ((itemId, count) in api.inputs) {
                 val identifier = ResourceLocation.tryParse(itemId) ?: return false
                 val item = BuiltInRegistries.ITEM.get(identifier) ?: return false
-                val itemName = ItemStack(item).hoverName.string
-
-                val handle = ItemsHandle(
+                luaArgs.add(ItemsHandle.toLuaTable(ItemsHandle(
                     itemId = itemId,
-                    itemName = itemName,
+                    itemName = ItemStack(item).hoverName.string,
                     count = count,
                     maxStackSize = item.getDefaultMaxStackSize(),
                     hasData = false,
@@ -384,48 +420,29 @@ object CraftingHelper {
                     sourceStorage = { null },
                     level = level,
                     bufferSource = BufferSource(cpu, itemId, count)
-                )
-                luaArgs.add(ItemsHandle.toLuaTable(handle))
+                )))
             }
-
+            // Run handler synchronously on the server thread.
             val result = when (luaArgs.size) {
-                0 -> handler.call()
                 1 -> handler.call(luaArgs[0])
                 2 -> handler.call(luaArgs[0], luaArgs[1])
+                3 -> handler.call(luaArgs[0], luaArgs[1], luaArgs[2])
                 else -> handler.invoke(LuaValue.varargsOf(luaArgs.toTypedArray())).arg1()
             }
 
-            if (result.isnil() || result.toboolean() == false) {
+            // Handler returned false/nil = explicit failure
+            if (!result.isnil() && result.isboolean() && !result.toboolean()) {
                 logger.debug("Processing handler '{}' returned failure", api.name)
                 return false
             }
 
-            // Handler returned an ItemsHandle — move outputs from source into network storage
-            if (result.istable()) {
-                val ref = result.get("_itemsHandle")
-                if (ref is ItemsHandle.ItemsHandleRef) {
-                    val outputHandle = ref.handle
-                    val sourceStorage = outputHandle.sourceStorage()
-                    if (sourceStorage != null) {
-                        for ((outputId, outputCount) in api.outputs) {
-                            // Extract from the handler's source storage
-                            val extracted = PlatformServices.storage.extractItems(
-                                sourceStorage,
-                                { CardHandle.matchesFilter(it, outputId) },
-                                outputCount.toLong()
-                            )
-                            if (extracted > 0) {
-                                // Insert into network storage
-                                val id = ResourceLocation.tryParse(outputId) ?: continue
-                                val item = BuiltInRegistries.ITEM.get(id) ?: continue
-                                val stack = ItemStack(item, extracted.toInt())
-                                NetworkStorageHelper.insertItemStack(level, snapshot, stack, cache)
-                            }
-                        }
-                    }
-                }
+            // Check if the pending job completed synchronously (job:pull found items immediately)
+            if (pending.isComplete) {
+                return pending.success
             }
 
+            // job:pull() registered a pending poll — store for the caller to wait on
+            currentPendingJob = pending
             return true
         } catch (e: org.luaj.vm2.LuaError) {
             logger.warn("Processing handler error for '{}': {}", api.name, e.message)

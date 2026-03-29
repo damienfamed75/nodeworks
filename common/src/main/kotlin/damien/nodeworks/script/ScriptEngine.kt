@@ -375,6 +375,7 @@ class ScriptEngine(
                 val identifier = args.checkjstring(2)
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
 
+                CraftingHelper.currentPendingJob = null
                 val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache, processingHandlers = processingHandlers.takeIf { it.isNotEmpty() })
                 if (result == null) {
                     CraftingHelper.lastFailReason?.let { logCallback(it, true) }
@@ -483,6 +484,116 @@ class ScriptEngine(
                 val handler = handlerArg.checkfunction()
                 processingHandlers[name] = handler
                 return LuaValue.NIL
+            }
+        })
+
+        // network:process(id, count?, id, count?, ...) → ProcessBuilder with :connect(fn)
+        networkTable.set("process", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                // Parse (id, count?, id, count?, ...) starting at arg 2 (arg 1 is self)
+                val requests = mutableListOf<Pair<String, Int>>() // (itemId, count)
+                var i = 2
+                while (i <= args.narg()) {
+                    val itemId = args.checkjstring(i)
+                    i++
+                    val count = if (i <= args.narg() && args.arg(i).isnumber()) {
+                        val c = args.checkint(i)
+                        i++
+                        c
+                    } else if (i <= args.narg() && args.arg(i).isstring()) {
+                        // Next arg is another item ID — this item defaults to count 1
+                        1
+                    } else {
+                        // Last item, no count specified
+                        1
+                    }
+                    requests.add(itemId to count)
+                }
+                if (requests.isEmpty()) throw LuaError("network:process() requires at least one item")
+
+                // Start all crafts — each one returns a CraftResult or sets a pending job
+                data class ProcessEntry(
+                    val itemId: String,
+                    val count: Int,
+                    val result: CraftingHelper.CraftResult?,
+                    val pendingJob: CraftingHelper.PendingHandlerJob?
+                )
+
+                val entries = mutableListOf<ProcessEntry>()
+                for ((itemId, count) in requests) {
+                    CraftingHelper.currentPendingJob = null
+                    val craftResult = CraftingHelper.craft(itemId, count, level, snapshot, cache = inventoryCache,
+                        processingHandlers = processingHandlers.takeIf { it.isNotEmpty() })
+
+                    val pending = CraftingHelper.currentPendingJob
+                    entries.add(ProcessEntry(itemId, count, craftResult, pending?.takeIf { !it.isComplete }))
+                }
+
+                // Build the ProcessBuilder table with :connect(fn)
+                val builder = LuaTable()
+                builder.set("connect", object : TwoArgFunction() {
+                    override fun call(selfArg: LuaValue, callbackArg: LuaValue): LuaValue {
+                        val callback = callbackArg.checkfunction()
+
+                        // Check if everything completed synchronously
+                        val allDone = entries.all { it.pendingJob == null || it.pendingJob.isComplete }
+                        if (allDone) {
+                            fireCallback(callback, entries)
+                            return LuaValue.NIL
+                        }
+
+                        // Some are pending — register a poll that checks all pending jobs
+                        val pendingJobs = entries.mapNotNull { it.pendingJob?.takeIf { p -> !p.isComplete } }
+                        scheduler.addPendingJob(SchedulerImpl.PendingJob(
+                            pollFn = { pendingJobs.all { it.isComplete } },
+                            timeoutAt = scheduler.currentTick + 6000L,
+                            onComplete = { success ->
+                                if (success) fireCallback(callback, entries)
+                                else logCallback("network:process() timed out", true)
+                            },
+                            label = "process"
+                        ))
+
+                        return LuaValue.NIL
+                    }
+
+                    private fun fireCallback(callback: LuaFunction, entries: List<ProcessEntry>) {
+                        val resultArgs = mutableListOf<LuaValue>()
+                        for (entry in entries) {
+                            val craftResult = entry.result
+                            if (craftResult == null) {
+                                resultArgs.add(LuaValue.NIL)
+                                continue
+                            }
+                            val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
+                            val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                                storageCards.firstNotNullOfOrNull { card ->
+                                    val storage = NetworkStorageHelper.getStorage(level, card)
+                                    if (storage != null) {
+                                        val has = PlatformServices.storage.countItems(storage) {
+                                            CardHandle.matchesFilter(it, craftResult.outputItemId)
+                                        }
+                                        if (has > 0) storage else null
+                                    } else null
+                                }
+                            }
+                            resultArgs.add(ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
+                                itemId = craftResult.outputItemId,
+                                itemName = craftResult.outputName,
+                                count = craftResult.count,
+                                sourceStorage = sourceStorage,
+                                level = level
+                            )))
+                        }
+                        try {
+                            callback.invoke(LuaValue.varargsOf(resultArgs.toTypedArray()))
+                        } catch (e: org.luaj.vm2.LuaError) {
+                            logCallback("process callback error: ${e.message}", true)
+                        }
+                    }
+                })
+
+                return builder
             }
         })
 
