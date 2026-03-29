@@ -124,7 +124,8 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
             // About to connect — check if both networks already have controllers
             val snapshotA = NetworkDiscovery.discoverNetwork(serverLevel, selectedPos)
             val snapshotB = NetworkDiscovery.discoverNetwork(serverLevel, pos)
-            if (snapshotA.controller != null && snapshotB.controller != null) {
+            if (snapshotA.controller != null && snapshotB.controller != null
+                && snapshotA.controller.pos != snapshotB.controller.pos) {
                 player.displayClientMessage(
                     Component.translatable("message.nodeworks.duplicate_controller"), false
                 )
