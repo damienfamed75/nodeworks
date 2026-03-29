@@ -606,6 +606,48 @@ class ScriptEngine(
             }
         })
 
+        // network:debug() — print full network summary
+        networkTable.set("debug", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue {
+                val sb = StringBuilder()
+                sb.appendLine("=== Network Debug ===")
+                sb.appendLine("Controller: ${snapshot.controller?.pos ?: "none"}")
+                sb.appendLine("Nodes: ${snapshot.nodes.size}")
+                for (node in snapshot.nodes) {
+                    val cardCount = node.sides.values.sumOf { it.size }
+                    sb.appendLine("  Node ${node.pos}: $cardCount cards")
+                    for ((dir, cards) in node.sides) {
+                        for (card in cards) {
+                            sb.appendLine("    ${dir.name}: ${card.effectiveAlias} (${card.capability.type})")
+                        }
+                    }
+                }
+                sb.appendLine("Terminals: ${snapshot.terminalPositions.size}")
+                for (pos in snapshot.terminalPositions) sb.appendLine("  $pos")
+                sb.appendLine("CPUs: ${snapshot.cpus.size}")
+                for (cpu in snapshot.cpus) sb.appendLine("  ${cpu.pos}: ${cpu.bufferUsed}/${cpu.bufferCapacity} ${if (cpu.isBusy) "BUSY" else "idle"}")
+                sb.appendLine("Crafters (Instruction Sets): ${snapshot.crafters.size}")
+                for (crafter in snapshot.crafters) {
+                    sb.appendLine("  ${crafter.pos}: ${crafter.instructionSets.size} recipes")
+                    for (recipe in crafter.instructionSets) sb.appendLine("    ${recipe.alias ?: recipe.outputItemId}")
+                }
+                sb.appendLine("Processing APIs: ${snapshot.processingApis.size}")
+                for (api in snapshot.processingApis) {
+                    val remote = if (api.remoteTerminalPositions != null) " (remote)" else ""
+                    sb.appendLine("  ${api.pos}$remote: ${api.apis.size} cards")
+                    for (card in api.apis) {
+                        val inputs = card.inputs.joinToString(", ") { "${it.first} x${it.second}" }
+                        val outputs = card.outputs.joinToString(", ") { "${it.first} x${it.second}" }
+                        sb.appendLine("    [${card.name}] $inputs -> $outputs")
+                    }
+                }
+                sb.appendLine("Variables: ${snapshot.variables.size}")
+                for (v in snapshot.variables) sb.appendLine("  ${v.name} (${v.type})")
+                logCallback(sb.toString().trimEnd(), false)
+                return LuaValue.NIL
+            }
+        })
+
         g.set("network", networkTable)
 
         // clock() -> seconds since script started (as a decimal)

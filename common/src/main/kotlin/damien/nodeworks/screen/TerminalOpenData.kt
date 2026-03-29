@@ -16,8 +16,7 @@ data class TerminalOpenData(
     val layoutIndex: Int,
     val cards: List<CardSnapshot>,
     val itemTags: List<String>,
-    val variables: List<Pair<String, Int>> = emptyList(), // name to type ordinal
-    val processingOutputs: List<String> = emptyList() // output item IDs from Processing API Cards
+    val variables: List<Pair<String, Int>> = emptyList()
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, TerminalOpenData> = object : StreamCodec<FriendlyByteBuf, TerminalOpenData> {
@@ -50,13 +49,11 @@ data class TerminalOpenData(
                         slotIndex = slotIndex
                     )
                 }
-                val tagCount = buf.readVarInt()
-                val itemTags = (0 until tagCount).map { buf.readUtf(256) }
                 val varCount = buf.readVarInt()
                 val variables = (0 until varCount).map { buf.readUtf(32) to buf.readVarInt() }
-                val procCount = buf.readVarInt()
-                val processingOutputs = (0 until procCount).map { buf.readUtf(256) }
-                return TerminalOpenData(pos, scripts, running, autoRun, layoutIndex, cards, itemTags, variables, processingOutputs)
+                val tagCount = buf.readVarInt()
+                val itemTags = (0 until tagCount).map { buf.readUtf(256) }
+                return TerminalOpenData(pos, scripts, running, autoRun, layoutIndex, cards, itemTags, variables)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: TerminalOpenData) {
@@ -82,18 +79,14 @@ data class TerminalOpenData(
                     buf.writeVarInt(defaultFace.ordinal)
                     buf.writeVarInt(card.slotIndex)
                 }
-                buf.writeVarInt(data.itemTags.size)
-                for (tag in data.itemTags) {
-                    buf.writeUtf(tag, 256)
-                }
                 buf.writeVarInt(data.variables.size)
                 for ((name, type) in data.variables) {
                     buf.writeUtf(name, 32)
                     buf.writeVarInt(type)
                 }
-                buf.writeVarInt(data.processingOutputs.size)
-                for (output in data.processingOutputs) {
-                    buf.writeUtf(output, 256)
+                buf.writeVarInt(data.itemTags.size)
+                for (tag in data.itemTags) {
+                    buf.writeUtf(tag, 256)
                 }
             }
         }

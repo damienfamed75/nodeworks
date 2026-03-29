@@ -12,8 +12,9 @@ class AutocompletePopup(
     private val font: Font,
     private val cards: List<CardSnapshot>,
     private val itemTags: List<String> = emptyList(),
-    private val variables: List<Pair<String, Int>> = emptyList(), // name to type ordinal (0=number, 1=string, 2=bool)
-    private val processingOutputs: List<String> = emptyList(), // output item IDs from Processing API Cards
+    private val variables: List<Pair<String, Int>> = emptyList(),
+    private val localApiNames: List<String> = emptyList(),
+    private val processableOutputs: List<String> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     data class Suggestion(val insertText: String, val displayText: String)
@@ -225,12 +226,28 @@ class AutocompletePopup(
             return fuzzyStrings(partial, types)
         }
 
-        // After network:handle("partial → suggest Processing API Card names
+        // After network:handle("partial → suggest local API Card names only
         val handleMatch = Regex("""network:handle\(\s*"([\w]*)$""").find(trimmed)
         if (handleMatch != null) {
             val partial = handleMatch.groupValues[1]
             customPrefix = partial
-            return fuzzyStrings(partial, processingOutputs)
+            return fuzzyStrings(partial, localApiNames)
+        }
+
+        // After network:process("partial → suggest all processable output item IDs (local + remote)
+        val processMatch = Regex("""network:process\(\s*"([\w:]*)$""").find(trimmed)
+        if (processMatch != null) {
+            val partial = processMatch.groupValues[1]
+            customPrefix = partial
+            return fuzzyStrings(partial, processableOutputs)
+        }
+
+        // After network:process("...", count, "partial → subsequent items in process call
+        val processNextMatch = Regex("""network:process\([^)]*,\s*"([\w:]*)$""").find(trimmed)
+        if (processNextMatch != null) {
+            val partial = processNextMatch.groupValues[1]
+            customPrefix = partial
+            return fuzzyStrings(partial, processableOutputs)
         }
 
         // After network:var("partial → suggest variable names with type hints

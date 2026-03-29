@@ -31,7 +31,9 @@ class TerminalScreen(
     private val cards: List<CardSnapshot> = menu.getCards()
     private val itemTags: List<String> = menu.getItemTags()
     private val variables: List<Pair<String, Int>> = menu.getVariables()
-    private val processingOutputs: List<String> = menu.getProcessingOutputs()
+    // Scanned client-side from block entities in the loaded world
+    private val localApiNames: List<String>
+    private val processableOutputs: List<String>
     private var scriptRunning: Boolean = menu.isRunning()
     private var autoRun: Boolean = menu.isAutoRun()
 
@@ -101,6 +103,58 @@ class TerminalScreen(
     init {
         imageWidth = currentLayout.w
         imageHeight = currentLayout.h
+
+        // Scan client-side block entities for API card data (avoids packet size limits)
+        val scannedLocal = mutableListOf<String>()
+        val scannedProcessable = mutableListOf<String>()
+        val mc = net.minecraft.client.Minecraft.getInstance()
+        val clientLevel = mc.level
+        if (clientLevel != null) {
+            val termPos = menu.getTerminalPos()
+            val termEntity = clientLevel.getBlockEntity(termPos)
+            if (termEntity is damien.nodeworks.network.Connectable) {
+                val visited = mutableSetOf<net.minecraft.core.BlockPos>()
+                val queue = ArrayDeque<net.minecraft.core.BlockPos>()
+                visited.add(termPos)
+                for (conn in termEntity.getConnections()) {
+                    if (visited.add(conn)) queue.add(conn)
+                }
+                while (queue.isNotEmpty() && visited.size < 128) {
+                    val pos = queue.removeFirst()
+                    if (!clientLevel.isLoaded(pos)) continue
+                    val entity = clientLevel.getBlockEntity(pos) ?: continue
+
+                    if (entity is damien.nodeworks.block.entity.ApiStorageBlockEntity) {
+                        for (api in entity.getAllProcessingApis()) {
+                            scannedLocal.add(api.name)
+                            scannedProcessable.addAll(api.outputItemIds)
+                        }
+                    }
+                    if (entity is damien.nodeworks.block.entity.ReceiverAntennaBlockEntity && entity.isPaired) {
+                        // Follow the receiver to its paired broadcast antenna
+                        val pairedData = entity.getItem(0)
+                        if (!pairedData.isEmpty && pairedData.item is damien.nodeworks.item.LinkChipItem) {
+                            val chipData = damien.nodeworks.item.LinkChipItem.getPairingData(pairedData)
+                            if (chipData != null && clientLevel.isLoaded(chipData.pos)) {
+                                val broadcast = clientLevel.getBlockEntity(chipData.pos)
+                                if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {
+                                    for (api in broadcast.getAvailableApis()) {
+                                        scannedProcessable.addAll(api.outputItemIds)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
+                    for (conn in connectable.getConnections()) {
+                        if (visited.add(conn)) queue.add(conn)
+                    }
+                }
+            }
+        }
+        localApiNames = scannedLocal.distinct()
+        processableOutputs = scannedProcessable.distinct()
     }
 
     override fun init() {
@@ -149,7 +203,7 @@ class TerminalScreen(
         }
         addRenderableWidget(editor)
 
-        autocomplete = AutocompletePopup(font, cards, itemTags, variables, processingOutputs) { scripts }
+        autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, processableOutputs) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 2
