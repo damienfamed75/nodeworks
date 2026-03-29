@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "formed=false": { "model": "nodeworks:block/crafting_core" },
+    "formed=true": { "model": "nodeworks:block/crafting_core_on" }
+  }
+}

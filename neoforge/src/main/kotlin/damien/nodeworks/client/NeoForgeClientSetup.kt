@@ -96,6 +96,9 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.VARIABLE) { menu, inventory, title ->
             VariableScreen(menu, inventory, title)
         }
+        event.register(ModScreenHandlers.CRAFTING_CORE) { menu, inventory, title ->
+            damien.nodeworks.screen.CraftingCoreScreen(menu, inventory, title)
+        }
     }
 
     private fun onRegisterBlockColors(event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.Block) {
