@@ -35,6 +35,18 @@ object TerminalPackets {
     fun getEngine(dimKey: ResourceKey<Level>, pos: BlockPos): ScriptEngine? =
         activeEngines[GlobalPos.of(dimKey, pos)]
 
+    /** Find the first active engine on the given network that has a processing handler for the output item ID. */
+    fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, outputItemId: String): ScriptEngine? {
+        val dimKey = level.dimension()
+        for (pos in terminalPositions) {
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            if (engine.isRunning() && engine.processingHandlers.containsKey(outputItemId)) {
+                return engine
+            }
+        }
+        return null
+    }
+
     /** Stop and remove the engine for a terminal. Called when the block entity is removed. */
     fun stopEngine(level: ServerLevel, pos: BlockPos) {
         val gp = GlobalPos.of(level.dimension(), pos)
@@ -57,6 +69,8 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
     }
@@ -206,6 +220,26 @@ object TerminalPackets {
                 "toggle" -> entity.toggleValue()
             }
         }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetProcessingApiDataPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
+                when (payload.key) {
+                    "input" -> menu.setInputCount(payload.slotIndex, payload.value)
+                    "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
+                    "timeout" -> menu.setTimeout(payload.value)
+                }
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetProcessingApiSlotPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
+                menu.setSlotFromId(payload.slotIndex, payload.itemId)
+            }
+        }
     }
 
     /** Terminals pending auto-start after world load. Populated by TerminalBlockEntity.setLevel. */
@@ -259,7 +293,7 @@ object TerminalPackets {
                 continue
             }
             engine.tick(tickCount)
-            if (!engine.scheduler.hasActiveTasks()) {
+            if (!engine.hasWork()) {
                 toRemove.add(gp)
             }
         }

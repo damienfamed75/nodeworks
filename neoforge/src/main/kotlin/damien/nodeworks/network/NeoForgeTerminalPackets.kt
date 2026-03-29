@@ -39,6 +39,18 @@ object NeoForgeTerminalPackets {
         activeEngines.remove(gp)?.stop()
     }
 
+    /** Find the first active engine on the given network that has a processing handler for the output item ID. */
+    fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, outputItemId: String): ScriptEngine? {
+        val dimKey = level.dimension()
+        for (pos in terminalPositions) {
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            if (engine.isRunning() && engine.processingHandlers.containsKey(outputItemId)) {
+                return engine
+            }
+        }
+        return null
+    }
+
     // --- Server handlers ---
 
     fun handleRunScript(payload: RunScriptPayload, context: IPayloadContext) {
@@ -223,7 +235,7 @@ object NeoForgeTerminalPackets {
                 continue
             }
             engine.tick(tickCount)
-            if (!engine.scheduler.hasActiveTasks()) {
+            if (!engine.hasWork()) {
                 toRemove.add(gp)
             }
         }

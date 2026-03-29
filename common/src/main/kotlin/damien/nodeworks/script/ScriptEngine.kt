@@ -40,6 +40,10 @@ class ScriptEngine(
     var inventoryCache: NetworkInventoryCache? = null
         private set
 
+    /** Processing handlers registered by network:handle(). Keyed by output item ID. */
+    val processingHandlers = mutableMapOf<String, LuaFunction>()
+
+
     fun start(scripts: Map<String, String>): Boolean {
         stop()
 
@@ -60,6 +64,7 @@ class ScriptEngine(
         g.load(Bit32Lib())
         g.load(TableLib())
         g.load(StringLib())
+        g.load(CoroutineLib())
         g.load(JseMathLib())
 
         // Install the Lua compiler
@@ -124,12 +129,19 @@ class ScriptEngine(
         onInsertCallback = null
         routeTable = null
         inventoryCache = null // clear local reference, cache lives in global registry
+        processingHandlers.clear()
         scheduler.clear()
         globals = null
         networkSnapshot = null
     }
 
     fun isRunning(): Boolean = globals != null
+
+    /** Whether this engine should stay alive — has scheduler tasks, handlers, or routing. */
+    fun hasWork(): Boolean = scheduler.hasActiveTasks()
+        || processingHandlers.isNotEmpty()
+        || onInsertCallback != null
+        || routeTable?.hasRoutes() == true
 
 
     /** Called each server tick. Runs scheduler callbacks within the instruction budget. */
@@ -363,8 +375,11 @@ class ScriptEngine(
                 val identifier = args.checkjstring(2)
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
 
-                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache)
-                    ?: return LuaValue.NIL
+                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache, processingHandlers = processingHandlers.takeIf { it.isNotEmpty() })
+                if (result == null) {
+                    CraftingHelper.lastFailReason?.let { logCallback(it, true) }
+                    return LuaValue.NIL
+                }
 
                 // Return an ItemsHandle pointing to the crafted items in network storage
                 val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
@@ -455,6 +470,18 @@ class ScriptEngine(
                     sourceStorage = sourceStorage2,
                     level = level
                 ))
+            }
+        })
+
+        // network:handle(outputItemId, handlerFn) — register a processing handler
+        // The handler function receives input items as arguments and should return
+        // the result ItemsHandle from the processing machine's output.
+        networkTable.set("handle", object : ThreeArgFunction() {
+            override fun call(selfArg: LuaValue, outputIdArg: LuaValue, handlerArg: LuaValue): LuaValue {
+                val outputId = outputIdArg.checkjstring()
+                val handler = handlerArg.checkfunction()
+                processingHandlers[outputId] = handler
+                return LuaValue.NIL
             }
         })
 

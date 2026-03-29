@@ -6,6 +6,7 @@ import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
+import damien.nodeworks.block.ApiStorageBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CraftingStorageBlock
 import damien.nodeworks.block.VariableBlock
@@ -78,6 +79,13 @@ object ModBlocks {
     val CRAFTING_STORAGE: Block = register(
         "crafting_storage",
         ::CraftingStorageBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+    )
+
+    val API_STORAGE: Block = register(
+        "api_storage",
+        ::ApiStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
     )

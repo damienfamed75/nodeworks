@@ -3,6 +3,7 @@ package damien.nodeworks.script
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.network.InstructionSetMatch
 import damien.nodeworks.network.NetworkSnapshot
+import damien.nodeworks.network.ProcessingApiMatch
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -11,6 +12,8 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.crafting.CraftingInput
 import net.minecraft.world.item.crafting.RecipeType
+import org.luaj.vm2.LuaFunction
+import org.luaj.vm2.LuaValue
 import org.slf4j.LoggerFactory
 
 /**
@@ -28,6 +31,10 @@ object CraftingHelper {
         val count: Int
     )
 
+    /** Reason why crafting failed — returned instead of null for diagnostics. */
+    var lastFailReason: String? = null
+        private set
+
     /**
      * Craft items matching the given identifier.
      * Finds an available Crafting CPU, extracts ingredients into its buffer,
@@ -40,6 +47,7 @@ object CraftingHelper {
      * @param depth Recursion depth guard
      * @param cache Optional inventory cache for UI updates
      * @param cpuPos Optional: force a specific CPU (for recursive calls that reuse the same CPU)
+     * @param processingHandlers Optional: Lua handlers for processing recipes (keyed by output item ID)
      */
     fun craft(
         identifier: String,
@@ -48,10 +56,13 @@ object CraftingHelper {
         snapshot: NetworkSnapshot,
         depth: Int = 0,
         cache: NetworkInventoryCache? = null,
-        cpuPos: BlockPos? = null
+        cpuPos: BlockPos? = null,
+        processingHandlers: Map<String, LuaFunction>? = null
     ): CraftResult? {
+        if (depth == 0) lastFailReason = null
+
         if (depth > 20) {
-            logger.warn("Crafting recursion depth exceeded for '{}'", identifier)
+            lastFailReason = "Crafting recursion depth exceeded for '$identifier'"
             return null
         }
 
@@ -61,43 +72,91 @@ object CraftingHelper {
             cpu = level.getBlockEntity(cpuPos) as? CraftingCoreBlockEntity ?: return null
         } else {
             val cpuSnapshot = snapshot.findAvailableCpu() ?: run {
-                logger.debug("No available Crafting CPU on network")
+                lastFailReason = "No available Crafting CPU on network"
                 return null
             }
-            cpu = level.getBlockEntity(cpuSnapshot.pos) as? CraftingCoreBlockEntity ?: return null
+            cpu = level.getBlockEntity(cpuSnapshot.pos) as? CraftingCoreBlockEntity ?: run {
+                lastFailReason = "Crafting CPU block entity missing"
+                return null
+            }
             if (!cpu.isFormed) {
-                logger.debug("Crafting CPU is not formed (no storage blocks)")
+                lastFailReason = "Crafting CPU is not formed (needs adjacent Crafting Storage)"
                 return null
             }
             cpu.setCrafting(true)
         }
 
-        val match = snapshot.findInstructionSet(identifier) ?: run {
+        // Try Instruction Set (3x3 crafting) first
+        val match = snapshot.findInstructionSet(identifier)
+        if (match != null) {
+            val recipe = match.instructionSet.recipe
+
+            var totalCrafted = 0
+            for (i in 0 until count) {
+                if (!craftOnce(recipe, match, level, snapshot, depth, cache, cpu, processingHandlers)) break
+                totalCrafted++
+            }
+
             if (cpuPos == null) finishCrafting(cpu, level, snapshot, cache)
-            return null
-        }
-        val recipe = match.instructionSet.recipe
+            if (totalCrafted == 0) return null
 
-        var totalCrafted = 0
-        for (i in 0 until count) {
-            if (!craftOnce(recipe, match, level, snapshot, depth, cache, cpu)) break
-            totalCrafted++
-        }
+            val outputId = match.instructionSet.outputItemId
+            val outputIdentifier = ResourceLocation.tryParse(outputId) ?: return null
+            val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier) ?: return null
+            val outputName = ItemStack(outputItem).hoverName.string
+            val outputPerCraft = getRecipeOutputCount(recipe, level)
 
-        // Only the top-level call cleans up the CPU
-        if (cpuPos == null) {
-            finishCrafting(cpu, level, snapshot, cache)
+            return CraftResult(outputId, outputName, totalCrafted * outputPerCraft)
         }
 
-        if (totalCrafted == 0) return null
+        // Try Processing API Card + handler
+        val apiMatch = snapshot.findProcessingApi(identifier)
+        if (apiMatch != null) {
+            // Look for handler: first in local engine, then across all active engines on the server
+            var handler = processingHandlers?.let { local ->
+                apiMatch.api.outputItemIds.firstNotNullOfOrNull { local[it] }
+            }
+            if (handler == null) {
+                val remoteEngine = apiMatch.api.outputItemIds.firstNotNullOfOrNull { outputId ->
+                    PlatformServices.modState.findProcessingEngine(level, snapshot.terminalPositions, outputId) as? ScriptEngine
+                }
+                if (remoteEngine != null) {
+                    handler = apiMatch.api.outputItemIds.firstNotNullOfOrNull { remoteEngine.processingHandlers[it] }
+                }
+            }
 
-        val outputId = match.instructionSet.outputItemId
-        val outputIdentifier = ResourceLocation.tryParse(outputId) ?: return null
-        val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier) ?: return null
-        val outputName = ItemStack(outputItem).hoverName.string
-        val outputPerCraft = getRecipeOutputCount(recipe, level)
+            if (handler != null) {
+                var totalCrafted = 0
+                for (i in 0 until count) {
+                    if (!craftViaProcessing(apiMatch, handler, level, snapshot, depth, cache, cpu, processingHandlers)) break
+                    totalCrafted++
+                }
 
-        return CraftResult(outputId, outputName, totalCrafted * outputPerCraft)
+                if (cpuPos == null) finishCrafting(cpu, level, snapshot, cache)
+                if (totalCrafted == 0) return null
+
+                // Return result for the matched output (the one the caller asked for)
+                val matchedOutput = apiMatch.api.outputs.firstOrNull { it.first == identifier }
+                    ?: apiMatch.api.outputs.first()
+                val outputId = matchedOutput.first
+                val outputIdentifier = ResourceLocation.tryParse(outputId) ?: return null
+                val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier) ?: return null
+                val outputName = ItemStack(outputItem).hoverName.string
+
+                return CraftResult(outputId, outputName, totalCrafted * matchedOutput.second)
+            }
+        }
+
+        // No recipe found — build diagnostic
+        if (cpuPos == null) finishCrafting(cpu, level, snapshot, cache)
+        val apiFound = apiMatch != null
+        lastFailReason = when {
+            !apiFound && snapshot.findInstructionSet(identifier) == null ->
+                "No recipe found for '$identifier' (no Instruction Set or Processing API Card)"
+            apiFound -> "Processing API Card found for '$identifier' but no handler registered (${snapshot.terminalPositions.size} terminals on network)"
+            else -> "Craft failed for '$identifier'"
+        }
+        return null
     }
 
     /**
@@ -139,7 +198,8 @@ object CraftingHelper {
         snapshot: NetworkSnapshot,
         depth: Int,
         cache: NetworkInventoryCache?,
-        cpu: CraftingCoreBlockEntity
+        cpu: CraftingCoreBlockEntity,
+        processingHandlers: Map<String, LuaFunction>? = null
     ): Boolean {
         // Count ingredients needed
         val ingredientCounts = mutableMapOf<String, Int>()
@@ -156,7 +216,7 @@ object CraftingHelper {
 
             while (have < needed) {
                 // Try to recursively craft the missing ingredient (reuse same CPU)
-                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos)
+                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers)
                 if (subResult == null || subResult.count == 0) {
                     logger.debug("Cannot craft '{}': unable to craft prerequisite '{}'",
                         match.instructionSet.outputItemId, itemId)
@@ -234,6 +294,135 @@ object CraftingHelper {
         }
 
         return true
+    }
+
+    /**
+     * Execute one processing operation via a Lua handler.
+     * Extracts input items from storage into CPU buffer, creates ItemsHandles,
+     * invokes the handler function, and inserts the result into network storage.
+     */
+    private fun craftViaProcessing(
+        apiMatch: ProcessingApiMatch,
+        handler: LuaFunction,
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        depth: Int,
+        cache: NetworkInventoryCache?,
+        cpu: CraftingCoreBlockEntity,
+        processingHandlers: Map<String, LuaFunction>?
+    ): Boolean {
+        val api = apiMatch.api
+
+        // Check/craft prerequisites for each input
+        for ((itemId, needed) in api.inputs) {
+            val inBuffer = cpu.getBufferCount(itemId)
+            val inStorage = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
+            var have = inBuffer + inStorage
+
+            while (have < needed) {
+                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers)
+                if (subResult == null || subResult.count == 0) {
+                    logger.debug("Cannot process '{}': unable to obtain prerequisite '{}'",
+                        api.primaryOutputItemId, itemId)
+                    return false
+                }
+                have = cpu.getBufferCount(itemId) + NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
+            }
+        }
+
+        // Extract input items from storage into CPU buffer
+        for ((itemId, needed) in api.inputs) {
+            val inBuffer = cpu.getBufferCount(itemId)
+            val fromStorage = maxOf(0, needed - inBuffer)
+
+            if (fromStorage > 0) {
+                var remaining = fromStorage.toLong()
+                for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
+                    if (remaining <= 0) break
+                    val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                    val extracted = PlatformServices.storage.extractItems(
+                        storage, { CardHandle.matchesFilter(it, itemId) }, remaining
+                    )
+                    if (extracted > 0) {
+                        cpu.addToBuffer(itemId, extracted.toInt())
+                        cache?.onExtracted(itemId, false, extracted)
+                        remaining -= extracted
+                    }
+                }
+                if (remaining > 0) {
+                    logger.warn("Failed to extract all '{}' for processing", itemId)
+                    return false
+                }
+            }
+        }
+
+        // Consume from buffer
+        for ((itemId, needed) in api.inputs) {
+            val removed = cpu.removeFromBuffer(itemId, needed)
+            if (removed < needed) {
+                logger.warn("Buffer underflow: needed {} of '{}' but only had {}", needed, itemId, removed)
+                return false
+            }
+        }
+
+        // Build Lua arguments for the handler — one ItemsHandle per input
+        try {
+            val luaArgs = mutableListOf<LuaValue>()
+            for ((itemId, count) in api.inputs) {
+                val identifier = ResourceLocation.tryParse(itemId) ?: return false
+                val item = BuiltInRegistries.ITEM.get(identifier) ?: return false
+                val itemName = ItemStack(item).hoverName.string
+
+                // The handler needs to be able to insert these items into machines.
+                // Create an ItemsHandle backed by the CPU buffer (items are in the buffer,
+                // but the handler will use network:get() to access machine I/O).
+                // For simplicity, we create a "virtual" handle representing the consumed items.
+                val handle = ItemsHandle.forCraftResult(
+                    itemId = itemId,
+                    itemName = itemName,
+                    count = count,
+                    sourceStorage = {
+                        // Source is "conceptual" — the handler uses network:get() to talk to machines
+                        null
+                    },
+                    level = level
+                )
+                luaArgs.add(ItemsHandle.toLuaTable(handle))
+            }
+
+            // Call the handler
+            val result = when (luaArgs.size) {
+                0 -> handler.call()
+                1 -> handler.call(luaArgs[0])
+                2 -> handler.call(luaArgs[0], luaArgs[1])
+                else -> handler.invoke(LuaValue.varargsOf(luaArgs.toTypedArray()))
+                    .arg1()
+            }
+
+            // The handler should return an ItemsHandle for the output.
+            // If it returns nil, the processing failed.
+            if (result.isnil()) {
+                logger.debug("Processing handler for '{}' returned nil", api.primaryOutputItemId)
+                return false
+            }
+
+            // Insert all outputs into network storage
+            for ((outputId, outputCount) in api.outputs) {
+                val outputIdentifier = ResourceLocation.tryParse(outputId) ?: return false
+                val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier) ?: return false
+                val outputStack = ItemStack(outputItem, outputCount)
+                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, outputStack, cache)
+                if (inserted == 0) {
+                    logger.debug("Network storage full, cannot insert processed item '{}'", outputId)
+                    return false
+                }
+            }
+
+            return true
+        } catch (e: org.luaj.vm2.LuaError) {
+            logger.warn("Processing handler error for '{}': {}", api.primaryOutputItemId, e.message)
+            return false
+        }
     }
 
     private fun getRecipeOutputCount(recipe: List<String>, level: ServerLevel): Int {

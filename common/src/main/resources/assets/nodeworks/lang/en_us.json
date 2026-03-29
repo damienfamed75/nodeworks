@@ -33,5 +33,9 @@
   "container.nodeworks.variable": "Variable Settings",
   "block.nodeworks.crafting_core": "Crafting Core",
   "container.nodeworks.crafting_core": "Crafting CPU",
-  "block.nodeworks.crafting_storage": "Crafting Storage"
+  "block.nodeworks.crafting_storage": "Crafting Storage",
+  "item.nodeworks.processing_api_card": "Processing API Card",
+  "container.nodeworks.processing_api_card": "Processing API Card",
+  "block.nodeworks.api_storage": "API Storage",
+  "container.nodeworks.api_storage": "API Storage"
 }

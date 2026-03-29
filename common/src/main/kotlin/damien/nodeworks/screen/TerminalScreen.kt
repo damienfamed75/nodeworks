@@ -31,6 +31,7 @@ class TerminalScreen(
     private val cards: List<CardSnapshot> = menu.getCards()
     private val itemTags: List<String> = menu.getItemTags()
     private val variables: List<Pair<String, Int>> = menu.getVariables()
+    private val processingOutputs: List<String> = menu.getProcessingOutputs()
     private var scriptRunning: Boolean = menu.isRunning()
     private var autoRun: Boolean = menu.isAutoRun()
 
@@ -143,12 +144,12 @@ class TerminalScreen(
             }
             // Update autocomplete whenever text changes (unless suppressed during programmatic insertion)
             if (!suppressAutocomplete) {
-                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY)
+                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
             }
         }
         addRenderableWidget(editor)
 
-        autocomplete = AutocompletePopup(font, cards, itemTags, variables) { scripts }
+        autocomplete = AutocompletePopup(font, cards, itemTags, variables, processingOutputs) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 2
@@ -307,6 +308,20 @@ class TerminalScreen(
         val arrow = if (logCollapsed) "\u25B6" else "\u25BC"
         graphics.drawString(font, "$arrow Output", logX + 3, logY + 2, 0xFF888888.toInt())
 
+        // Copy button — two overlapping rectangles icon
+        val copyBtnSize = 9
+        val copyBtnX = logX + logW - copyBtnSize - 4
+        val copyBtnY = logY + 1
+        val copyHovered = mouseX >= copyBtnX - 1 && mouseX <= copyBtnX + copyBtnSize + 1 &&
+                mouseY >= copyBtnY && mouseY <= copyBtnY + copyBtnSize + 1
+        val copyColor = if (copyHovered) 0xFFCCCCCC.toInt() else 0xFF666666.toInt()
+        // Back rectangle
+        graphics.fill(copyBtnX + 2, copyBtnY, copyBtnX + copyBtnSize, copyBtnY + 7, copyColor)
+        graphics.fill(copyBtnX + 3, copyBtnY + 1, copyBtnX + copyBtnSize - 1, copyBtnY + 6, 0xFF1E1E1E.toInt())
+        // Front rectangle (offset down-left)
+        graphics.fill(copyBtnX, copyBtnY + 2, copyBtnX + copyBtnSize - 2, copyBtnY + copyBtnSize, copyColor)
+        graphics.fill(copyBtnX + 1, copyBtnY + 3, copyBtnX + copyBtnSize - 3, copyBtnY + copyBtnSize - 1, 0xFF1E1E1E.toInt())
+
         if (!logCollapsed) {
             // Log content area
             val logContentTop = logY + logCollapsedHeight
@@ -462,7 +477,7 @@ class TerminalScreen(
 
             // Ctrl+Space triggers autocomplete
             if (keyCode == InputConstants.KEY_SPACE && (modifiers and 2) != 0) {
-                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, forced = true)
+                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, forced = true, editorScrollY = editor.scrollY)
                 return true
             }
 
@@ -481,8 +496,7 @@ class TerminalScreen(
                             val cursorPos = editor.getCursorPosition()
                             val deleteStart = cursorPos - result.deleteCount
                             val newText = text.substring(0, deleteStart) + result.insertText + text.substring(cursorPos)
-                            editor.value = newText
-                            editor.cursor = deleteStart + result.insertText.length
+                            editor.setValueKeepScroll(newText, deleteStart + result.insertText.length)
                             suppressAutocomplete = false
                             autocomplete.hide()
                             return true
@@ -512,7 +526,7 @@ class TerminalScreen(
                 InputConstants.KEY_LALT, InputConstants.KEY_RALT
             )
             if (!isNavOrModifierKey) {
-                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY)
+                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
             }
             // Always consume key events when editor is focused to prevent other mods from stealing them
             return true
@@ -537,7 +551,7 @@ class TerminalScreen(
                 return true
             }
             editor.charTyped(codePoint, modifiers)
-            autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY)
+            autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
             // Always consume when editor is focused to prevent other mods stealing input
             return true
         }
@@ -575,6 +589,19 @@ class TerminalScreen(
         val logX = leftPos + cardPanelWidth + editorPadding
         val logY = topPos + imageHeight - effectiveLogHeight
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
+        // Copy button in log toggle bar
+        val copyBtnSize = 9
+        val copyBtnX = logX + logW - copyBtnSize - 4
+        val copyBtnY = logY + 1
+        if (mx >= copyBtnX - 1 && mx <= copyBtnX + copyBtnSize + 1 && my >= copyBtnY && my <= copyBtnY + copyBtnSize + 1) {
+            val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
+            val text = logs.joinToString("\n") { (if (it.isError) "[ERR] " else "") + it.message }
+            if (text.isNotEmpty()) {
+                minecraft?.keyboardHandler?.clipboard = text
+            }
+            return true
+        }
+
         if (mx >= logX && mx <= logX + logW && my >= logY && my <= logY + logCollapsedHeight) {
             logCollapsed = !logCollapsed
             rebuildWithText = editor.value
