@@ -349,9 +349,12 @@ class ScriptEditor(
     }
 
     override fun onDrag(mouseX: Double, mouseY: Double, dragX: Double, dragY: Double) {
-        if (selectStart < 0) selectStart = cursor  // set anchor on first drag
-        cursor = screenToCursor(mouseX, mouseY)
-        ensureCursorVisible()
+        val newPos = screenToCursor(mouseX, mouseY)
+        if (newPos != cursor) {
+            if (selectStart < 0) selectStart = cursor
+            cursor = newPos
+            ensureCursorVisible()
+        }
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
