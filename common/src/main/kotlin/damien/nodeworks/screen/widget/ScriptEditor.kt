@@ -333,12 +333,13 @@ class ScriptEditor(
     override fun onClick(mouseX: Double, mouseY: Double) {
         val clickPos = screenToCursor(mouseX, mouseY)
         cursor = clickPos
-        selectStart = clickPos  // set anchor for potential drag
+        selectStart = -1  // clear selection on click
         cursorBlinkTime = System.currentTimeMillis()
         ensureCursorVisible()
     }
 
     override fun onDrag(mouseX: Double, mouseY: Double, dragX: Double, dragY: Double) {
+        if (selectStart < 0) selectStart = cursor  // set anchor on first drag
         cursor = screenToCursor(mouseX, mouseY)
         ensureCursorVisible()
     }

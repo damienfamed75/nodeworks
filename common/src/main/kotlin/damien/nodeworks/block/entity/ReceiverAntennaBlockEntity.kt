@@ -67,32 +67,21 @@ class ReceiverAntennaBlockEntity(
 
     /** Load the paired Broadcast Antenna if in range and valid. */
     fun getBroadcastAntenna(level: ServerLevel): BroadcastAntennaBlockEntity? {
-        val pos = pairedPos
-        val dim = pairedDimension
-        val freq = pairedFrequencyId
-        if (pos == null || dim == null || freq == null) {
-            logger.debug("Receiver at {} not paired (pos={}, dim={}, freq={})", worldPosition, pos, dim, freq)
-            return null
-        }
+        val pos = pairedPos ?: return null
+        val dim = pairedDimension ?: return null
+        val freq = pairedFrequencyId ?: return null
 
-        val targetLevel = level.server.getLevel(dim)
-        if (targetLevel == null) { logger.debug("Receiver: dimension {} not found", dim); return null }
-        if (!targetLevel.isLoaded(pos)) { logger.debug("Receiver: broadcast at {} not loaded", pos); return null }
+        val targetLevel = level.server.getLevel(dim) ?: return null
+        if (!targetLevel.isLoaded(pos)) return null
 
         val dx = pos.x - worldPosition.x.toDouble()
         val dy = pos.y - worldPosition.y.toDouble()
         val dz = pos.z - worldPosition.z.toDouble()
-        val distSq = dx * dx + dy * dy + dz * dz
-        if (distSq > BASE_RANGE * BASE_RANGE) { logger.debug("Receiver: broadcast at {} out of range (dist={})", pos, Math.sqrt(distSq)); return null }
+        if (dx * dx + dy * dy + dz * dz > BASE_RANGE * BASE_RANGE) return null
 
-        val entity = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity
-        if (entity == null) { logger.debug("Receiver: no BroadcastAntennaBlockEntity at {}", pos); return null }
-        if (entity.frequencyId != freq) { logger.debug("Receiver: frequency mismatch (expected={}, actual={})", freq, entity.frequencyId); return null }
+        val entity = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return null
+        if (entity.frequencyId != freq) return null
         return entity
-    }
-
-    companion object {
-        private val logger = org.slf4j.LoggerFactory.getLogger("nodeworks-receiver")
     }
 
     /** Read pairing data from the chip in the slot. */
