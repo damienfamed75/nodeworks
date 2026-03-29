@@ -20,6 +20,8 @@ class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
 
     companion object {
         private val EMISSIVE_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/terminal_front_emissive.png")
+        // Track last-known connection count per position to detect changes
+        private val lastConnectionCount = java.util.concurrent.ConcurrentHashMap<net.minecraft.core.BlockPos, Int>()
     }
 
     override fun render(
@@ -30,7 +32,16 @@ class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
         packedLight: Int,
         packedOverlay: Int
     ) {
-        // Emissive overlay is now handled by the block model via neoforge_data
+        // Detect connection changes and trigger chunk section rebuild for tint color update
+        val connectionCount = entity.getConnections().size
+        val last = lastConnectionCount.put(entity.blockPos, connectionCount)
+        if (last != null && last != connectionCount) {
+            val mc = net.minecraft.client.Minecraft.getInstance()
+            val sx = net.minecraft.core.SectionPos.blockToSectionCoord(entity.blockPos.x)
+            val sy = net.minecraft.core.SectionPos.blockToSectionCoord(entity.blockPos.y)
+            val sz = net.minecraft.core.SectionPos.blockToSectionCoord(entity.blockPos.z)
+            mc.levelRenderer.setSectionDirtyWithNeighbors(sx, sy, sz)
+        }
     }
 
     @Suppress("unused")
