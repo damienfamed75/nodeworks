@@ -39,6 +39,7 @@ class ProcessingApiCardScreenHandler(
     }
 
     var cardName: String = ""
+    var serial: Boolean = false
 
     val inputCounts: IntArray get() = IntArray(INPUT_SLOTS) { data.get(it) }
     val outputCounts: IntArray get() = IntArray(OUTPUT_SLOTS) { data.get(INPUT_SLOTS + it) }
@@ -92,6 +93,7 @@ class ProcessingApiCardScreenHandler(
 
             return ProcessingApiCardScreenHandler(syncId, playerInventory, inputGrid, outputGrid, data, SaveMode.Handheld(hand)).also {
                 it.cardName = ProcessingApiCard.getCardName(stack)
+                it.serial = ProcessingApiCard.isSerial(stack)
             }
         }
 
@@ -125,6 +127,7 @@ class ProcessingApiCardScreenHandler(
 
             return ProcessingApiCardScreenHandler(syncId, playerInventory, inputGrid, outputGrid, data, SaveMode.ClientDummy).also {
                 it.cardName = openData.name
+                it.serial = openData.serial
             }
         }
     }
@@ -268,7 +271,7 @@ class ProcessingApiCardScreenHandler(
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is ProcessingApiCard) {
-                    ProcessingApiCard.setRecipe(stack, cardName, inputs, outputs, timeout)
+                    ProcessingApiCard.setRecipe(stack, cardName, inputs, outputs, timeout, serial)
                 }
             }
             is SaveMode.ClientDummy -> {}

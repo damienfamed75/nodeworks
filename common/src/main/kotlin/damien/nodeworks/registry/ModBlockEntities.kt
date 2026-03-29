@@ -1,6 +1,5 @@
 package damien.nodeworks.registry
 
-import damien.nodeworks.block.entity.InstructionCrafterBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
@@ -31,11 +30,6 @@ object ModBlockEntities {
     val TERMINAL: BlockEntityType<TerminalBlockEntity> = register(
         "terminal",
         PlatformServices.blockEntity.createBlockEntityType(::TerminalBlockEntity, ModBlocks.TERMINAL)
-    )
-
-    val INSTRUCTION_CRAFTER: BlockEntityType<InstructionCrafterBlockEntity> = register(
-        "instruction_crafter",
-        PlatformServices.blockEntity.createBlockEntityType(::InstructionCrafterBlockEntity, ModBlocks.INSTRUCTION_CRAFTER)
     )
 
     val INSTRUCTION_STORAGE: BlockEntityType<InstructionStorageBlockEntity> = register(

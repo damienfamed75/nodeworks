@@ -4,7 +4,7 @@ import net.minecraft.core.BlockPos
 
 /**
  * Interface for block entities that can participate in node network connections.
- * Implemented by NodeBlockEntity and InstructionCrafterBlockEntity.
+ * Implemented by NodeBlockEntity and other network-connectable block entities.
  * Implementors must also be BlockEntity subclasses (which provide blockPos via getBlockPos()).
  */
 interface Connectable {

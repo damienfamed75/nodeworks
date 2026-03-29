@@ -7,7 +7,8 @@ data class ProcessingApiCardOpenData(
     val name: String,
     val inputs: List<Pair<String, Int>>,
     val outputs: List<Pair<String, Int>>,
-    val timeout: Int
+    val timeout: Int,
+    val serial: Boolean
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, ProcessingApiCardOpenData> = object : StreamCodec<FriendlyByteBuf, ProcessingApiCardOpenData> {
@@ -22,7 +23,8 @@ data class ProcessingApiCardOpenData(
                     buf.readUtf(256) to buf.readVarInt()
                 }
                 val timeout = buf.readVarInt()
-                return ProcessingApiCardOpenData(name, inputs, outputs, timeout)
+                val serial = buf.readBoolean()
+                return ProcessingApiCardOpenData(name, inputs, outputs, timeout, serial)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: ProcessingApiCardOpenData) {
@@ -38,6 +40,7 @@ data class ProcessingApiCardOpenData(
                     buf.writeVarInt(count)
                 }
                 buf.writeVarInt(data.timeout)
+                buf.writeBoolean(data.serial)
             }
         }
     }

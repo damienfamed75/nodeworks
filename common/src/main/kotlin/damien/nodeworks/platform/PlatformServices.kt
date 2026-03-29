@@ -143,4 +143,7 @@ interface ModStateService {
      * scoped to the given terminal positions (i.e., only terminals on the same network).
      */
     fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? = null
+
+    /** Find any active ScriptEngine at the given terminal positions. */
+    fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): Any? = null
 }

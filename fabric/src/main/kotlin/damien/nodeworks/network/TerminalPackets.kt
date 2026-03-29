@@ -35,6 +35,16 @@ object TerminalPackets {
     fun getEngine(dimKey: ResourceKey<Level>, pos: BlockPos): ScriptEngine? =
         activeEngines[GlobalPos.of(dimKey, pos)]
 
+    /** Find any active engine at the given positions. */
+    fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): ScriptEngine? {
+        val dimKey = level.dimension()
+        for (pos in terminalPositions) {
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            if (engine.isRunning()) return engine
+        }
+        return null
+    }
+
     /** Find the first active engine on the given network that has a processing handler for the given card name. */
     fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): ScriptEngine? {
         val dimKey = level.dimension()
@@ -71,6 +81,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
     }
@@ -239,6 +250,14 @@ object TerminalPackets {
             if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
                 menu.setSlotFromId(payload.slotIndex, payload.itemId)
             }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(CancelCraftPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
+            val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@registerGlobalReceiver
+            entity.cancelJob()
         }
     }
 

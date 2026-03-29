@@ -33,15 +33,11 @@ class ProcessingApiCard(properties: Properties) : Item(properties) {
         if (level.isClientSide) return InteractionResultHolder.success(stack)
 
         val serverPlayer = player as ServerPlayer
-        val name = getCardName(stack)
-        val inputs = getInputs(stack)
-        val outputs = getOutputs(stack)
-        val timeout = getTimeout(stack)
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.processing_api_card"),
-            ProcessingApiCardOpenData(name, inputs, outputs, timeout),
+            ProcessingApiCardOpenData(getCardName(stack), getInputs(stack), getOutputs(stack), getTimeout(stack), isSerial(stack)),
             ProcessingApiCardOpenData.STREAM_CODEC,
             { syncId, inv, p -> ProcessingApiCardScreenHandler.createHandheld(syncId, inv, hand, stack) }
         )
@@ -92,6 +88,7 @@ class ProcessingApiCard(properties: Properties) : Item(properties) {
         private const val OUTPUT_COUNTS_KEY = "output_counts"
         private const val NAME_KEY = "name"
         private const val TIMEOUT_KEY = "timeout"
+        private const val SERIAL_KEY = "serial"
         const val MAX_OUTPUTS = 3
 
         /** Get the card's registered name (used as the handler key). */
@@ -142,8 +139,14 @@ class ProcessingApiCard(properties: Properties) : Item(properties) {
             return if (tag.contains(TIMEOUT_KEY)) tag.getInt(TIMEOUT_KEY) else 0
         }
 
+        /** Whether this card enforces serial (one-at-a-time) handler execution. */
+        fun isSerial(stack: ItemStack): Boolean {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
+            return customData.copyTag().getBoolean(SERIAL_KEY)
+        }
+
         /** Save the processing recipe to the card stack. */
-        fun setRecipe(stack: ItemStack, name: String, inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>, timeout: Int) {
+        fun setRecipe(stack: ItemStack, name: String, inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>, timeout: Int, serial: Boolean = false) {
             val tag = CompoundTag()
             tag.putString(NAME_KEY, name)
 
@@ -166,6 +169,7 @@ class ProcessingApiCard(properties: Properties) : Item(properties) {
             tag.putIntArray(OUTPUT_COUNTS_KEY, outputCounts)
 
             tag.putInt(TIMEOUT_KEY, timeout)
+            tag.putBoolean(SERIAL_KEY, serial)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
     }

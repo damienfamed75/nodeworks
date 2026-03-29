@@ -1,7 +1,6 @@
 package damien.nodeworks.network
 
 import damien.nodeworks.block.entity.ApiStorageBlockEntity
-import damien.nodeworks.block.entity.InstructionCrafterBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
@@ -42,7 +41,6 @@ object NetworkDiscovery {
 
             when (connectable) {
                 is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
-                is InstructionCrafterBlockEntity -> crafters.add(snapshotCrafter(connectable))
                 is InstructionStorageBlockEntity -> {
                     // Storage block connected via laser — scan its cluster for all recipes
                     val clusterSets = connectable.getAllInstructionSets()
@@ -122,10 +120,6 @@ object NetworkDiscovery {
         return NodeSnapshot(entity.blockPos, sides)
     }
 
-    private fun snapshotCrafter(entity: InstructionCrafterBlockEntity): CrafterSnapshot {
-        val instructionSets = entity.getAllInstructionSets()
-        return CrafterSnapshot(entity.blockPos, instructionSets)
-    }
 }
 
 data class ControllerSnapshot(

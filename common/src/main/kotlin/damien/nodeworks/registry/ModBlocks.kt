@@ -1,6 +1,5 @@
 package damien.nodeworks.registry
 
-import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.InstructionStorageBlock
 import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
@@ -36,15 +35,6 @@ object ModBlocks {
         ::TerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
-    )
-
-    val INSTRUCTION_CRAFTER: Block = register(
-        "instruction_crafter",
-        ::InstructionCrafterBlock,
-        BlockBehaviour.Properties.of()
-            .strength(3.0f, 6.0f)
-            .noOcclusion()
-            .lightLevel { 15 }
     )
 
     val INSTRUCTION_STORAGE: Block = register(

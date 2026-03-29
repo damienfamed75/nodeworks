@@ -147,11 +147,6 @@ class TerminalScreen(
                                 if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
                             }
                         }
-                        is damien.nodeworks.block.entity.InstructionCrafterBlockEntity -> {
-                            for (info in entity.getAllInstructionSets()) {
-                                if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
-                            }
-                        }
                         is damien.nodeworks.block.entity.ApiStorageBlockEntity -> {
                             for (api in entity.getAllProcessingApis()) {
                                 scannedLocal.add(api.name)

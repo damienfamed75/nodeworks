@@ -84,6 +84,33 @@ class CraftingCoreBlockEntity(
         markDirtyAndSync()
     }
 
+    /** Cancel the current job: drop buffer contents as items and reset state. */
+    fun cancelJob() {
+        val lvl = level as? net.minecraft.server.level.ServerLevel ?: return
+        val contents = clearBuffer()
+        for ((itemId, count) in contents) {
+            val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+            var remaining = count
+            while (remaining > 0) {
+                val batch = minOf(remaining, item.getDefaultMaxStackSize())
+                val stack = net.minecraft.world.item.ItemStack(item, batch)
+                // Try to insert into network storage via connected nodes
+                val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
+                val inserted = damien.nodeworks.script.NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, null)
+                if (inserted > 0) {
+                    remaining -= inserted
+                } else {
+                    // Can't insert to storage — drop as item entity
+                    net.minecraft.world.Containers.dropItemStack(lvl,
+                        worldPosition.x + 0.5, worldPosition.y + 1.0, worldPosition.z + 0.5, stack)
+                    remaining -= batch
+                }
+            }
+        }
+        setCrafting(false)
+    }
+
     // --- Multiblock detection ---
 
     /**

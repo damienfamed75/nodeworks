@@ -85,7 +85,7 @@ class AutocompletePopup(
     private val knownTypes = listOf(
         Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
-        Suggestion("ProcessBuilder", "ProcessBuilder — from network:process(), chain with :connect()"),
+        Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()"),
         Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var"),
         Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:var"),
         Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:var")
@@ -243,21 +243,6 @@ class AutocompletePopup(
             return fuzzyStrings(partial, localApiNames)
         }
 
-        // After network:process("partial → suggest all processable output item IDs (local + remote)
-        val processMatch = Regex("""network:process\(\s*"([\w:]*)$""").find(trimmed)
-        if (processMatch != null) {
-            val partial = processMatch.groupValues[1]
-            customPrefix = partial
-            return fuzzyStrings(partial, processableOutputs)
-        }
-
-        // After network:process("...", count, "partial → subsequent items in process call
-        val processNextMatch = Regex("""network:process\([^)]*,\s*"([\w:]*)$""").find(trimmed)
-        if (processNextMatch != null) {
-            val partial = processNextMatch.groupValues[1]
-            customPrefix = partial
-            return fuzzyStrings(partial, processableOutputs)
-        }
 
         // After network:var("partial → suggest variable names with type hints
         val varMatch = Regex("""network:var\(\s*"(\w*)$""").find(trimmed)
@@ -293,13 +278,12 @@ class AutocompletePopup(
                 suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
                 suggest("count(", "count(filter: string) → number"),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
-                suggest("craft(", "craft(recipe: string, count?: number) → ItemsHandle?"),
+                suggest("craft(", "craft(id: string, count?: number) → CraftBuilder"),
                 suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
                 suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
                 suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)"),
                 suggest("var(", "var(name: string) → VariableHandle"),
-                suggest("handle(", "handle(cardName: string, fn: function(job, ItemsHandle...))"),
-                suggest("process(", "process(id, count?, ...):connect(fn(ItemsHandle...))")
+                suggest("handle(", "handle(cardName: string, fn: function(job, ItemsHandle...))")
             )
             return fuzzy(partial, methods)
         }
@@ -324,14 +308,15 @@ class AutocompletePopup(
             return cardHandleMethods(partial)
         }
 
-        // ProcessBuilder method chain: after network:process(...): or on next line
-        val processChainMatch = Regex("""network:process\([^)]*\)\s*:(\w*)$""").find(trimmed)
-            ?: Regex("""network:process\([^)]*\)\s*\n\s*:(\w*)$""").find(trimmed)
+        // CraftBuilder method chain: after network:craft(...): or on next line
+        val processChainMatch = Regex("""network:craft\([^)]*\)\s*:(\w*)$""").find(trimmed)
+            ?: Regex("""network:craft\([^)]*\)\s*\n\s*:(\w*)$""").find(trimmed)
         if (processChainMatch != null) {
             val partial = processChainMatch.groupValues[1]
             customPrefix = partial
             return fuzzy(partial, listOf(
-                suggest("connect(", "connect(fn: function(ItemsHandle...)) — callback when done")
+                suggest("connect(", "connect(fn: function(item: ItemsHandle)) — callback when done"),
+                suggest("store(", "store() — send result to network storage")
             ))
         }
 
@@ -423,20 +408,6 @@ class AutocompletePopup(
             return fuzzy(partial, methods)
         }
 
-        // After coroutine. or coroutine.partial → suggest coroutine library methods
-        val coroutineMatch = Regex("""coroutine\.(\w*)$""").find(trimmed)
-        if (coroutineMatch != null) {
-            val partial = coroutineMatch.groupValues[1]
-            val methods = listOf(
-                suggest("create(", "create(fn: function) → thread"),
-                suggest("resume(", "resume(co: thread, ...) → boolean, ..."),
-                suggest("yield(", "yield(...) — pause coroutine"),
-                suggest("status(", "status(co: thread) → string"),
-                suggest("wrap(", "wrap(fn: function) → function"),
-                suggest("isyieldable(", "isyieldable() → boolean")
-            )
-            return fuzzy(partial, methods)
-        }
 
         // After require("partial → suggest available script names
         val requireMatch = Regex("""require\(\s*"(\w*)$""").find(trimmed)
@@ -473,7 +444,6 @@ class AutocompletePopup(
                 suggest("string", "string library"),
                 suggest("math", "math library"),
                 suggest("table", "table library"),
-                suggest("coroutine", "coroutine library"),
                 suggest("tostring", "tostring(value: any) → string"),
                 suggest("tonumber", "tonumber(value: any) → number?"),
                 suggest("type", "type(value: any) → string"),
@@ -522,7 +492,7 @@ class AutocompletePopup(
         // 4. Inference from assignment context
         if (varName in extractCardVariables(text)) return "CardHandle"
         if (varName in extractItemsHandleVariables(text)) return "ItemsHandle"
-        if (Regex("""local\s+${Regex.escape(varName)}\s*=\s*network:process\s*\(""").containsMatchIn(text)) return "ProcessBuilder"
+        if (Regex("""local\s+${Regex.escape(varName)}\s*=\s*network:craft\s*\(""").containsMatchIn(text)) return "CraftBuilder"
         val varType = resolveVariableHandleType(varName, text)
         if (varType != null) return varType
 
@@ -542,7 +512,10 @@ class AutocompletePopup(
         val methods = when (type) {
             "CardHandle" -> cardHandleMethods("")
             "ItemsHandle" -> itemsHandleMethods("")
-            "ProcessBuilder" -> listOf(suggest("connect(", "connect(fn: function(ItemsHandle...)) — callback when done"))
+            "CraftBuilder" -> listOf(
+                suggest("connect(", "connect(fn: function(item: ItemsHandle)) — callback when done"),
+                suggest("store(", "store() — send result to network storage")
+            )
             "VariableHandle" -> variableHandleMethods("")
             "NumberVariableHandle" -> numberVariableHandleMethods("")
             "StringVariableHandle" -> stringVariableHandleMethods("")
@@ -684,9 +657,7 @@ class AutocompletePopup(
         // local X = network:findStack(...)
         val netFindStackPattern = Regex("""local\s+(\w+)\s*=\s*network:findStack\s*\(""")
         netFindStackPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
-        // local X = network:craft(...)
-        val craftPattern = Regex("""local\s+(\w+)\s*=\s*network:craft\s*\(""")
-        craftPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
+        // network:craft now returns CraftBuilder, not ItemsHandle — handled by resolveVariableType
         // local X = network:shapeless(...)
         val shapelessPattern = Regex("""local\s+(\w+)\s*=\s*network:shapeless\s*\(""")
         shapelessPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
