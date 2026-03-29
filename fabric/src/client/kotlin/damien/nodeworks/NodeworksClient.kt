@@ -68,6 +68,12 @@ object NodeworksClient : ClientModInitializer {
         MenuScreens.register(ModScreenHandlers.API_STORAGE) { menu, inventory, title ->
             damien.nodeworks.screen.ApiStorageScreen(menu, inventory, title)
         }
+        MenuScreens.register(ModScreenHandlers.BROADCAST_ANTENNA) { menu, inventory, title ->
+            damien.nodeworks.screen.BroadcastAntennaScreen(menu, inventory, title)
+        }
+        MenuScreens.register(ModScreenHandlers.RECEIVER_ANTENNA) { menu, inventory, title ->
+            damien.nodeworks.screen.ReceiverAntennaScreen(menu, inventory, title)
+        }
 
         // Receive log messages from the server
         ClientPlayNetworking.registerGlobalReceiver(TerminalLogPayload.TYPE) { payload, context ->

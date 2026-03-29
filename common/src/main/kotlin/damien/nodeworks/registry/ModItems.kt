@@ -4,6 +4,7 @@ import damien.nodeworks.card.IOCard
 import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.ProcessingApiCard
 import damien.nodeworks.card.StorageCard
+import damien.nodeworks.item.LinkChipItem
 import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
@@ -50,6 +51,12 @@ object ModItems {
         "memory_upgrade",
         ::MemoryUpgradeItem,
         Item.Properties().stacksTo(4)
+    )
+
+    val LINK_CHIP: Item = register(
+        "link_chip",
+        ::LinkChipItem,
+        Item.Properties().stacksTo(1)
     )
 
     val MONITOR: Item = register(

@@ -1,6 +1,8 @@
 package damien.nodeworks.registry
 
 import damien.nodeworks.screen.ApiStorageScreenHandler
+import damien.nodeworks.screen.BroadcastAntennaMenu
+import damien.nodeworks.screen.ReceiverAntennaMenu
 import damien.nodeworks.screen.InstructionStorageScreenHandler
 import damien.nodeworks.screen.InventoryTerminalMenu
 import damien.nodeworks.screen.NetworkControllerMenu
@@ -28,6 +30,8 @@ object ModScreenHandlers {
     lateinit var CRAFTING_CORE: MenuType<CraftingCoreMenu>
     lateinit var PROCESSING_API_CARD: MenuType<ProcessingApiCardScreenHandler>
     lateinit var API_STORAGE: MenuType<ApiStorageScreenHandler>
+    lateinit var BROADCAST_ANTENNA: MenuType<BroadcastAntennaMenu>
+    lateinit var RECEIVER_ANTENNA: MenuType<ReceiverAntennaMenu>
 
     fun initialize() {
         // Platform module must call registerAll() before this

@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "nodeworks:block/broadcast_antenna_top",
+    "bottom": "nodeworks:block/broadcast_antenna_bottom",
+    "side": "nodeworks:block/broadcast_antenna_side"
+  }
+}
