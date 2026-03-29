@@ -34,6 +34,7 @@ class TerminalScreen(
     // Scanned client-side from block entities in the loaded world
     private val localApiNames: List<String>
     private val processableOutputs: List<String>
+    private val craftableOutputs: List<String> // Instruction Set outputs + processable outputs
     private var scriptRunning: Boolean = menu.isRunning()
     private var autoRun: Boolean = menu.isAutoRun()
 
@@ -104,9 +105,10 @@ class TerminalScreen(
         imageWidth = currentLayout.w
         imageHeight = currentLayout.h
 
-        // Scan client-side block entities for API card data (avoids packet size limits)
+        // Scan client-side block entities for autocomplete data
         val scannedLocal = mutableListOf<String>()
         val scannedProcessable = mutableListOf<String>()
+        val scannedCraftable = mutableListOf<String>()
         val mc = net.minecraft.client.Minecraft.getInstance()
         val clientLevel = mc.level
         if (clientLevel != null) {
@@ -124,6 +126,16 @@ class TerminalScreen(
                     if (!clientLevel.isLoaded(pos)) continue
                     val entity = clientLevel.getBlockEntity(pos) ?: continue
 
+                    if (entity is damien.nodeworks.block.entity.InstructionStorageBlockEntity) {
+                        for (info in entity.getAllInstructionSets()) {
+                            if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
+                        }
+                    }
+                    if (entity is damien.nodeworks.block.entity.InstructionCrafterBlockEntity) {
+                        for (info in entity.getAllInstructionSets()) {
+                            if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
+                        }
+                    }
                     if (entity is damien.nodeworks.block.entity.ApiStorageBlockEntity) {
                         for (api in entity.getAllProcessingApis()) {
                             scannedLocal.add(api.name)
@@ -155,6 +167,7 @@ class TerminalScreen(
         }
         localApiNames = scannedLocal.distinct()
         processableOutputs = scannedProcessable.distinct()
+        craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
     }
 
     override fun init() {
@@ -203,7 +216,7 @@ class TerminalScreen(
         }
         addRenderableWidget(editor)
 
-        autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, processableOutputs) { scripts }
+        autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, processableOutputs, craftableOutputs) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 2
