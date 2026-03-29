@@ -72,6 +72,11 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "variable")),
             ExtendedScreenHandlerType({ syncId, inv, data -> VariableMenu.clientFactory(syncId, inv, data) }, VariableOpenData.STREAM_CODEC)
         )
+        ModScreenHandlers.CRAFTING_CORE = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "crafting_core")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> CraftingCoreMenu.clientFactory(syncId, inv, data) }, CraftingCoreOpenData.STREAM_CODEC)
+        )
 
         ModBlocks.initialize()
         ModBlockEntities.initialize()

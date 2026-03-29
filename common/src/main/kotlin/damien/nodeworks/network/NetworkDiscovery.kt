@@ -4,6 +4,7 @@ import damien.nodeworks.block.entity.InstructionCrafterBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.block.entity.VariableType
 import damien.nodeworks.card.SideCapability
@@ -23,6 +24,7 @@ object NetworkDiscovery {
         val queue = ArrayDeque<BlockPos>()
         val nodes = mutableListOf<NodeSnapshot>()
         val crafters = mutableListOf<CrafterSnapshot>()
+        val cpus = mutableListOf<CpuSnapshot>()
         val variables = mutableListOf<VariableSnapshot>()
         var controller: ControllerSnapshot? = null
 
@@ -36,7 +38,17 @@ object NetworkDiscovery {
             when (connectable) {
                 is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
                 is InstructionCrafterBlockEntity -> crafters.add(snapshotCrafter(connectable))
+                is InstructionStorageBlockEntity -> {
+                    // Storage block connected via laser — scan its cluster for all recipes
+                    val clusterSets = connectable.getAllInstructionSets()
+                    if (clusterSets.isNotEmpty()) {
+                        crafters.add(CrafterSnapshot(connectable.blockPos, clusterSets))
+                    }
+                }
                 is NetworkControllerBlockEntity -> controller = ControllerSnapshot(connectable.blockPos, connectable.networkId)
+                is CraftingCoreBlockEntity -> cpus.add(CpuSnapshot(
+                    connectable.blockPos, connectable.bufferUsed, connectable.bufferCapacity, connectable.isCrafting
+                ))
                 is VariableBlockEntity -> if (connectable.variableName.isNotEmpty()) {
                     variables.add(VariableSnapshot(connectable.blockPos, connectable.variableName, connectable.variableType))
                 }
@@ -52,7 +64,7 @@ object NetworkDiscovery {
         // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1)
         assignAutoAliases(nodes)
 
-        return NetworkSnapshot(nodes, crafters, variables, controller)
+        return NetworkSnapshot(nodes, crafters, variables, cpus, controller)
     }
 
     private fun assignAutoAliases(nodes: List<NodeSnapshot>) {
@@ -96,6 +108,13 @@ data class ControllerSnapshot(
     val networkId: UUID
 )
 
+data class CpuSnapshot(
+    val pos: BlockPos,
+    val bufferUsed: Int,
+    val bufferCapacity: Int,
+    val isBusy: Boolean
+)
+
 data class VariableSnapshot(
     val pos: BlockPos,
     val name: String,
@@ -106,6 +125,7 @@ data class NetworkSnapshot(
     val nodes: List<NodeSnapshot>,
     val crafters: List<CrafterSnapshot> = emptyList(),
     val variables: List<VariableSnapshot> = emptyList(),
+    val cpus: List<CpuSnapshot> = emptyList(),
     val controller: ControllerSnapshot? = null
 ) {
     /** Whether this network has a controller and is online. */
@@ -116,6 +136,10 @@ data class NetworkSnapshot(
 
     /** Find a variable by name. */
     fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
+
+    /** Find an available (not busy) Crafting CPU with enough buffer capacity. */
+    fun findAvailableCpu(requiredCapacity: Int = 0): CpuSnapshot? =
+        cpus.firstOrNull { !it.isBusy && it.bufferCapacity - it.bufferUsed >= requiredCapacity }
 
     /** Find a card by alias (custom or auto-generated) across the entire network. */
     fun findByAlias(alias: String): CardSnapshot? {

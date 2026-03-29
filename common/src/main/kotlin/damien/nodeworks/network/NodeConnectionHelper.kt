@@ -70,7 +70,7 @@ object NodeConnectionHelper {
     /** Get a Connectable block entity at the given position. */
     fun getConnectable(level: Level, pos: BlockPos): Connectable? {
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock) return null
+        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is damien.nodeworks.block.CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock) return null
         return level.getBlockEntity(pos) as? Connectable
     }
 

@@ -30,5 +30,8 @@
   "message.nodeworks.duplicate_controller": "Network already has a controller.",
   "message.nodeworks.no_controller": "Network has no controller.",
   "block.nodeworks.variable": "Variable",
-  "container.nodeworks.variable": "Variable Settings"
+  "container.nodeworks.variable": "Variable Settings",
+  "block.nodeworks.crafting_core": "Crafting Core",
+  "container.nodeworks.crafting_core": "Crafting CPU",
+  "block.nodeworks.crafting_storage": "Crafting Storage"
 }

@@ -6,6 +6,8 @@ import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
+import damien.nodeworks.block.CraftingCoreBlock
+import damien.nodeworks.block.CraftingStorageBlock
 import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -64,6 +66,20 @@ object ModBlocks {
         ::VariableBlock,
         BlockBehaviour.Properties.of()
             .strength(2.0f, 6.0f)
+    )
+
+    val CRAFTING_CORE: Block = register(
+        "crafting_core",
+        ::CraftingCoreBlock,
+        BlockBehaviour.Properties.of()
+            .strength(4.0f, 8.0f)
+    )
+
+    val CRAFTING_STORAGE: Block = register(
+        "crafting_storage",
+        ::CraftingStorageBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
     )
 
     val INVENTORY_TERMINAL: Block = register(

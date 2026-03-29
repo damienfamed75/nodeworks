@@ -39,6 +39,7 @@ class InstructionStorageBlock(properties: Properties) : BaseEntityBlock(properti
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
+        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val blockEntity = level.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: return InteractionResult.PASS
@@ -60,5 +61,11 @@ class InstructionStorageBlock(properties: Properties) : BaseEntityBlock(properti
             Containers.dropContents(level, pos, level.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: return)
         }
         super.onRemove(state, level, pos, newState, movedByPiston)
+    }
+
+    override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: net.minecraft.world.entity.player.Player): BlockState {
+        val entity = level.getBlockEntity(pos) as? InstructionStorageBlockEntity
+        entity?.blockDestroyed = true
+        return super.playerWillDestroy(level, pos, state, player)
     }
 }

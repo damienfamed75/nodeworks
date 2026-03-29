@@ -130,6 +130,14 @@ class Nodeworks(modBus: IEventBus) {
                     VariableMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.CRAFTING_CORE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "crafting_core")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = CraftingCoreOpenData.STREAM_CODEC.decode(buf)
+                    CraftingCoreMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
