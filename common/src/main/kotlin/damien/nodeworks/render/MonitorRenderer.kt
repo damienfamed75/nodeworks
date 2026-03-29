@@ -45,7 +45,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         val count: Long
     )
 
-    data class BeamTarget(val dx: Float, val dy: Float, val dz: Float)
+    data class BeamTarget(val dx: Float, val dy: Float, val dz: Float, val blocked: Boolean = false)
 
     override fun shouldRenderOffScreen(entity: NodeBlockEntity): Boolean = true
 
@@ -75,10 +75,13 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         val beamTargets = if (NodeConnectionRenderer.beamEffectEnabled) {
             val thisPos = entity.blockPos
             entity.getConnections().map { targetPos ->
+                val blocked = NodeConnectionRenderer.isConnectionBlocked(thisPos, targetPos) ||
+                    !NodeConnectionRenderer.isReachable(thisPos) || !NodeConnectionRenderer.isReachable(targetPos)
                 BeamTarget(
                     (targetPos.x - thisPos.x).toFloat(),
                     (targetPos.y - thisPos.y).toFloat(),
-                    (targetPos.z - thisPos.z).toFloat()
+                    (targetPos.z - thisPos.z).toFloat(),
+                    blocked
                 )
             }
         } else {
@@ -267,19 +270,21 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
 
     private fun renderBeams(targets: List<BeamTarget>, poseStack: PoseStack, bufferSource: MultiBufferSource, networkColor: Int) {
         val time = (System.currentTimeMillis() % 100000) / 1000f
-        val color = networkColor
-        val r = (color shr 16) and 0xFF
-        val g = (color shr 8) and 0xFF
-        val b = color and 0xFF
+        val r = (networkColor shr 16) and 0xFF
+        val g = (networkColor shr 8) and 0xFF
+        val b = networkColor and 0xFF
 
-        // Opaque core beam
         val opaqueType = RenderType.beaconBeam(LASER_TEXTURE, false)
-        // Translucent glow
         val translucentType = RenderType.beaconBeam(LASER_TEXTURE, true)
 
         for (target in targets) {
-            renderSingleBeam(poseStack, bufferSource, opaqueType, target, time, 255, 255, 255, 255, beamWidth, 0f)
-            renderSingleBeam(poseStack, bufferSource, translucentType, target, time, r, g, b, 120, beamWidth * 3.5f, Math.PI.toFloat() / 4f)
+            if (target.blocked) {
+                // Blocked: dim red beam, no white core
+                renderSingleBeam(poseStack, bufferSource, translucentType, target, time, 180, 50, 50, 80, beamWidth * 2f, 0f)
+            } else {
+                renderSingleBeam(poseStack, bufferSource, opaqueType, target, time, 255, 255, 255, 255, beamWidth, 0f)
+                renderSingleBeam(poseStack, bufferSource, translucentType, target, time, r, g, b, 120, beamWidth * 3.5f, Math.PI.toFloat() / 4f)
+            }
         }
     }
 

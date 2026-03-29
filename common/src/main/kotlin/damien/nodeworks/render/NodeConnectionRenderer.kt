@@ -26,6 +26,16 @@ object NodeConnectionRenderer {
     /** Default network color (RGB, no alpha). Used as fallback when no controller is found. */
     const val DEFAULT_NETWORK_COLOR = 0x888888
 
+    /** How often to refresh line-of-sight cache (ticks). */
+    private const val LOS_REFRESH_INTERVAL = 10
+
+    // Line-of-sight cache: (min(a,b), max(a,b)) → blocked?
+    private val losCache = HashMap<Long, Boolean>()
+    private var losRefreshTick = 0L
+
+    // Set of block positions reachable from any controller through unblocked connections
+    private val reachablePositions = HashSet<BlockPos>()
+
     /** Beam effect toggle — disable for lower-end PCs. */
     var beamEffectEnabled = true
 
@@ -62,7 +72,7 @@ object NodeConnectionRenderer {
         visited.add(startPos)
         val startConnectable = startEntity as? damien.nodeworks.network.Connectable ?: return null
         for (conn in startConnectable.getConnections()) {
-            if (visited.add(conn)) queue.add(conn)
+            if (!isConnectionBlocked(startPos, conn) && visited.add(conn)) queue.add(conn)
         }
         while (queue.isNotEmpty() && visited.size < 32) {
             val pos = queue.removeFirst()
@@ -70,7 +80,7 @@ object NodeConnectionRenderer {
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) return entity
             val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
             for (conn in connectable.getConnections()) {
-                if (visited.add(conn)) queue.add(conn)
+                if (!isConnectionBlocked(pos, conn) && visited.add(conn)) queue.add(conn)
             }
         }
         return null
@@ -79,6 +89,67 @@ object NodeConnectionRenderer {
     /** Convenience: find the network color for a position. */
     fun findNetworkColor(level: net.minecraft.world.level.Level?, startPos: BlockPos): Int {
         return findController(level, startPos)?.networkColor ?: DEFAULT_NETWORK_COLOR
+    }
+
+    /** Whether a specific connection is blocked (no line-of-sight). Uses cache. */
+    fun isConnectionBlocked(a: BlockPos, b: BlockPos): Boolean {
+        val key = connectionKey(a, b)
+        return losCache[key] ?: false
+    }
+
+    /** Whether a block position is reachable from a controller through unblocked connections. */
+    fun isReachable(pos: BlockPos): Boolean = reachablePositions.contains(pos)
+
+    private fun connectionKey(a: BlockPos, b: BlockPos): Long {
+        // Deterministic key: hash both positions into a single long
+        val (lo, hi) = if (isLessThan(a, b)) a to b else b to a
+        return lo.asLong() xor (hi.asLong() * 31)
+    }
+
+    /** Refresh the LOS cache and reachability set. Called from render() every N ticks. */
+    private fun refreshLosCache(level: net.minecraft.world.level.Level) {
+        losCache.clear()
+
+        // Check LOS for all connections
+        for (nodePos in knownNodes) {
+            if (!level.isLoaded(nodePos)) continue
+            val connectable = level.getBlockEntity(nodePos) as? damien.nodeworks.network.Connectable ?: continue
+            for (targetPos in connectable.getConnections()) {
+                val key = connectionKey(nodePos, targetPos)
+                if (losCache.containsKey(key)) continue
+                if (!level.isLoaded(targetPos)) { losCache[key] = true; continue }
+                val blocked = !damien.nodeworks.network.NodeConnectionHelper.checkLineOfSight(level, nodePos, targetPos)
+                losCache[key] = blocked
+            }
+        }
+
+        // BFS from all controllers through unblocked connections
+        reachablePositions.clear()
+        for (nodePos in knownNodes) {
+            if (!level.isLoaded(nodePos)) continue
+            val entity = level.getBlockEntity(nodePos)
+            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
+                bfsReachable(level, nodePos)
+            }
+        }
+    }
+
+    private fun bfsReachable(level: net.minecraft.world.level.Level, controllerPos: BlockPos) {
+        val queue = ArrayDeque<BlockPos>()
+        queue.add(controllerPos)
+        reachablePositions.add(controllerPos)
+
+        while (queue.isNotEmpty()) {
+            val pos = queue.removeFirst()
+            val connectable = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
+            for (targetPos in connectable.getConnections()) {
+                if (targetPos in reachablePositions) continue
+                if (isConnectionBlocked(pos, targetPos)) continue
+                if (!level.isLoaded(targetPos)) continue
+                reachablePositions.add(targetPos)
+                queue.add(targetPos)
+            }
+        }
     }
 
     fun register() {
@@ -100,6 +171,13 @@ object NodeConnectionRenderer {
     ) {
         val mc = Minecraft.getInstance()
         val level = mc.level ?: return
+
+        // Refresh LOS cache periodically
+        val tick = mc.level?.gameTime ?: 0L
+        if (tick - losRefreshTick >= LOS_REFRESH_INTERVAL) {
+            losRefreshTick = tick
+            refreshLosCache(level)
+        }
 
         poseStack.pushPose()
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)

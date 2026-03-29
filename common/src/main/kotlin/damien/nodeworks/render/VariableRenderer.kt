@@ -16,7 +16,7 @@ import net.minecraft.core.SectionPos
 class VariableRenderer(context: BlockEntityRendererProvider.Context) :
     BlockEntityRenderer<VariableBlockEntity> {
 
-    private val lastConnectionCount = HashMap<BlockPos, Int>()
+    private val lastState = HashMap<BlockPos, Int>()
 
     override fun render(
         entity: VariableBlockEntity,
@@ -26,9 +26,10 @@ class VariableRenderer(context: BlockEntityRendererProvider.Context) :
         packedLight: Int,
         packedOverlay: Int
     ) {
-        val connectionCount = entity.getConnections().size
-        val last = lastConnectionCount.put(entity.blockPos, connectionCount)
-        if (last != null && last != connectionCount) {
+        val reachable = NodeConnectionRenderer.isReachable(entity.blockPos)
+        val state = entity.getConnections().size or (if (reachable) 0x10000 else 0)
+        val last = lastState.put(entity.blockPos, state)
+        if (last != null && last != state) {
             val sx = SectionPos.blockToSectionCoord(entity.blockPos.x)
             val sy = SectionPos.blockToSectionCoord(entity.blockPos.y)
             val sz = SectionPos.blockToSectionCoord(entity.blockPos.z)
