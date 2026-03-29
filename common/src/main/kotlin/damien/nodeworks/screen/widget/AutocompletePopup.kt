@@ -15,6 +15,7 @@ class AutocompletePopup(
     private val variables: List<Pair<String, Int>> = emptyList(),
     private val localApiNames: List<String> = emptyList(),
     private val processableOutputs: List<String> = emptyList(),
+    private val craftableOutputs: List<String> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     data class Suggestion(val insertText: String, val displayText: String)
@@ -224,6 +225,14 @@ class AutocompletePopup(
             customPrefix = partial
             val types = listOf("io", "storage")
             return fuzzyStrings(partial, types)
+        }
+
+        // After network:craft("partial → suggest all craftable item IDs
+        val craftMatch = Regex("""network:craft\(\s*"([\w:]*)$""").find(trimmed)
+        if (craftMatch != null) {
+            val partial = craftMatch.groupValues[1]
+            customPrefix = partial
+            return fuzzyStrings(partial, craftableOutputs)
         }
 
         // After network:handle("partial → suggest local API Card names only
