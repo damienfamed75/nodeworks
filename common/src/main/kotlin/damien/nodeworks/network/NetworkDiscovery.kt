@@ -79,6 +79,8 @@ object NetworkDiscovery {
 
             for (connection in connectable.getConnections()) {
                 if (visited.add(connection)) {
+                    // Skip connections with blocked line-of-sight
+                    if (!NodeConnectionHelper.checkLineOfSight(level, pos, connection)) continue
                     queue.add(connection)
                 }
             }
