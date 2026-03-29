@@ -34,7 +34,7 @@ class ScriptEditor(
             "function", "if", "in", "local", "nil", "not", "or", "repeat",
             "return", "then", "true", "until", "while"
         )
-        private val BUILTINS = setOf("card", "scheduler", "print", "network", "clock", "require", "coroutine")
+        private val BUILTINS = setOf("card", "scheduler", "print", "network", "clock", "require")
     }
 
     // Text state

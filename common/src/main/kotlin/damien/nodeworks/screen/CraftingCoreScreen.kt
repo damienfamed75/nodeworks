@@ -1,5 +1,7 @@
 package damien.nodeworks.screen
 
+import damien.nodeworks.network.CancelCraftPayload
+import damien.nodeworks.platform.PlatformServices
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
@@ -13,7 +15,7 @@ class CraftingCoreScreen(
 
     init {
         imageWidth = 180
-        imageHeight = 100
+        imageHeight = 110
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -80,8 +82,23 @@ class CraftingCoreScreen(
         val countWidth = font.width(countText)
         graphics.drawString(font, countText, barX + (barW - countWidth) / 2, barTop + 1, 0xFFFFFFFF.toInt())
 
+        // Cancel button (only when crafting)
+        val btnTop = barTop + 14
+        if (menu.isCrafting || menu.bufferUsed > 0) {
+            val btnX = contentLeft
+            val btnW = 50
+            val btnH = 14
+            val hovered = mouseX >= btnX && mouseX < btnX + btnW && mouseY >= btnTop && mouseY < btnTop + btnH
+            val bg = if (hovered) 0xFF553333.toInt() else 0xFF442222.toInt()
+            graphics.fill(btnX, btnTop, btnX + btnW, btnTop + btnH, bg)
+            graphics.fill(btnX, btnTop, btnX + btnW, btnTop + 1, 0xFF664444.toInt())
+            graphics.fill(btnX, btnTop + btnH - 1, btnX + btnW, btnTop + btnH, 0xFF331111.toInt())
+            val textW = font.width("Cancel")
+            graphics.drawString(font, "Cancel", btnX + (btnW - textW) / 2, btnTop + 3, 0xFFFF8888.toInt())
+        }
+
         // Capacity info
-        val capacityTop = barTop + 16
+        val capacityTop = btnTop + 18
         if (!menu.isFormed) {
             graphics.drawString(font, "Place Crafting Storage adjacent", contentLeft, capacityTop, 0xFF888888.toInt())
             graphics.drawString(font, "to form the CPU", contentLeft, capacityTop + 11, 0xFF888888.toInt())
@@ -90,5 +107,19 @@ class CraftingCoreScreen(
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.render(graphics, mouseX, mouseY, partialTick)
+    }
+
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (menu.isCrafting || menu.bufferUsed > 0) {
+            val contentLeft = leftPos + 8
+            val btnTop = topPos + 26 + 16 + 14
+            val btnW = 50
+            val btnH = 14
+            if (mouseX >= contentLeft && mouseX < contentLeft + btnW && mouseY >= btnTop && mouseY < btnTop + btnH) {
+                PlatformServices.clientNetworking.sendToServer(CancelCraftPayload(menu.corePos))
+                return true
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 }

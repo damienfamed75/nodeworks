@@ -79,9 +79,10 @@ class ApiStorageBlockEntity(
             val inputs = ProcessingApiCard.getInputs(stack)
             val outputs = ProcessingApiCard.getOutputs(stack)
             val timeout = ProcessingApiCard.getTimeout(stack)
+            val serial = ProcessingApiCard.isSerial(stack)
             if (outputs.isEmpty()) continue
             val name = explicitName.ifEmpty { generateAutoName(outputs) }
-            result.add(ProcessingApiInfo(name, inputs, outputs, timeout))
+            result.add(ProcessingApiInfo(name, inputs, outputs, timeout, serial))
         }
         return result
     }
@@ -118,7 +119,8 @@ class ApiStorageBlockEntity(
         val name: String,
         val inputs: List<Pair<String, Int>>,
         val outputs: List<Pair<String, Int>>,
-        val timeout: Int
+        val timeout: Int,
+        val serial: Boolean = false
     ) {
         /** All output item IDs. */
         val outputItemIds: List<String> get() = outputs.map { it.first }

@@ -126,6 +126,24 @@ class ProcessingApiCardScreen(
         graphics.drawString(font, "Timeout:", x + 8, y + 97, LABEL_COLOR)
         graphics.drawString(font, "ticks", x + 104, y + 97, 0xFF666666.toInt())
 
+        // === Serial toggle ===
+        val serialY = y + 97
+        val serialX = x + 140
+        val serialLabel = if (menu.serial) "Serial" else "Parallel"
+        val serialColor = if (menu.serial) 0xFF55FF55.toInt() else LABEL_COLOR
+        graphics.drawString(font, serialLabel, serialX + 14, serialY, serialColor)
+        // Toggle box
+        val boxBg = if (menu.serial) 0xFF2A5A2A.toInt() else 0xFF333333.toInt()
+        graphics.fill(serialX, serialY - 1, serialX + 10, serialY + 9, boxBg)
+        graphics.fill(serialX, serialY - 1, serialX + 10, serialY, 0xFF444444.toInt())
+        graphics.fill(serialX, serialY + 8, serialX + 10, serialY + 9, 0xFF222222.toInt())
+        if (menu.serial) {
+            // Checkmark
+            graphics.fill(serialX + 2, serialY + 4, serialX + 4, serialY + 6, 0xFF55FF55.toInt())
+            graphics.fill(serialX + 4, serialY + 2, serialX + 6, serialY + 5, 0xFF55FF55.toInt())
+            graphics.fill(serialX + 6, serialY + 0, serialX + 8, serialY + 3, 0xFF55FF55.toInt())
+        }
+
         // === Separator ===
         graphics.fill(x + 4, y + 112, x + w - 4, y + 113, TOP_BAR_LINE)
 
@@ -188,5 +206,20 @@ class ProcessingApiCardScreen(
         }
 
         renderTooltip(graphics, mouseX, mouseY)
+    }
+
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
+
+        // Serial toggle click
+        val serialX = leftPos + 140
+        val serialY = topPos + 96
+        if (mx >= serialX && mx <= serialX + 60 && my >= serialY && my <= serialY + 10) {
+            menu.serial = !menu.serial
+            return true
+        }
+
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 }

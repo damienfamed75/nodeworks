@@ -26,11 +26,27 @@ object CraftingHelper {
 
     private val logger = LoggerFactory.getLogger("nodeworks-crafting")
 
+    /** Tracks active serial handler jobs by card name. If a card is serial, only one job at a time. */
+    private val activeSerialJobs = mutableSetOf<String>()
+
     data class CraftResult(
         val outputItemId: String,
         val outputName: String,
-        val count: Int
+        val count: Int,
+        val cpu: CraftingCoreBlockEntity? = null,
+        val level: ServerLevel? = null,
+        val snapshot: NetworkSnapshot? = null,
+        val cache: NetworkInventoryCache? = null,
+        val pendingJob: PendingHandlerJob? = null
     )
+
+    /** Release a craft result: move items from CPU buffer to storage and mark CPU idle. */
+    fun releaseCraftResult(result: CraftResult) {
+        val cpu = result.cpu ?: return
+        val level = result.level ?: return
+        val snapshot = result.snapshot ?: return
+        finishCrafting(cpu, level, snapshot, result.cache)
+    }
 
     /** Reason why crafting failed — returned instead of null for diagnostics. */
     var lastFailReason: String? = null
@@ -79,7 +95,8 @@ object CraftingHelper {
         depth: Int = 0,
         cache: NetworkInventoryCache? = null,
         cpuPos: BlockPos? = null,
-        processingHandlers: Map<String, LuaFunction>? = null
+        processingHandlers: Map<String, LuaFunction>? = null,
+        callerScheduler: SchedulerImpl? = null
     ): CraftResult? {
         if (depth == 0) lastFailReason = null
 
@@ -115,12 +132,14 @@ object CraftingHelper {
 
             var totalCrafted = 0
             for (i in 0 until count) {
-                if (!craftOnce(recipe, match, level, snapshot, depth, cache, cpu, processingHandlers)) break
+                if (!craftOnce(recipe, match, level, snapshot, depth, cache, cpu, processingHandlers, callerScheduler)) break
                 totalCrafted++
             }
 
-            if (cpuPos == null) finishCrafting(cpu, level, snapshot, cache)
-            if (totalCrafted == 0) return null
+            if (totalCrafted == 0) {
+                if (cpuPos == null) finishCrafting(cpu, level, snapshot, cache)
+                return null
+            }
 
             val outputId = match.instructionSet.outputItemId
             val outputIdentifier = ResourceLocation.tryParse(outputId) ?: return null
@@ -128,7 +147,9 @@ object CraftingHelper {
             val outputName = ItemStack(outputItem).hoverName.string
             val outputPerCraft = getRecipeOutputCount(recipe, level)
 
-            return CraftResult(outputId, outputName, totalCrafted * outputPerCraft)
+            // Items stay in CPU buffer — caller releases via connect/store
+            return CraftResult(outputId, outputName, totalCrafted * outputPerCraft,
+                cpu = if (cpuPos == null) cpu else null, level = level, snapshot = snapshot, cache = cache)
         }
 
         // Try Processing API Card + handler
@@ -151,22 +172,22 @@ object CraftingHelper {
             if (handler != null) {
                 var totalCrafted = 0
                 for (i in 0 until count) {
-                    if (!craftViaProcessing(apiMatch, handler, handlerEngine, level, snapshot, depth, cache, cpu, processingHandlers)) break
+                    if (!craftViaProcessing(apiMatch, handler, handlerEngine, level, snapshot, depth, cache, cpu, processingHandlers, isRecursive = cpuPos != null, callerScheduler = callerScheduler)) break
                     totalCrafted++
                 }
 
-                val pending = currentPendingJob
-                if (pending != null && !pending.isComplete && cpuPos == null) {
-                    // Defer finishCrafting until the handler coroutine completes
-                    pending.onCompleteCallback = {
-                        finishCrafting(cpu, level, snapshot, cache)
-                    }
-                } else if (cpuPos == null) {
-                    finishCrafting(cpu, level, snapshot, cache)
+                if (totalCrafted == 0) {
+                    if (cpuPos == null) finishCrafting(cpu, level, snapshot, cache)
+                    return null
                 }
-                if (totalCrafted == 0) return null
 
-                // Return result for the matched output (the one the caller asked for)
+                val pending = currentPendingJob?.takeIf { !it.isComplete }
+
+                // If async (pending job not done), return null — caller checks currentPendingJob
+                if (pending != null) {
+                    return null
+                }
+
                 val matchedOutput = apiMatch.api.outputs.firstOrNull { it.first == identifier }
                     ?: apiMatch.api.outputs.first()
                 val outputId = matchedOutput.first
@@ -174,7 +195,8 @@ object CraftingHelper {
                 val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier) ?: return null
                 val outputName = ItemStack(outputItem).hoverName.string
 
-                return CraftResult(outputId, outputName, totalCrafted * matchedOutput.second)
+                return CraftResult(outputId, outputName, totalCrafted * matchedOutput.second,
+                    cpu = if (cpuPos == null) cpu else null, level = level, snapshot = snapshot, cache = cache)
             }
         }
 
@@ -221,6 +243,8 @@ object CraftingHelper {
 
     /**
      * Execute one crafting operation using the CPU buffer.
+     * If prerequisites need async processing, starts them all and registers a
+     * pending job that assembles the recipe when all prerequisites arrive.
      */
     private fun craftOnce(
         recipe: List<String>,
@@ -230,43 +254,25 @@ object CraftingHelper {
         depth: Int,
         cache: NetworkInventoryCache?,
         cpu: CraftingCoreBlockEntity,
-        processingHandlers: Map<String, LuaFunction>? = null
+        processingHandlers: Map<String, LuaFunction>? = null,
+        callerScheduler: SchedulerImpl? = null
     ): Boolean {
-        // Count ingredients needed
         val ingredientCounts = mutableMapOf<String, Int>()
         for (itemId in recipe) {
             if (itemId.isEmpty()) continue
             ingredientCounts[itemId] = (ingredientCounts[itemId] ?: 0) + 1
         }
 
-        // For each ingredient, check buffer + storage. Recursively craft prerequisites if needed.
+        // Phase 1: Extract what's already available, then craft what's missing
+        val pendingPrereqs = mutableListOf<PendingHandlerJob>()
+
         for ((itemId, needed) in ingredientCounts) {
+            // First, extract what's already in storage into the buffer
             val inBuffer = cpu.getBufferCount(itemId)
             val inStorage = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
-            var have = inBuffer + inStorage
-
-            while (have < needed) {
-                // Try to recursively craft the missing ingredient (reuse same CPU)
-                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers)
-                if (subResult == null || subResult.count == 0) {
-                    logger.debug("Cannot craft '{}': unable to craft prerequisite '{}'",
-                        match.instructionSet.outputItemId, itemId)
-                    return false
-                }
-                // Re-check: sub-craft results go into storage, so check both buffer + storage
-                have = cpu.getBufferCount(itemId) + NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
-            }
-        }
-
-        // Extract ingredients from storage into CPU buffer
-        for ((itemId, needed) in ingredientCounts) {
-            // First use what's already in the buffer
-            val inBuffer = cpu.getBufferCount(itemId)
-            val fromStorage = maxOf(0, needed - inBuffer)
-
-            if (fromStorage > 0) {
-                // Extract from network storage into buffer
-                var remaining = fromStorage.toLong()
+            val canExtract = minOf(needed - inBuffer, inStorage).toLong()
+            if (canExtract > 0) {
+                var remaining = canExtract
                 for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
                     if (remaining <= 0) break
                     val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
@@ -279,14 +285,77 @@ object CraftingHelper {
                         remaining -= extracted
                     }
                 }
-                if (remaining > 0) {
-                    logger.warn("Failed to extract all '{}' for crafting", itemId)
-                    return false
+            }
+
+            // Now craft what's still missing
+            var have = cpu.getBufferCount(itemId)
+            var toCraft = needed - have
+
+            while (toCraft > 0) {
+                currentPendingJob = null
+                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler)
+                if (subResult == null || subResult.count == 0) {
+                    val pending = currentPendingJob
+                    if (pending != null) {
+                        pendingPrereqs.add(pending)
+                        toCraft -= 1
+                    } else {
+                        logger.debug("Cannot craft '{}': unable to craft prerequisite '{}'",
+                            match.instructionSet.outputItemId, itemId)
+                        return false
+                    }
+                } else {
+                    // Sync craft succeeded — re-check buffer
+                    have = cpu.getBufferCount(itemId)
+                    toCraft = needed - have
                 }
             }
         }
 
-        // Consume ingredients from buffer
+        // If there are pending async prerequisites, register a job that assembles when all complete
+        if (pendingPrereqs.isNotEmpty()) {
+            val assemblyJob = PendingHandlerJob()
+            val pollFn: () -> Boolean = {
+                if (pendingPrereqs.all { it.isComplete }) {
+                    // All prereqs done — now do the actual assembly
+                    val success = assembleRecipe(recipe, ingredientCounts, level, snapshot, cache, cpu)
+                    assemblyJob.complete(success)
+                    true
+                } else false
+            }
+
+            // We need to find a scheduler to register on. Store the poll job reference
+            // so the caller's scheduler can pick it up.
+            currentPendingJob = assemblyJob
+            val assemblyScheduler = callerScheduler ?: findAnyScheduler(level, snapshot)
+            if (assemblyScheduler == null) {
+                logger.warn("No scheduler found to register assembly job for '{}'", match.instructionSet.outputItemId)
+                return false
+            }
+            assemblyScheduler.addPendingJob(SchedulerImpl.PendingJob(
+                pollFn = pollFn,
+                timeoutAt = Long.MAX_VALUE,
+                label = "assembly:${match.instructionSet.outputItemId}"
+            ))
+
+            return true // signals "started, pending"
+        }
+
+        // Phase 2: All prerequisites available — extract and assemble immediately
+        return assembleRecipe(recipe, ingredientCounts, level, snapshot, cache, cpu)
+    }
+
+    /** Consume ingredients from buffer and assemble the 3x3 recipe. */
+    private fun assembleRecipe(
+        recipe: List<String>,
+        ingredientCounts: Map<String, Int>,
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        cache: NetworkInventoryCache?,
+        cpu: CraftingCoreBlockEntity
+    ): Boolean {
+        // All ingredients should already be in the buffer
+        // (extracted from storage + crafted by prerequisites)
         for ((itemId, needed) in ingredientCounts) {
             val removed = cpu.removeFromBuffer(itemId, needed)
             if (removed < needed) {
@@ -317,14 +386,16 @@ object CraftingHelper {
             return false
         }
 
-        // Insert crafted result into network storage
-        val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, result, cache)
-        if (inserted == 0) {
-            logger.debug("Network storage full, cannot insert crafted item")
-            return false
-        }
+        // Insert crafted result into CPU buffer (not storage — caller releases via connect/store)
+        val outputId = BuiltInRegistries.ITEM.getKey(result.item)?.toString() ?: return false
+        cpu.addToBuffer(outputId, result.count)
 
         return true
+    }
+
+    private fun findAnyScheduler(level: ServerLevel, snapshot: NetworkSnapshot): SchedulerImpl? {
+        val engine = PlatformServices.modState.findAnyEngine(level, snapshot.terminalPositions) as? ScriptEngine
+        return engine?.scheduler
     }
 
     /**
@@ -341,7 +412,9 @@ object CraftingHelper {
         depth: Int,
         cache: NetworkInventoryCache?,
         cpu: CraftingCoreBlockEntity,
-        processingHandlers: Map<String, LuaFunction>?
+        processingHandlers: Map<String, LuaFunction>?,
+        isRecursive: Boolean = false,
+        callerScheduler: SchedulerImpl? = null
     ): Boolean {
         val api = apiMatch.api
 
@@ -352,7 +425,7 @@ object CraftingHelper {
             var have = inBuffer + inStorage
 
             while (have < needed) {
-                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers)
+                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler)
                 if (subResult == null || subResult.count == 0) {
                     logger.debug("Cannot process '{}': unable to obtain prerequisite '{}'", api.name, itemId)
                     return false
@@ -395,14 +468,20 @@ object CraftingHelper {
             }
         }
 
-        // Run the handler as a coroutine on the handler engine's scheduler.
-        // The handler calls job:pull() which yields if outputs aren't ready yet.
-        // The scheduler resumes the coroutine each tick until job:pull() succeeds.
         try {
+            // Serial mode: only one handler invocation at a time per card
+            if (api.serial && api.name in activeSerialJobs) {
+                logger.debug("Serial handler '{}' is busy, skipping", api.name)
+                return false
+            }
+
             val engine = handlerEngine ?: return false
             val scheduler = engine.scheduler
 
+            if (api.serial) activeSerialJobs.add(api.name)
+
             val pending = PendingHandlerJob()
+            pending.onCompleteCallback = { if (api.serial) activeSerialJobs.remove(api.name) }
             val job = ProcessingJob(api, cpu, level, scheduler, pending)
             val jobTable = job.toLuaTable()
 
@@ -441,7 +520,8 @@ object CraftingHelper {
                 return pending.success
             }
 
-            // job:pull() registered a pending poll — store for the caller to wait on
+            // job:pull() registered a pending poll (async — outputs not ready yet)
+            // Store pending job — caller (craftOnce or network:craft) will wait on it
             currentPendingJob = pending
             return true
         } catch (e: org.luaj.vm2.LuaError) {

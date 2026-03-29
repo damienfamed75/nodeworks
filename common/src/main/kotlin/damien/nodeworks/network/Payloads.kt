@@ -209,3 +209,15 @@ data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int,
     }
     override fun type() = TYPE
 }
+
+/** C2S: Cancel a crafting job — return buffer contents to network storage. */
+data class CancelCraftPayload(val pos: BlockPos) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CancelCraftPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "cancel_craft"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CancelCraftPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos) },
+            { buf -> CancelCraftPayload(buf.readBlockPos()) }
+        )
+    }
+    override fun type() = TYPE
+}

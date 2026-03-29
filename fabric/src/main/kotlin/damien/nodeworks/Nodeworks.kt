@@ -140,6 +140,10 @@ class FabricModStateService : ModStateService {
         TerminalPackets.registerPendingAutoRun(level, pos)
     }
 
+    override fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): Any? {
+        return TerminalPackets.findAnyEngine(level, terminalPositions)
+    }
+
     override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? {
         return TerminalPackets.findEngineWithHandler(level, terminalPositions, cardName)
     }

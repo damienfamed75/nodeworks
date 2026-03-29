@@ -246,6 +246,16 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToServer(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@enqueueWork
+                entity.cancelJob()
+            }
+        }
+
         registrar.playToServer(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
@@ -301,6 +311,10 @@ class NeoForgeModStateService : ModStateService {
 
     override fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos) {
         NeoForgeTerminalPackets.registerPendingAutoRun(level, pos)
+    }
+
+    override fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): Any? {
+        return NeoForgeTerminalPackets.findAnyEngine(level, terminalPositions)
     }
 
     override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? {
