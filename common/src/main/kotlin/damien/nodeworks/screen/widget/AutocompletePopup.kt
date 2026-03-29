@@ -83,6 +83,7 @@ class AutocompletePopup(
     private val knownTypes = listOf(
         Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
+        Suggestion("ProcessBuilder", "ProcessBuilder — from network:process(), chain with :connect()"),
         Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var"),
         Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:var"),
         Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:var")
@@ -184,16 +185,20 @@ class AutocompletePopup(
         val trimmed = beforeCursor.trimEnd()
         val fullText = lastFullText
 
-        // Type annotation context: after `:` or `: ` in function params or local declarations
-        // Matches: (param: Partial, (param:Partial, local x: Partial, ): Partial
-        val typeAnnotationMatch = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|local\s+\w+\s*:\s*|\)\s*:\s*)([A-Z]\w*)$""").find(trimmed)
+        // Type annotation context — only in these specific positions:
+        // 1. Function parameter: (param: Type  or  (param: Type, param2: Type
+        // 2. Local variable: local x: Type
+        // 3. Function return type: function(...)): Type  or  function name(...)): Type
+        val typeContextPattern = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\bfunction\s*\w*\s*\([^)]*\)\s*:\s*)""")
+
+        val typeAnnotationMatch = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\bfunction\s*\w*\s*\([^)]*\)\s*:\s*)([A-Z]\w*)$""").find(trimmed)
         if (typeAnnotationMatch != null) {
             val partial = typeAnnotationMatch.groupValues[1]
             customPrefix = partial
             return fuzzy(partial, knownTypes)
         }
         // Also match when just the colon was typed with no partial yet
-        val typeAnnotationEmpty = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\)\s*:\s*)$""").find(trimmed)
+        val typeAnnotationEmpty = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\bfunction\s*\w*\s*\([^)]*\)\s*:\s*)$""").find(trimmed)
         if (typeAnnotationEmpty != null) {
             customPrefix = ""
             return knownTypes
@@ -267,7 +272,8 @@ class AutocompletePopup(
                 suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
                 suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)"),
                 suggest("var(", "var(name: string) → VariableHandle"),
-                suggest("handle(", "handle(cardName: string, fn: function(ItemsHandle...) → boolean)")
+                suggest("handle(", "handle(cardName: string, fn: function(job, ItemsHandle...))"),
+                suggest("process(", "process(id, count?, ...):connect(fn(ItemsHandle...))")
             )
             return fuzzy(partial, methods)
         }
@@ -290,6 +296,17 @@ class AutocompletePopup(
         if (chainedMatch != null) {
             val partial = chainedMatch.groupValues[2]
             return cardHandleMethods(partial)
+        }
+
+        // ProcessBuilder method chain: after network:process(...): or on next line
+        val processChainMatch = Regex("""network:process\([^)]*\)\s*:(\w*)$""").find(trimmed)
+            ?: Regex("""network:process\([^)]*\)\s*\n\s*:(\w*)$""").find(trimmed)
+        if (processChainMatch != null) {
+            val partial = processChainMatch.groupValues[1]
+            customPrefix = partial
+            return fuzzy(partial, listOf(
+                suggest("connect(", "connect(fn: function(ItemsHandle...)) — callback when done")
+            ))
         }
 
         // After # or #partial → suggest item tags (must be before method match since #c: looks like a method call)
@@ -479,6 +496,7 @@ class AutocompletePopup(
         // 4. Inference from assignment context
         if (varName in extractCardVariables(text)) return "CardHandle"
         if (varName in extractItemsHandleVariables(text)) return "ItemsHandle"
+        if (Regex("""local\s+${Regex.escape(varName)}\s*=\s*network:process\s*\(""").containsMatchIn(text)) return "ProcessBuilder"
         val varType = resolveVariableHandleType(varName, text)
         if (varType != null) return varType
 
@@ -498,6 +516,7 @@ class AutocompletePopup(
         val methods = when (type) {
             "CardHandle" -> cardHandleMethods("")
             "ItemsHandle" -> itemsHandleMethods("")
+            "ProcessBuilder" -> listOf(suggest("connect(", "connect(fn: function(ItemsHandle...)) — callback when done"))
             "VariableHandle" -> variableHandleMethods("")
             "NumberVariableHandle" -> numberVariableHandleMethods("")
             "StringVariableHandle" -> stringVariableHandleMethods("")
