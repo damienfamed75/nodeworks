@@ -21,7 +21,6 @@ import java.util.UUID
  * by walking the connection graph. Returns an ephemeral network snapshot.
  */
 object NetworkDiscovery {
-    private val logger = org.slf4j.LoggerFactory.getLogger("nodeworks-discovery")
 
     fun discoverNetwork(level: ServerLevel, startPos: BlockPos): NetworkSnapshot {
         val visited = mutableSetOf<BlockPos>()
@@ -40,8 +39,6 @@ object NetworkDiscovery {
         while (queue.isNotEmpty()) {
             val pos = queue.removeFirst()
             val connectable = NodeConnectionHelper.getConnectable(level, pos) ?: continue
-
-            logger.debug("Discovery visiting {} at {}", connectable::class.simpleName, pos)
 
             when (connectable) {
                 is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
