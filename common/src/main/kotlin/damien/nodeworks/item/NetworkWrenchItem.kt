@@ -45,9 +45,11 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         val block = level.getBlockState(pos).block
         if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ApiStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock) return InteractionResult.PASS
 
-        // Client side: track selection for highlight rendering
+        val isNode = block is NodeBlock
+
+        // Client side: track selection for highlight rendering (nodes only)
         if (level.isClientSide) {
-            if (player.isShiftKeyDown) {
+            if (player.isShiftKeyDown && isNode) {
                 clientSelectedNode = pos
             }
             return InteractionResult.SUCCESS
@@ -57,7 +59,8 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         val serverLevel = level as ServerLevel
 
         if (player.isShiftKeyDown) {
-            // Shift + right-click: select node
+            // Shift + right-click: select (only Nodes can be selected as connection endpoints)
+            if (!isNode) return InteractionResult.PASS
             selectedNodes[player.uuid] = Selection(pos, level.dimension())
             player.displayClientMessage(
                 Component.translatable("message.nodeworks.node_selected", pos.x, pos.y, pos.z), false
