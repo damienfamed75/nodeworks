@@ -1,8 +1,6 @@
 package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.TerminalBlockEntity
-import damien.nodeworks.network.CardSnapshot
-import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.BlockPos
@@ -18,35 +16,18 @@ class TerminalScreenHandler(
     private val scripts: Map<String, String>,
     private val running: Boolean,
     private val autoRun: Boolean,
-    private val layoutIndex: Int,
-    private val cards: List<CardSnapshot>,
-    private val itemTags: List<String>,
-    private val variables: List<Pair<String, Int>> = emptyList()
+    private val layoutIndex: Int
 ) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
 
     companion object {
         fun createServer(syncId: Int, player: Player, terminal: TerminalBlockEntity): TerminalScreenHandler {
             val level = player.level() as? ServerLevel
-            val startPos = terminal.getNetworkStartPos()
-
-            val snapshot = if (level != null && startPos != null) NetworkDiscovery.discoverNetwork(level, startPos) else null
-            val cards = snapshot?.allCards() ?: emptyList()
-            val varNames = snapshot?.variables?.map { it.name to it.type.ordinal } ?: emptyList()
-
             val isRunning = if (level != null) PlatformServices.modState.isScriptRunning(level, terminal.blockPos) else false
-
-            val tags = if (level != null) {
-                net.minecraft.core.registries.BuiltInRegistries.ITEM.getTagNames()
-                    .map { it.location().toString() }
-                    .sorted()
-                    .toList()
-            } else emptyList()
-
-            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex, cards, tags, varNames)
+            return TerminalScreenHandler(syncId, terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: TerminalOpenData): TerminalScreenHandler {
-            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex, data.cards, data.itemTags, data.variables)
+            return TerminalScreenHandler(syncId, data.terminalPos, data.scripts, data.running, data.autoRun, data.layoutIndex)
         }
     }
 
@@ -56,9 +37,6 @@ class TerminalScreenHandler(
     fun isRunning(): Boolean = running
     fun isAutoRun(): Boolean = autoRun
     fun getLayoutIndex(): Int = layoutIndex
-    fun getCards(): List<CardSnapshot> = cards
-    fun getItemTags(): List<String> = itemTags
-    fun getVariables(): List<Pair<String, Int>> = variables
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY
 
