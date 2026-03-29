@@ -267,8 +267,12 @@ class ScriptEditor(
             259 -> { // BACKSPACE
                 if (hasSelection) { deleteSelection(); return true }
                 if (cursor > 0) {
-                    deleteAt(cursor - 1)
-                    cursor--
+                    if (ctrl) {
+                        deleteWordLeft()
+                    } else {
+                        deleteAt(cursor - 1)
+                        cursor--
+                    }
                     onTextChanged()
                 }
                 ensureCursorVisible()
@@ -276,6 +280,12 @@ class ScriptEditor(
             }
             261 -> { // DELETE
                 if (hasSelection) { deleteSelection(); return true }
+                if (ctrl) {
+                    deleteWordRight()
+                    onTextChanged()
+                    ensureCursorVisible()
+                    return true
+                }
                 if (cursor < totalTextLength()) {
                     deleteAt(cursor)
                     onTextChanged()
@@ -406,19 +416,71 @@ class ScriptEditor(
     }
 
     private fun moveCursorWordLeft() {
-        val text = value
-        var pos = cursor - 1
-        while (pos > 0 && !text[pos - 1].isLetterOrDigit()) pos--
-        while (pos > 0 && text[pos - 1].isLetterOrDigit()) pos--
-        cursor = maxOf(0, pos)
+        cursor = findWordBoundaryLeft(value, cursor)
     }
 
     private fun moveCursorWordRight() {
+        cursor = findWordBoundaryRight(value, cursor)
+    }
+
+    /**
+     * Find the word boundary to the left of [pos], VSCode-style.
+     * Stops at: whitespace→non-whitespace, delimiter boundaries, word→non-word transitions.
+     */
+    private fun findWordBoundaryLeft(text: String, pos: Int): Int {
+        if (pos <= 0) return 0
+        var p = pos - 1
+        // Skip spaces (but stop at newline)
+        while (p > 0 && text[p] == ' ') p--
+        if (p >= 0 && text[p] == '\n') return p
+        return when {
+            // At a delimiter — consume that one delimiter
+            p >= 0 && text[p].isDelimiter() -> p
+            // At a word char — consume the whole word
+            p >= 0 && text[p].isWordChar() -> {
+                while (p > 0 && text[p - 1].isWordChar()) p--
+                p
+            }
+            else -> maxOf(0, p)
+        }
+    }
+
+    private fun findWordBoundaryRight(text: String, pos: Int): Int {
+        if (pos >= text.length) return text.length
+        var p = pos
+        // Skip spaces (but stop at newline)
+        while (p < text.length && text[p] == ' ') p++
+        if (p < text.length && text[p] == '\n') return p + 1
+        return when {
+            p < text.length && text[p].isDelimiter() -> p + 1
+            p < text.length && text[p].isWordChar() -> {
+                while (p < text.length && text[p].isWordChar()) p++
+                p
+            }
+            else -> minOf(text.length, p + 1)
+        }
+    }
+
+    private fun Char.isWordChar(): Boolean = isLetterOrDigit() || this == '_'
+    private fun Char.isDelimiter(): Boolean = this in ".:;,\"'()[]{}=+-*/<>!&|#@"
+
+    private fun deleteWordLeft() {
         val text = value
-        var pos = cursor
-        while (pos < text.length && !text[pos].isLetterOrDigit()) pos++
-        while (pos < text.length && text[pos].isLetterOrDigit()) pos++
-        cursor = pos
+        val newPos = findWordBoundaryLeft(text, cursor)
+        if (newPos < cursor) {
+            val newText = text.removeRange(newPos, cursor)
+            rebuildLines(newText)
+            cursor = newPos
+        }
+    }
+
+    private fun deleteWordRight() {
+        val text = value
+        val newPos = findWordBoundaryRight(text, cursor)
+        if (newPos > cursor) {
+            val newText = text.removeRange(cursor, newPos)
+            rebuildLines(newText)
+        }
     }
 
     private fun ensureCursorVisible() {
