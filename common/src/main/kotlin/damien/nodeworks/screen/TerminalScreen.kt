@@ -28,13 +28,13 @@ class TerminalScreen(
     /** Exposed for platform-specific input suppression (e.g., blocking JEI keybinds). */
     fun isEditorFocused(): Boolean = ::editor.isInitialized && editor.isFocused
     private lateinit var autocomplete: AutocompletePopup
-    private val cards: List<CardSnapshot> = menu.getCards()
-    private val itemTags: List<String> = menu.getItemTags()
-    private val variables: List<Pair<String, Int>> = menu.getVariables()
-    // Scanned client-side from block entities in the loaded world
+    // All scanned client-side from block entities in the loaded world
+    private val cards: List<CardSnapshot>
+    private val itemTags: List<String>
+    private val variables: List<Pair<String, Int>>
     private val localApiNames: List<String>
     private val processableOutputs: List<String>
-    private val craftableOutputs: List<String> // Instruction Set outputs + processable outputs
+    private val craftableOutputs: List<String>
     private var scriptRunning: Boolean = menu.isRunning()
     private var autoRun: Boolean = menu.isAutoRun()
 
@@ -105,7 +105,9 @@ class TerminalScreen(
         imageWidth = currentLayout.w
         imageHeight = currentLayout.h
 
-        // Scan client-side block entities for autocomplete data
+        // Scan client-side block entities for all autocomplete data
+        val scannedCards = mutableListOf<CardSnapshot>()
+        val scannedVars = mutableListOf<Pair<String, Int>>()
         val scannedLocal = mutableListOf<String>()
         val scannedProcessable = mutableListOf<String>()
         val scannedCraftable = mutableListOf<String>()
@@ -126,32 +128,48 @@ class TerminalScreen(
                     if (!clientLevel.isLoaded(pos)) continue
                     val entity = clientLevel.getBlockEntity(pos) ?: continue
 
-                    if (entity is damien.nodeworks.block.entity.InstructionStorageBlockEntity) {
-                        for (info in entity.getAllInstructionSets()) {
-                            if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
+                    when (entity) {
+                        is damien.nodeworks.block.entity.NodeBlockEntity -> {
+                            for (dir in net.minecraft.core.Direction.entries) {
+                                val caps = entity.getSideCapabilities(dir)
+                                for (info in caps) {
+                                    scannedCards.add(CardSnapshot(info.capability, info.alias, info.slotIndex))
+                                }
+                            }
                         }
-                    }
-                    if (entity is damien.nodeworks.block.entity.InstructionCrafterBlockEntity) {
-                        for (info in entity.getAllInstructionSets()) {
-                            if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
+                        is damien.nodeworks.block.entity.VariableBlockEntity -> {
+                            if (entity.variableName.isNotEmpty()) {
+                                scannedVars.add(entity.variableName to entity.variableType.ordinal)
+                            }
                         }
-                    }
-                    if (entity is damien.nodeworks.block.entity.ApiStorageBlockEntity) {
-                        for (api in entity.getAllProcessingApis()) {
-                            scannedLocal.add(api.name)
-                            scannedProcessable.addAll(api.outputItemIds)
+                        is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> {
+                            for (info in entity.getAllInstructionSets()) {
+                                if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
+                            }
                         }
-                    }
-                    if (entity is damien.nodeworks.block.entity.ReceiverAntennaBlockEntity && entity.isPaired) {
-                        // Follow the receiver to its paired broadcast antenna
-                        val pairedData = entity.getItem(0)
-                        if (!pairedData.isEmpty && pairedData.item is damien.nodeworks.item.LinkChipItem) {
-                            val chipData = damien.nodeworks.item.LinkChipItem.getPairingData(pairedData)
-                            if (chipData != null && clientLevel.isLoaded(chipData.pos)) {
-                                val broadcast = clientLevel.getBlockEntity(chipData.pos)
-                                if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {
-                                    for (api in broadcast.getAvailableApis()) {
-                                        scannedProcessable.addAll(api.outputItemIds)
+                        is damien.nodeworks.block.entity.InstructionCrafterBlockEntity -> {
+                            for (info in entity.getAllInstructionSets()) {
+                                if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
+                            }
+                        }
+                        is damien.nodeworks.block.entity.ApiStorageBlockEntity -> {
+                            for (api in entity.getAllProcessingApis()) {
+                                scannedLocal.add(api.name)
+                                scannedProcessable.addAll(api.outputItemIds)
+                            }
+                        }
+                        is damien.nodeworks.block.entity.ReceiverAntennaBlockEntity -> {
+                            if (entity.isPaired) {
+                                val pairedData = entity.getItem(0)
+                                if (!pairedData.isEmpty && pairedData.item is damien.nodeworks.item.LinkChipItem) {
+                                    val chipData = damien.nodeworks.item.LinkChipItem.getPairingData(pairedData)
+                                    if (chipData != null && clientLevel.isLoaded(chipData.pos)) {
+                                        val broadcast = clientLevel.getBlockEntity(chipData.pos)
+                                        if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {
+                                            for (api in broadcast.getAvailableApis()) {
+                                                scannedProcessable.addAll(api.outputItemIds)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -165,6 +183,27 @@ class TerminalScreen(
                 }
             }
         }
+
+        // Assign auto-aliases to unnamed cards (same logic as NetworkDiscovery)
+        val counters = mutableMapOf<String, Int>()
+        for (card in scannedCards) {
+            if (card.alias == null) {
+                val type = card.capability.type
+                val count = counters.getOrDefault(type, 0) + 1
+                counters[type] = count
+                card.autoAlias = "${type}_$count"
+            }
+        }
+
+        // Item tags from the client registry
+        val scannedTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTagNames()
+            .map { it.location().toString() }
+            .sorted()
+            .toList()
+
+        cards = scannedCards
+        itemTags = scannedTags
+        variables = scannedVars
         localApiNames = scannedLocal.distinct()
         processableOutputs = scannedProcessable.distinct()
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
