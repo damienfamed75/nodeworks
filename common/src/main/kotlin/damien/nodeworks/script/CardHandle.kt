@@ -191,15 +191,38 @@ class CardHandle private constructor(
                     throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
                 }
                 val itemsHandle = ref.handle
-
-                val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
                 val destStorage = self.getItemStorage() ?: return LuaValue.valueOf(0)
+                val amount = minOf(maxCount, itemsHandle.count.toLong())
 
+                // Buffer-backed source (from processing handler arguments)
+                val bufSrc = itemsHandle.bufferSource
+                if (bufSrc != null) {
+                    val id = net.minecraft.resources.ResourceLocation.tryParse(bufSrc.itemId)
+                        ?: return LuaValue.valueOf(0)
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
+                        ?: return LuaValue.valueOf(0)
+                    var totalMoved = 0
+                    var remaining = amount.toInt()
+                    while (remaining > 0) {
+                        val batch = minOf(remaining, item.getDefaultMaxStackSize())
+                        val extracted = bufSrc.extract(batch)
+                        if (extracted == 0) break
+                        val stack = net.minecraft.world.item.ItemStack(item, extracted)
+                        val inserted = PlatformServices.storage.insertItemStack(destStorage, stack)
+                        totalMoved += inserted
+                        remaining -= inserted
+                        if (inserted < extracted) break // dest full
+                    }
+                    return LuaValue.valueOf(totalMoved)
+                }
+
+                // Normal storage-backed source
+                val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
                 val moved = try {
                     PlatformServices.storage.moveItems(
                         sourceStorage, destStorage,
                         { matchesFilter(it, itemsHandle.filter) },
-                        minOf(maxCount, itemsHandle.count.toLong())
+                        amount
                     )
                 } catch (_: Exception) {
                     0L

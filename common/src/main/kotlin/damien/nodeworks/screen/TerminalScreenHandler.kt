@@ -33,7 +33,7 @@ class TerminalScreenHandler(
             val snapshot = if (level != null && startPos != null) NetworkDiscovery.discoverNetwork(level, startPos) else null
             val cards = snapshot?.allCards() ?: emptyList()
             val varNames = snapshot?.variables?.map { it.name to it.type.ordinal } ?: emptyList()
-            val procOutputs = snapshot?.allProcessingApis()?.flatMap { it.outputItemIds }?.distinct() ?: emptyList()
+            val procOutputs = snapshot?.allProcessingApis()?.map { it.name }?.distinct() ?: emptyList()
 
             val isRunning = if (level != null) PlatformServices.modState.isScriptRunning(level, terminal.blockPos) else false
 

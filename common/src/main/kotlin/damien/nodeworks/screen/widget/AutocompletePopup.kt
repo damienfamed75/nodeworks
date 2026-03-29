@@ -220,8 +220,8 @@ class AutocompletePopup(
             return fuzzyStrings(partial, types)
         }
 
-        // After network:handle("partial → suggest processing API output item IDs
-        val handleMatch = Regex("""network:handle\(\s*"([\w:]*)$""").find(trimmed)
+        // After network:handle("partial → suggest Processing API Card names
+        val handleMatch = Regex("""network:handle\(\s*"([\w]*)$""").find(trimmed)
         if (handleMatch != null) {
             val partial = handleMatch.groupValues[1]
             customPrefix = partial
@@ -267,7 +267,7 @@ class AutocompletePopup(
                 suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
                 suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)"),
                 suggest("var(", "var(name: string) → VariableHandle"),
-                suggest("handle(", "handle(outputId: string, fn: function(...) → ItemsHandle?)")
+                suggest("handle(", "handle(cardName: string, fn: function(ItemsHandle...) → boolean)")
             )
             return fuzzy(partial, methods)
         }

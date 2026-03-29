@@ -112,16 +112,15 @@ object CraftingHelper {
         // Try Processing API Card + handler
         val apiMatch = snapshot.findProcessingApi(identifier)
         if (apiMatch != null) {
-            // Look for handler: first in local engine, then across all active engines on the server
-            var handler = processingHandlers?.let { local ->
-                apiMatch.api.outputItemIds.firstNotNullOfOrNull { local[it] }
-            }
+            val cardName = apiMatch.api.name
+            // Look for handler by card name: first in local engine, then across network terminals
+            var handler = processingHandlers?.get(cardName)
             if (handler == null) {
-                val remoteEngine = apiMatch.api.outputItemIds.firstNotNullOfOrNull { outputId ->
-                    PlatformServices.modState.findProcessingEngine(level, snapshot.terminalPositions, outputId) as? ScriptEngine
-                }
+                val remoteEngine = PlatformServices.modState.findProcessingEngine(
+                    level, snapshot.terminalPositions, cardName
+                ) as? ScriptEngine
                 if (remoteEngine != null) {
-                    handler = apiMatch.api.outputItemIds.firstNotNullOfOrNull { remoteEngine.processingHandlers[it] }
+                    handler = remoteEngine.processingHandlers[cardName]
                 }
             }
 
@@ -153,7 +152,7 @@ object CraftingHelper {
         lastFailReason = when {
             !apiFound && snapshot.findInstructionSet(identifier) == null ->
                 "No recipe found for '$identifier' (no Instruction Set or Processing API Card)"
-            apiFound -> "Processing API Card found for '$identifier' but no handler registered (${snapshot.terminalPositions.size} terminals on network)"
+            apiFound -> "Processing API Card '${apiMatch!!.api.name}' found for '$identifier' but no handler registered (need network:handle(\"${apiMatch.api.name}\", ...) on a running terminal)"
             else -> "Craft failed for '$identifier'"
         }
         return null
@@ -323,7 +322,7 @@ object CraftingHelper {
                 val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers)
                 if (subResult == null || subResult.count == 0) {
                     logger.debug("Cannot process '{}': unable to obtain prerequisite '{}'",
-                        api.primaryOutputItemId, itemId)
+                        api.name, itemId)
                     return false
                 }
                 have = cpu.getBufferCount(itemId) + NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
@@ -356,16 +355,16 @@ object CraftingHelper {
             }
         }
 
-        // Consume from buffer
+        // Consume from buffer — items stay in buffer, handler gets buffer-backed ItemsHandles
         for ((itemId, needed) in api.inputs) {
-            val removed = cpu.removeFromBuffer(itemId, needed)
-            if (removed < needed) {
-                logger.warn("Buffer underflow: needed {} of '{}' but only had {}", needed, itemId, removed)
+            val has = cpu.getBufferCount(itemId)
+            if (has < needed) {
+                logger.warn("Buffer underflow: needed {} of '{}' but only had {}", needed, itemId, has)
                 return false
             }
         }
 
-        // Build Lua arguments for the handler — one ItemsHandle per input
+        // Build buffer-backed ItemsHandles for each input
         try {
             val luaArgs = mutableListOf<LuaValue>()
             for ((itemId, count) in api.inputs) {
@@ -373,54 +372,61 @@ object CraftingHelper {
                 val item = BuiltInRegistries.ITEM.get(identifier) ?: return false
                 val itemName = ItemStack(item).hoverName.string
 
-                // The handler needs to be able to insert these items into machines.
-                // Create an ItemsHandle backed by the CPU buffer (items are in the buffer,
-                // but the handler will use network:get() to access machine I/O).
-                // For simplicity, we create a "virtual" handle representing the consumed items.
-                val handle = ItemsHandle.forCraftResult(
+                val handle = ItemsHandle(
                     itemId = itemId,
                     itemName = itemName,
                     count = count,
-                    sourceStorage = {
-                        // Source is "conceptual" — the handler uses network:get() to talk to machines
-                        null
-                    },
-                    level = level
+                    maxStackSize = item.getDefaultMaxStackSize(),
+                    hasData = false,
+                    filter = itemId,
+                    sourceStorage = { null },
+                    level = level,
+                    bufferSource = BufferSource(cpu, itemId, count)
                 )
                 luaArgs.add(ItemsHandle.toLuaTable(handle))
             }
 
-            // Call the handler
             val result = when (luaArgs.size) {
                 0 -> handler.call()
                 1 -> handler.call(luaArgs[0])
                 2 -> handler.call(luaArgs[0], luaArgs[1])
-                else -> handler.invoke(LuaValue.varargsOf(luaArgs.toTypedArray()))
-                    .arg1()
+                else -> handler.invoke(LuaValue.varargsOf(luaArgs.toTypedArray())).arg1()
             }
 
-            // The handler should return an ItemsHandle for the output.
-            // If it returns nil, the processing failed.
-            if (result.isnil()) {
-                logger.debug("Processing handler for '{}' returned nil", api.primaryOutputItemId)
+            if (result.isnil() || result.toboolean() == false) {
+                logger.debug("Processing handler '{}' returned failure", api.name)
                 return false
             }
 
-            // Insert all outputs into network storage
-            for ((outputId, outputCount) in api.outputs) {
-                val outputIdentifier = ResourceLocation.tryParse(outputId) ?: return false
-                val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier) ?: return false
-                val outputStack = ItemStack(outputItem, outputCount)
-                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, outputStack, cache)
-                if (inserted == 0) {
-                    logger.debug("Network storage full, cannot insert processed item '{}'", outputId)
-                    return false
+            // Handler returned an ItemsHandle — move outputs from source into network storage
+            if (result.istable()) {
+                val ref = result.get("_itemsHandle")
+                if (ref is ItemsHandle.ItemsHandleRef) {
+                    val outputHandle = ref.handle
+                    val sourceStorage = outputHandle.sourceStorage()
+                    if (sourceStorage != null) {
+                        for ((outputId, outputCount) in api.outputs) {
+                            // Extract from the handler's source storage
+                            val extracted = PlatformServices.storage.extractItems(
+                                sourceStorage,
+                                { CardHandle.matchesFilter(it, outputId) },
+                                outputCount.toLong()
+                            )
+                            if (extracted > 0) {
+                                // Insert into network storage
+                                val id = ResourceLocation.tryParse(outputId) ?: continue
+                                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                                val stack = ItemStack(item, extracted.toInt())
+                                NetworkStorageHelper.insertItemStack(level, snapshot, stack, cache)
+                            }
+                        }
+                    }
                 }
             }
 
             return true
         } catch (e: org.luaj.vm2.LuaError) {
-            logger.warn("Processing handler error for '{}': {}", api.primaryOutputItemId, e.message)
+            logger.warn("Processing handler error for '{}': {}", api.name, e.message)
             return false
         }
     }

@@ -33,6 +33,7 @@ class ProcessingApiCard(properties: Properties) : Item(properties) {
         if (level.isClientSide) return InteractionResultHolder.success(stack)
 
         val serverPlayer = player as ServerPlayer
+        val name = getCardName(stack)
         val inputs = getInputs(stack)
         val outputs = getOutputs(stack)
         val timeout = getTimeout(stack)
@@ -40,7 +41,7 @@ class ProcessingApiCard(properties: Properties) : Item(properties) {
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.processing_api_card"),
-            ProcessingApiCardOpenData(inputs, outputs, timeout),
+            ProcessingApiCardOpenData(name, inputs, outputs, timeout),
             ProcessingApiCardOpenData.STREAM_CODEC,
             { syncId, inv, p -> ProcessingApiCardScreenHandler.createHandheld(syncId, inv, hand, stack) }
         )
@@ -89,8 +90,15 @@ class ProcessingApiCard(properties: Properties) : Item(properties) {
         private const val INPUT_COUNTS_KEY = "input_counts"
         private const val OUTPUTS_KEY = "outputs"
         private const val OUTPUT_COUNTS_KEY = "output_counts"
+        private const val NAME_KEY = "name"
         private const val TIMEOUT_KEY = "timeout"
         const val MAX_OUTPUTS = 3
+
+        /** Get the card's registered name (used as the handler key). */
+        fun getCardName(stack: ItemStack): String {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
+            return customData.copyTag().getString(NAME_KEY)
+        }
 
         /** Get the list of (itemId, count) input pairs. */
         fun getInputs(stack: ItemStack): List<Pair<String, Int>> {
@@ -135,8 +143,9 @@ class ProcessingApiCard(properties: Properties) : Item(properties) {
         }
 
         /** Save the processing recipe to the card stack. */
-        fun setRecipe(stack: ItemStack, inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>, timeout: Int) {
+        fun setRecipe(stack: ItemStack, name: String, inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>, timeout: Int) {
             val tag = CompoundTag()
+            tag.putString(NAME_KEY, name)
 
             val inputIds = ListTag()
             val inputCounts = IntArray(inputs.size)

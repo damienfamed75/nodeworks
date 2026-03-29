@@ -287,7 +287,7 @@ class NeoForgeModStateService : ModStateService {
         NeoForgeTerminalPackets.registerPendingAutoRun(level, pos)
     }
 
-    override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, outputItemId: String): Any? {
-        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, outputItemId)
+    override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? {
+        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName)
     }
 }

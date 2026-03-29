@@ -39,12 +39,12 @@ object NeoForgeTerminalPackets {
         activeEngines.remove(gp)?.stop()
     }
 
-    /** Find the first active engine on the given network that has a processing handler for the output item ID. */
-    fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, outputItemId: String): ScriptEngine? {
+    /** Find the first active engine on the given network that has a processing handler for the given card name. */
+    fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): ScriptEngine? {
         val dimKey = level.dimension()
         for (pos in terminalPositions) {
             val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
-            if (engine.isRunning() && engine.processingHandlers.containsKey(outputItemId)) {
+            if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) {
                 return engine
             }
         }
