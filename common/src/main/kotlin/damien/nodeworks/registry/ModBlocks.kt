@@ -7,6 +7,7 @@ import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.ApiStorageBlock
+import damien.nodeworks.block.BroadcastAntennaBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CraftingStorageBlock
 import damien.nodeworks.block.VariableBlock
@@ -88,6 +89,18 @@ object ModBlocks {
         ::ApiStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+    )
+
+    val BROADCAST_ANTENNA: Block = register(
+        "broadcast_antenna",
+        ::BroadcastAntennaBlock,
+        BlockBehaviour.Properties.of().strength(3.0f, 6.0f)
+    )
+
+    val RECEIVER_ANTENNA: Block = register(
+        "receiver_antenna",
+        { damien.nodeworks.block.ReceiverAntennaBlock(it) },
+        BlockBehaviour.Properties.of().strength(3.0f, 6.0f)
     )
 
     val INVENTORY_TERMINAL: Block = register(

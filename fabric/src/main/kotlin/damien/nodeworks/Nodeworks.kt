@@ -87,6 +87,16 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "api_storage")),
             ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ApiStorageScreenHandler.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ApiStorageOpenData.STREAM_CODEC)
         )
+        ModScreenHandlers.BROADCAST_ANTENNA = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "broadcast_antenna")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.BroadcastAntennaMenu.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.BroadcastAntennaOpenData.STREAM_CODEC)
+        )
+        ModScreenHandlers.RECEIVER_ANTENNA = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "receiver_antenna")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ReceiverAntennaMenu.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ReceiverAntennaOpenData.STREAM_CODEC)
+        )
 
         ModBlocks.initialize()
         ModBlockEntities.initialize()

@@ -37,5 +37,10 @@
   "item.nodeworks.processing_api_card": "Processing API Card",
   "container.nodeworks.processing_api_card": "Processing API Card",
   "block.nodeworks.api_storage": "API Storage",
-  "container.nodeworks.api_storage": "API Storage"
+  "container.nodeworks.api_storage": "API Storage",
+  "item.nodeworks.link_chip": "Link Chip",
+  "block.nodeworks.broadcast_antenna": "Broadcast Antenna",
+  "block.nodeworks.receiver_antenna": "Receiver Antenna",
+  "container.nodeworks.broadcast_antenna": "Broadcast Antenna",
+  "container.nodeworks.receiver_antenna": "Receiver Antenna"
 }

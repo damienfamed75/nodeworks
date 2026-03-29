@@ -6,6 +6,7 @@ import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
+import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.block.entity.VariableType
@@ -20,6 +21,7 @@ import java.util.UUID
  * by walking the connection graph. Returns an ephemeral network snapshot.
  */
 object NetworkDiscovery {
+    private val logger = org.slf4j.LoggerFactory.getLogger("nodeworks-discovery")
 
     fun discoverNetwork(level: ServerLevel, startPos: BlockPos): NetworkSnapshot {
         val visited = mutableSetOf<BlockPos>()
@@ -39,6 +41,8 @@ object NetworkDiscovery {
             val pos = queue.removeFirst()
             val connectable = NodeConnectionHelper.getConnectable(level, pos) ?: continue
 
+            logger.debug("Discovery visiting {} at {}", connectable::class.simpleName, pos)
+
             when (connectable) {
                 is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
                 is InstructionCrafterBlockEntity -> crafters.add(snapshotCrafter(connectable))
@@ -53,6 +57,17 @@ object NetworkDiscovery {
                     val clusterApis = connectable.getAllProcessingApis()
                     if (clusterApis.isNotEmpty()) {
                         processingApis.add(ProcessingApiSnapshot(connectable.blockPos, clusterApis))
+                    }
+                }
+                is ReceiverAntennaBlockEntity -> {
+                    val serverLevel = level
+                    val broadcast = connectable.getBroadcastAntenna(serverLevel)
+                    if (broadcast != null) {
+                        val remoteApis = broadcast.getAvailableApis()
+                        if (remoteApis.isNotEmpty()) {
+                            val remoteTerminals = broadcast.getProviderTerminalPositions()
+                            processingApis.add(ProcessingApiSnapshot(broadcast.blockPos, remoteApis, remoteTerminals))
+                        }
                     }
                 }
                 is TerminalBlockEntity -> terminalPositions.add(connectable.blockPos)
@@ -134,7 +149,8 @@ data class VariableSnapshot(
 
 data class ProcessingApiSnapshot(
     val pos: BlockPos,
-    val apis: List<ApiStorageBlockEntity.ProcessingApiInfo>
+    val apis: List<ApiStorageBlockEntity.ProcessingApiInfo>,
+    val remoteTerminalPositions: List<BlockPos>? = null
 )
 
 data class NetworkSnapshot(

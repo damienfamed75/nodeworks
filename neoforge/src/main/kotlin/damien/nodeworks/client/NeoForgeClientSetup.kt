@@ -105,6 +105,12 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.API_STORAGE) { menu, inventory, title ->
             damien.nodeworks.screen.ApiStorageScreen(menu, inventory, title)
         }
+        event.register(ModScreenHandlers.BROADCAST_ANTENNA) { menu, inventory, title ->
+            damien.nodeworks.screen.BroadcastAntennaScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.RECEIVER_ANTENNA) { menu, inventory, title ->
+            damien.nodeworks.screen.ReceiverAntennaScreen(menu, inventory, title)
+        }
     }
 
     private fun onRegisterBlockColors(event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.Block) {

@@ -116,8 +116,10 @@ object CraftingHelper {
             // Look for handler by card name: first in local engine, then across network terminals
             var handler = processingHandlers?.get(cardName)
             if (handler == null) {
+                // If the API came through a receiver antenna, search the remote network's terminals
+                val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
                 val remoteEngine = PlatformServices.modState.findProcessingEngine(
-                    level, snapshot.terminalPositions, cardName
+                    level, searchPositions, cardName
                 ) as? ScriptEngine
                 if (remoteEngine != null) {
                     handler = remoteEngine.processingHandlers[cardName]

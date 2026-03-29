@@ -158,6 +158,22 @@ class Nodeworks(modBus: IEventBus) {
                     ApiStorageScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.BROADCAST_ANTENNA = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "broadcast_antenna")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.BroadcastAntennaOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.BroadcastAntennaMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.RECEIVER_ANTENNA = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "receiver_antenna")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.ReceiverAntennaOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.ReceiverAntennaMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }

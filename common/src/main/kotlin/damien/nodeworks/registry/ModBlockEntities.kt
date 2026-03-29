@@ -7,7 +7,9 @@ import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.block.entity.ApiStorageBlockEntity
+import damien.nodeworks.block.entity.BroadcastAntennaBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
+import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
 import damien.nodeworks.block.entity.CraftingStorageBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
@@ -64,6 +66,16 @@ object ModBlockEntities {
     val API_STORAGE: BlockEntityType<ApiStorageBlockEntity> = register(
         "api_storage",
         PlatformServices.blockEntity.createBlockEntityType(::ApiStorageBlockEntity, ModBlocks.API_STORAGE)
+    )
+
+    val BROADCAST_ANTENNA: BlockEntityType<BroadcastAntennaBlockEntity> = register(
+        "broadcast_antenna",
+        PlatformServices.blockEntity.createBlockEntityType(::BroadcastAntennaBlockEntity, ModBlocks.BROADCAST_ANTENNA)
+    )
+
+    val RECEIVER_ANTENNA: BlockEntityType<ReceiverAntennaBlockEntity> = register(
+        "receiver_antenna",
+        PlatformServices.blockEntity.createBlockEntityType(::ReceiverAntennaBlockEntity, ModBlocks.RECEIVER_ANTENNA)
     )
 
     val INVENTORY_TERMINAL: BlockEntityType<InventoryTerminalBlockEntity> = register(
