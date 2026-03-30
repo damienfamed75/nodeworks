@@ -1,1 +1,12 @@
-{"parent": "minecraft:item/generated", "textures": {"layer0": "nodeworks:item/link_crystal"}}
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "nodeworks:item/link_crystal_unlinked"
+  },
+  "overrides": [
+    {
+      "predicate": { "nodeworks:linked": 1 },
+      "model": "nodeworks:item/link_crystal_linked"
+    }
+  ]
+}

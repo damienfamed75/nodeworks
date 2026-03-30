@@ -1,18 +1,18 @@
 package damien.nodeworks.item
 
+import damien.nodeworks.entity.MilkySoulBallEntity
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.stats.Stats
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResultHolder
 import net.minecraft.world.entity.player.Player
-import net.minecraft.world.entity.projectile.Snowball
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 
 /**
- * Milky Soul Ball — throwable item like a snowball.
+ * Milky Soul Ball — throwable projectile that applies Wither effect on hit.
  */
 class MilkySoulBallItem(properties: Properties) : Item(properties) {
 
@@ -24,10 +24,10 @@ class MilkySoulBallItem(properties: Properties) : Item(properties) {
             0.4f / (level.getRandom().nextFloat() * 0.4f + 0.8f))
 
         if (!level.isClientSide) {
-            val snowball = Snowball(level, player)
-            snowball.setItem(stack)
-            snowball.shootFromRotation(player, player.xRot, player.yRot, 0.0f, 1.5f, 1.0f)
-            level.addFreshEntity(snowball)
+            val projectile = MilkySoulBallEntity(level, player)
+            projectile.setItem(stack)
+            projectile.shootFromRotation(player, player.xRot, player.yRot, 0.0f, 1.5f, 1.0f)
+            level.addFreshEntity(projectile)
         }
 
         player.awardStat(Stats.ITEM_USED.get(this))

@@ -31,11 +31,10 @@ object SoulSandInteraction {
                 }
             }
 
-            // Drop the Milky Soul Ball
-            val soulBall = ItemStack(ModItems.MILKY_SOUL_BALL)
-            if (!player.inventory.add(soulBall)) {
-                player.drop(soulBall, false)
-            }
+            // Drop 4 Milky Soul Balls at the block position
+            val soulBall = ItemStack(ModItems.MILKY_SOUL_BALL, 4)
+            net.minecraft.world.Containers.dropItemStack(level,
+                pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, soulBall)
 
             return InteractionResult.SUCCESS
         }

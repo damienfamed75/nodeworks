@@ -75,6 +75,7 @@ class Nodeworks(modBus: IEventBus) {
             ModBlocks.initialize()
             ModItems.initialize()
             ModBlockEntities.initialize()
+            damien.nodeworks.registry.ModEntityTypes.initialize()
         }
 
         // Register menu types
