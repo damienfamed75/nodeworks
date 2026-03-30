@@ -28,10 +28,6 @@ class ScriptEngine(
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl()
 
-    /** Routing callback set by network:onInsert(). Called when items enter network storage. */
-    var onInsertCallback: LuaFunction? = null
-        private set
-
     /** Precomputed route table set by network:route(). */
     var routeTable: RouteTable? = null
         private set
@@ -125,7 +121,6 @@ class ScriptEngine(
     }
 
     fun stop() {
-        onInsertCallback = null
         routeTable = null
         inventoryCache = null // clear local reference, cache lives in global registry
         processingHandlers.clear()
@@ -139,7 +134,6 @@ class ScriptEngine(
     /** Whether this engine should stay alive — has scheduler tasks, handlers, or routing. */
     fun hasWork(): Boolean = scheduler.hasActiveTasks()
         || processingHandlers.isNotEmpty()
-        || onInsertCallback != null
         || routeTable?.hasRoutes() == true
 
 
@@ -157,45 +151,6 @@ class ScriptEngine(
             logCallback("Runtime error: ${e.message}", true)
             logger.warn("Script runtime exception: {}", e.message, e)
             stop()
-        }
-    }
-
-    /**
-     * Creates a routing callback for NetworkStorageHelper.insertItems().
-     * Invokes the Lua onInsert callback and extracts the target storage from the returned CardHandle.
-     */
-    private fun createRoutingCallback(snapshot: NetworkSnapshot): ((String, Long) -> damien.nodeworks.platform.ItemStorageHandle?)? {
-        val callback = onInsertCallback ?: return null
-        return { itemId, count ->
-            try {
-                val identifier = net.minecraft.resources.ResourceLocation.tryParse(itemId)
-                val itemName = if (identifier != null) {
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier)
-                    net.minecraft.world.item.ItemStack(item).hoverName.string ?: itemId
-                } else itemId
-
-                // Create an ItemsHandle for the callback
-                val itemsTable = ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
-                    itemId = itemId,
-                    itemName = itemName,
-                    count = count.toInt(),
-                    sourceStorage = { null }, // source doesn't matter for routing decision
-                    level = level
-                ))
-
-                val result = callback.call(itemsTable)
-
-                // If callback returned a CardHandle table, extract its storage
-                if (!result.isnil() && result.istable()) {
-                    val storageGetter = result.get("_getStorage")
-                    if (storageGetter is CardHandle.StorageGetter) {
-                        storageGetter.getStorage()
-                    } else null
-                } else null
-            } catch (e: LuaError) {
-                logCallback("onInsert error: ${e.message}", true)
-                null
-            }
         }
     }
 
@@ -338,7 +293,7 @@ class ScriptEngine(
                     level, snapshot, sourceStorage, itemsHandle.filter,
                     minOf(maxCount, itemsHandle.count.toLong()),
                     routeTable,
-                    createRoutingCallback(snapshot),
+                    null,
                     inventoryCache
                 )
                 return LuaValue.valueOf(moved.toInt())
@@ -459,14 +414,6 @@ class ScriptEngine(
             }
         })
 
-        // network:onInsert(fn) — register a routing callback for items entering network storage
-        networkTable.set("onInsert", object : TwoArgFunction() {
-            override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
-                if (!fnArg.isfunction()) throw LuaError("onInsert expects a function")
-                onInsertCallback = fnArg.checkfunction()
-                return LuaValue.NIL
-            }
-        })
 
         // network:shapeless(item1, count1, item2?, count2?, ...) → ItemsHandle or nil
         // Crafts using vanilla shapeless recipes. Inputs are item/count pairs.

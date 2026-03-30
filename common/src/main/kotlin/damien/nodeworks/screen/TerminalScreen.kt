@@ -33,6 +33,7 @@ class TerminalScreen(
     private val itemTags: List<String>
     private val variables: List<Pair<String, Int>>
     private val localApiNames: List<String>
+    private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
     private val processableOutputs: List<String>
     private val craftableOutputs: List<String>
     private var scriptRunning: Boolean = menu.isRunning()
@@ -112,6 +113,7 @@ class TerminalScreen(
         val scannedCards = mutableListOf<CardSnapshot>()
         val scannedVars = mutableListOf<Pair<String, Int>>()
         val scannedLocal = mutableListOf<String>()
+        val scannedLocalApis = mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
         val scannedProcessable = mutableListOf<String>()
         val scannedCraftable = mutableListOf<String>()
         val mc = net.minecraft.client.Minecraft.getInstance()
@@ -153,6 +155,7 @@ class TerminalScreen(
                         is damien.nodeworks.block.entity.ProcessingStorageBlockEntity -> {
                             for (api in entity.getAllProcessingApis()) {
                                 scannedLocal.add(api.name)
+                                scannedLocalApis.add(api)
                                 scannedProcessable.addAll(api.outputItemIds)
                             }
                         }
@@ -203,6 +206,7 @@ class TerminalScreen(
         itemTags = scannedTags
         variables = scannedVars
         localApiNames = scannedLocal.distinct()
+        localApis = scannedLocalApis
         processableOutputs = scannedProcessable.distinct()
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
     }
@@ -253,7 +257,7 @@ class TerminalScreen(
         }
         addRenderableWidget(editor)
 
-        autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, processableOutputs, craftableOutputs) { scripts }
+        autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, processableOutputs, craftableOutputs, localApis) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 2
@@ -625,9 +629,10 @@ class TerminalScreen(
                             val cursorPos = editor.getCursorPosition()
                             val deleteStart = cursorPos - result.deleteCount
                             val newText = text.substring(0, deleteStart) + result.insertText + text.substring(cursorPos)
-                            editor.setValueKeepScroll(newText, deleteStart + result.insertText.length)
+                            editor.setValueKeepScroll(newText, deleteStart + result.cursorOffset)
                             suppressAutocomplete = false
-                            autocomplete.hide()
+                            // Trigger autocomplete at new cursor position (e.g. inside quotes after snippet)
+                            autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
                             return true
                         }
                     }

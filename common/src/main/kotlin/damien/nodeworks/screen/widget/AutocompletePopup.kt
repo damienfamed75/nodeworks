@@ -16,9 +16,15 @@ class AutocompletePopup(
     private val localApiNames: List<String> = emptyList(),
     private val processableOutputs: List<String> = emptyList(),
     private val craftableOutputs: List<String> = emptyList(),
+    private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
-    data class Suggestion(val insertText: String, val displayText: String)
+    data class Suggestion(
+        val insertText: String,
+        val displayText: String,
+        val snippetText: String? = null,    // full text to insert (with newlines), null = use insertText
+        val snippetCursor: Int = -1          // cursor position within snippet, -1 = end
+    )
 
     var visible: Boolean = false
         private set
@@ -85,6 +91,7 @@ class AutocompletePopup(
     private val knownTypes = listOf(
         Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
+        Suggestion("Job", "Job — processing handler context from network:handle"),
         Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()"),
         Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var"),
         Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:var"),
@@ -92,6 +99,10 @@ class AutocompletePopup(
     )
 
     private fun suggest(insertText: String, displayText: String = insertText) = Suggestion(insertText, displayText)
+
+    /** Create a suggestion that inserts a multi-line snippet with cursor at a specific position. */
+    private fun snippet(insertText: String, displayText: String, snippetText: String, cursorOffset: Int) =
+        Suggestion(insertText, displayText, snippetText, cursorOffset)
 
     /** Filter suggestions using fuzzy matching, or return all if query is empty. */
     private fun fuzzy(query: String, suggestions: List<Suggestion>): List<Suggestion> {
@@ -126,7 +137,7 @@ class AutocompletePopup(
         }
     }
 
-    data class AcceptResult(val deleteCount: Int, val insertText: String)
+    data class AcceptResult(val deleteCount: Int, val insertText: String, val cursorOffset: Int = insertText.length)
 
     /**
      * Accept the current suggestion. Returns how many characters to delete (the typed prefix)
@@ -137,7 +148,9 @@ class AutocompletePopup(
         val suggestion = suggestions[selectedIndex]
         val deleteCount = prefix.length
         hide()
-        return AcceptResult(deleteCount, suggestion.insertText)
+        val text = suggestion.snippetText ?: suggestion.insertText
+        val cursorPos = if (suggestion.snippetText != null && suggestion.snippetCursor >= 0) suggestion.snippetCursor else text.length
+        return AcceptResult(deleteCount, text, cursorPos)
     }
 
     fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
@@ -206,15 +219,28 @@ class AutocompletePopup(
             return knownTypes
         }
 
-        // After network:get("partial or network:route("partial → suggest aliases with type hints
-        val aliasContextMatch = Regex("""network:(?:get|route)\(\s*"(\w*)$""").find(trimmed)
-        if (aliasContextMatch != null) {
-            val partial = aliasContextMatch.groupValues[1]
+        // After network:get("partial → suggest all card aliases
+        val getContextMatch = Regex("""network:get\(\s*"(\w*)$""").find(trimmed)
+        if (getContextMatch != null) {
+            val partial = getContextMatch.groupValues[1]
             customPrefix = partial
             return cards
                 .map { card -> card.effectiveAlias to card.capability.type }
                 .distinct()
                 .map { suggest(it.first, "${it.first} (${it.second})") }
+                .let { FuzzyMatch.filter(partial, it) }
+        }
+
+        // After network:route("partial → suggest only storage card aliases
+        val routeContextMatch = Regex("""network:route\(\s*"(\w*)$""").find(trimmed)
+        if (routeContextMatch != null) {
+            val partial = routeContextMatch.groupValues[1]
+            customPrefix = partial
+            return cards
+                .filter { it.capability.type == "storage" }
+                .map { card -> card.effectiveAlias to card.capability.type }
+                .distinct()
+                .map { suggest(it.first, "${it.first} (storage)") }
                 .let { FuzzyMatch.filter(partial, it) }
         }
 
@@ -233,6 +259,28 @@ class AutocompletePopup(
             val partial = craftMatch.groupValues[1]
             customPrefix = partial
             return fuzzyStrings(partial, craftableOutputs)
+        }
+
+        // After network:handle("cardName", partial → suggest function snippet with card's input params
+        val handleFnMatch = Regex("""network:handle\(\s*"([^"]+)"\s*,\s*(\w*)$""").find(trimmed)
+        if (handleFnMatch != null) {
+            val cardName = handleFnMatch.groupValues[1]
+            val partial = handleFnMatch.groupValues[2]
+            customPrefix = partial
+            val api = localApis.firstOrNull { it.name == cardName }
+            val params = buildString {
+                append("job: Job")
+                if (api != null) {
+                    for ((itemId, _) in api.inputs) {
+                        append(", ")
+                        append(itemIdToParamName(itemId))
+                        append(": ItemsHandle")
+                    }
+                }
+            }
+            val body = "function($params)\n    \nend)"
+            val cursorPos = body.indexOf("\n    \n") + 5
+            return listOf(snippet("function(", "function($params)", body, cursorPos))
         }
 
         // After network:handle("partial → suggest local API Card names only
@@ -277,12 +325,17 @@ class AutocompletePopup(
                 suggest("findEach(", "findEach(filter: string) → ItemsHandle[]"),
                 suggest("count(", "count(filter: string) → number"),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
-                suggest("craft(", "craft(id: string, count?: number) → CraftBuilder"),
+                run {
+                    val body = "craft(\"\"):connect(function(item: ItemsHandle)\n    \nend)"
+                    snippet("craft(", "craft(id, count?):connect(fn)", body, body.indexOf("\"\"") + 1)
+                },
                 suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
-                suggest("route(", "route(alias: string, fn: function(ItemsHandle) → boolean)"),
-                suggest("onInsert(", "onInsert(fn: function(ItemsHandle) → CardHandle?)"),
+                run {
+                    val body = "route(\"\", function(item: ItemsHandle)\n    return true\nend)"
+                    snippet("route(", "route(alias, fn(item) → boolean)", body, body.indexOf("\"\"") + 1)
+                },
                 suggest("var(", "var(name: string) → VariableHandle"),
-                suggest("handle(", "handle(cardName: string, fn: function(job, ItemsHandle...))")
+                suggest("handle(", "handle(cardName: string, fn: function(job, ...))")
             )
             return fuzzy(partial, methods)
         }
@@ -291,10 +344,13 @@ class AutocompletePopup(
         val schedulerMatch = Regex("""scheduler:(\w*)$""").find(trimmed)
         if (schedulerMatch != null) {
             val partial = schedulerMatch.groupValues[1]
+            val tickBody = "tick(function()\n    \nend)"
+            val secondBody = "second(function()\n    \nend)"
+            val delayBody = "delay(20, function()\n    \nend)"
             val methods = listOf(
-                suggest("tick(", "tick(fn: function) → number"),
-                suggest("second(", "second(fn: function) → number"),
-                suggest("delay(", "delay(ticks: number, fn: function) → number"),
+                snippet("tick(", "tick(fn: function) → number", tickBody, tickBody.indexOf("\n    \n") + 5),
+                snippet("second(", "second(fn: function) → number", secondBody, secondBody.indexOf("\n    \n") + 5),
+                snippet("delay(", "delay(ticks: number, fn: function) → number", delayBody, delayBody.indexOf("\n    \n") + 5),
                 suggest("cancel(", "cancel(id: number)")
             )
             return fuzzy(partial, methods)
@@ -454,7 +510,7 @@ class AutocompletePopup(
             val keywords = listOf("local", "function", "end",
                 "if", "then", "else", "elseif", "for", "while", "do", "return",
                 "true", "false", "nil", "not", "and", "or").map { suggest(it) }
-            val userVars = extractVariableNames(fullText).map { suggest(it) }
+            val userVars = (extractVariableNames(fullText) + extractFunctionParams(fullText)).distinct().map { suggest(it) }
             val userFuncs = extractFunctionNames(fullText).map { suggest("$it(", "$it(...)") }
             val requireSuggest = if (scripts().size > 1) listOf(suggest("require", "require(module: string) → table")) else emptyList()
             val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs).distinctBy { it.insertText }
@@ -511,6 +567,7 @@ class AutocompletePopup(
         val methods = when (type) {
             "CardHandle" -> cardHandleMethods("")
             "ItemsHandle" -> itemsHandleMethods("")
+            "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...) — wait for outputs"))
             "CraftBuilder" -> listOf(
                 suggest("connect(", "connect(fn: function(item: ItemsHandle)) — callback when done"),
                 suggest("store(", "store() — send result to network storage")
@@ -625,6 +682,23 @@ class AutocompletePopup(
         return pattern.findAll(text).map { it.groupValues[1] }.distinct().toList()
     }
 
+    /** Extracts function parameter names from function signatures in the script. */
+    private fun extractFunctionParams(text: String): List<String> {
+        val result = mutableListOf<String>()
+        // Match: function(param1: Type, param2: Type) or function(param1, param2)
+        val funcPattern = Regex("""\bfunction\s*\(([^)]+)\)""")
+        for (match in funcPattern.findAll(text)) {
+            val paramsStr = match.groupValues[1]
+            for (param in paramsStr.split(",")) {
+                val name = param.trim().split(":")[0].trim().split("\\s+".toRegex())[0]
+                if (name.isNotEmpty() && name.all { it.isLetterOrDigit() || it == '_' }) {
+                    result.add(name)
+                }
+            }
+        }
+        return result.distinct()
+    }
+
     /** Extracts variable names that are assigned from network:get() or :face() calls. */
     private fun extractCardVariables(text: String): Set<String> {
         val result = mutableSetOf<String>()
@@ -726,6 +800,15 @@ class AutocompletePopup(
         }
 
         return exports.distinctBy { it.insertText }
+    }
+
+    /** Convert "minecraft:copper_ingot" → "copperIngot" */
+    private fun itemIdToParamName(itemId: String): String {
+        val shortId = itemId.substringAfter(':') // "copper_ingot"
+        val parts = shortId.split('_')
+        return parts.mapIndexed { i, part ->
+            if (i == 0) part else part.replaceFirstChar { it.uppercase() }
+        }.joinToString("")
     }
 
     private fun extractPrefix(beforeCursor: String): String {
