@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "nodeworks:block/processing_storage_top",
+    "bottom": "nodeworks:block/processing_storage_bottom",
+    "side": "nodeworks:block/processing_storage_side"
+  }
+}

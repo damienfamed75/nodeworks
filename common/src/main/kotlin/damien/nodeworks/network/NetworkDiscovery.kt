@@ -1,6 +1,6 @@
 package damien.nodeworks.network
 
-import damien.nodeworks.block.entity.ApiStorageBlockEntity
+import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
@@ -48,7 +48,7 @@ object NetworkDiscovery {
                         crafters.add(CrafterSnapshot(connectable.blockPos, clusterSets))
                     }
                 }
-                is ApiStorageBlockEntity -> {
+                is ProcessingStorageBlockEntity -> {
                     val clusterApis = connectable.getAllProcessingApis()
                     if (clusterApis.isNotEmpty()) {
                         processingApis.add(ProcessingApiSnapshot(connectable.blockPos, clusterApis))
@@ -142,7 +142,7 @@ data class VariableSnapshot(
 
 data class ProcessingApiSnapshot(
     val pos: BlockPos,
-    val apis: List<ApiStorageBlockEntity.ProcessingApiInfo>,
+    val apis: List<ProcessingStorageBlockEntity.ProcessingApiInfo>,
     val remoteTerminalPositions: List<BlockPos>? = null
 )
 
@@ -202,7 +202,7 @@ data class NetworkSnapshot(
         return null
     }
 
-    /** Find a Processing API Card that outputs a specific item ID (checks all outputs). */
+    /** Find a Processing Set that outputs a specific item ID (checks all outputs). */
     fun findProcessingApi(outputItemId: String): ProcessingApiMatch? {
         for (snapshot in processingApis) {
             for (api in snapshot.apis) {
@@ -214,8 +214,8 @@ data class NetworkSnapshot(
         return null
     }
 
-    /** Get all Processing API Cards across the entire network. */
-    fun allProcessingApis(): List<ApiStorageBlockEntity.ProcessingApiInfo> {
+    /** Get all Processing Sets across the entire network. */
+    fun allProcessingApis(): List<ProcessingStorageBlockEntity.ProcessingApiInfo> {
         return processingApis.flatMap { it.apis }
     }
 
@@ -250,7 +250,7 @@ data class InstructionSetMatch(
 
 data class ProcessingApiMatch(
     val apiStorage: ProcessingApiSnapshot,
-    val api: ApiStorageBlockEntity.ProcessingApiInfo
+    val api: ProcessingStorageBlockEntity.ProcessingApiInfo
 )
 
 data class CardSnapshot(

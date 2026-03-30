@@ -181,7 +181,7 @@ data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, va
 }
 
 /**
- * C2S: Update Processing API Card data.
+ * C2S: Update Processing Set data.
  * key: "input" (slotIndex=0-8, value=count), "output" (slotIndex=0-2, value=count), "timeout" (value=ticks)
  */
 data class SetProcessingApiDataPayload(val containerId: Int, val key: String, val slotIndex: Int, val value: Int) : CustomPacketPayload {
@@ -196,7 +196,7 @@ data class SetProcessingApiDataPayload(val containerId: Int, val key: String, va
 }
 
 /**
- * C2S: Set a single ghost slot on the Processing API Card by item ID.
+ * C2S: Set a single ghost slot on the Processing Set by item ID.
  * slotIndex 0-8 = input, 9-11 = output. Empty string = clear slot.
  */
 data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int, val itemId: String) : CustomPacketPayload {

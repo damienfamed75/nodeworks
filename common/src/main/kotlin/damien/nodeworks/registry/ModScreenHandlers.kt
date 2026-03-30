@@ -1,13 +1,13 @@
 package damien.nodeworks.registry
 
-import damien.nodeworks.screen.ApiStorageScreenHandler
+import damien.nodeworks.screen.ProcessingStorageScreenHandler
 import damien.nodeworks.screen.BroadcastAntennaMenu
 import damien.nodeworks.screen.ReceiverAntennaMenu
 import damien.nodeworks.screen.InstructionStorageScreenHandler
 import damien.nodeworks.screen.InventoryTerminalMenu
 import damien.nodeworks.screen.NetworkControllerMenu
 import damien.nodeworks.screen.CraftingCoreMenu
-import damien.nodeworks.screen.ProcessingApiCardScreenHandler
+import damien.nodeworks.screen.ProcessingSetScreenHandler
 import damien.nodeworks.screen.VariableMenu
 import damien.nodeworks.screen.NodeSideScreenHandler
 import damien.nodeworks.screen.InstructionSetScreenHandler
@@ -28,8 +28,8 @@ object ModScreenHandlers {
     lateinit var NETWORK_CONTROLLER: MenuType<NetworkControllerMenu>
     lateinit var VARIABLE: MenuType<VariableMenu>
     lateinit var CRAFTING_CORE: MenuType<CraftingCoreMenu>
-    lateinit var PROCESSING_API_CARD: MenuType<ProcessingApiCardScreenHandler>
-    lateinit var API_STORAGE: MenuType<ApiStorageScreenHandler>
+    lateinit var PROCESSING_SET: MenuType<ProcessingSetScreenHandler>
+    lateinit var PROCESSING_STORAGE: MenuType<ProcessingStorageScreenHandler>
     lateinit var BROADCAST_ANTENNA: MenuType<BroadcastAntennaMenu>
     lateinit var RECEIVER_ANTENNA: MenuType<ReceiverAntennaMenu>
 

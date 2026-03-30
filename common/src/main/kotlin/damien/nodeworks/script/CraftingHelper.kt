@@ -152,7 +152,7 @@ object CraftingHelper {
                 cpu = if (cpuPos == null) cpu else null, level = level, snapshot = snapshot, cache = cache)
         }
 
-        // Try Processing API Card + handler
+        // Try Processing Set + handler
         val apiMatch = snapshot.findProcessingApi(identifier)
         if (apiMatch != null) {
             val cardName = apiMatch.api.name
@@ -205,8 +205,8 @@ object CraftingHelper {
         val apiFound = apiMatch != null
         lastFailReason = when {
             !apiFound && snapshot.findInstructionSet(identifier) == null ->
-                "No recipe found for '$identifier' (no Instruction Set or Processing API Card)"
-            apiFound -> "Processing API Card '${apiMatch!!.api.name}' found for '$identifier' but no handler registered (need network:handle(\"${apiMatch.api.name}\", ...) on a running terminal)"
+                "No recipe found for '$identifier' (no Instruction Set or Processing Set)"
+            apiFound -> "Processing Set '${apiMatch!!.api.name}' found for '$identifier' but no handler registered (need network:handle(\"${apiMatch.api.name}\", ...) on a running terminal)"
             else -> "Craft failed for '$identifier'"
         }
         return null

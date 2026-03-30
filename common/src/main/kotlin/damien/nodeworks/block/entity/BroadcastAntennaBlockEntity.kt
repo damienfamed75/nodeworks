@@ -1,6 +1,6 @@
 package damien.nodeworks.block.entity
 
-import damien.nodeworks.item.LinkChipItem
+import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
@@ -21,9 +21,9 @@ import net.minecraft.world.level.block.state.BlockState
 import java.util.UUID
 
 /**
- * Broadcast Antenna — broadcasts Processing API Cards from adjacent API Storage blocks.
- * NOT Connectable — sits adjacent to API Storage, not on the laser network.
- * Has 1 slot for a Link Chip which gets encoded with the antenna's frequency on insertion.
+ * Broadcast Antenna — broadcasts Processing Sets from adjacent Processing Storage blocks.
+ * NOT Connectable — sits adjacent to Processing Storage, not on the laser network.
+ * Has 1 slot for a Link Crystal which gets encoded with the antenna's frequency on insertion.
  */
 class BroadcastAntennaBlockEntity(
     pos: BlockPos,
@@ -35,17 +35,17 @@ class BroadcastAntennaBlockEntity(
 
     private val items = NonNullList.withSize(1, ItemStack.EMPTY)
 
-    /** Scan adjacent API Storage clusters for all Processing API Cards. */
-    fun getAvailableApis(): List<ApiStorageBlockEntity.ProcessingApiInfo> {
+    /** Scan adjacent Processing Storage clusters for all Processing Sets. */
+    fun getAvailableApis(): List<ProcessingStorageBlockEntity.ProcessingApiInfo> {
         val lvl = level ?: return emptyList()
-        val result = mutableListOf<ApiStorageBlockEntity.ProcessingApiInfo>()
+        val result = mutableListOf<ProcessingStorageBlockEntity.ProcessingApiInfo>()
         val visited = mutableSetOf<BlockPos>()
 
         for (dir in Direction.entries) {
             val neighbor = worldPosition.relative(dir)
             if (neighbor in visited) continue
             if (!lvl.isLoaded(neighbor)) continue
-            val entity = lvl.getBlockEntity(neighbor) as? ApiStorageBlockEntity ?: continue
+            val entity = lvl.getBlockEntity(neighbor) as? ProcessingStorageBlockEntity ?: continue
             visited.add(neighbor)
             result.addAll(entity.getAllProcessingApis())
         }
@@ -54,7 +54,7 @@ class BroadcastAntennaBlockEntity(
 
     /**
      * Discover the provider network's terminal positions.
-     * Finds an adjacent API Storage block that's Connectable, then runs network discovery from it.
+     * Finds an adjacent Processing Storage block that's Connectable, then runs network discovery from it.
      */
     fun getProviderTerminalPositions(): List<BlockPos> {
         val lvl = level as? ServerLevel ?: return emptyList()
@@ -62,7 +62,7 @@ class BroadcastAntennaBlockEntity(
             val neighbor = worldPosition.relative(dir)
             if (!lvl.isLoaded(neighbor)) continue
             val entity = lvl.getBlockEntity(neighbor)
-            if (entity is ApiStorageBlockEntity && entity.getConnections().isNotEmpty()) {
+            if (entity is ProcessingStorageBlockEntity && entity.getConnections().isNotEmpty()) {
                 val snapshot = NetworkDiscovery.discoverNetwork(lvl, neighbor)
                 return snapshot.terminalPositions
             }
@@ -90,10 +90,10 @@ class BroadcastAntennaBlockEntity(
     override fun setItem(slot: Int, stack: ItemStack) {
         if (slot != 0) return
         items[0] = stack
-        // Encode (or re-encode) the chip when a Link Chip is inserted
-        if (stack.item is LinkChipItem) {
+        // Encode (or re-encode) the chip when a Link Crystal is inserted
+        if (stack.item is LinkCrystalItem) {
             val lvl = level ?: return
-            LinkChipItem.encode(stack, worldPosition, lvl.dimension(), frequencyId)
+            LinkCrystalItem.encode(stack, worldPosition, lvl.dimension(), frequencyId)
         }
         setChanged()
     }

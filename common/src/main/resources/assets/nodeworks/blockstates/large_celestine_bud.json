@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "facing=up": {"model": "nodeworks:block/large_celestine_bud"},
+    "facing=down": {"model": "nodeworks:block/large_celestine_bud", "x": 180},
+    "facing=north": {"model": "nodeworks:block/large_celestine_bud", "x": 90},
+    "facing=south": {"model": "nodeworks:block/large_celestine_bud", "x": 90, "y": 180},
+    "facing=east": {"model": "nodeworks:block/large_celestine_bud", "x": 90, "y": 90},
+    "facing=west": {"model": "nodeworks:block/large_celestine_bud", "x": 90, "y": 270}
+  }
+}

@@ -1,6 +1,6 @@
 package damien.nodeworks.script
 
-import damien.nodeworks.block.entity.ApiStorageBlockEntity
+import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.server.level.ServerLevel
@@ -15,7 +15,7 @@ import org.luaj.vm2.lib.*
  * Handler runs synchronously on the server thread — no coroutines.
  */
 class ProcessingJob(
-    private val api: ApiStorageBlockEntity.ProcessingApiInfo,
+    private val api: ProcessingStorageBlockEntity.ProcessingApiInfo,
     private val cpu: CraftingCoreBlockEntity,
     private val level: ServerLevel,
     private val scheduler: SchedulerImpl,

@@ -99,11 +99,11 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.CRAFTING_CORE) { menu, inventory, title ->
             damien.nodeworks.screen.CraftingCoreScreen(menu, inventory, title)
         }
-        event.register(ModScreenHandlers.PROCESSING_API_CARD) { menu, inventory, title ->
-            damien.nodeworks.screen.ProcessingApiCardScreen(menu, inventory, title)
+        event.register(ModScreenHandlers.PROCESSING_SET) { menu, inventory, title ->
+            damien.nodeworks.screen.ProcessingSetScreen(menu, inventory, title)
         }
-        event.register(ModScreenHandlers.API_STORAGE) { menu, inventory, title ->
-            damien.nodeworks.screen.ApiStorageScreen(menu, inventory, title)
+        event.register(ModScreenHandlers.PROCESSING_STORAGE) { menu, inventory, title ->
+            damien.nodeworks.screen.ProcessingStorageScreen(menu, inventory, title)
         }
         event.register(ModScreenHandlers.BROADCAST_ANTENNA) { menu, inventory, title ->
             damien.nodeworks.screen.BroadcastAntennaScreen(menu, inventory, title)

@@ -5,8 +5,8 @@ import damien.nodeworks.network.SetProcessingApiSlotPayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.InstructionSetScreenHandler
-import damien.nodeworks.screen.ProcessingApiCardScreen
-import damien.nodeworks.screen.ProcessingApiCardScreenHandler
+import damien.nodeworks.screen.ProcessingSetScreen
+import damien.nodeworks.screen.ProcessingSetScreenHandler
 import mezz.jei.api.IModPlugin
 import mezz.jei.api.JeiPlugin
 import mezz.jei.api.constants.RecipeTypes
@@ -41,15 +41,15 @@ class NodeworksJeiPlugin : IModPlugin {
             RecipeTypes.CRAFTING
         )
         registration.addRecipeTransferHandler(
-            ProcessingApiCardTransferHandler(),
+            ProcessingSetTransferHandler(),
             RecipeTypes.CRAFTING
         )
     }
 
     override fun registerGuiHandlers(registration: IGuiHandlerRegistration) {
         registration.addGhostIngredientHandler(
-            ProcessingApiCardScreen::class.java,
-            ProcessingApiCardGhostHandler()
+            ProcessingSetScreen::class.java,
+            ProcessingSetGhostHandler()
         )
     }
 }
@@ -99,21 +99,21 @@ class InstructionSetTransferHandler : IRecipeTransferHandler<InstructionSetScree
     }
 }
 
-// ── Processing API Card: recipe transfer (+) ──
+// ── Processing Set: recipe transfer (+) ──
 
-class ProcessingApiCardTransferHandler : IRecipeTransferHandler<ProcessingApiCardScreenHandler, RecipeHolder<CraftingRecipe>> {
+class ProcessingSetTransferHandler : IRecipeTransferHandler<ProcessingSetScreenHandler, RecipeHolder<CraftingRecipe>> {
 
-    override fun getContainerClass(): Class<out ProcessingApiCardScreenHandler> =
-        ProcessingApiCardScreenHandler::class.java
+    override fun getContainerClass(): Class<out ProcessingSetScreenHandler> =
+        ProcessingSetScreenHandler::class.java
 
-    override fun getMenuType(): Optional<MenuType<ProcessingApiCardScreenHandler>> =
-        Optional.of(ModScreenHandlers.PROCESSING_API_CARD)
+    override fun getMenuType(): Optional<MenuType<ProcessingSetScreenHandler>> =
+        Optional.of(ModScreenHandlers.PROCESSING_SET)
 
     override fun getRecipeType(): RecipeType<RecipeHolder<CraftingRecipe>> =
         RecipeTypes.CRAFTING
 
     override fun transferRecipe(
-        container: ProcessingApiCardScreenHandler,
+        container: ProcessingSetScreenHandler,
         recipe: RecipeHolder<CraftingRecipe>,
         recipeSlots: IRecipeSlotsView,
         player: Player,
@@ -124,7 +124,7 @@ class ProcessingApiCardTransferHandler : IRecipeTransferHandler<ProcessingApiCar
             // Set inputs from recipe ingredients
             val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
             for ((index, slotView) in inputSlots.withIndex()) {
-                if (index >= ProcessingApiCardScreenHandler.INPUT_SLOTS) break
+                if (index >= ProcessingSetScreenHandler.INPUT_SLOTS) break
                 val displayed = slotView.displayedIngredient
                 val itemId = if (displayed.isPresent) {
                     val ingredient = displayed.get().ingredient
@@ -148,7 +148,7 @@ class ProcessingApiCardTransferHandler : IRecipeTransferHandler<ProcessingApiCar
                         PlatformServices.clientNetworking.sendToServer(
                             SetProcessingApiSlotPayload(
                                 container.containerId,
-                                ProcessingApiCardScreenHandler.INPUT_SLOTS, // first output slot
+                                ProcessingSetScreenHandler.INPUT_SLOTS, // first output slot
                                 outputId
                             )
                         )
@@ -161,12 +161,12 @@ class ProcessingApiCardTransferHandler : IRecipeTransferHandler<ProcessingApiCar
     }
 }
 
-// ── Processing API Card: ghost ingredient drag from JEI ──
+// ── Processing Set: ghost ingredient drag from JEI ──
 
-class ProcessingApiCardGhostHandler : IGhostIngredientHandler<ProcessingApiCardScreen> {
+class ProcessingSetGhostHandler : IGhostIngredientHandler<ProcessingSetScreen> {
 
     override fun <I> getTargetsTyped(
-        gui: ProcessingApiCardScreen,
+        gui: ProcessingSetScreen,
         ingredient: ITypedIngredient<I>,
         doStart: Boolean
     ): List<IGhostIngredientHandler.Target<I>> {
@@ -179,7 +179,7 @@ class ProcessingApiCardGhostHandler : IGhostIngredientHandler<ProcessingApiCardS
         val menu = gui.menu
 
         // Input slots (0-8)
-        for (i in 0 until ProcessingApiCardScreenHandler.INPUT_SLOTS) {
+        for (i in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
             val slot = menu.slots[i]
             val screenX = gui.getLeft() + slot.x
             val screenY = gui.getTop() + slot.y
@@ -187,8 +187,8 @@ class ProcessingApiCardGhostHandler : IGhostIngredientHandler<ProcessingApiCardS
         }
 
         // Output slots (9-11)
-        for (i in 0 until ProcessingApiCardScreenHandler.OUTPUT_SLOTS) {
-            val slotIndex = ProcessingApiCardScreenHandler.INPUT_SLOTS + i
+        for (i in 0 until ProcessingSetScreenHandler.OUTPUT_SLOTS) {
+            val slotIndex = ProcessingSetScreenHandler.INPUT_SLOTS + i
             val slot = menu.slots[slotIndex]
             val screenX = gui.getLeft() + slot.x
             val screenY = gui.getTop() + slot.y
@@ -203,7 +203,7 @@ class ProcessingApiCardGhostHandler : IGhostIngredientHandler<ProcessingApiCardS
     }
 
     private class GhostTarget<I>(
-        private val gui: ProcessingApiCardScreen,
+        private val gui: ProcessingSetScreen,
         private val slotIndex: Int,
         private val area: Rect2i
     ) : IGhostIngredientHandler.Target<I> {
