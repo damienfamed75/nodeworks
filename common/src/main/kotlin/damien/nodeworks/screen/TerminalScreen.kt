@@ -23,6 +23,13 @@ class TerminalScreen(
     title: Component
 ) : AbstractContainerScreen<TerminalScreenHandler>(menu, playerInventory, title) {
 
+    companion object {
+        /** Client-side UI preferences — persisted across terminal opens, shared across all terminals */
+        var savedLogCollapsed = false
+        var savedLogPanelHeight = 80
+
+    }
+
     private lateinit var editor: ScriptEditor
 
     /** Exposed for platform-specific input suppression (e.g., blocking JEI keybinds). */
@@ -49,7 +56,7 @@ class TerminalScreen(
     private val buttonHeight = 20
     private val topBarHeight = 24
     private val tabBarHeight = 18
-    private val logPanelHeight = 80
+    private var logPanelHeight = savedLogPanelHeight
 
     // New tab input state
     private var showNewTabInput = false
@@ -67,11 +74,8 @@ class TerminalScreen(
     // Log scroll state
     private var logScrollOffset = 0
     private var logAutoScroll = true
-    private var logCollapsed = run {
-        val mc = net.minecraft.client.Minecraft.getInstance()
-        val entity = mc.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.block.entity.TerminalBlockEntity
-        entity?.logCollapsed ?: false
-    }
+    private var logCollapsed: Boolean = savedLogCollapsed
+    private var draggingLogPanel = false
     private val logCollapsedHeight = 12 // just enough for the toggle bar
 
     // Used to preserve editor text across layout changes
@@ -112,6 +116,7 @@ class TerminalScreen(
     init {
         imageWidth = currentLayout.w
         imageHeight = currentLayout.h
+
 
         // Scan client-side block entities for all autocomplete data
         val scannedCards = mutableListOf<CardSnapshot>()
@@ -439,8 +444,21 @@ class TerminalScreen(
 
         // Toggle bar background
         graphics.fill(logX, logY, logX + logW, logY + logCollapsedHeight, 0xFF1E1E1E.toInt())
-        // Separator line
-        graphics.fill(logX, logY, logX + logW, logY + 1, 0xFF555555.toInt())
+        // Separator / drag handle
+        if (!logCollapsed) {
+            val hovering = mouseX >= logX && mouseX <= logX + logW && mouseY >= logY - 4 && mouseY <= logY + 3
+            val sepColor = if (hovering || draggingLogPanel) 0xFF777777.toInt() else 0xFF555555.toInt()
+            graphics.fill(logX, logY, logX + logW, logY + 1, sepColor)
+            // Grip dots — centered on separator
+            val centerX = logX + logW / 2
+            val dotColor = if (hovering || draggingLogPanel) 0xFF999999.toInt() else 0xFF666666.toInt()
+            for (d in -3..3) {
+                graphics.fill(centerX + d * 3, logY - 2, centerX + d * 3 + 1, logY - 1, dotColor)
+            }
+        } else {
+            graphics.fill(logX, logY, logX + logW, logY + 1, 0xFF555555.toInt())
+        }
+
         // Toggle label with arrow
         val arrow = if (logCollapsed) "\u25B6" else "\u25BC"
         graphics.drawString(font, "$arrow Output", logX + 3, logY + 2, 0xFF888888.toInt())
@@ -778,11 +796,15 @@ class TerminalScreen(
             return true
         }
 
+        // Drag handle: full width of separator, extends 4px above and 3px below
+        if (!logCollapsed && mx >= logX && mx <= logX + logW && my >= logY - 4 && my <= logY + 3) {
+            draggingLogPanel = true
+            return true
+        }
+
         if (mx >= logX && mx <= logX + logW && my >= logY && my <= logY + logCollapsedHeight) {
             logCollapsed = !logCollapsed
-            PlatformServices.clientNetworking.sendToServer(
-                damien.nodeworks.network.SetLogCollapsedPayload(menu.getTerminalPos(), logCollapsed)
-            )
+            savedLogCollapsed = logCollapsed
             rebuildWithText = editor.value
             rebind()
             return true
@@ -831,11 +853,29 @@ class TerminalScreen(
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        if (draggingLogPanel) {
+            val bottomY = topPos + imageHeight
+            val minTop = topPos + topBarHeight + tabBarHeight + 40 // leave room for editor
+            val newLogY = mouseY.toInt().coerceIn(minTop, bottomY - 30)
+            logPanelHeight = (bottomY - newLogY).coerceIn(30, 200)
+            rebuildWithText = editor.value
+            rebind()
+            return true
+        }
         if (editor.isFocused && button == 0) {
             editor.mouseDragged(mouseX, mouseY, button, dragX, dragY)
             return true
         }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+    }
+
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (draggingLogPanel) {
+            draggingLogPanel = false
+            savedLogPanelHeight = logPanelHeight
+            return true
+        }
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     private fun switchTab(name: String) {

@@ -325,10 +325,7 @@ class AutocompletePopup(
                 suggest("findEach(", "findEach(filter: string) → ItemsHandle[]"),
                 suggest("count(", "count(filter: string) → number"),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
-                run {
-                    val body = "craft(\"\"):connect(function(item: ItemsHandle)\n    \nend)"
-                    snippet("craft(", "craft(id, count?):connect(fn)", body, body.indexOf("\"\"") + 1)
-                },
+                suggest("craft(", "craft(id: string, count?: number) → CraftBuilder"),
                 suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
                 run {
                     val body = "route(\"\", function(item: ItemsHandle)\n    return true\nend)"
@@ -369,8 +366,9 @@ class AutocompletePopup(
         if (processChainMatch != null) {
             val partial = processChainMatch.groupValues[1]
             customPrefix = partial
+            val connectBody = "connect(function(item: ItemsHandle)\n    \nend)"
             return fuzzy(partial, listOf(
-                suggest("connect(", "connect(fn: function(item: ItemsHandle)) — callback when done"),
+                snippet("connect(", "connect(fn(item: ItemsHandle))", connectBody, connectBody.indexOf("\n    \n") + 5),
                 suggest("store(", "store() — send result to network storage")
             ))
         }
@@ -568,10 +566,13 @@ class AutocompletePopup(
             "CardHandle" -> cardHandleMethods("")
             "ItemsHandle" -> itemsHandleMethods("")
             "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...) — wait for outputs"))
-            "CraftBuilder" -> listOf(
-                suggest("connect(", "connect(fn: function(item: ItemsHandle)) — callback when done"),
-                suggest("store(", "store() — send result to network storage")
-            )
+            "CraftBuilder" -> run {
+                val connectBody = "connect(function(item: ItemsHandle)\n    \nend)"
+                listOf(
+                    snippet("connect(", "connect(fn(item: ItemsHandle))", connectBody, connectBody.indexOf("\n    \n") + 5),
+                    suggest("store(", "store() — send result to network storage")
+                )
+            }
             "VariableHandle" -> variableHandleMethods("")
             "NumberVariableHandle" -> numberVariableHandleMethods("")
             "StringVariableHandle" -> stringVariableHandleMethods("")

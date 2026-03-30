@@ -38,8 +38,6 @@ class TerminalBlockEntity(
         private set
     var layoutIndex: Int = 0
         private set
-    var logCollapsed: Boolean = false
-        private set
 
     /** The current script text (active tab = "main"). */
     val scriptText: String get() = scripts["main"] ?: ""
@@ -66,11 +64,6 @@ class TerminalBlockEntity(
 
     fun setAutoRun(enabled: Boolean) {
         autoRun = enabled
-        setChanged()
-    }
-
-    fun setLogCollapsed(collapsed: Boolean) {
-        logCollapsed = collapsed
         setChanged()
     }
 
@@ -155,7 +148,6 @@ class TerminalBlockEntity(
         }
         tag.putBoolean("autoRun", autoRun)
         tag.putInt("layoutIndex", layoutIndex)
-        tag.putBoolean("logCollapsed", logCollapsed)
         if (connections.isNotEmpty()) {
             tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
@@ -177,7 +169,6 @@ class TerminalBlockEntity(
         }
         autoRun = tag.getBoolean("autoRun")
         layoutIndex = if (tag.contains("layoutIndex")) tag.getInt("layoutIndex") else 0
-        logCollapsed = tag.getBoolean("logCollapsed")
         connections.clear()
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }

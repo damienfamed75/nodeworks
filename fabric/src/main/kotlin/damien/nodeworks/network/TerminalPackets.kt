@@ -82,7 +82,6 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC)
-        PayloadTypeRegistry.playC2S().register(SetLogCollapsedPayload.TYPE, SetLogCollapsedPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
     }
@@ -253,12 +252,6 @@ object TerminalPackets {
             }
         }
 
-        ServerPlayNetworking.registerGlobalReceiver(SetLogCollapsedPayload.TYPE) { payload, context ->
-            val player = context.player()
-            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
-            val terminal = level.getBlockEntity(payload.terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity ?: return@registerGlobalReceiver
-            terminal.setLogCollapsed(payload.collapsed)
-        }
 
         ServerPlayNetworking.registerGlobalReceiver(CancelCraftPayload.TYPE) { payload, context ->
             val player = context.player()
