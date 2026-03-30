@@ -6,6 +6,7 @@ import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MemoryUpgradeItem
+import damien.nodeworks.item.MilkySoulBallItem
 import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
@@ -57,6 +58,12 @@ object ModItems {
         "link_crystal",
         ::LinkCrystalItem,
         Item.Properties().stacksTo(1)
+    )
+
+    val MILKY_SOUL_BALL: Item = register(
+        "milky_soul_ball",
+        ::MilkySoulBallItem,
+        Item.Properties().stacksTo(16)
     )
 
     val CELESTINE_SHARD: Item = register(
