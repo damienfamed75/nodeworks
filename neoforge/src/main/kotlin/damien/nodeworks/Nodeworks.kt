@@ -56,6 +56,7 @@ class Nodeworks(modBus: IEventBus) {
         // Register game events on the NeoForge event bus
         NeoForge.EVENT_BUS.addListener(::onServerTick)
         NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
+        NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
 
         // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber)
         damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
@@ -295,6 +296,16 @@ class Nodeworks(modBus: IEventBus) {
 
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {
         NetworkWrenchItem.clearSelection(event.entity.uuid)
+    }
+
+    private fun onRightClickBlock(event: net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock) {
+        val result = damien.nodeworks.item.SoulSandInteraction.onUseItemOnBlock(
+            event.entity, event.level, event.pos, event.itemStack
+        )
+        if (result != net.minecraft.world.InteractionResult.PASS) {
+            event.cancellationResult = result
+            event.isCanceled = true
+        }
     }
 }
 
