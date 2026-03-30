@@ -13,7 +13,7 @@ import org.luaj.vm2.lib.*
 /**
  * Lua-side handle representing a reference to a single item type in a specific storage.
  * Created by CardHandle:find(), network:find(), network:craft(), network:shapeless().
- * Always represents one item type — use findAll() for multiple.
+ * Always represents one item type — use findEach() for multiple.
  */
 /**
  * Opaque source for items held in a CPU buffer rather than real block storage.

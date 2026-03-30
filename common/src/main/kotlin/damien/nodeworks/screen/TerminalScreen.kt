@@ -61,6 +61,7 @@ class TerminalScreen(
 
     // Card panel scroll state
     private var cardScrollOffset = 0
+    private var sidebarEntries = listOf<SidebarEntry>()
 
     // Log scroll state
     private var logScrollOffset = 0
@@ -92,6 +93,8 @@ class TerminalScreen(
     }
 
     // Layout presets
+    private data class SidebarEntry(val name: String, val color: Int, val iconU: Int, val iconV: Int, val type: String)
+
     enum class TerminalLayout(val w: Int, val h: Int, val spriteName: String) {
         SMALL(320, 220, "layout_small"),
         WIDE(480, 220, "layout_wide"),
@@ -359,38 +362,63 @@ class TerminalScreen(
         graphics.fill(statusX, statusY + 1, statusX + 5, statusY + 4, circleColor)
         graphics.drawString(font, statusText, statusX + 7, statusY, textColor)
 
-        // Card list header
+        // Card & variable list header
         val cardStartY = topPos + topBarHeight + 6
-        graphics.drawString(font, "Cards:", leftPos + 6, cardStartY, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, "Network:", leftPos + 6, cardStartY, 0xFFAAAAAA.toInt())
 
-        // Card entries (scrollable)
-        val cardListTop = cardStartY + 12
-        val cardListBottom = topPos + imageHeight - 28
-        val cardLineHeight = 11
-
-        graphics.enableScissor(leftPos, cardListTop, leftPos + cardPanelWidth, cardListBottom)
-        for ((i, card) in cards.withIndex()) {
-            val y = cardListTop + i * cardLineHeight - cardScrollOffset
-            if (y + cardLineHeight < cardListTop) continue
-            if (y > cardListBottom) break
-            val alias = card.effectiveAlias
-            val color = when (card.capability.type) {
+        // Build combined sidebar entries: cards + variables
+        val entries = mutableListOf<SidebarEntry>()
+        for (card in cards) {
+            val type = card.capability.type
+            val iconU = when (type) { "io" -> 0; "storage" -> 16; else -> 0 }
+            val color = when (type) {
                 "io" -> 0xFF83E086.toInt()
                 "storage" -> 0xFFAA83E0.toInt()
                 "energy" -> 0xFFFFD700.toInt()
                 "fluid" -> 0xFF55AAFF.toInt()
                 else -> 0xFFAAAAAA.toInt()
             }
-            graphics.drawString(font, alias, leftPos + 6, y, color)
+            entries.add(SidebarEntry(card.effectiveAlias, color, iconU, 16, "card"))
+        }
+        for ((name, typeOrd) in variables) {
+            entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var"))
+        }
+
+        // Sidebar entries (scrollable)
+        val cardListTop = cardStartY + 12
+        val cardListBottom = topPos + imageHeight - 28
+        val cardLineHeight = 11
+
+        sidebarEntries = entries
+
+        graphics.enableScissor(leftPos, cardListTop, leftPos + cardPanelWidth, cardListBottom)
+        val iconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+        for ((i, entry) in entries.withIndex()) {
+            val y = cardListTop + i * cardLineHeight - cardScrollOffset
+            if (y + cardLineHeight < cardListTop) continue
+            if (y > cardListBottom) break
+
+            // Hover highlight
+            val hovered = mouseX >= leftPos && mouseX < leftPos + cardPanelWidth - 3 &&
+                mouseY >= y && mouseY < y + cardLineHeight
+            if (hovered) {
+                graphics.fill(leftPos + 1, y, leftPos + cardPanelWidth - 3, y + cardLineHeight, 0x30FFFFFF.toInt())
+            }
+
+            // 8x8 icon cropped from center of 16x16 tile in atlas
+            graphics.blit(iconsTexture, leftPos + 4, y + 1, (entry.iconU + 4).toFloat(), (entry.iconV + 4).toFloat(), 8, 8, 256, 256)
+
+            // Name
+            graphics.drawString(font, entry.name, leftPos + 14, y + 1, entry.color)
         }
         graphics.disableScissor()
 
-        // Scroll indicator if there are more cards
+        // Scroll indicator
         val maxVisibleCards = (cardListBottom - cardListTop) / cardLineHeight
-        if (cards.size > maxVisibleCards) {
+        if (entries.size > maxVisibleCards) {
             val scrollbarHeight = cardListBottom - cardListTop
-            val thumbHeight = maxOf(8, scrollbarHeight * maxVisibleCards / cards.size)
-            val maxCardScroll = maxOf(1, (cards.size - maxVisibleCards) * cardLineHeight)
+            val thumbHeight = maxOf(8, scrollbarHeight * maxVisibleCards / entries.size)
+            val maxCardScroll = maxOf(1, (entries.size - maxVisibleCards) * cardLineHeight)
             val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
             graphics.fill(leftPos + cardPanelWidth - 3, thumbY.toInt(), leftPos + cardPanelWidth - 1, (thumbY + thumbHeight).toInt(), 0xFF555555.toInt())
         }
@@ -675,6 +703,30 @@ class TerminalScreen(
                 newTabName = ""
             }
             return true
+        }
+
+        // Check sidebar click — insert reference at top of file
+        val cardStartY = topPos + topBarHeight + 6
+        val cardListTop = cardStartY + 12
+        val cardListBottom = topPos + imageHeight - 28
+        val cardLineHeight = 11
+        if (mx >= leftPos && mx < leftPos + cardPanelWidth - 3 && my >= cardListTop && my < cardListBottom) {
+            val clickedIndex = (my - cardListTop + cardScrollOffset) / cardLineHeight
+            if (clickedIndex in sidebarEntries.indices) {
+                val entry = sidebarEntries[clickedIndex]
+                val line = when (entry.type) {
+                    "card" -> "local ${entry.name} = network:get(\"${entry.name}\")"
+                    "var" -> "local ${entry.name} = network:var(\"${entry.name}\")"
+                    else -> null
+                }
+                if (line != null) {
+                    val text = editor.value
+                    val newText = line + "\n" + text
+                    editor.setValueKeepScroll(newText, 0)
+                    editor.cursor = line.length
+                }
+                return true
+            }
         }
 
         // Check tab bar BEFORE widgets get the click

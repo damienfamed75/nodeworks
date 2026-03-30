@@ -281,31 +281,8 @@ class ScriptEngine(
             }
         })
 
-        // network:findStack(filter) → ItemsHandle or nil (single stack from first storage card)
-        networkTable.set("findStack", object : TwoArgFunction() {
-            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
-                val filter = filterArg.checkjstring()
-                val (info, _) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
-                    ?: return LuaValue.NIL
-
-                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
-                    NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
-                        val storage = NetworkStorageHelper.getStorage(level, card)
-                        if (storage != null) {
-                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
-                                CardHandle.matchesFilter(it, filter)
-                            }
-                            if (has > 0) storage else null
-                        } else null
-                    }
-                }
-
-                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(info, filter, sourceStorage, level))
-            }
-        })
-
-        // network:findAll(filter) → table of ItemsHandles (scans real storage)
-        networkTable.set("findAll", object : TwoArgFunction() {
+        // network:findEach(filter) → table of ItemsHandles (scans real storage)
+        networkTable.set("findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot, filter)
