@@ -63,6 +63,14 @@ object NeoForgeClientSetup {
             PlatformServices.clientNetworking = NeoForgeClientNetworkingService()
             PlatformServices.clientEvents = NeoForgeClientEventService()
 
+            // Register Link Crystal model predicate
+            net.minecraft.client.renderer.item.ItemProperties.register(
+                damien.nodeworks.registry.ModItems.LINK_CRYSTAL,
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "linked")
+            ) { stack, _, _, _ ->
+                if (damien.nodeworks.item.LinkCrystalItem.isEncoded(stack)) 1.0f else 0.0f
+            }
+
             NodeConnectionRenderer.register()
         }
     }
@@ -72,6 +80,9 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
+        event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
+            net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
+        }
     }
 
     private fun onRegisterMenuScreens(event: RegisterMenuScreensEvent) {

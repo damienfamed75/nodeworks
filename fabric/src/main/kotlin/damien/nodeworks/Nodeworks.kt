@@ -101,6 +101,7 @@ object Nodeworks : ModInitializer {
         ModBlocks.initialize()
         ModBlockEntities.initialize()
         ModItems.initialize()
+        damien.nodeworks.registry.ModEntityTypes.initialize()
         ModScreenHandlers.initialize()
 
         // Register Celestine geode in overworld biomes
