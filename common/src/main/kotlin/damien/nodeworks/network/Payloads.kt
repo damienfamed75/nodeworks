@@ -210,18 +210,6 @@ data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int,
     override fun type() = TYPE
 }
 
-/** C2S: Set log collapsed state on a terminal. */
-data class SetLogCollapsedPayload(val terminalPos: BlockPos, val collapsed: Boolean) : CustomPacketPayload {
-    companion object {
-        val TYPE: CustomPacketPayload.Type<SetLogCollapsedPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "set_log_collapsed"))
-        val CODEC: StreamCodec<FriendlyByteBuf, SetLogCollapsedPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeBoolean(p.collapsed) },
-            { buf -> SetLogCollapsedPayload(buf.readBlockPos(), buf.readBoolean()) }
-        )
-    }
-    override fun type() = TYPE
-}
-
 /** C2S: Cancel a crafting job — return buffer contents to network storage. */
 data class CancelCraftPayload(val pos: BlockPos) : CustomPacketPayload {
     companion object {
