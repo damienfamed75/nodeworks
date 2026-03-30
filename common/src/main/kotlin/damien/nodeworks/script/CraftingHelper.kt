@@ -489,8 +489,7 @@ object CraftingHelper {
                 return false
             }
 
-            val engine = handlerEngine ?: return false
-            val scheduler = engine.scheduler
+            val scheduler = handlerEngine?.scheduler ?: callerScheduler ?: return false
 
             if (api.serial) activeSerialJobs.add(api.name)
 
