@@ -49,7 +49,7 @@ class TerminalScreen(
     private val buttonHeight = 20
     private val topBarHeight = 24
     private val tabBarHeight = 18
-    private val logPanelHeight = 50
+    private val logPanelHeight = 80
 
     // New tab input state
     private var showNewTabInput = false
@@ -67,7 +67,11 @@ class TerminalScreen(
     // Log scroll state
     private var logScrollOffset = 0
     private var logAutoScroll = true
-    private var logCollapsed = false
+    private var logCollapsed = run {
+        val mc = net.minecraft.client.Minecraft.getInstance()
+        val entity = mc.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.block.entity.TerminalBlockEntity
+        entity?.logCollapsed ?: false
+    }
     private val logCollapsedHeight = 12 // just enough for the toggle bar
 
     // Used to preserve editor text across layout changes
@@ -461,24 +465,37 @@ class TerminalScreen(
             val logContentBottom = logY + logPanelHeight - editorPadding
             graphics.fill(logX, logContentTop, logX + logW, logContentBottom, 0xFF1E1E1E.toInt())
 
-            // Log entries with scrolling
+            // Log entries with word wrapping
             val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
             val logLineHeight = font.lineHeight + 1
             val logTextAreaHeight = logContentBottom - logContentTop
-            val maxVisibleLines = logTextAreaHeight / logLineHeight
+            val maxLogWidth = logW - 6
 
-            if (logAutoScroll && logs.isNotEmpty()) {
-                logScrollOffset = maxOf(0, logs.size - maxVisibleLines)
+            // Build wrapped lines
+            data class WrappedLine(val text: String, val color: Int)
+            val wrappedLines = mutableListOf<WrappedLine>()
+            for (entry in logs) {
+                val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
+                val fullText = "> " + entry.message
+                val split = font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
+                for ((j, line) in split.withIndex()) {
+                    val prefix = if (j == 0) "" else "  "
+                    wrappedLines.add(WrappedLine(prefix + line.string, color))
+                }
+            }
+
+            val maxVisibleLines = logTextAreaHeight / logLineHeight
+            if (logAutoScroll && wrappedLines.isNotEmpty()) {
+                logScrollOffset = maxOf(0, wrappedLines.size - maxVisibleLines)
             }
 
             graphics.enableScissor(logX, logContentTop, logX + logW, logContentBottom)
             for (i in 0 until maxVisibleLines) {
-                val logIdx = logScrollOffset + i
-                if (logIdx >= logs.size) break
-                val entry = logs[logIdx]
+                val lineIdx = logScrollOffset + i
+                if (lineIdx >= wrappedLines.size) break
+                val line = wrappedLines[lineIdx]
                 val entryY = logContentTop + i * logLineHeight
-                val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
-                graphics.drawString(font, "> " + entry.message, logX + 3, entryY, color)
+                graphics.drawString(font, line.text, logX + 3, entryY, line.color)
             }
             graphics.disableScissor()
         }
@@ -757,11 +774,15 @@ class TerminalScreen(
             if (text.isNotEmpty()) {
                 minecraft?.keyboardHandler?.clipboard = text
             }
+            minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
             return true
         }
 
         if (mx >= logX && mx <= logX + logW && my >= logY && my <= logY + logCollapsedHeight) {
             logCollapsed = !logCollapsed
+            PlatformServices.clientNetworking.sendToServer(
+                damien.nodeworks.network.SetLogCollapsedPayload(menu.getTerminalPos(), logCollapsed)
+            )
             rebuildWithText = editor.value
             rebind()
             return true
@@ -855,8 +876,15 @@ class TerminalScreen(
         if (mouseX >= logX && mouseX <= logX + logW && mouseY >= logY && mouseY <= topPos + imageHeight) {
             val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
             val logLineHeight = font.lineHeight + 1
+            val maxLogWidth = logW - 6
+            // Count wrapped lines for scroll calculation
+            var totalWrapped = 0
+            for (entry in logs) {
+                val split = font.splitter.splitLines("> " + entry.message, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
+                totalWrapped += split.size
+            }
             val maxVisibleLines = (logPanelHeight - 14) / logLineHeight
-            val maxScroll = maxOf(0, logs.size - maxVisibleLines)
+            val maxScroll = maxOf(0, totalWrapped - maxVisibleLines)
 
             logScrollOffset -= scrollY.toInt()
             logScrollOffset = logScrollOffset.coerceIn(0, maxScroll)

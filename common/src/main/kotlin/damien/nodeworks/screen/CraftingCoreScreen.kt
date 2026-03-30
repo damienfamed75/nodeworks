@@ -15,7 +15,7 @@ class CraftingCoreScreen(
 
     init {
         imageWidth = 180
-        imageHeight = 110
+        imageHeight = 140
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -38,9 +38,15 @@ class CraftingCoreScreen(
         val contentLeft = leftPos + 8
         val contentTop = topPos + 26
 
-        // Status
+        // Status + current craft item
+        val mc = net.minecraft.client.Minecraft.getInstance()
+        val level = mc.level
+        val coreEntity = level?.getBlockEntity(menu.corePos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity
+
+        val craftItemName = coreEntity?.currentCraftItem ?: ""
         val statusLabel = when {
             !menu.isFormed -> "Not Formed"
+            menu.isCrafting && craftItemName.isNotEmpty() -> "Crafting: $craftItemName"
             menu.isCrafting -> "Crafting..."
             else -> "Idle"
         }
@@ -97,11 +103,23 @@ class CraftingCoreScreen(
             graphics.drawString(font, "Cancel", btnX + (btnW - textW) / 2, btnTop + 3, 0xFFFF8888.toInt())
         }
 
-        // Capacity info
-        val capacityTop = btnTop + 18
+        // Buffer contents or capacity info
+        val contentsTop = btnTop + 18
         if (!menu.isFormed) {
-            graphics.drawString(font, "Place Crafting Storage adjacent", contentLeft, capacityTop, 0xFF888888.toInt())
-            graphics.drawString(font, "to form the CPU", contentLeft, capacityTop + 11, 0xFF888888.toInt())
+            graphics.drawString(font, "Place Crafting Storage adjacent", contentLeft, contentsTop, 0xFF888888.toInt())
+            graphics.drawString(font, "to form the CPU", contentLeft, contentsTop + 11, 0xFF888888.toInt())
+        } else if (menu.bufferUsed > 0) {
+            graphics.drawString(font, "Buffer:", contentLeft, contentsTop, 0xFFAAAAAA.toInt())
+            if (coreEntity != null) {
+                val contents = coreEntity.getBufferContents()
+                var itemY = contentsTop + 11
+                for ((itemId, count) in contents) {
+                    val shortName = itemId.substringAfter(':').replace('_', ' ')
+                    graphics.drawString(font, "  ${count}x $shortName", contentLeft, itemY, 0xFF888888.toInt())
+                    itemY += 10
+                    if (itemY > topPos + imageHeight - 8) break
+                }
+            }
         }
     }
 

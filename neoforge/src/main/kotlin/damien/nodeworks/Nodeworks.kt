@@ -248,6 +248,15 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToServer(SetLogCollapsedPayload.TYPE, SetLogCollapsedPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                val terminal = level.getBlockEntity(payload.terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity ?: return@enqueueWork
+                terminal.setLogCollapsed(payload.collapsed)
+            }
+        }
+
         registrar.playToServer(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()

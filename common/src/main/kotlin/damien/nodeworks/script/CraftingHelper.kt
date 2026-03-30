@@ -96,7 +96,8 @@ object CraftingHelper {
         cache: NetworkInventoryCache? = null,
         cpuPos: BlockPos? = null,
         processingHandlers: Map<String, LuaFunction>? = null,
-        callerScheduler: SchedulerImpl? = null
+        callerScheduler: SchedulerImpl? = null,
+        traceLog: ((String) -> Unit)? = null
     ): CraftResult? {
         if (depth == 0) lastFailReason = null
 
@@ -122,17 +123,21 @@ object CraftingHelper {
                 lastFailReason = "Crafting CPU is not formed (needs adjacent Crafting Storage)"
                 return null
             }
-            cpu.setCrafting(true)
+            cpu.setCrafting(true, identifier.substringAfter(':').replace('_', ' '))
         }
 
         // Try Instruction Set (3x3 crafting) first
         val match = snapshot.findInstructionSet(identifier)
         if (match != null) {
+            if (depth == 0) {
+                val alias = match.instructionSet.alias ?: match.instructionSet.outputItemId
+                traceLog?.invoke("[craft] Resolved '$identifier' via Craft Template: $alias")
+            }
             val recipe = match.instructionSet.recipe
 
             var totalCrafted = 0
             for (i in 0 until count) {
-                if (!craftOnce(recipe, match, level, snapshot, depth, cache, cpu, processingHandlers, callerScheduler)) break
+                if (!craftOnce(recipe, match, level, snapshot, depth, cache, cpu, processingHandlers, callerScheduler, traceLog)) break
                 totalCrafted++
             }
 
@@ -170,9 +175,13 @@ object CraftingHelper {
             }
 
             if (handler != null) {
+                if (depth == 0) {
+                    val source = if (apiMatch.apiStorage.remoteTerminalPositions != null) "subnet" else "local"
+                    traceLog?.invoke("[craft] Resolved '$identifier' via Process Template: ${cardName} ($source)")
+                }
                 var totalCrafted = 0
                 for (i in 0 until count) {
-                    if (!craftViaProcessing(apiMatch, handler, handlerEngine, level, snapshot, depth, cache, cpu, processingHandlers, isRecursive = cpuPos != null, callerScheduler = callerScheduler)) break
+                    if (!craftViaProcessing(apiMatch, handler, handlerEngine, level, snapshot, depth, cache, cpu, processingHandlers, isRecursive = cpuPos != null, callerScheduler = callerScheduler, traceLog = traceLog)) break
                     totalCrafted++
                 }
 
@@ -255,7 +264,8 @@ object CraftingHelper {
         cache: NetworkInventoryCache?,
         cpu: CraftingCoreBlockEntity,
         processingHandlers: Map<String, LuaFunction>? = null,
-        callerScheduler: SchedulerImpl? = null
+        callerScheduler: SchedulerImpl? = null,
+        traceLog: ((String) -> Unit)? = null
     ): Boolean {
         val ingredientCounts = mutableMapOf<String, Int>()
         for (itemId in recipe) {
@@ -271,6 +281,8 @@ object CraftingHelper {
             val inBuffer = cpu.getBufferCount(itemId)
             val inStorage = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
             val canExtract = minOf(needed - inBuffer, inStorage).toLong()
+            val shortId = itemId.substringAfter(':')
+            if (canExtract > 0) traceLog?.invoke("[craft] Extracting ${canExtract}x $shortId from storage (need $needed, have $inBuffer in buffer + $inStorage in storage)")
             if (canExtract > 0) {
                 var remaining = canExtract
                 for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
@@ -291,17 +303,19 @@ object CraftingHelper {
             var have = cpu.getBufferCount(itemId)
             var toCraft = needed - have
 
+            if (toCraft > 0) traceLog?.invoke("[craft] Need ${toCraft}x $shortId — crafting prerequisites...")
+
             while (toCraft > 0) {
                 currentPendingJob = null
-                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler)
+                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler, traceLog)
                 if (subResult == null || subResult.count == 0) {
                     val pending = currentPendingJob
                     if (pending != null) {
                         pendingPrereqs.add(pending)
+                        traceLog?.invoke("[craft] Queued async processing for $shortId (waiting for handler)")
                         toCraft -= 1
                     } else {
-                        logger.debug("Cannot craft '{}': unable to craft prerequisite '{}'",
-                            match.instructionSet.outputItemId, itemId)
+                        traceLog?.invoke("[craft] Missing ingredient '$shortId' for '${match.instructionSet.outputItemId.substringAfter(':')}' — not in storage and no recipe available")
                         return false
                     }
                 } else {
@@ -314,11 +328,14 @@ object CraftingHelper {
 
         // If there are pending async prerequisites, register a job that assembles when all complete
         if (pendingPrereqs.isNotEmpty()) {
+            traceLog?.invoke("[craft] Waiting for ${pendingPrereqs.size} async prerequisite(s)...")
             val assemblyJob = PendingHandlerJob()
             val pollFn: () -> Boolean = {
                 if (pendingPrereqs.all { it.isComplete }) {
-                    // All prereqs done — now do the actual assembly
+                    traceLog?.invoke("[craft] All prerequisites ready — assembling recipe")
                     val success = assembleRecipe(recipe, ingredientCounts, level, snapshot, cache, cpu)
+                    if (success) traceLog?.invoke("[craft] Assembly complete")
+                    else traceLog?.invoke("[craft] Assembly failed")
                     assemblyJob.complete(success)
                     true
                 } else false
@@ -414,7 +431,8 @@ object CraftingHelper {
         cpu: CraftingCoreBlockEntity,
         processingHandlers: Map<String, LuaFunction>?,
         isRecursive: Boolean = false,
-        callerScheduler: SchedulerImpl? = null
+        callerScheduler: SchedulerImpl? = null,
+        traceLog: ((String) -> Unit)? = null
     ): Boolean {
         val api = apiMatch.api
 
@@ -425,9 +443,9 @@ object CraftingHelper {
             var have = inBuffer + inStorage
 
             while (have < needed) {
-                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler)
+                val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler, traceLog)
                 if (subResult == null || subResult.count == 0) {
-                    logger.debug("Cannot process '{}': unable to obtain prerequisite '{}'", api.name, itemId)
+                    traceLog?.invoke("[craft] Missing ingredient '${itemId.substringAfter(':')}' for '${api.name}' — not in storage and no recipe available")
                     return false
                 }
                 have = cpu.getBufferCount(itemId) + NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
