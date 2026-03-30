@@ -307,7 +307,7 @@ class ScriptEngine(
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
 
                 CraftingHelper.currentPendingJob = null
-                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache, processingHandlers = processingHandlers.takeIf { it.isNotEmpty() }, callerScheduler = scheduler)
+                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache, processingHandlers = processingHandlers.takeIf { it.isNotEmpty() }, callerScheduler = scheduler, traceLog = { msg -> logCallback(msg, false) })
 
                 // Check for async pending job (processing handler or async assembly)
                 val pending = CraftingHelper.currentPendingJob

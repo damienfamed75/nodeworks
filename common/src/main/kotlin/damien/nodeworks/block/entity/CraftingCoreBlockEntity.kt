@@ -48,6 +48,10 @@ class CraftingCoreBlockEntity(
     var isCrafting: Boolean = false
         private set
 
+    /** The item currently being crafted (display name for GUI). */
+    var currentCraftItem: String = ""
+        private set
+
     // --- Buffer operations ---
 
     fun addToBuffer(itemId: String, count: Int): Boolean {
@@ -79,8 +83,9 @@ class CraftingCoreBlockEntity(
         return contents
     }
 
-    fun setCrafting(crafting: Boolean) {
+    fun setCrafting(crafting: Boolean, itemName: String = "") {
         isCrafting = crafting
+        currentCraftItem = if (crafting) itemName else ""
         markDirtyAndSync()
     }
 
@@ -217,6 +222,7 @@ class CraftingCoreBlockEntity(
         tag.putInt("bufferCapacity", bufferCapacity)
         tag.putBoolean("isFormed", isFormed)
         tag.putBoolean("isCrafting", isCrafting)
+        tag.putString("currentCraftItem", currentCraftItem)
 
         // Save buffer contents
         if (buffer.isNotEmpty()) {
@@ -237,6 +243,7 @@ class CraftingCoreBlockEntity(
         bufferCapacity = if (tag.contains("bufferCapacity")) tag.getInt("bufferCapacity") else 0
         isFormed = tag.getBoolean("isFormed")
         isCrafting = tag.getBoolean("isCrafting")
+        currentCraftItem = if (tag.contains("currentCraftItem")) tag.getString("currentCraftItem") else ""
 
         buffer.clear()
         if (tag.contains("buffer")) {
