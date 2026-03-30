@@ -13,6 +13,14 @@ class CraftingCoreScreen(
     title: Component
 ) : AbstractContainerScreen<CraftingCoreMenu>(menu, playerInventory, title) {
 
+    private var bufferScrollOffset = 0
+
+    private fun formatCount(count: Int): String = when {
+        count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
+        count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+        else -> count.toString()
+    }
+
     init {
         imageWidth = 180
         imageHeight = 140
@@ -110,14 +118,55 @@ class CraftingCoreScreen(
             graphics.drawString(font, "to form the CPU", contentLeft, contentsTop + 11, 0xFF888888.toInt())
         } else if (menu.bufferUsed > 0) {
             graphics.drawString(font, "Buffer:", contentLeft, contentsTop, 0xFFAAAAAA.toInt())
-            if (coreEntity != null) {
-                val contents = coreEntity.getBufferContents()
-                var itemY = contentsTop + 11
-                for ((itemId, count) in contents) {
-                    val shortName = itemId.substringAfter(':').replace('_', ' ')
-                    graphics.drawString(font, "  ${count}x $shortName", contentLeft, itemY, 0xFF888888.toInt())
-                    itemY += 10
-                    if (itemY > topPos + imageHeight - 8) break
+            run {
+                val contents = menu.clientBufferContents
+                val startX = contentLeft
+                val startY = contentsTop + 12
+                val slotSize = 18
+                val cols = (imageWidth - 24) / slotSize  // leave room for scrollbar
+                val availHeight = topPos + imageHeight - startY - 4
+                val rows = maxOf(1, availHeight / slotSize)
+                val totalRows = (contents.size + cols - 1) / cols
+                val maxScroll = maxOf(0, totalRows - rows)
+                bufferScrollOffset = bufferScrollOffset.coerceIn(0, maxScroll)
+
+                graphics.enableScissor(startX, startY, startX + cols * slotSize, startY + rows * slotSize)
+                // Pass 1: backgrounds + items
+                for ((i, entry) in contents.withIndex()) {
+                    val row = i / cols - bufferScrollOffset
+                    val col = i % cols
+                    if (row < 0 || row >= rows) continue
+                    val ix = startX + col * slotSize
+                    val iy = startY + row * slotSize
+                    val id = net.minecraft.resources.ResourceLocation.tryParse(entry.first) ?: continue
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+                    val stack = net.minecraft.world.item.ItemStack(item, 1)
+                    graphics.fill(ix, iy, ix + 16, iy + 16, 0xFF1A1A1A.toInt())
+                    graphics.renderItem(stack, ix, iy)
+                }
+                // Pass 2: count text on top of all items
+                graphics.pose().pushPose()
+                graphics.pose().translate(0f, 0f, 200f)
+                for ((i, entry) in contents.withIndex()) {
+                    val row = i / cols - bufferScrollOffset
+                    val col = i % cols
+                    if (row < 0 || row >= rows) continue
+                    val ix = startX + col * slotSize
+                    val iy = startY + row * slotSize
+                    val countText = formatCount(entry.second)
+                    graphics.drawString(font, countText, ix + 17 - font.width(countText), iy + 9, 0xFFFFFFFF.toInt(), true)
+                }
+                graphics.pose().popPose()
+                graphics.disableScissor()
+
+                // Scrollbar
+                if (totalRows > rows) {
+                    val sbX = startX + cols * slotSize + 2
+                    val sbH = rows * slotSize
+                    val thumbH = maxOf(6, sbH * rows / totalRows)
+                    val thumbY = startY + (sbH - thumbH) * bufferScrollOffset / maxScroll
+                    graphics.fill(sbX, startY, sbX + 3, startY + sbH, 0xFF1A1A1A.toInt())
+                    graphics.fill(sbX, thumbY, sbX + 3, thumbY + thumbH, 0xFF555555.toInt())
                 }
             }
         }
@@ -125,6 +174,14 @@ class CraftingCoreScreen(
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.render(graphics, mouseX, mouseY, partialTick)
+    }
+
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        if (menu.bufferUsed > 0) {
+            bufferScrollOffset -= scrollY.toInt()
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {

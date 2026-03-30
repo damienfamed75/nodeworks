@@ -97,5 +97,13 @@ object NodeworksClient : ClientModInitializer {
                 screen.repo.handleUpdate(payload)
             }
         }
+
+        ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.BufferSyncPayload.TYPE) { payload, context ->
+            val player = Minecraft.getInstance().player ?: return@registerGlobalReceiver
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                menu.clientBufferContents = payload.entries
+            }
+        }
     }
 }

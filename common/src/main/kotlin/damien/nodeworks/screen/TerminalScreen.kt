@@ -76,6 +76,7 @@ class TerminalScreen(
     private var logAutoScroll = true
     private var logCollapsed: Boolean = savedLogCollapsed
     private var draggingLogPanel = false
+    private var pressedButton: String? = null // "copy" or "clear" while mouse is down
     private val logCollapsedHeight = 12 // just enough for the toggle bar
 
     // Used to preserve editor text across layout changes
@@ -463,19 +464,28 @@ class TerminalScreen(
         val arrow = if (logCollapsed) "\u25B6" else "\u25BC"
         graphics.drawString(font, "$arrow Output", logX + 3, logY + 2, 0xFF888888.toInt())
 
-        // Copy button — two overlapping rectangles icon
-        val copyBtnSize = 9
-        val copyBtnX = logX + logW - copyBtnSize - 4
-        val copyBtnY = logY + 1
-        val copyHovered = mouseX >= copyBtnX - 1 && mouseX <= copyBtnX + copyBtnSize + 1 &&
-                mouseY >= copyBtnY && mouseY <= copyBtnY + copyBtnSize + 1
-        val copyColor = if (copyHovered) 0xFFCCCCCC.toInt() else 0xFF666666.toInt()
-        // Back rectangle
-        graphics.fill(copyBtnX + 2, copyBtnY, copyBtnX + copyBtnSize, copyBtnY + 7, copyColor)
-        graphics.fill(copyBtnX + 3, copyBtnY + 1, copyBtnX + copyBtnSize - 1, copyBtnY + 6, 0xFF1E1E1E.toInt())
-        // Front rectangle (offset down-left)
-        graphics.fill(copyBtnX, copyBtnY + 2, copyBtnX + copyBtnSize - 2, copyBtnY + copyBtnSize, copyColor)
-        graphics.fill(copyBtnX + 1, copyBtnY + 3, copyBtnX + copyBtnSize - 3, copyBtnY + copyBtnSize - 1, 0xFF1E1E1E.toInt())
+        // Output toolbar buttons from icons atlas (row 2, y=32)
+        // Each button: 16x16 tile with 3 variants (normal, hovered, pressed)
+        val btnRenderSize = 10
+        val atlasIconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+
+        // Clear button (left of copy)
+        val clearBtnX = logX + logW - btnRenderSize * 2 - 6
+        val clearBtnY = logY + 3
+        val clearHovered = mouseX >= clearBtnX && mouseX < clearBtnX + btnRenderSize &&
+                mouseY >= clearBtnY && mouseY < clearBtnY + btnRenderSize
+        val clearU = 48 + when { pressedButton == "clear" -> 32; clearHovered -> 16; else -> 0 }
+        graphics.blit(atlasIconsTexture, clearBtnX, clearBtnY, btnRenderSize, btnRenderSize,
+            (clearU + 3).toFloat(), 35f, 10, 10, 256, 256)
+
+        // Copy button
+        val copyBtnX = logX + logW - btnRenderSize - 3
+        val copyBtnY = logY + 3
+        val copyHovered = mouseX >= copyBtnX && mouseX < copyBtnX + btnRenderSize &&
+                mouseY >= copyBtnY && mouseY < copyBtnY + btnRenderSize
+        val copyU = when { pressedButton == "copy" -> 32; copyHovered -> 16; else -> 0 }
+        graphics.blit(atlasIconsTexture, copyBtnX, copyBtnY, btnRenderSize, btnRenderSize,
+            (copyU + 3).toFloat(), 35f, 10, 10, 256, 256)
 
         if (!logCollapsed) {
             // Log content area
@@ -782,11 +792,25 @@ class TerminalScreen(
         val logX = leftPos + cardPanelWidth + editorPadding
         val logY = topPos + imageHeight - effectiveLogHeight
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
-        // Copy button in log toggle bar
-        val copyBtnSize = 9
-        val copyBtnX = logX + logW - copyBtnSize - 4
-        val copyBtnY = logY + 1
-        if (mx >= copyBtnX - 1 && mx <= copyBtnX + copyBtnSize + 1 && my >= copyBtnY && my <= copyBtnY + copyBtnSize + 1) {
+        // Output toolbar buttons
+        val btnRenderSize = 10
+
+        // Clear button
+        val clearBtnX = logX + logW - btnRenderSize * 2 - 6
+        val clearBtnY = logY + 3
+        if (mx >= clearBtnX && mx < clearBtnX + btnRenderSize && my >= clearBtnY && my < clearBtnY + btnRenderSize) {
+            pressedButton = "clear"
+            TerminalLogBuffer.clear(menu.getTerminalPos())
+            logScrollOffset = 0
+            minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
+            return true
+        }
+
+        // Copy button
+        val copyBtnX = logX + logW - btnRenderSize - 3
+        val copyBtnY = logY + 3
+        if (mx >= copyBtnX && mx < copyBtnX + btnRenderSize && my >= copyBtnY && my < copyBtnY + btnRenderSize) {
+            pressedButton = "copy"
             val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
             val text = logs.joinToString("\n") { (if (it.isError) "[ERR] " else "") + it.message }
             if (text.isNotEmpty()) {
@@ -870,6 +894,7 @@ class TerminalScreen(
     }
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        pressedButton = null
         if (draggingLogPanel) {
             draggingLogPanel = false
             savedLogPanelHeight = logPanelHeight

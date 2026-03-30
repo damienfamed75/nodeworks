@@ -109,8 +109,8 @@ class ScriptEngine(
         // Compile and run the main script (top-level code: variable setup, scheduler registrations)
         return try {
             val chunk = g.load(stripTypeAnnotations(mainScript), "main")
-            chunk.call()
             logCallback("Script started.", false)
+            chunk.call()
             true
         } catch (e: LuaError) {
             logCallback("Error: ${e.message}", true)

@@ -283,6 +283,15 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
+        registrar.playToClient(BufferSyncPayload.TYPE, BufferSyncPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                    menu.clientBufferContents = payload.entries
+                }
+            }
+        }
     }
 
     private fun onServerTick(event: ServerTickEvent.Post) {
