@@ -142,7 +142,7 @@ class InstructionStorageBlockEntity(
     override fun setRemoved() {
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val lvl = level
-        if (blockDestroyed && lvl is ServerLevel) {
+        if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
         }

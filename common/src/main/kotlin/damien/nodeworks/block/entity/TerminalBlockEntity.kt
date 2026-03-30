@@ -128,10 +128,8 @@ class TerminalBlockEntity(
         val currentLevel = level
         if (currentLevel is ServerLevel) {
             PlatformServices.modState.stopScript(currentLevel, worldPosition)
-            if (blockDestroyed) {
-                NodeConnectionHelper.removeAllConnections(currentLevel, this)
-                NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
-            }
+            NodeConnectionHelper.removeAllConnections(currentLevel, this)
+            NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
         }
         super.setRemoved()
     }

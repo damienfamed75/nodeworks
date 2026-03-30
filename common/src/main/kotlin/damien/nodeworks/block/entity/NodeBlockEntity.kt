@@ -291,9 +291,7 @@ class NodeBlockEntity(
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
-            if (blockDestroyed) {
-                NodeConnectionHelper.removeAllConnections(currentLevel, this)
-            }
+            NodeConnectionHelper.removeAllConnections(currentLevel, this)
             NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
         }
         super.setRemoved()

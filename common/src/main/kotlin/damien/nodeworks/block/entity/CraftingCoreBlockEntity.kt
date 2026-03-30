@@ -52,6 +52,10 @@ class CraftingCoreBlockEntity(
     var currentCraftItem: String = ""
         private set
 
+    /** Incremented on each cancel — lets in-flight ProcessingJobs detect stale state. */
+    var jobGeneration: Int = 0
+        private set
+
     // --- Buffer operations ---
 
     fun addToBuffer(itemId: String, count: Int): Boolean {
@@ -113,6 +117,7 @@ class CraftingCoreBlockEntity(
                 }
             }
         }
+        jobGeneration++
         setCrafting(false)
     }
 
@@ -202,7 +207,7 @@ class CraftingCoreBlockEntity(
     override fun setRemoved() {
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val lvl = level
-        if (blockDestroyed && lvl is ServerLevel) {
+        if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
         }

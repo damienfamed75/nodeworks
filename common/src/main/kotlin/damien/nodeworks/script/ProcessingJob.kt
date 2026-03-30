@@ -22,6 +22,7 @@ class ProcessingJob(
     private val pendingResult: CraftingHelper.PendingHandlerJob
 ) {
     private val remaining = api.outputs.map { it.first to it.second }.toMutableList()
+    private val startGeneration = cpu.jobGeneration
 
     fun toLuaTable(): LuaTable {
         val table = LuaTable()
@@ -72,6 +73,8 @@ class ProcessingJob(
         return table
     }
 
+    private val isStale: Boolean get() = cpu.jobGeneration != startGeneration
+
     private fun tryExtract(getters: List<CardHandle.StorageGetter>): Boolean {
         for ((outputId, needed) in remaining) {
             var available = 0L
@@ -85,6 +88,10 @@ class ProcessingJob(
             if (available < needed) return false
         }
 
+        // Items are ready — extract and route appropriately
+        val stale = isStale
+        val snapshot = if (stale) damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos) else null
+
         for ((outputId, needed) in remaining.toList()) {
             var stillNeeded = needed.toLong()
             for (getter in getters) {
@@ -94,7 +101,16 @@ class ProcessingJob(
                     storage, { CardHandle.matchesFilter(it, outputId) }, stillNeeded
                 )
                 if (extracted > 0) {
-                    cpu.addToBuffer(outputId, extracted.toInt())
+                    if (stale) {
+                        // Job was cancelled — return items to network storage
+                        val id = net.minecraft.resources.ResourceLocation.tryParse(outputId)
+                        val item = id?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.get(it) }
+                        if (item != null) {
+                            NetworkStorageHelper.insertItemStack(level, snapshot!!, net.minecraft.world.item.ItemStack(item, extracted.toInt()), null)
+                        }
+                    } else {
+                        cpu.addToBuffer(outputId, extracted.toInt())
+                    }
                     stillNeeded -= extracted
                 }
             }

@@ -201,19 +201,19 @@ class AutocompletePopup(
         val fullText = lastFullText
 
         // Type annotation context — only in these specific positions:
-        // 1. Function parameter: (param: Type  or  (param: Type, param2: Type
+        // 1. Function parameter: function(param: Type  or  function(param: Type, param2: Type
         // 2. Local variable: local x: Type
         // 3. Function return type: function(...)): Type  or  function name(...)): Type
-        val typeContextPattern = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\bfunction\s*\w*\s*\([^)]*\)\s*:\s*)""")
+        val typeAnnotationRegex = """(?:\bfunction\s*\w*\s*\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\bfunction\s*\w*\s*\([^)]*\)\s*:\s*)"""
 
-        val typeAnnotationMatch = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\bfunction\s*\w*\s*\([^)]*\)\s*:\s*)([A-Z]\w*)$""").find(trimmed)
+        val typeAnnotationMatch = Regex("""${typeAnnotationRegex}([A-Z]\w*)$""").find(trimmed)
         if (typeAnnotationMatch != null) {
             val partial = typeAnnotationMatch.groupValues[1]
             customPrefix = partial
             return fuzzy(partial, knownTypes)
         }
         // Also match when just the colon was typed with no partial yet
-        val typeAnnotationEmpty = Regex("""(?:\(\s*(?:\w+\s*:\s*\w+\??\s*,\s*)*\w+\s*:\s*|\blocal\s+\w+\s*:\s*|\bfunction\s*\w*\s*\([^)]*\)\s*:\s*)$""").find(trimmed)
+        val typeAnnotationEmpty = Regex("""${typeAnnotationRegex}$""").find(trimmed)
         if (typeAnnotationEmpty != null) {
             customPrefix = ""
             return knownTypes
