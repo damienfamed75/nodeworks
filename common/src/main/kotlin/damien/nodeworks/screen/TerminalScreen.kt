@@ -504,7 +504,7 @@ class TerminalScreen(
             val wrappedLines = mutableListOf<WrappedLine>()
             for (entry in logs) {
                 val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
-                val fullText = "> " + entry.message
+                val fullText = "> " + entry.displayMessage
                 val split = font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
                 for ((j, line) in split.withIndex()) {
                     val prefix = if (j == 0) "" else "  "
@@ -812,7 +812,7 @@ class TerminalScreen(
         if (mx >= copyBtnX && mx < copyBtnX + btnRenderSize && my >= copyBtnY && my < copyBtnY + btnRenderSize) {
             pressedButton = "copy"
             val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
-            val text = logs.joinToString("\n") { (if (it.isError) "[ERR] " else "") + it.message }
+            val text = logs.joinToString("\n") { (if (it.isError) "[ERR] " else "") + it.displayMessage }
             if (text.isNotEmpty()) {
                 minecraft?.keyboardHandler?.clipboard = text
             }
@@ -945,7 +945,7 @@ class TerminalScreen(
             // Count wrapped lines for scroll calculation
             var totalWrapped = 0
             for (entry in logs) {
-                val split = font.splitter.splitLines("> " + entry.message, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
+                val split = font.splitter.splitLines("> " + entry.displayMessage, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
                 totalWrapped += split.size
             }
             val maxVisibleLines = (logPanelHeight - 14) / logLineHeight
