@@ -39,13 +39,13 @@ object ModItems {
     val INSTRUCTION_SET: Item = register(
         "instruction_set",
         ::InstructionSet,
-        Item.Properties().stacksTo(1)
+        Item.Properties().stacksTo(64)
     )
 
     val PROCESSING_SET: Item = register(
         "processing_set",
         ::ProcessingSet,
-        Item.Properties().stacksTo(1)
+        Item.Properties().stacksTo(64)
     )
 
     val MEMORY_UPGRADE: Item = register(

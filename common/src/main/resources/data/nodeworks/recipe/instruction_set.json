@@ -1,0 +1,23 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        "GRG",
+        "GPG",
+        "GGG"
+    ],
+    "key": {
+        "P": {
+            "item": "minecraft:paper"
+        },
+        "R": {
+            "item": "minecraft:redstone"
+        },
+        "G": {
+            "item": "minecraft:gold_nugget"
+        }
+    },
+    "result": {
+        "id": "nodeworks:instruction_set",
+        "count": 1
+    }
+}
