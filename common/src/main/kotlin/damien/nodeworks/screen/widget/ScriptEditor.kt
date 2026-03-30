@@ -221,14 +221,18 @@ class ScriptEditor(
             // Arrow keys
             263 -> { // LEFT
                 if (shift) startSelection()
-                if (ctrl) moveCursorWordLeft() else moveCursorLeft()
+                if (ctrl) moveCursorWordLeft()
+                else if (shift) { if (cursor > 0) cursor-- }
+                else moveCursorLeft()
                 if (!shift) clearSelection()
                 ensureCursorVisible()
                 return true
             }
             262 -> { // RIGHT
                 if (shift) startSelection()
-                if (ctrl) moveCursorWordRight() else moveCursorRight()
+                if (ctrl) moveCursorWordRight()
+                else if (shift) { if (cursor < totalTextLength()) cursor++ }
+                else moveCursorRight()
                 if (!shift) clearSelection()
                 ensureCursorVisible()
                 return true
