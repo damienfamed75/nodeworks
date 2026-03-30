@@ -143,23 +143,9 @@ class CardHandle private constructor(
             }
         })
 
-        // :findStack(filter) -> ItemsHandle or nil (single slot info, NOT aggregated)
-        table.set("findStack", object : TwoArgFunction() {
-            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
-                val filter = filterArg.checkjstring()
-                val storage = self.getItemStorage() ?: return LuaValue.NIL
-
-                val info = PlatformServices.storage.findFirstItemInfo(storage) { matchesFilter(it, filter) }
-                    ?: return LuaValue.NIL
-
-                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
-                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(info, filter, sourceStorage, level))
-            }
-        })
-
-        // :findAll(filter) -> table of ItemsHandles
+        // :findEach(filter) -> table of ItemsHandles
         // Returns all unique item types matching the filter
-        table.set("findAll", object : TwoArgFunction() {
+        table.set("findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val storage = self.getItemStorage() ?: return LuaTable()

@@ -274,8 +274,7 @@ class AutocompletePopup(
                 suggest("get(", "get(alias: string) → CardHandle"),
                 suggest("getAll(", "getAll(type: string) → CardHandle[]"),
                 suggest("find(", "find(filter: string) → ItemsHandle?"),
-                suggest("findStack(", "findStack(filter: string) → ItemsHandle?"),
-                suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
+                suggest("findEach(", "findEach(filter: string) → ItemsHandle[]"),
                 suggest("count(", "count(filter: string) → number"),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
                 suggest("craft(", "craft(id: string, count?: number) → CraftBuilder"),
@@ -537,8 +536,7 @@ class AutocompletePopup(
     private fun cardHandleMethods(partial: String): List<Suggestion> {
         val methods = listOf(
             suggest("find(", "find(filter: string) → ItemsHandle?"),
-            suggest("findStack(", "findStack(filter: string) → ItemsHandle?"),
-            suggest("findAll(", "findAll(filter: string) → ItemsHandle[]"),
+            suggest("findEach(", "findEach(filter: string) → ItemsHandle[]"),
             suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
             suggest("count(", "count(filter: string) → number"),
             suggest("face(", "face(side: string) → CardHandle"),
@@ -645,19 +643,12 @@ class AutocompletePopup(
     /** Extracts variable names assigned from find(), craft(), or shapeless() — these are ItemsHandle. */
     private fun extractItemsHandleVariables(text: String): Set<String> {
         val result = mutableSetOf<String>()
-        // local X = something:find(...) — but NOT findAll
+        // local X = something:find(...)
         val findPattern = Regex("""local\s+(\w+)\s*=\s*\w+:find\s*\(""")
         findPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
-        // local X = something:findStack(...)
-        val findStackPattern = Regex("""local\s+(\w+)\s*=\s*\w+:findStack\s*\(""")
-        findStackPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
         // local X = network:find(...)
         val netFindPattern = Regex("""local\s+(\w+)\s*=\s*network:find\s*\(""")
         netFindPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
-        // local X = network:findStack(...)
-        val netFindStackPattern = Regex("""local\s+(\w+)\s*=\s*network:findStack\s*\(""")
-        netFindStackPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
-        // network:craft now returns CraftBuilder, not ItemsHandle — handled by resolveVariableType
         // local X = network:shapeless(...)
         val shapelessPattern = Regex("""local\s+(\w+)\s*=\s*network:shapeless\s*\(""")
         shapelessPattern.findAll(text).forEach { result.add(it.groupValues[1]) }
