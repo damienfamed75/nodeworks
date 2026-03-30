@@ -9,10 +9,10 @@ import damien.nodeworks.registry.ModBlocks
 import damien.nodeworks.registry.ModItems
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.*
-import damien.nodeworks.screen.ProcessingApiCardOpenData
-import damien.nodeworks.screen.ProcessingApiCardScreenHandler
-import damien.nodeworks.screen.ApiStorageOpenData
-import damien.nodeworks.screen.ApiStorageScreenHandler
+import damien.nodeworks.screen.ProcessingSetOpenData
+import damien.nodeworks.screen.ProcessingSetScreenHandler
+import damien.nodeworks.screen.ProcessingStorageOpenData
+import damien.nodeworks.screen.ProcessingStorageScreenHandler
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -142,20 +142,20 @@ class Nodeworks(modBus: IEventBus) {
                     CraftingCoreMenu.clientFactory(syncId, inv, data)
                 }
             )
-            ModScreenHandlers.PROCESSING_API_CARD = Registry.register(
+            ModScreenHandlers.PROCESSING_SET = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_api_card")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_set")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
-                    val data = ProcessingApiCardOpenData.STREAM_CODEC.decode(buf)
-                    ProcessingApiCardScreenHandler.clientFactory(syncId, inv, data)
+                    val data = ProcessingSetOpenData.STREAM_CODEC.decode(buf)
+                    ProcessingSetScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
-            ModScreenHandlers.API_STORAGE = Registry.register(
+            ModScreenHandlers.PROCESSING_STORAGE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "api_storage")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_storage")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
-                    val data = ApiStorageOpenData.STREAM_CODEC.decode(buf)
-                    ApiStorageScreenHandler.clientFactory(syncId, inv, data)
+                    val data = ProcessingStorageOpenData.STREAM_CODEC.decode(buf)
+                    ProcessingStorageScreenHandler.clientFactory(syncId, inv, data)
                 }
             )
             ModScreenHandlers.BROADCAST_ANTENNA = Registry.register(
@@ -236,7 +236,7 @@ class Nodeworks(modBus: IEventBus) {
             context.enqueueWork {
                 val player = context.player()
                 val menu = player.containerMenu
-                if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
+                if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
                     when (payload.key) {
                         "input" -> menu.setInputCount(payload.slotIndex, payload.value)
                         "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
@@ -260,7 +260,7 @@ class Nodeworks(modBus: IEventBus) {
             context.enqueueWork {
                 val player = context.player()
                 val menu = player.containerMenu
-                if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
+                if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
                     menu.setSlotFromId(payload.slotIndex, payload.itemId)
                 }
             }

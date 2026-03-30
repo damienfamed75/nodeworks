@@ -1,6 +1,6 @@
 package damien.nodeworks.block.entity
 
-import damien.nodeworks.item.LinkChipItem
+import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
@@ -28,9 +28,9 @@ import java.util.UUID
 private const val BASE_RANGE = 32.0
 
 /**
- * Receiver Antenna — receives Processing API Cards from a paired Broadcast Antenna.
+ * Receiver Antenna — receives Processing Sets from a paired Broadcast Antenna.
  * Connectable via laser to the consumer network.
- * Has 1 slot for an encoded Link Chip that defines the pairing.
+ * Has 1 slot for an encoded Link Crystal that defines the pairing.
  */
 class ReceiverAntennaBlockEntity(
     pos: BlockPos,
@@ -42,7 +42,7 @@ class ReceiverAntennaBlockEntity(
 
     private val items = NonNullList.withSize(1, ItemStack.EMPTY)
 
-    // Pairing data — read from the Link Chip in the slot
+    // Pairing data — read from the Link Crystal in the slot
     private var pairedPos: BlockPos? = null
     private var pairedDimension: ResourceKey<Level>? = null
     private var pairedFrequencyId: UUID? = null
@@ -87,13 +87,13 @@ class ReceiverAntennaBlockEntity(
     /** Read pairing data from the chip in the slot. */
     private fun updatePairingFromChip() {
         val stack = items[0]
-        if (stack.isEmpty || stack.item !is LinkChipItem) {
+        if (stack.isEmpty || stack.item !is LinkCrystalItem) {
             pairedPos = null
             pairedDimension = null
             pairedFrequencyId = null
             return
         }
-        val data = LinkChipItem.getPairingData(stack)
+        val data = LinkCrystalItem.getPairingData(stack)
         if (data != null) {
             pairedPos = data.pos
             pairedDimension = data.dimension

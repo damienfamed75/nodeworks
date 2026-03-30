@@ -147,7 +147,7 @@ class TerminalScreen(
                                 if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
                             }
                         }
-                        is damien.nodeworks.block.entity.ApiStorageBlockEntity -> {
+                        is damien.nodeworks.block.entity.ProcessingStorageBlockEntity -> {
                             for (api in entity.getAllProcessingApis()) {
                                 scannedLocal.add(api.name)
                                 scannedProcessable.addAll(api.outputItemIds)
@@ -156,8 +156,8 @@ class TerminalScreen(
                         is damien.nodeworks.block.entity.ReceiverAntennaBlockEntity -> {
                             if (entity.isPaired) {
                                 val pairedData = entity.getItem(0)
-                                if (!pairedData.isEmpty && pairedData.item is damien.nodeworks.item.LinkChipItem) {
-                                    val chipData = damien.nodeworks.item.LinkChipItem.getPairingData(pairedData)
+                                if (!pairedData.isEmpty && pairedData.item is damien.nodeworks.item.LinkCrystalItem) {
+                                    val chipData = damien.nodeworks.item.LinkCrystalItem.getPairingData(pairedData)
                                     if (chipData != null && clientLevel.isLoaded(chipData.pos)) {
                                         val broadcast = clientLevel.getBlockEntity(chipData.pos)
                                         if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {

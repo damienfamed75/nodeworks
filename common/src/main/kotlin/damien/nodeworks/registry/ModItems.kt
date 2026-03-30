@@ -2,9 +2,9 @@ package damien.nodeworks.registry
 
 import damien.nodeworks.card.IOCard
 import damien.nodeworks.card.InstructionSet
-import damien.nodeworks.card.ProcessingApiCard
+import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.card.StorageCard
-import damien.nodeworks.item.LinkChipItem
+import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
@@ -41,9 +41,9 @@ object ModItems {
         Item.Properties().stacksTo(1)
     )
 
-    val PROCESSING_API_CARD: Item = register(
-        "processing_api_card",
-        ::ProcessingApiCard,
+    val PROCESSING_SET: Item = register(
+        "processing_set",
+        ::ProcessingSet,
         Item.Properties().stacksTo(1)
     )
 
@@ -53,10 +53,16 @@ object ModItems {
         Item.Properties().stacksTo(4)
     )
 
-    val LINK_CHIP: Item = register(
-        "link_chip",
-        ::LinkChipItem,
+    val LINK_CRYSTAL: Item = register(
+        "link_crystal",
+        ::LinkCrystalItem,
         Item.Properties().stacksTo(1)
+    )
+
+    val CELESTINE_SHARD: Item = register(
+        "celestine_shard",
+        ::Item,
+        Item.Properties()
     )
 
     val MONITOR: Item = register(

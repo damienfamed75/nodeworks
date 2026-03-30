@@ -63,7 +63,7 @@ class ReceiverAntennaScreen(
         graphics.fill(sx, sy, sx + 16, sy + 16, 0xFF1A1A1A.toInt())
 
         // Label
-        graphics.drawString(font, "Insert encoded Link Chip", x + 8, y + 56, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, "Insert encoded Link Crystal", x + 8, y + 56, 0xFFAAAAAA.toInt())
 
         // Separator
         graphics.fill(x + 4, y + 72, x + w - 4, y + 73, 0xFF555555.toInt())

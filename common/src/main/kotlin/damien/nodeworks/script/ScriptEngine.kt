@@ -539,7 +539,7 @@ class ScriptEngine(
         })
 
         // network:handle(cardName, handlerFn) — register a processing handler
-        // cardName matches the name set on a Processing API Card in API Storage.
+        // cardName matches the name set on a Processing Set in Processing Storage.
         // The handler function receives input items as arguments and should return
         // the result ItemsHandle from the processing machine's output.
         networkTable.set("handle", object : ThreeArgFunction() {

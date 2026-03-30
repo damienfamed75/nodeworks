@@ -62,11 +62,11 @@ object NodeworksClient : ClientModInitializer {
         MenuScreens.register(ModScreenHandlers.CRAFTING_CORE) { menu, inventory, title ->
             damien.nodeworks.screen.CraftingCoreScreen(menu, inventory, title)
         }
-        MenuScreens.register(ModScreenHandlers.PROCESSING_API_CARD) { menu, inventory, title ->
-            damien.nodeworks.screen.ProcessingApiCardScreen(menu, inventory, title)
+        MenuScreens.register(ModScreenHandlers.PROCESSING_SET) { menu, inventory, title ->
+            damien.nodeworks.screen.ProcessingSetScreen(menu, inventory, title)
         }
-        MenuScreens.register(ModScreenHandlers.API_STORAGE) { menu, inventory, title ->
-            damien.nodeworks.screen.ApiStorageScreen(menu, inventory, title)
+        MenuScreens.register(ModScreenHandlers.PROCESSING_STORAGE) { menu, inventory, title ->
+            damien.nodeworks.screen.ProcessingStorageScreen(menu, inventory, title)
         }
         MenuScreens.register(ModScreenHandlers.BROADCAST_ANTENNA) { menu, inventory, title ->
             damien.nodeworks.screen.BroadcastAntennaScreen(menu, inventory, title)

@@ -77,15 +77,15 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "crafting_core")),
             ExtendedScreenHandlerType({ syncId, inv, data -> CraftingCoreMenu.clientFactory(syncId, inv, data) }, CraftingCoreOpenData.STREAM_CODEC)
         )
-        ModScreenHandlers.PROCESSING_API_CARD = Registry.register(
+        ModScreenHandlers.PROCESSING_SET = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_api_card")),
-            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ProcessingApiCardScreenHandler.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ProcessingApiCardOpenData.STREAM_CODEC)
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_set")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ProcessingSetScreenHandler.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ProcessingSetOpenData.STREAM_CODEC)
         )
-        ModScreenHandlers.API_STORAGE = Registry.register(
+        ModScreenHandlers.PROCESSING_STORAGE = Registry.register(
             BuiltInRegistries.MENU,
-            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "api_storage")),
-            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ApiStorageScreenHandler.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ApiStorageOpenData.STREAM_CODEC)
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_storage")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ProcessingStorageScreenHandler.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ProcessingStorageOpenData.STREAM_CODEC)
         )
         ModScreenHandlers.BROADCAST_ANTENNA = Registry.register(
             BuiltInRegistries.MENU,
@@ -102,6 +102,16 @@ object Nodeworks : ModInitializer {
         ModBlockEntities.initialize()
         ModItems.initialize()
         ModScreenHandlers.initialize()
+
+        // Register Celestine geode in overworld biomes
+        net.fabricmc.fabric.api.biome.v1.BiomeModifications.addFeature(
+            net.fabricmc.fabric.api.biome.v1.BiomeSelectors.foundInOverworld(),
+            net.minecraft.world.level.levelgen.GenerationStep.Decoration.LOCAL_MODIFICATIONS,
+            net.minecraft.resources.ResourceKey.create(
+                net.minecraft.core.registries.Registries.PLACED_FEATURE,
+                ResourceLocation.fromNamespaceAndPath("nodeworks", "celestine_geode")
+            )
+        )
 
         TerminalPackets.registerPayloads()
         TerminalPackets.registerServerHandlers()

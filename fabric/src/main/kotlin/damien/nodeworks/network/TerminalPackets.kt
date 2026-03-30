@@ -235,7 +235,7 @@ object TerminalPackets {
         ServerPlayNetworking.registerGlobalReceiver(SetProcessingApiDataPayload.TYPE) { payload, context ->
             val player = context.player()
             val menu = player.containerMenu
-            if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
+            if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
                 when (payload.key) {
                     "input" -> menu.setInputCount(payload.slotIndex, payload.value)
                     "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
@@ -247,7 +247,7 @@ object TerminalPackets {
         ServerPlayNetworking.registerGlobalReceiver(SetProcessingApiSlotPayload.TYPE) { payload, context ->
             val player = context.player()
             val menu = player.containerMenu
-            if (menu is damien.nodeworks.screen.ProcessingApiCardScreenHandler && menu.containerId == payload.containerId) {
+            if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
                 menu.setSlotFromId(payload.slotIndex, payload.itemId)
             }
         }

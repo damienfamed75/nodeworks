@@ -5,7 +5,7 @@ import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
-import damien.nodeworks.block.ApiStorageBlock
+import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.BroadcastAntennaBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CraftingStorageBlock
@@ -74,9 +74,9 @@ object ModBlocks {
             .strength(3.0f, 6.0f)
     )
 
-    val API_STORAGE: Block = register(
-        "api_storage",
-        ::ApiStorageBlock,
+    val PROCESSING_STORAGE: Block = register(
+        "processing_storage",
+        ::ProcessingStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
     )
@@ -93,12 +93,66 @@ object ModBlocks {
         BlockBehaviour.Properties.of().strength(3.0f, 6.0f)
     )
 
+    // --- Celestine Geode blocks ---
+
+    val CELESTINE_BLOCK: Block = registerDirect("celestine_block",
+        net.minecraft.world.level.block.AmethystBlock(BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+            .strength(1.5f).sound(net.minecraft.world.level.block.SoundType.AMETHYST)
+            .requiresCorrectToolForDrops()))
+
+    val BUDDING_CELESTINE: Block = registerDirect("budding_celestine",
+        damien.nodeworks.block.BuddingCelestineBlock(BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+            .randomTicks().strength(1.5f).sound(net.minecraft.world.level.block.SoundType.AMETHYST)
+            .requiresCorrectToolForDrops().pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
+    val CELESTINE_CLUSTER: Block = registerDirect("celestine_cluster",
+        net.minecraft.world.level.block.AmethystClusterBlock(7.0f, 3.0f,
+            BlockBehaviour.Properties.of()
+                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.AMETHYST_CLUSTER)
+                .strength(1.5f).lightLevel { 5 }
+                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
+    val LARGE_CELESTINE_BUD: Block = registerDirect("large_celestine_bud",
+        net.minecraft.world.level.block.AmethystClusterBlock(5.0f, 3.0f,
+            BlockBehaviour.Properties.of()
+                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.LARGE_AMETHYST_BUD)
+                .strength(1.5f).lightLevel { 4 }
+                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
+    val MEDIUM_CELESTINE_BUD: Block = registerDirect("medium_celestine_bud",
+        net.minecraft.world.level.block.AmethystClusterBlock(4.0f, 3.0f,
+            BlockBehaviour.Properties.of()
+                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.MEDIUM_AMETHYST_BUD)
+                .strength(1.5f).lightLevel { 2 }
+                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
+    val SMALL_CELESTINE_BUD: Block = registerDirect("small_celestine_bud",
+        net.minecraft.world.level.block.AmethystClusterBlock(3.0f, 4.0f,
+            BlockBehaviour.Properties.of()
+                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.SMALL_AMETHYST_BUD)
+                .strength(1.5f).lightLevel { 1 }
+                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
     val INVENTORY_TERMINAL: Block = register(
         "inventory_terminal",
         ::InventoryTerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
     )
+
+    private fun registerDirect(id: String, block: Block): Block {
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        Registry.register(BuiltInRegistries.BLOCK, identifier, block)
+        val item = BlockItem(block, Item.Properties())
+        Registry.register(BuiltInRegistries.ITEM, identifier, item)
+        return block
+    }
 
     private fun register(
         id: String,

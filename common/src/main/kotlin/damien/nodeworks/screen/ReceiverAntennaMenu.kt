@@ -1,7 +1,7 @@
 package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
-import damien.nodeworks.item.LinkChipItem
+import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.BlockPos
 import net.minecraft.world.Container
@@ -64,7 +64,7 @@ class ReceiverAntennaMenu(
 
     private class ChipSlot(container: Container, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
         override fun mayPlace(stack: ItemStack): Boolean =
-            stack.item is LinkChipItem && LinkChipItem.isEncoded(stack)
+            stack.item is LinkCrystalItem && LinkCrystalItem.isEncoded(stack)
         override fun getMaxStackSize(): Int = 1
     }
 
@@ -77,7 +77,7 @@ class ReceiverAntennaMenu(
         if (slotIndex == 0) {
             if (!moveItemStackTo(stack, 1, slots.size, true)) return ItemStack.EMPTY
         } else {
-            if (stack.item is LinkChipItem && LinkChipItem.isEncoded(stack)) {
+            if (stack.item is LinkCrystalItem && LinkCrystalItem.isEncoded(stack)) {
                 if (!moveItemStackTo(stack, 0, 1, false)) return ItemStack.EMPTY
             } else return ItemStack.EMPTY
         }
