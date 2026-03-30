@@ -409,7 +409,7 @@ class TerminalScreen(
             graphics.blit(iconsTexture, leftPos + 4, y + 1, (entry.iconU + 4).toFloat(), (entry.iconV + 4).toFloat(), 8, 8, 256, 256)
 
             // Name
-            graphics.drawString(font, entry.name, leftPos + 14, y + 1, entry.color)
+            graphics.drawString(font, entry.name, leftPos + 15, y + 1, entry.color)
         }
         graphics.disableScissor()
 
