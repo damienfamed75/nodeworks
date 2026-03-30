@@ -282,7 +282,6 @@ object CraftingHelper {
             val inStorage = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
             val canExtract = minOf(needed - inBuffer, inStorage).toLong()
             val shortId = itemId.substringAfter(':')
-            if (canExtract > 0) traceLog?.invoke("[craft] Extracting ${canExtract}x $shortId from storage (need $needed, have $inBuffer in buffer + $inStorage in storage)")
             if (canExtract > 0) {
                 var remaining = canExtract
                 for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
@@ -302,8 +301,7 @@ object CraftingHelper {
             // Now craft what's still missing
             var have = cpu.getBufferCount(itemId)
             var toCraft = needed - have
-
-            if (toCraft > 0) traceLog?.invoke("[craft] Need ${toCraft}x $shortId — crafting prerequisites...")
+            var asyncCount = 0
 
             while (toCraft > 0) {
                 currentPendingJob = null
@@ -312,10 +310,10 @@ object CraftingHelper {
                     val pending = currentPendingJob
                     if (pending != null) {
                         pendingPrereqs.add(pending)
-                        traceLog?.invoke("[craft] Queued async processing for $shortId (waiting for handler)")
+                        asyncCount++
                         toCraft -= 1
                     } else {
-                        traceLog?.invoke("[craft] Missing ingredient '$shortId' for '${match.instructionSet.outputItemId.substringAfter(':')}' — not in storage and no recipe available")
+                        traceLog?.invoke("[craft] Missing ingredient '$shortId' for '${match.instructionSet.outputItemId.substringAfter(':')}' — no recipe found")
                         return false
                     }
                 } else {
@@ -324,18 +322,16 @@ object CraftingHelper {
                     toCraft = needed - have
                 }
             }
+            if (asyncCount > 0) traceLog?.invoke("[craft] Waiting on ${asyncCount}x $shortId from handler")
         }
 
         // If there are pending async prerequisites, register a job that assembles when all complete
         if (pendingPrereqs.isNotEmpty()) {
-            traceLog?.invoke("[craft] Waiting for ${pendingPrereqs.size} async prerequisite(s)...")
             val assemblyJob = PendingHandlerJob()
             val pollFn: () -> Boolean = {
                 if (pendingPrereqs.all { it.isComplete }) {
-                    traceLog?.invoke("[craft] All prerequisites ready — assembling recipe")
                     val success = assembleRecipe(recipe, ingredientCounts, level, snapshot, cache, cpu)
-                    if (success) traceLog?.invoke("[craft] Assembly complete")
-                    else traceLog?.invoke("[craft] Assembly failed")
+                    if (!success) traceLog?.invoke("[craft] Assembly failed")
                     assemblyJob.complete(success)
                     true
                 } else false
@@ -445,7 +441,7 @@ object CraftingHelper {
             while (have < needed) {
                 val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler, traceLog)
                 if (subResult == null || subResult.count == 0) {
-                    traceLog?.invoke("[craft] Missing ingredient '${itemId.substringAfter(':')}' for '${api.name}' — not in storage and no recipe available")
+                    traceLog?.invoke("[craft] Missing ingredient '${itemId.substringAfter(':')}' for '${api.name}' — no recipe found")
                     return false
                 }
                 have = cpu.getBufferCount(itemId) + NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
@@ -519,6 +515,9 @@ object CraftingHelper {
                     bufferSource = BufferSource(cpu, itemId, count)
                 )))
             }
+            // Update CPU display to show the active sub-craft
+            cpu.setCrafting(true, api.outputs.firstOrNull()?.first?.substringAfter(':')?.replace('_', ' ') ?: "")
+
             // Run handler synchronously on the server thread.
             val result = when (luaArgs.size) {
                 1 -> handler.call(luaArgs[0])
