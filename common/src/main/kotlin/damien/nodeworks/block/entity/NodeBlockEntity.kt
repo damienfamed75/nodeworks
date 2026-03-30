@@ -176,7 +176,7 @@ class NodeBlockEntity(
     fun setStack(side: Direction, slot: Int, stack: ItemStack) {
         require(slot in 0 until SLOTS_PER_SIDE) { "Slot $slot out of range for side" }
         items[sideOffset(side) + slot] = stack
-        setChanged()
+        markDirtyAndSync()
     }
 
     // --- Container implementation ---
@@ -189,7 +189,7 @@ class NodeBlockEntity(
 
     override fun removeItem(slot: Int, amount: Int): ItemStack {
         val result = ContainerHelper.removeItem(items, slot, amount)
-        if (!result.isEmpty) setChanged()
+        if (!result.isEmpty) markDirtyAndSync()
         return result
     }
 
@@ -199,7 +199,7 @@ class NodeBlockEntity(
 
     override fun setItem(slot: Int, stack: ItemStack) {
         items[slot] = stack
-        setChanged()
+        markDirtyAndSync()
     }
 
     override fun stillValid(player: Player): Boolean {
@@ -208,7 +208,7 @@ class NodeBlockEntity(
 
     override fun clearContent() {
         items.clear()
-        setChanged()
+        markDirtyAndSync()
     }
 
     // --- WorldlyContainer: controls which slots are accessible from each direction ---
