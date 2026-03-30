@@ -94,7 +94,9 @@ class ProcessingStorageScreenHandler(
         private val handler: ProcessingStorageScreenHandler
     ) : Slot(container, index, x, y) {
         override fun mayPlace(stack: ItemStack): Boolean {
-            return stack.item is ProcessingSet && handler.isSlotActive(index)
+            return stack.item is ProcessingSet
+                && ProcessingSet.getOutputs(stack).isNotEmpty()
+                && handler.isSlotActive(index)
         }
     }
 

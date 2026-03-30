@@ -97,7 +97,9 @@ class InstructionStorageScreenHandler(
         private val handler: InstructionStorageScreenHandler
     ) : Slot(container, index, x, y) {
         override fun mayPlace(stack: ItemStack): Boolean {
-            return stack.item is InstructionSet && handler.isSlotActive(index)
+            return stack.item is InstructionSet
+                && InstructionSet.getOutput(stack).isNotEmpty()
+                && handler.isSlotActive(index)
         }
     }
 
