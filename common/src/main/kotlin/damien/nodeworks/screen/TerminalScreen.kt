@@ -757,6 +757,18 @@ class TerminalScreen(
             }
         }
 
+        // Split into name (bright) and hint (dim) — find the first separator
+        val separatorIdx = tooltipText.indexOfFirst { it == '(' || it == ':' || it == '—' || it == '→' }
+        val namePart: String
+        val hintPart: String
+        if (separatorIdx > 0) {
+            namePart = tooltipText.substring(0, separatorIdx)
+            hintPart = tooltipText.substring(separatorIdx)
+        } else {
+            namePart = tooltipText
+            hintPart = ""
+        }
+
         val tooltipW = font.width(tooltipText) + 6
         val tooltipH = font.lineHeight + 4
         val tx = mouseX + 8
@@ -764,7 +776,10 @@ class TerminalScreen(
 
         graphics.fill(tx - 1, ty - 1, tx + tooltipW + 1, ty + tooltipH + 1, 0xFF555555.toInt())
         graphics.fill(tx, ty, tx + tooltipW, ty + tooltipH, 0xFF1A1A1A.toInt())
-        graphics.drawString(font, tooltipText, tx + 3, ty + 2, 0xFFCCCCCC.toInt())
+        graphics.drawString(font, namePart, tx + 3, ty + 2, 0xFFCCCCCC.toInt())
+        if (hintPart.isNotEmpty()) {
+            graphics.drawString(font, hintPart, tx + 3 + font.width(namePart), ty + 2, 0xFF888888.toInt())
+        }
     }
 
     private fun renderLineNumbers(graphics: GuiGraphics) {
@@ -786,9 +801,12 @@ class TerminalScreen(
         // Inner top of the editor, adjusted for scroll (matches ScriptEditor's padding)
         val innerTop = editor.y + 4 - editor.scrollY
 
-        // Fade error highlight after 2 seconds
-        val highlightActive = errorHighlightLine >= 0 &&
-            (net.minecraft.Util.getMillis() - errorHighlightTime) < 2000
+        // Error highlight fades out over 2 seconds
+        val highlightElapsed = if (errorHighlightLine >= 0) net.minecraft.Util.getMillis() - errorHighlightTime else Long.MAX_VALUE
+        val highlightFadeDuration = 2000L
+        val highlightAlpha = if (highlightElapsed < highlightFadeDuration) {
+            ((1.0 - highlightElapsed.toDouble() / highlightFadeDuration) * 0x40).toInt().coerceIn(0, 0x40)
+        } else 0
 
         graphics.enableScissor(gutterX, gutterTop, editorX - 1, gutterBottom)
         for (line in 1..totalLines) {
@@ -796,14 +814,23 @@ class TerminalScreen(
             if (y + lineHeight < gutterTop) continue
             if (y > gutterBottom) break
 
-            // Error line highlight — red tint across gutter and editor
-            if (highlightActive && line - 1 == errorHighlightLine) {
-                graphics.fill(gutterX, y, editorX + editor.width, y + lineHeight, 0x30FF3333.toInt())
+            // Error line highlight — red tint across gutter and editor, fading out
+            if (highlightAlpha > 0 && line - 1 == errorHighlightLine) {
+                val color = (highlightAlpha shl 24) or 0xFF3333
+                graphics.fill(gutterX, y, editorX + editor.width, y + lineHeight, color)
             }
 
             val numStr = line.toString()
             val numWidth = font.width(numStr)
-            val numColor = if (highlightActive && line - 1 == errorHighlightLine) 0xFFFF5555.toInt() else 0xFF555555.toInt()
+            val numColor = if (highlightAlpha > 0 && line - 1 == errorHighlightLine) {
+                // Fade line number from red to normal gray
+                val redAmount = (highlightAlpha * 255 / 0x40).coerceIn(0, 255)
+                val grayBase = 0x55
+                val r = grayBase + (0xFF - grayBase) * redAmount / 255
+                val g = grayBase + (0x55 - grayBase) * redAmount / 255
+                val b = grayBase + (0x55 - grayBase) * redAmount / 255
+                (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+            } else 0xFF555555.toInt()
             graphics.drawString(font, numStr, editorX - 4 - numWidth, y, numColor, false)
         }
         graphics.disableScissor()
