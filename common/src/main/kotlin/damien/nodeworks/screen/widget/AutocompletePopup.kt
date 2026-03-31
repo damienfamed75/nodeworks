@@ -725,6 +725,7 @@ class AutocompletePopup(
             suggest("scheduler", "scheduler"),
             suggest("network", "network"),
             suggest("print(", "print(message: any)"),
+            suggest("error(", "error(message: string) — throw an error"),
             suggest("clock(", "clock() → number"),
             suggest("string", "string library"),
             suggest("math", "math library"),

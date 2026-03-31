@@ -169,8 +169,10 @@ class TerminalScreen(
         }
     }
 
-    /** Find the error line number from a click position in the log panel, or null if not an error line. */
-    private fun getClickedErrorLine(mouseY: Int, logContentTop: Int, logW: Int): Int? {
+    data class ErrorLocation(val scriptName: String?, val line: Int)
+
+    /** Find the error script name and line number from a click position in the log panel. */
+    private fun getClickedErrorLocation(mouseY: Int, logContentTop: Int, logW: Int): ErrorLocation? {
         val logLineHeight = font.lineHeight + 1
         val maxLogWidth = logW - 6
         val clickedVisualLine = (mouseY - logContentTop) / logLineHeight
@@ -183,8 +185,15 @@ class TerminalScreen(
             val splitCount = font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY).size
             if (clickedWrappedIdx in wrappedIdx until wrappedIdx + splitCount) {
                 if (entry.isError) {
-                    val lineMatch = errorLinePattern.find(entry.message)
-                    return lineMatch?.groupValues?.get(1)?.toIntOrNull()
+                    // Match [string "name"]:line or name:line
+                    val bracketMatch = Regex("""\[string "(\w+)"\]:(\d+)""").find(entry.message)
+                    if (bracketMatch != null) {
+                        return ErrorLocation(bracketMatch.groupValues[1], bracketMatch.groupValues[2].toInt())
+                    }
+                    val simpleMatch = Regex("""(\w+):(\d+)""").find(entry.message)
+                    if (simpleMatch != null) {
+                        return ErrorLocation(simpleMatch.groupValues[1], simpleMatch.groupValues[2].toInt())
+                    }
                 }
                 return null
             }
@@ -716,6 +725,7 @@ class TerminalScreen(
         "onChange" to "onChange(fn: function(strength: number))",
         // Lua builtins
         "print" to "print(...) — output to terminal",
+        "error" to "error(message: string) — throw an error",
         "clock" to "clock() → number (server tick count)",
         "tostring" to "tostring(value: any) → string",
         "tonumber" to "tonumber(value: any) → number?",
@@ -1161,9 +1171,14 @@ class TerminalScreen(
             val logContentTop = logY + logCollapsedHeight
             val logContentBottom = logY + logPanelHeight - editorPadding
             if (mx >= logX && mx < logX + logW && my >= logContentTop && my < logContentBottom) {
-                val lineNum = getClickedErrorLine(my, logContentTop, logW)
-                if (lineNum != null) {
-                    jumpToLine(lineNum)
+                val errorLoc = getClickedErrorLocation(my, logContentTop, logW)
+                if (errorLoc != null) {
+                    // Switch to the correct tab if error is from a different script
+                    val targetTab = errorLoc.scriptName
+                    if (targetTab != null && targetTab != activeTab && targetTab in scripts) {
+                        switchTab(targetTab)
+                    }
+                    jumpToLine(errorLoc.line)
                     minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.3f, 1.2f)
                     return true
                 }
