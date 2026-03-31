@@ -88,6 +88,7 @@ class TerminalScreen(
     private val undoStack = ArrayDeque<UndoState>(50)
     private val redoStack = ArrayDeque<UndoState>(50)
     private var lastSavedText = ""
+    private var lastSavedCursor = 0
     private var undoInProgress = false
 
     private fun applyUndoState(state: UndoState) {
@@ -319,8 +320,7 @@ class TerminalScreen(
         editor.setValueListener { newText ->
             // Push undo state when text changes (but not during undo/redo itself)
             if (!undoInProgress && newText != lastSavedText) {
-                val cursorPos = editor.getCursorPosition()
-                undoStack.addLast(UndoState(lastSavedText, cursorPos))
+                undoStack.addLast(UndoState(lastSavedText, lastSavedCursor))
                 if (undoStack.size > 50) undoStack.removeFirst()
                 redoStack.clear()
                 lastSavedText = newText
@@ -684,6 +684,9 @@ class TerminalScreen(
         }
 
         if (editor.isFocused) {
+            // Capture cursor before any edits for undo
+            lastSavedCursor = editor.getCursorPosition()
+
             if (keyCode == InputConstants.KEY_ESCAPE) {
                 if (autocomplete.visible) {
                     autocomplete.hide()
@@ -846,6 +849,9 @@ class TerminalScreen(
             return true
         }
         if (editor.isFocused) {
+            // Capture cursor before any edits for undo
+            lastSavedCursor = editor.getCursorPosition()
+
             // Block the space from Ctrl+Space — it was already handled in keyPressed
             if (codePoint == ' ' && (modifiers and 2) != 0) {
                 return true

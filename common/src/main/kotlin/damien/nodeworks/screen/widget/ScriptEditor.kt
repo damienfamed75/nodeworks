@@ -75,6 +75,7 @@ class ScriptEditor(
         cursor = newCursor.coerceIn(0, text.length)
         selectStart = -1
         ensureCursorVisible()
+        onTextChanged()
     }
 
 
