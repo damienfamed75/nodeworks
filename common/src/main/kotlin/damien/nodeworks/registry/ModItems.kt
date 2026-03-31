@@ -5,6 +5,7 @@ import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.card.RedstoneCard
 import damien.nodeworks.card.StorageCard
+import damien.nodeworks.item.DiagnosticToolItem
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.item.MilkySoulBallItem
@@ -77,6 +78,12 @@ object ModItems {
         "celestine_shard",
         ::Item,
         Item.Properties()
+    )
+
+    val DIAGNOSTIC_TOOL: Item = register(
+        "diagnostic_tool",
+        ::DiagnosticToolItem,
+        Item.Properties().stacksTo(1)
     )
 
     val MONITOR: Item = register(

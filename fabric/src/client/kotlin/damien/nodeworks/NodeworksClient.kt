@@ -85,6 +85,9 @@ object NodeworksClient : ClientModInitializer {
         MenuScreens.register(ModScreenHandlers.RECEIVER_ANTENNA) { menu, inventory, title ->
             damien.nodeworks.screen.ReceiverAntennaScreen(menu, inventory, title)
         }
+        MenuScreens.register(ModScreenHandlers.DIAGNOSTIC) { menu, inventory, title ->
+            damien.nodeworks.screen.DiagnosticScreen(menu, inventory, title)
+        }
 
         // Receive log messages from the server
         ClientPlayNetworking.registerGlobalReceiver(TerminalLogPayload.TYPE) { payload, context ->

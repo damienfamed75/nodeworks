@@ -141,6 +141,9 @@ class TerminalBlockEntity(
         if (hasContent) {
             val tag = saveWithoutMetadata(level.registryAccess())
             tag.remove("connections")
+            // NeoForge requires "id" in BLOCK_ENTITY_DATA for serialization
+            val typeKey = net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type)
+            if (typeKey != null) tag.putString("id", typeKey.toString())
             stack.set(net.minecraft.core.component.DataComponents.BLOCK_ENTITY_DATA,
                 net.minecraft.world.item.component.CustomData.of(tag))
         }

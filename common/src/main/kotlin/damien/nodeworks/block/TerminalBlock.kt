@@ -70,7 +70,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem) return InteractionResult.PASS
+        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem || player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return InteractionResult.PASS

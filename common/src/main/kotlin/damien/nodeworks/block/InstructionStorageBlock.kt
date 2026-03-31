@@ -39,7 +39,7 @@ class InstructionStorageBlock(properties: Properties) : BaseEntityBlock(properti
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem) return InteractionResult.PASS
+        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem || player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val blockEntity = level.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: return InteractionResult.PASS
