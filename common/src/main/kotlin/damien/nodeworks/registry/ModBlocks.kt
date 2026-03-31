@@ -28,6 +28,7 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .strength(2.0f, 6.0f)
             .noOcclusion()
+            .requiresCorrectToolForDrops()
     )
 
     val TERMINAL: Block = register(
@@ -35,6 +36,7 @@ object ModBlocks {
         ::TerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     val INSTRUCTION_STORAGE: Block = register(
@@ -42,6 +44,7 @@ object ModBlocks {
         ::InstructionStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     val NETWORK_CONTROLLER: Block = register(
@@ -51,6 +54,7 @@ object ModBlocks {
             .strength(4.0f, 8.0f)
             .noOcclusion()
             .lightLevel { 10 }
+            .requiresCorrectToolForDrops()
     )
 
     val VARIABLE: Block = register(
@@ -58,6 +62,7 @@ object ModBlocks {
         ::VariableBlock,
         BlockBehaviour.Properties.of()
             .strength(2.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     val CRAFTING_CORE: Block = register(
@@ -65,6 +70,7 @@ object ModBlocks {
         ::CraftingCoreBlock,
         BlockBehaviour.Properties.of()
             .strength(4.0f, 8.0f)
+            .requiresCorrectToolForDrops()
     )
 
     val CRAFTING_STORAGE: Block = register(
@@ -72,6 +78,7 @@ object ModBlocks {
         ::CraftingStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     val PROCESSING_STORAGE: Block = register(
@@ -79,18 +86,21 @@ object ModBlocks {
         ::ProcessingStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     val BROADCAST_ANTENNA: Block = register(
         "broadcast_antenna",
         ::BroadcastAntennaBlock,
         BlockBehaviour.Properties.of().strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     val RECEIVER_ANTENNA: Block = register(
         "receiver_antenna",
         { damien.nodeworks.block.ReceiverAntennaBlock(it) },
         BlockBehaviour.Properties.of().strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     // --- Celestine Geode blocks ---
@@ -144,6 +154,7 @@ object ModBlocks {
         ::InventoryTerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     private fun registerDirect(id: String, block: Block): Block {

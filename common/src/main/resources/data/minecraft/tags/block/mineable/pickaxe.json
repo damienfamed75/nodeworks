@@ -1,6 +1,17 @@
 {
   "replace": false,
   "values": [
+    "nodeworks:node",
+    "nodeworks:terminal",
+    "nodeworks:inventory_terminal",
+    "nodeworks:network_controller",
+    "nodeworks:variable",
+    "nodeworks:instruction_storage",
+    "nodeworks:processing_storage",
+    "nodeworks:crafting_core",
+    "nodeworks:crafting_storage",
+    "nodeworks:broadcast_antenna",
+    "nodeworks:receiver_antenna",
     "nodeworks:celestine_block",
     "nodeworks:budding_celestine",
     "nodeworks:celestine_cluster",
