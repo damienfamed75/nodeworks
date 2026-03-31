@@ -461,6 +461,25 @@ class AutocompletePopup(
 
     // ========== Symbol Table ==========
 
+    /** Public access to the symbol table for hover tooltips. */
+    fun getSymbolTable(fullText: String, beforeCursor: String): Map<String, String> = buildSymbolTable(fullText, beforeCursor)
+
+    /** Get function signature for a given function name. Checks current script and all module scripts. */
+    fun getFunctionSignature(funcName: String, fullText: String): String? {
+        val allTexts = mutableListOf(fullText)
+        for ((_, scriptText) in scripts()) allTexts.add(scriptText)
+        val pattern = Regex("""\bfunction\s+([\w.]*${Regex.escape(funcName)})\s*\(([^)]*)\)\s*(?::\s*(\w+)\??\s*)?""")
+        for (text in allTexts) {
+            val match = pattern.find(text) ?: continue
+            val name = match.groupValues[1]
+            val params = match.groupValues[2].trim().split(",").joinToString(", ") { it.trim() }
+            val retType = match.groupValues[3].ifEmpty { null }
+            val retStr = if (retType != null) " → $retType" else ""
+            return "$name($params)$retStr"
+        }
+        return null
+    }
+
     private fun buildSymbolTable(fullText: String, beforeCursor: String): Map<String, String> {
         val symbols = mutableMapOf<String, String>()
 

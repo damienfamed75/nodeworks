@@ -32,6 +32,9 @@ class TerminalScreen(
 
     private lateinit var editor: ScriptEditor
 
+    /** Matches line numbers in error messages: `main:5` or `[string "main"]:6` */
+    private val errorLinePattern = Regex(""":(\d+)""")
+
     /** Exposed for platform-specific input suppression (e.g., blocking JEI keybinds). */
     fun isEditorFocused(): Boolean = ::editor.isInitialized && editor.isFocused
     private lateinit var autocomplete: AutocompletePopup
@@ -77,6 +80,8 @@ class TerminalScreen(
     private var draggingLogPanel = false
     private var pressedButton: String? = null // "copy" or "clear" while mouse is down
     private val logCollapsedHeight = 12 // just enough for the toggle bar
+    private var errorHighlightLine = -1 // 0-indexed line to highlight, -1 = none
+    private var errorHighlightTime = 0L
 
     // Used to preserve editor text across layout changes
     private var rebuildWithText: String? = null
@@ -162,6 +167,44 @@ class TerminalScreen(
             val newCursor = (cursor + endDelta).coerceIn(0, newText.length)
             editor.setValueKeepScroll(newText, newCursor)
         }
+    }
+
+    /** Find the error line number from a click position in the log panel, or null if not an error line. */
+    private fun getClickedErrorLine(mouseY: Int, logContentTop: Int, logW: Int): Int? {
+        val logLineHeight = font.lineHeight + 1
+        val maxLogWidth = logW - 6
+        val clickedVisualLine = (mouseY - logContentTop) / logLineHeight
+        val clickedWrappedIdx = logScrollOffset + clickedVisualLine
+
+        val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
+        var wrappedIdx = 0
+        for (entry in logs) {
+            val fullText = "> " + entry.displayMessage
+            val splitCount = font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY).size
+            if (clickedWrappedIdx in wrappedIdx until wrappedIdx + splitCount) {
+                if (entry.isError) {
+                    val lineMatch = errorLinePattern.find(entry.message)
+                    return lineMatch?.groupValues?.get(1)?.toIntOrNull()
+                }
+                return null
+            }
+            wrappedIdx += splitCount
+        }
+        return null
+    }
+
+    private fun jumpToLine(lineNumber: Int) {
+        val lines = editor.value.split('\n')
+        val lineIdx = (lineNumber - 1).coerceIn(0, lines.lastIndex)
+        var pos = 0
+        for (i in 0 until lineIdx) pos += lines[i].length + 1
+        // Select the entire line
+        val lineEnd = pos + lines[lineIdx].length
+        editor.setSelection(pos, lineEnd)
+        editor.isFocused = true
+        // Highlight the line temporarily
+        errorHighlightLine = lineIdx
+        errorHighlightTime = net.minecraft.Util.getMillis()
     }
 
     private fun rebind() {
@@ -566,15 +609,16 @@ class TerminalScreen(
             val maxLogWidth = logW - 6
 
             // Build wrapped lines
-            data class WrappedLine(val text: String, val color: Int)
+            data class WrappedLine(val text: String, val color: Int, val clickable: Boolean = false)
             val wrappedLines = mutableListOf<WrappedLine>()
             for (entry in logs) {
                 val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
                 val fullText = "> " + entry.displayMessage
+                val hasLineRef = entry.isError && errorLinePattern.containsMatchIn(entry.message)
                 val split = font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
                 for ((j, line) in split.withIndex()) {
                     val prefix = if (j == 0) "" else "  "
-                    wrappedLines.add(WrappedLine(prefix + line.string, color))
+                    wrappedLines.add(WrappedLine(prefix + line.string, color, hasLineRef && j == 0))
                 }
             }
 
@@ -590,6 +634,12 @@ class TerminalScreen(
                 val line = wrappedLines[lineIdx]
                 val entryY = logContentTop + i * logLineHeight
                 graphics.drawString(font, line.text, logX + 3, entryY, line.color)
+                // Underline clickable error lines when hovered
+                if (line.clickable && mouseY >= entryY && mouseY < entryY + logLineHeight &&
+                    mouseX >= logX && mouseX < logX + logW) {
+                    val textW = font.width(line.text)
+                    graphics.fill(logX + 3, entryY + font.lineHeight, logX + 3 + textW, entryY + font.lineHeight + 1, 0xAAFF5555.toInt())
+                }
             }
             graphics.disableScissor()
         }
@@ -600,6 +650,11 @@ class TerminalScreen(
 
         // Line number gutter
         renderLineNumbers(graphics)
+
+        // Hover type tooltip
+        if (!autocomplete.visible && !showNewTabInput) {
+            renderTypeTooltip(graphics, mouseX, mouseY)
+        }
 
         // Autocomplete popup renders on top of everything
         autocomplete.render(graphics, mouseX, mouseY)
@@ -623,6 +678,95 @@ class TerminalScreen(
         renderTooltip(graphics, mouseX, mouseY)
     }
 
+    /** Known method signatures for tooltip display. */
+    private val methodSignatures = mapOf(
+        // Network methods
+        "get" to "network:get(alias: string) → CardHandle",
+        "getAll" to "network:getAll(type: string) → CardHandle[]",
+        "craft" to "network:craft(id: string, count?: number) → CraftBuilder",
+        "handle" to "network:handle(cardName: string, fn: function(job, ...))",
+        "route" to "network:route(alias: string, fn: function(item) → boolean)",
+        "shapeless" to "network:shapeless(item: string, count?: number, ...) → ItemsHandle?",
+        "debug" to "network:debug() — print network topology",
+        "var" to "network:var(name: string) → VariableHandle",
+        // Network item methods (also on CardHandle)
+        "find" to "find(filter: string) → ItemsHandle?",
+        "findEach" to "findEach(filter: string) → ItemsHandle[]",
+        "insert" to "insert(items: ItemsHandle, count?: number) → number",
+        "count" to "count(filter: string) → number",
+        "face" to "face(side: string) → CardHandle",
+        "slots" to "slots(...: number) → CardHandle",
+        // ItemsHandle methods
+        "hasTag" to "hasTag(tag: string) → boolean",
+        "matches" to "matches(filter: string) → boolean",
+        // Scheduler methods
+        "tick" to "scheduler:tick(fn: function) → number",
+        "second" to "scheduler:second(fn: function) → number",
+        "delay" to "scheduler:delay(ticks: number, fn: function) → number",
+        "cancel" to "scheduler:cancel(id: number)",
+        // CraftBuilder methods
+        "connect" to "connect(fn: function(item: ItemsHandle))",
+        "store" to "store() — send result to network storage",
+        // Job methods
+        "pull" to "job:pull(card: CardHandle, ...) — wait for outputs",
+        // RedstoneCard methods
+        "powered" to "powered() → boolean",
+        "strength" to "strength() → number (0-15)",
+        "set" to "set(boolean | number) — emit redstone signal",
+        "onChange" to "onChange(fn: function(strength: number))",
+        // Lua builtins
+        "print" to "print(...) — output to terminal",
+        "clock" to "clock() → number (server tick count)",
+        "tostring" to "tostring(value: any) → string",
+        "tonumber" to "tonumber(value: any) → number?",
+        "type" to "type(value: any) → string",
+        "pairs" to "pairs(t: table) → iterator",
+        "ipairs" to "ipairs(t: table) → iterator",
+        "require" to "require(module: string) → table"
+    )
+
+    private fun renderTypeTooltip(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+        if (mouseX < editorX || mouseX > editorX + editor.width ||
+            mouseY < editorY || mouseY > editorY + editor.height) return
+
+        val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble()) ?: return
+
+        // Check built-in method signatures first
+        val methodSig = methodSignatures[word]
+
+        val tooltipText = if (methodSig != null) {
+            methodSig
+        } else {
+            // Check user-defined functions (current script + modules)
+            val funcSig = autocomplete.getFunctionSignature(word, editor.value)
+            if (funcSig != null) {
+                funcSig
+            } else {
+                // Check variable types
+                val type = when (word) {
+                    "network" -> "Network API"
+                    "scheduler" -> "Scheduler API"
+                    "true", "false" -> "boolean"
+                    "nil" -> "nil"
+                    else -> {
+                        val symbols = autocomplete.getSymbolTable(editor.value, editor.value.substring(0, editor.getCursorPosition()))
+                        symbols[word]
+                    }
+                }
+                if (type != null) "$word: $type" else return
+            }
+        }
+
+        val tooltipW = font.width(tooltipText) + 6
+        val tooltipH = font.lineHeight + 4
+        val tx = mouseX + 8
+        val ty = mouseY - tooltipH - 2
+
+        graphics.fill(tx - 1, ty - 1, tx + tooltipW + 1, ty + tooltipH + 1, 0xFF555555.toInt())
+        graphics.fill(tx, ty, tx + tooltipW, ty + tooltipH, 0xFF1A1A1A.toInt())
+        graphics.drawString(font, tooltipText, tx + 3, ty + 2, 0xFFCCCCCC.toInt())
+    }
+
     private fun renderLineNumbers(graphics: GuiGraphics) {
         val text = editor.value
         val lineHeight = font.lineHeight
@@ -642,14 +786,25 @@ class TerminalScreen(
         // Inner top of the editor, adjusted for scroll (matches ScriptEditor's padding)
         val innerTop = editor.y + 4 - editor.scrollY
 
+        // Fade error highlight after 2 seconds
+        val highlightActive = errorHighlightLine >= 0 &&
+            (net.minecraft.Util.getMillis() - errorHighlightTime) < 2000
+
         graphics.enableScissor(gutterX, gutterTop, editorX - 1, gutterBottom)
         for (line in 1..totalLines) {
             val y = innerTop + (line - 1) * lineHeight
             if (y + lineHeight < gutterTop) continue
             if (y > gutterBottom) break
+
+            // Error line highlight — red tint across gutter and editor
+            if (highlightActive && line - 1 == errorHighlightLine) {
+                graphics.fill(gutterX, y, editorX + editor.width, y + lineHeight, 0x30FF3333.toInt())
+            }
+
             val numStr = line.toString()
             val numWidth = font.width(numStr)
-            graphics.drawString(font, numStr, editorX - 4 - numWidth, y, 0xFF555555.toInt(), false)
+            val numColor = if (highlightActive && line - 1 == errorHighlightLine) 0xFFFF5555.toInt() else 0xFF555555.toInt()
+            graphics.drawString(font, numStr, editorX - 4 - numWidth, y, numColor, false)
         }
         graphics.disableScissor()
     }
@@ -802,8 +957,8 @@ class TerminalScreen(
                     for (line in text.lines()) {
                         val trimmed = line.trim()
                         if (trimmed.startsWith("--")) continue // skip comments
-                        if (Regex("""\b(function\s|if\s.+\sthen|for\s.+\sdo|while\s.+\sdo)""").containsMatchIn(trimmed)) depth++
-                        if (Regex("""^\s*end\s*[)\s]*$""").matches(line) || trimmed == "end") depth--
+                        if (Regex("""\bfunction[\s(]|if\s.+\sthen|for\s.+\sdo|while\s.+\sdo""").containsMatchIn(trimmed)) depth++
+                        if (Regex("""\bend\b""").containsMatchIn(trimmed)) depth--
                     }
 
                     if (depth > 0) {
@@ -972,6 +1127,20 @@ class TerminalScreen(
             }
             minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
             return true
+        }
+
+        // Click on error line in log → jump to that line in editor
+        if (!logCollapsed) {
+            val logContentTop = logY + logCollapsedHeight
+            val logContentBottom = logY + logPanelHeight - editorPadding
+            if (mx >= logX && mx < logX + logW && my >= logContentTop && my < logContentBottom) {
+                val lineNum = getClickedErrorLine(my, logContentTop, logW)
+                if (lineNum != null) {
+                    jumpToLine(lineNum)
+                    minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.3f, 1.2f)
+                    return true
+                }
+            }
         }
 
         // Drag handle: full width of separator, extends 4px above and 3px below
