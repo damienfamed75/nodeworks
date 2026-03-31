@@ -693,6 +693,45 @@ class TerminalScreen(
                 return true
             }
 
+            // Auto-delete pair: if backspace on empty pair like (), [], {}, ""
+            if (keyCode == InputConstants.KEY_BACKSPACE) {
+                val bText = editor.value
+                val bCursor = editor.getCursorPosition()
+                if (bCursor > 0 && bCursor < bText.length) {
+                    val pair = "" + bText[bCursor - 1] + bText[bCursor]
+                    if (pair == "()" || pair == "[]" || pair == "{}" || pair == "\"\"") {
+                        val newText = bText.substring(0, bCursor - 1) + bText.substring(bCursor + 1)
+                        editor.setValueKeepScroll(newText, bCursor - 1)
+                        autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+                        return true
+                    }
+                }
+            }
+
+            // Auto-insert `end` when pressing Enter after block-opening statements
+            if (keyCode == InputConstants.KEY_RETURN) {
+                val text = editor.value
+                val cursor = editor.getCursorPosition()
+                val beforeCursor = text.substring(0, cursor)
+                val currentLine = beforeCursor.substringAfterLast('\n').trimEnd()
+
+                // Check if the line opens a block that needs `end`
+                val needsEnd = currentLine.matches(Regex("""^\s*(local\s+)?function\s.*""")) ||
+                    currentLine.matches(Regex("""^\s*if\s+.+\s+then\s*$""")) ||
+                    currentLine.matches(Regex("""^\s*for\s+.+\s+do\s*$""")) ||
+                    currentLine.matches(Regex("""^\s*while\s+.+\s+do\s*$"""))
+
+                if (needsEnd) {
+                    // Detect indentation of the current line
+                    val indent = currentLine.takeWhile { it == ' ' }
+                    val newText = text.substring(0, cursor) + "\n$indent    \n${indent}end" + text.substring(cursor)
+                    val newCursor = cursor + 1 + indent.length + 4 // after \n + indent + 4 spaces
+                    editor.setValueKeepScroll(newText, newCursor)
+                    autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+                    return true
+                }
+            }
+
             editor.keyPressed(keyCode, scanCode, modifiers)
             // Update autocomplete only for keys that modify text, not navigation
             val isNavOrModifierKey = keyCode in setOf(
@@ -729,7 +768,30 @@ class TerminalScreen(
             if (codePoint == ' ' && (modifiers and 2) != 0) {
                 return true
             }
-            editor.charTyped(codePoint, modifiers)
+            // Skip-over: if typing a closing char that's already next, just move cursor forward
+            val text = editor.value
+            val cursor = editor.getCursorPosition()
+            val nextChar = if (cursor < text.length) text[cursor] else null
+            val isClosing = codePoint in listOf(')', ']', '}')
+            val isQuoteSkip = codePoint == '"' && nextChar == '"'
+            if ((isClosing || isQuoteSkip) && nextChar == codePoint) {
+                editor.setValueKeepScroll(text, cursor + 1)
+            } else {
+                // Auto-pair brackets, quotes, and parens
+                val closingChar = when (codePoint) {
+                    '(' -> ')'
+                    '[' -> ']'
+                    '{' -> '}'
+                    '"' -> '"'
+                    else -> null
+                }
+                if (closingChar != null) {
+                    val newText = text.substring(0, cursor) + codePoint + closingChar + text.substring(cursor)
+                    editor.setValueKeepScroll(newText, cursor + 1)
+                } else {
+                    editor.charTyped(codePoint, modifiers)
+                }
+            }
             autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
             // Always consume when editor is focused to prevent other mods stealing input
             return true
