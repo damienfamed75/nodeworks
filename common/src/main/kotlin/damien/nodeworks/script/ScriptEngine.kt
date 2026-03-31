@@ -159,19 +159,19 @@ class ScriptEngine(
          * Strips Luau-style type annotations from script text before Lua compilation.
          * Handles: function params `(x: Type)`, return types `): Type`, local vars `local x: Type =`
          */
+        private val typePattern = """(?:[A-Z]\w*|string|number|boolean|any)\??"""
+
         fun stripTypeAnnotations(source: String): String {
             var result = source
 
             // Function parameter types: (param:Type) or (param: Type) or (param :Type)
-            // Also handles optional: (param: Type?)
-            // Match `: TypeName?` after a word inside parentheses context
-            result = result.replace(Regex("""\b(\w+)\s*:\s*([A-Z]\w*\??)""")) { match ->
-                // Only strip if it looks like a type annotation (type starts with uppercase)
+            // Matches uppercase types (CardHandle, ItemsHandle) and builtin types (string, number, boolean, any)
+            result = result.replace(Regex("""\b(\w+)\s*:\s*($typePattern)""")) { match ->
                 match.groupValues[1]
             }
 
             // Return type annotations: ): TypeName or ): TypeName?
-            result = result.replace(Regex("""\)\s*:\s*([A-Z]\w*\??)""")) { ")" }
+            result = result.replace(Regex("""\)\s*:\s*($typePattern)""")) { ")" }
 
             return result
         }
