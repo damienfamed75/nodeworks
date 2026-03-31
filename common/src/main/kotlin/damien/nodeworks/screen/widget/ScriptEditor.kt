@@ -123,6 +123,35 @@ class ScriptEditor(
         return pos + col.coerceAtMost(lines[line.coerceAtMost(lines.size - 1)].length)
     }
 
+    /** Get the word under the given screen coordinates, or null if not over a word. */
+    fun getWordAt(mx: Double, my: Double): String? {
+        val relY = my - textTop + scrollY
+        val lineIdx = (relY / lineHeight).toInt()
+        if (lineIdx < 0 || lineIdx >= lines.size) return null
+        val line = lines[lineIdx]
+        val relX = mx - textLeft + scrollX
+
+        // Find column
+        var col = 0
+        var w = 0f
+        for (ch in line) {
+            val charW = font.width(ch.toString()).toFloat()
+            if (w + charW / 2 > relX) break
+            w += charW
+            col++
+        }
+        if (col >= line.length) return null
+        val ch = line[col]
+        if (!ch.isLetterOrDigit() && ch != '_') return null
+
+        // Expand to full word
+        var start = col
+        while (start > 0 && (line[start - 1].isLetterOrDigit() || line[start - 1] == '_')) start--
+        var end = col
+        while (end < line.length && (line[end].isLetterOrDigit() || line[end] == '_')) end++
+        return line.substring(start, end)
+    }
+
     /** Convert screen coordinates to cursor position. */
     private fun screenToCursor(mx: Double, my: Double): Int {
         val relY = my - textTop + scrollY

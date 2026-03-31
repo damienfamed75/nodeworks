@@ -617,11 +617,60 @@ class ScriptEngine(
         })
 
         // print(message)
-        g.set("print", object : OneArgFunction() {
-            override fun call(arg: LuaValue): LuaValue {
-                logCallback(arg.tojstring(), false)
-                return LuaValue.NIL
+        g.set("print", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val parts = mutableListOf<String>()
+                for (i in 1..args.narg()) {
+                    parts.add(formatValue(args.arg(i)))
+                }
+                logCallback(parts.joinToString("  "), false)
+                return LuaValue.NONE
             }
         })
+    }
+
+    private fun formatValue(value: LuaValue, depth: Int = 0): String {
+        if (depth > 3) return "{...}"
+        return when {
+            value.istable() -> {
+                val table = value.checktable()
+                val entries = mutableListOf<String>()
+                var isArray = true
+                var arrayIdx = 1
+
+                // First pass: check if it's a pure array
+                var key = LuaValue.NIL
+                while (true) {
+                    val n = table.next(key)
+                    if (n.arg1().isnil()) break
+                    key = n.arg1()
+                    if (!key.isint() || key.toint() != arrayIdx) {
+                        isArray = false
+                        break
+                    }
+                    arrayIdx++
+                }
+
+                // Second pass: format entries
+                key = LuaValue.NIL
+                while (true) {
+                    val n = table.next(key)
+                    if (n.arg1().isnil()) break
+                    key = n.arg1()
+                    val v = n.arg(2)
+                    if (entries.size >= 20) { entries.add("..."); break }
+                    if (isArray) {
+                        entries.add(formatValue(v, depth + 1))
+                    } else {
+                        val keyStr = if (key.isstring()) key.tojstring() else formatValue(key, depth + 1)
+                        entries.add("$keyStr = ${formatValue(v, depth + 1)}")
+                    }
+                }
+
+                if (entries.isEmpty()) "{}" else "{ ${entries.joinToString(", ")} }"
+            }
+            value.isstring() -> "\"${value.tojstring()}\""
+            else -> value.tojstring()
+        }
     }
 }
