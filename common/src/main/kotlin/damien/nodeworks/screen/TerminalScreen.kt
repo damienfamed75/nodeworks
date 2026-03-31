@@ -41,7 +41,6 @@ class TerminalScreen(
     private val variables: List<Pair<String, Int>>
     private val localApiNames: List<String>
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
-    private val processableOutputs: List<String>
     private val craftableOutputs: List<String>
     private var scriptRunning: Boolean = menu.isRunning()
     private var autoRun: Boolean = menu.isAutoRun()
@@ -217,7 +216,6 @@ class TerminalScreen(
         variables = scannedVars
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
-        processableOutputs = scannedProcessable.distinct()
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
     }
 
@@ -267,7 +265,7 @@ class TerminalScreen(
         }
         addRenderableWidget(editor)
 
-        autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, processableOutputs, craftableOutputs, localApis) { scripts }
+        autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 2

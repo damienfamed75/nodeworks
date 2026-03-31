@@ -14,7 +14,6 @@ class AutocompletePopup(
     private val itemTags: List<String> = emptyList(),
     private val variables: List<Pair<String, Int>> = emptyList(),
     private val localApiNames: List<String> = emptyList(),
-    private val processableOutputs: List<String> = emptyList(),
     private val craftableOutputs: List<String> = emptyList(),
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
@@ -36,7 +35,6 @@ class AutocompletePopup(
     private var popupX: Int = 0
     private var popupY: Int = 0
     private var prefix: String = ""
-    private var lastFullText: String = ""
     private var customPrefix: String? = null
     private var scrollOffset: Int = 0
     private val maxVisible: Int = 8
@@ -45,7 +43,6 @@ class AutocompletePopup(
 
     fun update(text: String, cursorPos: Int, editorX: Int, editorY: Int, forced: Boolean = false, editorScrollY: Int = 0) {
         val cursor = minOf(cursorPos, text.length)
-        lastFullText = text
 
         if (cursor <= 0) { hide(); return }
 
@@ -787,10 +784,8 @@ class AutocompletePopup(
                     suggest("store(", "store() — send result to network storage")
                 )
             }
-            "VariableHandle" -> variableHandleMethods()
-            "NumberVariableHandle" -> numberVariableHandleMethods()
-            "StringVariableHandle" -> stringVariableHandleMethods()
-            "BoolVariableHandle" -> boolVariableHandleMethods()
+            "VariableHandle", "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle" ->
+                variableHandleMethods(type)
             else -> emptyList()
         }
         return fuzzy(partial, methods)
@@ -819,44 +814,31 @@ class AutocompletePopup(
         "name(" to "name() → string"
     )
 
-    private fun variableHandleMethods(): List<Suggestion> {
-        return baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
-            suggest("increment(", "increment(n: number) → number"),
-            suggest("decrement(", "decrement(n: number) → number"),
-            suggest("min(", "min(n: number) → number"),
-            suggest("max(", "max(n: number) → number"),
-            suggest("append(", "append(s: string) → string"),
-            suggest("length(", "length() → number"),
-            suggest("clear(", "clear()"),
-            suggest("toggle(", "toggle() → boolean"),
-            suggest("tryLock(", "tryLock() → boolean"),
-            suggest("unlock(", "unlock()")
-        )
-    }
+    private val numberMethods = listOf(
+        "increment(" to "increment(n: number) → number",
+        "decrement(" to "decrement(n: number) → number",
+        "min(" to "min(n: number) → number",
+        "max(" to "max(n: number) → number"
+    )
+    private val stringMethods = listOf(
+        "append(" to "append(s: string) → string",
+        "length(" to "length() → number",
+        "clear(" to "clear()"
+    )
+    private val boolMethods = listOf(
+        "toggle(" to "toggle() → boolean",
+        "tryLock(" to "tryLock() → boolean",
+        "unlock(" to "unlock()"
+    )
 
-    private fun numberVariableHandleMethods(): List<Suggestion> {
-        return baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
-            suggest("increment(", "increment(n: number) → number"),
-            suggest("decrement(", "decrement(n: number) → number"),
-            suggest("min(", "min(n: number) → number"),
-            suggest("max(", "max(n: number) → number")
-        )
-    }
-
-    private fun stringVariableHandleMethods(): List<Suggestion> {
-        return baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
-            suggest("append(", "append(s: string) → string"),
-            suggest("length(", "length() → number"),
-            suggest("clear(", "clear()")
-        )
-    }
-
-    private fun boolVariableHandleMethods(): List<Suggestion> {
-        return baseVariableMethods.map { suggest(it.first, it.second) } + listOf(
-            suggest("toggle(", "toggle() → boolean"),
-            suggest("tryLock(", "tryLock() → boolean"),
-            suggest("unlock(", "unlock()")
-        )
+    private fun variableHandleMethods(kind: String): List<Suggestion> {
+        val extra = when (kind) {
+            "NumberVariableHandle" -> numberMethods
+            "StringVariableHandle" -> stringMethods
+            "BoolVariableHandle" -> boolMethods
+            else -> numberMethods + stringMethods + boolMethods // VariableHandle fallback: show all
+        }
+        return (baseVariableMethods + extra).map { suggest(it.first, it.second) }
     }
 
     // ========== Library methods ==========
