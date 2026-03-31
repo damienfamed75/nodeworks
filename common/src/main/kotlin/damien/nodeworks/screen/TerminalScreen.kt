@@ -96,6 +96,73 @@ class TerminalScreen(
         lastSavedText = state.text
     }
 
+    private fun toggleLineComment() {
+        val text = editor.value
+        val hadSelection = editor.hasSelection
+        val origSelStart = editor.selectionStart
+        val origSelEnd = editor.selectionEnd
+        val cursor = editor.getCursorPosition()
+        val lines = text.split('\n').toMutableList()
+
+        // Determine which lines are affected
+        val startLine: Int
+        val endLine: Int
+        if (hadSelection) {
+            startLine = text.substring(0, origSelStart).count { it == '\n' }
+            endLine = text.substring(0, origSelEnd).count { it == '\n' }
+        } else {
+            val line = text.substring(0, cursor).count { it == '\n' }
+            startLine = line
+            endLine = line
+        }
+
+        // Check if ALL non-empty affected lines are commented (-- at column 0)
+        val allCommented = (startLine..endLine).all { i ->
+            i < lines.size && (lines[i].isBlank() || lines[i].startsWith("-- ") || lines[i].startsWith("--"))
+        }
+
+        // Track delta for selection start and end separately
+        var startDelta = 0
+        var endDelta = 0
+        val selStartLine = text.substring(0, origSelStart).count { it == '\n' }
+
+        for (i in startLine..minOf(endLine, lines.lastIndex)) {
+            val line = lines[i]
+
+            if (allCommented) {
+                val uncommented = when {
+                    line.startsWith("-- ") -> line.removePrefix("-- ")
+                    line.startsWith("--") -> line.removePrefix("--")
+                    else -> line
+                }
+                val removed = line.length - uncommented.length
+                if (i < selStartLine) startDelta -= removed
+                endDelta -= removed
+                lines[i] = uncommented
+            } else {
+                if (line.isBlank()) continue
+                lines[i] = "-- $line"
+                if (i < selStartLine) startDelta += 3
+                endDelta += 3
+            }
+        }
+
+        val newText = lines.joinToString("\n")
+
+        if (hadSelection) {
+            val newSelStart = (origSelStart + startDelta).coerceIn(0, newText.length)
+            val newSelEnd = (origSelEnd + endDelta).coerceIn(0, newText.length)
+            // Preserve which end of the selection the cursor was on
+            val cursorAtStart = cursor == origSelStart
+            editor.setValueKeepScroll(newText, if (cursorAtStart) newSelStart else newSelEnd)
+            if (cursorAtStart) editor.setSelection(newSelEnd, newSelStart)
+            else editor.setSelection(newSelStart, newSelEnd)
+        } else {
+            val newCursor = (cursor + endDelta).coerceIn(0, newText.length)
+            editor.setValueKeepScroll(newText, newCursor)
+        }
+    }
+
     private fun rebind() {
         clearWidgets()
         init()
@@ -382,10 +449,11 @@ class TerminalScreen(
         val entries = mutableListOf<SidebarEntry>()
         for (card in cards) {
             val type = card.capability.type
-            val iconU = when (type) { "io" -> 0; "storage" -> 16; else -> 0 }
+            val iconU = when (type) { "io" -> 0; "storage" -> 16; "redstone" -> 32; else -> 0 }
             val color = when (type) {
                 "io" -> 0xFF83E086.toInt()
                 "storage" -> 0xFFAA83E0.toInt()
+                "redstone" -> 0xFFF53B68.toInt()
                 "energy" -> 0xFFFFD700.toInt()
                 "fluid" -> 0xFF55AAFF.toInt()
                 else -> 0xFFAAAAAA.toInt()
@@ -651,6 +719,12 @@ class TerminalScreen(
                 return true
             }
 
+            // Ctrl+/ = toggle line comment
+            if (keyCode == InputConstants.KEY_SLASH && (modifiers and 2) != 0) {
+                toggleLineComment()
+                return true
+            }
+
             // Ctrl+Space triggers autocomplete
             if (keyCode == InputConstants.KEY_SPACE && (modifiers and 2) != 0) {
                 autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, forced = true, editorScrollY = editor.scrollY)
@@ -720,13 +794,23 @@ class TerminalScreen(
                     currentLine.matches(Regex("""^\s*while\s+.+\s+do\s*$"""))
 
                 if (needsEnd) {
-                    // Detect indentation of the current line
-                    val indent = currentLine.takeWhile { it == ' ' }
-                    val newText = text.substring(0, cursor) + "\n$indent    \n${indent}end" + text.substring(cursor)
-                    val newCursor = cursor + 1 + indent.length + 4 // after \n + indent + 4 spaces
-                    editor.setValueKeepScroll(newText, newCursor)
-                    autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
-                    return true
+                    // Count block openers vs `end` keywords line-by-line
+                    var depth = 0
+                    for (line in text.lines()) {
+                        val trimmed = line.trim()
+                        if (trimmed.startsWith("--")) continue // skip comments
+                        if (Regex("""\b(function\s|if\s.+\sthen|for\s.+\sdo|while\s.+\sdo)""").containsMatchIn(trimmed)) depth++
+                        if (Regex("""^\s*end\s*[)\s]*$""").matches(line) || trimmed == "end") depth--
+                    }
+
+                    if (depth > 0) {
+                        val indent = currentLine.takeWhile { it == ' ' }
+                        val newText = text.substring(0, cursor) + "\n$indent    \n${indent}end" + text.substring(cursor)
+                        val newCursor = cursor + 1 + indent.length + 4
+                        editor.setValueKeepScroll(newText, newCursor)
+                        autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+                        return true
+                    }
                 }
             }
 
@@ -766,24 +850,28 @@ class TerminalScreen(
             if (codePoint == ' ' && (modifiers and 2) != 0) {
                 return true
             }
-            // Skip-over: if typing a closing char that's already next, just move cursor forward
             val text = editor.value
             val cursor = editor.getCursorPosition()
-            val nextChar = if (cursor < text.length) text[cursor] else null
-            val isClosing = codePoint in listOf(')', ']', '}')
-            val isQuoteSkip = codePoint == '"' && nextChar == '"'
-            if ((isClosing || isQuoteSkip) && nextChar == codePoint) {
-                editor.setValueKeepScroll(text, cursor + 1)
+
+            // Surround selection with matching pair
+            val closingChar = when (codePoint) {
+                '(' -> ')'; '[' -> ']'; '{' -> '}'; '"' -> '"'; else -> null
+            }
+            if (closingChar != null && editor.hasSelection) {
+                val selStart = editor.selectionStart
+                val selEnd = editor.selectionEnd
+                val newText = text.substring(0, selStart) + codePoint + text.substring(selStart, selEnd) + closingChar + text.substring(selEnd)
+                editor.setValueKeepScroll(newText, selEnd + 2)
+                editor.setSelection(selStart + 1, selEnd + 1)
             } else {
-                // Auto-pair brackets, quotes, and parens
-                val closingChar = when (codePoint) {
-                    '(' -> ')'
-                    '[' -> ']'
-                    '{' -> '}'
-                    '"' -> '"'
-                    else -> null
-                }
-                if (closingChar != null) {
+                // Skip-over: if typing a closing char that's already next, just move cursor forward
+                val nextChar = if (cursor < text.length) text[cursor] else null
+                val isClosing = codePoint in listOf(')', ']', '}')
+                val isQuoteSkip = codePoint == '"' && nextChar == '"'
+                if ((isClosing || isQuoteSkip) && nextChar == codePoint) {
+                    editor.setValueKeepScroll(text, cursor + 1)
+                } else if (closingChar != null) {
+                    // Auto-pair: insert both and place cursor between
                     val newText = text.substring(0, cursor) + codePoint + closingChar + text.substring(cursor)
                     editor.setValueKeepScroll(newText, cursor + 1)
                 } else {

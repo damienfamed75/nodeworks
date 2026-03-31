@@ -3,6 +3,7 @@ package damien.nodeworks.registry
 import damien.nodeworks.card.IOCard
 import damien.nodeworks.card.InstructionSet
 import damien.nodeworks.card.ProcessingSet
+import damien.nodeworks.card.RedstoneCard
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MemoryUpgradeItem
@@ -33,6 +34,12 @@ object ModItems {
     val STORAGE_CARD: Item = register(
         "storage_card",
         ::StorageCard,
+        Item.Properties().stacksTo(1)
+    )
+
+    val REDSTONE_CARD: Item = register(
+        "redstone_card",
+        ::RedstoneCard,
         Item.Properties().stacksTo(1)
     )
 

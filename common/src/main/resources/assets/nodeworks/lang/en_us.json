@@ -11,6 +11,7 @@
   "message.nodeworks.disconnected": "Nodes disconnected.",
   "item.nodeworks.io_card": "IO Card",
   "item.nodeworks.storage_card": "Storage Card",
+  "item.nodeworks.redstone_card": "Redstone Card",
   "item.nodeworks.instruction_set": "Instruction Set",
   "container.nodeworks.instruction_set": "Instruction Set",
   "container.nodeworks.node_side": "Node — %s",
