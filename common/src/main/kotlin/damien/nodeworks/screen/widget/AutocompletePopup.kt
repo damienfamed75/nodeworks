@@ -498,7 +498,16 @@ class AutocompletePopup(
         }
 
         // 3. Assignment inference via chain resolution (don't override explicit annotations)
-        // Handles: network:get(), :face(), :slots(), :find(), network:craft(), etc.
+        // Special case: network:get("alias") — check if alias refers to a redstone card
+        Regex("""\blocal\s+(\w+)\s*=\s*network:get\s*\(\s*"([\w]+)"\s*\)""").findAll(fullText).forEach {
+            val varName = it.groupValues[1]
+            val alias = it.groupValues[2]
+            if (varName !in symbols) {
+                val card = cards.firstOrNull { c -> c.effectiveAlias == alias }
+                val type = if (card?.capability?.type == "redstone") "RedstoneCard" else "CardHandle"
+                symbols[varName] = type
+            }
+        }
         // Special case: network:var("name") needs argument to determine specific type
         Regex("""\blocal\s+(\w+)\s*=\s*network:var\s*\(\s*"(\w+)"\s*\)""").findAll(fullText).forEach {
             val varName = it.groupValues[1]
@@ -519,13 +528,22 @@ class AutocompletePopup(
             if (f.returnType != null) funcReturnTypes[f.name] = f.returnType
         }
 
-        // General inference: local x = expr(...)
+        // General inference: local x = expr
         Regex("""\blocal\s+(\w+)\s*=\s*(.+)""").findAll(fullText).forEach { match ->
             val varName = match.groupValues[1]
             if (varName !in symbols) {
                 val rhs = match.groupValues[2].trim()
-                if (rhs.endsWith(")")) {
-                    // Try chain resolution first (handles method calls like :find, :face, etc.)
+                // Literal inference
+                val literalType = when {
+                    rhs == "true" || rhs == "false" -> "boolean"
+                    rhs.startsWith("\"") || rhs.startsWith("'") || rhs.startsWith("[[") -> "string"
+                    rhs.firstOrNull()?.let { it.isDigit() || (it == '-' && rhs.length > 1) } == true -> "number"
+                    else -> null
+                }
+                if (literalType != null) {
+                    symbols[varName] = literalType
+                } else if (rhs.endsWith(")")) {
+                    // Try chain resolution (handles method calls like :find, :face, etc.)
                     val chainType = resolveExpressionType(rhs)
                     if (chainType != null) {
                         symbols[varName] = chainType
@@ -626,6 +644,7 @@ class AutocompletePopup(
         Suggestion("any", "any"),
         Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
+        Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get"),
         Suggestion("Job", "Job — processing handler context from network:handle"),
         Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()"),
         Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var"),
@@ -772,6 +791,16 @@ class AutocompletePopup(
                 suggest("face(", "face(side: string) → CardHandle"),
                 suggest("slots(", "slots(...: number) → CardHandle")
             )
+            "RedstoneCard" -> {
+                val onChangeBody = "onChange(function(strength: number)\n    \nend)"
+                listOf(
+                    suggest("powered(", "powered() → boolean"),
+                    suggest("strength(", "strength() → number"),
+                    suggest("set(", "set(boolean | number)"),
+                    snippet("onChange(", "onChange(fn(strength: number))", onChangeBody, onChangeBody.indexOf("\n    \n") + 5),
+                    suggest("face(", "face(side: string) → RedstoneCard")
+                )
+            }
             "ItemsHandle" -> listOf(
                 suggest("hasTag(", "hasTag(tag: string) → boolean"),
                 suggest("matches(", "matches(filter: string) → boolean")

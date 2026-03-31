@@ -47,3 +47,18 @@ data class StorageSideCapability(
 ) : SideCapability {
     override val type: String = "storage"
 }
+
+/**
+ * Redstone Card capability — reads/writes redstone signals on the adjacent block.
+ * [nodePos] is the position of the node itself (needed for writing output signals).
+ * [nodeSide] is the direction from the node to the adjacent block.
+ * [defaultFace] is the face of the target block that faces the node.
+ */
+data class RedstoneSideCapability(
+    override val adjacentPos: BlockPos,
+    val nodePos: BlockPos,
+    val nodeSide: Direction,
+    val defaultFace: Direction
+) : SideCapability {
+    override val type: String = "redstone"
+}

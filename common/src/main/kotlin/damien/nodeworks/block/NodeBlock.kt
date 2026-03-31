@@ -150,6 +150,20 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         }
     }
 
+    // --- Redstone emission ---
+
+    override fun isSignalSource(state: BlockState): Boolean = true
+
+    override fun getSignal(state: BlockState, level: BlockGetter, pos: BlockPos, direction: Direction): Int {
+        // `direction` is the side of the querying block — the node side is the opposite
+        val entity = level.getBlockEntity(pos) as? NodeBlockEntity ?: return 0
+        return entity.getRedstoneOutput(direction.opposite)
+    }
+
+    override fun getDirectSignal(state: BlockState, level: BlockGetter, pos: BlockPos, direction: Direction): Int {
+        return getSignal(state, level, pos, direction)
+    }
+
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
         val entity = level.getBlockEntity(pos) as? NodeBlockEntity
         if (entity != null) {

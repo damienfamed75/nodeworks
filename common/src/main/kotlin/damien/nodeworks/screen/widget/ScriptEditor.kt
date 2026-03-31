@@ -83,6 +83,12 @@ class ScriptEditor(
 
     fun getCursorPosition(): Int = cursor
 
+    fun setSelection(start: Int, end: Int) {
+        selectStart = start.coerceIn(0, totalTextLength())
+        cursor = end.coerceIn(0, totalTextLength())
+        ensureCursorVisible()
+    }
+
     val hasSelection: Boolean get() = selectStart >= 0 && selectStart != cursor
     val selectionStart: Int get() = if (hasSelection) minOf(selectStart, cursor) else cursor
     val selectionEnd: Int get() = if (hasSelection) maxOf(selectStart, cursor) else cursor
@@ -262,6 +268,22 @@ class ScriptEditor(
             269 -> { // END
                 if (shift) startSelection()
                 cursor = lineColToCursor(line, lines[line].length)
+                if (!shift) clearSelection()
+                ensureCursorVisible()
+                return true
+            }
+            266 -> { // PAGE UP
+                if (shift) startSelection()
+                val targetLine = maxOf(0, line - visibleLines)
+                cursor = lineColToCursor(targetLine, col)
+                if (!shift) clearSelection()
+                ensureCursorVisible()
+                return true
+            }
+            267 -> { // PAGE DOWN
+                if (shift) startSelection()
+                val targetLine = minOf(lines.size - 1, line + visibleLines)
+                cursor = lineColToCursor(targetLine, col)
                 if (!shift) clearSelection()
                 ensureCursorVisible()
                 return true

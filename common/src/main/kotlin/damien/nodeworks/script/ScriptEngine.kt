@@ -39,6 +39,14 @@ class ScriptEngine(
     /** Processing handlers registered by network:handle(). Keyed by card name. */
     val processingHandlers = mutableMapOf<String, LuaFunction>()
 
+    /** Redstone onChange callbacks. Keyed by card alias → (capability, lastStrength, callback). */
+    private data class RedstoneCallback(
+        val capability: damien.nodeworks.card.RedstoneSideCapability,
+        var lastStrength: Int,
+        val callback: LuaFunction
+    )
+    private val redstoneCallbacks = mutableMapOf<String, RedstoneCallback>()
+
 
     fun start(scripts: Map<String, String>): Boolean {
         stop()
@@ -124,6 +132,7 @@ class ScriptEngine(
         routeTable = null
         inventoryCache = null // clear local reference, cache lives in global registry
         processingHandlers.clear()
+        redstoneCallbacks.clear()
         scheduler.clear()
         globals = null
         networkSnapshot = null
@@ -134,6 +143,7 @@ class ScriptEngine(
     /** Whether this engine should stay alive — has scheduler tasks, handlers, or routing. */
     fun hasWork(): Boolean = scheduler.hasActiveTasks()
         || processingHandlers.isNotEmpty()
+        || redstoneCallbacks.isNotEmpty()
         || routeTable?.hasRoutes() == true
 
 
@@ -143,6 +153,7 @@ class ScriptEngine(
 
         try {
             scheduler.tick(tickCount)
+            pollRedstoneCallbacks()
         } catch (e: LuaError) {
             logCallback("Runtime error: ${e.message}", true)
             logger.warn("Script runtime error: {}", e.message)
@@ -151,6 +162,17 @@ class ScriptEngine(
             logCallback("Runtime error: ${e.message}", true)
             logger.warn("Script runtime exception: {}", e.message, e)
             stop()
+        }
+    }
+
+    private fun pollRedstoneCallbacks() {
+        if (redstoneCallbacks.isEmpty()) return
+        for ((_, cb) in redstoneCallbacks) {
+            val currentStrength = level.getSignal(cb.capability.adjacentPos, cb.capability.nodeSide)
+            if (currentStrength != cb.lastStrength) {
+                cb.lastStrength = currentStrength
+                cb.callback.call(LuaValue.valueOf(currentStrength))
+            }
         }
     }
 
@@ -177,6 +199,63 @@ class ScriptEngine(
         }
     }
 
+    private fun createCardTable(card: damien.nodeworks.network.CardSnapshot, alias: String): LuaTable {
+        val table = CardHandle.create(card, level)
+        val cap = card.capability
+
+        if (cap is damien.nodeworks.card.RedstoneSideCapability) {
+            // Remove inventory methods that don't apply to redstone
+            table.set("find", LuaValue.NIL)
+            table.set("findEach", LuaValue.NIL)
+            table.set("insert", LuaValue.NIL)
+            table.set("count", LuaValue.NIL)
+            table.set("slots", LuaValue.NIL)
+
+            // powered() → boolean
+            table.set("powered", object : OneArgFunction() {
+                override fun call(selfArg: LuaValue): LuaValue {
+                    val strength = level.getSignal(cap.adjacentPos, cap.nodeSide)
+                    return LuaValue.valueOf(strength > 0)
+                }
+            })
+
+            // strength() → number 0-15
+            table.set("strength", object : OneArgFunction() {
+                override fun call(selfArg: LuaValue): LuaValue {
+                    val strength = level.getSignal(cap.adjacentPos, cap.nodeSide)
+                    return LuaValue.valueOf(strength)
+                }
+            })
+
+            // set(boolean | number) — emit redstone signal
+            table.set("set", object : TwoArgFunction() {
+                override fun call(selfArg: LuaValue, valueArg: LuaValue): LuaValue {
+                    val strength = when {
+                        valueArg.isboolean() -> if (valueArg.toboolean()) 15 else 0
+                        valueArg.isnumber() -> valueArg.checkint().coerceIn(0, 15)
+                        else -> throw LuaError("set() expects boolean or number (0-15)")
+                    }
+                    val entity = level.getBlockEntity(cap.nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity
+                        ?: throw LuaError("Node block entity not found")
+                    entity.setRedstoneOutput(cap.nodeSide, strength)
+                    return LuaValue.NIL
+                }
+            })
+
+            // onChange(function(strength: number)) — register callback for signal changes
+            table.set("onChange", object : TwoArgFunction() {
+                override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
+                    val fn = fnArg.checkfunction()
+                    val currentStrength = level.getSignal(cap.adjacentPos, cap.nodeSide)
+                    redstoneCallbacks[alias] = RedstoneCallback(cap, currentStrength, fn)
+                    return LuaValue.NIL
+                }
+            })
+        }
+
+        return table
+    }
+
     private fun injectApi(g: Globals) {
         val snapshot = networkSnapshot!!
 
@@ -192,7 +271,7 @@ class ScriptEngine(
                 val alias = aliasArg.checkjstring()
                 val card = snapshot.findByAlias(alias)
                     ?: throw LuaError("Not found on network: '$alias'")
-                return CardHandle.create(card, level)
+                return createCardTable(card, alias)
             }
         })
 
@@ -203,7 +282,7 @@ class ScriptEngine(
                 val cards = snapshot.allCards().filter { it.capability.type == type }
                 val result = LuaTable()
                 for ((i, card) in cards.withIndex()) {
-                    result.set(i + 1, CardHandle.create(card, level))
+                    result.set(i + 1, createCardTable(card, card.effectiveAlias))
                 }
                 return result
             }

@@ -1,6 +1,7 @@
 package damien.nodeworks.block.entity
 
 import damien.nodeworks.card.IOSideCapability
+import damien.nodeworks.card.RedstoneSideCapability
 import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.card.NodeCard
 import damien.nodeworks.card.SideCapability
@@ -59,6 +60,22 @@ class NodeBlockEntity(
 
     private val items: NonNullList<ItemStack> = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
     private val connections: LinkedHashSet<BlockPos> = linkedSetOf()
+
+    // --- Redstone output per side (0-15) ---
+    private val redstoneOutputs = IntArray(6) // indexed by Direction.ordinal
+
+    fun getRedstoneOutput(side: Direction): Int = redstoneOutputs[side.ordinal]
+
+    fun setRedstoneOutput(side: Direction, strength: Int) {
+        val clamped = strength.coerceIn(0, 15)
+        if (redstoneOutputs[side.ordinal] != clamped) {
+            redstoneOutputs[side.ordinal] = clamped
+            markDirtyAndSync()
+            level?.updateNeighborsAt(worldPosition, blockState.block)
+        }
+    }
+
+    fun hasAnyRedstoneOutput(): Boolean = redstoneOutputs.any { it > 0 }
 
     // --- Monitors ---
 
@@ -155,6 +172,7 @@ class NodeBlockEntity(
                     val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
                     StorageSideCapability(adjacentPos, accessFace, priority)
                 }
+                is damien.nodeworks.card.RedstoneCard -> RedstoneSideCapability(adjacentPos, worldPosition, side, accessFace)
                 else -> null
             }
             SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex)
@@ -241,6 +259,10 @@ class NodeBlockEntity(
         if (connections.isNotEmpty()) {
             tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
+        // Save redstone outputs (only if any non-zero)
+        if (hasAnyRedstoneOutput()) {
+            tag.putIntArray("redstoneOutputs", redstoneOutputs.toList())
+        }
         // Save monitors
         tag.putInt("monitorCount", monitors.size)
         var idx = 0
@@ -259,6 +281,14 @@ class NodeBlockEntity(
         connections.clear()
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
+        }
+        // Load redstone outputs
+        redstoneOutputs.fill(0)
+        if (tag.contains("redstoneOutputs")) {
+            val saved = tag.getIntArray("redstoneOutputs")
+            for (i in 0 until minOf(saved.size, 6)) {
+                redstoneOutputs[i] = saved[i].coerceIn(0, 15)
+            }
         }
         // Load monitors
         monitors.clear()
