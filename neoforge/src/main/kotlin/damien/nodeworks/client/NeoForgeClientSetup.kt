@@ -122,6 +122,9 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.RECEIVER_ANTENNA) { menu, inventory, title ->
             damien.nodeworks.screen.ReceiverAntennaScreen(menu, inventory, title)
         }
+        event.register(ModScreenHandlers.DIAGNOSTIC) { menu, inventory, title ->
+            damien.nodeworks.screen.DiagnosticScreen(menu, inventory, title)
+        }
     }
 
     private fun onRegisterBlockColors(event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.Block) {

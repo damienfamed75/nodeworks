@@ -38,7 +38,7 @@ class ProcessingStorageBlock(properties: Properties) : BaseEntityBlock(propertie
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem) return InteractionResult.PASS
+        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem || player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val blockEntity = level.getBlockEntity(pos) as? ProcessingStorageBlockEntity ?: return InteractionResult.PASS

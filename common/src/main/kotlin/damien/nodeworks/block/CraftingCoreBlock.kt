@@ -52,7 +52,7 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        if (player.mainHandItem.item is NetworkWrenchItem) return InteractionResult.PASS
+        if (player.mainHandItem.item is NetworkWrenchItem || player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val entity = level.getBlockEntity(pos) as? CraftingCoreBlockEntity ?: return InteractionResult.PASS

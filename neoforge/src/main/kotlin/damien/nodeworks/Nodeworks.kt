@@ -176,6 +176,14 @@ class Nodeworks(modBus: IEventBus) {
                     damien.nodeworks.screen.ReceiverAntennaMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.DIAGNOSTIC = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "diagnostic")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.DiagnosticOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.DiagnosticMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }

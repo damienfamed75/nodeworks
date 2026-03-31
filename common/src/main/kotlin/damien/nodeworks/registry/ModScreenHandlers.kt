@@ -1,5 +1,6 @@
 package damien.nodeworks.registry
 
+import damien.nodeworks.screen.DiagnosticMenu
 import damien.nodeworks.screen.ProcessingStorageScreenHandler
 import damien.nodeworks.screen.BroadcastAntennaMenu
 import damien.nodeworks.screen.ReceiverAntennaMenu
@@ -32,6 +33,7 @@ object ModScreenHandlers {
     lateinit var PROCESSING_STORAGE: MenuType<ProcessingStorageScreenHandler>
     lateinit var BROADCAST_ANTENNA: MenuType<BroadcastAntennaMenu>
     lateinit var RECEIVER_ANTENNA: MenuType<ReceiverAntennaMenu>
+    lateinit var DIAGNOSTIC: MenuType<DiagnosticMenu>
 
     fun initialize() {
         // Platform module must call registerAll() before this

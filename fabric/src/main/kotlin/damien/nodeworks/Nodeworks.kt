@@ -98,6 +98,12 @@ object Nodeworks : ModInitializer {
             ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.ReceiverAntennaMenu.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.ReceiverAntennaOpenData.STREAM_CODEC)
         )
 
+        ModScreenHandlers.DIAGNOSTIC = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "diagnostic")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.DiagnosticMenu.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.DiagnosticOpenData.STREAM_CODEC)
+        )
+
         ModBlocks.initialize()
         ModBlockEntities.initialize()
         ModItems.initialize()
