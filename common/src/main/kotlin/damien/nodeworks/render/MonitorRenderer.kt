@@ -98,6 +98,9 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
             renderGlowingOverlay(poseStack, bufferSource, networkColor, nodeGlowStyle)
         }
 
+        // Render card link lines to adjacent blocks
+        renderCardLinks(entity, poseStack, bufferSource)
+
         for (face in faces) {
 
             poseStack.pushPose()
@@ -416,6 +419,89 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
             count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
             count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
             else -> count.toString()
+        }
+    }
+
+    private val cardColors = mapOf(
+        "io" to Triple(0x83, 0xE0, 0x86),       // green
+        "storage" to Triple(0xAA, 0x83, 0xE0),   // purple
+        "redstone" to Triple(0xF5, 0x3B, 0x68)   // red
+    )
+
+    /** Fixed 3x3 grid offsets for the 9 card slots, centered around 0. */
+    private val slotOffsets: Array<Pair<Float, Float>> = run {
+        val spacing = 1f / 16f
+        Array(9) { i ->
+            val col = 1 - i % 3  // 1, 0, -1 (left to right when facing the node)
+            val row = 1 - i / 3  // 1, 0, -1 (top to bottom)
+            Pair(col * spacing, row * spacing)
+        }
+    }
+
+    private fun renderCardLinks(entity: NodeBlockEntity, poseStack: PoseStack, bufferSource: MultiBufferSource) {
+        val level = entity.level ?: return
+        val vc = bufferSource.getBuffer(RenderType.beaconBeam(LASER_TEXTURE, true))
+        val pose = poseStack.last()
+        val hw = 0.3f / 16f
+
+        // Camera direction for billboarding
+        val cam = Minecraft.getInstance().gameRenderer.mainCamera
+        val camPos = cam.position
+        val blockX = entity.blockPos.x.toFloat()
+        val blockY = entity.blockPos.y.toFloat()
+        val blockZ = entity.blockPos.z.toFloat()
+
+        for (side in Direction.entries) {
+            val cards = entity.getCards(side)
+            if (cards.isEmpty()) continue
+
+            val adjacentPos = entity.blockPos.relative(side)
+            if (level.getBlockState(adjacentPos).isAir) continue
+
+            // Beam direction (unit vector along the face)
+            val bx = side.stepX.toFloat()
+            val by = side.stepY.toFloat()
+            val bz = side.stepZ.toFloat()
+
+            for (card in cards) {
+                val (r, g, b) = cardColors[card.card.cardType] ?: continue
+                val (offA, offB) = slotOffsets[card.slotIndex]
+
+                // Compute endpoints: node center → block face
+                val ox: Float; val oy: Float; val oz: Float
+                val fx: Float; val fy: Float; val fz: Float
+
+                when (side) {
+                    Direction.NORTH -> { ox = 0.5f + offA; oy = 0.5f + offB; oz = 0.5f; fx = ox; fy = oy; fz = 0f }
+                    Direction.SOUTH -> { ox = 0.5f - offA; oy = 0.5f + offB; oz = 0.5f; fx = ox; fy = oy; fz = 1f }
+                    Direction.WEST  -> { ox = 0.5f; oy = 0.5f + offB; oz = 0.5f - offA; fx = 0f; fy = oy; fz = oz }
+                    Direction.EAST  -> { ox = 0.5f; oy = 0.5f + offB; oz = 0.5f + offA; fx = 1f; fy = oy; fz = oz }
+                    Direction.DOWN  -> { ox = 0.5f + offA; oy = 0.5f; oz = 0.5f + offB; fx = ox; fy = 0f; fz = oz }
+                    Direction.UP    -> { ox = 0.5f + offA; oy = 0.5f; oz = 0.5f + offB; fx = ox; fy = 1f; fz = oz }
+                }
+
+                // Billboard: compute perpendicular to both beam direction and camera-to-beam vector
+                val midX = (ox + fx) / 2f + blockX
+                val midY = (oy + fy) / 2f + blockY
+                val midZ = (oz + fz) / 2f + blockZ
+                val toCamX = (camPos.x - midX).toFloat()
+                val toCamY = (camPos.y - midY).toFloat()
+                val toCamZ = (camPos.z - midZ).toFloat()
+
+                // cross(beamDir, toCam) = perpendicular vector
+                var px = by * toCamZ - bz * toCamY
+                var py = bz * toCamX - bx * toCamZ
+                var pz = bx * toCamY - by * toCamX
+                val plen = sqrt(px * px + py * py + pz * pz)
+                if (plen < 0.001f) continue
+                px = px / plen * hw; py = py / plen * hw; pz = pz / plen * hw
+
+                val a = 180
+                vc.addVertex(pose, ox - px, oy - py, oz - pz).setUv(0f, 0f).setColor(r, g, b, a).setOverlay(OverlayTexture.NO_OVERLAY).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, ox + px, oy + py, oz + pz).setUv(0.3f, 0f).setColor(r, g, b, a).setOverlay(OverlayTexture.NO_OVERLAY).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, fx + px, fy + py, fz + pz).setUv(0.3f, 1f).setColor(r, g, b, a).setOverlay(OverlayTexture.NO_OVERLAY).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, fx - px, fy - py, fz - pz).setUv(0f, 1f).setColor(r, g, b, a).setOverlay(OverlayTexture.NO_OVERLAY).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            }
         }
     }
 }
