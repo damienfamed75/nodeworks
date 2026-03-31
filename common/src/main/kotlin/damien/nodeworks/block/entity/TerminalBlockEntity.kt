@@ -130,8 +130,22 @@ class TerminalBlockEntity(
             PlatformServices.modState.stopScript(currentLevel, worldPosition)
             NodeConnectionHelper.removeAllConnections(currentLevel, this)
             NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
+            dropAsItem(currentLevel)
         }
         super.setRemoved()
+    }
+
+    private fun dropAsItem(level: ServerLevel) {
+        val stack = net.minecraft.world.item.ItemStack(damien.nodeworks.registry.ModBlocks.TERMINAL)
+        val hasContent = scripts.any { it.value.isNotEmpty() } || autoRun
+        if (hasContent) {
+            val tag = saveWithoutMetadata(level.registryAccess())
+            tag.remove("connections")
+            stack.set(net.minecraft.core.component.DataComponents.BLOCK_ENTITY_DATA,
+                net.minecraft.world.item.component.CustomData.of(tag))
+        }
+        net.minecraft.world.Containers.dropItemStack(level,
+            worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5, stack)
     }
 
     // --- Serialization ---
