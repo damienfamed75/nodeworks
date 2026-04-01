@@ -57,7 +57,7 @@ class TerminalScreen(
     private val editorPadding = 4
     private val buttonHeight = 20
     private val topBarHeight = 24
-    private val tabBarHeight = 18
+    private val tabBarHeight = 17
     private var logPanelHeight = savedLogPanelHeight
 
     // New tab input state
@@ -431,37 +431,34 @@ class TerminalScreen(
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
         // Main background
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFF2B2B2B.toInt())
+        NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         // Top bar
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + topBarHeight, 0xFF3C3C3C.toInt())
+        NineSlice.TOP_BAR.draw(graphics, leftPos, topPos, imageWidth, topBarHeight)
 
         // Tab bar background
         val tabBarY = topPos + topBarHeight
         val tabBarStartX = leftPos + cardPanelWidth + 1
-        graphics.fill(tabBarStartX, tabBarY, leftPos + imageWidth, tabBarY + tabBarHeight, 0xFF252525.toInt())
-        // Tab bar separator
-        graphics.fill(tabBarStartX, tabBarY + tabBarHeight - 1, leftPos + imageWidth, tabBarY + tabBarHeight, 0xFF444444.toInt())
+        NineSlice.PANEL_INSET.draw(graphics, tabBarStartX, tabBarY, leftPos + imageWidth - tabBarStartX, tabBarHeight)
 
         // Draw tabs
         var tabX = tabBarStartX + 2
         for (name in scripts.keys) {
             val tabWidth = font.width(name) + 12 + if (name != "main") 10 else 0 // extra space for ✕
             val isActive = name == activeTab
-            val tabBg = if (isActive) 0xFF3C3C3C.toInt() else 0xFF2B2B2B.toInt()
             val textColor = if (isActive) 0xFFFFFFFF.toInt() else 0xFF888888.toInt()
 
-            graphics.fill(tabX, tabBarY + 1, tabX + tabWidth, tabBarY + tabBarHeight - 1, tabBg)
-            if (isActive) {
-                // Active tab hides the bottom separator
-                graphics.fill(tabX, tabBarY + tabBarHeight - 1, tabX + tabWidth, tabBarY + tabBarHeight, tabBg)
-            }
-            graphics.drawString(font, name, tabX + 4, tabBarY + 4, textColor, false)
+            val tabSlice = if (isActive) NineSlice.TAB_ACTIVE else NineSlice.TAB_INACTIVE
+            val tabTop = tabBarY + 1
+            val tabH = tabBarHeight - 1
+            tabSlice.draw(graphics, tabX, tabTop, tabWidth, tabH)
+            val textY = tabTop + (tabH - font.lineHeight) / 2 + 1
+            graphics.drawString(font, name, tabX + 6, textY, textColor, false)
 
             // Draw ✕ for non-main tabs
             if (name != "main") {
                 val closeX = tabX + tabWidth - 10
-                graphics.drawString(font, "\u00D7", closeX, tabBarY + 4, 0xFF666666.toInt(), false)
+                graphics.drawString(font, "\u00D7", closeX, textY, 0xFF666666.toInt(), false)
             }
 
             tabX += tabWidth + 2
@@ -469,16 +466,19 @@ class TerminalScreen(
 
         // [+] button if under max tabs
         if (scripts.size < 8) {
-            val plusWidth = font.width("+") + 8
-            graphics.fill(tabX, tabBarY + 1, tabX + plusWidth, tabBarY + tabBarHeight - 1, 0xFF2B2B2B.toInt())
-            graphics.drawString(font, "+", tabX + 4, tabBarY + 4, 0xFF888888.toInt(), false)
+            val plusWidth = font.width("+") + 7
+            val tabTop = tabBarY + 1
+            val tabH = tabBarHeight - 1
+            NineSlice.TAB_INACTIVE.draw(graphics, tabX, tabTop, plusWidth, tabH)
+            val textY = tabTop + (tabH - font.lineHeight) / 2 + 1
+            graphics.drawString(font, "+", tabX + 4, textY, 0xFF888888.toInt(), false)
         }
 
         // Card panel background
-        graphics.fill(leftPos, topPos + topBarHeight, leftPos + cardPanelWidth, topPos + imageHeight, 0xFF333333.toInt())
+        NineSlice.ROW_HIGHLIGHT.draw(graphics, leftPos, topPos + topBarHeight, cardPanelWidth, imageHeight - topBarHeight)
 
         // Card panel separator
-        graphics.fill(leftPos + cardPanelWidth, topPos + topBarHeight, leftPos + cardPanelWidth + 1, topPos + imageHeight, 0xFF555555.toInt())
+        NineSlice.SEPARATOR.draw(graphics, leftPos + cardPanelWidth, topPos + topBarHeight, 1, imageHeight - topBarHeight)
 
         // Title in top bar
         graphics.drawString(font, title, leftPos + 6, topPos + 7, 0xFFFFFFFF.toInt())
@@ -524,7 +524,6 @@ class TerminalScreen(
         sidebarEntries = entries
 
         graphics.enableScissor(leftPos, cardListTop, leftPos + cardPanelWidth, cardListBottom)
-        val iconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
         for ((i, entry) in entries.withIndex()) {
             val y = cardListTop + i * cardLineHeight - cardScrollOffset
             if (y + cardLineHeight < cardListTop) continue
@@ -538,7 +537,17 @@ class TerminalScreen(
             }
 
             // 8x8 icon cropped from center of 16x16 tile in atlas
-            graphics.blit(iconsTexture, leftPos + 4, y + 1, (entry.iconU + 4).toFloat(), (entry.iconV + 4).toFloat(), 8, 8, 256, 256)
+            val icon = when (entry.type) {
+                "card" -> when (entry.iconU) {
+                    0 -> Icons.IO_CARD
+                    16 -> Icons.STORAGE_CARD
+                    32 -> Icons.REDSTONE_CARD
+                    else -> Icons.IO_CARD
+                }
+                "var" -> Icons.VARIABLE
+                else -> Icons.IO_CARD
+            }
+            icon.drawSmall(graphics, leftPos + 4, y + 1)
 
             // Name
             graphics.drawString(font, entry.name, leftPos + 15, y + 1, entry.color)
@@ -552,7 +561,7 @@ class TerminalScreen(
             val thumbHeight = maxOf(8, scrollbarHeight * maxVisibleCards / entries.size)
             val maxCardScroll = maxOf(1, (entries.size - maxVisibleCards) * cardLineHeight)
             val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
-            graphics.fill(leftPos + cardPanelWidth - 3, thumbY.toInt(), leftPos + cardPanelWidth - 1, (thumbY + thumbHeight).toInt(), 0xFF555555.toInt())
+            NineSlice.SCROLLBAR_THUMB.draw(graphics, leftPos + cardPanelWidth - 3, thumbY.toInt(), 2, (thumbHeight).toInt())
         }
 
         // Log panel
@@ -561,55 +570,45 @@ class TerminalScreen(
         val logY = topPos + imageHeight - effectiveLogHeight
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
 
-        // Toggle bar background
-        graphics.fill(logX, logY, logX + logW, logY + logCollapsedHeight, 0xFF1E1E1E.toInt())
+        // Log panel background (single panel for toggle bar + content)
+        NineSlice.PANEL_INSET.draw(graphics, logX, logY, logW, effectiveLogHeight)
         // Separator / drag handle
         if (!logCollapsed) {
             val hovering = mouseX >= logX && mouseX <= logX + logW && mouseY >= logY - 4 && mouseY <= logY + 3
-            val sepColor = if (hovering || draggingLogPanel) 0xFF777777.toInt() else 0xFF555555.toInt()
-            graphics.fill(logX, logY, logX + logW, logY + 1, sepColor)
             // Grip dots — centered on separator
             val centerX = logX + logW / 2
             val dotColor = if (hovering || draggingLogPanel) 0xFF999999.toInt() else 0xFF666666.toInt()
             for (d in -3..3) {
                 graphics.fill(centerX + d * 3, logY - 2, centerX + d * 3 + 1, logY - 1, dotColor)
             }
-        } else {
-            graphics.fill(logX, logY, logX + logW, logY + 1, 0xFF555555.toInt())
         }
 
         // Toggle label with arrow
         val arrow = if (logCollapsed) "\u25B6" else "\u25BC"
         graphics.drawString(font, "$arrow Output", logX + 3, logY + 2, 0xFF888888.toInt())
 
-        // Output toolbar buttons from icons atlas (row 2, y=32)
-        // Each button: 16x16 tile with 3 variants (normal, hovered, pressed)
-        val btnRenderSize = 10
-        val atlasIconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
-
-        // Clear button (left of copy)
-        val clearBtnX = logX + logW - btnRenderSize * 2 - 6
-        val clearBtnY = logY + 3
-        val clearHovered = mouseX >= clearBtnX && mouseX < clearBtnX + btnRenderSize &&
-                mouseY >= clearBtnY && mouseY < clearBtnY + btnRenderSize
-        val clearU = 48 + when { pressedButton == "clear" -> 32; clearHovered -> 16; else -> 0 }
-        graphics.blit(atlasIconsTexture, clearBtnX, clearBtnY, btnRenderSize, btnRenderSize,
-            (clearU + 3).toFloat(), 35f, 10, 10, 256, 256)
-
-        // Copy button
-        val copyBtnX = logX + logW - btnRenderSize - 3
-        val copyBtnY = logY + 3
-        val copyHovered = mouseX >= copyBtnX && mouseX < copyBtnX + btnRenderSize &&
-                mouseY >= copyBtnY && mouseY < copyBtnY + btnRenderSize
-        val copyU = when { pressedButton == "copy" -> 32; copyHovered -> 16; else -> 0 }
-        graphics.blit(atlasIconsTexture, copyBtnX, copyBtnY, btnRenderSize, btnRenderSize,
-            (copyU + 3).toFloat(), 35f, 10, 10, 256, 256)
-
         if (!logCollapsed) {
+            // Output toolbar buttons (only when expanded)
+            val btnRenderSize = 10
+
+            // Clear button (left of copy)
+            val clearBtnX = logX + logW - btnRenderSize * 2 - 6
+            val clearBtnY = logY + 5
+            val clearHovered = mouseX >= clearBtnX && mouseX < clearBtnX + btnRenderSize &&
+                    mouseY >= clearBtnY && mouseY < clearBtnY + btnRenderSize
+            val clearIcon = when { pressedButton == "clear" -> Icons.TRASH_PRESSED; clearHovered -> Icons.TRASH_HOVER; else -> Icons.TRASH_IDLE }
+            clearIcon.draw(graphics, clearBtnX - 3, clearBtnY - 3)
+
+            // Copy button
+            val copyBtnX = logX + logW - btnRenderSize - 3
+            val copyBtnY = logY + 5
+            val copyHovered = mouseX >= copyBtnX && mouseX < copyBtnX + btnRenderSize &&
+                    mouseY >= copyBtnY && mouseY < copyBtnY + btnRenderSize
+            val copyIcon = when { pressedButton == "copy" -> Icons.COPY_PRESSED; copyHovered -> Icons.COPY_HOVER; else -> Icons.COPY_IDLE }
+            copyIcon.draw(graphics, copyBtnX - 3, copyBtnY - 3)
             // Log content area
             val logContentTop = logY + logCollapsedHeight
             val logContentBottom = logY + logPanelHeight - editorPadding
-            graphics.fill(logX, logContentTop, logX + logW, logContentBottom, 0xFF1E1E1E.toInt())
 
             // Log entries with word wrapping
             val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
@@ -673,8 +672,7 @@ class TerminalScreen(
             val inputH = 20
             val inputX = leftPos + imageWidth / 2 - inputW / 2
             val inputY = topPos + imageHeight / 2 - inputH / 2
-            graphics.fill(inputX - 2, inputY - 2, inputX + inputW + 2, inputY + inputH + 2, 0xFF555555.toInt())
-            graphics.fill(inputX, inputY, inputX + inputW, inputY + inputH, 0xFF1E1E1E.toInt())
+            NineSlice.INPUT_FIELD.draw(graphics, inputX - 2, inputY - 2, inputW + 4, inputH + 4)
             val displayText = if (newTabName.isEmpty()) "enter name..." else newTabName
             val displayColor = if (newTabName.isEmpty()) 0xFF666666.toInt() else 0xFFFFFFFF.toInt()
             graphics.drawString(font, displayText, inputX + 4, inputY + 6, displayColor, false)
@@ -784,8 +782,7 @@ class TerminalScreen(
         val tx = mouseX + 8
         val ty = mouseY - tooltipH - 2
 
-        graphics.fill(tx - 1, ty - 1, tx + tooltipW + 1, ty + tooltipH + 1, 0xFF555555.toInt())
-        graphics.fill(tx, ty, tx + tooltipW, ty + tooltipH, 0xFF1A1A1A.toInt())
+        NineSlice.PANEL_INSET.draw(graphics, tx - 1, ty - 1, tooltipW + 2, tooltipH + 2)
         graphics.drawString(font, namePart, tx + 3, ty + 2, 0xFFCCCCCC.toInt())
         if (hintPart.isNotEmpty()) {
             graphics.drawString(font, hintPart, tx + 3 + font.width(namePart), ty + 2, 0xFF888888.toInt())
@@ -801,9 +798,9 @@ class TerminalScreen(
         val gutterBottom = editorY + editor.height
 
         // Gutter background
-        graphics.fill(gutterX, gutterTop, editorX - 1, gutterBottom, 0xFF1E1E1E.toInt())
+        NineSlice.PANEL_INSET.draw(graphics, gutterX, gutterTop, editorX - 1 - gutterX, gutterBottom - gutterTop)
         // Separator line
-        graphics.fill(editorX - 1, gutterTop, editorX, gutterBottom, 0xFF3C3C3C.toInt())
+        NineSlice.SEPARATOR.draw(graphics, editorX - 1, gutterTop, 1, gutterBottom - gutterTop)
 
         // Count total lines
         val totalLines = text.count { it == '\n' } + 1
@@ -1143,7 +1140,7 @@ class TerminalScreen(
 
         // Clear button
         val clearBtnX = logX + logW - btnRenderSize * 2 - 6
-        val clearBtnY = logY + 3
+        val clearBtnY = logY + 5
         if (mx >= clearBtnX && mx < clearBtnX + btnRenderSize && my >= clearBtnY && my < clearBtnY + btnRenderSize) {
             pressedButton = "clear"
             TerminalLogBuffer.clear(menu.getTerminalPos())
@@ -1154,7 +1151,7 @@ class TerminalScreen(
 
         // Copy button
         val copyBtnX = logX + logW - btnRenderSize - 3
-        val copyBtnY = logY + 3
+        val copyBtnY = logY + 5
         if (mx >= copyBtnX && mx < copyBtnX + btnRenderSize && my >= copyBtnY && my < copyBtnY + btnRenderSize) {
             pressedButton = "copy"
             val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
@@ -1231,7 +1228,7 @@ class TerminalScreen(
             tabX += tabWidth + 2
         }
         if (scripts.size < 8) {
-            val plusWidth = font.width("+") + 8
+            val plusWidth = font.width("+") + 7
             if (mx >= tabX && mx < tabX + plusWidth) {
                 showNewTabInput = true
                 newTabName = ""
