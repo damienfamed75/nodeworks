@@ -87,7 +87,7 @@ class DiagnosticScreen(
     // Topology view state
     private var panX = 0f
     private var panY = 0f
-    private var zoom = 1f
+    private var zoom = 2f
     private var dragging = false
     private var lastDragX = 0.0
     private var lastDragY = 0.0
@@ -314,12 +314,13 @@ class DiagnosticScreen(
                     renderBlockIcon(graphics, block, bx, by, halfBlock, mouseX, mouseY)
                 }
 
-                // [-] collapse button — fixed position to the left of group
-                val btnX = gsx - 18
-                val btnY = gsy - 4
+                // [-] button inside the rectangle (top-right corner)
+                val btnX = rectX + totalW - 9
+                val btnY = rectY + 1
                 val btnHovered = mouseX >= btnX && mouseX < btnX + 8 && mouseY >= btnY && mouseY < btnY + 8
                 graphics.fill(btnX, btnY, btnX + 8, btnY + 8, if (btnHovered) 0xFF555555.toInt() else 0xFF333333.toInt())
                 graphics.drawString(font, "-", btnX + 2, btnY, WHITE, false)
+                if (btnHovered) hoveredGroupIdx = groupIdx
             } else {
                 // Collapsed: render stacked item icons with slight offset + count badge
                 val sx = worldToScreenX(group.displayPos.first).roundToInt()
@@ -340,7 +341,7 @@ class DiagnosticScreen(
                     }
                 }
 
-                // Count badge + [+] button on top of everything
+                // Count badge on top of everything
                 val topZ = group.blocks.size * 50f + 100f
                 val totalOffset = (group.blocks.size - 1) * stackOffset
                 graphics.pose().pushPose()
@@ -351,21 +352,13 @@ class DiagnosticScreen(
                     graphics.drawString(font, countStr, sx + 2 + totalOffset, sy - 10, WHITE, true)
                 }
 
-                // [+] expand button — same position as [-] when expanded
-                val btnX = sx - 18
-                val btnY = sy - 4
-                val btnHovered = mouseX >= btnX && mouseX < btnX + 8 && mouseY >= btnY && mouseY < btnY + 8
-                graphics.fill(btnX, btnY, btnX + 8, btnY + 8, if (btnHovered) 0xFF555555.toInt() else 0xFF333333.toInt())
-                graphics.drawString(font, "+", btnX + 2, btnY, WHITE, false)
-
                 graphics.pose().popPose()
 
-                // Hover on group (16x16 area around center)
+                // Hover on stacked group — clicking expands
                 if (mouseX >= sx - 8 && mouseX < sx + 8 + totalOffset &&
                     mouseY >= sy - 8 && mouseY < sy + 8 + totalOffset) {
                     hoveredGroupIdx = groupIdx
                 }
-                if (btnHovered) hoveredGroupIdx = groupIdx + 1000
             }
         }
 
@@ -697,7 +690,11 @@ class DiagnosticScreen(
 
         // Selection highlight — tight around the 16x16 icon, uses network color
         if (block == selectedBlock) {
-            val selColor = menu.topology.networkColor or 0xFF000000.toInt()
+            val nc = menu.topology.networkColor
+            val selR = minOf(((nc shr 16) and 0xFF) * 3 / 2, 255)
+            val selG = minOf(((nc shr 8) and 0xFF) * 3 / 2, 255)
+            val selB = minOf((nc and 0xFF) * 3 / 2, 255)
+            val selColor = (0xFF shl 24) or (selR shl 16) or (selG shl 8) or selB
             graphics.fill(sx - 9, sy - 9, sx + 9, sy - 8, selColor)
             graphics.fill(sx - 9, sy + 8, sx + 9, sy + 9, selColor)
             graphics.fill(sx - 9, sy - 9, sx - 8, sy + 9, selColor)
@@ -748,23 +745,12 @@ class DiagnosticScreen(
             }
         }
 
-        // Group expand/collapse buttons
-        if (activeTab == 0) {
-            val halfBlock = blockSize / 2
-            for ((groupIdx, group) in stackGroups.withIndex()) {
-                val gsx = worldToScreenX(group.displayPos.first).roundToInt()
-                val gsy = worldToScreenY(group.displayPos.second).roundToInt()
-
-                // Button is always at the same position relative to the group center
-                val btnX = gsx - 18
-                val btnY = gsy - 4
-
-                if (mx >= btnX && mx < btnX + 8 && my >= btnY && my < btnY + 8) {
-                    if (groupIdx in expandedGroups) expandedGroups.remove(groupIdx)
-                    else expandedGroups.add(groupIdx)
-                    return true
-                }
-            }
+        // Group expand/collapse — click on stacked icons or expanded rectangle to toggle
+        if (activeTab == 0 && hoveredGroupIdx in stackGroups.indices) {
+            val groupIdx = hoveredGroupIdx
+            if (groupIdx in expandedGroups) expandedGroups.remove(groupIdx)
+            else expandedGroups.add(groupIdx)
+            return true
         }
 
         // Inspector panel interactions
