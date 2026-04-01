@@ -228,53 +228,17 @@ class NetworkControllerScreen(
             }
             btnSlice.draw(graphics, bx, by, btnW, btnH)
 
-            // Draw icon based on style
-            val cx = bx + btnW / 2
-            val cy = by + btnH / 2
-            val col = menu.networkColor or 0xFF000000.toInt()
-            when (i) {
-                0 -> { // Square
-                    graphics.fill(cx - 3, cy - 3, cx + 3, cy + 3, col)
-                }
-
-                1 -> { // Circle
-                    graphics.fill(cx - 2, cy - 3, cx + 2, cy + 3, col)
-                    graphics.fill(cx - 3, cy - 2, cx + 3, cy + 2, col)
-                }
-
-                2 -> { // Dot
-                    graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, col)
-                }
-
-                3 -> { // Creeper face
-                    // Eyes
-                    graphics.fill(cx - 3, cy - 3, cx - 1, cy - 1, col)
-                    graphics.fill(cx + 1, cy - 3, cx + 3, cy - 1, col)
-                    // Nose/mouth
-                    graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, col)
-                    graphics.fill(cx - 2, cy + 1, cx + 2, cy + 3, col)
-                }
-
-                4 -> { // Cat face
-                    // Ears
-                    graphics.fill(cx - 3, cy - 4, cx - 2, cy - 2, col)
-                    graphics.fill(cx + 2, cy - 4, cx + 3, cy - 2, col)
-                    // Head
-                    graphics.fill(cx - 2, cy - 2, cx + 2, cy + 2, col)
-                    // Eyes
-                    graphics.fill(cx - 1, cy - 1, cx, cy, 0xFF1E1E1E.toInt())
-                    graphics.fill(cx + 1, cy - 1, cx + 2, cy, 0xFF1E1E1E.toInt())
-                    // Nose
-                    graphics.fill(cx, cy + 1, cx + 1, cy + 2, 0xFF1E1E1E.toInt())
-                }
-
-                5 -> { // None — X mark
-                    for (j in -3..3) {
-                        graphics.fill(cx + j, cy + j, cx + j + 1, cy + j + 1, 0xFF666666.toInt())
-                        graphics.fill(cx + j, cy - j, cx + j + 1, cy - j + 1, 0xFF666666.toInt())
-                    }
-                }
+            // Draw icon from atlas
+            val glowIcon = when (i) {
+                0 -> Icons.GLOW_SQUARE
+                1 -> Icons.GLOW_CIRCLE
+                2 -> Icons.GLOW_DOT
+                3 -> Icons.GLOW_CREEPER
+                4 -> Icons.GLOW_CAT
+                5 -> Icons.GLOW_NONE
+                else -> Icons.GLOW_NONE
             }
+            glowIcon.draw(graphics, bx, by)
 
             // Tooltip on hover
             if (hovered) {
