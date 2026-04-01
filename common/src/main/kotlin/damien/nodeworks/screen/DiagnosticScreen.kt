@@ -173,19 +173,12 @@ class DiagnosticScreen(
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
-        // Craft preview text input
-        craftItemField = net.minecraft.client.gui.components.EditBox(font, contentLeft + 4, contentTop + 4, 200, 14, net.minecraft.network.chat.Component.literal("Item ID")).also {
+        // Craft preview search field
+        craftItemField = net.minecraft.client.gui.components.EditBox(font, contentLeft + 4, contentTop + 4, 200, 14, net.minecraft.network.chat.Component.literal("Search recipes...")).also {
             it.setMaxLength(128)
             it.setBordered(true)
             it.visible = activeTab == 2
-            it.setResponder { value ->
-                updateCraftAutocomplete(value)
-                if (value.isNotEmpty() && value.contains(':')) {
-                    damien.nodeworks.platform.PlatformServices.clientNetworking.sendToServer(
-                        damien.nodeworks.network.CraftPreviewRequestPayload(menu.containerId, menu.clickedPos, value)
-                    )
-                }
-            }
+            it.setResponder { value -> updateCraftAutocomplete(value) }
             addRenderableWidget(it)
         }
     }
@@ -443,23 +436,18 @@ class DiagnosticScreen(
 
     private var craftAutocompleteSuggestions: List<String> = emptyList()
     private var craftAutocompleteSelected = 0
+    private var craftAutocompleteScroll = 0
+    private val craftDropdownMaxVisible = 10
 
     private fun updateCraftAutocomplete(query: String) {
-        if (query.length < 2) {
-            craftAutocompleteSuggestions = emptyList()
-            return
+        val all = menu.topology.craftableItems
+        craftAutocompleteSuggestions = if (query.isEmpty()) {
+            all // show all when empty
+        } else {
+            all.filter { it.contains(query, ignoreCase = true) }
         }
-        // Search all registered items
-        val matches = mutableListOf<String>()
-        for (entry in net.minecraft.core.registries.BuiltInRegistries.ITEM) {
-            val id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(entry)?.toString() ?: continue
-            if (id.contains(query, ignoreCase = true)) {
-                matches.add(id)
-                if (matches.size >= 8) break
-            }
-        }
-        craftAutocompleteSuggestions = matches
         craftAutocompleteSelected = 0
+        craftAutocompleteScroll = 0
     }
 
     private fun renderCraftAutocomplete(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
@@ -470,33 +458,54 @@ class DiagnosticScreen(
         val dropX = field.x
         val dropY = field.y + field.height + 1
         val dropW = field.width
-        val itemH = font.lineHeight + 2
+        val itemH = font.lineHeight + 4
+        val visibleCount = minOf(craftAutocompleteSuggestions.size, craftDropdownMaxVisible)
+        val dropH = visibleCount * itemH + 2
 
         graphics.pose().pushPose()
         graphics.pose().translate(0f, 0f, 300f)
-        graphics.fill(dropX, dropY, dropX + dropW, dropY + craftAutocompleteSuggestions.size * itemH + 2, 0xFF111111.toInt())
+        graphics.fill(dropX, dropY, dropX + dropW, dropY + dropH, 0xFF111111.toInt())
         graphics.fill(dropX, dropY, dropX + dropW, dropY + 1, SEPARATOR)
+        graphics.fill(dropX, dropY + dropH - 1, dropX + dropW, dropY + dropH, SEPARATOR)
 
-        for ((i, suggestion) in craftAutocompleteSuggestions.withIndex()) {
+        for (i in 0 until visibleCount) {
+            val idx = craftAutocompleteScroll + i
+            if (idx >= craftAutocompleteSuggestions.size) break
+            val suggestion = craftAutocompleteSuggestions[idx]
             val sy = dropY + 1 + i * itemH
-            if (i == craftAutocompleteSelected) {
-                graphics.fill(dropX + 1, sy, dropX + dropW - 1, sy + itemH, 0xFF3A5FCD.toInt())
+
+            val rowBg = when {
+                idx == craftAutocompleteSelected -> 0xFF3A5FCD.toInt()
+                i % 2 == 1 -> 0x08FFFFFF.toInt()
+                else -> 0
             }
-            // Show item icon
+            if (rowBg != 0) graphics.fill(dropX + 1, sy, dropX + dropW - 1, sy + itemH, rowBg)
+
+            // Item icon
             val id = net.minecraft.resources.ResourceLocation.tryParse(suggestion)
             if (id != null) {
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
                 if (item != null) {
                     graphics.pose().pushPose()
-                    graphics.pose().translate((dropX + 2).toFloat(), (sy).toFloat(), 0f)
+                    graphics.pose().translate((dropX + 2).toFloat(), (sy + 1).toFloat(), 0f)
                     graphics.pose().scale(0.5f, 0.5f, 1f)
                     graphics.renderItem(ItemStack(item), 0, 0)
                     graphics.pose().popPose()
                 }
             }
-            val color = if (i == craftAutocompleteSelected) WHITE else GRAY
-            graphics.drawString(font, suggestion, dropX + 12, sy + 1, color, false)
+
+            // Item name (short) + ID
+            val shortName = suggestion.substringAfter(':').replace('_', ' ')
+            val color = if (idx == craftAutocompleteSelected) WHITE else GRAY
+            graphics.drawString(font, shortName, dropX + 14, sy + 2, color, false)
         }
+
+        // Scroll indicator
+        if (craftAutocompleteSuggestions.size > craftDropdownMaxVisible) {
+            val countStr = "${craftAutocompleteScroll + 1}-${minOf(craftAutocompleteScroll + visibleCount, craftAutocompleteSuggestions.size)} of ${craftAutocompleteSuggestions.size}"
+            graphics.drawString(font, countStr, dropX + dropW - font.width(countStr) - 4, dropY + dropH - itemH + 2, DIM, false)
+        }
+
         graphics.pose().popPose()
     }
 
@@ -1021,20 +1030,27 @@ class DiagnosticScreen(
                 craftAutocompleteSuggestions = emptyList()
                 return super.keyPressed(keyCode, scanCode, modifiers)
             }
-            // Autocomplete navigation
+            // Dropdown navigation
             if (craftAutocompleteSuggestions.isNotEmpty()) {
                 when (keyCode) {
                     265 -> { // UP
-                        craftAutocompleteSelected = (craftAutocompleteSelected - 1 + craftAutocompleteSuggestions.size) % craftAutocompleteSuggestions.size
+                        craftAutocompleteSelected = (craftAutocompleteSelected - 1).coerceAtLeast(0)
+                        // Scroll to keep selected visible
+                        if (craftAutocompleteSelected < craftAutocompleteScroll) craftAutocompleteScroll = craftAutocompleteSelected
                         return true
                     }
                     264 -> { // DOWN
-                        craftAutocompleteSelected = (craftAutocompleteSelected + 1) % craftAutocompleteSuggestions.size
+                        craftAutocompleteSelected = (craftAutocompleteSelected + 1).coerceAtMost(craftAutocompleteSuggestions.lastIndex)
+                        if (craftAutocompleteSelected >= craftAutocompleteScroll + craftDropdownMaxVisible) craftAutocompleteScroll = craftAutocompleteSelected - craftDropdownMaxVisible + 1
                         return true
                     }
-                    257, 258 -> { // ENTER or TAB — accept suggestion
-                        field.value = craftAutocompleteSuggestions[craftAutocompleteSelected]
+                    257, 258 -> { // ENTER or TAB — accept and request preview
+                        val selected = craftAutocompleteSuggestions[craftAutocompleteSelected]
+                        field.value = selected
                         craftAutocompleteSuggestions = emptyList()
+                        damien.nodeworks.platform.PlatformServices.clientNetworking.sendToServer(
+                            damien.nodeworks.network.CraftPreviewRequestPayload(menu.containerId, menu.clickedPos, selected)
+                        )
                         return true
                     }
                 }
@@ -1049,18 +1065,23 @@ class DiagnosticScreen(
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
-        // Craft autocomplete click
+        // Craft dropdown click
         if (craftAutocompleteSuggestions.isNotEmpty() && craftItemField != null) {
             val field = craftItemField!!
             val dropX = field.x
             val dropY = field.y + field.height + 1
             val dropW = field.width
-            val itemH = font.lineHeight + 2
+            val itemH = font.lineHeight + 4
             if (mx >= dropX && mx < dropX + dropW && my >= dropY) {
-                val idx = (my - dropY - 1) / itemH
+                val visIdx = (my - dropY - 1) / itemH
+                val idx = craftAutocompleteScroll + visIdx
                 if (idx in craftAutocompleteSuggestions.indices) {
-                    field.value = craftAutocompleteSuggestions[idx]
+                    val selected = craftAutocompleteSuggestions[idx]
+                    field.value = selected
                     craftAutocompleteSuggestions = emptyList()
+                    damien.nodeworks.platform.PlatformServices.clientNetworking.sendToServer(
+                        damien.nodeworks.network.CraftPreviewRequestPayload(menu.containerId, menu.clickedPos, selected)
+                    )
                     return true
                 }
             }
@@ -1162,6 +1183,13 @@ class DiagnosticScreen(
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        // Scroll craft dropdown
+        if (craftAutocompleteSuggestions.size > craftDropdownMaxVisible && craftItemField?.isFocused == true) {
+            val maxScroll = craftAutocompleteSuggestions.size - craftDropdownMaxVisible
+            craftAutocompleteScroll = (craftAutocompleteScroll - scrollY.toInt()).coerceIn(0, maxScroll)
+            return true
+        }
+
         if (activeTab == 0 && mouseX >= contentLeft && mouseX < contentLeft + contentW &&
             mouseY >= contentTop && mouseY < contentTop + contentH) {
             val oldZoom = zoom
