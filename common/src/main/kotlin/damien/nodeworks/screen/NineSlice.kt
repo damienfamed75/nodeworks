@@ -184,6 +184,7 @@ class NineSlice(
         // (48, 80)   24x16   ROW                  1, 1, 1, 1        Default/odd row (#1E1E1E) with subtle border
         // (72, 80)   24x16   ROW_HIGHLIGHT        1, 1, 1, 1        Alternating/even row stripe (#252525) with subtle border
         // (72,104)   24x3    SEPARATOR            1, 1, 1, 1        Thin horizontal divider line (#3C3C3C)
+        // (96,104)   24x6    SEPARATOR_BAR        1, 1, 1, 1        Horizontal bar for thin gaps (#2B2B2B fill, bordered)
         // (0, 128)   8x24    SCROLLBAR_TRACK      2, 2, 3, 3        Scrollbar groove (#1A1A1A)
         // (8, 128)   8x16    SCROLLBAR_THUMB      2, 2, 3, 3        Scrollbar thumb (#555555) with grip lines
         // (16,128)   8x16    SCROLLBAR_THUMB_HOVER 2, 2, 3, 3       Scrollbar thumb hovered (#666666)
@@ -211,6 +212,7 @@ class NineSlice(
         val ROW                  = NineSlice(GUI_ATLAS, 48,  80, 24, 16, 1, 1, 1, 1)
         val ROW_HIGHLIGHT        = NineSlice(GUI_ATLAS, 72,  80, 24, 16, 1, 1, 1, 1)
         val SEPARATOR            = NineSlice(GUI_ATLAS, 72, 104, 24,  3, 1, 1, 1, 1)
+        val SEPARATOR_BAR        = NineSlice(GUI_ATLAS, 96, 104, 24,  6, 1, 1, 1, 1)
         val TOGGLE_ACTIVE        = NineSlice(GUI_ATLAS, 72,  64, 48, 16, 3, 3, 3, 3)
         val TOGGLE_INACTIVE      = NineSlice(GUI_ATLAS,120,  64, 48, 16, 3, 3, 3, 3)
         val SCROLLBAR_TRACK      = NineSlice(GUI_ATLAS,  0, 128,  8, 24, 2, 2, 3, 3)
