@@ -160,6 +160,7 @@ object NodeConnectionRenderer {
         PlatformServices.clientEvents.onWorldRender { poseStack, consumers, cameraPos ->
             if (poseStack != null && consumers != null) {
                 render(poseStack, consumers, cameraPos)
+                renderPinHighlight(poseStack, consumers, cameraPos)
             }
         }
     }
@@ -388,5 +389,70 @@ object NodeConnectionRenderer {
         if (a.x != b.x) return a.x < b.x
         if (a.y != b.y) return a.y < b.y
         return a.z < b.z
+    }
+
+    // ========== Diagnostic Pin Highlight ==========
+
+    /** The currently pinned block position, or null. Global across all networks. */
+    var pinnedBlock: BlockPos? = null
+
+    fun renderPinHighlight(poseStack: PoseStack, consumers: MultiBufferSource, cameraPos: net.minecraft.world.phys.Vec3) {
+        val pos = pinnedBlock ?: return
+        val mc = Minecraft.getInstance()
+        val player = mc.player ?: return
+
+        val mainItem = player.mainHandItem.item
+        val offItem = player.offhandItem.item
+        if (mainItem !is damien.nodeworks.item.DiagnosticToolItem && offItem !is damien.nodeworks.item.DiagnosticToolItem) return
+
+        // Flush any pending MC render batches first
+        if (consumers is MultiBufferSource.BufferSource) consumers.endBatch()
+
+        val x = pos.x.toFloat() - cameraPos.x.toFloat()
+        val y = pos.y.toFloat() - cameraPos.y.toFloat()
+        val z = pos.z.toFloat() - cameraPos.z.toFloat()
+
+        val time = (System.currentTimeMillis() % 2000) / 2000f
+        val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.3f + 0.5f)
+
+        val r = 0.3f; val g = 0.8f; val b = 1.0f; val a = pulse
+        val e = 0.005f
+        val min = -e; val max = 1f + e
+
+        // Direct GL rendering — bypass MC's render types to disable depth test
+        poseStack.pushPose()
+        poseStack.translate(x.toDouble(), y.toDouble(), z.toDouble())
+
+        val matrix = poseStack.last().pose()
+
+        com.mojang.blaze3d.systems.RenderSystem.disableDepthTest()
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.renderer.GameRenderer::getPositionColorShader)
+        com.mojang.blaze3d.systems.RenderSystem.lineWidth(2f)
+
+        val tesselator = com.mojang.blaze3d.vertex.Tesselator.getInstance()
+        val buf = tesselator.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.DEBUG_LINES, com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR)
+
+        fun line(x1: Float, y1: Float, z1: Float, x2: Float, y2: Float, z2: Float) {
+            buf.addVertex(matrix, x1, y1, z1).setColor(r, g, b, a)
+            buf.addVertex(matrix, x2, y2, z2).setColor(r, g, b, a)
+        }
+
+        // 12 edges
+        line(min, min, min, max, min, min); line(max, min, min, max, min, max)
+        line(max, min, max, min, min, max); line(min, min, max, min, min, min)
+        line(min, max, min, max, max, min); line(max, max, min, max, max, max)
+        line(max, max, max, min, max, max); line(min, max, max, min, max, min)
+        line(min, min, min, min, max, min); line(max, min, min, max, max, min)
+        line(max, min, max, max, max, max); line(min, min, max, min, max, max)
+
+        com.mojang.blaze3d.vertex.BufferUploader.drawWithShader(buf.buildOrThrow())
+
+        com.mojang.blaze3d.systems.RenderSystem.enableDepthTest()
+        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        com.mojang.blaze3d.systems.RenderSystem.lineWidth(1f)
+
+        poseStack.popPose()
     }
 }
