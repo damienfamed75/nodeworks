@@ -79,16 +79,15 @@ class NetworkControllerScreen(
     }
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
-        // Main background (matches Terminal)
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFF2B2B2B.toInt())
+        // Main window frame
+        NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         // Top bar
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + TOP_BAR_H, 0xFF3C3C3C.toInt())
-        graphics.fill(leftPos, topPos + TOP_BAR_H - 1, leftPos + imageWidth, topPos + TOP_BAR_H, 0xFF555555.toInt())
+        NineSlice.TOP_BAR.draw(graphics, leftPos, topPos, imageWidth, TOP_BAR_H)
         graphics.drawString(font, title, leftPos + 6, topPos + 6, 0xFFFFFFFF.toInt())
 
-        // List area background
-        graphics.fill(listLeft, listTop, listRight, listBottom, 0xFF1E1E1E.toInt())
+        // List area (inset panel)
+        NineSlice.PANEL_INSET.draw(graphics, listLeft, listTop, listRight - listLeft, listBottom - listTop)
 
         // Render scrollable property rows
         graphics.enableScissor(listLeft, listTop, listRight, listBottom)
@@ -100,19 +99,18 @@ class NetworkControllerScreen(
 
             val prop = properties[i]
 
-            // Alternating row background
-            if (i % 2 == 0) {
-                graphics.fill(listLeft, rowY, listRight, rowY + ROW_H, 0xFF252525.toInt())
-            }
+            // Row background
+            val rowSlice = if (i % 2 == 0) NineSlice.ROW_HIGHLIGHT else NineSlice.ROW
+            rowSlice.draw(graphics, listLeft, rowY, listRight - listLeft, ROW_H)
 
             // Row separator
-            graphics.fill(listLeft, rowY + ROW_H - 1, listRight, rowY + ROW_H, 0xFF3C3C3C.toInt())
+            NineSlice.SEPARATOR.draw(graphics, listLeft, rowY + ROW_H - 2, listRight - listLeft, 3)
 
             // Label
-            graphics.drawString(font, prop.label, listLeft + 6, rowY + (ROW_H - 8) / 2, 0xFFAAAAAA.toInt())
+            graphics.drawString(font, prop.label, listLeft + 6, rowY + (ROW_H - 8) / 2 - 1, 0xFFAAAAAA.toInt())
 
             val controlX = listLeft + LABEL_W + 4
-            val controlY = rowY + (ROW_H - 16) / 2
+            val controlY = rowY + (ROW_H - 16) / 2 - 1
 
             when (prop.type) {
                 PropertyType.NAME -> {
@@ -126,21 +124,29 @@ class NetworkControllerScreen(
                         val setBtnY = controlY
                         val setBtnW = 26
                         val setBtnH = 16
-                        val setHovered = mouseX >= setBtnX && mouseX < setBtnX + setBtnW && mouseY >= setBtnY && mouseY < setBtnY + setBtnH
-                        val bg = if (setHovered) 0xFF3A5A3A.toInt() else 0xFF2A4A2A.toInt()
-                        graphics.fill(setBtnX, setBtnY, setBtnX + setBtnW, setBtnY + setBtnH, bg)
-                        graphics.fill(setBtnX, setBtnY, setBtnX + setBtnW, setBtnY + 1, 0xFF4A6A4A.toInt())
-                        graphics.fill(setBtnX, setBtnY + setBtnH - 1, setBtnX + setBtnW, setBtnY + setBtnH, 0xFF1A3A1A.toInt())
+                        val setHovered =
+                            mouseX >= setBtnX && mouseX < setBtnX + setBtnW && mouseY >= setBtnY && mouseY < setBtnY + setBtnH
+                        val btnSlice = if (setHovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
+                        btnSlice.draw(graphics, setBtnX, setBtnY, setBtnW, setBtnH)
                         val label = "Set"
                         val textColor = if (setHovered) 0xFF88FF88.toInt() else 0xFF55CC55.toInt()
-                        graphics.drawString(font, label, setBtnX + (setBtnW - font.width(label)) / 2, setBtnY + 4, textColor)
+                        graphics.drawString(
+                            font,
+                            label,
+                            setBtnX + (setBtnW - font.width(label)) / 2,
+                            setBtnY + 4,
+                            textColor
+                        )
 
                         // Checkmark icon after click
                         if (nameCheckmarkTime >= 0) {
                             val mc = net.minecraft.client.Minecraft.getInstance()
                             val elapsed = mc.level?.gameTime?.minus(nameCheckmarkTime) ?: checkmarkDuration
                             if (elapsed < checkmarkDuration) {
-                                val iconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+                                val iconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+                                    "nodeworks",
+                                    "textures/gui/icons.png"
+                                )
                                 graphics.blit(iconsTexture, setBtnX + setBtnW + 1, setBtnY, 0f, 0f, 16, 16, 256, 256)
                             } else {
                                 nameCheckmarkTime = -1
@@ -148,25 +154,31 @@ class NetworkControllerScreen(
                         }
                     }
                 }
+
                 PropertyType.COLOR -> {
-                    // Color swatch
+                    // Color swatch with slot-style border
                     val swX = controlX
                     val swY = controlY
+                    NineSlice.SLOT.draw(graphics, swX - 1, swY - 1, 18, 18)
                     graphics.fill(swX, swY, swX + 16, swY + 16, menu.networkColor or 0xFF000000.toInt())
-                    // Border
-                    graphics.fill(swX - 1, swY - 1, swX + 17, swY, 0xFF555555.toInt())
-                    graphics.fill(swX - 1, swY - 1, swX, swY + 17, 0xFF555555.toInt())
-                    graphics.fill(swX + 16, swY - 1, swX + 17, swY + 17, 0xFF888888.toInt())
-                    graphics.fill(swX - 1, swY + 16, swX + 17, swY + 17, 0xFF888888.toInt())
                     // Hex text next to swatch
-                    graphics.drawString(font, "#${String.format("%06X", menu.networkColor)}", swX + 20, swY + 4, 0xFF888888.toInt())
+                    graphics.drawString(
+                        font,
+                        "#${String.format("%06X", menu.networkColor)}",
+                        swX + 20,
+                        swY + 4,
+                        0xFF888888.toInt()
+                    )
                 }
+
                 PropertyType.REDSTONE -> {
                     renderRedstoneControl(graphics, controlX, controlY, mouseX, mouseY)
                 }
+
                 PropertyType.GLOW_STYLE -> {
                     renderGlowStyleControl(graphics, controlX, controlY, mouseX, mouseY)
                 }
+
                 else -> {}
             }
         }
@@ -175,44 +187,24 @@ class NetworkControllerScreen(
 
         // Scrollbar
         renderScrollbar(graphics, mouseX, mouseY)
-
-        // Player inventory area
-        val invY = topPos + imageHeight
-        // No player inventory rendered — this is a settings-only screen
     }
 
     private fun renderRedstoneControl(graphics: GuiGraphics, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
         val mode = menu.redstoneMode
-        val bw = 20
+        val bw = 16
         val bh = 16
         val hovered = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + bh
 
-        // Button bg
-        val bg = if (hovered) 0xFF444444.toInt() else 0xFF333333.toInt()
-        graphics.fill(bx, by, bx + bw, by + bh, bg)
-        graphics.fill(bx, by, bx + bw, by + 1, 0xFF4A4A4A.toInt())
-        graphics.fill(bx, by + bh - 1, bx + bw, by + bh, 0xFF1E1E1E.toInt())
+        val btnSlice = if (hovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
+        btnSlice.draw(graphics, bx, by, bw, bh)
 
-        when (mode) {
-            0 -> { // Ignored — grey X
-                val cx = bx + bw / 2; val cy = by + bh / 2
-                for (i in -3..3) {
-                    graphics.fill(cx + i, cy - i, cx + i + 1, cy - i + 1, 0xFFCC3333.toInt())
-                    graphics.fill(cx + i, cy + i, cx + i + 1, cy + i + 1, 0xFF888888.toInt())
-                }
-            }
-            1 -> { // Active Low — dim torch
-                val tx = bx + bw / 2; val ty = by + 1
-                graphics.fill(tx, ty + 4, tx + 1, ty + 12, 0xFF7B6B4B.toInt())
-                graphics.fill(tx - 2, ty, tx + 3, ty + 4, 0xFF662222.toInt())
-            }
-            2 -> { // Active High — bright torch
-                val tx = bx + bw / 2; val ty = by + 1
-                graphics.fill(tx, ty + 4, tx + 1, ty + 12, 0xFF7B6B4B.toInt())
-                graphics.fill(tx - 2, ty, tx + 3, ty + 4, 0xFFFF4433.toInt())
-                graphics.fill(tx - 3, ty - 1, tx + 4, ty + 1, 0x33FF2200.toInt())
-            }
+        val icon = when (mode) {
+            0 -> Icons.REDSTONE_IGNORE
+            1 -> Icons.REDSTONE_INACTIVE
+            2 -> Icons.REDSTONE_ACTIVE
+            else -> Icons.REDSTONE_IGNORE
         }
+        icon.draw(graphics, bx + (bw - 16) / 2, by)
 
         // Label
         graphics.drawString(font, REDSTONE_LABELS[mode], bx + bw + 4, by + 4, 0xFF888888.toInt())
@@ -229,22 +221,12 @@ class NetworkControllerScreen(
             val hovered = mouseX >= bx && mouseX < bx + btnW && mouseY >= by && mouseY < by + btnH
 
             // Button background
-            val bg = when {
-                selected -> 0xFF4A4A4A.toInt()
-                hovered -> 0xFF3A3A3A.toInt()
-                else -> 0xFF333333.toInt()
+            val btnSlice = when {
+                selected -> NineSlice.BUTTON_ACTIVE
+                hovered -> NineSlice.BUTTON_HOVER
+                else -> NineSlice.BUTTON
             }
-            graphics.fill(bx, by, bx + btnW, by + btnH, bg)
-            if (selected) {
-                // Selected border highlight
-                graphics.fill(bx, by, bx + btnW, by + 1, 0xFFAAAAAA.toInt())
-                graphics.fill(bx, by + btnH - 1, bx + btnW, by + btnH, 0xFFAAAAAA.toInt())
-                graphics.fill(bx, by, bx + 1, by + btnH, 0xFFAAAAAA.toInt())
-                graphics.fill(bx + btnW - 1, by, bx + btnW, by + btnH, 0xFFAAAAAA.toInt())
-            } else {
-                graphics.fill(bx, by, bx + btnW, by + 1, 0xFF4A4A4A.toInt())
-                graphics.fill(bx, by + btnH - 1, bx + btnW, by + btnH, 0xFF1E1E1E.toInt())
-            }
+            btnSlice.draw(graphics, bx, by, btnW, btnH)
 
             // Draw icon based on style
             val cx = bx + btnW / 2
@@ -254,13 +236,16 @@ class NetworkControllerScreen(
                 0 -> { // Square
                     graphics.fill(cx - 3, cy - 3, cx + 3, cy + 3, col)
                 }
+
                 1 -> { // Circle
                     graphics.fill(cx - 2, cy - 3, cx + 2, cy + 3, col)
                     graphics.fill(cx - 3, cy - 2, cx + 3, cy + 2, col)
                 }
+
                 2 -> { // Dot
                     graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, col)
                 }
+
                 3 -> { // Creeper face
                     // Eyes
                     graphics.fill(cx - 3, cy - 3, cx - 1, cy - 1, col)
@@ -269,6 +254,7 @@ class NetworkControllerScreen(
                     graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, col)
                     graphics.fill(cx - 2, cy + 1, cx + 2, cy + 3, col)
                 }
+
                 4 -> { // Cat face
                     // Ears
                     graphics.fill(cx - 3, cy - 4, cx - 2, cy - 2, col)
@@ -281,6 +267,7 @@ class NetworkControllerScreen(
                     // Nose
                     graphics.fill(cx, cy + 1, cx + 1, cy + 2, 0xFF1E1E1E.toInt())
                 }
+
                 5 -> { // None — X mark
                     for (j in -3..3) {
                         graphics.fill(cx + j, cy + j, cx + j + 1, cy + j + 1, 0xFF666666.toInt())
@@ -309,14 +296,15 @@ class NetworkControllerScreen(
         val totalH = properties.size * ROW_H
 
         // Track
-        graphics.fill(sbX, listTop, sbX + sbW, listBottom, 0xFF1A1A1A.toInt())
+        NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, listTop, sbW, trackH)
 
         if (totalH > trackH) {
             val thumbH = maxOf(12, trackH * trackH / totalH)
             val thumbY = listTop + (trackH - thumbH) * scrollOffset / maxScroll
             val hovered = mouseX >= sbX && mouseX < sbX + sbW && mouseY >= listTop && mouseY < listBottom
-            val color = if (hovered || draggingScrollbar) 0xFF666666.toInt() else 0xFF444444.toInt()
-            graphics.fill(sbX + 1, thumbY, sbX + sbW - 1, thumbY + thumbH, color)
+            val thumbSlice =
+                if (hovered || draggingScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
+            thumbSlice.draw(graphics, sbX, thumbY, sbW, thumbH)
         }
     }
 
@@ -359,7 +347,7 @@ class NetworkControllerScreen(
             if (rowY + ROW_H < listTop || rowY > listBottom) continue
 
             val controlX = listLeft + LABEL_W + 4
-            val controlY = rowY + (ROW_H - 16) / 2
+            val controlY = rowY + (ROW_H - 16) / 2 - 1
             val prop = properties[i]
 
             when (prop.type) {
@@ -371,15 +359,19 @@ class NetworkControllerScreen(
                         return true
                     }
                 }
+
                 PropertyType.REDSTONE -> {
-                    val bw = 20; val bh = 16
+                    val bw = 20;
+                    val bh = 16
                     if (mx >= controlX && mx < controlX + bw && my >= controlY && my < controlY + bh) {
                         sendRedstoneUpdate((menu.redstoneMode + 1) % 3)
                         return true
                     }
                 }
+
                 PropertyType.GLOW_STYLE -> {
-                    val btnW = 16; val btnH = 16
+                    val btnW = 16;
+                    val btnH = 16
                     for (j in 0 until GLOW_COUNT) {
                         val bx = controlX + j * (btnW + 2)
                         if (mx >= bx && mx < bx + btnW && my >= controlY && my < controlY + btnH) {
@@ -388,6 +380,7 @@ class NetworkControllerScreen(
                         }
                     }
                 }
+
                 PropertyType.NAME -> {
                     val setBtnX = controlX + 104
                     val setBtnW = 26
@@ -395,10 +388,15 @@ class NetworkControllerScreen(
                     if (mx >= setBtnX && mx < setBtnX + setBtnW && my >= controlY && my < controlY + setBtnH) {
                         sendNameUpdate(this.nameField.value)
                         nameCheckmarkTime = net.minecraft.client.Minecraft.getInstance().level?.gameTime ?: 0
-                        minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
+                        minecraft?.player?.playSound(
+                            net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(),
+                            0.5f,
+                            1.0f
+                        )
                         return true
                     }
                 }
+
                 else -> {}
             }
         }
