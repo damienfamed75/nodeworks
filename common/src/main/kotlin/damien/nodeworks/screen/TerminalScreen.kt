@@ -10,8 +10,6 @@ import damien.nodeworks.screen.widget.AutocompletePopup
 import damien.nodeworks.screen.widget.ScriptEditor
 
 import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.client.gui.components.Button
-import net.minecraft.client.gui.components.SpriteIconButton
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
@@ -55,7 +53,7 @@ class TerminalScreen(
     // Layout constants
     private val cardPanelWidth = 80
     private val editorPadding = 4
-    private val buttonHeight = 20
+    private val buttonHeight = 16
     private val topBarHeight = 24
     private val tabBarHeight = 17
     private var logPanelHeight = savedLogPanelHeight
@@ -224,11 +222,11 @@ class TerminalScreen(
     // Layout presets
     private data class SidebarEntry(val name: String, val color: Int, val iconU: Int, val iconV: Int, val type: String)
 
-    enum class TerminalLayout(val w: Int, val h: Int, val spriteName: String) {
-        SMALL(320, 220, "layout_small"),
-        WIDE(480, 220, "layout_wide"),
-        TALL(320, 300, "layout_tall"),
-        LARGE(480, 300, "layout_large")
+    enum class TerminalLayout(val w: Int, val h: Int, val icon: Icons) {
+        SMALL(320, 220, Icons.LAYOUT_SMALL),
+        WIDE(480, 220, Icons.LAYOUT_WIDE),
+        TALL(320, 300, Icons.LAYOUT_TALL),
+        LARGE(480, 300, Icons.LAYOUT_LARGE)
     }
 
     private var currentLayout = TerminalLayout.entries.getOrElse(menu.getLayoutIndex()) { TerminalLayout.SMALL }
@@ -387,46 +385,51 @@ class TerminalScreen(
         autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
-        val btnY = topPos + 2
+        val btnY = topPos + 4
         val stopX = leftPos + imageWidth - 44
         val runX = stopX - 44
         val layoutX = runX - 24
 
-        // Layout cycle button (icon, standard MC button look)
-        val layoutBtn = SpriteIconButton.builder(Component.literal("Layout"), { _ ->
+        // Layout cycle button — shows current layout icon
+        addRenderableWidget(damien.nodeworks.screen.widget.SlicedButton.create(
+            layoutX, btnY, 20, buttonHeight, "", currentLayout.icon
+        ) { _ ->
             val savedText = editor.value
             currentLayout = TerminalLayout.entries[(currentLayout.ordinal + 1) % TerminalLayout.entries.size]
             PlatformServices.clientNetworking.sendToServer(SetLayoutPayload(menu.getTerminalPos(), currentLayout.ordinal))
             rebuildWithText = savedText
             rebind()
-        }, true)
-            .sprite(ResourceLocation.fromNamespaceAndPath("nodeworks", currentLayout.spriteName), 16, 16)
-            .size(20, buttonHeight)
-            .build()
-        layoutBtn.x = layoutX
-        layoutBtn.y = btnY
-        addRenderableWidget(layoutBtn)
+        })
 
         // Run button — save current tab text first, then tell server to run
-        addRenderableWidget(Button.builder(Component.literal("Run")) { _ ->
+        addRenderableWidget(damien.nodeworks.screen.widget.SlicedButton.createColored(
+            runX, btnY, 40, buttonHeight, "Run",
+            0xFF55CC55.toInt(), 0xFF88FF88.toInt()
+        ) { _ ->
             scripts[activeTab] = editor.value
             PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
             PlatformServices.clientNetworking.sendToServer(RunScriptPayload(menu.getTerminalPos()))
             scriptRunning = true
-        }.bounds(runX, btnY, 40, buttonHeight).build())
+        })
 
         // Stop button
-        addRenderableWidget(Button.builder(Component.literal("Stop")) { _ ->
+        addRenderableWidget(damien.nodeworks.screen.widget.SlicedButton.createColored(
+            stopX, btnY, 40, buttonHeight, "Stop",
+            0xFFCC5555.toInt(), 0xFFFF8888.toInt()
+        ) { _ ->
             PlatformServices.clientNetworking.sendToServer(StopScriptPayload(menu.getTerminalPos()))
             scriptRunning = false
-        }.bounds(stopX, btnY, 40, buttonHeight).build())
+        })
 
         // Auto-run toggle
-        addRenderableWidget(Button.builder(autoRunLabel()) { btn ->
+        addRenderableWidget(damien.nodeworks.screen.widget.SlicedButton.create(
+            leftPos + 4, topPos + imageHeight - 24, cardPanelWidth - 8, buttonHeight,
+            autoRunLabel().string
+        ) { btn ->
             autoRun = !autoRun
             PlatformServices.clientNetworking.sendToServer(ToggleAutoRunPayload(menu.getTerminalPos(), autoRun))
             btn.message = autoRunLabel()
-        }.bounds(leftPos + 4, topPos + imageHeight - 24, cardPanelWidth - 8, buttonHeight).build())
+        })
     }
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
@@ -481,17 +484,15 @@ class TerminalScreen(
         NineSlice.SEPARATOR.draw(graphics, leftPos + cardPanelWidth, topPos + topBarHeight, 1, imageHeight - topBarHeight)
 
         // Title in top bar
-        graphics.drawString(font, title, leftPos + 6, topPos + 7, 0xFFFFFFFF.toInt())
-
-        // Status indicator — positioned left of the layout button
-        val statusX = leftPos + imageWidth - 170
-        val statusY = topPos + 7
-        val circleColor = if (scriptRunning) 0xFF55FF55.toInt() else 0xFF666666.toInt()
+        // Status indicator — top left of bar
+        val statusX = leftPos + 4
+        val statusIconY = topPos + (topBarHeight - 16) / 2
+        val statusIcon = if (scriptRunning) Icons.CRYSTAL_ACTIVE else Icons.CRYSTAL_INACTIVE
+        statusIcon.draw(graphics, statusX, statusIconY)
         val statusText = if (scriptRunning) "Running" else "Stopped"
-        val textColor = if (scriptRunning) 0xFF55FF55.toInt() else 0xFF888888.toInt()
-        graphics.fill(statusX + 1, statusY, statusX + 4, statusY + 5, circleColor)
-        graphics.fill(statusX, statusY + 1, statusX + 5, statusY + 4, circleColor)
-        graphics.drawString(font, statusText, statusX + 7, statusY, textColor)
+        val textColor = if (scriptRunning) 0xFFD3FFFF.toInt() else 0xFF888888.toInt()
+        val statusTextY = topPos + (topBarHeight - font.lineHeight) / 2 + 1
+        graphics.drawString(font, statusText, statusX + 18, statusTextY, textColor)
 
         // Card & variable list header
         val cardStartY = topPos + topBarHeight + 6
