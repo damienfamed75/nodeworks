@@ -40,6 +40,8 @@ class NetworkControllerScreen(
     )
 
     private lateinit var nameField: EditBox
+    private var nameCheckmarkTime: Long = -1
+    private val checkmarkDuration = 30L
     private var scrollOffset = 0
     private var maxScroll = 0
     private var listTop = 0
@@ -49,7 +51,7 @@ class NetworkControllerScreen(
     private var draggingScrollbar = false
 
     init {
-        imageWidth = 220
+        imageWidth = 260
         imageHeight = 180
         // Hide default labels — we draw our own title in the top bar
         inventoryLabelY = -9999
@@ -71,7 +73,7 @@ class NetworkControllerScreen(
         // Name field — will be positioned dynamically in render
         nameField = EditBox(font, listLeft + LABEL_W + 4, listTop, 100, 16, Component.literal("Name"))
         nameField.setMaxLength(32)
-        nameField.value = ""
+        nameField.value = menu.initialName
         nameField.setBordered(true)
         addRenderableWidget(nameField)
     }
@@ -118,6 +120,33 @@ class NetworkControllerScreen(
                     nameField.setX(controlX)
                     nameField.setY(controlY)
                     nameField.visible = rowY + ROW_H > listTop && rowY < listBottom
+                    // Set button next to name field
+                    if (nameField.visible) {
+                        val setBtnX = controlX + 104
+                        val setBtnY = controlY
+                        val setBtnW = 26
+                        val setBtnH = 16
+                        val setHovered = mouseX >= setBtnX && mouseX < setBtnX + setBtnW && mouseY >= setBtnY && mouseY < setBtnY + setBtnH
+                        val bg = if (setHovered) 0xFF3A5A3A.toInt() else 0xFF2A4A2A.toInt()
+                        graphics.fill(setBtnX, setBtnY, setBtnX + setBtnW, setBtnY + setBtnH, bg)
+                        graphics.fill(setBtnX, setBtnY, setBtnX + setBtnW, setBtnY + 1, 0xFF4A6A4A.toInt())
+                        graphics.fill(setBtnX, setBtnY + setBtnH - 1, setBtnX + setBtnW, setBtnY + setBtnH, 0xFF1A3A1A.toInt())
+                        val label = "Set"
+                        val textColor = if (setHovered) 0xFF88FF88.toInt() else 0xFF55CC55.toInt()
+                        graphics.drawString(font, label, setBtnX + (setBtnW - font.width(label)) / 2, setBtnY + 4, textColor)
+
+                        // Checkmark icon after click
+                        if (nameCheckmarkTime >= 0) {
+                            val mc = net.minecraft.client.Minecraft.getInstance()
+                            val elapsed = mc.level?.gameTime?.minus(nameCheckmarkTime) ?: checkmarkDuration
+                            if (elapsed < checkmarkDuration) {
+                                val iconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+                                graphics.blit(iconsTexture, setBtnX + setBtnW + 1, setBtnY, 0f, 0f, 16, 16, 256, 256)
+                            } else {
+                                nameCheckmarkTime = -1
+                            }
+                        }
+                    }
                 }
                 PropertyType.COLOR -> {
                     // Color swatch
@@ -299,6 +328,21 @@ class NetworkControllerScreen(
         }
     }
 
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        if (this.nameField.isFocused) {
+            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers) // ESC
+            if (keyCode == 257) { // ENTER — apply name
+                sendNameUpdate(this.nameField.value)
+                this.nameField.isFocused = false
+                nameCheckmarkTime = net.minecraft.client.Minecraft.getInstance().level?.gameTime ?: 0
+                return true
+            }
+            this.nameField.keyPressed(keyCode, scanCode, modifiers)
+            return true
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers)
+    }
+
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
@@ -342,6 +386,17 @@ class NetworkControllerScreen(
                             sendGlowStyleUpdate(j)
                             return true
                         }
+                    }
+                }
+                PropertyType.NAME -> {
+                    val setBtnX = controlX + 104
+                    val setBtnW = 26
+                    val setBtnH = 16
+                    if (mx >= setBtnX && mx < setBtnX + setBtnW && my >= controlY && my < controlY + setBtnH) {
+                        sendNameUpdate(this.nameField.value)
+                        nameCheckmarkTime = net.minecraft.client.Minecraft.getInstance().level?.gameTime ?: 0
+                        minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
+                        return true
                     }
                 }
                 else -> {}

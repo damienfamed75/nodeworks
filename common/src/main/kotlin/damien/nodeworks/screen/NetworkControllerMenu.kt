@@ -13,7 +13,8 @@ import net.minecraft.world.item.ItemStack
 class NetworkControllerMenu(
     syncId: Int,
     val controllerPos: BlockPos,
-    private val data: ContainerData = SimpleContainerData(DATA_SLOTS)
+    private val data: ContainerData = SimpleContainerData(DATA_SLOTS),
+    val initialName: String = ""
 ) : AbstractContainerMenu(ModScreenHandlers.NETWORK_CONTROLLER, syncId) {
 
     companion object {
@@ -25,7 +26,7 @@ class NetworkControllerMenu(
             data.set(1, openData.networkColor and 0xFFFF)
             data.set(2, openData.redstoneMode)
             data.set(3, openData.nodeGlowStyle)
-            return NetworkControllerMenu(syncId, openData.pos, data)
+            return NetworkControllerMenu(syncId, openData.pos, data, openData.networkName)
         }
 
         fun createServer(
