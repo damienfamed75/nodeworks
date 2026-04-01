@@ -188,7 +188,10 @@ class NineSlice(
         // (8, 128)   8x16    SCROLLBAR_THUMB      2, 2, 3, 3        Scrollbar thumb (#555555) with grip lines
         // (16,128)   8x16    SCROLLBAR_THUMB_HOVER 2, 2, 3, 3       Scrollbar thumb hovered (#666666)
         //
-        // Free space: (72+, 48–79), (96+, 80–103), (48+, 104–127), (24+, 128+), entire rows 152+
+        // (72, 64)   48x16   TOGGLE_ACTIVE        3, 3, 3, 3        Toggle switch ON state
+        // (120,64)   48x16   TOGGLE_INACTIVE      3, 3, 3, 3        Toggle switch OFF state
+        //
+        // Free space: (72+, 48–63), (160+, 64–79), (96+, 80–103), (48+, 104–127), (24+, 128+), entire rows 152+
         // =====================================================================
 
         // ---- Pre-built slices ----
@@ -208,6 +211,8 @@ class NineSlice(
         val ROW                  = NineSlice(GUI_ATLAS, 48,  80, 24, 16, 1, 1, 1, 1)
         val ROW_HIGHLIGHT        = NineSlice(GUI_ATLAS, 72,  80, 24, 16, 1, 1, 1, 1)
         val SEPARATOR            = NineSlice(GUI_ATLAS, 72, 104, 24,  3, 1, 1, 1, 1)
+        val TOGGLE_ACTIVE        = NineSlice(GUI_ATLAS, 72,  64, 48, 16, 3, 3, 3, 3)
+        val TOGGLE_INACTIVE      = NineSlice(GUI_ATLAS,120,  64, 48, 16, 3, 3, 3, 3)
         val SCROLLBAR_TRACK      = NineSlice(GUI_ATLAS,  0, 128,  8, 24, 2, 2, 3, 3)
         val SCROLLBAR_THUMB      = NineSlice(GUI_ATLAS,  8, 128,  8, 16, 2, 2, 3, 3)
         val SCROLLBAR_THUMB_HOVER = NineSlice(GUI_ATLAS, 16, 128, 8, 16, 2, 2, 3, 3)

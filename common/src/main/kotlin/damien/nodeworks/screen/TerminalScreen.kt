@@ -421,15 +421,7 @@ class TerminalScreen(
             scriptRunning = false
         })
 
-        // Auto-run toggle
-        addRenderableWidget(damien.nodeworks.screen.widget.SlicedButton.create(
-            leftPos + 4, topPos + imageHeight - 24, cardPanelWidth - 8, buttonHeight,
-            autoRunLabel().string
-        ) { btn ->
-            autoRun = !autoRun
-            PlatformServices.clientNetworking.sendToServer(ToggleAutoRunPayload(menu.getTerminalPos(), autoRun))
-            btn.message = autoRunLabel()
-        })
+        // Auto-run toggle is rendered manually in renderBg and handled in mouseClicked
     }
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
@@ -482,6 +474,16 @@ class TerminalScreen(
 
         // Card panel separator
         NineSlice.SEPARATOR.draw(graphics, leftPos + cardPanelWidth, topPos + topBarHeight, 1, imageHeight - topBarHeight)
+
+        // Auto-run toggle at bottom of card panel
+        val toggleW = cardPanelWidth - 8
+        val toggleX = leftPos + 4
+        val toggleY = topPos + imageHeight - 20
+        val labelText = "Autorun"
+        graphics.drawString(font, labelText, toggleX + (toggleW - font.width(labelText)) / 2, toggleY - font.lineHeight - 2, 0xFFAAAAAA.toInt())
+        val toggleU = if (autoRun) 72f else 120f
+        val toggleDrawX = toggleX + (toggleW - 48) / 2
+        graphics.blit(NineSlice.GUI_ATLAS, toggleDrawX, toggleY, toggleU, 64f, 48, 16, 256, 256)
 
         // Title in top bar
         // Status indicator — top left of bar
@@ -1085,6 +1087,16 @@ class TerminalScreen(
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
+        // Auto-run toggle click
+        val toggleW = cardPanelWidth - 8
+        val toggleX = leftPos + 4
+        val toggleY = topPos + imageHeight - 20
+        if (mx >= toggleX && mx < toggleX + toggleW && my >= toggleY && my < toggleY + 16) {
+            autoRun = !autoRun
+            PlatformServices.clientNetworking.sendToServer(ToggleAutoRunPayload(menu.getTerminalPos(), autoRun))
+            minecraft?.player?.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(), 0.5f, 1.0f)
+            return true
+        }
 
         // Handle new tab input dialog — intercept all clicks
         if (showNewTabInput) {
