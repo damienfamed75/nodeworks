@@ -122,8 +122,6 @@ class DiagnosticScreen(
     private val blockToGroup = mutableMapOf<BlockPos, Int>()
 
     init {
-        imageWidth = 480
-        imageHeight = 300
         inventoryLabelY = -9999
         titleLabelY = -9999
 
@@ -169,6 +167,9 @@ class DiagnosticScreen(
 
     override fun init() {
         super.init()
+        // Scale to fill most of the screen with some margin
+        imageWidth = (width * 0.9f).toInt().coerceIn(320, width - 20)
+        imageHeight = (height * 0.85f).toInt().coerceIn(200, height - 20)
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
