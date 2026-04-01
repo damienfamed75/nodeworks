@@ -181,10 +181,9 @@ class ScriptEditor(
         val borderColor = if (isFocused) 0xFF555555.toInt() else 0xFF333333.toInt()
         graphics.fill(x, y, x + width, y + 1, borderColor)
         graphics.fill(x, y + height - 1, x + width, y + height, borderColor)
-        graphics.fill(x, y, x + 1, y + height, borderColor)
         graphics.fill(x + width - 1, y, x + width, y + height, borderColor)
 
-        graphics.enableScissor(x + 1, y + 1, x + width - 1, y + height - 1)
+        graphics.enableScissor(x, y + 1, x + width - 1, y + height - 1)
 
         val (curLine, curCol) = cursorToLineCol(cursor)
         var inBlockComment = false

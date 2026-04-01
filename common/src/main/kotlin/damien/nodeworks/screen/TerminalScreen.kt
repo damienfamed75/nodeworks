@@ -36,6 +36,7 @@ class TerminalScreen(
     /** Exposed for platform-specific input suppression (e.g., blocking JEI keybinds). */
     fun isEditorFocused(): Boolean = ::editor.isInitialized && editor.isFocused
     private lateinit var autocomplete: AutocompletePopup
+
     // All scanned client-side from block entities in the loaded world
     private val cards: List<CardSnapshot>
     private val itemTags: List<String>
@@ -83,11 +84,13 @@ class TerminalScreen(
 
     // Used to preserve editor text across layout changes
     private var rebuildWithText: String? = null
+
     // Suppresses autocomplete updates during programmatic text insertion
     private var suppressAutocomplete = false
 
     // Undo/redo stacks
     private data class UndoState(val text: String, val cursor: Int)
+
     private val undoStack = ArrayDeque<UndoState>(50)
     private val redoStack = ArrayDeque<UndoState>(50)
     private var lastSavedText = ""
@@ -180,7 +183,8 @@ class TerminalScreen(
         var wrappedIdx = 0
         for (entry in logs) {
             val fullText = "> " + entry.displayMessage
-            val splitCount = font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY).size
+            val splitCount =
+                font.splitter.splitLines(fullText, maxLogWidth, net.minecraft.network.chat.Style.EMPTY).size
             if (clickedWrappedIdx in wrappedIdx until wrappedIdx + splitCount) {
                 if (entry.isError) {
                     // Match [string "name"]:line or name:line
@@ -240,7 +244,8 @@ class TerminalScreen(
         val scannedCards = mutableListOf<CardSnapshot>()
         val scannedVars = mutableListOf<Pair<String, Int>>()
         val scannedLocal = mutableListOf<String>()
-        val scannedLocalApis = mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
+        val scannedLocalApis =
+            mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
         val scannedProcessable = mutableListOf<String>()
         val scannedCraftable = mutableListOf<String>()
         val mc = net.minecraft.client.Minecraft.getInstance()
@@ -269,16 +274,19 @@ class TerminalScreen(
                                 }
                             }
                         }
+
                         is damien.nodeworks.block.entity.VariableBlockEntity -> {
                             if (entity.variableName.isNotEmpty()) {
                                 scannedVars.add(entity.variableName to entity.variableType.ordinal)
                             }
                         }
+
                         is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> {
                             for (info in entity.getAllInstructionSets()) {
                                 if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
                             }
                         }
+
                         is damien.nodeworks.block.entity.ProcessingStorageBlockEntity -> {
                             for (api in entity.getAllProcessingApis()) {
                                 scannedLocal.add(api.name)
@@ -286,6 +294,7 @@ class TerminalScreen(
                                 scannedProcessable.addAll(api.outputItemIds)
                             }
                         }
+
                         is damien.nodeworks.block.entity.ReceiverAntennaBlockEntity -> {
                             if (entity.isPaired) {
                                 val pairedData = entity.getItem(0)
@@ -352,7 +361,7 @@ class TerminalScreen(
         editorY = topPos + topBarHeight + tabBarHeight
         val editorW = imageWidth - cardPanelWidth - editorPadding * 2 - lineNumberWidth
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
-        val editorH = imageHeight - topBarHeight - tabBarHeight - effectiveLogHeight - editorPadding
+        val editorH = imageHeight - topBarHeight - tabBarHeight - effectiveLogHeight - editorPadding - 4
 
         editor = ScriptEditor(font, editorX, editorY, editorW, editorH)
 
@@ -377,12 +386,19 @@ class TerminalScreen(
             }
             // Update autocomplete whenever text changes (unless suppressed during programmatic insertion)
             if (!suppressAutocomplete) {
-                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+                autocomplete.update(
+                    editor.value,
+                    editor.getCursorPosition(),
+                    editorX,
+                    editorY,
+                    editorScrollY = editor.scrollY
+                )
             }
         }
         addRenderableWidget(editor)
 
-        autocomplete = AutocompletePopup(font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis) { scripts }
+        autocomplete =
+            AutocompletePopup(font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 4
@@ -391,35 +407,49 @@ class TerminalScreen(
         val layoutX = runX - 24
 
         // Layout cycle button — shows current layout icon
-        addRenderableWidget(damien.nodeworks.screen.widget.SlicedButton.create(
-            layoutX, btnY, 20, buttonHeight, "", currentLayout.icon
-        ) { _ ->
-            val savedText = editor.value
-            currentLayout = TerminalLayout.entries[(currentLayout.ordinal + 1) % TerminalLayout.entries.size]
-            PlatformServices.clientNetworking.sendToServer(SetLayoutPayload(menu.getTerminalPos(), currentLayout.ordinal))
-            rebuildWithText = savedText
-            rebind()
-        })
+        addRenderableWidget(
+            damien.nodeworks.screen.widget.SlicedButton.create(
+                layoutX, btnY, 20, buttonHeight, "", currentLayout.icon
+            ) { _ ->
+                val savedText = editor.value
+                currentLayout = TerminalLayout.entries[(currentLayout.ordinal + 1) % TerminalLayout.entries.size]
+                PlatformServices.clientNetworking.sendToServer(
+                    SetLayoutPayload(
+                        menu.getTerminalPos(),
+                        currentLayout.ordinal
+                    )
+                )
+                rebuildWithText = savedText
+                rebind()
+            })
 
         // Run button — save current tab text first, then tell server to run
-        addRenderableWidget(damien.nodeworks.screen.widget.SlicedButton.createColored(
-            runX, btnY, 40, buttonHeight, "Run",
-            0xFF55CC55.toInt(), 0xFF88FF88.toInt()
-        ) { _ ->
-            scripts[activeTab] = editor.value
-            PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
-            PlatformServices.clientNetworking.sendToServer(RunScriptPayload(menu.getTerminalPos()))
-            scriptRunning = true
-        })
+        addRenderableWidget(
+            damien.nodeworks.screen.widget.SlicedButton.createColored(
+                runX, btnY, 40, buttonHeight, "Run",
+                0xFF55CC55.toInt(), 0xFF88FF88.toInt()
+            ) { _ ->
+                scripts[activeTab] = editor.value
+                PlatformServices.clientNetworking.sendToServer(
+                    SaveScriptPayload(
+                        menu.getTerminalPos(),
+                        activeTab,
+                        editor.value
+                    )
+                )
+                PlatformServices.clientNetworking.sendToServer(RunScriptPayload(menu.getTerminalPos()))
+                scriptRunning = true
+            })
 
         // Stop button
-        addRenderableWidget(damien.nodeworks.screen.widget.SlicedButton.createColored(
-            stopX, btnY, 40, buttonHeight, "Stop",
-            0xFFCC5555.toInt(), 0xFFFF8888.toInt()
-        ) { _ ->
-            PlatformServices.clientNetworking.sendToServer(StopScriptPayload(menu.getTerminalPos()))
-            scriptRunning = false
-        })
+        addRenderableWidget(
+            damien.nodeworks.screen.widget.SlicedButton.createColored(
+                stopX, btnY, 40, buttonHeight, "Stop",
+                0xFFCC5555.toInt(), 0xFFFF8888.toInt()
+            ) { _ ->
+                PlatformServices.clientNetworking.sendToServer(StopScriptPayload(menu.getTerminalPos()))
+                scriptRunning = false
+            })
 
         // Auto-run toggle is rendered manually in renderBg and handled in mouseClicked
     }
@@ -428,16 +458,22 @@ class TerminalScreen(
         // Main background
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
-        // Top bar
-        NineSlice.TOP_BAR.draw(graphics, leftPos, topPos, imageWidth, topBarHeight)
+        // Sidebar window frame — drawn early so sidebar content renders on top
+        // NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, cardPanelWidth + editorPadding - 3, imageHeight)
 
-        // Tab bar background
+        // Tab bar background — aligned with gutter/editor
         val tabBarY = topPos + topBarHeight
-        val tabBarStartX = leftPos + cardPanelWidth + 1
-        NineSlice.PANEL_INSET.draw(graphics, tabBarStartX, tabBarY, leftPos + imageWidth - tabBarStartX, tabBarHeight)
+        val tabBarStartX = leftPos + cardPanelWidth + editorPadding
+        NineSlice.PANEL_INSET.draw(
+            graphics,
+            tabBarStartX,
+            tabBarY,
+            leftPos + imageWidth - tabBarStartX - editorPadding,
+            tabBarHeight
+        )
 
         // Draw tabs
-        var tabX = tabBarStartX + 2
+        var tabX = tabBarStartX + 3
         for (name in scripts.keys) {
             val tabWidth = font.width(name) + 12 + if (name != "main") 10 else 0 // extra space for ✕
             val isActive = name == activeTab
@@ -469,33 +505,6 @@ class TerminalScreen(
             graphics.drawString(font, "+", tabX + 4, textY, 0xFF888888.toInt(), false)
         }
 
-        // Card panel background
-        NineSlice.ROW_HIGHLIGHT.draw(graphics, leftPos, topPos + topBarHeight, cardPanelWidth, imageHeight - topBarHeight)
-
-        // Card panel separator
-        NineSlice.SEPARATOR.draw(graphics, leftPos + cardPanelWidth, topPos + topBarHeight, 1, imageHeight - topBarHeight)
-
-        // Auto-run toggle at bottom of card panel
-        val toggleW = cardPanelWidth - 8
-        val toggleX = leftPos + 4
-        val toggleY = topPos + imageHeight - 20
-        val labelText = "Autorun"
-        graphics.drawString(font, labelText, toggleX + (toggleW - font.width(labelText)) / 2, toggleY - font.lineHeight - 2, 0xFFAAAAAA.toInt())
-        val toggleU = if (autoRun) 72f else 120f
-        val toggleDrawX = toggleX + (toggleW - 48) / 2
-        graphics.blit(NineSlice.GUI_ATLAS, toggleDrawX, toggleY, toggleU, 64f, 48, 16, 256, 256)
-
-        // Title in top bar
-        // Status indicator — top left of bar
-        val statusX = leftPos + 4
-        val statusIconY = topPos + (topBarHeight - 16) / 2
-        val statusIcon = if (scriptRunning) Icons.CRYSTAL_ACTIVE else Icons.CRYSTAL_INACTIVE
-        statusIcon.draw(graphics, statusX, statusIconY)
-        val statusText = if (scriptRunning) "Running" else "Stopped"
-        val textColor = if (scriptRunning) 0xFFD3FFFF.toInt() else 0xFF888888.toInt()
-        val statusTextY = topPos + (topBarHeight - font.lineHeight) / 2 + 1
-        graphics.drawString(font, statusText, statusX + 18, statusTextY, textColor)
-
         // Card & variable list header
         val cardStartY = topPos + topBarHeight + 6
         graphics.drawString(font, "Network:", leftPos + 6, cardStartY, 0xFFAAAAAA.toInt())
@@ -504,7 +513,9 @@ class TerminalScreen(
         val entries = mutableListOf<SidebarEntry>()
         for (card in cards) {
             val type = card.capability.type
-            val iconU = when (type) { "io" -> 0; "storage" -> 16; "redstone" -> 32; else -> 0 }
+            val iconU = when (type) {
+                "io" -> 0; "storage" -> 16; "redstone" -> 32; else -> 0
+            }
             val color = when (type) {
                 "io" -> 0xFF83E086.toInt()
                 "storage" -> 0xFFAA83E0.toInt()
@@ -534,7 +545,7 @@ class TerminalScreen(
 
             // Hover highlight
             val hovered = mouseX >= leftPos && mouseX < leftPos + cardPanelWidth - 3 &&
-                mouseY >= y && mouseY < y + cardLineHeight
+                    mouseY >= y && mouseY < y + cardLineHeight
             if (hovered) {
                 graphics.fill(leftPos + 1, y, leftPos + cardPanelWidth - 3, y + cardLineHeight, 0x30FFFFFF.toInt())
             }
@@ -547,6 +558,7 @@ class TerminalScreen(
                     32 -> Icons.REDSTONE_CARD
                     else -> Icons.IO_CARD
                 }
+
                 "var" -> Icons.VARIABLE
                 else -> Icons.IO_CARD
             }
@@ -564,13 +576,36 @@ class TerminalScreen(
             val thumbHeight = maxOf(8, scrollbarHeight * maxVisibleCards / entries.size)
             val maxCardScroll = maxOf(1, (entries.size - maxVisibleCards) * cardLineHeight)
             val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
-            NineSlice.SCROLLBAR_THUMB.draw(graphics, leftPos + cardPanelWidth - 3, thumbY.toInt(), 2, (thumbHeight).toInt())
+            NineSlice.SCROLLBAR_THUMB.draw(
+                graphics,
+                leftPos + cardPanelWidth - 3,
+                thumbY.toInt(),
+                2,
+                (thumbHeight).toInt()
+            )
         }
+
+        // Auto-run toggle
+        val toggleW = cardPanelWidth - 8
+        val toggleX = leftPos + 4
+        val toggleY = topPos + imageHeight - 20
+        val labelText = "Autorun"
+        graphics.drawString(
+            font,
+            labelText,
+            toggleX + (toggleW - font.width(labelText)) / 2,
+            toggleY - font.lineHeight - 2,
+            0xFFAAAAAA.toInt()
+        )
+        val toggleU = if (autoRun) 72f else 120f
+        val toggleDrawX = toggleX + (toggleW - 48) / 2
+        graphics.blit(NineSlice.GUI_ATLAS, toggleDrawX, toggleY, toggleU, 64f, 48, 16, 256, 256)
 
         // Log panel
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
         val logX = leftPos + cardPanelWidth + editorPadding
-        val logY = topPos + imageHeight - effectiveLogHeight
+        val logBottomPadding = 4
+        val logY = topPos + imageHeight - effectiveLogHeight - logBottomPadding
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
 
         // Log panel background (single panel for toggle bar + content)
@@ -599,7 +634,9 @@ class TerminalScreen(
             val clearBtnY = logY + 5
             val clearHovered = mouseX >= clearBtnX && mouseX < clearBtnX + btnRenderSize &&
                     mouseY >= clearBtnY && mouseY < clearBtnY + btnRenderSize
-            val clearIcon = when { pressedButton == "clear" -> Icons.TRASH_PRESSED; clearHovered -> Icons.TRASH_HOVER; else -> Icons.TRASH_IDLE }
+            val clearIcon = when {
+                pressedButton == "clear" -> Icons.TRASH_PRESSED; clearHovered -> Icons.TRASH_HOVER; else -> Icons.TRASH_IDLE
+            }
             clearIcon.draw(graphics, clearBtnX - 3, clearBtnY - 3)
 
             // Copy button
@@ -607,7 +644,9 @@ class TerminalScreen(
             val copyBtnY = logY + 5
             val copyHovered = mouseX >= copyBtnX && mouseX < copyBtnX + btnRenderSize &&
                     mouseY >= copyBtnY && mouseY < copyBtnY + btnRenderSize
-            val copyIcon = when { pressedButton == "copy" -> Icons.COPY_PRESSED; copyHovered -> Icons.COPY_HOVER; else -> Icons.COPY_IDLE }
+            val copyIcon = when {
+                pressedButton == "copy" -> Icons.COPY_PRESSED; copyHovered -> Icons.COPY_HOVER; else -> Icons.COPY_IDLE
+            }
             copyIcon.draw(graphics, copyBtnX - 3, copyBtnY - 3)
             // Log content area
             val logContentTop = logY + logCollapsedHeight
@@ -621,6 +660,7 @@ class TerminalScreen(
 
             // Build wrapped lines
             data class WrappedLine(val text: String, val color: Int, val clickable: Boolean = false)
+
             val wrappedLines = mutableListOf<WrappedLine>()
             for (entry in logs) {
                 val color = if (entry.isError) 0xFFFF5555.toInt() else 0xFF999999.toInt()
@@ -647,13 +687,46 @@ class TerminalScreen(
                 graphics.drawString(font, line.text, logX + 3, entryY, line.color)
                 // Underline clickable error lines when hovered
                 if (line.clickable && mouseY >= entryY && mouseY < entryY + logLineHeight &&
-                    mouseX >= logX && mouseX < logX + logW) {
+                    mouseX >= logX && mouseX < logX + logW
+                ) {
                     val textW = font.width(line.text)
-                    graphics.fill(logX + 3, entryY + font.lineHeight, logX + 3 + textW, entryY + font.lineHeight + 1, 0xAAFF5555.toInt())
+                    graphics.fill(
+                        logX + 3,
+                        entryY + font.lineHeight,
+                        logX + 3 + textW,
+                        entryY + font.lineHeight + 1,
+                        0xAAFF5555.toInt()
+                    )
                 }
             }
             graphics.disableScissor()
         }
+
+        // Content border — overlays everything, extends 3px up into top bar
+        // val contentLeft = leftPos + cardPanelWidth + editorPadding - 3
+        // val contentTop = topPos + topBarHeight - 3
+        // val contentRight = leftPos + imageWidth
+        // val contentBottom = topPos + imageHeight
+        // NineSlice.CONTENT_BORDER.draw(
+        //     graphics,
+        //     contentLeft,
+        //     contentTop,
+        //     contentRight - contentLeft,
+        //     contentBottom - contentTop
+        // )
+
+        // Re-draw top bar over everything
+        NineSlice.TOP_BAR.draw(graphics, leftPos, topPos, imageWidth, topBarHeight)
+
+        // Status indicator on top of top bar
+        val statusX = leftPos + 4
+        val statusIconY = topPos + (topBarHeight - 16) / 2
+        val statusIcon = if (scriptRunning) Icons.CRYSTAL_ACTIVE else Icons.CRYSTAL_INACTIVE
+        statusIcon.draw(graphics, statusX, statusIconY)
+        val statusText = if (scriptRunning) "Running" else "Stopped"
+        val statusTextColor = if (scriptRunning) 0xFFD3FFFF.toInt() else 0xFF888888.toInt()
+        val statusTextY = topPos + (topBarHeight - font.lineHeight) / 2 + 1
+        graphics.drawString(font, statusText, statusX + 18, statusTextY, statusTextColor)
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -738,7 +811,8 @@ class TerminalScreen(
 
     private fun renderTypeTooltip(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
         if (mouseX < editorX || mouseX > editorX + editor.width ||
-            mouseY < editorY || mouseY > editorY + editor.height) return
+            mouseY < editorY || mouseY > editorY + editor.height
+        ) return
 
         val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble()) ?: return
 
@@ -760,7 +834,10 @@ class TerminalScreen(
                     "true", "false" -> "boolean"
                     "nil" -> "nil"
                     else -> {
-                        val symbols = autocomplete.getSymbolTable(editor.value, editor.value.substring(0, editor.getCursorPosition()))
+                        val symbols = autocomplete.getSymbolTable(
+                            editor.value,
+                            editor.value.substring(0, editor.getCursorPosition())
+                        )
                         symbols[word]
                     }
                 }
@@ -800,10 +877,14 @@ class TerminalScreen(
         val gutterTop = editorY
         val gutterBottom = editorY + editor.height
 
-        // Gutter background
-        NineSlice.PANEL_INSET.draw(graphics, gutterX, gutterTop, editorX - 1 - gutterX, gutterBottom - gutterTop)
-        // Separator line
-        NineSlice.SEPARATOR.draw(graphics, editorX - 1, gutterTop, 1, gutterBottom - gutterTop)
+        // Gutter background — matches editor background, no separator
+        graphics.fill(gutterX, gutterTop, editorX, gutterBottom, 0xFF0D0D0D.toInt())
+
+        // Border around gutter (top, bottom, left)
+        val borderColor = if (editor.isFocused) 0xFF555555.toInt() else 0xFF333333.toInt()
+        graphics.fill(gutterX, gutterTop, editorX, gutterTop + 1, borderColor)           // top
+        graphics.fill(gutterX, gutterBottom - 1, editorX, gutterBottom, borderColor)      // bottom
+        graphics.fill(gutterX, gutterTop, gutterX + 1, gutterBottom, borderColor)         // left
 
         // Count total lines
         val totalLines = text.count { it == '\n' } + 1
@@ -812,7 +893,8 @@ class TerminalScreen(
         val innerTop = editor.y + 4 - editor.scrollY
 
         // Error highlight fades out over 2 seconds
-        val highlightElapsed = if (errorHighlightLine >= 0) net.minecraft.Util.getMillis() - errorHighlightTime else Long.MAX_VALUE
+        val highlightElapsed =
+            if (errorHighlightLine >= 0) net.minecraft.Util.getMillis() - errorHighlightTime else Long.MAX_VALUE
         val highlightFadeDuration = 2000L
         val highlightAlpha = if (highlightElapsed < highlightFadeDuration) {
             ((1.0 - highlightElapsed.toDouble() / highlightFadeDuration) * 0x40).toInt().coerceIn(0, 0x40)
@@ -854,20 +936,28 @@ class TerminalScreen(
                     showNewTabInput = false
                     newTabName = ""
                 }
+
                 InputConstants.KEY_RETURN -> {
                     if (newTabName.isNotEmpty() && newTabName !in scripts) {
                         scripts[newTabName] = ""
-                        PlatformServices.clientNetworking.sendToServer(CreateScriptTabPayload(menu.getTerminalPos(), newTabName))
+                        PlatformServices.clientNetworking.sendToServer(
+                            CreateScriptTabPayload(
+                                menu.getTerminalPos(),
+                                newTabName
+                            )
+                        )
                         showNewTabInput = false
                         switchTab(newTabName)
                         newTabName = ""
                     }
                 }
+
                 InputConstants.KEY_BACKSPACE -> {
                     if (newTabName.isNotEmpty()) {
                         newTabName = newTabName.dropLast(1)
                     }
                 }
+
                 else -> {
                     // charTyped handles actual character input
                 }
@@ -902,7 +992,8 @@ class TerminalScreen(
 
             // Ctrl+Shift+Z or Ctrl+Y = redo
             if ((keyCode == InputConstants.KEY_Z && (modifiers and 3) == 3) ||
-                (keyCode == InputConstants.KEY_Y && (modifiers and 2) != 0)) {
+                (keyCode == InputConstants.KEY_Y && (modifiers and 2) != 0)
+            ) {
                 if (redoStack.isNotEmpty()) {
                     undoInProgress = true
                     val cursorPos = editor.getCursorPosition()
@@ -922,15 +1013,28 @@ class TerminalScreen(
 
             // Ctrl+Space triggers autocomplete
             if (keyCode == InputConstants.KEY_SPACE && (modifiers and 2) != 0) {
-                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, forced = true, editorScrollY = editor.scrollY)
+                autocomplete.update(
+                    editor.value,
+                    editor.getCursorPosition(),
+                    editorX,
+                    editorY,
+                    forced = true,
+                    editorScrollY = editor.scrollY
+                )
                 return true
             }
 
             // Autocomplete navigation
             if (autocomplete.visible) {
                 when (keyCode) {
-                    InputConstants.KEY_UP -> { autocomplete.moveUp(); return true }
-                    InputConstants.KEY_DOWN -> { autocomplete.moveDown(); return true }
+                    InputConstants.KEY_UP -> {
+                        autocomplete.moveUp(); return true
+                    }
+
+                    InputConstants.KEY_DOWN -> {
+                        autocomplete.moveDown(); return true
+                    }
+
                     InputConstants.KEY_RETURN, InputConstants.KEY_TAB -> {
                         val result = autocomplete.accept()
                         if (result != null) {
@@ -944,7 +1048,13 @@ class TerminalScreen(
                             editor.setValueKeepScroll(newText, deleteStart + result.cursorOffset)
                             suppressAutocomplete = false
                             // Trigger autocomplete at new cursor position (e.g. inside quotes after snippet)
-                            autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+                            autocomplete.update(
+                                editor.value,
+                                editor.getCursorPosition(),
+                                editorX,
+                                editorY,
+                                editorScrollY = editor.scrollY
+                            )
                             return true
                         }
                     }
@@ -969,7 +1079,13 @@ class TerminalScreen(
                     if (pair == "()" || pair == "[]" || pair == "{}" || pair == "\"\"") {
                         val newText = bText.substring(0, bCursor - 1) + bText.substring(bCursor + 1)
                         editor.setValueKeepScroll(newText, bCursor - 1)
-                        autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+                        autocomplete.update(
+                            editor.value,
+                            editor.getCursorPosition(),
+                            editorX,
+                            editorY,
+                            editorScrollY = editor.scrollY
+                        )
                         return true
                     }
                 }
@@ -984,9 +1100,9 @@ class TerminalScreen(
 
                 // Check if the line opens a block that needs `end`
                 val needsEnd = currentLine.matches(Regex("""^\s*(local\s+)?function\s.*""")) ||
-                    currentLine.matches(Regex("""^\s*if\s+.+\s+then\s*$""")) ||
-                    currentLine.matches(Regex("""^\s*for\s+.+\s+do\s*$""")) ||
-                    currentLine.matches(Regex("""^\s*while\s+.+\s+do\s*$"""))
+                        currentLine.matches(Regex("""^\s*if\s+.+\s+then\s*$""")) ||
+                        currentLine.matches(Regex("""^\s*for\s+.+\s+do\s*$""")) ||
+                        currentLine.matches(Regex("""^\s*while\s+.+\s+do\s*$"""))
 
                 if (needsEnd) {
                     // Count block openers vs `end` keywords line-by-line
@@ -1003,7 +1119,13 @@ class TerminalScreen(
                         val newText = text.substring(0, cursor) + "\n$indent    \n${indent}end" + text.substring(cursor)
                         val newCursor = cursor + 1 + indent.length + 4
                         editor.setValueKeepScroll(newText, newCursor)
-                        autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+                        autocomplete.update(
+                            editor.value,
+                            editor.getCursorPosition(),
+                            editorX,
+                            editorY,
+                            editorScrollY = editor.scrollY
+                        )
                         return true
                     }
                 }
@@ -1021,7 +1143,13 @@ class TerminalScreen(
                 InputConstants.KEY_LALT, InputConstants.KEY_RALT
             )
             if (!isNavOrModifierKey) {
-                autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+                autocomplete.update(
+                    editor.value,
+                    editor.getCursorPosition(),
+                    editorX,
+                    editorY,
+                    editorScrollY = editor.scrollY
+                )
             }
             // Always consume key events when editor is focused to prevent other mods from stealing them
             return true
@@ -1058,7 +1186,10 @@ class TerminalScreen(
             if (closingChar != null && editor.hasSelection) {
                 val selStart = editor.selectionStart
                 val selEnd = editor.selectionEnd
-                val newText = text.substring(0, selStart) + codePoint + text.substring(selStart, selEnd) + closingChar + text.substring(selEnd)
+                val newText = text.substring(0, selStart) + codePoint + text.substring(
+                    selStart,
+                    selEnd
+                ) + closingChar + text.substring(selEnd)
                 editor.setValueKeepScroll(newText, selEnd + 2)
                 editor.setSelection(selStart + 1, selEnd + 1)
             } else {
@@ -1076,7 +1207,13 @@ class TerminalScreen(
                     editor.charTyped(codePoint, modifiers)
                 }
             }
-            autocomplete.update(editor.value, editor.getCursorPosition(), editorX, editorY, editorScrollY = editor.scrollY)
+            autocomplete.update(
+                editor.value,
+                editor.getCursorPosition(),
+                editorX,
+                editorY,
+                editorScrollY = editor.scrollY
+            )
             // Always consume when editor is focused to prevent other mods stealing input
             return true
         }
@@ -1137,7 +1274,7 @@ class TerminalScreen(
 
         // Check tab bar BEFORE widgets get the click
         val tabBarY = topPos + topBarHeight
-        val tabBarStartX = leftPos + cardPanelWidth + 1
+        val tabBarStartX = leftPos + cardPanelWidth + editorPadding
         if (my >= tabBarY && my < tabBarY + tabBarHeight && mx >= tabBarStartX) {
             handleTabBarClick(mx, tabBarY, tabBarStartX)
             return true
@@ -1146,7 +1283,7 @@ class TerminalScreen(
         // Check log toggle bar BEFORE widgets get the click
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
         val logX = leftPos + cardPanelWidth + editorPadding
-        val logY = topPos + imageHeight - effectiveLogHeight
+        val logY = topPos + imageHeight - effectiveLogHeight - 4
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
         // Output toolbar buttons
         val btnRenderSize = 10
@@ -1219,13 +1356,19 @@ class TerminalScreen(
     }
 
     private fun handleTabBarClick(mx: Int, tabBarY: Int, tabBarStartX: Int): Boolean {
-        var tabX = tabBarStartX + 2
+        var tabX = tabBarStartX + 3
         for (name in scripts.keys.toList()) {
             val tabWidth = font.width(name) + 12 + if (name != "main") 10 else 0
             if (mx >= tabX && mx < tabX + tabWidth) {
                 if (name != "main" && mx >= tabX + tabWidth - 10) {
                     scripts[activeTab] = editor.value
-                    PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
+                    PlatformServices.clientNetworking.sendToServer(
+                        SaveScriptPayload(
+                            menu.getTerminalPos(),
+                            activeTab,
+                            editor.value
+                        )
+                    )
                     scripts.remove(name)
                     PlatformServices.clientNetworking.sendToServer(DeleteScriptTabPayload(menu.getTerminalPos(), name))
                     if (activeTab == name) {
@@ -1253,7 +1396,7 @@ class TerminalScreen(
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
         if (draggingLogPanel) {
-            val bottomY = topPos + imageHeight
+            val bottomY = topPos + imageHeight - 4 // account for bottom padding
             val minTop = topPos + topBarHeight + tabBarHeight + 40 // leave room for editor
             val newLogY = mouseY.toInt().coerceIn(minTop, bottomY - 30)
             logPanelHeight = (bottomY - newLogY).coerceIn(30, 200)
@@ -1282,7 +1425,13 @@ class TerminalScreen(
         if (name == activeTab) return
         // Save current tab
         scripts[activeTab] = editor.value
-        PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
+        PlatformServices.clientNetworking.sendToServer(
+            SaveScriptPayload(
+                menu.getTerminalPos(),
+                activeTab,
+                editor.value
+            )
+        )
         // Switch
         activeTab = name
         undoStack.clear()
@@ -1294,7 +1443,8 @@ class TerminalScreen(
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
         // Check if mouse is over the card panel
         if (mouseX >= leftPos && mouseX <= leftPos + cardPanelWidth &&
-            mouseY >= topPos + topBarHeight && mouseY <= topPos + imageHeight - 28) {
+            mouseY >= topPos + topBarHeight && mouseY <= topPos + imageHeight - 28
+        ) {
             val cardListTop = topPos + topBarHeight + 18
             val cardListBottom = topPos + imageHeight - 28
             val cardLineHeight = 11
@@ -1311,16 +1461,20 @@ class TerminalScreen(
         // Check if mouse is over the log panel
         if (logCollapsed) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
         val logX = leftPos + cardPanelWidth + editorPadding
-        val logY = topPos + imageHeight - logPanelHeight
+        val logY = topPos + imageHeight - logPanelHeight - 4
         val logW = imageWidth - cardPanelWidth - editorPadding * 2
-        if (mouseX >= logX && mouseX <= logX + logW && mouseY >= logY && mouseY <= topPos + imageHeight) {
+        if (mouseX >= logX && mouseX <= logX + logW && mouseY >= logY && mouseY <= topPos + imageHeight - 4) {
             val logs = TerminalLogBuffer.getLogs(menu.getTerminalPos())
             val logLineHeight = font.lineHeight + 1
             val maxLogWidth = logW - 6
             // Count wrapped lines for scroll calculation
             var totalWrapped = 0
             for (entry in logs) {
-                val split = font.splitter.splitLines("> " + entry.displayMessage, maxLogWidth, net.minecraft.network.chat.Style.EMPTY)
+                val split = font.splitter.splitLines(
+                    "> " + entry.displayMessage,
+                    maxLogWidth,
+                    net.minecraft.network.chat.Style.EMPTY
+                )
                 totalWrapped += split.size
             }
             val maxVisibleLines = (logPanelHeight - 14) / logLineHeight
@@ -1340,7 +1494,13 @@ class TerminalScreen(
 
     override fun onClose() {
         scripts[activeTab] = editor.value
-        PlatformServices.clientNetworking.sendToServer(SaveScriptPayload(menu.getTerminalPos(), activeTab, editor.value))
+        PlatformServices.clientNetworking.sendToServer(
+            SaveScriptPayload(
+                menu.getTerminalPos(),
+                activeTab,
+                editor.value
+            )
+        )
         super.onClose()
     }
 
