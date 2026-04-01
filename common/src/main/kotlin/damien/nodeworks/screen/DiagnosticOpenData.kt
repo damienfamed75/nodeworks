@@ -20,7 +20,8 @@ data class DiagnosticOpenData(
     data class CardInfo(
         val side: Int,
         val cardType: String,
-        val alias: String
+        val alias: String,
+        val adjacentBlockId: String  // e.g. "minecraft:furnace", empty if air
     )
 
     companion object {
@@ -34,7 +35,7 @@ data class DiagnosticOpenData(
                     val connections = (0 until connCount).map { buf.readBlockPos() }
                     val cardCount = buf.readVarInt()
                     val cards = (0 until cardCount).map {
-                        CardInfo(buf.readVarInt(), buf.readUtf(32), buf.readUtf(64))
+                        CardInfo(buf.readVarInt(), buf.readUtf(32), buf.readUtf(64), buf.readUtf(128))
                     }
                     val detailCount = buf.readVarInt()
                     val details = (0 until detailCount).map { buf.readUtf(256) }
@@ -59,6 +60,7 @@ data class DiagnosticOpenData(
                         buf.writeVarInt(card.side)
                         buf.writeUtf(card.cardType, 32)
                         buf.writeUtf(card.alias, 64)
+                        buf.writeUtf(card.adjacentBlockId, 128)
                     }
                     buf.writeVarInt(block.details.size)
                     for (detail in block.details) {
