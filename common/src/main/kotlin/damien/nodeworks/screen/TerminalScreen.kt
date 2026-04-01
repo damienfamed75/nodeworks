@@ -71,6 +71,8 @@ class TerminalScreen(
     // Card panel scroll state
     private var cardScrollOffset = 0
     private var sidebarEntries = listOf<SidebarEntry>()
+    private var sidebarHoverIndex = -1
+    private var sidebarHoverStart = 0L
 
     // Log scroll state
     private var logScrollOffset = 0
@@ -507,7 +509,7 @@ class TerminalScreen(
 
         // Card & variable list header
         val cardStartY = topPos + topBarHeight + 6
-        graphics.drawString(font, "Network:", leftPos + 6, cardStartY, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, "Network:", leftPos + 8, cardStartY, 0xFFAAAAAA.toInt())
 
         // Build combined sidebar entries: cards + variables
         val entries = mutableListOf<SidebarEntry>()
@@ -537,17 +539,17 @@ class TerminalScreen(
 
         sidebarEntries = entries
 
-        graphics.enableScissor(leftPos, cardListTop, leftPos + cardPanelWidth, cardListBottom)
+        graphics.enableScissor(leftPos, cardListTop, leftPos + 82, cardListBottom)
         for ((i, entry) in entries.withIndex()) {
             val y = cardListTop + i * cardLineHeight - cardScrollOffset
             if (y + cardLineHeight < cardListTop) continue
             if (y > cardListBottom) break
 
             // Hover highlight
-            val hovered = mouseX >= leftPos && mouseX < leftPos + cardPanelWidth - 3 &&
+            val hovered = mouseX >= leftPos && mouseX < leftPos + 82 &&
                     mouseY >= y && mouseY < y + cardLineHeight
             if (hovered) {
-                graphics.fill(leftPos + 1, y, leftPos + cardPanelWidth - 3, y + cardLineHeight, 0x30FFFFFF.toInt())
+                graphics.fill(leftPos + 5, y, leftPos + 82, y + cardLineHeight, 0x30FFFFFF.toInt())
             }
 
             // 8x8 icon cropped from center of 16x16 tile in atlas
@@ -562,10 +564,37 @@ class TerminalScreen(
                 "var" -> Icons.VARIABLE
                 else -> Icons.IO_CARD
             }
-            icon.drawSmall(graphics, leftPos + 4, y + 1)
+            icon.drawSmall(graphics, leftPos + 7, y + 1)
 
-            // Name
-            graphics.drawString(font, entry.name, leftPos + 15, y + 1, entry.color)
+            // Track hover state for scroll timing
+            if (hovered) {
+                if (sidebarHoverIndex != i) {
+                    sidebarHoverIndex = i
+                    sidebarHoverStart = System.currentTimeMillis()
+                }
+            }
+
+            // Name — scroll if hovered and text is too long
+            val nameX = leftPos + 18
+            val maxNameW = leftPos + 82 - nameX
+            val nameW = font.width(entry.name)
+            if (hovered && nameW > maxNameW) {
+                val elapsed = System.currentTimeMillis() - sidebarHoverStart
+                val pause = 500L
+                val scrollSpeed = 20.0 // pixels per second
+                val totalScroll = nameW - maxNameW + 10
+                val scrollPx = if (elapsed < pause) 0
+                else ((elapsed - pause) / 1000.0 * scrollSpeed).coerceAtMost(totalScroll.toDouble()).toInt()
+                graphics.enableScissor(nameX, y, leftPos + 82, y + cardLineHeight)
+                graphics.drawString(font, entry.name, nameX - scrollPx, y + 1, entry.color)
+                graphics.disableScissor()
+            } else {
+                graphics.drawString(font, entry.name, nameX, y + 1, entry.color)
+            }
+        }
+        // Reset hover if mouse left the sidebar
+        if (!(mouseX >= leftPos && mouseX < leftPos + 82 && mouseY >= cardListTop && mouseY < cardListBottom)) {
+            sidebarHoverIndex = -1
         }
         graphics.disableScissor()
 
@@ -578,7 +607,7 @@ class TerminalScreen(
             val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
             NineSlice.SCROLLBAR_THUMB.draw(
                 graphics,
-                leftPos + cardPanelWidth - 3,
+                leftPos + 82,
                 thumbY.toInt(),
                 2,
                 (thumbHeight).toInt()
@@ -588,7 +617,7 @@ class TerminalScreen(
         // Auto-run toggle
         val toggleW = cardPanelWidth - 8
         val toggleX = leftPos + 4
-        val toggleY = topPos + imageHeight - 20
+        val toggleY = topPos + imageHeight - 22
         val labelText = "Autorun"
         graphics.drawString(
             font,
@@ -1227,7 +1256,7 @@ class TerminalScreen(
         // Auto-run toggle click
         val toggleW = cardPanelWidth - 8
         val toggleX = leftPos + 4
-        val toggleY = topPos + imageHeight - 20
+        val toggleY = topPos + imageHeight - 22
         if (mx >= toggleX && mx < toggleX + toggleW && my >= toggleY && my < toggleY + 16) {
             autoRun = !autoRun
             PlatformServices.clientNetworking.sendToServer(ToggleAutoRunPayload(menu.getTerminalPos(), autoRun))
@@ -1253,7 +1282,7 @@ class TerminalScreen(
         val cardListTop = cardStartY + 12
         val cardListBottom = topPos + imageHeight - 28
         val cardLineHeight = 11
-        if (mx >= leftPos && mx < leftPos + cardPanelWidth - 3 && my >= cardListTop && my < cardListBottom) {
+        if (mx >= leftPos && mx < leftPos + 82 && my >= cardListTop && my < cardListBottom) {
             val clickedIndex = (my - cardListTop + cardScrollOffset) / cardLineHeight
             if (clickedIndex in sidebarEntries.indices) {
                 val entry = sidebarEntries[clickedIndex]
