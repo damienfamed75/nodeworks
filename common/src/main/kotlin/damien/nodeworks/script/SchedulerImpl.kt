@@ -10,7 +10,10 @@ import org.luaj.vm2.lib.*
  * 1. Scheduled tasks — :tick(fn), :second(fn), :delay(ticks, fn), :cancel(id)
  * 2. Pending jobs — polling callbacks checked each tick (used by job:pull and network:process)
  */
-class SchedulerImpl {
+class SchedulerImpl(
+    /** Called when a scheduled task throws an error. The error is logged but execution continues. */
+    private val onTaskError: ((String) -> Unit)? = null
+) {
 
     private data class ScheduledTask(
         val id: Int,
@@ -39,7 +42,11 @@ class SchedulerImpl {
         val toRun = tasks.filter { tickCount >= it.nextRun }
         val toRemove = mutableListOf<Int>()
         for (task in toRun) {
-            task.callback.call()
+            try {
+                task.callback.call()
+            } catch (e: org.luaj.vm2.LuaError) {
+                onTaskError?.invoke("${e.message}")
+            }
             if (task.repeating) {
                 val index = tasks.indexOf(task)
                 if (index >= 0) tasks[index] = task.copy(nextRun = tickCount + task.interval)

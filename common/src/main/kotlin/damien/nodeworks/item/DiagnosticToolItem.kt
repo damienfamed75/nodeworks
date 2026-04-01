@@ -172,7 +172,36 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             }
         }
 
-        val openData = DiagnosticOpenData(blocks, networkName, networkColor, pos, craftableItems.sorted())
+        // Collect CPU info
+        val cpuInfos = snapshot.cpus.map { cpu ->
+            val entity = level.getBlockEntity(cpu.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity
+            DiagnosticOpenData.CpuInfo(
+                cpu.pos, cpu.bufferUsed, cpu.bufferCapacity, cpu.isBusy,
+                entity?.currentCraftItem ?: "", entity?.isFormed ?: false
+            )
+        }
+
+        // Collect terminal info
+        val terminalInfos = snapshot.terminalPositions.mapNotNull { tPos ->
+            val terminal = level.getBlockEntity(tPos) as? damien.nodeworks.block.entity.TerminalBlockEntity ?: return@mapNotNull null
+            val isRunning = PlatformServices.modState.isScriptRunning(serverLevel, tPos)
+            val handlers = if (isRunning) {
+                val engine = PlatformServices.modState.getScriptEngine(serverLevel, tPos)
+                (engine as? damien.nodeworks.script.ScriptEngine)?.processingHandlers?.keys?.toList() ?: emptyList()
+            } else emptyList()
+            DiagnosticOpenData.TerminalInfo(
+                tPos, isRunning, terminal.scripts.keys.toList(), handlers, terminal.autoRun
+            )
+        }
+
+        // Collect recent errors from the server-side buffer
+        val terminalPosSet = snapshot.terminalPositions.toSet()
+        val currentTick = serverLevel.server.tickCount.toLong()
+        val recentErrors = damien.nodeworks.script.NetworkErrorBuffer.getRecentErrors(terminalPosSet, 10, currentTick).map { err ->
+            DiagnosticOpenData.ErrorEntry(err.terminalPos, err.message, (currentTick - err.tickTime).toInt())
+        }
+
+        val openData = DiagnosticOpenData(blocks, networkName, networkColor, pos, craftableItems.sorted(), cpuInfos, terminalInfos, recentErrors)
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,

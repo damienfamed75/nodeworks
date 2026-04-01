@@ -8,9 +8,35 @@ data class DiagnosticOpenData(
     val blocks: List<NetworkBlock>,
     val networkName: String,
     val networkColor: Int,
-    val networkPos: BlockPos,  // position used for network discovery (for craft preview requests)
-    val craftableItems: List<String> = emptyList()  // all craftable item IDs from instruction sets + processing sets
+    val networkPos: BlockPos,
+    val craftableItems: List<String> = emptyList(),
+    val cpuInfos: List<CpuInfo> = emptyList(),
+    val terminalInfos: List<TerminalInfo> = emptyList(),
+    val recentErrors: List<ErrorEntry> = emptyList()
 ) {
+    data class ErrorEntry(
+        val terminalPos: BlockPos,
+        val message: String,
+        val tickAge: Int  // how many ticks ago this error occurred
+    )
+
+    data class CpuInfo(
+        val pos: BlockPos,
+        val bufferUsed: Int,
+        val bufferCapacity: Int,
+        val isCrafting: Boolean,
+        val currentCraftItem: String,
+        val isFormed: Boolean
+    )
+
+    data class TerminalInfo(
+        val pos: BlockPos,
+        val isRunning: Boolean,
+        val scriptNames: List<String>,
+        val handlers: List<String>,  // registered processing handler names
+        val autoRun: Boolean
+    )
+
     data class NetworkBlock(
         val pos: BlockPos,
         val type: String,
@@ -48,7 +74,26 @@ data class DiagnosticOpenData(
                 val networkPos = buf.readBlockPos()
                 val craftableCount = buf.readVarInt()
                 val craftableItems = (0 until craftableCount).map { buf.readUtf(256) }
-                return DiagnosticOpenData(blocks, networkName, networkColor, networkPos, craftableItems)
+                val cpuCount = buf.readVarInt()
+                val cpuInfos = (0 until cpuCount).map {
+                    CpuInfo(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(), buf.readUtf(64), buf.readBoolean())
+                }
+                val termCount = buf.readVarInt()
+                val terminalInfos = (0 until termCount).map {
+                    val tPos = buf.readBlockPos()
+                    val running = buf.readBoolean()
+                    val sCount = buf.readVarInt()
+                    val sNames = (0 until sCount).map { buf.readUtf(64) }
+                    val hCount = buf.readVarInt()
+                    val handlers = (0 until hCount).map { buf.readUtf(64) }
+                    val autoRun = buf.readBoolean()
+                    TerminalInfo(tPos, running, sNames, handlers, autoRun)
+                }
+                val errCount = buf.readVarInt()
+                val recentErrors = (0 until errCount).map {
+                    ErrorEntry(buf.readBlockPos(), buf.readUtf(512), buf.readVarInt())
+                }
+                return DiagnosticOpenData(blocks, networkName, networkColor, networkPos, craftableItems, cpuInfos, terminalInfos, recentErrors)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: DiagnosticOpenData) {
@@ -77,6 +122,31 @@ data class DiagnosticOpenData(
                 buf.writeBlockPos(data.networkPos)
                 buf.writeVarInt(data.craftableItems.size)
                 for (item in data.craftableItems) buf.writeUtf(item, 256)
+                buf.writeVarInt(data.cpuInfos.size)
+                for (cpu in data.cpuInfos) {
+                    buf.writeBlockPos(cpu.pos)
+                    buf.writeVarInt(cpu.bufferUsed)
+                    buf.writeVarInt(cpu.bufferCapacity)
+                    buf.writeBoolean(cpu.isCrafting)
+                    buf.writeUtf(cpu.currentCraftItem, 64)
+                    buf.writeBoolean(cpu.isFormed)
+                }
+                buf.writeVarInt(data.terminalInfos.size)
+                for (term in data.terminalInfos) {
+                    buf.writeBlockPos(term.pos)
+                    buf.writeBoolean(term.isRunning)
+                    buf.writeVarInt(term.scriptNames.size)
+                    for (s in term.scriptNames) buf.writeUtf(s, 64)
+                    buf.writeVarInt(term.handlers.size)
+                    for (h in term.handlers) buf.writeUtf(h, 64)
+                    buf.writeBoolean(term.autoRun)
+                }
+                buf.writeVarInt(data.recentErrors.size)
+                for (err in data.recentErrors) {
+                    buf.writeBlockPos(err.terminalPos)
+                    buf.writeUtf(err.message, 512)
+                    buf.writeVarInt(err.tickAge)
+                }
             }
         }
     }

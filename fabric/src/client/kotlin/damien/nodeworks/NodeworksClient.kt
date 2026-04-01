@@ -92,6 +92,14 @@ object NodeworksClient : ClientModInitializer {
         // Receive log messages from the server
         ClientPlayNetworking.registerGlobalReceiver(TerminalLogPayload.TYPE) { payload, context ->
             TerminalLogBuffer.addLog(payload.terminalPos, payload.message, payload.isError)
+            // Feed errors to the diagnostic menu if open
+            if (payload.isError) {
+                val player = Minecraft.getInstance().player
+                val menu = player?.containerMenu
+                if (menu is damien.nodeworks.screen.DiagnosticMenu) {
+                    menu.addError(payload.terminalPos, payload.message)
+                }
+            }
         }
 
         ClientPlayNetworking.registerGlobalReceiver(InventorySyncPayload.TYPE) { payload, context ->

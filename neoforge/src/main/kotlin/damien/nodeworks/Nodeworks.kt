@@ -293,6 +293,13 @@ class Nodeworks(modBus: IEventBus) {
         registrar.playToClient(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 TerminalLogBuffer.addLog(payload.terminalPos, payload.message, payload.isError)
+                if (payload.isError) {
+                    val player = net.minecraft.client.Minecraft.getInstance().player
+                    val menu = player?.containerMenu
+                    if (menu is damien.nodeworks.screen.DiagnosticMenu) {
+                        menu.addError(payload.terminalPos, payload.message)
+                    }
+                }
             }
         }
         registrar.playToClient(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC) { payload, context ->
@@ -371,5 +378,9 @@ class NeoForgeModStateService : ModStateService {
 
     override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? {
         return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName)
+    }
+
+    override fun getScriptEngine(level: ServerLevel, pos: BlockPos): Any? {
+        return NeoForgeTerminalPackets.getEngine(level, pos)
     }
 }
