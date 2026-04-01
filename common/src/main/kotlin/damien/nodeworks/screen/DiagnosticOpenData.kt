@@ -7,7 +7,8 @@ import net.minecraft.network.codec.StreamCodec
 data class DiagnosticOpenData(
     val blocks: List<NetworkBlock>,
     val networkName: String,
-    val networkColor: Int
+    val networkColor: Int,
+    val networkPos: BlockPos  // position used for network discovery (for craft preview requests)
 ) {
     data class NetworkBlock(
         val pos: BlockPos,
@@ -43,7 +44,8 @@ data class DiagnosticOpenData(
                 }
                 val networkName = buf.readUtf(64)
                 val networkColor = buf.readVarInt()
-                return DiagnosticOpenData(blocks, networkName, networkColor)
+                val networkPos = buf.readBlockPos()
+                return DiagnosticOpenData(blocks, networkName, networkColor, networkPos)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: DiagnosticOpenData) {
@@ -69,6 +71,7 @@ data class DiagnosticOpenData(
                 }
                 buf.writeUtf(data.networkName, 64)
                 buf.writeVarInt(data.networkColor)
+                buf.writeBlockPos(data.networkPos)
             }
         }
     }

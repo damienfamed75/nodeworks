@@ -267,6 +267,18 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToServer(CraftPreviewRequestPayload.TYPE, CraftPreviewRequestPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, payload.networkPos)
+                val tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(payload.itemId, 1, level, snapshot)
+                val serverPlayer = player as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
+                val packet = net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(CraftPreviewResponsePayload(payload.containerId, tree))
+                serverPlayer.connection.send(packet)
+            }
+        }
+
         registrar.playToServer(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
@@ -297,6 +309,16 @@ class Nodeworks(modBus: IEventBus) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
                     menu.clientBufferContents = payload.entries
+                }
+            }
+        }
+
+        registrar.playToClient(CraftPreviewResponsePayload.TYPE, CraftPreviewResponsePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.DiagnosticMenu && menu.containerId == payload.containerId) {
+                    menu.craftTree = payload.tree
                 }
             }
         }

@@ -248,3 +248,61 @@ data class CancelCraftPayload(val pos: BlockPos) : CustomPacketPayload {
     }
     override fun type() = TYPE
 }
+
+/** C2S: Request a craft preview tree for the diagnostic tool. */
+data class CraftPreviewRequestPayload(val containerId: Int, val networkPos: BlockPos, val itemId: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CraftPreviewRequestPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "craft_preview_request"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CraftPreviewRequestPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeBlockPos(p.networkPos); buf.writeUtf(p.itemId, 256) },
+            { buf -> CraftPreviewRequestPayload(buf.readVarInt(), buf.readBlockPos(), buf.readUtf(256)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** S2C: Craft preview tree response. Tree is serialized recursively. */
+data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode?) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CraftPreviewResponsePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "craft_preview_response"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CraftPreviewResponsePayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                buf.writeBoolean(p.tree != null)
+                if (p.tree != null) writeNode(buf, p.tree)
+            },
+            { buf ->
+                val containerId = buf.readVarInt()
+                val hasTree = buf.readBoolean()
+                val tree = if (hasTree) readNode(buf) else null
+                CraftPreviewResponsePayload(containerId, tree)
+            }
+        )
+
+        private fun writeNode(buf: FriendlyByteBuf, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode) {
+            buf.writeUtf(node.itemId, 256)
+            buf.writeUtf(node.itemName, 128)
+            buf.writeVarInt(node.count)
+            buf.writeUtf(node.source, 32)
+            buf.writeUtf(node.templateName, 64)
+            buf.writeUtf(node.resolvedBy, 32)
+            buf.writeVarInt(node.inStorage)
+            buf.writeVarInt(node.children.size)
+            for (child in node.children) writeNode(buf, child)
+        }
+
+        private fun readNode(buf: FriendlyByteBuf): damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode {
+            val itemId = buf.readUtf(256)
+            val itemName = buf.readUtf(128)
+            val count = buf.readVarInt()
+            val source = buf.readUtf(32)
+            val templateName = buf.readUtf(64)
+            val resolvedBy = buf.readUtf(32)
+            val inStorage = buf.readVarInt()
+            val childCount = buf.readVarInt()
+            val children = (0 until childCount).map { readNode(buf) }
+            return damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(itemId, itemName, count, source, templateName, resolvedBy, inStorage, children)
+        }
+    }
+    override fun type() = TYPE
+}
