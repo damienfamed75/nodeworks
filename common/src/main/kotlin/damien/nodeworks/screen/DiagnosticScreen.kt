@@ -86,7 +86,7 @@ class DiagnosticScreen(
 
     // Topology view state
     private var panX = 0f
-    private var panY = 0f
+    private var panY = 80f
     private var zoom = 2f
     private var dragging = false
     private var lastDragX = 0.0
@@ -116,6 +116,7 @@ class DiagnosticScreen(
 
     /** Groups of blocks stacked at the same XZ. Key = group ID, Value = list of blocks sorted by Y. */
     private data class StackGroup(val blocks: List<DiagnosticOpenData.NetworkBlock>, val displayPos: Pair<Float, Float>)
+
     private val stackGroups = mutableListOf<StackGroup>()
     private val expandedGroups = mutableSetOf<Int>() // indices of expanded groups
 
@@ -175,7 +176,14 @@ class DiagnosticScreen(
         topPos = (height - imageHeight) / 2
 
         // Craft preview search field
-        craftItemField = net.minecraft.client.gui.components.EditBox(font, contentLeft + 4, contentTop + 4, 200, 14, net.minecraft.network.chat.Component.literal("Search recipes...")).also {
+        craftItemField = net.minecraft.client.gui.components.EditBox(
+            font,
+            contentLeft + 4,
+            contentTop + 4,
+            200,
+            14,
+            net.minecraft.network.chat.Component.literal("Search recipes...")
+        ).also {
             it.setMaxLength(128)
             it.setBordered(true)
             it.visible = activeTab == 2
@@ -294,7 +302,14 @@ class DiagnosticScreen(
                 if (block.pos.asLong() > conn.asLong()) continue
                 val sx2 = blockScreenX(conn)
                 val sy2 = blockScreenY(conn)
-                drawLine(graphics, sx1.roundToInt(), sy1.roundToInt(), sx2.roundToInt(), sy2.roundToInt(), networkLineColor)
+                drawLine(
+                    graphics,
+                    sx1.roundToInt(),
+                    sy1.roundToInt(),
+                    sx2.roundToInt(),
+                    sy2.roundToInt(),
+                    networkLineColor
+                )
             }
         }
 
@@ -341,7 +356,13 @@ class DiagnosticScreen(
                 val btnX = rectX + totalW - 9
                 val btnY = rectY + 1
                 val btnHovered = mouseX >= btnX && mouseX < btnX + 8 && mouseY >= btnY && mouseY < btnY + 8
-                graphics.fill(btnX, btnY, btnX + 8, btnY + 8, if (btnHovered) 0xFF555555.toInt() else 0xFF333333.toInt())
+                graphics.fill(
+                    btnX,
+                    btnY,
+                    btnX + 8,
+                    btnY + 8,
+                    if (btnHovered) 0xFF555555.toInt() else 0xFF333333.toInt()
+                )
                 graphics.drawString(font, "-", btnX + 2, btnY, WHITE, false)
                 if (btnHovered) hoveredGroupIdx = groupIdx
             } else {
@@ -379,7 +400,8 @@ class DiagnosticScreen(
 
                 // Hover on stacked group — clicking expands
                 if (mouseX >= sx - 8 && mouseX < sx + 8 + totalOffset &&
-                    mouseY >= sy - 8 && mouseY < sy + 8 + totalOffset) {
+                    mouseY >= sy - 8 && mouseY < sy + 8 + totalOffset
+                ) {
                     hoveredGroupIdx = groupIdx
                 }
             }
@@ -389,7 +411,13 @@ class DiagnosticScreen(
 
         // Zoom indicator
         val zoomStr = String.format("%.0f%%", zoom * 100)
-        graphics.drawString(font, zoomStr, contentLeft + contentW - font.width(zoomStr) - 4, contentTop + contentH - font.lineHeight - 2, DIM)
+        graphics.drawString(
+            font,
+            zoomStr,
+            contentLeft + contentW - font.width(zoomStr) - 4,
+            contentTop + contentH - font.lineHeight - 2,
+            DIM
+        )
     }
 
     // ========== Craft Preview Tab ==========
@@ -410,7 +438,13 @@ class DiagnosticScreen(
         renderCraftAutocomplete(graphics, mouseX, mouseY)
 
         if (tree == null) {
-            graphics.drawString(font, "Enter an item ID above to preview crafting", contentLeft + 8, treeAreaTop + 8, DIM)
+            graphics.drawString(
+                font,
+                "Enter an item ID above to preview crafting",
+                contentLeft + 8,
+                treeAreaTop + 8,
+                DIM
+            )
             return
         }
 
@@ -504,8 +538,20 @@ class DiagnosticScreen(
 
         // Scroll indicator
         if (craftAutocompleteSuggestions.size > craftDropdownMaxVisible) {
-            val countStr = "${craftAutocompleteScroll + 1}-${minOf(craftAutocompleteScroll + visibleCount, craftAutocompleteSuggestions.size)} of ${craftAutocompleteSuggestions.size}"
-            graphics.drawString(font, countStr, dropX + dropW - font.width(countStr) - 4, dropY + dropH - itemH + 2, DIM, false)
+            val countStr = "${craftAutocompleteScroll + 1}-${
+                minOf(
+                    craftAutocompleteScroll + visibleCount,
+                    craftAutocompleteSuggestions.size
+                )
+            } of ${craftAutocompleteSuggestions.size}"
+            graphics.drawString(
+                font,
+                countStr,
+                dropX + dropW - font.width(countStr) - 4,
+                dropY + dropH - itemH + 2,
+                DIM,
+                false
+            )
         }
 
         graphics.pose().popPose()
@@ -513,7 +559,13 @@ class DiagnosticScreen(
 
     private var craftTreeTextY = 0 // tracks current Y for text rendering
 
-    private fun renderCraftTreeText(graphics: GuiGraphics, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode, x: Int, startY: Int, depth: Int) {
+    private fun renderCraftTreeText(
+        graphics: GuiGraphics,
+        node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode,
+        x: Int,
+        startY: Int,
+        depth: Int
+    ) {
         val lineH = font.lineHeight + 2
         val indent = depth * 12
         var y = if (depth == 0) startY else craftTreeTextY
@@ -671,6 +723,7 @@ class DiagnosticScreen(
     // ========== Jobs & Errors Tab ==========
 
     private var jobsScrollY = 0
+
     /** Rendered error click regions: (y start, y end, terminal pos) */
     private val errorClickRegions = mutableListOf<Triple<Int, Int, BlockPos>>()
 
@@ -706,7 +759,14 @@ class DiagnosticScreen(
                 }
                 graphics.drawString(font, status, contentLeft + 8, y, statusColor, false)
                 y += lineH
-                graphics.drawString(font, "Buffer: ${cpu.bufferUsed}/${cpu.bufferCapacity}", contentLeft + 12, y, DIM, false)
+                graphics.drawString(
+                    font,
+                    "Buffer: ${cpu.bufferUsed}/${cpu.bufferCapacity}",
+                    contentLeft + 12,
+                    y,
+                    DIM,
+                    false
+                )
                 y += lineH
                 val posStr = "(${cpu.pos.x}, ${cpu.pos.y}, ${cpu.pos.z})"
                 graphics.drawString(font, posStr, contentLeft + 12, y, DIM, false)
@@ -737,7 +797,14 @@ class DiagnosticScreen(
                 y += lineH
 
                 if (term.handlers.isNotEmpty()) {
-                    graphics.drawString(font, "Handlers: ${term.handlers.joinToString(", ")}", contentLeft + 12, y, 0xFFAA83E0.toInt(), false)
+                    graphics.drawString(
+                        font,
+                        "Handlers: ${term.handlers.joinToString(", ")}",
+                        contentLeft + 12,
+                        y,
+                        0xFFAA83E0.toInt(),
+                        false
+                    )
                     y += lineH
                 }
 
@@ -772,7 +839,8 @@ class DiagnosticScreen(
                 val isHovered = mouseX >= splitX + 2 && mouseX < errorRight
 
                 // Time + position header
-                val headerColor = if (isHovered && mouseY >= entryStart && mouseY < entryStart + lineH) 0xFFAABBCC.toInt() else DIM
+                val headerColor =
+                    if (isHovered && mouseY >= entryStart && mouseY < entryStart + lineH) 0xFFAABBCC.toInt() else DIM
                 graphics.drawString(font, "$ageStr — $posStr", splitX + 6, ey, headerColor, false)
                 ey += lineH
 
@@ -791,7 +859,13 @@ class DiagnosticScreen(
                     graphics.fill(splitX + 3, entryStart - 1, errorRight - 2, entryEnd, 0x15FFFFFF.toInt())
                     // Underline the position text to indicate clickability
                     val posW = font.width("$ageStr — $posStr")
-                    graphics.fill(splitX + 6, entryStart + lineH - 2, splitX + 6 + posW, entryStart + lineH - 1, 0x60FFFFFF.toInt())
+                    graphics.fill(
+                        splitX + 6,
+                        entryStart + lineH - 2,
+                        splitX + 6 + posW,
+                        entryStart + lineH - 1,
+                        0x60FFFFFF.toInt()
+                    )
                 }
 
                 errorClickRegions.add(Triple(entryStart, entryEnd, error.terminalPos))
@@ -845,7 +919,14 @@ class DiagnosticScreen(
 
     /** Build sections for the inspector panel. Each section has a title and list of lines. */
     /** iconU >= 0 = draw card icon from atlas. blockItemId = render block's item icon. indent = tree depth. */
-    private data class InspectorLine(val text: String, val color: Int, val iconU: Int = -1, val blockItemId: String = "", val indent: Int = 0)
+    private data class InspectorLine(
+        val text: String,
+        val color: Int,
+        val iconU: Int = -1,
+        val blockItemId: String = "",
+        val indent: Int = 0
+    )
+
     private data class InspectorSection(val title: String?, val lines: List<InspectorLine>)
 
     private val CARD_ICON_U = mapOf("io" to 0, "storage" to 16, "redstone" to 32)
@@ -854,10 +935,14 @@ class DiagnosticScreen(
         val sections = mutableListOf<InspectorSection>()
 
         // Info section
-        sections.add(InspectorSection("Info", listOf(
-            InspectorLine("Position: ${block.pos.x}, ${block.pos.y}, ${block.pos.z}", GRAY),
-            InspectorLine("Connections: ${block.connections.size}", GRAY)
-        )))
+        sections.add(
+            InspectorSection(
+                "Info", listOf(
+                    InspectorLine("Position: ${block.pos.x}, ${block.pos.y}, ${block.pos.z}", GRAY),
+                    InspectorLine("Connections: ${block.connections.size}", GRAY)
+                )
+            )
+        )
 
         // Cards section grouped by face (nodes only)
         if (block.cards.isNotEmpty()) {
@@ -916,7 +1001,10 @@ class DiagnosticScreen(
     private fun renderInspector(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
         val sel = selectedBlock ?: return
         val bounds = getInspectorBounds() ?: return
-        val px = bounds[0]; val py = bounds[1]; val pw = bounds[2]; val ph = bounds[3]
+        val px = bounds[0];
+        val py = bounds[1];
+        val pw = bounds[2];
+        val ph = bounds[3]
 
         // Border
         graphics.fill(px - 1, py - 1, px + pw + 1, py + ph + 1, SEPARATOR)
@@ -939,9 +1027,10 @@ class DiagnosticScreen(
         val pinX = px + pw - 24
         val pinY = py + 1
         val pinHovered = mouseX >= pinX && mouseX < pinX + 10 && mouseY >= pinY && mouseY < pinY + 10
-        val pinIconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
-        // Use checkmark icon (u=0) for pinned, arrow-right (u=32) for unpinned
-        val pinU = if (isPinned) 0f else 32f
+        val pinIconsTexture =
+            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+        // 5th column (u=64) = unpinned, 6th column (u=80) = pinned
+        val pinU = if (isPinned) 80f else 64f
         val tint = if (isPinned) 0xFF55CCFF.toInt() else if (pinHovered) WHITE else GRAY
         val tr = ((tint shr 16) and 0xFF) / 255f
         val tg = ((tint shr 8) and 0xFF) / 255f
@@ -962,7 +1051,8 @@ class DiagnosticScreen(
 
         // Sections
         val sections = buildInspectorSections(sel)
-        val iconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+        val iconsTexture =
+            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
         var curY = sepY + 3
         var rowIndex = 0
         for ((sectionIdx, section) in sections.withIndex()) {
@@ -1011,8 +1101,10 @@ class DiagnosticScreen(
 
                 // Card type icon from atlas
                 if (line.iconU >= 0) {
-                    graphics.blit(iconsTexture, textX, curY, 8, 8,
-                        (line.iconU + 4).toFloat(), 20f, 8, 8, 256, 256)
+                    graphics.blit(
+                        iconsTexture, textX, curY, 8, 8,
+                        (line.iconU + 4).toFloat(), 20f, 8, 8, 256, 256
+                    )
                     textX += 12
                 }
 
@@ -1024,7 +1116,13 @@ class DiagnosticScreen(
                     val swatchX = textX + font.width("Color: ")
                     val swatchSize = font.lineHeight - 2
                     // Swatch with border
-                    graphics.fill(swatchX - 1, curY - 1, swatchX + swatchSize + 1, curY + swatchSize + 1, 0xFF444444.toInt())
+                    graphics.fill(
+                        swatchX - 1,
+                        curY - 1,
+                        swatchX + swatchSize + 1,
+                        curY + swatchSize + 1,
+                        0xFF444444.toInt()
+                    )
                     graphics.fill(swatchX, curY, swatchX + swatchSize, curY + swatchSize, swatchColor)
                     // Hex label after swatch
                     val hexStr = "#${Integer.toHexString(colorVal).uppercase().padStart(6, '0')}"
@@ -1040,11 +1138,60 @@ class DiagnosticScreen(
                     // Draw glow icon (same as NetworkControllerScreen)
                     when (glowStyle) {
                         0 -> graphics.fill(iconCx - 3, iconCy - 3, iconCx + 3, iconCy + 3, glowColor)
-                        1 -> { graphics.fill(iconCx - 2, iconCy - 3, iconCx + 2, iconCy + 3, glowColor); graphics.fill(iconCx - 3, iconCy - 2, iconCx + 3, iconCy + 2, glowColor) }
+                        1 -> {
+                            graphics.fill(iconCx - 2, iconCy - 3, iconCx + 2, iconCy + 3, glowColor); graphics.fill(
+                                iconCx - 3,
+                                iconCy - 2,
+                                iconCx + 3,
+                                iconCy + 2,
+                                glowColor
+                            )
+                        }
+
                         2 -> graphics.fill(iconCx - 1, iconCy - 1, iconCx + 1, iconCy + 1, glowColor)
-                        3 -> { graphics.fill(iconCx - 3, iconCy - 3, iconCx - 1, iconCy - 1, glowColor); graphics.fill(iconCx + 1, iconCy - 3, iconCx + 3, iconCy - 1, glowColor); graphics.fill(iconCx - 1, iconCy - 1, iconCx + 1, iconCy + 1, glowColor); graphics.fill(iconCx - 2, iconCy + 1, iconCx + 2, iconCy + 3, glowColor) }
-                        4 -> { graphics.fill(iconCx - 3, iconCy - 4, iconCx - 2, iconCy - 2, glowColor); graphics.fill(iconCx + 2, iconCy - 4, iconCx + 3, iconCy - 2, glowColor); graphics.fill(iconCx - 2, iconCy - 2, iconCx + 2, iconCy + 2, glowColor) }
-                        5 -> { for (j in -3..3) { graphics.fill(iconCx + j, iconCy + j, iconCx + j + 1, iconCy + j + 1, 0xFF666666.toInt()); graphics.fill(iconCx + j, iconCy - j, iconCx + j + 1, iconCy - j + 1, 0xFF666666.toInt()) } }
+                        3 -> {
+                            graphics.fill(iconCx - 3, iconCy - 3, iconCx - 1, iconCy - 1, glowColor); graphics.fill(
+                                iconCx + 1,
+                                iconCy - 3,
+                                iconCx + 3,
+                                iconCy - 1,
+                                glowColor
+                            ); graphics.fill(iconCx - 1, iconCy - 1, iconCx + 1, iconCy + 1, glowColor); graphics.fill(
+                                iconCx - 2,
+                                iconCy + 1,
+                                iconCx + 2,
+                                iconCy + 3,
+                                glowColor
+                            )
+                        }
+
+                        4 -> {
+                            graphics.fill(iconCx - 3, iconCy - 4, iconCx - 2, iconCy - 2, glowColor); graphics.fill(
+                                iconCx + 2,
+                                iconCy - 4,
+                                iconCx + 3,
+                                iconCy - 2,
+                                glowColor
+                            ); graphics.fill(iconCx - 2, iconCy - 2, iconCx + 2, iconCy + 2, glowColor)
+                        }
+
+                        5 -> {
+                            for (j in -3..3) {
+                                graphics.fill(
+                                    iconCx + j,
+                                    iconCy + j,
+                                    iconCx + j + 1,
+                                    iconCy + j + 1,
+                                    0xFF666666.toInt()
+                                ); graphics.fill(
+                                    iconCx + j,
+                                    iconCy - j,
+                                    iconCx + j + 1,
+                                    iconCy - j + 1,
+                                    0xFF666666.toInt()
+                                )
+                            }
+                        }
                     }
                 } else {
                     // Render text — split "key: value" for color differentiation
@@ -1118,7 +1265,8 @@ class DiagnosticScreen(
 
         // Card icons in a visible pill below the block
         if (block.cards.isNotEmpty()) {
-            val iconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+            val iconsTexture =
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
             val uniqueTypes = block.cards.map { it.cardType }.distinct()
             val iconSize = 10
             val iconSpacing = 0
@@ -1136,8 +1284,10 @@ class DiagnosticScreen(
                 val iconX = pillX + i * (iconSize + iconSpacing)
                 val iconY = pillY
                 // Render the full 16x16 atlas tile scaled down to iconSize
-                graphics.blit(iconsTexture, iconX, iconY, iconSize, iconSize,
-                    iconU.toFloat(), 16f, 16, 16, 256, 256)
+                graphics.blit(
+                    iconsTexture, iconX, iconY, iconSize, iconSize,
+                    iconU.toFloat(), 16f, 16, 16, 256, 256
+                )
             }
         }
 
@@ -1154,9 +1304,19 @@ class DiagnosticScreen(
             graphics.fill(sx + 8, sy - 9, sx + 9, sy + 9, selColor)
         }
 
+        // Pinned indicator icon (top-left corner of block)
+        if (damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == block.pos) {
+            val pinIconTex =
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.33f, 0.8f, 1f, 1f) // cyan tint
+            graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256)
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        }
+
         // Hover detection (16x16 area)
         if (mouseX >= sx - 8 && mouseX < sx + 8 &&
-            mouseY >= sy - 8 && mouseY < sy + 8) {
+            mouseY >= sy - 8 && mouseY < sy + 8
+        ) {
             hoveredBlock = block
         }
     }
@@ -1192,20 +1352,29 @@ class DiagnosticScreen(
                     265 -> { // UP
                         craftAutocompleteSelected = (craftAutocompleteSelected - 1).coerceAtLeast(0)
                         // Scroll to keep selected visible
-                        if (craftAutocompleteSelected < craftAutocompleteScroll) craftAutocompleteScroll = craftAutocompleteSelected
+                        if (craftAutocompleteSelected < craftAutocompleteScroll) craftAutocompleteScroll =
+                            craftAutocompleteSelected
                         return true
                     }
+
                     264 -> { // DOWN
-                        craftAutocompleteSelected = (craftAutocompleteSelected + 1).coerceAtMost(craftAutocompleteSuggestions.lastIndex)
-                        if (craftAutocompleteSelected >= craftAutocompleteScroll + craftDropdownMaxVisible) craftAutocompleteScroll = craftAutocompleteSelected - craftDropdownMaxVisible + 1
+                        craftAutocompleteSelected =
+                            (craftAutocompleteSelected + 1).coerceAtMost(craftAutocompleteSuggestions.lastIndex)
+                        if (craftAutocompleteSelected >= craftAutocompleteScroll + craftDropdownMaxVisible) craftAutocompleteScroll =
+                            craftAutocompleteSelected - craftDropdownMaxVisible + 1
                         return true
                     }
+
                     257, 258 -> { // ENTER or TAB — accept and request preview
                         val selected = craftAutocompleteSuggestions[craftAutocompleteSelected]
                         field.value = selected
                         craftAutocompleteSuggestions = emptyList()
                         damien.nodeworks.platform.PlatformServices.clientNetworking.sendToServer(
-                            damien.nodeworks.network.CraftPreviewRequestPayload(menu.containerId, menu.clickedPos, selected)
+                            damien.nodeworks.network.CraftPreviewRequestPayload(
+                                menu.containerId,
+                                menu.clickedPos,
+                                selected
+                            )
                         )
                         return true
                     }
@@ -1301,7 +1470,10 @@ class DiagnosticScreen(
         if (activeTab == 0 && selectedBlock != null) {
             val bounds = getInspectorBounds()
             if (bounds != null) {
-                val px = bounds[0]; val py = bounds[1]; val pw = bounds[2]; val ph = bounds[3]
+                val px = bounds[0];
+                val py = bounds[1];
+                val pw = bounds[2];
+                val ph = bounds[3]
                 // Pin button
                 val pinX = px + pw - 24
                 val pinY = py + 1
@@ -1337,7 +1509,8 @@ class DiagnosticScreen(
 
         // Click in content area — start drag (don't deselect inspector)
         if (activeTab == 0 && mx >= contentLeft && mx < contentLeft + contentW &&
-            my >= contentTop && my < contentTop + contentH) {
+            my >= contentTop && my < contentTop + contentH
+        ) {
             dragging = true
             lastDragX = mouseX
             lastDragY = mouseY
@@ -1347,7 +1520,8 @@ class DiagnosticScreen(
         // Craft graph drag
         val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
         if (activeTab == 2 && mx >= splitX && mx < contentLeft + contentW &&
-            my >= contentTop + 22 && my < contentTop + contentH) {
+            my >= contentTop + 22 && my < contentTop + contentH
+        ) {
             craftGraphDragging = true
             craftGraphLastDragX = mouseX
             craftGraphLastDragY = mouseY
@@ -1390,7 +1564,8 @@ class DiagnosticScreen(
         }
 
         if (activeTab == 0 && mouseX >= contentLeft && mouseX < contentLeft + contentW &&
-            mouseY >= contentTop && mouseY < contentTop + contentH) {
+            mouseY >= contentTop && mouseY < contentTop + contentH
+        ) {
             val oldZoom = zoom
             zoom = (zoom * (1f + scrollY.toFloat() * 0.15f)).coerceIn(0.3f, 8f)
 
@@ -1422,7 +1597,8 @@ class DiagnosticScreen(
         }
         // Jobs tab scrolling
         if (activeTab == 3 && mouseX >= contentLeft && mouseX < contentLeft + contentW &&
-            mouseY >= contentTop && mouseY < contentTop + contentH) {
+            mouseY >= contentTop && mouseY < contentTop + contentH
+        ) {
             jobsScrollY = (jobsScrollY - scrollY.toInt() * 10).coerceAtLeast(0)
             return true
         }
