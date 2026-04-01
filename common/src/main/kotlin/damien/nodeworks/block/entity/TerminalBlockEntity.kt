@@ -123,6 +123,7 @@ class TerminalBlockEntity(
         }
     }
 
+
     override fun setRemoved() {
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val currentLevel = level
@@ -130,7 +131,9 @@ class TerminalBlockEntity(
             PlatformServices.modState.stopScript(currentLevel, worldPosition)
             NodeConnectionHelper.removeAllConnections(currentLevel, this)
             NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
-            dropAsItem(currentLevel)
+            if (blockDestroyed) {
+                dropAsItem(currentLevel)
+            }
         }
         super.setRemoved()
     }

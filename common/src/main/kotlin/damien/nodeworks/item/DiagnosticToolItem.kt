@@ -38,6 +38,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
 
         // Build topology data for the client
         val blocks = mutableListOf<DiagnosticOpenData.NetworkBlock>()
+        val aliasCounters = mutableMapOf<String, Int>() // for auto-generating card aliases
         val visited = mutableSetOf<net.minecraft.core.BlockPos>()
         val queue = ArrayDeque<net.minecraft.core.BlockPos>()
         queue.add(pos)
@@ -68,8 +69,18 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                 val cardList = mutableListOf<DiagnosticOpenData.CardInfo>()
                 for (side in Direction.entries) {
                     for (card in entity.getCards(side)) {
-                        val alias = card.alias ?: ""
-                        cardList.add(DiagnosticOpenData.CardInfo(side.ordinal, card.card.cardType, alias))
+                        val alias = card.alias ?: run {
+                            val type = card.card.cardType
+                            val count = aliasCounters.getOrDefault(type, 0) + 1
+                            aliasCounters[type] = count
+                            "${type}_$count"
+                        }
+                        val adjPos = blockPos.relative(side)
+                        val adjState = level.getBlockState(adjPos)
+                        val adjBlockId = if (!adjState.isAir) {
+                            net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(adjState.block)?.toString() ?: ""
+                        } else ""
+                        cardList.add(DiagnosticOpenData.CardInfo(side.ordinal, card.card.cardType, alias, adjBlockId))
                     }
                 }
                 cardList
@@ -81,6 +92,10 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                 is NetworkControllerBlockEntity -> {
                     if (entity.networkName.isNotEmpty()) details.add("Name: ${entity.networkName}")
                     details.add("Network ID: ${entity.networkId.toString().take(8)}...")
+                    details.add("__color:${entity.networkColor}")
+                    details.add("__glow:${entity.nodeGlowStyle}:${entity.networkColor}")
+                    val redstoneNames = arrayOf("Ignored", "Active High", "Active Low")
+                    details.add("Redstone: ${redstoneNames.getOrElse(entity.redstoneMode) { "Unknown" }}")
                 }
                 is damien.nodeworks.block.entity.TerminalBlockEntity -> {
                     val scriptCount = entity.scripts.size

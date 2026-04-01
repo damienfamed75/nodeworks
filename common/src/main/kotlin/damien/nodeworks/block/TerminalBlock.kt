@@ -104,6 +104,16 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
+        val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
+        entity?.blockDestroyed = true
         return super.playerWillDestroy(level, pos, state, player)
+    }
+
+    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
+        if (!state.`is`(newState.block)) {
+            val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
+            if (entity != null) entity.blockDestroyed = true
+        }
+        super.onRemove(state, level, pos, newState, movedByPiston)
     }
 }
