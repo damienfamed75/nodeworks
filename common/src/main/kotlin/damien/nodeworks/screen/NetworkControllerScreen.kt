@@ -299,6 +299,20 @@ class NetworkControllerScreen(
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
+        // Deselect name field if clicking outside it and the Set button
+        if (nameField.isFocused) {
+            val nameRow = listTop + 0 * ROW_H - scrollOffset
+            val controlX = listLeft + LABEL_W + 4
+            val controlY = nameRow + (ROW_H - 16) / 2 - 1
+            val setBtnX = controlX + 104
+            val setBtnW = 26
+            val inNameField = mx >= controlX && mx < controlX + 100 && my >= controlY && my < controlY + 16
+            val inSetBtn = mx >= setBtnX && mx < setBtnX + setBtnW && my >= controlY && my < controlY + 16
+            if (!inNameField && !inSetBtn) {
+                nameField.isFocused = false
+            }
+        }
+
         // Scrollbar drag start
         if (mx >= listRight && mx < listRight + SCROLL_BAR_W && my >= listTop && my < listBottom && maxScroll > 0) {
             draggingScrollbar = true
@@ -351,6 +365,7 @@ class NetworkControllerScreen(
                     val setBtnH = 16
                     if (mx >= setBtnX && mx < setBtnX + setBtnW && my >= controlY && my < controlY + setBtnH) {
                         sendNameUpdate(this.nameField.value)
+                        nameField.isFocused = false
                         nameCheckmarkTime = net.minecraft.client.Minecraft.getInstance().level?.gameTime ?: 0
                         minecraft?.player?.playSound(
                             net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(),

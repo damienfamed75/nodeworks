@@ -180,6 +180,7 @@ class NineSlice(
         // (0,  80)   24x24   PANEL_INSET          3, 3, 3, 3        Recessed content area (#1E1E1E) for editors/lists
         // (0, 104)   18x18   SLOT                 1, 1, 1, 1        Item slot (#1A1A1A) with inset border
         // (24,104)   24x16   INPUT_FIELD          3, 3, 3, 3        Text input (#1A1A1A) with highlighted border
+        // (24, 80)   24x24   CONTENT_BORDER       3, 3, 3, 3        Inset frame with transparent center — overlay on top of content
         // (48, 80)   24x16   ROW                  1, 1, 1, 1        Default/odd row (#1E1E1E) with subtle border
         // (72, 80)   24x16   ROW_HIGHLIGHT        1, 1, 1, 1        Alternating/even row stripe (#252525) with subtle border
         // (72,104)   24x3    SEPARATOR            1, 1, 1, 1        Thin horizontal divider line (#3C3C3C)
@@ -203,6 +204,7 @@ class NineSlice(
         val PANEL_INSET          = NineSlice(GUI_ATLAS,  0,  80, 24, 24, 3, 3, 3, 3)
         val SLOT                 = NineSlice(GUI_ATLAS,  0, 104, 18, 18, 1, 1, 1, 1)
         val INPUT_FIELD          = NineSlice(GUI_ATLAS, 24, 104, 24, 16, 3, 3, 3, 3)
+        val CONTENT_BORDER       = NineSlice(GUI_ATLAS, 24,  80, 24, 24, 3, 3, 3, 3)
         val ROW                  = NineSlice(GUI_ATLAS, 48,  80, 24, 16, 1, 1, 1, 1)
         val ROW_HIGHLIGHT        = NineSlice(GUI_ATLAS, 72,  80, 24, 16, 1, 1, 1, 1)
         val SEPARATOR            = NineSlice(GUI_ATLAS, 72, 104, 24,  3, 1, 1, 1, 1)
