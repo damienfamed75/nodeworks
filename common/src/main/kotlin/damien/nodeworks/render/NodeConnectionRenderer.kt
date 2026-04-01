@@ -400,58 +400,74 @@ object NodeConnectionRenderer {
         val pos = pinnedBlock ?: return
         val mc = Minecraft.getInstance()
         val player = mc.player ?: return
+        val level = mc.level ?: return
 
         val mainItem = player.mainHandItem.item
         val offItem = player.offhandItem.item
         if (mainItem !is damien.nodeworks.item.DiagnosticToolItem && offItem !is damien.nodeworks.item.DiagnosticToolItem) return
 
+        val blockState = level.getBlockState(pos)
+        if (blockState.isAir) return
+
         // Flush any pending MC render batches first
         if (consumers is MultiBufferSource.BufferSource) consumers.endBatch()
 
-        val x = pos.x.toFloat() - cameraPos.x.toFloat()
-        val y = pos.y.toFloat() - cameraPos.y.toFloat()
-        val z = pos.z.toFloat() - cameraPos.z.toFloat()
+        val model = mc.blockRenderer.getBlockModel(blockState)
+        val random = net.minecraft.util.RandomSource.create()
 
         val time = (System.currentTimeMillis() % 2000) / 2000f
-        val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.3f + 0.5f)
+        val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.15f + 0.75f)
 
-        val r = 0.3f; val g = 0.8f; val b = 1.0f; val a = pulse
-        val e = 0.005f
-        val min = -e; val max = 1f + e
-
-        // Direct GL rendering — bypass MC's render types to disable depth test
         poseStack.pushPose()
-        poseStack.translate(x.toDouble(), y.toDouble(), z.toDouble())
+        val x = pos.x.toDouble() - cameraPos.x
+        val y = pos.y.toDouble() - cameraPos.y
+        val z = pos.z.toDouble() - cameraPos.z
+        poseStack.translate(x, y, z)
+
+        // Pulse scale centered on block (1.01–1.07)
+        val scalePulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.03f + 1.04f)
+        poseStack.translate(0.5, 0.5, 0.5)
+        poseStack.scale(scalePulse, scalePulse, scalePulse)
+        poseStack.translate(-0.5, -0.5, -0.5)
 
         val matrix = poseStack.last().pose()
 
         com.mojang.blaze3d.systems.RenderSystem.disableDepthTest()
         com.mojang.blaze3d.systems.RenderSystem.enableBlend()
         com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-        com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.renderer.GameRenderer::getPositionColorShader)
-        com.mojang.blaze3d.systems.RenderSystem.lineWidth(2f)
+        com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.renderer.GameRenderer::getPositionTexShader)
+        com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0, net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS)
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.6f, 0.9f, 1.0f, pulse)
 
         val tesselator = com.mojang.blaze3d.vertex.Tesselator.getInstance()
-        val buf = tesselator.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.DEBUG_LINES, com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR)
+        val buf = tesselator.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS, com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_TEX)
 
-        fun line(x1: Float, y1: Float, z1: Float, x2: Float, y2: Float, z2: Float) {
-            buf.addVertex(matrix, x1, y1, z1).setColor(r, g, b, a)
-            buf.addVertex(matrix, x2, y2, z2).setColor(r, g, b, a)
+        var quadCount = 0
+        val directions: List<net.minecraft.core.Direction?> = Direction.entries + listOf(null)
+        for (dir in directions) {
+            random.setSeed(42L)
+            for (quad in model.getQuads(blockState, dir, random)) {
+                val verts = quad.vertices
+                for (i in 0 until 4) {
+                    val off = i * 8
+                    val vx = Float.fromBits(verts[off])
+                    val vy = Float.fromBits(verts[off + 1])
+                    val vz = Float.fromBits(verts[off + 2])
+                    val u = Float.fromBits(verts[off + 4])
+                    val v = Float.fromBits(verts[off + 5])
+                    buf.addVertex(matrix, vx, vy, vz).setUv(u, v)
+                }
+                quadCount++
+            }
         }
 
-        // 12 edges
-        line(min, min, min, max, min, min); line(max, min, min, max, min, max)
-        line(max, min, max, min, min, max); line(min, min, max, min, min, min)
-        line(min, max, min, max, max, min); line(max, max, min, max, max, max)
-        line(max, max, max, min, max, max); line(min, max, max, min, max, min)
-        line(min, min, min, min, max, min); line(max, min, min, max, max, min)
-        line(max, min, max, max, max, max); line(min, min, max, min, max, max)
+        if (quadCount > 0) {
+            com.mojang.blaze3d.vertex.BufferUploader.drawWithShader(buf.buildOrThrow())
+        }
 
-        com.mojang.blaze3d.vertex.BufferUploader.drawWithShader(buf.buildOrThrow())
-
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
         com.mojang.blaze3d.systems.RenderSystem.enableDepthTest()
         com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-        com.mojang.blaze3d.systems.RenderSystem.lineWidth(1f)
 
         poseStack.popPose()
     }
