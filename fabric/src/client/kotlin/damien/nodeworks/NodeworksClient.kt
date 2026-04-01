@@ -108,5 +108,13 @@ object NodeworksClient : ClientModInitializer {
                 menu.clientBufferContents = payload.entries
             }
         }
+
+        ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.CraftPreviewResponsePayload.TYPE) { payload, context ->
+            val player = Minecraft.getInstance().player ?: return@registerGlobalReceiver
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.DiagnosticMenu && menu.containerId == payload.containerId) {
+                menu.craftTree = payload.tree
+            }
+        }
     }
 }

@@ -94,6 +94,16 @@ class DiagnosticScreen(
     private var hoveredBlock: DiagnosticOpenData.NetworkBlock? = null
     private var selectedBlock: DiagnosticOpenData.NetworkBlock? = null
 
+    // Craft preview state
+    private var craftItemField: net.minecraft.client.gui.components.EditBox? = null
+    private var craftTreeScrollY = 0
+    private var craftGraphPanX = 0f
+    private var craftGraphPanY = 0f
+    private var craftGraphZoom = 1f
+    private var craftGraphDragging = false
+    private var craftGraphLastDragX = 0.0
+    private var craftGraphLastDragY = 0.0
+
     // Precomputed center of the network (for initial view)
     private var centerX = 0f
     private var centerZ = 0f
@@ -161,6 +171,22 @@ class DiagnosticScreen(
         super.init()
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
+
+        // Craft preview text input
+        craftItemField = net.minecraft.client.gui.components.EditBox(font, contentLeft + 4, contentTop + 4, 200, 14, net.minecraft.network.chat.Component.literal("Item ID")).also {
+            it.setMaxLength(128)
+            it.setBordered(true)
+            it.visible = activeTab == 2
+            it.setResponder { value ->
+                updateCraftAutocomplete(value)
+                if (value.isNotEmpty() && value.contains(':')) {
+                    damien.nodeworks.platform.PlatformServices.clientNetworking.sendToServer(
+                        damien.nodeworks.network.CraftPreviewRequestPayload(menu.containerId, menu.clickedPos, value)
+                    )
+                }
+            }
+            addRenderableWidget(it)
+        }
     }
 
     // ========== Coordinate conversion ==========
@@ -239,6 +265,7 @@ class DiagnosticScreen(
 
         when (activeTab) {
             0 -> renderTopology(graphics, mouseX, mouseY)
+            2 -> renderCraftPreview(graphics, mouseX, mouseY)
             else -> {
                 val msg = "Coming Soon"
                 val msgW = font.width(msg)
@@ -367,6 +394,266 @@ class DiagnosticScreen(
         // Zoom indicator
         val zoomStr = String.format("%.0f%%", zoom * 100)
         graphics.drawString(font, zoomStr, contentLeft + contentW - font.width(zoomStr) - 4, contentTop + contentH - font.lineHeight - 2, DIM)
+    }
+
+    // ========== Craft Preview Tab ==========
+
+    private val craftSplitRatio = 3f / 5f
+
+    private fun renderCraftPreview(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+        val tree = menu.craftTree
+        val treeAreaTop = contentTop + 22
+        val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
+
+        // Always draw panel backgrounds and separator
+        graphics.fill(contentLeft, treeAreaTop, splitX, contentTop + contentH, 0xFF191919.toInt()) // darker left
+        graphics.fill(splitX + 1, treeAreaTop, contentLeft + contentW, contentTop + contentH, CONTENT_BG) // right
+        graphics.fill(splitX, contentTop, splitX + 1, contentTop + contentH, SEPARATOR) // separator
+
+        // Autocomplete dropdown for item field
+        renderCraftAutocomplete(graphics, mouseX, mouseY)
+
+        if (tree == null) {
+            graphics.drawString(font, "Enter an item ID above to preview crafting", contentLeft + 8, treeAreaTop + 8, DIM)
+            return
+        }
+
+        // Left panel: detail text tree
+        graphics.enableScissor(contentLeft, treeAreaTop, splitX, contentTop + contentH)
+        renderCraftTreeText(graphics, tree, contentLeft + 4, treeAreaTop + 2 - craftTreeScrollY, 0)
+        graphics.disableScissor()
+
+        // Right panel: visual item graph with zoom/pan
+        val graphLeft = splitX + 2
+        val graphRight = contentLeft + contentW
+        val graphW = graphRight - graphLeft
+        graphics.enableScissor(graphLeft, treeAreaTop, graphRight, contentTop + contentH)
+        graphics.pose().pushPose()
+        val graphCenterX = graphLeft + graphW / 2f + craftGraphPanX
+        val graphCenterY = treeAreaTop + 20f + craftGraphPanY
+        // Precompute layout then render
+        val layout = layoutCraftTree(tree)
+        renderCraftTreeVisual(graphics, tree, layout, graphCenterX, graphCenterY, craftGraphZoom)
+        graphics.pose().popPose()
+        graphics.disableScissor()
+    }
+
+    // ========== Craft Item Autocomplete ==========
+
+    private var craftAutocompleteSuggestions: List<String> = emptyList()
+    private var craftAutocompleteSelected = 0
+
+    private fun updateCraftAutocomplete(query: String) {
+        if (query.length < 2) {
+            craftAutocompleteSuggestions = emptyList()
+            return
+        }
+        // Search all registered items
+        val matches = mutableListOf<String>()
+        for (entry in net.minecraft.core.registries.BuiltInRegistries.ITEM) {
+            val id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(entry)?.toString() ?: continue
+            if (id.contains(query, ignoreCase = true)) {
+                matches.add(id)
+                if (matches.size >= 8) break
+            }
+        }
+        craftAutocompleteSuggestions = matches
+        craftAutocompleteSelected = 0
+    }
+
+    private fun renderCraftAutocomplete(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+        if (craftAutocompleteSuggestions.isEmpty()) return
+        val field = craftItemField ?: return
+        if (!field.isFocused) return
+
+        val dropX = field.x
+        val dropY = field.y + field.height + 1
+        val dropW = field.width
+        val itemH = font.lineHeight + 2
+
+        graphics.pose().pushPose()
+        graphics.pose().translate(0f, 0f, 300f)
+        graphics.fill(dropX, dropY, dropX + dropW, dropY + craftAutocompleteSuggestions.size * itemH + 2, 0xFF111111.toInt())
+        graphics.fill(dropX, dropY, dropX + dropW, dropY + 1, SEPARATOR)
+
+        for ((i, suggestion) in craftAutocompleteSuggestions.withIndex()) {
+            val sy = dropY + 1 + i * itemH
+            if (i == craftAutocompleteSelected) {
+                graphics.fill(dropX + 1, sy, dropX + dropW - 1, sy + itemH, 0xFF3A5FCD.toInt())
+            }
+            // Show item icon
+            val id = net.minecraft.resources.ResourceLocation.tryParse(suggestion)
+            if (id != null) {
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
+                if (item != null) {
+                    graphics.pose().pushPose()
+                    graphics.pose().translate((dropX + 2).toFloat(), (sy).toFloat(), 0f)
+                    graphics.pose().scale(0.5f, 0.5f, 1f)
+                    graphics.renderItem(ItemStack(item), 0, 0)
+                    graphics.pose().popPose()
+                }
+            }
+            val color = if (i == craftAutocompleteSelected) WHITE else GRAY
+            graphics.drawString(font, suggestion, dropX + 12, sy + 1, color, false)
+        }
+        graphics.pose().popPose()
+    }
+
+    private var craftTreeTextY = 0 // tracks current Y for text rendering
+
+    private fun renderCraftTreeText(graphics: GuiGraphics, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode, x: Int, startY: Int, depth: Int) {
+        val lineH = font.lineHeight + 2
+        val indent = depth * 12
+        var y = if (depth == 0) startY else craftTreeTextY
+
+        // Source label and color
+        val sourceLabel = when (node.source) {
+            "craft_template" -> "Craft Template"
+            "process_template" -> "Process Template"
+            "process_no_handler" -> "No Handler!"
+            "storage" -> "In Storage"
+            "missing" -> "Missing!"
+            else -> node.source
+        }
+        val sourceColor = when (node.source) {
+            "storage" -> 0xFF55AA55.toInt()
+            "craft_template" -> 0xFF5599FF.toInt()
+            "process_template" -> 0xFFAA55DD.toInt()
+            "process_no_handler" -> 0xFFFF5555.toInt()
+            "missing" -> 0xFFFF5555.toInt()
+            else -> GRAY
+        }
+
+        // Row background
+        val rowBg = if ((depth % 2) == 0) 0x00000000 else 0x08FFFFFF.toInt()
+        graphics.fill(contentLeft, y, contentLeft + contentW * 3 / 5, y + lineH, rowBg)
+
+        // Item icon (small)
+        val itemId = net.minecraft.resources.ResourceLocation.tryParse(node.itemId)
+        if (itemId != null) {
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId)
+            if (item != null) {
+                graphics.pose().pushPose()
+                graphics.pose().translate((x + indent).toFloat(), (y - 1).toFloat(), 0f)
+                graphics.pose().scale(0.5f, 0.5f, 1f)
+                graphics.renderItem(ItemStack(item), 0, 0)
+                graphics.pose().popPose()
+            }
+        }
+
+        // Text: count x name — source
+        val text = "${node.count}x ${node.itemName}"
+        graphics.drawString(font, text, x + indent + 10, y, WHITE, false)
+        graphics.drawString(font, " — $sourceLabel", x + indent + 10 + font.width(text), y, sourceColor, false)
+
+        // Sub-info
+        y += lineH
+        if (node.templateName.isNotEmpty()) {
+            graphics.drawString(font, "Template: ${node.templateName}", x + indent + 14, y, DIM, false)
+            y += lineH
+        }
+        if (node.resolvedBy.isNotEmpty() && node.resolvedBy != "storage") {
+            graphics.drawString(font, "Handler: ${node.resolvedBy}", x + indent + 14, y, DIM, false)
+            y += lineH
+        }
+        if (node.inStorage > 0 && node.source != "storage") {
+            graphics.drawString(font, "In storage: ${node.inStorage}", x + indent + 14, y, 0xFF557755.toInt(), false)
+            y += lineH
+        }
+
+        craftTreeTextY = y
+        for (child in node.children) {
+            renderCraftTreeText(graphics, child, x, y, depth + 1)
+            y = craftTreeTextY
+        }
+        craftTreeTextY = y
+    }
+
+    /** Layout data: x,y position for each node in the tree (unscaled, relative to root at 0,0). */
+    private data class TreeLayout(val positions: Map<damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode, Pair<Float, Float>>)
+
+    private val nodeSpacingX = 28f  // horizontal distance between siblings
+    private val nodeSpacingY = 30f  // vertical distance between parent and child (depth)
+
+    /** Compute layout positions for all nodes. Root at (0,0), children spread horizontally below. */
+    private fun layoutCraftTree(root: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode): TreeLayout {
+        val positions = mutableMapOf<damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode, Pair<Float, Float>>()
+        layoutNode(root, 0f, 0f, positions)
+        return TreeLayout(positions)
+    }
+
+    /** Returns the total width occupied by this subtree. */
+    private fun layoutNode(
+        node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode,
+        xStart: Float, y: Float,
+        positions: MutableMap<damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode, Pair<Float, Float>>
+    ): Float {
+        if (node.children.isEmpty()) {
+            positions[node] = xStart to y
+            return nodeSpacingX
+        }
+
+        // Layout children first to know total width
+        var childX = xStart
+        val childWidths = mutableListOf<Float>()
+        for (child in node.children) {
+            val w = layoutNode(child, childX, y + nodeSpacingY, positions)
+            childWidths.add(w)
+            childX += w
+        }
+
+        // Center this node horizontally among its children
+        val totalChildW = childWidths.sum()
+        val centerX = xStart + totalChildW / 2f - nodeSpacingX / 2f
+        positions[node] = centerX to y
+
+        return totalChildW
+    }
+
+    private fun renderCraftTreeVisual(
+        graphics: GuiGraphics, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode,
+        layout: TreeLayout, originX: Float, originY: Float, zoom: Float
+    ) {
+        val lineColor = 0xFF444444.toInt()
+
+        for ((n, pos) in layout.positions) {
+            val sx = (originX + pos.first * zoom).roundToInt()
+            val sy = (originY + pos.second * zoom).roundToInt()
+
+            // Draw lines to children (top-to-bottom tree)
+            for (child in n.children) {
+                val childPos = layout.positions[child] ?: continue
+                val cx = (originX + childPos.first * zoom).roundToInt()
+                val cy = (originY + childPos.second * zoom).roundToInt()
+                // L-shaped connector: vertical down from parent, then horizontal to child
+                val midY = (sy + 16 + cy) / 2
+                graphics.fill(sx, sy + 16, sx + 1, midY, lineColor)     // vertical from parent
+                graphics.fill(minOf(sx, cx), midY, maxOf(sx, cx) + 1, midY + 1, lineColor) // horizontal
+                graphics.fill(cx, midY, cx + 1, cy, lineColor)          // vertical to child
+            }
+
+            // Render item icon
+            val itemId = net.minecraft.resources.ResourceLocation.tryParse(n.itemId)
+            if (itemId != null) {
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId)
+                if (item != null) {
+                    graphics.renderItem(ItemStack(item), sx - 8, sy)
+                    if (n.count > 1) {
+                        graphics.drawString(font, "x${n.count}", sx + 9, sy + 9, WHITE, true)
+                    }
+                }
+            }
+
+            // Source color dot below icon
+            val dotColor = when (n.source) {
+                "storage" -> 0xFF55AA55.toInt()
+                "craft_template" -> 0xFF5599FF.toInt()
+                "process_template" -> 0xFFAA55DD.toInt()
+                "missing", "process_no_handler" -> 0xFFFF5555.toInt()
+                else -> GRAY
+            }
+            graphics.fill(sx - 2, sy + 17, sx + 2, sy + 19, dotColor)
+        }
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -726,9 +1013,57 @@ class DiagnosticScreen(
 
     // ========== Input ==========
 
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        val field = craftItemField
+        if (field != null && field.isFocused) {
+            if (keyCode == 256) { // ESC
+                craftAutocompleteSuggestions = emptyList()
+                return super.keyPressed(keyCode, scanCode, modifiers)
+            }
+            // Autocomplete navigation
+            if (craftAutocompleteSuggestions.isNotEmpty()) {
+                when (keyCode) {
+                    265 -> { // UP
+                        craftAutocompleteSelected = (craftAutocompleteSelected - 1 + craftAutocompleteSuggestions.size) % craftAutocompleteSuggestions.size
+                        return true
+                    }
+                    264 -> { // DOWN
+                        craftAutocompleteSelected = (craftAutocompleteSelected + 1) % craftAutocompleteSuggestions.size
+                        return true
+                    }
+                    257, 258 -> { // ENTER or TAB — accept suggestion
+                        field.value = craftAutocompleteSuggestions[craftAutocompleteSelected]
+                        craftAutocompleteSuggestions = emptyList()
+                        return true
+                    }
+                }
+            }
+            field.keyPressed(keyCode, scanCode, modifiers)
+            return true
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers)
+    }
+
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
+
+        // Craft autocomplete click
+        if (craftAutocompleteSuggestions.isNotEmpty() && craftItemField != null) {
+            val field = craftItemField!!
+            val dropX = field.x
+            val dropY = field.y + field.height + 1
+            val dropW = field.width
+            val itemH = font.lineHeight + 2
+            if (mx >= dropX && mx < dropX + dropW && my >= dropY) {
+                val idx = (my - dropY - 1) / itemH
+                if (idx in craftAutocompleteSuggestions.indices) {
+                    field.value = craftAutocompleteSuggestions[idx]
+                    craftAutocompleteSuggestions = emptyList()
+                    return true
+                }
+            }
+        }
 
         // Tab clicks
         val tabY = topPos + 20
@@ -739,6 +1074,7 @@ class DiagnosticScreen(
                 val tabW = font.width(name) + 10
                 if (mx >= tabX && mx < tabX + tabW) {
                     activeTab = i
+                    craftItemField?.visible = i == 2
                     return true
                 }
                 tabX += tabW + 2
@@ -787,11 +1123,22 @@ class DiagnosticScreen(
             return true
         }
 
+        // Craft graph drag
+        val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
+        if (activeTab == 2 && mx >= splitX && mx < contentLeft + contentW &&
+            my >= contentTop + 22 && my < contentTop + contentH) {
+            craftGraphDragging = true
+            craftGraphLastDragX = mouseX
+            craftGraphLastDragY = mouseY
+            return true
+        }
+
         return super.mouseClicked(mouseX, mouseY, button)
     }
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
         dragging = false
+        craftGraphDragging = false
         return super.mouseReleased(mouseX, mouseY, button)
     }
 
@@ -801,6 +1148,13 @@ class DiagnosticScreen(
             panY += (mouseY - lastDragY).toFloat()
             lastDragX = mouseX
             lastDragY = mouseY
+            return true
+        }
+        if (craftGraphDragging) {
+            craftGraphPanX += (mouseX - craftGraphLastDragX).toFloat()
+            craftGraphPanY += (mouseY - craftGraphLastDragY).toFloat()
+            craftGraphLastDragX = mouseX
+            craftGraphLastDragY = mouseY
             return true
         }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
@@ -819,6 +1173,24 @@ class DiagnosticScreen(
             panY -= my * (zoom / oldZoom - 1f)
 
             return true
+        }
+        // Craft tab: scroll text tree on left, zoom graph on right
+        if (activeTab == 2 && mouseY >= contentTop && mouseY < contentTop + contentH) {
+            val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
+            if (mouseX >= splitX) {
+                // Zoom the graph panel
+                val oldZoom = craftGraphZoom
+                craftGraphZoom = (craftGraphZoom * (1f + scrollY.toFloat() * 0.15f)).coerceIn(0.3f, 4f)
+                // Zoom toward mouse
+                val mx = (mouseX - (splitX + 2 + (contentLeft + contentW - splitX - 2) / 2f) - craftGraphPanX).toFloat()
+                val my = (mouseY - (contentTop + 20f) - craftGraphPanY).toFloat()
+                craftGraphPanX -= mx * (craftGraphZoom / oldZoom - 1f)
+                craftGraphPanY -= my * (craftGraphZoom / oldZoom - 1f)
+                return true
+            } else if (mouseX >= contentLeft) {
+                craftTreeScrollY = (craftTreeScrollY - scrollY.toInt() * 10).coerceAtLeast(0)
+                return true
+            }
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }

@@ -159,7 +159,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             }
         }
 
-        val openData = DiagnosticOpenData(blocks, networkName, networkColor)
+        val openData = DiagnosticOpenData(blocks, networkName, networkColor, pos)
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,

@@ -82,9 +82,11 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(CraftPreviewRequestPayload.TYPE, CraftPreviewRequestPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(BufferSyncPayload.TYPE, BufferSyncPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(CraftPreviewResponsePayload.TYPE, CraftPreviewResponsePayload.CODEC)
     }
 
     fun registerServerHandlers() {
@@ -260,6 +262,14 @@ object TerminalPackets {
             if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
             val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@registerGlobalReceiver
             entity.cancelJob()
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(CraftPreviewRequestPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, payload.networkPos)
+            val tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(payload.itemId, 1, level, snapshot)
+            ServerPlayNetworking.send(player, CraftPreviewResponsePayload(payload.containerId, tree))
         }
     }
 
