@@ -102,10 +102,19 @@ object TerminalPackets {
 
             val terminalPos = payload.terminalPos
             val engine = ScriptEngine(level, nodePos) { message, isError ->
+                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(terminalPos, message, level.server.tickCount.toLong())
                 val logPayload = TerminalLogPayload(terminalPos, message, isError)
                 for (p in level.players()) {
+                    // Send to nearby players (existing behavior)
                     if (p.distanceToSqr(terminalPos.x + 0.5, terminalPos.y + 0.5, terminalPos.z + 0.5) <= 64.0 * 64.0) {
                         ServerPlayNetworking.send(p, logPayload)
+                    }
+                    // Fan out to players with open diagnostic tool on this network
+                    else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                        if (diagMenu.topology.terminalInfos.any { it.pos == terminalPos }) {
+                            ServerPlayNetworking.send(p, logPayload)
+                        }
                     }
                 }
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
@@ -299,10 +308,16 @@ object TerminalPackets {
             if (activeEngines.containsKey(gp)) continue
 
             val engine = ScriptEngine(level, nodePos) { message, isError ->
+                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
                 val logPayload = TerminalLogPayload(pos, message, isError)
                 for (p in level.players()) {
                     if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
                         ServerPlayNetworking.send(p, logPayload)
+                    } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                        if (diagMenu.topology.terminalInfos.any { it.pos == pos }) {
+                            ServerPlayNetworking.send(p, logPayload)
+                        }
                     }
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)

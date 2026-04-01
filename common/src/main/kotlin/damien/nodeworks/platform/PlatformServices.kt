@@ -146,4 +146,7 @@ interface ModStateService {
 
     /** Find any active ScriptEngine at the given terminal positions. */
     fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): Any? = null
+
+    /** Get the ScriptEngine at a specific terminal position, or null. */
+    fun getScriptEngine(level: ServerLevel, pos: BlockPos): Any? = null
 }

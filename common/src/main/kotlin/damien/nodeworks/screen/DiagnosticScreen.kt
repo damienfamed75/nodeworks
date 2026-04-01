@@ -261,6 +261,7 @@ class DiagnosticScreen(
         when (activeTab) {
             0 -> renderTopology(graphics, mouseX, mouseY)
             2 -> renderCraftPreview(graphics, mouseX, mouseY)
+            3 -> renderJobsAndErrors(graphics, mouseX, mouseY)
             else -> {
                 val msg = "Coming Soon"
                 val msgW = font.width(msg)
@@ -665,6 +666,124 @@ class DiagnosticScreen(
             }
             graphics.fill(sx - 2, sy + 17, sx + 2, sy + 19, dotColor)
         }
+    }
+
+    // ========== Jobs & Errors Tab ==========
+
+    private var jobsScrollY = 0
+
+    private fun renderJobsAndErrors(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+        val lineH = font.lineHeight + 2
+        val splitX = contentLeft + contentW / 2
+        graphics.fill(splitX, contentTop, splitX + 1, contentTop + contentH, SEPARATOR)
+
+        // Left panel: Jobs (CPUs + Terminals)
+        graphics.enableScissor(contentLeft, contentTop, splitX, contentTop + contentH)
+        var y = contentTop + 2 - jobsScrollY
+
+        // CPU section
+        graphics.fill(contentLeft + 1, y, splitX - 1, y + lineH, 0x20FFFFFF.toInt())
+        graphics.drawString(font, "Crafting CPUs", contentLeft + 4, y + 1, WHITE, false)
+        y += lineH + 2
+
+        val cpus = menu.topology.cpuInfos
+        if (cpus.isEmpty()) {
+            graphics.drawString(font, "No CPUs on network", contentLeft + 8, y, DIM, false)
+            y += lineH
+        } else {
+            for (cpu in cpus) {
+                val statusColor = when {
+                    !cpu.isFormed -> 0xFFFF5555.toInt()
+                    cpu.isCrafting -> 0xFF55FF55.toInt()
+                    else -> GRAY
+                }
+                val status = when {
+                    !cpu.isFormed -> "Not Formed"
+                    cpu.isCrafting -> "Crafting: ${cpu.currentCraftItem}"
+                    else -> "Idle"
+                }
+                graphics.drawString(font, status, contentLeft + 8, y, statusColor, false)
+                y += lineH
+                graphics.drawString(font, "Buffer: ${cpu.bufferUsed}/${cpu.bufferCapacity}", contentLeft + 12, y, DIM, false)
+                y += lineH
+                val posStr = "(${cpu.pos.x}, ${cpu.pos.y}, ${cpu.pos.z})"
+                graphics.drawString(font, posStr, contentLeft + 12, y, DIM, false)
+                y += lineH + 2
+            }
+        }
+
+        // Terminal section
+        y += 4
+        graphics.fill(contentLeft + 1, y, splitX - 1, y + lineH, 0x20FFFFFF.toInt())
+        graphics.drawString(font, "Terminals", contentLeft + 4, y + 1, WHITE, false)
+        y += lineH + 2
+
+        val terminals = menu.topology.terminalInfos
+        if (terminals.isEmpty()) {
+            graphics.drawString(font, "No terminals on network", contentLeft + 8, y, DIM, false)
+            y += lineH
+        } else {
+            for (term in terminals) {
+                val statusColor = if (term.isRunning) 0xFF55FF55.toInt() else GRAY
+                val statusStr = if (term.isRunning) "Running" else "Stopped"
+                val autoStr = if (term.autoRun) " [auto]" else ""
+                graphics.drawString(font, "$statusStr$autoStr", contentLeft + 8, y, statusColor, false)
+                y += lineH
+
+                val posStr = "(${term.pos.x}, ${term.pos.y}, ${term.pos.z})"
+                graphics.drawString(font, posStr, contentLeft + 12, y, DIM, false)
+                y += lineH
+
+                if (term.handlers.isNotEmpty()) {
+                    graphics.drawString(font, "Handlers: ${term.handlers.joinToString(", ")}", contentLeft + 12, y, 0xFFAA83E0.toInt(), false)
+                    y += lineH
+                }
+
+                val scripts = term.scriptNames.joinToString(", ")
+                graphics.drawString(font, "Scripts: $scripts", contentLeft + 12, y, DIM, false)
+                y += lineH + 2
+            }
+        }
+        graphics.disableScissor()
+
+        // Right panel: Live Errors
+        graphics.fill(splitX + 2, contentTop, contentLeft + contentW, contentTop + lineH + 2, 0x20FFFFFF.toInt())
+        graphics.drawString(font, "Errors (live)", splitX + 6, contentTop + 2, WHITE, false)
+
+        val errors = menu.liveErrors
+        val errorTop = contentTop + lineH + 4
+        graphics.enableScissor(splitX + 2, errorTop, contentLeft + contentW, contentTop + contentH)
+
+        if (errors.isEmpty()) {
+            graphics.drawString(font, "No errors", splitX + 8, errorTop + 2, DIM, false)
+        } else {
+            var ey = errorTop + 2
+            for (error in errors) {
+                val age = (System.currentTimeMillis() - error.timestamp) / 1000
+                val ageStr = if (age < 60) "${age}s ago" else "${age / 60}m ago"
+                val posStr = "(${error.terminalPos.x}, ${error.terminalPos.y}, ${error.terminalPos.z})"
+
+                // Time + position header
+                graphics.drawString(font, "$ageStr — $posStr", splitX + 6, ey, DIM, false)
+                ey += lineH
+
+                // Error message (may wrap)
+                val maxW = contentLeft + contentW - splitX - 10
+                val wrapped = font.splitter.splitLines(error.message, maxW, net.minecraft.network.chat.Style.EMPTY)
+                for (line in wrapped) {
+                    graphics.drawString(font, line.string, splitX + 8, ey, 0xFFFF5555.toInt(), false)
+                    ey += lineH
+                }
+                ey += 2
+
+                // Separator between errors
+                graphics.fill(splitX + 6, ey - 1, contentLeft + contentW - 4, ey, 0xFF333333.toInt())
+                ey += 2
+
+                if (ey > contentTop + contentH) break
+            }
+        }
+        graphics.disableScissor()
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -1234,6 +1353,12 @@ class DiagnosticScreen(
                 craftTreeScrollY = (craftTreeScrollY - scrollY.toInt() * 10).coerceAtLeast(0)
                 return true
             }
+        }
+        // Jobs tab scrolling
+        if (activeTab == 3 && mouseX >= contentLeft && mouseX < contentLeft + contentW &&
+            mouseY >= contentTop && mouseY < contentTop + contentH) {
+            jobsScrollY = (jobsScrollY - scrollY.toInt() * 10).coerceAtLeast(0)
+            return true
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }

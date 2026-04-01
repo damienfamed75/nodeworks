@@ -169,4 +169,8 @@ class FabricModStateService : ModStateService {
     override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? {
         return TerminalPackets.findEngineWithHandler(level, terminalPositions, cardName)
     }
+
+    override fun getScriptEngine(level: ServerLevel, pos: BlockPos): Any? {
+        return TerminalPackets.getEngine(level, pos)
+    }
 }

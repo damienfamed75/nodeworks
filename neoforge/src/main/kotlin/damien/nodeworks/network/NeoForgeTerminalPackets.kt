@@ -75,10 +75,16 @@ object NeoForgeTerminalPackets {
 
             val terminalPos = payload.terminalPos
             val engine = ScriptEngine(level, nodePos) { message, isError ->
+                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(terminalPos, message, level.server.tickCount.toLong())
                 val logPayload = TerminalLogPayload(terminalPos, message, isError)
                 for (p in level.players()) {
                     if (p.distanceToSqr(terminalPos.x + 0.5, terminalPos.y + 0.5, terminalPos.z + 0.5) <= 64.0 * 64.0) {
                         PacketDistributor.sendToPlayer(p, logPayload)
+                    } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                        if (diagMenu.topology.terminalInfos.any { it.pos == terminalPos }) {
+                            PacketDistributor.sendToPlayer(p, logPayload)
+                        }
                     }
                 }
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
@@ -220,10 +226,16 @@ object NeoForgeTerminalPackets {
             if (activeEngines.containsKey(gp)) continue
 
             val engine = ScriptEngine(level, nodePos) { message, isError ->
+                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
                 val logPayload = TerminalLogPayload(pos, message, isError)
                 for (p in level.players()) {
                     if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
                         PacketDistributor.sendToPlayer(p, logPayload)
+                    } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                        if (diagMenu.topology.terminalInfos.any { it.pos == pos }) {
+                            PacketDistributor.sendToPlayer(p, logPayload)
+                        }
                     }
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)

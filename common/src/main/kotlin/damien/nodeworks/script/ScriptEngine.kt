@@ -26,7 +26,7 @@ class ScriptEngine(
 
     private var globals: Globals? = null
     private var networkSnapshot: NetworkSnapshot? = null
-    val scheduler = SchedulerImpl()
+    val scheduler = SchedulerImpl { errorMsg -> logCallback(errorMsg, true) }
 
     /** Precomputed route table set by network:route(). */
     var routeTable: RouteTable? = null
