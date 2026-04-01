@@ -28,15 +28,6 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
 
     companion object {
         private val LASER_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
-
-        /** Beam width in blocks. */
-        var beamWidth = 1.0f / 16f
-
-        /** UV scroll speed (units per second). */
-        var beamScrollSpeed = 0.8f
-
-        /** Rotation speed (radians per second). */
-        var beamRotationSpeed = 1.0f
     }
 
     data class MonitorFace(
@@ -44,8 +35,6 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         val itemId: String?,
         val count: Long
     )
-
-    data class BeamTarget(val dx: Float, val dy: Float, val dz: Float, val blocked: Boolean = false)
 
     override fun shouldRenderOffScreen(entity: NodeBlockEntity): Boolean = true
 
@@ -71,27 +60,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         val networkColor = controller?.networkColor ?: NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         val nodeGlowStyle = controller?.nodeGlowStyle ?: 0
 
-        // Collect beam connection targets (relative positions)
-        val beamTargets = if (NodeConnectionRenderer.beamEffectEnabled) {
-            val thisPos = entity.blockPos
-            entity.getConnections().map { targetPos ->
-                val blocked = NodeConnectionRenderer.isConnectionBlocked(thisPos, targetPos) ||
-                    !NodeConnectionRenderer.isReachable(thisPos) || !NodeConnectionRenderer.isReachable(targetPos)
-                BeamTarget(
-                    (targetPos.x - thisPos.x).toFloat(),
-                    (targetPos.y - thisPos.y).toFloat(),
-                    (targetPos.z - thisPos.z).toFloat(),
-                    blocked
-                )
-            }
-        } else {
-            emptyList()
-        }
-
-        // Render beacon-style laser beams to connected blocks
-        if (beamTargets.isNotEmpty()) {
-            renderBeams(beamTargets, poseStack, bufferSource, networkColor)
-        }
+        // Beams are now rendered by NodeConnectionRenderer (world render event, no frustum culling)
 
         // Render glowing overlay cube (eyes render type for emissive effect)
         if (nodeGlowStyle != 5) { // 5 = NONE
@@ -267,138 +236,6 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
         vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
         vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
         vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-    }
-
-    // --- Beam rendering ---
-
-    private fun renderBeams(targets: List<BeamTarget>, poseStack: PoseStack, bufferSource: MultiBufferSource, networkColor: Int) {
-        val time = (System.currentTimeMillis() % 100000) / 1000f
-        val r = (networkColor shr 16) and 0xFF
-        val g = (networkColor shr 8) and 0xFF
-        val b = networkColor and 0xFF
-
-        val opaqueType = RenderType.beaconBeam(LASER_TEXTURE, false)
-        val translucentType = RenderType.beaconBeam(LASER_TEXTURE, true)
-
-        for (target in targets) {
-            if (target.blocked) {
-                // Blocked: dim red beam, no white core
-                renderSingleBeam(poseStack, bufferSource, translucentType, target, time, 180, 50, 50, 80, beamWidth * 2f, 0f)
-            } else {
-                renderSingleBeam(poseStack, bufferSource, opaqueType, target, time, 255, 255, 255, 255, beamWidth, 0f)
-                renderSingleBeam(poseStack, bufferSource, translucentType, target, time, r, g, b, 120, beamWidth * 3.5f, Math.PI.toFloat() / 4f)
-            }
-        }
-    }
-
-    private fun renderSingleBeam(
-        poseStack: PoseStack,
-        bufferSource: MultiBufferSource,
-        renderType: RenderType,
-        target: BeamTarget,
-        time: Float,
-        r: Int, g: Int, b: Int, a: Int,
-        width: Float,
-        angleOffset: Float
-    ) {
-        // Beam from block center (0.5, 0.5, 0.5) to target center
-        val fromX = 0.5f; val fromY = 0.5f; val fromZ = 0.5f
-        val toX = target.dx + 0.5f; val toY = target.dy + 0.5f; val toZ = target.dz + 0.5f
-
-        val dx = toX - fromX
-        val dy = toY - fromY
-        val dz = toZ - fromZ
-        val len = sqrt(dx * dx + dy * dy + dz * dz)
-        if (len < 0.01f) return
-
-        // Normalized beam direction
-        val dirX = dx / len; val dirY = dy / len; val dirZ = dz / len
-
-        // Find two perpendicular axes
-        val refX: Float; val refY: Float; val refZ: Float
-        if (abs(dirY) < 0.9f) {
-            refX = 0f; refY = 1f; refZ = 0f
-        } else {
-            refX = 1f; refY = 0f; refZ = 0f
-        }
-
-        // axis1 = cross(dir, ref)
-        var a1x = dirY * refZ - dirZ * refY
-        var a1y = dirZ * refX - dirX * refZ
-        var a1z = dirX * refY - dirY * refX
-        val a1len = sqrt(a1x * a1x + a1y * a1y + a1z * a1z)
-        a1x /= a1len; a1y /= a1len; a1z /= a1len
-
-        // axis2 = cross(dir, axis1)
-        var a2x = dirY * a1z - dirZ * a1y
-        var a2y = dirZ * a1x - dirX * a1z
-        var a2z = dirX * a1y - dirY * a1x
-        val a2len = sqrt(a2x * a2x + a2y * a2y + a2z * a2z)
-        a2x /= a2len; a2y /= a2len; a2z /= a2len
-
-        // Rotate axes around beam direction for animation
-        val angle = time * beamRotationSpeed + angleOffset
-        val cosA = cos(angle); val sinA = sin(angle)
-        val r1x = a1x * cosA + a2x * sinA
-        val r1y = a1y * cosA + a2y * sinA
-        val r1z = a1z * cosA + a2z * sinA
-        val r2x = -a1x * sinA + a2x * cosA
-        val r2y = -a1y * sinA + a2y * cosA
-        val r2z = -a1z * sinA + a2z * cosA
-
-        val hw = width / 2f
-
-        // UV mapping: beam occupies first 5px of 16px wide texture
-        val uMax = 5f / 16f
-        val uvScroll = time * beamScrollSpeed
-        val v0 = uvScroll
-        val v1 = uvScroll + len * 0.5f  // less tiling for a less squished look
-
-        val light = 15728880
-        val overlay = OverlayTexture.NO_OVERLAY
-
-        val vc = bufferSource.getBuffer(renderType)
-        val pose = poseStack.last()
-
-        // Quad 1 front: along axis1
-        vc.addVertex(pose, fromX - r1x * hw, fromY - r1y * hw, fromZ - r1z * hw)
-            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, fromX + r1x * hw, fromY + r1y * hw, fromZ + r1z * hw)
-            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, toX + r1x * hw, toY + r1y * hw, toZ + r1z * hw)
-            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, toX - r1x * hw, toY - r1y * hw, toZ - r1z * hw)
-            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-
-        // Quad 1 back: reversed winding
-        vc.addVertex(pose, fromX + r1x * hw, fromY + r1y * hw, fromZ + r1z * hw)
-            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, fromX - r1x * hw, fromY - r1y * hw, fromZ - r1z * hw)
-            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, toX - r1x * hw, toY - r1y * hw, toZ - r1z * hw)
-            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, toX + r1x * hw, toY + r1y * hw, toZ + r1z * hw)
-            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-
-        // Quad 2 front: along axis2
-        vc.addVertex(pose, fromX - r2x * hw, fromY - r2y * hw, fromZ - r2z * hw)
-            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, fromX + r2x * hw, fromY + r2y * hw, fromZ + r2z * hw)
-            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, toX + r2x * hw, toY + r2y * hw, toZ + r2z * hw)
-            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, toX - r2x * hw, toY - r2y * hw, toZ - r2z * hw)
-            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-
-        // Quad 2 back: reversed winding
-        vc.addVertex(pose, fromX + r2x * hw, fromY + r2y * hw, fromZ + r2z * hw)
-            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, fromX - r2x * hw, fromY - r2y * hw, fromZ - r2z * hw)
-            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, toX - r2x * hw, toY - r2y * hw, toZ - r2z * hw)
-            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, toX + r2x * hw, toY + r2y * hw, toZ + r2z * hw)
-            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
     }
 
     // --- Monitor helpers ---

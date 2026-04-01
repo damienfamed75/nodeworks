@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
 import net.minecraft.client.renderer.MultiBufferSource
 import net.minecraft.client.renderer.RenderType
+import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
@@ -18,8 +19,12 @@ import net.minecraft.resources.ResourceLocation
 import org.joml.Quaternionf
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.sqrt
+import kotlin.math.sin
 
 object NodeConnectionRenderer {
+
+    data class ConnectionPair(val fromPos: BlockPos, val toPos: BlockPos, val color: Int, val blocked: Boolean)
 
     private val knownNodes: MutableSet<BlockPos> = Collections.newSetFromMap(ConcurrentHashMap())
 
@@ -47,8 +52,6 @@ object NodeConnectionRenderer {
 
     /** Beam pulse speed (cycles per second). */
     var beamPulseSpeed = 1.0f
-
-    private val LASER_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
 
     // Node shape bounds (5/16 to 11/16)
     private const val MIN = 5f / 16f
@@ -186,9 +189,7 @@ object NodeConnectionRenderer {
         val pose = poseStack.last()
 
         // Collect all connection pairs with their network color
-        data class Connection(val from: net.minecraft.world.phys.Vec3, val to: net.minecraft.world.phys.Vec3, val color: Int)
-
-        val connections = mutableListOf<Connection>()
+        val connections = mutableListOf<ConnectionPair>()
 
         for (nodePos in knownNodes) {
             if (!level.isLoaded(nodePos)) continue
@@ -198,20 +199,20 @@ object NodeConnectionRenderer {
                 if (!isLessThan(nodePos, targetPos)) continue
                 if (!level.isLoaded(targetPos)) continue
                 val color = findNetworkColor(level, nodePos)
-                connections.add(Connection(nodePos.getCenter(), targetPos.getCenter(), color))
+                val blocked = isConnectionBlocked(nodePos, targetPos) ||
+                    !isReachable(nodePos) || !isReachable(targetPos)
+                connections.add(ConnectionPair(nodePos, targetPos, color, blocked))
             }
         }
 
         if (beamEffectEnabled) {
-            // Beacon-style beams are rendered by MonitorRenderer (BlockEntityRenderer)
-            // which has access to SubmitNodeCollector for proper emissive rendering.
-            // Nothing to do here.
+            renderConnectionBeams(poseStack, consumers, level, connections)
         } else {
             // Fallback: thin lines
             val lineBuffer = consumers.getBuffer(RenderType.lines())
             for (conn in connections) {
-                val from = conn.from
-                val to = conn.to
+                val from = conn.fromPos.center
+                val to = conn.toPos.center
                 val lr = (conn.color shr 16) and 0xFF
                 val lg = (conn.color shr 8) and 0xFF
                 val lb = conn.color and 0xFF
@@ -253,6 +254,242 @@ object NodeConnectionRenderer {
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
         renderMonitorText(poseStack, consumers, level)
         poseStack.popPose()
+    }
+
+    // ========== Billboard Beam Rendering ==========
+
+    private val LASER_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+    private const val BEAM_WIDTH = 1.0f / 16f
+    private const val BEAM_SCROLL_SPEED = 0.8f
+
+    private fun renderConnectionBeams(
+        poseStack: PoseStack,
+        consumers: MultiBufferSource,
+        level: net.minecraft.world.level.Level,
+        connections: List<ConnectionPair>
+    ) {
+        val time = (System.currentTimeMillis() % 100000) / 1000f
+        val cam = Minecraft.getInstance().gameRenderer.mainCamera
+        val camPos = cam.position
+
+        val pulse = (sin((time * 2.0).toDouble()).toFloat() * 0.3f + 0.7f)
+
+        val opaqueType = RenderType.beaconBeam(LASER_TEXTURE, false)
+        val translucentType = RenderType.beaconBeam(LASER_TEXTURE, true)
+
+        for (conn in connections) {
+            val fromPos = conn.fromPos
+            val toPos = conn.toPos
+            val color = conn.color
+            val blocked = conn.blocked
+
+            val nr = (color shr 16) and 0xFF
+            val ng = (color shr 8) and 0xFF
+            val nb = color and 0xFF
+            val colorAlpha = (120 * pulse).toInt().coerceIn(0, 255)
+
+            // Raycast from source to target, offsetting past source block
+            val fromVec = net.minecraft.world.phys.Vec3.atCenterOf(fromPos)
+            val toVec = net.minecraft.world.phys.Vec3.atCenterOf(toPos)
+            val dir = toVec.subtract(fromVec).normalize()
+            val offsetFrom = fromVec.add(dir.scale(0.55))
+            val hitResult = level.clip(
+                net.minecraft.world.level.ClipContext(
+                    offsetFrom, toVec,
+                    net.minecraft.world.level.ClipContext.Block.VISUAL,
+                    net.minecraft.world.level.ClipContext.Fluid.NONE,
+                    net.minecraft.world.phys.shapes.CollisionContext.empty()
+                )
+            )
+            val endVec = if (hitResult.type != net.minecraft.world.phys.HitResult.Type.MISS) {
+                hitResult.location
+            } else {
+                toVec
+            }
+
+            // World-space endpoints
+            val fx = fromVec.x.toFloat(); val fy = fromVec.y.toFloat(); val fz = fromVec.z.toFloat()
+            val tx = endVec.x.toFloat(); val ty = endVec.y.toFloat(); val tz = endVec.z.toFloat()
+
+            if (blocked) {
+                renderBillboardBeam(poseStack, consumers, translucentType, camPos, fx, fy, fz, tx, ty, tz, time, 180, 50, 50, 80, BEAM_WIDTH * 2f)
+            } else {
+                // White rotating rectangular prism core (half width)
+                renderPrismBeam(poseStack, consumers, opaqueType, fx, fy, fz, tx, ty, tz, time, 255, 255, 255, 255, BEAM_WIDTH * 0.5f)
+                // Colored pulsing billboard — pulsate both size and opacity
+                val sizePulse = (sin((time * 2.0).toDouble()).toFloat() * 0.25f + 1.0f) // 0.75x–1.25x
+                renderBillboardBeam(poseStack, consumers, translucentType, camPos, fx, fy, fz, tx, ty, tz, time, nr, ng, nb, colorAlpha, BEAM_WIDTH * 3.5f * sizePulse)
+            }
+        }
+    }
+
+    /** Renders a rectangular prism (4-sided tube) along the beam axis. */
+    private fun renderPrismBeam(
+        poseStack: PoseStack,
+        consumers: MultiBufferSource,
+        renderType: RenderType,
+        fromX: Float, fromY: Float, fromZ: Float,
+        toX: Float, toY: Float, toZ: Float,
+        time: Float,
+        r: Int, g: Int, b: Int, a: Int,
+        width: Float
+    ) {
+        val dx = toX - fromX; val dy = toY - fromY; val dz = toZ - fromZ
+        val len = sqrt(dx * dx + dy * dy + dz * dz)
+        if (len < 0.01f) return
+
+        val dirX = dx / len; val dirY = dy / len; val dirZ = dz / len
+
+        // Find two perpendicular axes
+        val refX: Float; val refY: Float; val refZ: Float
+        if (kotlin.math.abs(dirY) < 0.9f) { refX = 0f; refY = 1f; refZ = 0f }
+        else { refX = 1f; refY = 0f; refZ = 0f }
+
+        // axis1 = normalize(cross(dir, ref))
+        var a1x = dirY * refZ - dirZ * refY
+        var a1y = dirZ * refX - dirX * refZ
+        var a1z = dirX * refY - dirY * refX
+        val a1len = sqrt(a1x * a1x + a1y * a1y + a1z * a1z)
+        a1x /= a1len; a1y /= a1len; a1z /= a1len
+
+        // axis2 = normalize(cross(dir, axis1))
+        var a2x = dirY * a1z - dirZ * a1y
+        var a2y = dirZ * a1x - dirX * a1z
+        var a2z = dirX * a1y - dirY * a1x
+        val a2len = sqrt(a2x * a2x + a2y * a2y + a2z * a2z)
+        a2x /= a2len; a2y /= a2len; a2z /= a2len
+
+        // Rotate axes around beam direction
+        val angle = time * 1.0f // 1 radian/sec
+        val cosA = kotlin.math.cos(angle); val sinA = sin(angle)
+        val r1x = a1x * cosA + a2x * sinA
+        val r1y = a1y * cosA + a2y * sinA
+        val r1z = a1z * cosA + a2z * sinA
+        val r2x = -a1x * sinA + a2x * cosA
+        val r2y = -a1y * sinA + a2y * cosA
+        val r2z = -a1z * sinA + a2z * cosA
+        a1x = r1x; a1y = r1y; a1z = r1z
+        a2x = r2x; a2y = r2y; a2z = r2z
+
+        val hw = width / 2f
+
+        val uMax = 5f / 16f
+        val uvScroll = time * BEAM_SCROLL_SPEED
+        val v0 = uvScroll
+        val v1 = uvScroll + len * 0.5f
+
+        val overlay = OverlayTexture.NO_OVERLAY
+        val vc = consumers.getBuffer(renderType)
+        val pose = poseStack.last()
+
+        // 4 corners at each end: ±axis1 ± axis2
+        // c0 = -a1 -a2, c1 = +a1 -a2, c2 = +a1 +a2, c3 = -a1 +a2
+        fun corner(baseX: Float, baseY: Float, baseZ: Float, s1: Float, s2: Float): Triple<Float, Float, Float> {
+            return Triple(
+                baseX + a1x * hw * s1 + a2x * hw * s2,
+                baseY + a1y * hw * s1 + a2y * hw * s2,
+                baseZ + a1z * hw * s1 + a2z * hw * s2
+            )
+        }
+
+        val f0 = corner(fromX, fromY, fromZ, -1f, -1f)
+        val f1 = corner(fromX, fromY, fromZ,  1f, -1f)
+        val f2 = corner(fromX, fromY, fromZ,  1f,  1f)
+        val f3 = corner(fromX, fromY, fromZ, -1f,  1f)
+        val t0 = corner(toX, toY, toZ, -1f, -1f)
+        val t1 = corner(toX, toY, toZ,  1f, -1f)
+        val t2 = corner(toX, toY, toZ,  1f,  1f)
+        val t3 = corner(toX, toY, toZ, -1f,  1f)
+
+        // 4 sides of the prism (each a quad, rendered double-sided)
+        fun quad(
+            ax: Float, ay: Float, az: Float, bx: Float, by: Float, bz: Float,
+            cx: Float, cy: Float, cz: Float, dx2: Float, dy2: Float, dz2: Float
+        ) {
+            // Front
+            vc.addVertex(pose, ax, ay, az).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, bx, by, bz).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, cx, cy, cz).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, dx2, dy2, dz2).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            // Back
+            vc.addVertex(pose, bx, by, bz).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, ax, ay, az).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, dx2, dy2, dz2).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, cx, cy, cz).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        }
+
+        // Side 1: f0→f1 to t0→t1
+        quad(f0.first, f0.second, f0.third, f1.first, f1.second, f1.third, t1.first, t1.second, t1.third, t0.first, t0.second, t0.third)
+        // Side 2: f1→f2 to t1→t2
+        quad(f1.first, f1.second, f1.third, f2.first, f2.second, f2.third, t2.first, t2.second, t2.third, t1.first, t1.second, t1.third)
+        // Side 3: f2→f3 to t2→t3
+        quad(f2.first, f2.second, f2.third, f3.first, f3.second, f3.third, t3.first, t3.second, t3.third, t2.first, t2.second, t2.third)
+        // Side 4: f3→f0 to t3→t0
+        quad(f3.first, f3.second, f3.third, f0.first, f0.second, f0.third, t0.first, t0.second, t0.third, t3.first, t3.second, t3.third)
+    }
+
+    private fun renderBillboardBeam(
+        poseStack: PoseStack,
+        consumers: MultiBufferSource,
+        renderType: RenderType,
+        camPos: net.minecraft.world.phys.Vec3,
+        fromX: Float, fromY: Float, fromZ: Float,
+        toX: Float, toY: Float, toZ: Float,
+        time: Float,
+        r: Int, g: Int, b: Int, a: Int,
+        width: Float
+    ) {
+        val dx = toX - fromX; val dy = toY - fromY; val dz = toZ - fromZ
+        val len = sqrt(dx * dx + dy * dy + dz * dz)
+        if (len < 0.01f) return
+
+        val dirX = dx / len; val dirY = dy / len; val dirZ = dz / len
+
+        // Camera-to-beam-midpoint for billboarding
+        val midX = (fromX + toX) / 2f
+        val midY = (fromY + toY) / 2f
+        val midZ = (fromZ + toZ) / 2f
+        val toCamX = (camPos.x - midX).toFloat()
+        val toCamY = (camPos.y - midY).toFloat()
+        val toCamZ = (camPos.z - midZ).toFloat()
+
+        // Perpendicular = cross(beamDir, toCam)
+        var px = dirY * toCamZ - dirZ * toCamY
+        var py = dirZ * toCamX - dirX * toCamZ
+        var pz = dirX * toCamY - dirY * toCamX
+        val plen = sqrt(px * px + py * py + pz * pz)
+        if (plen < 0.001f) return
+        val hw = width / 2f
+        px = px / plen * hw; py = py / plen * hw; pz = pz / plen * hw
+
+        val uMax = 5f / 16f
+        val uvScroll = time * BEAM_SCROLL_SPEED
+        val v0 = uvScroll
+        val v1 = uvScroll + len * 0.5f
+
+        val overlay = OverlayTexture.NO_OVERLAY
+        val vc = consumers.getBuffer(renderType)
+        val pose = poseStack.last()
+
+        // Front face
+        vc.addVertex(pose, fromX - px, fromY - py, fromZ - pz)
+            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, fromX + px, fromY + py, fromZ + pz)
+            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, toX + px, toY + py, toZ + pz)
+            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, toX - px, toY - py, toZ - pz)
+            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+
+        // Back face
+        vc.addVertex(pose, fromX + px, fromY + py, fromZ + pz)
+            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, fromX - px, fromY - py, fromZ - pz)
+            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, toX - px, toY - py, toZ - pz)
+            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, toX + px, toY + py, toZ + pz)
+            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
     }
 
     private fun renderSelectionHighlight(poseStack: PoseStack, buffer: VertexConsumer, pos: BlockPos) {
