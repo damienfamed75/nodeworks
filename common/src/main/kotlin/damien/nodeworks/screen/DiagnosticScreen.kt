@@ -671,6 +671,8 @@ class DiagnosticScreen(
     // ========== Jobs & Errors Tab ==========
 
     private var jobsScrollY = 0
+    /** Rendered error click regions: (y start, y end, terminal pos) */
+    private val errorClickRegions = mutableListOf<Triple<Int, Int, BlockPos>>()
 
     private fun renderJobsAndErrors(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
         val lineH = font.lineHeight + 2
@@ -754,30 +756,48 @@ class DiagnosticScreen(
         val errorTop = contentTop + lineH + 4
         graphics.enableScissor(splitX + 2, errorTop, contentLeft + contentW, contentTop + contentH)
 
+        errorClickRegions.clear()
         if (errors.isEmpty()) {
             graphics.drawString(font, "No errors", splitX + 8, errorTop + 2, DIM, false)
         } else {
             var ey = errorTop + 2
             for (error in errors) {
+                val entryStart = ey
                 val age = (System.currentTimeMillis() - error.timestamp) / 1000
                 val ageStr = if (age < 60) "${age}s ago" else "${age / 60}m ago"
                 val posStr = "(${error.terminalPos.x}, ${error.terminalPos.y}, ${error.terminalPos.z})"
 
+                // Check if this entry is hovered
+                val errorRight = contentLeft + contentW
+                val isHovered = mouseX >= splitX + 2 && mouseX < errorRight
+
                 // Time + position header
-                graphics.drawString(font, "$ageStr — $posStr", splitX + 6, ey, DIM, false)
+                val headerColor = if (isHovered && mouseY >= entryStart && mouseY < entryStart + lineH) 0xFFAABBCC.toInt() else DIM
+                graphics.drawString(font, "$ageStr — $posStr", splitX + 6, ey, headerColor, false)
                 ey += lineH
 
                 // Error message (may wrap)
-                val maxW = contentLeft + contentW - splitX - 10
+                val maxW = errorRight - splitX - 10
                 val wrapped = font.splitter.splitLines(error.message, maxW, net.minecraft.network.chat.Style.EMPTY)
                 for (line in wrapped) {
                     graphics.drawString(font, line.string, splitX + 8, ey, 0xFFFF5555.toInt(), false)
                     ey += lineH
                 }
-                ey += 2
 
-                // Separator between errors
-                graphics.fill(splitX + 6, ey - 1, contentLeft + contentW - 4, ey, 0xFF333333.toInt())
+                val entryEnd = ey
+
+                // Hover highlight + underline
+                if (isHovered && mouseY >= entryStart && mouseY < entryEnd) {
+                    graphics.fill(splitX + 3, entryStart - 1, errorRight - 2, entryEnd, 0x15FFFFFF.toInt())
+                    // Underline the position text to indicate clickability
+                    val posW = font.width("$ageStr — $posStr")
+                    graphics.fill(splitX + 6, entryStart + lineH - 2, splitX + 6 + posW, entryStart + lineH - 1, 0x60FFFFFF.toInt())
+                }
+
+                errorClickRegions.add(Triple(entryStart, entryEnd, error.terminalPos))
+
+                ey += 2
+                graphics.fill(splitX + 6, ey - 1, errorRight - 4, ey, 0xFF333333.toInt())
                 ey += 2
 
                 if (ey > contentTop + contentH) break
@@ -1231,6 +1251,23 @@ class DiagnosticScreen(
                     damien.nodeworks.platform.PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.CraftPreviewRequestPayload(menu.containerId, menu.clickedPos, selected)
                     )
+                    return true
+                }
+            }
+        }
+
+        // Error click → switch to topology, select + pin the terminal
+        if (activeTab == 3 && errorClickRegions.isNotEmpty()) {
+            for ((yStart, yEnd, termPos) in errorClickRegions) {
+                if (my >= yStart && my < yEnd && mx >= contentLeft + contentW / 2 && mx < contentLeft + contentW) {
+                    // Find the block in topology that matches this terminal pos
+                    val block = menu.topology.blocks.firstOrNull { it.pos == termPos }
+                    if (block != null) {
+                        selectedBlock = block
+                        damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock = termPos
+                        activeTab = 0
+                        craftItemField?.visible = false
+                    }
                     return true
                 }
             }
