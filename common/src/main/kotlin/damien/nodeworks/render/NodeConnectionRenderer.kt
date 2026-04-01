@@ -288,28 +288,9 @@ object NodeConnectionRenderer {
             val nb = color and 0xFF
             val colorAlpha = (120 * pulse).toInt().coerceIn(0, 255)
 
-            // Raycast from source to target, offsetting past source block
-            val fromVec = net.minecraft.world.phys.Vec3.atCenterOf(fromPos)
-            val toVec = net.minecraft.world.phys.Vec3.atCenterOf(toPos)
-            val dir = toVec.subtract(fromVec).normalize()
-            val offsetFrom = fromVec.add(dir.scale(0.55))
-            val hitResult = level.clip(
-                net.minecraft.world.level.ClipContext(
-                    offsetFrom, toVec,
-                    net.minecraft.world.level.ClipContext.Block.VISUAL,
-                    net.minecraft.world.level.ClipContext.Fluid.NONE,
-                    net.minecraft.world.phys.shapes.CollisionContext.empty()
-                )
-            )
-            val endVec = if (hitResult.type != net.minecraft.world.phys.HitResult.Type.MISS) {
-                hitResult.location
-            } else {
-                toVec
-            }
-
-            // World-space endpoints
-            val fx = fromVec.x.toFloat(); val fy = fromVec.y.toFloat(); val fz = fromVec.z.toFloat()
-            val tx = endVec.x.toFloat(); val ty = endVec.y.toFloat(); val tz = endVec.z.toFloat()
+            // World-space endpoints (center to center)
+            val fx = fromPos.x + 0.5f; val fy = fromPos.y + 0.5f; val fz = fromPos.z + 0.5f
+            val tx = toPos.x + 0.5f; val ty = toPos.y + 0.5f; val tz = toPos.z + 0.5f
 
             if (blocked) {
                 renderBillboardBeam(poseStack, consumers, translucentType, camPos, fx, fy, fz, tx, ty, tz, time, 180, 50, 50, 80, BEAM_WIDTH * 2f)
