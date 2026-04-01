@@ -96,6 +96,7 @@ class DiagnosticScreen(
 
     // Craft preview state
     private var craftItemField: net.minecraft.client.gui.components.EditBox? = null
+    private var craftFieldLastClickTime = 0L
     private var craftTreeScrollY = 0
     private var craftGraphPanX = 0f
     private var craftGraphPanY = 0f
@@ -1064,6 +1065,19 @@ class DiagnosticScreen(
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
+
+        // Double-click on craft field → select all
+        val field = craftItemField
+        if (field != null && field.visible && mx >= field.x && mx < field.x + field.width && my >= field.y && my < field.y + field.height) {
+            val now = net.minecraft.Util.getMillis()
+            if (now - craftFieldLastClickTime < 400) {
+                field.moveCursorToStart(false)
+                field.moveCursorToEnd(true)
+                craftFieldLastClickTime = 0
+                return true
+            }
+            craftFieldLastClickTime = now
+        }
 
         // Craft dropdown click
         if (craftAutocompleteSuggestions.isNotEmpty() && craftItemField != null) {
