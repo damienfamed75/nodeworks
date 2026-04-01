@@ -193,6 +193,16 @@ class VariableScreen(
         super.render(graphics, mouseX, mouseY, partialTick)
     }
 
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        if (nameField.isFocused || valueField.isFocused) {
+            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers) // ESC
+            nameField.keyPressed(keyCode, scanCode, modifiers)
+            valueField.keyPressed(keyCode, scanCode, modifiers)
+            return true
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers)
+    }
+
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val mx = mouseX.toInt()
         val my = mouseY.toInt()

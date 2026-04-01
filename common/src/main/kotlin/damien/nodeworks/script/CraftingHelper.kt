@@ -55,6 +55,9 @@ object CraftingHelper {
     /** Set when craftViaProcessing starts an async handler. The caller should wait on this. */
     var currentPendingJob: PendingHandlerJob? = null
 
+    /** Source description for the last resolved processing handler. */
+    var lastHandlerSource: String? = null
+
     /**
      * Represents a pending async handler invocation.
      * CraftingHelper starts the coroutine, and the caller polls [isComplete].
@@ -175,8 +178,10 @@ object CraftingHelper {
             }
 
             if (handler != null) {
+                val isSubnet = apiMatch.apiStorage.remoteTerminalPositions != null
+                val source = if (isSubnet) "subnet" else "local"
+                lastHandlerSource = "$cardName ($source)"
                 if (depth == 0) {
-                    val source = if (apiMatch.apiStorage.remoteTerminalPositions != null) "subnet" else "local"
                     traceLog?.invoke("[craft] Resolved '$identifier' via Process Template: ${cardName} ($source)")
                 }
                 var totalCrafted = 0
@@ -322,7 +327,10 @@ object CraftingHelper {
                     toCraft = needed - have
                 }
             }
-            if (asyncCount > 0) traceLog?.invoke("[craft] Waiting on ${asyncCount}x $shortId from handler")
+            if (asyncCount > 0) {
+                val src = lastHandlerSource ?: "handler"
+                traceLog?.invoke("[craft] Waiting on ${asyncCount}x $shortId from $src")
+            }
         }
 
         // If there are pending async prerequisites, register a job that assembles when all complete
