@@ -159,7 +159,20 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             }
         }
 
-        val openData = DiagnosticOpenData(blocks, networkName, networkColor, pos)
+        // Collect all craftable item IDs from instruction sets and processing sets
+        val craftableItems = mutableSetOf<String>()
+        for (crafter in snapshot.crafters) {
+            for (info in crafter.instructionSets) {
+                if (info.outputItemId.isNotEmpty()) craftableItems.add(info.outputItemId)
+            }
+        }
+        for (apiSnapshot in snapshot.processingApis) {
+            for (api in apiSnapshot.apis) {
+                craftableItems.addAll(api.outputItemIds)
+            }
+        }
+
+        val openData = DiagnosticOpenData(blocks, networkName, networkColor, pos, craftableItems.sorted())
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,

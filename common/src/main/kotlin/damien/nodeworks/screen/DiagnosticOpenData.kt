@@ -8,7 +8,8 @@ data class DiagnosticOpenData(
     val blocks: List<NetworkBlock>,
     val networkName: String,
     val networkColor: Int,
-    val networkPos: BlockPos  // position used for network discovery (for craft preview requests)
+    val networkPos: BlockPos,  // position used for network discovery (for craft preview requests)
+    val craftableItems: List<String> = emptyList()  // all craftable item IDs from instruction sets + processing sets
 ) {
     data class NetworkBlock(
         val pos: BlockPos,
@@ -45,7 +46,9 @@ data class DiagnosticOpenData(
                 val networkName = buf.readUtf(64)
                 val networkColor = buf.readVarInt()
                 val networkPos = buf.readBlockPos()
-                return DiagnosticOpenData(blocks, networkName, networkColor, networkPos)
+                val craftableCount = buf.readVarInt()
+                val craftableItems = (0 until craftableCount).map { buf.readUtf(256) }
+                return DiagnosticOpenData(blocks, networkName, networkColor, networkPos, craftableItems)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: DiagnosticOpenData) {
@@ -72,6 +75,8 @@ data class DiagnosticOpenData(
                 buf.writeUtf(data.networkName, 64)
                 buf.writeVarInt(data.networkColor)
                 buf.writeBlockPos(data.networkPos)
+                buf.writeVarInt(data.craftableItems.size)
+                for (item in data.craftableItems) buf.writeUtf(item, 256)
             }
         }
     }
