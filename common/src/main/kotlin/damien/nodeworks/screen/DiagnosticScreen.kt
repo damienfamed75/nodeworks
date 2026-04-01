@@ -914,6 +914,22 @@ class DiagnosticScreen(
         }
         graphics.drawString(font, title, px + 20, py + 5, titleColor)
 
+        // Pin button (icon from atlas)
+        val isPinned = damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == sel.pos
+        val pinX = px + pw - 24
+        val pinY = py + 1
+        val pinHovered = mouseX >= pinX && mouseX < pinX + 10 && mouseY >= pinY && mouseY < pinY + 10
+        val pinIconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+        // Use checkmark icon (u=0) for pinned, arrow-right (u=32) for unpinned
+        val pinU = if (isPinned) 0f else 32f
+        val tint = if (isPinned) 0xFF55CCFF.toInt() else if (pinHovered) WHITE else GRAY
+        val tr = ((tint shr 16) and 0xFF) / 255f
+        val tg = ((tint shr 8) and 0xFF) / 255f
+        val tb = (tint and 0xFF) / 255f
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(tr, tg, tb, 1f)
+        graphics.blit(pinIconsTexture, pinX, pinY, 10, 10, pinU, 0f, 16, 16, 256, 256)
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+
         // [X] close button
         val closeX = px + pw - 10
         val closeY = py + 2
@@ -1249,6 +1265,19 @@ class DiagnosticScreen(
             val bounds = getInspectorBounds()
             if (bounds != null) {
                 val px = bounds[0]; val py = bounds[1]; val pw = bounds[2]; val ph = bounds[3]
+                // Pin button
+                val pinX = px + pw - 24
+                val pinY = py + 1
+                if (mx >= pinX && mx < pinX + 10 && my >= pinY && my < pinY + 10) {
+                    val currentPin = damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock
+                    if (currentPin == selectedBlock?.pos) {
+                        damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock = null
+                    } else {
+                        damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock = selectedBlock?.pos
+                    }
+                    return true
+                }
+
                 // [X] close button
                 val closeX = px + pw - 10
                 val closeY = py + 2
