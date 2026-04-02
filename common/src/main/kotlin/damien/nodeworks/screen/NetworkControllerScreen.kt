@@ -83,8 +83,7 @@ class NetworkControllerScreen(
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         // Top bar
-        NineSlice.TOP_BAR.draw(graphics, leftPos, topPos, imageWidth, TOP_BAR_H)
-        graphics.drawString(font, title, leftPos + 6, topPos + 6, 0xFFFFFFFF.toInt())
+        NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H)
 
         // List area (inset panel)
         NineSlice.PANEL_INSET.draw(graphics, listLeft, listTop, listRight - listLeft, listBottom - listTop)

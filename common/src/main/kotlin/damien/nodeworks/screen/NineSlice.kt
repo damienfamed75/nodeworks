@@ -163,6 +163,18 @@ class NineSlice(
         /** The shared GUI atlas containing all 9-slice regions. */
         val GUI_ATLAS = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/gui_atlas.png")
 
+        /** Visual text offset from top of the TOP_BAR — accounts for the top-heavy 9-slice. */
+        const val TITLE_TEXT_Y = 7
+
+        /**
+         * Draw a TOP_BAR with a left-aligned title, visually centered.
+         * Use this for consistent title bars across all screens.
+         */
+        fun drawTitleBar(graphics: GuiGraphics, font: net.minecraft.client.gui.Font, title: net.minecraft.network.chat.Component, x: Int, y: Int, width: Int, height: Int = 20) {
+            TOP_BAR.draw(graphics, x, y, width, height)
+            graphics.drawString(font, title, x + 6, y + TITLE_TEXT_Y, 0xFFFFFFFF.toInt())
+        }
+
         // =====================================================================
         // Atlas Layout Reference (gui_atlas.png, 256x256)
         // =====================================================================
@@ -170,6 +182,7 @@ class NineSlice(
         // Position   Size    Name                 Insets (L,R,T,B)  Description
         // ---------  ------  -------------------  ----------------  ---------------------------
         // (0,   0)   24x24   WINDOW_FRAME         3, 3, 3, 3        Main window background (#2B2B2B) with gradient border
+        // (24,  0)   24x24   WINDOW_DEEPEN        3, 3, 3, 3        Deepened window panel — darker inset variant of WINDOW_FRAME
         // (0,  24)   24x24   TOP_BAR              3, 3, 3, 3        Header bar (#3C3C3C) with border
         // (0,  48)   24x16   TAB_ACTIVE           3, 3, 3, 2        Active tab (#2B2B2B) with blue accent top edge
         // (24, 48)   24x16   TAB_INACTIVE         3, 3, 3, 2        Inactive tab (#222222) with subtle border
@@ -197,26 +210,27 @@ class NineSlice(
 
         // ---- Pre-built slices ----
 
-        val WINDOW_FRAME         = NineSlice(GUI_ATLAS,  0,   0, 24, 24, 3, 3, 3, 3)
-        val TOP_BAR              = NineSlice(GUI_ATLAS,  0,  24, 24, 24, 3, 3, 3, 3)
-        val TAB_ACTIVE           = NineSlice(GUI_ATLAS,  0,  48, 24, 16, 3, 3, 3, 2)
-        val TAB_INACTIVE         = NineSlice(GUI_ATLAS, 24,  48, 24, 16, 3, 3, 3, 2)
-        val TAB_HOVER            = NineSlice(GUI_ATLAS, 48,  48, 24, 16, 3, 3, 3, 2)
-        val BUTTON               = NineSlice(GUI_ATLAS,  0,  64, 24, 16, 3, 3, 3, 3)
-        val BUTTON_HOVER         = NineSlice(GUI_ATLAS, 24,  64, 24, 16, 3, 3, 3, 3)
-        val BUTTON_ACTIVE        = NineSlice(GUI_ATLAS, 48,  64, 24, 16, 3, 3, 3, 3)
-        val PANEL_INSET          = NineSlice(GUI_ATLAS,  0,  80, 24, 24, 3, 3, 3, 3)
-        val SLOT                 = NineSlice(GUI_ATLAS,  0, 104, 18, 18, 1, 1, 1, 1)
-        val INPUT_FIELD          = NineSlice(GUI_ATLAS, 24, 104, 24, 16, 3, 3, 3, 3)
-        val CONTENT_BORDER       = NineSlice(GUI_ATLAS, 24,  80, 24, 24, 3, 3, 3, 3)
-        val ROW                  = NineSlice(GUI_ATLAS, 48,  80, 24, 16, 1, 1, 1, 1)
-        val ROW_HIGHLIGHT        = NineSlice(GUI_ATLAS, 72,  80, 24, 16, 1, 1, 1, 1)
-        val SEPARATOR            = NineSlice(GUI_ATLAS, 72, 104, 24,  3, 1, 1, 1, 1)
-        val SEPARATOR_BAR        = NineSlice(GUI_ATLAS, 96, 104, 24,  6, 1, 1, 1, 1)
-        val TOGGLE_ACTIVE        = NineSlice(GUI_ATLAS, 72,  64, 48, 16, 3, 3, 3, 3)
-        val TOGGLE_INACTIVE      = NineSlice(GUI_ATLAS,120,  64, 48, 16, 3, 3, 3, 3)
-        val SCROLLBAR_TRACK      = NineSlice(GUI_ATLAS,  0, 128,  8, 24, 2, 2, 3, 3)
-        val SCROLLBAR_THUMB      = NineSlice(GUI_ATLAS,  8, 128,  8, 16, 2, 2, 3, 3)
+        val WINDOW_FRAME = NineSlice(GUI_ATLAS, 0, 0, 24, 24, 3, 3, 3, 3)
+        val WINDOW_DEEPEN = NineSlice(GUI_ATLAS, 24, 0, 24, 24, 3, 3, 4, 3)
+        val TOP_BAR = NineSlice(GUI_ATLAS, 0, 24, 24, 24, 3, 3, 3, 3)
+        val TAB_ACTIVE = NineSlice(GUI_ATLAS, 0, 48, 24, 16, 3, 3, 3, 2)
+        val TAB_INACTIVE = NineSlice(GUI_ATLAS, 24, 48, 24, 16, 3, 3, 3, 2)
+        val TAB_HOVER = NineSlice(GUI_ATLAS, 48, 48, 24, 16, 3, 3, 3, 2)
+        val BUTTON = NineSlice(GUI_ATLAS, 0, 64, 24, 16, 3, 3, 3, 3)
+        val BUTTON_HOVER = NineSlice(GUI_ATLAS, 24, 64, 24, 16, 3, 3, 3, 3)
+        val BUTTON_ACTIVE = NineSlice(GUI_ATLAS, 48, 64, 24, 16, 3, 3, 3, 3)
+        val PANEL_INSET = NineSlice(GUI_ATLAS, 0, 80, 24, 24, 3, 3, 3, 3)
+        val SLOT = NineSlice(GUI_ATLAS, 0, 104, 18, 18, 1, 1, 1, 1)
+        val INPUT_FIELD = NineSlice(GUI_ATLAS, 24, 104, 24, 16, 3, 3, 3, 3)
+        val CONTENT_BORDER = NineSlice(GUI_ATLAS, 24, 80, 24, 24, 3, 3, 3, 3)
+        val ROW = NineSlice(GUI_ATLAS, 48, 80, 24, 16, 1, 1, 1, 1)
+        val ROW_HIGHLIGHT = NineSlice(GUI_ATLAS, 72, 80, 24, 16, 1, 1, 1, 1)
+        val SEPARATOR = NineSlice(GUI_ATLAS, 72, 104, 24, 3, 1, 1, 1, 1)
+        val SEPARATOR_BAR = NineSlice(GUI_ATLAS, 96, 104, 24, 6, 1, 1, 1, 1)
+        val TOGGLE_ACTIVE = NineSlice(GUI_ATLAS, 72, 64, 48, 16, 3, 3, 3, 3)
+        val TOGGLE_INACTIVE = NineSlice(GUI_ATLAS, 120, 64, 48, 16, 3, 3, 3, 3)
+        val SCROLLBAR_TRACK = NineSlice(GUI_ATLAS, 0, 128, 8, 24, 2, 2, 3, 3)
+        val SCROLLBAR_THUMB = NineSlice(GUI_ATLAS, 8, 128, 8, 16, 2, 2, 3, 3)
         val SCROLLBAR_THUMB_HOVER = NineSlice(GUI_ATLAS, 16, 128, 8, 16, 2, 2, 3, 3)
     }
 }

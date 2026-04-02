@@ -44,7 +44,7 @@ class TerminalScreen(
     private val localApiNames: List<String>
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
     private val craftableOutputs: List<String>
-    private var scriptRunning: Boolean = menu.isRunning()
+    private val scriptRunning: Boolean get() = menu.isRunning()
     private var autoRun: Boolean = menu.isAutoRun()
 
     // Multi-script state — scripts map keyed by name, activeTab tracks which is shown in editor
@@ -403,7 +403,7 @@ class TerminalScreen(
             AutocompletePopup(font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis) { scripts }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
-        val btnY = topPos + 4
+        val btnY = topPos + 5
         val stopX = leftPos + imageWidth - 44
         val runX = stopX - 44
         val layoutX = runX - 24
@@ -440,7 +440,6 @@ class TerminalScreen(
                     )
                 )
                 PlatformServices.clientNetworking.sendToServer(RunScriptPayload(menu.getTerminalPos()))
-                scriptRunning = true
             })
 
         // Stop button
@@ -450,7 +449,6 @@ class TerminalScreen(
                 0xFFCC5555.toInt(), 0xFFFF8888.toInt()
             ) { _ ->
                 PlatformServices.clientNetworking.sendToServer(StopScriptPayload(menu.getTerminalPos()))
-                scriptRunning = false
             })
 
         // Auto-run toggle is rendered manually in renderBg and handled in mouseClicked
@@ -614,21 +612,26 @@ class TerminalScreen(
             )
         }
 
-        // Auto-run toggle
-        val toggleW = cardPanelWidth - 8
-        val toggleX = leftPos + 4
-        val toggleY = topPos + imageHeight - 22
+        // Auto-run toggle — centered on sidebar
+        val sidebarW = cardPanelWidth + editorPadding - 3
+        val toggleW = 56
+        val toggleX = leftPos + (sidebarW - toggleW) / 2 + 4
+        val toggleY = topPos + imageHeight - 38
+        // Deepened background behind toggle area (expanded 3px each side, 2px taller)
+        val deepenH = font.lineHeight + 5 + 16 + 3 + 6 + 2
+        NineSlice.WINDOW_DEEPEN.draw(graphics, toggleX - 3, toggleY - font.lineHeight - 5 - 3, toggleW + 6, deepenH)
+
         val labelText = "Autorun"
         graphics.drawString(
             font,
             labelText,
             toggleX + (toggleW - font.width(labelText)) / 2,
-            toggleY - font.lineHeight - 2,
+            toggleY - font.lineHeight,
             0xFFAAAAAA.toInt()
         )
         val toggleU = if (autoRun) 72f else 120f
-        val toggleDrawX = toggleX + (toggleW - 48) / 2
-        graphics.blit(NineSlice.GUI_ATLAS, toggleDrawX, toggleY, toggleU, 64f, 48, 16, 256, 256)
+        val toggleDrawX = toggleX + (toggleW - 48) / 2 - 1
+        graphics.blit(NineSlice.GUI_ATLAS, toggleDrawX, toggleY + 2, toggleU, 64f, 48, 16, 256, 256)
 
         // Log panel
         val effectiveLogHeight = if (logCollapsed) logCollapsedHeight else logPanelHeight
@@ -749,13 +752,13 @@ class TerminalScreen(
 
         // Status indicator on top of top bar
         val statusX = leftPos + 4
-        val statusIconY = topPos + (topBarHeight - 16) / 2
+        val statusIconY = topPos + (topBarHeight - 16) / 2 + 1
         val statusIcon = if (scriptRunning) Icons.CRYSTAL_ACTIVE else Icons.CRYSTAL_INACTIVE
         statusIcon.draw(graphics, statusX, statusIconY)
         val statusText = if (scriptRunning) "Running" else "Stopped"
         val statusTextColor = if (scriptRunning) 0xFFD3FFFF.toInt() else 0xFF888888.toInt()
-        val statusTextY = topPos + (topBarHeight - font.lineHeight) / 2 + 1
-        graphics.drawString(font, statusText, statusX + 18, statusTextY, statusTextColor)
+        val statusTextY = topPos + (topBarHeight - font.lineHeight) / 2 + 2
+        graphics.drawString(font, statusText, statusX + 21, statusTextY, statusTextColor)
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -1254,9 +1257,10 @@ class TerminalScreen(
         val my = mouseY.toInt()
 
         // Auto-run toggle click
-        val toggleW = cardPanelWidth - 8
-        val toggleX = leftPos + 4
-        val toggleY = topPos + imageHeight - 22
+        val sidebarW = cardPanelWidth + editorPadding - 3
+        val toggleW = 56
+        val toggleX = leftPos + (sidebarW - toggleW) / 2 + 4
+        val toggleY = topPos + imageHeight - 38
         if (mx >= toggleX && mx < toggleX + toggleW && my >= toggleY && my < toggleY + 16) {
             autoRun = !autoRun
             PlatformServices.clientNetworking.sendToServer(ToggleAutoRunPayload(menu.getTerminalPos(), autoRun))
