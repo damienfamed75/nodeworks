@@ -454,15 +454,20 @@ class TerminalScreen(
     }
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
-        // Resolve network color once for the whole frame
+        // Resolve network color once for the whole frame (gray if disconnected)
         val mcInst = net.minecraft.client.Minecraft.getInstance()
-        val termEntity = mcInst.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
-        val networkColor = if (termEntity?.networkId != null) {
-            damien.nodeworks.network.NetworkSettingsRegistry.getColor(termEntity.networkId)
+        val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getTerminalPos())
+        val networkColor = if (reachable) {
+            val termEntity = mcInst.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
+            if (termEntity?.networkId != null) {
+                damien.nodeworks.network.NetworkSettingsRegistry.getColor(termEntity.networkId)
+            } else {
+                cachedNetworkColor ?: damien.nodeworks.render.NodeConnectionRenderer.findNetworkColor(
+                    mcInst.level, menu.getTerminalPos()
+                ).also { cachedNetworkColor = it }
+            }
         } else {
-            cachedNetworkColor ?: damien.nodeworks.render.NodeConnectionRenderer.findNetworkColor(
-                mcInst.level, menu.getTerminalPos()
-            ).also { cachedNetworkColor = it }
+            -1
         }
 
         // Main background
@@ -498,7 +503,7 @@ class TerminalScreen(
                 else -> NineSlice.TAB_INACTIVE
             }
             tabSlice.draw(graphics, tabX, tabTop, tabWidth, tabH)
-            if (isActive) {
+            if (isActive && networkColor >= 0) {
                 NineSlice.TAB_TRIM.drawTinted(graphics, tabX, tabTop, tabWidth, tabH, networkColor, alpha = 0.7f)
             }
             val textY = tabTop + (tabH - font.lineHeight) / 2 + 1

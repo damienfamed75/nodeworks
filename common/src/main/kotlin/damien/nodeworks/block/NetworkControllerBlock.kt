@@ -46,6 +46,7 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
         return NetworkControllerBlockEntity(pos, state)
     }
 
+
     override fun useWithoutItem(
         state: BlockState,
         level: Level,

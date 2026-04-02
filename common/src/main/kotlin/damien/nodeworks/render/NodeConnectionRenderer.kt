@@ -89,8 +89,16 @@ object NodeConnectionRenderer {
         return null
     }
 
-    /** Convenience: find the network color for a position. */
+    /** Convenience: find the network color for a position. Checks registry first, falls back to BFS. */
     fun findNetworkColor(level: net.minecraft.world.level.Level?, startPos: BlockPos): Int {
+        // Try registry first (O(1), works even if controller is unloaded)
+        val connectable = level?.getBlockEntity(startPos) as? damien.nodeworks.network.Connectable
+        val networkId = connectable?.networkId
+        if (networkId != null) {
+            val regColor = damien.nodeworks.network.NetworkSettingsRegistry.getColor(networkId)
+            if (regColor != DEFAULT_NETWORK_COLOR) return regColor
+        }
+        // Fallback to BFS
         return findController(level, startPos)?.networkColor ?: DEFAULT_NETWORK_COLOR
     }
 

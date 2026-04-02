@@ -37,20 +37,19 @@ class NodeSideScreenHandler(
         for (row in 0..2) {
             for (col in 0..2) {
                 val slotIndex = offset + row * 3 + col
-                addSlot(CardOnlySlot(nodeInventory, slotIndex, 62 + col * 18, 17 + row * 18))
+                addSlot(CardOnlySlot(nodeInventory, slotIndex, 63 + col * 18, 25 + row * 18))
             }
         }
 
-        // Player inventory
         // Player inventory (3 rows)
         for (row in 0 until 3) {
             for (col in 0 until 9) {
-                addSlot(net.minecraft.world.inventory.Slot(playerInventory, col + row * 9 + 9, 8 + col * 18, 84 + row * 18))
+                addSlot(net.minecraft.world.inventory.Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 93 + row * 18))
             }
         }
         // Player hotbar
         for (col in 0 until 9) {
-            addSlot(net.minecraft.world.inventory.Slot(playerInventory, col, 8 + col * 18, 84 + 58))
+            addSlot(net.minecraft.world.inventory.Slot(playerInventory, col, 9 + col * 18, 93 + 3 * 18 + 4))
         }
     }
 
