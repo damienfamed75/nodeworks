@@ -632,7 +632,20 @@ class TerminalScreen(
         val toggleY = topPos + imageHeight - 38
         // Deepened background behind toggle area (expanded 3px each side, 2px taller)
         val deepenH = font.lineHeight + 5 + 16 + 3 + 6 + 2
-        NineSlice.WINDOW_RECESSED.draw(graphics, toggleX - 3, toggleY - font.lineHeight - 5 - 3, toggleW + 6, deepenH)
+        val recessX = toggleX - 3
+        val recessY = toggleY - font.lineHeight - 5 - 3
+        val recessW = toggleW + 6
+        NineSlice.WINDOW_RECESSED.draw(graphics, recessX, recessY, recessW, deepenH)
+
+        // Corner screws just outside the recessed area
+        val screwU = Icons.SMALL_SCREW.u + 5f
+        val screwV = Icons.SMALL_SCREW.v + 5f
+        val ss = 6 // screw size
+        val so = 1 // offset outside the recessed edge
+        graphics.blit(Icons.ATLAS, recessX - ss - so, recessY - ss - so, screwU, screwV, ss, ss, 256, 256)
+        graphics.blit(Icons.ATLAS, recessX + recessW + so, recessY - ss - so, screwU, screwV, ss, ss, 256, 256)
+        graphics.blit(Icons.ATLAS, recessX - ss - so, recessY + deepenH + so, screwU, screwV, ss, ss, 256, 256)
+        graphics.blit(Icons.ATLAS, recessX + recessW + so, recessY + deepenH + so, screwU, screwV, ss, ss, 256, 256)
 
         val labelText = "Autorun"
         graphics.drawString(
