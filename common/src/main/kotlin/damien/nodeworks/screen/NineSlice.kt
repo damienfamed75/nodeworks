@@ -228,6 +228,7 @@ class NineSlice(
         // (0,  48)   24x16   TAB_ACTIVE           3, 3, 3, 2        Active tab (#2B2B2B) with blue accent top edge
         // (24, 48)   24x16   TAB_INACTIVE         3, 3, 3, 2        Inactive tab (#222222) with subtle border
         // (48, 48)   24x16   TAB_HOVER            3, 3, 3, 2        Hovered tab (#333333) between active/inactive
+        // (72, 48)   24x16   TAB_TRIM             3, 3, 3, 2        White trim overlay for active tab — tint with network color
         // (0,  64)   24x16   BUTTON               3, 3, 3, 3        Raised button (#3C3C3C) with 3D borders
         // (24, 64)   24x16   BUTTON_HOVER         3, 3, 3, 3        Hovered button (#4A4A4A) brighter 3D borders
         // (48, 64)   24x16   BUTTON_ACTIVE        3, 3, 3, 3        Pressed button (#333333) inverted 3D borders
@@ -258,6 +259,7 @@ class NineSlice(
         val TAB_ACTIVE = NineSlice(GUI_ATLAS, 0, 48, 24, 16, 3, 3, 3, 2)
         val TAB_INACTIVE = NineSlice(GUI_ATLAS, 24, 48, 24, 16, 3, 3, 3, 2)
         val TAB_HOVER = NineSlice(GUI_ATLAS, 48, 48, 24, 16, 3, 3, 3, 2)
+        val TAB_TRIM = NineSlice(GUI_ATLAS, 72, 48, 24, 16, 3, 3, 3, 2)
         val BUTTON = NineSlice(GUI_ATLAS, 0, 64, 24, 16, 3, 3, 3, 3)
         val BUTTON_HOVER = NineSlice(GUI_ATLAS, 24, 64, 24, 16, 3, 3, 3, 3)
         val BUTTON_ACTIVE = NineSlice(GUI_ATLAS, 48, 64, 24, 16, 3, 3, 3, 3)
