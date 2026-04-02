@@ -454,6 +454,17 @@ class TerminalScreen(
     }
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+        // Resolve network color once for the whole frame
+        val mcInst = net.minecraft.client.Minecraft.getInstance()
+        val termEntity = mcInst.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
+        val networkColor = if (termEntity?.networkId != null) {
+            damien.nodeworks.network.NetworkSettingsRegistry.getColor(termEntity.networkId)
+        } else {
+            cachedNetworkColor ?: damien.nodeworks.render.NodeConnectionRenderer.findNetworkColor(
+                mcInst.level, menu.getTerminalPos()
+            ).also { cachedNetworkColor = it }
+        }
+
         // Main background
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
@@ -482,6 +493,9 @@ class TerminalScreen(
             val tabTop = tabBarY + 1
             val tabH = tabBarHeight - 1
             tabSlice.draw(graphics, tabX, tabTop, tabWidth, tabH)
+            if (isActive) {
+                NineSlice.TAB_TRIM.drawTinted(graphics, tabX, tabTop, tabWidth, tabH, networkColor, alpha = 0.7f)
+            }
             val textY = tabTop + (tabH - font.lineHeight) / 2 + 1
             graphics.drawString(font, name, tabX + 6, textY, textColor, false)
 
@@ -747,26 +761,7 @@ class TerminalScreen(
         // )
 
         // Re-draw top bar over everything
-        // Network color: prefer registry, fallback to cached BFS result
-        val terminalEntity =
-            net.minecraft.client.Minecraft.getInstance().level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
-        val networkColor = if (terminalEntity?.networkId != null) {
-            damien.nodeworks.network.NetworkSettingsRegistry.getColor(terminalEntity.networkId)
-        } else {
-            cachedNetworkColor ?: damien.nodeworks.render.NodeConnectionRenderer.findNetworkColor(
-                net.minecraft.client.Minecraft.getInstance().level, menu.getTerminalPos()
-            ).also { cachedNetworkColor = it }
-        }
-        NineSlice.drawTitleBar(
-            graphics,
-            font,
-            Component.empty(),
-            leftPos,
-            topPos,
-            imageWidth,
-            topBarHeight,
-            networkColor
-        )
+        NineSlice.drawTitleBar(graphics, font, Component.empty(), leftPos, topPos, imageWidth, topBarHeight, networkColor)
 
         // Status indicator on top of top bar
         val statusX = leftPos + 4
