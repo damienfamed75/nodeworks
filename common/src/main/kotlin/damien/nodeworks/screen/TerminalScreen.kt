@@ -5,12 +5,10 @@ import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.*
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.screen.TerminalScreenHandler
 import damien.nodeworks.screen.widget.AutocompletePopup
 import damien.nodeworks.screen.widget.ScriptEditor
 
 import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.resources.ResourceLocation
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
@@ -45,6 +43,7 @@ class TerminalScreen(
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
     private val craftableOutputs: List<String>
     private val scriptRunning: Boolean get() = menu.isRunning()
+    private var cachedNetworkColor: Int? = null
     private var autoRun: Boolean = menu.isAutoRun()
 
     // Multi-script state — scripts map keyed by name, activeTab tracks which is shown in editor
@@ -619,7 +618,7 @@ class TerminalScreen(
         val toggleY = topPos + imageHeight - 38
         // Deepened background behind toggle area (expanded 3px each side, 2px taller)
         val deepenH = font.lineHeight + 5 + 16 + 3 + 6 + 2
-        NineSlice.WINDOW_DEEPEN.draw(graphics, toggleX - 3, toggleY - font.lineHeight - 5 - 3, toggleW + 6, deepenH)
+        NineSlice.WINDOW_RECESSED.draw(graphics, toggleX - 3, toggleY - font.lineHeight - 5 - 3, toggleW + 6, deepenH)
 
         val labelText = "Autorun"
         graphics.drawString(
@@ -748,7 +747,26 @@ class TerminalScreen(
         // )
 
         // Re-draw top bar over everything
-        NineSlice.TOP_BAR.draw(graphics, leftPos, topPos, imageWidth, topBarHeight)
+        // Network color: prefer registry, fallback to cached BFS result
+        val terminalEntity =
+            net.minecraft.client.Minecraft.getInstance().level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
+        val networkColor = if (terminalEntity?.networkId != null) {
+            damien.nodeworks.network.NetworkSettingsRegistry.getColor(terminalEntity.networkId)
+        } else {
+            cachedNetworkColor ?: damien.nodeworks.render.NodeConnectionRenderer.findNetworkColor(
+                net.minecraft.client.Minecraft.getInstance().level, menu.getTerminalPos()
+            ).also { cachedNetworkColor = it }
+        }
+        NineSlice.drawTitleBar(
+            graphics,
+            font,
+            Component.empty(),
+            leftPos,
+            topPos,
+            imageWidth,
+            topBarHeight,
+            networkColor
+        )
 
         // Status indicator on top of top bar
         val statusX = leftPos + 4

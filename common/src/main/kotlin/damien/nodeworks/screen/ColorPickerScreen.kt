@@ -102,7 +102,7 @@ class ColorPickerScreen(
         NineSlice.WINDOW_FRAME.draw(graphics, panelX, panelY, PANEL_W, PANEL_H)
 
         // Top bar
-        NineSlice.drawTitleBar(graphics, font, title, panelX, panelY, PANEL_W, TOP_BAR_H)
+        NineSlice.drawTitleBar(graphics, font, title, panelX, panelY, PANEL_W, TOP_BAR_H, selectedColor)
 
         // Color palette with border frame
         val px = panelX + PICKER_X

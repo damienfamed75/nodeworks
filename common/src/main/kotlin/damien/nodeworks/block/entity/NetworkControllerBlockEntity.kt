@@ -29,8 +29,7 @@ class NetworkControllerBlockEntity(
     override var blockDestroyed: Boolean = false
 
     /** The network's unique identity. Generated on first placement. */
-    var networkId: UUID = UUID.randomUUID()
-        private set
+    override var networkId: UUID? = UUID.randomUUID()
 
     // --- Network Settings ---
 
@@ -115,7 +114,7 @@ class NetworkControllerBlockEntity(
         if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
-            damien.nodeworks.script.NetworkInventoryCache.removeByUUID(networkId)
+            networkId?.let { damien.nodeworks.script.NetworkInventoryCache.removeByUUID(it) }
         }
         super.setRemoved()
     }
@@ -124,7 +123,7 @@ class NetworkControllerBlockEntity(
 
     override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
         super.saveAdditional(tag, registries)
-        tag.putString("networkId", networkId.toString())
+        networkId?.let { tag.putString("networkId", it.toString()) }
         tag.putInt("networkColor", networkColor)
         tag.putString("networkName", networkName)
         tag.putInt("redstoneMode", redstoneMode)
@@ -151,6 +150,13 @@ class NetworkControllerBlockEntity(
         connections.clear()
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
+        }
+        // Update client-side settings registry
+        networkId?.let {
+            damien.nodeworks.network.NetworkSettingsRegistry.update(
+                it,
+                damien.nodeworks.network.NetworkSettingsRegistry.NetworkSettings(networkColor, nodeGlowStyle)
+            )
         }
     }
 

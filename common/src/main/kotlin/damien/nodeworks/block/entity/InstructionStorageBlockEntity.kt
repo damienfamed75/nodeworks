@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import java.util.UUID
 
 /**
  * Block entity for Instruction Storage. Holds Instruction Sets and an upgrade slot.
@@ -48,6 +49,7 @@ class InstructionStorageBlockEntity(
     private val items = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
+    override var networkId: UUID? = null
 
     var upgradeLevel: Int = 0
         private set
@@ -206,6 +208,7 @@ class InstructionStorageBlockEntity(
         super.saveAdditional(tag, registries)
         ContainerHelper.saveAllItems(tag, items, registries)
         tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
+        networkId?.let { tag.putString("networkId", it.toString()) }
     }
 
     override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
@@ -213,6 +216,9 @@ class InstructionStorageBlockEntity(
         items.clear()
         ContainerHelper.loadAllItems(tag, items, registries)
         recalculateUpgradeLevel()
+        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
         connections.clear()
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }

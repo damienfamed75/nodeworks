@@ -91,7 +91,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             when (entity) {
                 is NetworkControllerBlockEntity -> {
                     if (entity.networkName.isNotEmpty()) details.add("Name: ${entity.networkName}")
-                    details.add("Network ID: ${entity.networkId.toString().take(8)}...")
+                    details.add("Network ID: ${entity.networkId?.toString()?.take(8) ?: "none"}...")
                     details.add("__color:${entity.networkColor}")
                     details.add("__glow:${entity.nodeGlowStyle}:${entity.networkColor}")
                     val redstoneNames = arrayOf("Ignored", "Active High", "Active Low")

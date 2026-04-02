@@ -44,9 +44,31 @@ class NineSlice(
     val texH: Int = 256
 ) {
     /**
+     * Draw this 9-slice tinted with an RGB color. Supports semi-transparent atlas pixels.
+     */
+    fun drawTinted(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int, color: Int, alpha: Float = 1f) {
+        val r = ((color shr 16) and 0xFF) / 255f
+        val g = ((color shr 8) and 0xFF) / 255f
+        val b = (color and 0xFF) / 255f
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
+        drawInner(graphics, x, y, width, height)
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+    }
+
+    /**
      * Draw this 9-slice at the given screen position and size.
      */
     fun draw(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        drawInner(graphics, x, y, width, height)
+        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+    }
+
+    private fun drawInner(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
         val midSrcW = srcWidth - left - right
         val midSrcH = srcHeight - top - bottom
         val midDstW = width - left - right
@@ -170,8 +192,26 @@ class NineSlice(
          * Draw a TOP_BAR with a left-aligned title, visually centered.
          * Use this for consistent title bars across all screens.
          */
-        fun drawTitleBar(graphics: GuiGraphics, font: net.minecraft.client.gui.Font, title: net.minecraft.network.chat.Component, x: Int, y: Int, width: Int, height: Int = 20) {
+        fun drawTitleBar(
+            graphics: GuiGraphics,
+            font: net.minecraft.client.gui.Font,
+            title: net.minecraft.network.chat.Component,
+            x: Int,
+            y: Int,
+            width: Int,
+            height: Int = 20,
+            trimColor: Int = -1
+        ) {
             TOP_BAR.draw(graphics, x, y, width, height)
+            if (trimColor >= 0) {
+                // Brighten the trim color by 50%
+                // val r = minOf(255, ((trimColor shr 16) and 0xFF) * 3 / 2)
+                // val g = minOf(255, ((trimColor shr 8) and 0xFF) * 3 / 2)
+                // val b = minOf(255, (trimColor and 0xFF) * 3 / 2)
+                // val brightened = (r shl 16) or (g shl 8) or b
+                // TITLE_TRIM.drawTinted(graphics, x, y, width, height, brightened)
+                TITLE_TRIM.drawTinted(graphics, x, y, width, height, trimColor, alpha = 0.7f)
+            }
             graphics.drawString(font, title, x + 6, y + TITLE_TEXT_Y, 0xFFFFFFFF.toInt())
         }
 
@@ -182,8 +222,9 @@ class NineSlice(
         // Position   Size    Name                 Insets (L,R,T,B)  Description
         // ---------  ------  -------------------  ----------------  ---------------------------
         // (0,   0)   24x24   WINDOW_FRAME         3, 3, 3, 3        Main window background (#2B2B2B) with gradient border
-        // (24,  0)   24x24   WINDOW_DEEPEN        3, 3, 3, 3        Deepened window panel — darker inset variant of WINDOW_FRAME
+        // (24,  0)   24x24   WINDOW_RECESSED      3, 3, 3, 3        Recessed window panel — darker inset variant of WINDOW_FRAME
         // (0,  24)   24x24   TOP_BAR              3, 3, 3, 3        Header bar (#3C3C3C) with border
+        // (24, 24)   24x24   TITLE_TRIM           3, 3, 3, 3        White trim overlay for title bar — tint with network color
         // (0,  48)   24x16   TAB_ACTIVE           3, 3, 3, 2        Active tab (#2B2B2B) with blue accent top edge
         // (24, 48)   24x16   TAB_INACTIVE         3, 3, 3, 2        Inactive tab (#222222) with subtle border
         // (48, 48)   24x16   TAB_HOVER            3, 3, 3, 2        Hovered tab (#333333) between active/inactive
@@ -211,8 +252,9 @@ class NineSlice(
         // ---- Pre-built slices ----
 
         val WINDOW_FRAME = NineSlice(GUI_ATLAS, 0, 0, 24, 24, 3, 3, 3, 3)
-        val WINDOW_DEEPEN = NineSlice(GUI_ATLAS, 24, 0, 24, 24, 3, 3, 4, 3)
+        val WINDOW_RECESSED = NineSlice(GUI_ATLAS, 24, 0, 24, 24, 3, 3, 5, 3)
         val TOP_BAR = NineSlice(GUI_ATLAS, 0, 24, 24, 24, 3, 3, 3, 3)
+        val TITLE_TRIM = NineSlice(GUI_ATLAS, 24, 24, 24, 24, 3, 3, 3, 3)
         val TAB_ACTIVE = NineSlice(GUI_ATLAS, 0, 48, 24, 16, 3, 3, 3, 2)
         val TAB_INACTIVE = NineSlice(GUI_ATLAS, 24, 48, 24, 16, 3, 3, 3, 2)
         val TAB_HOVER = NineSlice(GUI_ATLAS, 48, 48, 24, 16, 3, 3, 3, 2)
