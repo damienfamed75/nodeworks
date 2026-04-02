@@ -628,7 +628,7 @@ class TerminalScreen(
         // Auto-run toggle — centered on sidebar
         val sidebarW = cardPanelWidth + editorPadding - 3
         val toggleW = 56
-        val toggleX = leftPos + (sidebarW - toggleW) / 2 + 4
+        val toggleX = leftPos + (sidebarW - toggleW) / 2 + 3
         val toggleY = topPos + imageHeight - 38
         // Deepened background behind toggle area (expanded 3px each side, 2px taller)
         val deepenH = font.lineHeight + 5 + 16 + 3 + 6 + 2
@@ -761,13 +761,25 @@ class TerminalScreen(
         // )
 
         // Re-draw top bar over everything
-        NineSlice.drawTitleBar(graphics, font, Component.empty(), leftPos, topPos, imageWidth, topBarHeight, networkColor)
+        NineSlice.drawTitleBar(
+            graphics,
+            font,
+            Component.empty(),
+            leftPos,
+            topPos,
+            imageWidth,
+            topBarHeight,
+            networkColor
+        )
 
         // Status indicator on top of top bar
         val statusX = leftPos + 4
         val statusIconY = topPos + (topBarHeight - 16) / 2 + 1
-        val statusIcon = if (scriptRunning) Icons.CRYSTAL_ACTIVE else Icons.CRYSTAL_INACTIVE
-        statusIcon.draw(graphics, statusX, statusIconY)
+        if (scriptRunning) {
+            Icons.CRYSTAL_ACTIVE.draw(graphics, statusX, statusIconY)
+        } else {
+            Icons.CRYSTAL_INACTIVE.draw(graphics, statusX, statusIconY)
+        }
         val statusText = if (scriptRunning) "Running" else "Stopped"
         val statusTextColor = if (scriptRunning) 0xFFD3FFFF.toInt() else 0xFF888888.toInt()
         val statusTextY = topPos + (topBarHeight - font.lineHeight) / 2 + 2
@@ -1272,7 +1284,7 @@ class TerminalScreen(
         // Auto-run toggle click
         val sidebarW = cardPanelWidth + editorPadding - 3
         val toggleW = 56
-        val toggleX = leftPos + (sidebarW - toggleW) / 2 + 4
+        val toggleX = leftPos + (sidebarW - toggleW) / 2 + 3
         val toggleY = topPos + imageHeight - 38
         if (mx >= toggleX && mx < toggleX + toggleW && my >= toggleY && my < toggleY + 16) {
             autoRun = !autoRun
