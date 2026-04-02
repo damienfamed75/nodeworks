@@ -489,9 +489,14 @@ class TerminalScreen(
             val isActive = name == activeTab
             val textColor = if (isActive) 0xFFFFFFFF.toInt() else 0xFF888888.toInt()
 
-            val tabSlice = if (isActive) NineSlice.TAB_ACTIVE else NineSlice.TAB_INACTIVE
             val tabTop = tabBarY + 1
             val tabH = tabBarHeight - 1
+            val tabHovered = !isActive && mouseX >= tabX && mouseX < tabX + tabWidth && mouseY >= tabTop && mouseY < tabTop + tabH
+            val tabSlice = when {
+                isActive -> NineSlice.TAB_ACTIVE
+                tabHovered -> NineSlice.TAB_HOVER
+                else -> NineSlice.TAB_INACTIVE
+            }
             tabSlice.draw(graphics, tabX, tabTop, tabWidth, tabH)
             if (isActive) {
                 NineSlice.TAB_TRIM.drawTinted(graphics, tabX, tabTop, tabWidth, tabH, networkColor, alpha = 0.7f)
@@ -513,7 +518,9 @@ class TerminalScreen(
             val plusWidth = font.width("+") + 7
             val tabTop = tabBarY + 1
             val tabH = tabBarHeight - 1
-            NineSlice.TAB_INACTIVE.draw(graphics, tabX, tabTop, plusWidth, tabH)
+            val plusHovered = mouseX >= tabX && mouseX < tabX + plusWidth && mouseY >= tabTop && mouseY < tabTop + tabH
+            val plusSlice = if (plusHovered) NineSlice.TAB_HOVER else NineSlice.TAB_INACTIVE
+            plusSlice.draw(graphics, tabX, tabTop, plusWidth, tabH)
             val textY = tabTop + (tabH - font.lineHeight) / 2 + 1
             graphics.drawString(font, "+", tabX + 4, textY, 0xFF888888.toInt(), false)
         }
