@@ -686,9 +686,27 @@ class TerminalScreen(
             }
         }
 
-        // Toggle label with arrow
-        val arrow = if (logCollapsed) "\u25B6" else "\u25BC"
-        graphics.drawString(font, "$arrow Output", logX + 3, logY + 2, 0xFF888888.toInt())
+        // Toggle icon + label
+        val toggleBtnX = logX + 3
+        val toggleBtnY = logY + 2
+        val toggleBtnSize = 10
+        val toggleHovered = mouseX >= logX && mouseX < logX + logW && mouseY >= logY && mouseY < logY + logCollapsedHeight
+        if (logCollapsed) {
+            val expandIcon = when {
+                pressedButton == "toggle" -> Icons.EXPAND_PRESSED
+                toggleHovered -> Icons.EXPAND_HOVER
+                else -> Icons.EXPAND_IDLE
+            }
+            expandIcon.draw(graphics, toggleBtnX - 3, toggleBtnY - 3)
+        } else {
+            val collapseIcon = when {
+                pressedButton == "toggle" -> Icons.COLLAPSE_PRESSED
+                toggleHovered -> Icons.COLLAPSE_HOVER
+                else -> Icons.COLLAPSE_IDLE
+            }
+            collapseIcon.draw(graphics, toggleBtnX - 3, toggleBtnY - 3)
+        }
+        graphics.drawString(font, "Output", logX + 14, logY + 2, 0xFF888888.toInt())
 
         if (!logCollapsed) {
             // Output toolbar buttons (only when expanded)
@@ -1417,6 +1435,7 @@ class TerminalScreen(
         }
 
         if (mx >= logX && mx <= logX + logW && my >= logY && my <= logY + logCollapsedHeight) {
+            pressedButton = "toggle"
             logCollapsed = !logCollapsed
             savedLogCollapsed = logCollapsed
             rebuildWithText = editor.value

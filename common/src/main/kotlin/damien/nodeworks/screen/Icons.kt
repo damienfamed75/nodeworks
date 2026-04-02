@@ -75,7 +75,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         // Col:    0            1            2            3             4           5            6              7              8
         // Row 0:  Checkmark    X            ArrowRight   ArrowLeft     Unpinned    Pinned       RedstoneIgnore RedstoneActive RedstoneInactive GlowSquare GlowCircle GlowDot GlowCreeper GlowCat GlowNone
         // Row 1:  IO Card      Storage Card Redstone Card Variable     CrystalInactive CrystalActive LayoutSmall LayoutWide LayoutTall LayoutLarge SmallScrew
-        // Row 2:  CopyIdle     CopyHover    CopyPressed  TrashIdle     TrashHover  TrashPressed
+        // Row 2:  CopyIdle     CopyHover    CopyPressed  TrashIdle     TrashHover  TrashPressed CollapseIdle CollapseHover CollapsePressed ExpandIdle ExpandHover ExpandPressed
         // Row 3+: (free)
         // =====================================================================
 
@@ -115,6 +115,12 @@ class Icons private constructor(val col: Int, val row: Int) {
         val COPY_PRESSED  = Icons(2, 2)
         val TRASH_IDLE    = Icons(3, 2)
         val TRASH_HOVER   = Icons(4, 2)
-        val TRASH_PRESSED = Icons(5, 2)
+        val TRASH_PRESSED     = Icons(5, 2)
+        val COLLAPSE_IDLE     = Icons(6, 2)
+        val COLLAPSE_HOVER    = Icons(7, 2)
+        val COLLAPSE_PRESSED  = Icons(8, 2)
+        val EXPAND_IDLE       = Icons(9, 2)
+        val EXPAND_HOVER      = Icons(10, 2)
+        val EXPAND_PRESSED    = Icons(11, 2)
     }
 }
