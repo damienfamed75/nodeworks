@@ -20,14 +20,20 @@ class Icons private constructor(val col: Int, val row: Int) {
      * Draw this icon at full 16x16 size.
      */
     fun draw(graphics: GuiGraphics, x: Int, y: Int) {
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
+        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
     }
 
     /**
      * Draw this icon scaled to a custom size.
      */
     fun draw(graphics: GuiGraphics, x: Int, y: Int, size: Int) {
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
         graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
+        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
     }
 
     /**
@@ -42,6 +48,21 @@ class Icons private constructor(val col: Int, val row: Int) {
      */
     fun drawSmall(graphics: GuiGraphics, x: Int, y: Int, size: Int) {
         graphics.blit(ATLAS, x, y, size, size, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
+    }
+
+    /**
+     * Draw this icon tinted with an RGB color. Respects the icon's alpha channel.
+     */
+    fun drawTinted(graphics: GuiGraphics, x: Int, y: Int, color: Int, alpha: Float = 1f) {
+        val r = ((color shr 16) and 0xFF) / 255f
+        val g = ((color shr 8) and 0xFF) / 255f
+        val b = (color and 0xFF) / 255f
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
+        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
     }
 
     companion object {
