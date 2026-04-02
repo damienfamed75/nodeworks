@@ -99,7 +99,54 @@ object NodeConnectionHelper {
         val entityB = getConnectable(level, posB) ?: return false
         entityA.addConnection(posB)
         entityB.addConnection(posA)
+        // Propagate network UUID across the newly connected network
+        propagateNetworkId(level, posA)
         return true
+    }
+
+    /** BFS from a position to find a controller and propagate its networkId to all reachable connectables. */
+    fun propagateNetworkId(level: ServerLevel, startPos: BlockPos) {
+        val visited = LinkedHashSet<BlockPos>()
+        val queue = ArrayDeque<BlockPos>()
+        visited.add(startPos)
+        queue.add(startPos)
+        var foundId: java.util.UUID? = null
+
+        // First pass: BFS to find a controller
+        while (queue.isNotEmpty()) {
+            val pos = queue.removeFirst()
+            val entity = getConnectable(level, pos) ?: continue
+            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
+                foundId = entity.networkId
+                break
+            }
+            for (conn in entity.getConnections()) {
+                if (visited.add(conn) && level.isLoaded(conn)) queue.add(conn)
+            }
+        }
+
+        // Second pass: set networkId on all visited connectables
+        for (pos in visited) {
+            val entity = getConnectable(level, pos) ?: continue
+            if (entity.networkId != foundId) {
+                entity.networkId = foundId
+                (entity as? net.minecraft.world.level.block.entity.BlockEntity)?.setChanged()
+            }
+        }
+        // Continue BFS for any nodes we didn't reach in the first pass
+        if (foundId != null) {
+            while (queue.isNotEmpty()) {
+                val pos = queue.removeFirst()
+                val entity = getConnectable(level, pos) ?: continue
+                if (entity.networkId != foundId) {
+                    entity.networkId = foundId
+                    (entity as? net.minecraft.world.level.block.entity.BlockEntity)?.setChanged()
+                }
+                for (conn in entity.getConnections()) {
+                    if (visited.add(conn) && level.isLoaded(conn)) queue.add(conn)
+                }
+            }
+        }
     }
 
     fun disconnect(level: ServerLevel, posA: BlockPos, posB: BlockPos): Boolean {
@@ -107,6 +154,9 @@ object NodeConnectionHelper {
         val entityB = getConnectable(level, posB)
         entityA?.removeConnection(posB)
         entityB?.removeConnection(posA)
+        // Re-propagate networkId for both sides (one side may have lost its controller)
+        if (entityA != null) propagateNetworkId(level, posA)
+        if (entityB != null) propagateNetworkId(level, posB)
         return entityA != null || entityB != null
     }
 

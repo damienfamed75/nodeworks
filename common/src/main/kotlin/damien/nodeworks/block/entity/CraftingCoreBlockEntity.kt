@@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import java.util.UUID
 
 /**
  * Crafting Core — the brain of a multiblock Crafting CPU.
@@ -27,6 +28,7 @@ class CraftingCoreBlockEntity(
 
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
+    override var networkId: UUID? = null
 
     // --- Buffer ---
 
@@ -228,6 +230,7 @@ class CraftingCoreBlockEntity(
         tag.putBoolean("isFormed", isFormed)
         tag.putBoolean("isCrafting", isCrafting)
         tag.putString("currentCraftItem", currentCraftItem)
+        networkId?.let { tag.putString("networkId", it.toString()) }
 
         // Save buffer contents
         if (buffer.isNotEmpty()) {
@@ -249,6 +252,9 @@ class CraftingCoreBlockEntity(
         isFormed = tag.getBoolean("isFormed")
         isCrafting = tag.getBoolean("isCrafting")
         currentCraftItem = if (tag.contains("currentCraftItem")) tag.getString("currentCraftItem") else ""
+        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
 
         buffer.clear()
         if (tag.contains("buffer")) {

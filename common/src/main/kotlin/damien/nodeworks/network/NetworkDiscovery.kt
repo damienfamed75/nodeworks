@@ -124,7 +124,7 @@ object NetworkDiscovery {
 
 data class ControllerSnapshot(
     val pos: BlockPos,
-    val networkId: UUID
+    val networkId: UUID?
 )
 
 data class CpuSnapshot(

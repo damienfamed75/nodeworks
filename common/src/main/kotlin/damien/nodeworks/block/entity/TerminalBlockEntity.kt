@@ -15,6 +15,7 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import java.util.UUID
 
 /**
  * Block entity for the Script Terminal. Stores multiple named scripts and settings.
@@ -31,6 +32,7 @@ class TerminalBlockEntity(
 
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
+    override var networkId: UUID? = null
 
     // Script storage
     val scripts: MutableMap<String, String> = linkedMapOf("main" to "")
@@ -166,6 +168,7 @@ class TerminalBlockEntity(
         }
         tag.putBoolean("autoRun", autoRun)
         tag.putInt("layoutIndex", layoutIndex)
+        networkId?.let { tag.putString("networkId", it.toString()) }
         if (connections.isNotEmpty()) {
             tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
@@ -187,6 +190,9 @@ class TerminalBlockEntity(
         }
         autoRun = tag.getBoolean("autoRun")
         layoutIndex = if (tag.contains("layoutIndex")) tag.getInt("layoutIndex") else 0
+        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
         connections.clear()
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }

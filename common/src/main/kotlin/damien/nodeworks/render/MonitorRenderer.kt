@@ -55,10 +55,10 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
             MonitorFace(face, itemId, monitor?.displayCount ?: 0L)
         }
 
-        // Find network settings from the controller
-        val controller = NodeConnectionRenderer.findController(entity.level, entity.blockPos)
-        val networkColor = controller?.networkColor ?: NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        val nodeGlowStyle = controller?.nodeGlowStyle ?: 0
+        // Find network settings via registry (no BFS needed)
+        val settings = damien.nodeworks.network.NetworkSettingsRegistry.get(entity.networkId)
+        val networkColor = settings.color
+        val nodeGlowStyle = settings.glowStyle
 
         // Beams are now rendered by NodeConnectionRenderer (world render event, no frustum culling)
 

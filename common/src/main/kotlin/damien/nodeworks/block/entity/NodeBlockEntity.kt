@@ -24,6 +24,7 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import java.util.UUID
 
 /**
  * Block entity for the Node block. Stores a separate inventory for each of the 6 faces.
@@ -263,6 +264,7 @@ class NodeBlockEntity(
         if (hasAnyRedstoneOutput()) {
             tag.putIntArray("redstoneOutputs", redstoneOutputs.toList())
         }
+        networkId?.let { tag.putString("networkId", it.toString()) }
         // Save monitors
         tag.putInt("monitorCount", monitors.size)
         var idx = 0
@@ -290,6 +292,9 @@ class NodeBlockEntity(
                 redstoneOutputs[i] = saved[i].coerceIn(0, 15)
             }
         }
+        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
         // Load monitors
         monitors.clear()
         val monitorCount = if (tag.contains("monitorCount")) tag.getInt("monitorCount") else 0
@@ -316,6 +321,7 @@ class NodeBlockEntity(
 
     /** Set to true by NodeBlock when the block is actually being destroyed. */
     override var blockDestroyed: Boolean = false
+    override var networkId: UUID? = null
 
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)

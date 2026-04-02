@@ -39,6 +39,7 @@ class ReceiverAntennaBlockEntity(
 
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
+    override var networkId: UUID? = null
 
     private val items = NonNullList.withSize(1, ItemStack.EMPTY)
 
@@ -189,6 +190,7 @@ class ReceiverAntennaBlockEntity(
         super.saveAdditional(tag, registries)
         ContainerHelper.saveAllItems(tag, items, registries)
         tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
+        networkId?.let { tag.putString("networkId", it.toString()) }
     }
 
     override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
@@ -196,6 +198,9 @@ class ReceiverAntennaBlockEntity(
         items.clear()
         ContainerHelper.loadAllItems(tag, items, registries)
         updatePairingFromChip()
+        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
         connections.clear()
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
