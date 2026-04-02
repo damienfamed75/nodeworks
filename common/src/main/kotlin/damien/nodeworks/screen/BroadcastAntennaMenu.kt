@@ -16,7 +16,7 @@ class BroadcastAntennaMenu(
     syncId: Int,
     playerInventory: Inventory,
     private val antennaInventory: Container,
-    private val antennaPos: BlockPos
+    val antennaPos: BlockPos
 ) : AbstractContainerMenu(ModScreenHandlers.BROADCAST_ANTENNA, syncId) {
 
     companion object {
@@ -30,17 +30,18 @@ class BroadcastAntennaMenu(
     }
 
     init {
-        // Chip slot — center of GUI
-        addSlot(ChipSlot(antennaInventory, 0, 80, 35))
+        // Chip slot — centered
+        addSlot(ChipSlot(antennaInventory, 0, 81, 37))
 
-        // Player inventory
+        // Player inventory (3 rows)
         for (row in 0 until 3) {
             for (col in 0 until 9) {
-                addSlot(Slot(playerInventory, col + row * 9 + 9, 8 + col * 18, 84 + row * 18))
+                addSlot(Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 83 + row * 18))
             }
         }
+        // Hotbar
         for (col in 0 until 9) {
-            addSlot(Slot(playerInventory, col, 8 + col * 18, 142))
+            addSlot(Slot(playerInventory, col, 9 + col * 18, 83 + 3 * 18 + 4))
         }
     }
 

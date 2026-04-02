@@ -11,29 +11,31 @@ class ReceiverAntennaScreen(
     title: Component
 ) : AbstractContainerScreen<ReceiverAntennaMenu>(menu, playerInventory, title) {
 
+    companion object {
+        private const val W = 176
+        private const val TOP_BAR_H = 20
+        private const val CHIP_X = 80
+        private const val CHIP_Y = 36
+        private const val INV_X = 8
+        private const val INV_Y = 82
+        private const val HOTBAR_GAP = 4
+        private const val H = INV_Y + 3 * 18 + HOTBAR_GAP + 18 + 4
+    }
+
     init {
-        imageWidth = 176
-        imageHeight = 166
+        imageWidth = W
+        imageHeight = H
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
 
-    override fun init() {
-        super.init()
-        leftPos = (width - imageWidth) / 2
-        topPos = (height - imageHeight) / 2
-    }
-
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
-        val x = leftPos; val y = topPos; val w = imageWidth
+        NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
-        // Dark background
-        graphics.fill(x, y, x + w, y + imageHeight, 0xFF2B2B2B.toInt())
-
-        // Top bar
-        graphics.fill(x, y, x + w, y + 20, 0xFF3C3C3C.toInt())
-        graphics.fill(x, y + 19, x + w, y + 20, 0xFF555555.toInt())
-        graphics.drawString(font, title, x + 6, y + 6, 0xFFFFFFFF.toInt())
+        val entity = net.minecraft.client.Minecraft.getInstance().level?.getBlockEntity(menu.antennaPos) as? damien.nodeworks.network.Connectable
+        val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.antennaPos)
+        val trimColor = if (reachable) damien.nodeworks.network.NetworkSettingsRegistry.getColor(entity?.networkId) else -1
+        NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, trimColor)
 
         // Status
         val statusCode = menu.statusCode
@@ -51,33 +53,15 @@ class ReceiverAntennaScreen(
             0 -> 0xFFFF5555.toInt()
             else -> 0xFFFFAA00.toInt()
         }
-        graphics.drawString(font, "Status:", x + 8, y + 26, 0xFFAAAAAA.toInt())
-        graphics.drawString(font, statusLabel, x + 52, y + 26, statusColor)
+        graphics.drawString(font, "Status:", leftPos + 8, topPos + 23, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, statusLabel, leftPos + 52, topPos + 23, statusColor)
 
-        // Chip slot background
-        val sx = x + 80; val sy = y + 35
-        graphics.fill(sx - 1, sy - 1, sx + 17, sy, 0xFF111111.toInt())
-        graphics.fill(sx - 1, sy - 1, sx, sy + 17, 0xFF111111.toInt())
-        graphics.fill(sx + 16, sy - 1, sx + 17, sy + 17, 0xFF444444.toInt())
-        graphics.fill(sx - 1, sy + 16, sx + 17, sy + 17, 0xFF444444.toInt())
-        graphics.fill(sx, sy, sx + 16, sy + 16, 0xFF1A1A1A.toInt())
+        graphics.drawString(font, "Insert encoded Link Crystal", leftPos + 8, topPos + 59, 0xFFAAAAAA.toInt())
 
-        // Label
-        graphics.drawString(font, "Insert encoded Link Crystal", x + 8, y + 56, 0xFFAAAAAA.toInt())
+        NineSlice.drawSlotGrid(graphics, leftPos + CHIP_X, topPos + CHIP_Y, 1, 1)
 
-        // Separator
-        graphics.fill(x + 4, y + 72, x + w - 4, y + 73, 0xFF555555.toInt())
-
-        // Player inventory slots
-        for (i in 1 until menu.slots.size) {
-            val slot = menu.slots[i]
-            val slotX = x + slot.x; val slotY = y + slot.y
-            graphics.fill(slotX, slotY, slotX + 16, slotY + 16, 0xFF1A1A1A.toInt())
-            graphics.fill(slotX - 1, slotY - 1, slotX + 17, slotY, 0xFF111111.toInt())
-            graphics.fill(slotX - 1, slotY - 1, slotX, slotY + 17, 0xFF111111.toInt())
-            graphics.fill(slotX + 16, slotY - 1, slotX + 17, slotY + 17, 0xFF444444.toInt())
-            graphics.fill(slotX - 1, slotY + 16, slotX + 17, slotY + 17, 0xFF444444.toInt())
-        }
+        graphics.drawString(font, "Inventory", leftPos + INV_X, topPos + INV_Y - 10, 0xFFAAAAAA.toInt())
+        NineSlice.drawPlayerInventory(graphics, leftPos + INV_X, topPos + INV_Y, HOTBAR_GAP)
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
