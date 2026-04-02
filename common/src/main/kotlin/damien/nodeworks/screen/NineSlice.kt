@@ -185,6 +185,29 @@ class NineSlice(
         /** The shared GUI atlas containing all 9-slice regions. */
         val GUI_ATLAS = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/gui_atlas.png")
 
+        /**
+         * Draw a grid of slots with a CONTENT_BORDER overlay.
+         * The border is inset 1px on each side to cover the outer edge of the edge slots.
+         */
+        fun drawSlotGrid(graphics: GuiGraphics, x: Int, y: Int, cols: Int, rows: Int) {
+            for (r in 0 until rows) {
+                for (c in 0 until cols) {
+                    SLOT.draw(graphics, x + c * 18, y + r * 18, 18, 18)
+                }
+            }
+            INVENTORY_BORDER.draw(graphics, x - 2, y - 2, cols * 18 + 4, rows * 18 + 4)
+        }
+
+        /**
+         * Draw the standard 36-slot player inventory (3x9 main + 1x9 hotbar with gap).
+         */
+        fun drawPlayerInventory(graphics: GuiGraphics, x: Int, y: Int, gap: Int = 4) {
+            // Main inventory (3x9)
+            drawSlotGrid(graphics, x, y, 9, 3)
+            // Hotbar (1x9)
+            drawSlotGrid(graphics, x, y + 3 * 18 + gap, 9, 1)
+        }
+
         /** Visual text offset from top of the TOP_BAR — accounts for the top-heavy 9-slice. */
         const val TITLE_TEXT_Y = 7
 
@@ -265,6 +288,7 @@ class NineSlice(
         val BUTTON_ACTIVE = NineSlice(GUI_ATLAS, 48, 64, 24, 16, 3, 3, 3, 3)
         val PANEL_INSET = NineSlice(GUI_ATLAS, 0, 80, 24, 24, 3, 3, 3, 3)
         val SLOT = NineSlice(GUI_ATLAS, 0, 104, 18, 18, 1, 1, 1, 1)
+        val INVENTORY_BORDER = NineSlice(GUI_ATLAS, 48, 104, 24, 24, 2, 2, 2, 2)
         val INPUT_FIELD = NineSlice(GUI_ATLAS, 24, 104, 24, 16, 3, 3, 3, 3)
         val CONTENT_BORDER = NineSlice(GUI_ATLAS, 24, 80, 24, 24, 3, 3, 3, 3)
         val ROW = NineSlice(GUI_ATLAS, 48, 80, 24, 16, 1, 1, 1, 1)

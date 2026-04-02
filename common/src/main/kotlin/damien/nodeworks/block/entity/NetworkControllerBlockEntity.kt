@@ -114,7 +114,10 @@ class NetworkControllerBlockEntity(
         if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
-            networkId?.let { damien.nodeworks.script.NetworkInventoryCache.removeByUUID(it) }
+            networkId?.let {
+                damien.nodeworks.script.NetworkInventoryCache.removeByUUID(it)
+                damien.nodeworks.network.NetworkSettingsRegistry.remove(it)
+            }
         }
         super.setRemoved()
     }
