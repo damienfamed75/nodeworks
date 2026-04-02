@@ -198,15 +198,21 @@ object NodeConnectionRenderer {
 
         // Collect all connection pairs with their network color
         val connections = mutableListOf<ConnectionPair>()
+        val colorCache = HashMap<BlockPos, Int>()
 
         for (nodePos in knownNodes) {
             if (!level.isLoaded(nodePos)) continue
             val connectable = level.getBlockEntity(nodePos) as? damien.nodeworks.network.Connectable ?: continue
 
+            val color = colorCache.getOrPut(nodePos) {
+                val nid = connectable.networkId
+                if (nid != null) damien.nodeworks.network.NetworkSettingsRegistry.getColor(nid)
+                else DEFAULT_NETWORK_COLOR
+            }
+
             for (targetPos in connectable.getConnections()) {
                 if (!isLessThan(nodePos, targetPos)) continue
                 if (!level.isLoaded(targetPos)) continue
-                val color = findNetworkColor(level, nodePos)
                 val blocked = isConnectionBlocked(nodePos, targetPos) ||
                     !isReachable(nodePos) || !isReachable(targetPos)
                 connections.add(ConnectionPair(nodePos, targetPos, color, blocked))
@@ -246,9 +252,11 @@ object NodeConnectionRenderer {
         val selectedPos = NetworkWrenchItem.clientSelectedNode
         val player = mc.player
         if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
-            if (level.getBlockEntity(selectedPos) is damien.nodeworks.network.Connectable) {
+            val selectedEntity = level.getBlockEntity(selectedPos) as? damien.nodeworks.network.Connectable
+            if (selectedEntity != null) {
                 val highlightBuffer = consumers.getBuffer(RenderType.lines())
-                hlColor = findNetworkColor(level, selectedPos)
+                val nid = selectedEntity.networkId
+                hlColor = if (nid != null) damien.nodeworks.network.NetworkSettingsRegistry.getColor(nid) else DEFAULT_NETWORK_COLOR
                 renderSelectionHighlight(poseStack, highlightBuffer, selectedPos)
             } else {
                 NetworkWrenchItem.clientSelectedNode = null

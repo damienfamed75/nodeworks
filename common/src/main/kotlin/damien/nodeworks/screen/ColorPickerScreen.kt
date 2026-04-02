@@ -38,6 +38,7 @@ class ColorPickerScreen(
     private var panelX = 0
     private var panelY = 0
     private var updatingField = false
+    private var ignoreFirstClick = true
 
     override fun init() {
         super.init()
@@ -148,6 +149,10 @@ class ColorPickerScreen(
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ignoreFirstClick) {
+            ignoreFirstClick = false
+            return true
+        }
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
