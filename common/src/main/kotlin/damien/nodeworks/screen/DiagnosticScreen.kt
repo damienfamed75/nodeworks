@@ -237,7 +237,16 @@ class DiagnosticScreen(
         // Top bar with network color
         val networkColor = menu.topology.networkColor
         val titleStr = if (menu.topology.networkName.isNotEmpty()) menu.topology.networkName else "Network Diagnostic"
-        NineSlice.drawTitleBar(graphics, font, Component.literal(titleStr), leftPos, topPos, imageWidth, 20, networkColor)
+        NineSlice.drawTitleBar(
+            graphics,
+            font,
+            Component.literal(titleStr),
+            leftPos,
+            topPos,
+            imageWidth,
+            20,
+            networkColor
+        )
 
         // Tab bar
         val tabY = topPos + 20
@@ -432,7 +441,13 @@ class DiagnosticScreen(
         // Right panel: content border around the tree view area
         val graphLeft = splitX + 4
         val graphRight = contentLeft + contentW - 4
-        NineSlice.CONTENT_BORDER.draw(graphics, graphLeft - 3, treeAreaTop - 3, graphRight - graphLeft + 6, contentTop + contentH - treeAreaTop + 6)
+        NineSlice.CONTENT_BORDER.draw(
+            graphics,
+            graphLeft - 3,
+            treeAreaTop - 3,
+            graphRight - graphLeft + 6,
+            contentTop + contentH - treeAreaTop + 6
+        )
 
         // Autocomplete dropdown for item field
         renderCraftAutocomplete(graphics, mouseX, mouseY)
@@ -916,7 +931,7 @@ class DiagnosticScreen(
     private val lineH get() = font.lineHeight + 1
 
     /** Inspector row types for the floating inspector panel. */
-    private enum class RowType { H2, H3, PROPERTY }
+    private enum class RowType { H2, PROPERTY }
     private data class InspectorRow(
         val type: RowType,
         val text: String,
@@ -935,16 +950,15 @@ class DiagnosticScreen(
         rows.add(InspectorRow(RowType.PROPERTY, "Position: ${block.pos.x}, ${block.pos.y}, ${block.pos.z}", GRAY))
         rows.add(InspectorRow(RowType.PROPERTY, "Connections: ${block.connections.size}", GRAY))
 
-        // Cards grouped by face
+        // Each face as its own section
         if (block.cards.isNotEmpty()) {
             val dirNames = arrayOf("Down", "Up", "North", "South", "East", "West")
             val bySide = block.cards.groupBy { it.side }
-            rows.add(InspectorRow(RowType.H2, "Cards"))
             for ((side, sideCards) in bySide) {
                 val dir = dirNames.getOrElse(side) { "?" }
                 val adjBlockId = sideCards.firstOrNull()?.adjacentBlockId ?: ""
-                val adjName = if (adjBlockId.isNotEmpty()) adjBlockId.substringAfter(':').replace('_', ' ') else "air"
-                rows.add(InspectorRow(RowType.H3, "$dir: $adjName", WHITE, blockItemId = adjBlockId))
+                val adjName = if (adjBlockId.isNotEmpty()) adjBlockId.substringAfter(':') else "air"
+                rows.add(InspectorRow(RowType.H2, "$dir \u2014 $adjName", WHITE, blockItemId = adjBlockId))
                 for (card in sideCards) {
                     val alias = if (card.alias.isNotEmpty()) card.alias else card.cardType
                     val color = CARD_COLORS[card.cardType] ?: GRAY
@@ -972,8 +986,7 @@ class DiagnosticScreen(
         var bodyH = 4 // top padding
         for (row in rows) {
             bodyH += when (row.type) {
-                RowType.H2 -> lineH + 3  // H2 (1px taller) + gap before + after
-                RowType.H3 -> lineH + 1  // H3 + small gap
+                RowType.H2 -> lineH + 3
                 RowType.PROPERTY -> lineH
             }
         }
@@ -987,7 +1000,10 @@ class DiagnosticScreen(
     private fun renderInspector(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
         val sel = selectedBlock ?: return
         val bounds = getInspectorBounds() ?: return
-        val px = bounds[0]; val py = bounds[1]; val pw = bounds[2]; val ph = bounds[3]
+        val px = bounds[0];
+        val py = bounds[1];
+        val pw = bounds[2];
+        val ph = bounds[3]
 
         // H1: header + inset body
         NineSlice.INSPECTOR_H1.draw(graphics, px, py, pw, 19)
@@ -1024,39 +1040,34 @@ class DiagnosticScreen(
 
         var isFirstRow = true
         for (row in rows) {
-            val textY = curY + 1
             when (row.type) {
                 RowType.H2 -> {
-                    if (!isFirstRow) curY += 1 // extra spacing before non-first H2
-                    // Category header — 9-sliced, extended 1px up
-                    NineSlice.INSPECTOR_H2.draw(graphics, px + 3, curY - 1, pw - 6, lineH + 3)
-                    graphics.drawString(font, row.text, px + 6, curY + 2, WHITE, false)
-                    curY += lineH + 2
-                    rowIndex = 0
-                }
-                RowType.H3 -> {
-                    // Sub-category — subtle lighter background to differentiate groups
-                    graphics.fill(px + 3, curY, px + pw - 3, curY + lineH, 0x10FFFFFF.toInt())
-                    var textX = px + 10
+                    if (!isFirstRow) curY += 1
+                    NineSlice.INSPECTOR_H2.draw(graphics, px + 2, curY - 1, pw - 4, lineH + 3)
+                    // H2 text with optional block icon
+                    var h2TextX = px + 6
+                    val h2TextY = curY + 2
                     if (row.blockItemId.isNotEmpty()) {
                         val adjId = net.minecraft.resources.ResourceLocation.tryParse(row.blockItemId)
                         if (adjId != null) {
                             val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(adjId)
                             if (adjItem != null) {
                                 graphics.pose().pushPose()
-                                graphics.pose().translate(textX.toFloat(), textY.toFloat(), 0f)
+                                graphics.pose().translate((h2TextX).toFloat(), (h2TextY - 1).toFloat(), 0f)
                                 graphics.pose().scale(0.5f, 0.5f, 1f)
                                 graphics.renderItem(ItemStack(adjItem), 0, 0)
                                 graphics.pose().popPose()
-                                textX += 10
+                                h2TextX += 10
                             }
                         }
                     }
-                    graphics.drawString(font, row.text, textX, textY, WHITE, false)
-                    curY += lineH + 1
+                    graphics.drawString(font, row.text, h2TextX, h2TextY, WHITE, false)
+                    curY += lineH + 2
                     rowIndex = 0
                 }
+
                 RowType.PROPERTY -> {
+                    val textY = curY + 1
                     // Alternating row background
                     if (rowIndex % 2 == 1) {
                         graphics.fill(px + 3, curY, px + pw - 3, curY + lineH, 0x08FFFFFF.toInt())
@@ -1092,7 +1103,12 @@ class DiagnosticScreen(
                             0 -> Icons.GLOW_SQUARE; 1 -> Icons.GLOW_CIRCLE; 2 -> Icons.GLOW_DOT
                             3 -> Icons.GLOW_CREEPER; 4 -> Icons.GLOW_CAT; else -> Icons.GLOW_NONE
                         }
-                        glowIcon.drawTinted(graphics, textX + font.width("Node Glow: "), textY - 3, glowColor and 0xFFFFFF)
+                        glowIcon.drawTinted(
+                            graphics,
+                            textX + font.width("Node Glow: "),
+                            textY - 3,
+                            glowColor and 0xFFFFFF
+                        )
                     } else {
                         // Key: value color split
                         val colonIdx = row.text.indexOf(':')
