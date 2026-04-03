@@ -107,6 +107,7 @@ object Nodeworks : ModInitializer {
         ModBlocks.initialize()
         ModBlockEntities.initialize()
         ModItems.initialize()
+        damien.nodeworks.registry.ModCreativeTab.initialize()
         damien.nodeworks.registry.ModEntityTypes.initialize()
         ModScreenHandlers.initialize()
 
