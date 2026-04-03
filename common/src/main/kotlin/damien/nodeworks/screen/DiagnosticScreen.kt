@@ -170,7 +170,7 @@ class DiagnosticScreen(
     override fun init() {
         super.init()
         // Scale to fill most of the screen with some margin
-        imageWidth = (width * 0.9f).toInt().coerceIn(320, width - 20)
+        imageWidth = (width * 0.75f).toInt().coerceIn(320, width - 20)
         imageHeight = (height * 0.85f).toInt().coerceIn(200, height - 20)
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
@@ -195,9 +195,9 @@ class DiagnosticScreen(
     // ========== Coordinate conversion ==========
 
     private val contentLeft get() = leftPos + 4
-    private val contentTop get() = topPos + 34
+    private val contentTop get() = topPos + 24
     private val contentW get() = imageWidth - 8
-    private val contentH get() = imageHeight - 38
+    private val contentH get() = imageHeight - 28
     private val viewCenterX get() = contentLeft + contentW / 2f
     private val viewCenterY get() = contentTop + contentH / 2f
 
@@ -236,7 +236,8 @@ class DiagnosticScreen(
 
         // Top bar with network color
         val networkColor = menu.topology.networkColor
-        val titleStr = if (menu.topology.networkName.isNotEmpty()) menu.topology.networkName else "Network Diagnostic"
+        val netName = if (menu.topology.networkName.isNotEmpty()) menu.topology.networkName else "Network"
+        val titleStr = "Inspecting: $netName"
         NineSlice.drawTitleBar(
             graphics,
             font,
@@ -244,32 +245,28 @@ class DiagnosticScreen(
             leftPos,
             topPos,
             imageWidth,
-            20,
+            22,
             networkColor
         )
 
-        // Tab bar
-        val tabY = topPos + 20
-        val tabH = 14
-        NineSlice.PANEL_INSET.draw(graphics, leftPos + 4, tabY, imageWidth - 8, tabH)
-
-        var tabX = leftPos + 8
-        for ((i, name) in TAB_NAMES.withIndex()) {
-            val tabW = font.width(name) + 10
-            val hovered = mouseX >= tabX && mouseX < tabX + tabW && mouseY >= tabY && mouseY < tabY + tabH
-            val tabSlice = when {
-                i == activeTab -> NineSlice.TAB_ACTIVE
-                hovered -> NineSlice.TAB_HOVER
-                else -> NineSlice.TAB_INACTIVE
+        // Tab buttons in title bar — right-aligned
+        val btnH = 14
+        val btnY = topPos + 5
+        var tabX = leftPos + imageWidth - 4
+        for (i in TAB_NAMES.indices.reversed()) {
+            val name = TAB_NAMES[i]
+            val btnW = font.width(name) + 10
+            tabX -= btnW + 2
+            val hovered = mouseX >= tabX && mouseX < tabX + btnW && mouseY >= btnY && mouseY < btnY + btnH
+            val btnSlice = when {
+                i == activeTab -> NineSlice.BUTTON_ACTIVE
+                hovered -> NineSlice.BUTTON_HOVER
+                else -> NineSlice.BUTTON
             }
-            tabSlice.draw(graphics, tabX, tabY + 1, tabW, tabH - 1)
-            if (i == activeTab) {
-                NineSlice.TAB_TRIM.drawTinted(graphics, tabX, tabY + 1, tabW, tabH - 1, networkColor, alpha = 0.7f)
-            }
+            btnSlice.draw(graphics, tabX, btnY, btnW, btnH)
             val textColor = if (i == activeTab) WHITE else GRAY
-            val textY = tabY + 1 + (tabH - 1 - font.lineHeight) / 2 + 1
+            val textY = btnY + (btnH - font.lineHeight) / 2 + 1
             graphics.drawString(font, name, tabX + 5, textY, textColor)
-            tabX += tabW + 2
         }
 
         // Content area
@@ -284,6 +281,14 @@ class DiagnosticScreen(
                 val msgW = font.width(msg)
                 graphics.drawString(font, msg, contentLeft + (contentW - msgW) / 2, contentTop + contentH / 2, DIM)
             }
+        }
+
+        // Inspector panel — rendered last with higher Z to draw over topology blocks
+        if (activeTab == 0) {
+            graphics.pose().pushPose()
+            graphics.pose().translate(0f, 0f, 200f)
+            renderInspector(graphics, mouseX, mouseY)
+            graphics.pose().popPose()
         }
     }
 
@@ -438,16 +443,13 @@ class DiagnosticScreen(
         val treeAreaTop = contentTop + 22
         val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
 
-        // Right panel: content border around the tree view area
-        val graphLeft = splitX + 4
+        // Right panel: tree view area
+        val graphLeft = splitX - 16
         val graphRight = contentLeft + contentW - 4
-        NineSlice.CONTENT_BORDER.draw(
-            graphics,
-            graphLeft - 3,
-            treeAreaTop - 3,
-            graphRight - graphLeft + 6,
-            contentTop + contentH - treeAreaTop + 6
-        )
+        val graphBottom = contentTop + contentH - 6
+        val gx = graphLeft - 3; val gy = treeAreaTop - 3; val gw = graphRight - graphLeft + 6; val gh = graphBottom - treeAreaTop + 6
+        NineSlice.PANEL_INSET.draw(graphics, gx, gy, gw, gh)
+        NineSlice.CONTENT_BORDER.draw(graphics, gx, gy, gw, gh)
 
         // Autocomplete dropdown for item field
         renderCraftAutocomplete(graphics, mouseX, mouseY)
@@ -470,7 +472,7 @@ class DiagnosticScreen(
 
         // Right panel: visual item graph with zoom/pan
         val graphW = graphRight - graphLeft
-        graphics.enableScissor(graphLeft, treeAreaTop, graphRight, contentTop + contentH)
+        graphics.enableScissor(graphLeft, treeAreaTop, graphRight, graphBottom)
         graphics.pose().pushPose()
         val graphCenterX = graphLeft + graphW / 2f + craftGraphPanX
         val graphCenterY = treeAreaTop + 20f + craftGraphPanY
@@ -923,8 +925,7 @@ class DiagnosticScreen(
             renderTooltipLines(graphics, lines, mouseX, mouseY)
         }
 
-        // Inspector panel for selected block
-        renderInspector(graphics, mouseX, mouseY)
+        // Inspector is rendered in renderBg after topology to ensure Z-ordering
     }
 
     private val inspectorWidth = 150
@@ -1343,18 +1344,19 @@ class DiagnosticScreen(
         }
 
         // Tab clicks
-        val tabY = topPos + 20
-        val tabH = 14
-        if (my >= tabY && my < tabY + tabH) {
-            var tabX = leftPos + 8
-            for ((i, name) in TAB_NAMES.withIndex()) {
-                val tabW = font.width(name) + 10
-                if (mx >= tabX && mx < tabX + tabW) {
+        val btnH = 14
+        val btnY = topPos + 5
+        if (my >= btnY && my < btnY + btnH) {
+            var tabX = leftPos + imageWidth - 4
+            for (i in TAB_NAMES.indices.reversed()) {
+                val btnW = font.width(TAB_NAMES[i]) + 10
+                tabX -= btnW + 2
+                if (mx >= tabX && mx < tabX + btnW) {
                     activeTab = i
                     craftItemField?.visible = i == 2
+                    selectedBlock = null
                     return true
                 }
-                tabX += tabW + 2
             }
         }
 
@@ -1375,9 +1377,9 @@ class DiagnosticScreen(
                 val pw = bounds[2];
                 val ph = bounds[3]
                 // Pin button
-                val pinX = px + pw - 24
-                val pinY = py + 1
-                if (mx >= pinX && mx < pinX + 10 && my >= pinY && my < pinY + 10) {
+                val pinX = px + pw - 27
+                val pinY = py + 6
+                if (mx >= pinX && mx < pinX + 16 && my >= pinY && my < pinY + 16) {
                     val currentPin = damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock
                     if (currentPin == selectedBlock?.pos) {
                         damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock = null
@@ -1388,9 +1390,9 @@ class DiagnosticScreen(
                 }
 
                 // [X] close button
-                val closeX = px + pw - 10
-                val closeY = py + 2
-                if (mx >= closeX && mx < closeX + 8 && my >= closeY && my < closeY + 8) {
+                val closeX = px + pw - 13
+                val closeY = py + 7
+                if (mx >= closeX && mx < closeX + 10 && my >= closeY && my < closeY + 10) {
                     selectedBlock = null
                     return true
                 }
