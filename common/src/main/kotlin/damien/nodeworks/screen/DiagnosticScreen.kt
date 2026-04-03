@@ -1005,31 +1005,30 @@ class DiagnosticScreen(
         val pw = bounds[2];
         val ph = bounds[3]
 
-        // H1: header + inset body
-        NineSlice.INSPECTOR_H1.draw(graphics, px, py, pw, 19)
-        NineSlice.PANEL_INSET.draw(graphics, px, py + 18, pw, ph - 18)
+        // Full inset body extending behind the title area
+        NineSlice.PANEL_INSET.draw(graphics, px, py, pw, ph)
 
         // H1: block icon + title
         val title = BLOCK_LABELS[sel.type] ?: sel.type
         val titleColor = BLOCK_COLORS[sel.type] ?: WHITE
         val itemStack = BLOCK_ITEMS[sel.type]
         if (itemStack != null) {
-            graphics.renderItem(itemStack, px + 2, py + 1)
+            graphics.renderItem(itemStack, px + 2, py + 3)
         }
-        graphics.drawString(font, title, px + 20, py + 6, titleColor)
+        graphics.drawString(font, title, px + 20, py + 8, titleColor)
 
         // H1: pin button
         val isPinned = damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == sel.pos
-        val pinX = px + pw - 24
-        val pinY = py + 1
+        val pinX = px + pw - 27
+        val pinY = py + 6
         val pinIcon = if (isPinned) Icons.PINNED else Icons.UNPINNED
         val pinHovered = mouseX >= pinX && mouseX < pinX + 10 && mouseY >= pinY && mouseY < pinY + 10
         val tint = if (isPinned) 0xFF55CCFF.toInt() else if (pinHovered) WHITE else GRAY
         pinIcon.drawTinted(graphics, pinX - 3, pinY - 3, tint)
 
         // H1: close button
-        val closeX = px + pw - 10
-        val closeY = py + 2
+        val closeX = px + pw - 13
+        val closeY = py + 7
         val closeHovered = mouseX >= closeX && mouseX < closeX + 8 && mouseY >= closeY && mouseY < closeY + 8
         graphics.drawString(font, "x", closeX + 1, closeY, if (closeHovered) WHITE else GRAY, false)
 
@@ -1138,8 +1137,7 @@ class DiagnosticScreen(
 
         graphics.pose().pushPose()
         graphics.pose().translate(0f, 0f, 400f)
-        graphics.fill(tx - 1, ty - 1, tx + tooltipW + 1, ty + tooltipH + 1, SEPARATOR)
-        graphics.fill(tx, ty, tx + tooltipW, ty + tooltipH, 0xFF1A1A1A.toInt())
+        NineSlice.TOOLTIP.draw(graphics, tx - 1, ty - 1, tooltipW + 2, tooltipH + 2)
         for ((i, line) in lines.withIndex()) {
             val c = if (i == 0) WHITE else GRAY
             graphics.drawString(font, line, tx + 3, ty + 2 + i * (font.lineHeight + 1), c)
@@ -1171,16 +1169,15 @@ class DiagnosticScreen(
             val iconsTexture =
                 net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
             val uniqueTypes = block.cards.map { it.cardType }.distinct()
-            val iconSize = 10
+            val iconSize = 12
             val iconSpacing = 0
             val pillW = uniqueTypes.size * (iconSize + iconSpacing) - iconSpacing
             val pillH = iconSize
             val pillX = sx - pillW / 2
-            val pillY = sy + 9
+            val pillY = sy + 7
 
-            // Pill background with border
-            graphics.fill(pillX - 1, pillY - 1, pillX + pillW + 1, pillY + pillH + 1, 0xFF333333.toInt())
-            graphics.fill(pillX, pillY, pillX + pillW, pillY + pillH, 0xFF1A1A1A.toInt())
+            // Pill background
+            NineSlice.PILL.draw(graphics, pillX - 2, pillY, pillW + 4, pillH)
 
             for ((i, cardType) in uniqueTypes.withIndex()) {
                 val iconU = CARD_ICON_U[cardType] ?: continue
