@@ -106,44 +106,39 @@ object NodeConnectionHelper {
 
     /** BFS from a position to find a controller and propagate its networkId to all reachable connectables. */
     fun propagateNetworkId(level: ServerLevel, startPos: BlockPos) {
+        // Full BFS to discover all reachable nodes
         val visited = LinkedHashSet<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         visited.add(startPos)
         queue.add(startPos)
-        var foundId: java.util.UUID? = null
 
-        // First pass: BFS to find a controller
         while (queue.isNotEmpty()) {
             val pos = queue.removeFirst()
             val entity = getConnectable(level, pos) ?: continue
-            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
-                foundId = entity.networkId
-                break
-            }
             for (conn in entity.getConnections()) {
                 if (visited.add(conn) && level.isLoaded(conn)) queue.add(conn)
             }
         }
 
-        // Second pass: set networkId on all visited connectables
+        // Find controller in the visited set
+        var foundId: java.util.UUID? = null
+        for (pos in visited) {
+            val entity = getConnectable(level, pos)
+            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
+                foundId = entity.networkId
+                break
+            }
+        }
+
+        // Update all visited nodes and sync to client
         for (pos in visited) {
             val entity = getConnectable(level, pos) ?: continue
             if (entity.networkId != foundId) {
                 entity.networkId = foundId
-                (entity as? net.minecraft.world.level.block.entity.BlockEntity)?.setChanged()
-            }
-        }
-        // Continue BFS for any nodes we didn't reach in the first pass
-        if (foundId != null) {
-            while (queue.isNotEmpty()) {
-                val pos = queue.removeFirst()
-                val entity = getConnectable(level, pos) ?: continue
-                if (entity.networkId != foundId) {
-                    entity.networkId = foundId
-                    (entity as? net.minecraft.world.level.block.entity.BlockEntity)?.setChanged()
-                }
-                for (conn in entity.getConnections()) {
-                    if (visited.add(conn) && level.isLoaded(conn)) queue.add(conn)
+                val be = entity as? net.minecraft.world.level.block.entity.BlockEntity
+                if (be != null) {
+                    be.setChanged()
+                    level.sendBlockUpdated(pos, be.blockState, be.blockState, net.minecraft.world.level.block.Block.UPDATE_CLIENTS)
                 }
             }
         }

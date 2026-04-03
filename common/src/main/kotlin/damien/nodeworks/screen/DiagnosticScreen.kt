@@ -195,9 +195,9 @@ class DiagnosticScreen(
     // ========== Coordinate conversion ==========
 
     private val contentLeft get() = leftPos + 4
-    private val contentTop get() = topPos + 32
+    private val contentTop get() = topPos + 34
     private val contentW get() = imageWidth - 8
-    private val contentH get() = imageHeight - 36
+    private val contentH get() = imageHeight - 38
     private val viewCenterX get() = contentLeft + contentW / 2f
     private val viewCenterY get() = contentTop + contentH / 2f
 
@@ -232,39 +232,39 @@ class DiagnosticScreen(
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
         // Main background
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, BG)
+        NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
-        // Top bar
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + 20, TOP_BAR)
+        // Top bar with network color
+        val networkColor = menu.topology.networkColor
         val titleStr = if (menu.topology.networkName.isNotEmpty()) menu.topology.networkName else "Network Diagnostic"
-        graphics.drawString(font, titleStr, leftPos + 6, topPos + 6, WHITE)
+        NineSlice.drawTitleBar(graphics, font, Component.literal(titleStr), leftPos, topPos, imageWidth, 20, networkColor)
 
         // Tab bar
         val tabY = topPos + 20
-        val tabH = 12
-        graphics.fill(leftPos, tabY, leftPos + imageWidth, tabY + tabH, TAB_INACTIVE)
+        val tabH = 14
+        NineSlice.PANEL_INSET.draw(graphics, leftPos + 4, tabY, imageWidth - 8, tabH)
 
-        var tabX = leftPos + 4
+        var tabX = leftPos + 8
         for ((i, name) in TAB_NAMES.withIndex()) {
             val tabW = font.width(name) + 10
             val hovered = mouseX >= tabX && mouseX < tabX + tabW && mouseY >= tabY && mouseY < tabY + tabH
-            val bg = when {
-                i == activeTab -> TAB_ACTIVE
-                hovered -> TAB_HOVER
-                else -> TAB_INACTIVE
+            val tabSlice = when {
+                i == activeTab -> NineSlice.TAB_ACTIVE
+                hovered -> NineSlice.TAB_HOVER
+                else -> NineSlice.TAB_INACTIVE
             }
-            graphics.fill(tabX, tabY, tabX + tabW, tabY + tabH, bg)
+            tabSlice.draw(graphics, tabX, tabY + 1, tabW, tabH - 1)
             if (i == activeTab) {
-                graphics.fill(tabX, tabY, tabX + tabW, tabY + 1, 0xFF5599FF.toInt())
+                NineSlice.TAB_TRIM.drawTinted(graphics, tabX, tabY + 1, tabW, tabH - 1, networkColor, alpha = 0.7f)
             }
             val textColor = if (i == activeTab) WHITE else GRAY
-            graphics.drawString(font, name, tabX + 5, tabY + 2, textColor)
+            val textY = tabY + 1 + (tabH - 1 - font.lineHeight) / 2 + 1
+            graphics.drawString(font, name, tabX + 5, textY, textColor)
             tabX += tabW + 2
         }
-        graphics.fill(leftPos, tabY + tabH, leftPos + imageWidth, tabY + tabH + 1, SEPARATOR)
 
         // Content area
-        graphics.fill(contentLeft, contentTop, contentLeft + contentW, contentTop + contentH, CONTENT_BG)
+        NineSlice.PANEL_INSET.draw(graphics, contentLeft, contentTop, contentW, contentH)
 
         when (activeTab) {
             0 -> renderTopology(graphics, mouseX, mouseY)
@@ -429,10 +429,10 @@ class DiagnosticScreen(
         val treeAreaTop = contentTop + 22
         val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
 
-        // Always draw panel backgrounds and separator
-        graphics.fill(contentLeft, treeAreaTop, splitX, contentTop + contentH, 0xFF191919.toInt()) // darker left
-        graphics.fill(splitX + 1, treeAreaTop, contentLeft + contentW, contentTop + contentH, CONTENT_BG) // right
-        graphics.fill(splitX, contentTop, splitX + 1, contentTop + contentH, SEPARATOR) // separator
+        // Right panel: content border around the tree view area
+        val graphLeft = splitX + 4
+        val graphRight = contentLeft + contentW - 4
+        NineSlice.CONTENT_BORDER.draw(graphics, graphLeft - 3, treeAreaTop - 3, graphRight - graphLeft + 6, contentTop + contentH - treeAreaTop + 6)
 
         // Autocomplete dropdown for item field
         renderCraftAutocomplete(graphics, mouseX, mouseY)
@@ -454,8 +454,6 @@ class DiagnosticScreen(
         graphics.disableScissor()
 
         // Right panel: visual item graph with zoom/pan
-        val graphLeft = splitX + 2
-        val graphRight = contentLeft + contentW
         val graphW = graphRight - graphLeft
         graphics.enableScissor(graphLeft, treeAreaTop, graphRight, contentTop + contentH)
         graphics.pose().pushPose()
@@ -917,82 +915,70 @@ class DiagnosticScreen(
     private val inspectorWidth = 150
     private val lineH get() = font.lineHeight + 1
 
-    /** Build sections for the inspector panel. Each section has a title and list of lines. */
-    /** iconU >= 0 = draw card icon from atlas. blockItemId = render block's item icon. indent = tree depth. */
-    private data class InspectorLine(
+    /** Inspector row types for the floating inspector panel. */
+    private enum class RowType { H2, H3, PROPERTY }
+    private data class InspectorRow(
+        val type: RowType,
         val text: String,
-        val color: Int,
+        val color: Int = WHITE,
         val iconU: Int = -1,
-        val blockItemId: String = "",
-        val indent: Int = 0
+        val blockItemId: String = ""
     )
-
-    private data class InspectorSection(val title: String?, val lines: List<InspectorLine>)
 
     private val CARD_ICON_U = mapOf("io" to 0, "storage" to 16, "redstone" to 32)
 
-    private fun buildInspectorSections(block: DiagnosticOpenData.NetworkBlock): List<InspectorSection> {
-        val sections = mutableListOf<InspectorSection>()
+    private fun buildInspectorRows(block: DiagnosticOpenData.NetworkBlock): List<InspectorRow> {
+        val rows = mutableListOf<InspectorRow>()
 
-        // Info section
-        sections.add(
-            InspectorSection(
-                "Info", listOf(
-                    InspectorLine("Position: ${block.pos.x}, ${block.pos.y}, ${block.pos.z}", GRAY),
-                    InspectorLine("Connections: ${block.connections.size}", GRAY)
-                )
-            )
-        )
+        // Info
+        rows.add(InspectorRow(RowType.H2, "Info"))
+        rows.add(InspectorRow(RowType.PROPERTY, "Position: ${block.pos.x}, ${block.pos.y}, ${block.pos.z}", GRAY))
+        rows.add(InspectorRow(RowType.PROPERTY, "Connections: ${block.connections.size}", GRAY))
 
-        // Cards section grouped by face (nodes only)
+        // Cards grouped by face
         if (block.cards.isNotEmpty()) {
             val dirNames = arrayOf("Down", "Up", "North", "South", "East", "West")
             val bySide = block.cards.groupBy { it.side }
-            val cardLines = mutableListOf<InspectorLine>()
+            rows.add(InspectorRow(RowType.H2, "Cards"))
             for ((side, sideCards) in bySide) {
                 val dir = dirNames.getOrElse(side) { "?" }
                 val adjBlockId = sideCards.firstOrNull()?.adjacentBlockId ?: ""
                 val adjName = if (adjBlockId.isNotEmpty()) adjBlockId.substringAfter(':').replace('_', ' ') else "air"
-                // Face header: indent=0, has block icon
-                cardLines.add(InspectorLine("$dir: $adjName", WHITE, -1, adjBlockId, indent = 0))
-                // Card entries: indent=1, has card icon
+                rows.add(InspectorRow(RowType.H3, "$dir: $adjName", WHITE, blockItemId = adjBlockId))
                 for (card in sideCards) {
                     val alias = if (card.alias.isNotEmpty()) card.alias else card.cardType
                     val color = CARD_COLORS[card.cardType] ?: GRAY
                     val iconU = CARD_ICON_U[card.cardType] ?: -1
-                    cardLines.add(InspectorLine(alias, color, iconU, indent = 1))
+                    rows.add(InspectorRow(RowType.PROPERTY, alias, color, iconU))
                 }
             }
-            sections.add(InspectorSection("Cards", cardLines))
         }
 
-        // Details section (block-specific)
+        // Details
         if (block.details.isNotEmpty()) {
-            val detailLines = block.details.mapNotNull { detail ->
-                if (detail.startsWith("__glow:")) {
-                    // Special: glow style icon — parsed during rendering
-                    InspectorLine(detail, GRAY)
-                } else {
-                    InspectorLine(detail, GRAY)
-                }
+            rows.add(InspectorRow(RowType.H2, "Details"))
+            for (detail in block.details) {
+                rows.add(InspectorRow(RowType.PROPERTY, detail, GRAY))
             }
-            sections.add(InspectorSection("Details", detailLines))
         }
 
-        return sections
+        return rows
     }
 
     private fun getInspectorBounds(): IntArray? {
         val sel = selectedBlock ?: return null
-        val sections = buildInspectorSections(sel)
-        val headerH = 20 // icon + title + separator
-        var bodyH = 0
-        for (section in sections) {
-            bodyH += lineH + 2 // section header + gap below header
-            bodyH += section.lines.size * lineH
-            bodyH += 3 // spacing after section
+        val rows = buildInspectorRows(sel)
+        val headerH = 20
+        var bodyH = 4 // top padding
+        for (row in rows) {
+            bodyH += when (row.type) {
+                RowType.H2 -> lineH + 3  // H2 (1px taller) + gap before + after
+                RowType.H3 -> lineH + 1  // H3 + small gap
+                RowType.PROPERTY -> lineH
+            }
         }
-        val panelH = headerH + bodyH + 4
+        bodyH += 4 // bottom padding
+        val panelH = headerH + bodyH
         val px = leftPos + imageWidth - inspectorWidth - 6
         val py = contentTop + 4
         return intArrayOf(px, py, inspectorWidth, panelH)
@@ -1001,229 +987,130 @@ class DiagnosticScreen(
     private fun renderInspector(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
         val sel = selectedBlock ?: return
         val bounds = getInspectorBounds() ?: return
-        val px = bounds[0];
-        val py = bounds[1];
-        val pw = bounds[2];
-        val ph = bounds[3]
+        val px = bounds[0]; val py = bounds[1]; val pw = bounds[2]; val ph = bounds[3]
 
-        // Border
-        graphics.fill(px - 1, py - 1, px + pw + 1, py + ph + 1, SEPARATOR)
-        // Body background
-        graphics.fill(px, py, px + pw, py + ph, 0xEE1E1E1E.toInt())
-        // Header background (darker)
-        graphics.fill(px, py, px + pw, py + 19, 0xEE151515.toInt())
+        // H1: header + inset body
+        NineSlice.INSPECTOR_H1.draw(graphics, px, py, pw, 19)
+        NineSlice.PANEL_INSET.draw(graphics, px, py + 18, pw, ph - 18)
 
-        // Header: icon + title
+        // H1: block icon + title
         val title = BLOCK_LABELS[sel.type] ?: sel.type
         val titleColor = BLOCK_COLORS[sel.type] ?: WHITE
         val itemStack = BLOCK_ITEMS[sel.type]
         if (itemStack != null) {
             graphics.renderItem(itemStack, px + 2, py + 1)
         }
-        graphics.drawString(font, title, px + 20, py + 5, titleColor)
+        graphics.drawString(font, title, px + 20, py + 6, titleColor)
 
-        // Pin button (icon from atlas)
+        // H1: pin button
         val isPinned = damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == sel.pos
         val pinX = px + pw - 24
         val pinY = py + 1
+        val pinIcon = if (isPinned) Icons.PINNED else Icons.UNPINNED
         val pinHovered = mouseX >= pinX && mouseX < pinX + 10 && mouseY >= pinY && mouseY < pinY + 10
-        val pinIconsTexture =
-            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
-        // 5th column (u=64) = unpinned, 6th column (u=80) = pinned
-        val pinU = if (isPinned) 80f else 64f
         val tint = if (isPinned) 0xFF55CCFF.toInt() else if (pinHovered) WHITE else GRAY
-        val tr = ((tint shr 16) and 0xFF) / 255f
-        val tg = ((tint shr 8) and 0xFF) / 255f
-        val tb = (tint and 0xFF) / 255f
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(tr, tg, tb, 1f)
-        graphics.blit(pinIconsTexture, pinX, pinY, 10, 10, pinU, 0f, 16, 16, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        pinIcon.drawTinted(graphics, pinX - 3, pinY - 3, tint)
 
-        // [X] close button
+        // H1: close button
         val closeX = px + pw - 10
         val closeY = py + 2
         val closeHovered = mouseX >= closeX && mouseX < closeX + 8 && mouseY >= closeY && mouseY < closeY + 8
         graphics.drawString(font, "x", closeX + 1, closeY, if (closeHovered) WHITE else GRAY, false)
 
-        // Header separator
-        val sepY = py + 18
-        graphics.fill(px, sepY, px + pw, sepY + 1, SEPARATOR)
-
-        // Sections
-        val sections = buildInspectorSections(sel)
-        val iconsTexture =
-            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
-        var curY = sepY + 3
+        // Body rows
+        val rows = buildInspectorRows(sel)
+        var curY = py + 22
         var rowIndex = 0
-        for ((sectionIdx, section) in sections.withIndex()) {
-            // Section header
-            if (section.title != null) {
-                graphics.fill(px + 1, curY - 1, px + pw - 1, curY + lineH - 1, 0x20FFFFFF.toInt())
-                graphics.drawString(font, section.title, px + 4, curY, WHITE, false)
-                curY += lineH + 2
-                rowIndex = 0
-            }
-            // Section lines with tree structure
-            val indentStep = 10
-            val treeLineColor = 0xFF444444.toInt()
-            for ((lineIdx, line) in section.lines.withIndex()) {
-                val rowBg = if (rowIndex % 2 == 1) 0x08FFFFFF.toInt() else 0x00000000
-                graphics.fill(px + 1, curY, px + pw - 1, curY + lineH, rowBg)
 
-                val baseX = px + 8 + line.indent * indentStep
-                var textX = baseX
-
-                // Draw tree connector lines
-                if (line.indent > 0) {
-                    val treeX = px + 8 + (line.indent - 1) * indentStep + 2
-                    // Vertical line from above
-                    graphics.fill(treeX, curY - 1, treeX + 1, curY + lineH / 2, treeLineColor)
-                    // Horizontal branch
-                    graphics.fill(treeX, curY + lineH / 2 - 1, treeX + 5, curY + lineH / 2, treeLineColor)
-                    textX = treeX + 6
+        var isFirstRow = true
+        for (row in rows) {
+            val textY = curY + 1
+            when (row.type) {
+                RowType.H2 -> {
+                    if (!isFirstRow) curY += 1 // extra spacing before non-first H2
+                    // Category header — 9-sliced, extended 1px up
+                    NineSlice.INSPECTOR_H2.draw(graphics, px + 3, curY - 1, pw - 6, lineH + 3)
+                    graphics.drawString(font, row.text, px + 6, curY + 2, WHITE, false)
+                    curY += lineH + 2
+                    rowIndex = 0
                 }
-
-                // Adjacent block item icon (face headers)
-                if (line.blockItemId.isNotEmpty()) {
-                    val adjId = net.minecraft.resources.ResourceLocation.tryParse(line.blockItemId)
-                    if (adjId != null) {
-                        val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(adjId)
-                        if (adjItem != null) {
-                            graphics.pose().pushPose()
-                            graphics.pose().translate(textX.toFloat(), curY.toFloat(), 0f)
-                            graphics.pose().scale(0.5f, 0.5f, 1f)
-                            graphics.renderItem(ItemStack(adjItem), 0, 0)
-                            graphics.pose().popPose()
-                            textX += 10
-                        }
-                    }
-                }
-
-                // Card type icon from atlas
-                if (line.iconU >= 0) {
-                    graphics.blit(
-                        iconsTexture, textX, curY, 8, 8,
-                        (line.iconU + 4).toFloat(), 20f, 8, 8, 256, 256
-                    )
-                    textX += 12
-                }
-
-                // Special rendering for color swatch
-                if (line.text.startsWith("__color:")) {
-                    val colorVal = line.text.removePrefix("__color:").toIntOrNull() ?: 0
-                    val swatchColor = colorVal or 0xFF000000.toInt()
-                    graphics.drawString(font, "Color:", textX, curY, WHITE, false)
-                    val swatchX = textX + font.width("Color: ")
-                    val swatchSize = font.lineHeight - 2
-                    // Swatch with border
-                    graphics.fill(
-                        swatchX - 1,
-                        curY - 1,
-                        swatchX + swatchSize + 1,
-                        curY + swatchSize + 1,
-                        0xFF444444.toInt()
-                    )
-                    graphics.fill(swatchX, curY, swatchX + swatchSize, curY + swatchSize, swatchColor)
-                    // Hex label after swatch
-                    val hexStr = "#${Integer.toHexString(colorVal).uppercase().padStart(6, '0')}"
-                    graphics.drawString(font, hexStr, swatchX + swatchSize + 3, curY, 0xFF888888.toInt(), false)
-                } else if (line.text.startsWith("__glow:")) {
-                    val parts = line.text.removePrefix("__glow:").split(":")
-                    val glowStyle = parts.getOrNull(0)?.toIntOrNull() ?: 0
-                    val glowColor = (parts.getOrNull(1)?.toIntOrNull() ?: 0x83E086) or 0xFF000000.toInt()
-                    graphics.drawString(font, "Node Glow:", textX, curY, WHITE, false)
-                    val iconX = textX + font.width("Node Glow: ")
-                    val iconCx = iconX + 4
-                    val iconCy = curY + font.lineHeight / 2
-                    // Draw glow icon (same as NetworkControllerScreen)
-                    when (glowStyle) {
-                        0 -> graphics.fill(iconCx - 3, iconCy - 3, iconCx + 3, iconCy + 3, glowColor)
-                        1 -> {
-                            graphics.fill(iconCx - 2, iconCy - 3, iconCx + 2, iconCy + 3, glowColor); graphics.fill(
-                                iconCx - 3,
-                                iconCy - 2,
-                                iconCx + 3,
-                                iconCy + 2,
-                                glowColor
-                            )
-                        }
-
-                        2 -> graphics.fill(iconCx - 1, iconCy - 1, iconCx + 1, iconCy + 1, glowColor)
-                        3 -> {
-                            graphics.fill(iconCx - 3, iconCy - 3, iconCx - 1, iconCy - 1, glowColor); graphics.fill(
-                                iconCx + 1,
-                                iconCy - 3,
-                                iconCx + 3,
-                                iconCy - 1,
-                                glowColor
-                            ); graphics.fill(iconCx - 1, iconCy - 1, iconCx + 1, iconCy + 1, glowColor); graphics.fill(
-                                iconCx - 2,
-                                iconCy + 1,
-                                iconCx + 2,
-                                iconCy + 3,
-                                glowColor
-                            )
-                        }
-
-                        4 -> {
-                            graphics.fill(iconCx - 3, iconCy - 4, iconCx - 2, iconCy - 2, glowColor); graphics.fill(
-                                iconCx + 2,
-                                iconCy - 4,
-                                iconCx + 3,
-                                iconCy - 2,
-                                glowColor
-                            ); graphics.fill(iconCx - 2, iconCy - 2, iconCx + 2, iconCy + 2, glowColor)
-                        }
-
-                        5 -> {
-                            for (j in -3..3) {
-                                graphics.fill(
-                                    iconCx + j,
-                                    iconCy + j,
-                                    iconCx + j + 1,
-                                    iconCy + j + 1,
-                                    0xFF666666.toInt()
-                                ); graphics.fill(
-                                    iconCx + j,
-                                    iconCy - j,
-                                    iconCx + j + 1,
-                                    iconCy - j + 1,
-                                    0xFF666666.toInt()
-                                )
+                RowType.H3 -> {
+                    // Sub-category — subtle lighter background to differentiate groups
+                    graphics.fill(px + 3, curY, px + pw - 3, curY + lineH, 0x10FFFFFF.toInt())
+                    var textX = px + 10
+                    if (row.blockItemId.isNotEmpty()) {
+                        val adjId = net.minecraft.resources.ResourceLocation.tryParse(row.blockItemId)
+                        if (adjId != null) {
+                            val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(adjId)
+                            if (adjItem != null) {
+                                graphics.pose().pushPose()
+                                graphics.pose().translate(textX.toFloat(), textY.toFloat(), 0f)
+                                graphics.pose().scale(0.5f, 0.5f, 1f)
+                                graphics.renderItem(ItemStack(adjItem), 0, 0)
+                                graphics.pose().popPose()
+                                textX += 10
                             }
                         }
                     }
-                } else {
-                    // Render text — split "key: value" for color differentiation
-                    val colonIdx = line.text.indexOf(':')
-                    if (colonIdx > 0 && line.indent == 0) {
-                        val key = line.text.substring(0, colonIdx + 1)
-                        val value = line.text.substring(colonIdx + 1)
-                        graphics.drawString(font, key, textX, curY, WHITE, false)
-                        graphics.drawString(font, value, textX + font.width(key), curY, 0xFF888888.toInt(), false)
+                    graphics.drawString(font, row.text, textX, textY, WHITE, false)
+                    curY += lineH + 1
+                    rowIndex = 0
+                }
+                RowType.PROPERTY -> {
+                    // Alternating row background
+                    if (rowIndex % 2 == 1) {
+                        graphics.fill(px + 3, curY, px + pw - 3, curY + lineH, 0x08FFFFFF.toInt())
+                    }
+                    var textX = px + 14
+
+                    // Card type icon
+                    if (row.iconU >= 0) {
+                        val icon = when (row.iconU) {
+                            0 -> Icons.IO_CARD; 16 -> Icons.STORAGE_CARD; 32 -> Icons.REDSTONE_CARD; else -> Icons.IO_CARD
+                        }
+                        icon.drawSmall(graphics, textX, textY)
+                        textX += 12
+                    }
+
+                    // Special rendering
+                    if (row.text.startsWith("__color:")) {
+                        val colorVal = row.text.removePrefix("__color:").toIntOrNull() ?: 0
+                        val swatchColor = colorVal or 0xFF000000.toInt()
+                        graphics.drawString(font, "Color:", textX, textY, WHITE, false)
+                        val swatchX = textX + font.width("Color: ")
+                        val ss = font.lineHeight - 2
+                        graphics.fill(swatchX - 1, textY - 1, swatchX + ss + 1, textY + ss + 1, 0xFF444444.toInt())
+                        graphics.fill(swatchX, textY, swatchX + ss, textY + ss, swatchColor)
+                        val hexStr = "#${Integer.toHexString(colorVal).uppercase().padStart(6, '0')}"
+                        graphics.drawString(font, hexStr, swatchX + ss + 3, textY, DIM, false)
+                    } else if (row.text.startsWith("__glow:")) {
+                        val parts = row.text.removePrefix("__glow:").split(":")
+                        val glowStyle = parts.getOrNull(0)?.toIntOrNull() ?: 0
+                        val glowColor = (parts.getOrNull(1)?.toIntOrNull() ?: 0x83E086) or 0xFF000000.toInt()
+                        graphics.drawString(font, "Node Glow:", textX, textY, WHITE, false)
+                        val glowIcon = when (glowStyle) {
+                            0 -> Icons.GLOW_SQUARE; 1 -> Icons.GLOW_CIRCLE; 2 -> Icons.GLOW_DOT
+                            3 -> Icons.GLOW_CREEPER; 4 -> Icons.GLOW_CAT; else -> Icons.GLOW_NONE
+                        }
+                        glowIcon.drawTinted(graphics, textX + font.width("Node Glow: "), textY - 3, glowColor and 0xFFFFFF)
                     } else {
-                        graphics.drawString(font, line.text, textX, curY, line.color, false)
+                        // Key: value color split
+                        val colonIdx = row.text.indexOf(':')
+                        if (colonIdx > 0) {
+                            val key = row.text.substring(0, colonIdx + 1)
+                            val value = row.text.substring(colonIdx + 1)
+                            graphics.drawString(font, key, textX, textY, 0xFFCCCCCC.toInt(), false)
+                            graphics.drawString(font, value, textX + font.width(key), textY, DIM, false)
+                        } else {
+                            graphics.drawString(font, row.text, textX, textY, row.color, false)
+                        }
                     }
-                }
 
-                // Draw vertical tree line connecting to next sibling at same indent
-                if (line.indent == 0 && lineIdx + 1 < section.lines.size) {
-                    val nextIndent = section.lines[lineIdx + 1].indent
-                    if (nextIndent > 0) {
-                        val treeX = px + 8 + line.indent * indentStep + 2
-                        graphics.fill(treeX, curY + lineH - 1, treeX + 1, curY + lineH, treeLineColor)
-                    }
+                    curY += lineH
+                    rowIndex++
                 }
-
-                curY += lineH
-                rowIndex++
             }
-            // Section separator (except after last section)
-            if (sectionIdx < sections.lastIndex) {
-                curY += 1
-                graphics.fill(px + 4, curY, px + pw - 4, curY + 1, 0xFF333333.toInt())
-                curY += 2
-            }
+            isFirstRow = false
         }
     }
 
@@ -1444,9 +1331,9 @@ class DiagnosticScreen(
 
         // Tab clicks
         val tabY = topPos + 20
-        val tabH = 12
+        val tabH = 14
         if (my >= tabY && my < tabY + tabH) {
-            var tabX = leftPos + 4
+            var tabX = leftPos + 8
             for ((i, name) in TAB_NAMES.withIndex()) {
                 val tabW = font.width(name) + 10
                 if (mx >= tabX && mx < tabX + tabW) {
