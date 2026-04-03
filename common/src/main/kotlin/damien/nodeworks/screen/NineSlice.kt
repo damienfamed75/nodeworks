@@ -291,6 +291,8 @@ class NineSlice(
         val INVENTORY_BORDER = NineSlice(GUI_ATLAS, 48, 104, 24, 24, 2, 2, 2, 2)
         val INPUT_FIELD = NineSlice(GUI_ATLAS, 24, 104, 24, 16, 3, 3, 3, 3)
         val CONTENT_BORDER = NineSlice(GUI_ATLAS, 24, 80, 24, 24, 3, 3, 3, 3)
+        val INSPECTOR_H1 = NineSlice(GUI_ATLAS, 96, 80, 24, 24, 3, 3, 3, 3)
+        val INSPECTOR_H2 = NineSlice(GUI_ATLAS, 120, 80, 24, 24, 3, 3, 3, 3)
         val ROW = NineSlice(GUI_ATLAS, 48, 80, 24, 16, 1, 1, 1, 1)
         val ROW_HIGHLIGHT = NineSlice(GUI_ATLAS, 72, 80, 24, 16, 1, 1, 1, 1)
         val SEPARATOR = NineSlice(GUI_ATLAS, 72, 104, 24, 3, 1, 1, 1, 1)
