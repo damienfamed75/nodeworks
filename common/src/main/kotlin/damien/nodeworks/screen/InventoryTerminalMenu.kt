@@ -23,7 +23,8 @@ class InventoryTerminalMenu(
     syncId: Int,
     playerInventory: Inventory,
     private val serverLevel: ServerLevel?,
-    private val nodePos: BlockPos?
+    val terminalPos: BlockPos?,
+    private val layoutIndex: Int = 0
 ) : AbstractContainerMenu(ModScreenHandlers.INVENTORY_TERMINAL, syncId) {
 
     private var cache: NetworkInventoryCache? = null
@@ -32,31 +33,38 @@ class InventoryTerminalMenu(
     private var tickCounter = 0
 
     companion object {
-        const val PLAYER_INV_Y = 136
-        const val HOTBAR_Y = 194
+        const val SLOT_X = 9 // left offset for slot content (GRID_PAD + 4 + 1 for border)
 
-        fun createServer(syncId: Int, inv: Inventory, level: ServerLevel, nodePos: BlockPos): InventoryTerminalMenu {
-            val menu = InventoryTerminalMenu(syncId, inv, level, nodePos)
+        /** Compute the player inventory Y offset for a given layout. */
+        fun playerInvY(layoutIndex: Int): Int {
+            val rows = InventoryTerminalScreen.Layout.entries.getOrElse(layoutIndex) { InventoryTerminalScreen.Layout.SMALL }.rows
+            return 22 + 4 + 16 + 4 + rows * 18 + 4 + 1  // TOP_BAR + pad + SEARCH + pad + grid + GRID_PAD + 1 border
+        }
+
+        fun createServer(syncId: Int, inv: Inventory, level: ServerLevel, nodePos: BlockPos, layoutIndex: Int = 0): InventoryTerminalMenu {
+            val menu = InventoryTerminalMenu(syncId, inv, level, nodePos, layoutIndex)
             menu.snapshot = NetworkDiscovery.discoverNetwork(level, nodePos)
             menu.cache = NetworkInventoryCache.getOrCreate(level, nodePos)
             return menu
         }
 
         fun clientFactory(syncId: Int, inv: Inventory, data: InventoryTerminalOpenData): InventoryTerminalMenu {
-            return InventoryTerminalMenu(syncId, inv, null, null)
+            return InventoryTerminalMenu(syncId, inv, null, data.terminalPos, data.layoutIndex)
         }
     }
 
     init {
+        val invY = playerInvY(layoutIndex)
+        val hotbarY = invY + 3 * 18 + 4
         // Player inventory (3 rows)
         for (row in 0..2) {
             for (col in 0..8) {
-                addSlot(Slot(playerInventory, col + row * 9 + 9, 8 + col * 18, PLAYER_INV_Y + row * 18))
+                addSlot(Slot(playerInventory, col + row * 9 + 9, SLOT_X + col * 18, invY + row * 18))
             }
         }
         // Hotbar
         for (col in 0..8) {
-            addSlot(Slot(playerInventory, col, 8 + col * 18, HOTBAR_Y))
+            addSlot(Slot(playerInventory, col, SLOT_X + col * 18, hotbarY))
         }
     }
 

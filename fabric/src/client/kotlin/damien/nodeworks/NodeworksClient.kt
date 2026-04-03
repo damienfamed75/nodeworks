@@ -28,6 +28,9 @@ import net.minecraft.client.gui.screens.MenuScreens
 
 object NodeworksClient : ClientModInitializer {
     override fun onInitializeClient() {
+        // Initialize client config
+        damien.nodeworks.config.ClientConfig.init(net.fabricmc.loader.api.FabricLoader.getInstance().configDir.toFile())
+
         // Initialize client platform services
         PlatformServices.clientNetworking = FabricClientNetworkingService()
         PlatformServices.clientEvents = FabricClientEventService()
