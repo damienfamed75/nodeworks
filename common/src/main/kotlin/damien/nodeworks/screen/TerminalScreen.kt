@@ -962,7 +962,7 @@ class TerminalScreen(
         val tx = mouseX + 8
         val ty = mouseY - tooltipH - 2
 
-        NineSlice.PANEL_INSET.draw(graphics, tx - 1, ty - 1, tooltipW + 2, tooltipH + 2)
+        NineSlice.TOOLTIP.draw(graphics, tx - 1, ty - 1, tooltipW + 2, tooltipH + 2)
         graphics.drawString(font, namePart, tx + 3, ty + 2, 0xFFCCCCCC.toInt())
         if (hintPart.isNotEmpty()) {
             graphics.drawString(font, hintPart, tx + 3 + font.width(namePart), ty + 2, 0xFF888888.toInt())
