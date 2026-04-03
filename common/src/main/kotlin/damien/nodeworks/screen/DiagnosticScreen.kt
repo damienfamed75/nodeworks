@@ -101,6 +101,8 @@ class DiagnosticScreen(
     private var craftGraphPanX = 0f
     private var craftGraphPanY = 0f
     private var craftGraphZoom = 1f
+    private var craftGraphNeedsAutoFit = true
+    private var lastCraftTree: Any? = null
     private var craftGraphDragging = false
     private var craftGraphLastDragX = 0.0
     private var craftGraphLastDragY = 0.0
@@ -186,6 +188,7 @@ class DiagnosticScreen(
         ).also {
             it.setMaxLength(128)
             it.setBordered(true)
+            it.setHint(net.minecraft.network.chat.Component.literal("insert item id"))
             it.visible = activeTab == 2
             it.setResponder { value -> updateCraftAutocomplete(value) }
             addRenderableWidget(it)
@@ -441,46 +444,114 @@ class DiagnosticScreen(
     private fun renderCraftPreview(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
         val tree = menu.craftTree
         val treeAreaTop = contentTop + 22
-        val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
 
-        // Right panel: tree view area
-        val graphLeft = splitX - 16
+        // Tree view fills the content area
+        val graphLeft = contentLeft + 4
         val graphRight = contentLeft + contentW - 4
-        val graphBottom = contentTop + contentH - 6
-        val gx = graphLeft - 3; val gy = treeAreaTop - 3; val gw = graphRight - graphLeft + 6; val gh = graphBottom - treeAreaTop + 6
-        NineSlice.PANEL_INSET.draw(graphics, gx, gy, gw, gh)
-        NineSlice.CONTENT_BORDER.draw(graphics, gx, gy, gw, gh)
+        val graphTop = treeAreaTop
+        val graphBottom = contentTop + contentH - 4
+        val graphW = graphRight - graphLeft
+
+        // Tree view background + border
+        NineSlice.PANEL_INSET.draw(graphics, graphLeft - 3, graphTop - 3, graphW + 6, graphBottom - graphTop + 6)
+        NineSlice.CONTENT_BORDER.draw(graphics, graphLeft - 3, graphTop - 3, graphW + 6, graphBottom - graphTop + 6)
 
         // Autocomplete dropdown for item field
         renderCraftAutocomplete(graphics, mouseX, mouseY)
 
+        // Floating detail panel frame (always visible)
+        val detailW = 180
+        val detailX = contentLeft + 6
+        val detailY = treeAreaTop + 2
+        val detailH = graphBottom - detailY - 2
+
+        graphics.pose().pushPose()
+        graphics.pose().translate(0f, 0f, 100f)
+        NineSlice.PANEL_INSET.draw(graphics, detailX, detailY, detailW, detailH)
+        NineSlice.CONTENT_BORDER.draw(graphics, detailX, detailY, detailW, detailH)
+        graphics.pose().popPose()
+
         if (tree == null) {
+            // Placeholder text inside the detail panel
+            graphics.pose().pushPose()
+            graphics.pose().translate(0f, 0f, 100f)
             graphics.drawString(
                 font,
-                "Enter an item ID above to preview crafting",
-                contentLeft + 8,
-                treeAreaTop + 8,
+                "Search for a recipe",
+                detailX + 8,
+                detailY + 8,
                 DIM
             )
+            graphics.pose().popPose()
             return
         }
 
-        // Left panel: detail text tree
-        graphics.enableScissor(contentLeft, treeAreaTop, splitX, contentTop + contentH)
-        renderCraftTreeText(graphics, tree, contentLeft + 4, treeAreaTop + 2 - craftTreeScrollY, 0)
-        graphics.disableScissor()
-
-        // Right panel: visual item graph with zoom/pan
-        val graphW = graphRight - graphLeft
-        graphics.enableScissor(graphLeft, treeAreaTop, graphRight, graphBottom)
+        // Visual item graph with zoom/pan (full content area)
+        graphics.enableScissor(graphLeft, graphTop, graphRight, graphBottom)
         graphics.pose().pushPose()
-        val graphCenterX = graphLeft + graphW / 2f + craftGraphPanX
-        val graphCenterY = treeAreaTop + 20f + craftGraphPanY
-        // Precompute layout then render
         val layout = layoutCraftTree(tree)
+
+        // Reset auto-fit when tree changes
+        if (tree !== lastCraftTree) {
+            lastCraftTree = tree
+            craftGraphNeedsAutoFit = true
+        }
+        // Auto-fit: compute bounds of the tree and scale to fit
+        if (craftGraphNeedsAutoFit) {
+            craftGraphNeedsAutoFit = false
+            val positions = layout.positions.values
+            if (positions.isNotEmpty()) {
+                val minX = positions.minOf { it.first }
+                val maxX = positions.maxOf { it.first }
+                val minY = positions.minOf { it.second }
+                val maxY = positions.maxOf { it.second }
+                val treeW = maxX - minX + 32f
+                val treeH = maxY - minY + 32f
+                val scaleX = (graphW - 16f) / treeW
+                val scaleY = ((graphBottom - graphTop) - 16f) / treeH
+                craftGraphZoom = minOf(scaleX, scaleY, 2f).coerceAtLeast(0.3f)
+                craftGraphPanX = -(minX + maxX) / 2f * craftGraphZoom
+                craftGraphPanY = -(minY + maxY) / 2f * craftGraphZoom + 10f
+            }
+        }
+
+        val graphCenterX = graphLeft + graphW / 2f + craftGraphPanX
+        val graphCenterY = graphTop + (graphBottom - graphTop) / 2f + craftGraphPanY
         renderCraftTreeVisual(graphics, tree, layout, graphCenterX, graphCenterY, craftGraphZoom)
         graphics.pose().popPose()
         graphics.disableScissor()
+
+        // Detail panel content (reuses frame drawn above)
+        val scrollbarW = 6
+
+        graphics.pose().pushPose()
+        graphics.pose().translate(0f, 0f, 100f)
+        // Redraw panel over the tree view content
+        NineSlice.PANEL_INSET.draw(graphics, detailX, detailY, detailW, detailH)
+        NineSlice.CONTENT_BORDER.draw(graphics, detailX, detailY, detailW, detailH)
+
+        val innerTop = detailY + 3
+        val innerBottom = detailY + detailH - 3
+        val innerH = innerBottom - innerTop
+
+        graphics.enableScissor(detailX + 3, innerTop, detailX + detailW - 3 - scrollbarW, innerBottom)
+        craftTreeTextY = 0
+        renderCraftTreeText(graphics, tree, detailX + 6, innerTop + 2 - craftTreeScrollY, 0)
+        val totalTextH = craftTreeTextY - (innerTop + 1 - craftTreeScrollY)
+        graphics.disableScissor()
+
+        // Scrollbar
+        val maxScroll = maxOf(0, totalTextH - innerH)
+        craftTreeScrollY = craftTreeScrollY.coerceIn(0, maxOf(0, maxScroll))
+        if (totalTextH > innerH) {
+            val sbX = detailX + detailW - 3 - scrollbarW
+            val thumbH = maxOf(12, innerH * innerH / totalTextH)
+            val thumbY = innerTop + (innerH - thumbH) * craftTreeScrollY / maxScroll
+            NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, innerTop, scrollbarW, innerH)
+            NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, thumbY, scrollbarW, thumbH)
+        }
+
+        graphics.pose().popPose()
     }
 
     // ========== Craft Item Autocomplete ==========
@@ -585,27 +656,20 @@ class DiagnosticScreen(
         val indent = depth * 12
         var y = if (depth == 0) startY else craftTreeTextY
 
-        // Source label and color
-        val sourceLabel = when (node.source) {
-            "craft_template" -> "Craft Template"
-            "process_template" -> "Process Template"
-            "process_no_handler" -> "No Handler!"
-            "storage" -> "In Storage"
-            "missing" -> "Missing!"
-            else -> node.source
+        // Source icon item
+        val sourceItem: net.minecraft.world.item.Item? = when (node.source) {
+            "craft_template" -> damien.nodeworks.registry.ModItems.INSTRUCTION_SET
+            "process_template" -> damien.nodeworks.registry.ModItems.PROCESSING_SET
+            "process_no_handler" -> damien.nodeworks.registry.ModItems.PROCESSING_SET
+            "storage" -> net.minecraft.world.item.Items.CHEST
+            "missing" -> net.minecraft.world.item.Items.CHEST
+            else -> null
         }
-        val sourceColor = when (node.source) {
-            "storage" -> 0xFF55AA55.toInt()
-            "craft_template" -> 0xFF5599FF.toInt()
-            "process_template" -> 0xFFAA55DD.toInt()
-            "process_no_handler" -> 0xFFFF5555.toInt()
-            "missing" -> 0xFFFF5555.toInt()
-            else -> GRAY
-        }
+        val showXOverlay = node.source == "process_no_handler" || node.source == "missing"
 
         // Row background
         val rowBg = if ((depth % 2) == 0) 0x00000000 else 0x08FFFFFF.toInt()
-        graphics.fill(contentLeft, y, contentLeft + contentW * 3 / 5, y + lineH, rowBg)
+        if (rowBg != 0) graphics.fill(x, y - 2, x + 300, y + lineH - 2, rowBg)
 
         // Item icon (small)
         val itemId = net.minecraft.resources.ResourceLocation.tryParse(node.itemId)
@@ -620,10 +684,26 @@ class DiagnosticScreen(
             }
         }
 
-        // Text: count x name — source
+        // Text: count x name — [icon]
         val text = "${node.count}x ${node.itemName}"
-        graphics.drawString(font, text, x + indent + 10, y, WHITE, false)
-        graphics.drawString(font, " — $sourceLabel", x + indent + 10 + font.width(text), y, sourceColor, false)
+        val textX = x + indent + 10
+        graphics.drawString(font, text, textX, y, WHITE, false)
+        val dashX = textX + font.width(text)
+        graphics.drawString(font, " — ", dashX, y, DIM, false)
+        val iconX = dashX + font.width(" — ")
+        if (sourceItem != null) {
+            graphics.pose().pushPose()
+            graphics.pose().translate(iconX.toFloat(), (y - 1).toFloat(), 0f)
+            graphics.pose().scale(0.5f, 0.5f, 1f)
+            graphics.renderItem(ItemStack(sourceItem), 0, 0)
+            graphics.pose().popPose()
+        }
+        if (showXOverlay) {
+            graphics.pose().pushPose()
+            graphics.pose().translate(0f, 0f, 300f)
+            Icons.X.draw(graphics, if (sourceItem != null) iconX else iconX - 4, y - 1, 8)
+            graphics.pose().popPose()
+        }
 
         // Sub-info
         y += lineH
@@ -632,11 +712,14 @@ class DiagnosticScreen(
             y += lineH
         }
         if (node.resolvedBy.isNotEmpty() && node.resolvedBy != "storage") {
-            graphics.drawString(font, "Handler: ${node.resolvedBy}", x + indent + 14, y, DIM, false)
-            y += lineH
-        }
-        if (node.inStorage > 0 && node.source != "storage") {
-            graphics.drawString(font, "In storage: ${node.inStorage}", x + indent + 14, y, 0xFF557755.toInt(), false)
+            val netIconX = x + indent + 14
+            Icons.NETWORK.draw(graphics, netIconX - 4, y - 4)
+            val netName = when {
+                node.resolvedBy.startsWith("subnet: ") -> node.resolvedBy.removePrefix("subnet: ")
+                node.resolvedBy == "subnet" -> "subnet"
+                else -> "in-network"
+            }
+            graphics.drawString(font, netName, netIconX + 11, y, DIM, false)
             y += lineH
         }
 
@@ -652,7 +735,7 @@ class DiagnosticScreen(
     private data class TreeLayout(val positions: Map<damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode, Pair<Float, Float>>)
 
     private val nodeSpacingX = 28f  // horizontal distance between siblings
-    private val nodeSpacingY = 30f  // vertical distance between parent and child (depth)
+    private val nodeSpacingY = 36f  // vertical distance between parent and child (depth)
 
     /** Compute layout positions for all nodes. Root at (0,0), children spread horizontally below. */
     private fun layoutCraftTree(root: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode): TreeLayout {
@@ -723,15 +806,27 @@ class DiagnosticScreen(
                 }
             }
 
-            // Source color dot below icon
-            val dotColor = when (n.source) {
-                "storage" -> 0xFF55AA55.toInt()
-                "craft_template" -> 0xFF5599FF.toInt()
-                "process_template" -> 0xFFAA55DD.toInt()
-                "missing", "process_no_handler" -> 0xFFFF5555.toInt()
-                else -> GRAY
+            // Source icon below item
+            val srcItem: net.minecraft.world.item.Item? = when (n.source) {
+                "craft_template" -> damien.nodeworks.registry.ModItems.INSTRUCTION_SET
+                "process_template" -> damien.nodeworks.registry.ModItems.PROCESSING_SET
+                "process_no_handler" -> damien.nodeworks.registry.ModItems.PROCESSING_SET
+                "storage", "missing" -> net.minecraft.world.item.Items.CHEST
+                else -> null
             }
-            graphics.fill(sx - 2, sy + 17, sx + 2, sy + 19, dotColor)
+            if (srcItem != null) {
+                graphics.pose().pushPose()
+                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat(), 0f)
+                graphics.pose().scale(0.5f, 0.5f, 1f)
+                graphics.renderItem(ItemStack(srcItem), 0, 0)
+                graphics.pose().popPose()
+            }
+            if (n.source == "missing" || n.source == "process_no_handler") {
+                graphics.pose().pushPose()
+                graphics.pose().translate(0f, 0f, 300f)
+                Icons.X.draw(graphics, sx - 4, sy + 16, 8)
+                graphics.pose().popPose()
+            }
         }
     }
 
@@ -929,6 +1024,8 @@ class DiagnosticScreen(
     }
 
     private val inspectorWidth = 150
+    private var inspectorScrollY = 0
+    private var draggingInspectorScrollbar = false
     private val lineH get() = font.lineHeight + 1
 
     /** Inspector row types for the floating inspector panel. */
@@ -980,19 +1077,26 @@ class DiagnosticScreen(
         return rows
     }
 
-    private fun getInspectorBounds(): IntArray? {
-        val sel = selectedBlock ?: return null
+    private fun getInspectorTotalBodyH(): Int {
+        val sel = selectedBlock ?: return 0
         val rows = buildInspectorRows(sel)
-        val headerH = 20
-        var bodyH = 4 // top padding
+        var bodyH = 4
         for (row in rows) {
             bodyH += when (row.type) {
                 RowType.H2 -> lineH + 3
                 RowType.PROPERTY -> lineH
             }
         }
-        bodyH += 4 // bottom padding
-        val panelH = headerH + bodyH
+        bodyH += 4
+        return bodyH
+    }
+
+    private fun getInspectorBounds(): IntArray? {
+        val sel = selectedBlock ?: return null
+        val headerH = 20
+        val totalBodyH = getInspectorTotalBodyH()
+        val maxH = contentH - 8
+        val panelH = minOf(headerH + totalBodyH, maxH)
         val px = leftPos + imageWidth - inspectorWidth - 6
         val py = contentTop + 4
         return intArrayOf(px, py, inspectorWidth, panelH)
@@ -1033,9 +1137,18 @@ class DiagnosticScreen(
         val closeHovered = mouseX >= closeX && mouseX < closeX + 8 && mouseY >= closeY && mouseY < closeY + 8
         graphics.drawString(font, "x", closeX + 1, closeY, if (closeHovered) WHITE else GRAY, false)
 
-        // Body rows
+        // Body rows (scrollable)
         val rows = buildInspectorRows(sel)
-        var curY = py + 22
+        val bodyTop = py + 20
+        val bodyBottom = py + ph
+        val bodyH = bodyBottom - bodyTop
+        val totalBodyH = getInspectorTotalBodyH()
+        val maxScroll = maxOf(0, totalBodyH - bodyH)
+        inspectorScrollY = inspectorScrollY.coerceIn(0, maxOf(0, maxScroll))
+        val scrollbarW = 6
+
+        graphics.enableScissor(px, bodyTop, px + pw, bodyBottom)
+        var curY = bodyTop + 4 - inspectorScrollY
         var rowIndex = 0
 
         var isFirstRow = true
@@ -1127,6 +1240,16 @@ class DiagnosticScreen(
                 }
             }
             isFirstRow = false
+        }
+        graphics.disableScissor()
+
+        // Scrollbar
+        if (totalBodyH > bodyH) {
+            val sbX = px + pw - scrollbarW - 2
+            val thumbH = maxOf(12, bodyH * bodyH / totalBodyH)
+            val thumbY = bodyTop + (bodyH - thumbH) * inspectorScrollY / maxScroll
+            NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, bodyTop, scrollbarW, bodyH)
+            NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, thumbY, scrollbarW, thumbH)
         }
     }
 
@@ -1334,6 +1457,7 @@ class DiagnosticScreen(
                     val block = menu.topology.blocks.firstOrNull { it.pos == termPos }
                     if (block != null) {
                         selectedBlock = block
+                        inspectorScrollY = 0
                         damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock = termPos
                         activeTab = 0
                         craftItemField?.visible = false
@@ -1396,6 +1520,17 @@ class DiagnosticScreen(
                     selectedBlock = null
                     return true
                 }
+                // Scrollbar drag start
+                val totalBodyH = getInspectorTotalBodyH()
+                val bodyTop = py + 20
+                val bodyH = ph - 20
+                if (totalBodyH > bodyH) {
+                    val sbX = px + pw - 8
+                    if (mx >= sbX && mx < sbX + 6 && my >= bodyTop && my < bodyTop + bodyH) {
+                        draggingInspectorScrollbar = true
+                        return true
+                    }
+                }
                 // Click inside inspector panel — consume but don't deselect
                 if (mx >= px && mx < px + pw && my >= py && my < py + ph) {
                     return true
@@ -1406,6 +1541,7 @@ class DiagnosticScreen(
         // Click on a block to select/swap inspector
         if (activeTab == 0 && hoveredBlock != null) {
             selectedBlock = hoveredBlock
+            inspectorScrollY = 0
             return true
         }
 
@@ -1436,10 +1572,28 @@ class DiagnosticScreen(
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
         dragging = false
         craftGraphDragging = false
+        draggingInspectorScrollbar = false
         return super.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        if (draggingInspectorScrollbar) {
+            val bounds = getInspectorBounds()
+            if (bounds != null) {
+                val py = bounds[1]; val ph = bounds[3]
+                val bodyTop = py + 20
+                val bodyH = ph - 20
+                val totalBodyH = getInspectorTotalBodyH()
+                val maxScroll = maxOf(1, totalBodyH - bodyH)
+                val thumbH = maxOf(12, bodyH * bodyH / totalBodyH)
+                val scrollRange = bodyH - thumbH
+                if (scrollRange > 0) {
+                    val relY = (mouseY.toInt() - bodyTop - thumbH / 2).toFloat() / scrollRange
+                    inspectorScrollY = (relY * maxScroll).toInt().coerceIn(0, maxScroll)
+                }
+            }
+            return true
+        }
         if (dragging) {
             panX += (mouseX - lastDragX).toFloat()
             panY += (mouseY - lastDragY).toFloat()
@@ -1463,6 +1617,18 @@ class DiagnosticScreen(
             val maxScroll = craftAutocompleteSuggestions.size - craftDropdownMaxVisible
             craftAutocompleteScroll = (craftAutocompleteScroll - scrollY.toInt()).coerceIn(0, maxScroll)
             return true
+        }
+
+        // Inspector panel scroll
+        if (activeTab == 0 && selectedBlock != null) {
+            val bounds = getInspectorBounds()
+            if (bounds != null) {
+                val ipx = bounds[0]; val ipy = bounds[1]; val ipw = bounds[2]; val iph = bounds[3]
+                if (mouseX >= ipx && mouseX < ipx + ipw && mouseY >= ipy && mouseY < ipy + iph) {
+                    inspectorScrollY = (inspectorScrollY - scrollY.toInt() * 10).coerceAtLeast(0)
+                    return true
+                }
+            }
         }
 
         if (activeTab == 0 && mouseX >= contentLeft && mouseX < contentLeft + contentW &&
