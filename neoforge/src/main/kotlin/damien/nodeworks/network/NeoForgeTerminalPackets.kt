@@ -175,8 +175,14 @@ object NeoForgeTerminalPackets {
         context.enqueueWork {
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-            terminal.setLayoutIndex(payload.layoutIndex)
+            val entity = level.getBlockEntity(payload.terminalPos)
+            when (entity) {
+                is TerminalBlockEntity -> entity.setLayoutIndex(payload.layoutIndex)
+                is damien.nodeworks.block.entity.InventoryTerminalBlockEntity -> {
+                    entity.layoutIndex = payload.layoutIndex
+                    entity.setChanged()
+                }
+            }
         }
     }
 

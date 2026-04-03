@@ -59,6 +59,9 @@ object NeoForgeClientSetup {
 
     private fun onClientSetup(event: FMLClientSetupEvent) {
         event.enqueueWork {
+            // Initialize client config
+            damien.nodeworks.config.ClientConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().toFile())
+
             // Initialize client platform services
             PlatformServices.clientNetworking = NeoForgeClientNetworkingService()
             PlatformServices.clientEvents = NeoForgeClientEventService()

@@ -6,16 +6,18 @@ import net.minecraft.network.codec.StreamCodec
 
 data class InventoryTerminalOpenData(
     val terminalPos: BlockPos,
-    val nodePos: BlockPos
+    val nodePos: BlockPos,
+    val layoutIndex: Int = 0
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, InventoryTerminalOpenData> = object : StreamCodec<FriendlyByteBuf, InventoryTerminalOpenData> {
             override fun decode(buf: FriendlyByteBuf): InventoryTerminalOpenData {
-                return InventoryTerminalOpenData(buf.readBlockPos(), buf.readBlockPos())
+                return InventoryTerminalOpenData(buf.readBlockPos(), buf.readBlockPos(), buf.readVarInt())
             }
             override fun encode(buf: FriendlyByteBuf, data: InventoryTerminalOpenData) {
                 buf.writeBlockPos(data.terminalPos)
                 buf.writeBlockPos(data.nodePos)
+                buf.writeVarInt(data.layoutIndex)
             }
         }
     }

@@ -190,8 +190,14 @@ object TerminalPackets {
         ServerPlayNetworking.registerGlobalReceiver(SetLayoutPayload.TYPE) { payload, context ->
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
-            terminal.setLayoutIndex(payload.layoutIndex)
+            val entity = level.getBlockEntity(payload.terminalPos)
+            when (entity) {
+                is TerminalBlockEntity -> entity.setLayoutIndex(payload.layoutIndex)
+                is damien.nodeworks.block.entity.InventoryTerminalBlockEntity -> {
+                    entity.layoutIndex = payload.layoutIndex
+                    entity.setChanged()
+                }
+            }
         }
 
         ServerPlayNetworking.registerGlobalReceiver(ToggleAutoRunPayload.TYPE) { payload, context ->
