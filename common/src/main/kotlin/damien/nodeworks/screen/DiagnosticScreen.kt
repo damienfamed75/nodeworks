@@ -288,8 +288,10 @@ class DiagnosticScreen(
 
         // Inspector panel — rendered last with higher Z to draw over topology blocks
         if (activeTab == 0) {
+            // Flush all batched topology renders (items, text) so inspector draws on top
+            graphics.flush()
             graphics.pose().pushPose()
-            graphics.pose().translate(0f, 0f, 200f)
+            graphics.pose().translate(0f, 0f, 500f)
             renderInspector(graphics, mouseX, mouseY)
             graphics.pose().popPose()
         }
@@ -496,7 +498,11 @@ class DiagnosticScreen(
             lastCraftTree = tree
             craftGraphNeedsAutoFit = true
         }
-        // Auto-fit: compute bounds of the tree and scale to fit
+        // The visible tree area is between the detail panel right edge and the graph right edge
+        val treeAreaLeft = detailX + detailW
+        val treeAreaW = graphRight - treeAreaLeft
+
+        // Auto-fit: compute bounds of the tree and scale to fit the visible area
         if (craftGraphNeedsAutoFit) {
             craftGraphNeedsAutoFit = false
             val positions = layout.positions.values
@@ -507,7 +513,7 @@ class DiagnosticScreen(
                 val maxY = positions.maxOf { it.second }
                 val treeW = maxX - minX + 32f
                 val treeH = maxY - minY + 32f
-                val scaleX = (graphW - 16f) / treeW
+                val scaleX = (treeAreaW - 16f) / treeW
                 val scaleY = ((graphBottom - graphTop) - 16f) / treeH
                 craftGraphZoom = minOf(scaleX, scaleY, 2f).coerceAtLeast(0.3f)
                 craftGraphPanX = -(minX + maxX) / 2f * craftGraphZoom
@@ -515,7 +521,7 @@ class DiagnosticScreen(
             }
         }
 
-        val graphCenterX = graphLeft + graphW / 2f + craftGraphPanX
+        val graphCenterX = treeAreaLeft + treeAreaW / 2f + craftGraphPanX
         val graphCenterY = graphTop + (graphBottom - graphTop) / 2f + craftGraphPanY
         renderCraftTreeVisual(graphics, tree, layout, graphCenterX, graphCenterY, craftGraphZoom)
         graphics.pose().popPose()

@@ -69,6 +69,7 @@ class TerminalScreen(
 
     // Card panel scroll state
     private var cardScrollOffset = 0
+    private var draggingSidebarScrollbar = false
     private var sidebarEntries = listOf<SidebarEntry>()
     private var sidebarHoverIndex = -1
     private var sidebarHoverStart = 0L
@@ -557,22 +558,22 @@ class TerminalScreen(
 
         // Sidebar entries (scrollable)
         val cardListTop = cardStartY + 12
-        val cardListBottom = topPos + imageHeight - 28
+        val cardListBottom = topPos + imageHeight - 70
         val cardLineHeight = 11
 
         sidebarEntries = entries
 
-        graphics.enableScissor(leftPos, cardListTop, leftPos + 82, cardListBottom)
+        graphics.enableScissor(leftPos, cardListTop, leftPos + 75, cardListBottom)
         for ((i, entry) in entries.withIndex()) {
             val y = cardListTop + i * cardLineHeight - cardScrollOffset
             if (y + cardLineHeight < cardListTop) continue
             if (y > cardListBottom) break
 
             // Hover highlight
-            val hovered = mouseX >= leftPos && mouseX < leftPos + 82 &&
+            val hovered = mouseX >= leftPos && mouseX < leftPos + 75 &&
                     mouseY >= y && mouseY < y + cardLineHeight
             if (hovered) {
-                graphics.fill(leftPos + 5, y, leftPos + 82, y + cardLineHeight, 0x30FFFFFF.toInt())
+                graphics.fill(leftPos + 5, y, leftPos + 75, y + cardLineHeight, 0x30FFFFFF.toInt())
             }
 
             // 8x8 icon cropped from center of 16x16 tile in atlas
@@ -599,7 +600,7 @@ class TerminalScreen(
 
             // Name — scroll if hovered and text is too long
             val nameX = leftPos + 18
-            val maxNameW = leftPos + 82 - nameX
+            val maxNameW = leftPos + 75 - nameX
             val nameW = font.width(entry.name)
             if (hovered && nameW > maxNameW) {
                 val elapsed = System.currentTimeMillis() - sidebarHoverStart
@@ -608,7 +609,7 @@ class TerminalScreen(
                 val totalScroll = nameW - maxNameW + 10
                 val scrollPx = if (elapsed < pause) 0
                 else ((elapsed - pause) / 1000.0 * scrollSpeed).coerceAtMost(totalScroll.toDouble()).toInt()
-                graphics.enableScissor(nameX, y, leftPos + 82, y + cardLineHeight)
+                graphics.enableScissor(nameX, y, leftPos + 75, y + cardLineHeight)
                 graphics.drawString(font, entry.name, nameX - scrollPx, y + 1, entry.color)
                 graphics.disableScissor()
             } else {
@@ -616,25 +617,24 @@ class TerminalScreen(
             }
         }
         // Reset hover if mouse left the sidebar
-        if (!(mouseX >= leftPos && mouseX < leftPos + 82 && mouseY >= cardListTop && mouseY < cardListBottom)) {
+        if (!(mouseX >= leftPos && mouseX < leftPos + 75 && mouseY >= cardListTop && mouseY < cardListBottom)) {
             sidebarHoverIndex = -1
         }
         graphics.disableScissor()
 
-        // Scroll indicator
+        // Scrollbar
+        val scrollbarW = 6
+        val sbX = leftPos + 76
         val maxVisibleCards = (cardListBottom - cardListTop) / cardLineHeight
         if (entries.size > maxVisibleCards) {
             val scrollbarHeight = cardListBottom - cardListTop
-            val thumbHeight = maxOf(8, scrollbarHeight * maxVisibleCards / entries.size)
+            val thumbHeight = maxOf(12, scrollbarHeight * maxVisibleCards / entries.size)
             val maxCardScroll = maxOf(1, (entries.size - maxVisibleCards) * cardLineHeight)
+            cardScrollOffset = cardScrollOffset.coerceIn(0, maxCardScroll)
             val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
-            NineSlice.SCROLLBAR_THUMB.draw(
-                graphics,
-                leftPos + 82,
-                thumbY.toInt(),
-                2,
-                (thumbHeight).toInt()
-            )
+            NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, cardListTop, scrollbarW, scrollbarHeight)
+            val thumbSlice = if (draggingSidebarScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
+            thumbSlice.draw(graphics, sbX, thumbY, scrollbarW, thumbHeight)
         }
 
         // Auto-run toggle — centered on sidebar
@@ -1349,12 +1349,19 @@ class TerminalScreen(
             return true
         }
 
-        // Check sidebar click — insert reference at top of file
+        // Sidebar scrollbar drag start
         val cardStartY = topPos + topBarHeight + 6
         val cardListTop = cardStartY + 12
-        val cardListBottom = topPos + imageHeight - 28
+        val cardListBottom = topPos + imageHeight - 70
         val cardLineHeight = 11
-        if (mx >= leftPos && mx < leftPos + 82 && my >= cardListTop && my < cardListBottom) {
+        val sbX = leftPos + 76
+        if (mx >= sbX && mx < sbX + 6 && my >= cardListTop && my < cardListBottom) {
+            draggingSidebarScrollbar = true
+            return true
+        }
+
+        // Check sidebar click — insert reference at top of file
+        if (mx >= leftPos && mx < leftPos + 75 && my >= cardListTop && my < cardListBottom) {
             val clickedIndex = (my - cardListTop + cardScrollOffset) / cardLineHeight
             if (clickedIndex in sidebarEntries.indices) {
                 val entry = sidebarEntries[clickedIndex]
@@ -1497,6 +1504,22 @@ class TerminalScreen(
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        if (draggingSidebarScrollbar) {
+            val cardStartY = topPos + topBarHeight + 6
+            val cardListTop = cardStartY + 12
+            val cardListBottom = topPos + imageHeight - 70
+            val cardLineHeight = 11
+            val scrollbarHeight = cardListBottom - cardListTop
+            val maxVisibleCards = scrollbarHeight / cardLineHeight
+            val maxCardScroll = maxOf(1, (sidebarEntries.size - maxVisibleCards) * cardLineHeight)
+            val thumbHeight = maxOf(12, scrollbarHeight * maxVisibleCards / sidebarEntries.size)
+            val scrollRange = scrollbarHeight - thumbHeight
+            if (scrollRange > 0) {
+                val relY = (mouseY.toInt() - cardListTop - thumbHeight / 2).toFloat() / scrollRange
+                cardScrollOffset = (relY * maxCardScroll).toInt().coerceIn(0, maxCardScroll)
+            }
+            return true
+        }
         if (draggingLogPanel) {
             val bottomY = topPos + imageHeight - 4 // account for bottom padding
             val minTop = topPos + topBarHeight + tabBarHeight + 40 // leave room for editor
@@ -1515,6 +1538,7 @@ class TerminalScreen(
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
         pressedButton = null
+        draggingSidebarScrollbar = false
         if (draggingLogPanel) {
             draggingLogPanel = false
             savedLogPanelHeight = logPanelHeight
@@ -1548,7 +1572,7 @@ class TerminalScreen(
             mouseY >= topPos + topBarHeight && mouseY <= topPos + imageHeight - 28
         ) {
             val cardListTop = topPos + topBarHeight + 18
-            val cardListBottom = topPos + imageHeight - 28
+            val cardListBottom = topPos + imageHeight - 70
             val cardLineHeight = 11
             val maxVisibleCards = (cardListBottom - cardListTop) / cardLineHeight
             val maxScroll = maxOf(0, (cards.size - maxVisibleCards) * cardLineHeight)
