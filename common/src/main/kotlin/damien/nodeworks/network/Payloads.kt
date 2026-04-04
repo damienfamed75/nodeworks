@@ -145,6 +145,21 @@ data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val
     override fun type() = TYPE
 }
 
+/**
+ * C2S: Click on a player inventory slot in the Inventory Terminal.
+ * action: 0=left click, 1=right click, 2=shift-click
+ */
+data class InvTerminalSlotClickPayload(val containerId: Int, val slotIndex: Int, val action: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalSlotClickPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "inv_terminal_slot_click"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalSlotClickPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.slotIndex); buf.writeVarInt(p.action) },
+            { buf -> InvTerminalSlotClickPayload(buf.readVarInt(), buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /** C2S: Update a network controller setting (color, name, redstone mode). */
 data class ControllerSettingsPayload(val pos: BlockPos, val key: String, val intValue: Int, val strValue: String) : CustomPacketPayload {
     companion object {

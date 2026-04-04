@@ -212,6 +212,15 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
+        registrar.playToServer(InvTerminalSlotClickPayload.TYPE, InvTerminalSlotClickPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handlePlayerSlotClick(player, payload.slotIndex, payload.action)
+                }
+            }
+        }
 
         registrar.playToServer(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC) { payload, context ->
             context.enqueueWork {

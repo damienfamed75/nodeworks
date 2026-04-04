@@ -8,7 +8,6 @@ base {
 
 loom {
     splitEnvironmentSourceSets()
-    accessWidenerPath.set(file("src/main/resources/nodeworks.accesswidener"))
 
     mods {
         register("nodeworks") {

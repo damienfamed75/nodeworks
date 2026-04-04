@@ -31,7 +31,6 @@
 			"damien.nodeworks.integration.jei.NodeworksJeiPlugin"
 		]
 	},
-	"accessWidener": "nodeworks.accesswidener",
 	"mixins": [
 		"nodeworks.mixins.json",
 		{

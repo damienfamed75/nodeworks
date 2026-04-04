@@ -62,10 +62,7 @@ class NineSlice(
      * Draw this 9-slice at the given screen position and size.
      */
     fun draw(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
-        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
         drawInner(graphics, x, y, width, height)
-        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
     }
 
     private fun drawInner(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
@@ -190,9 +187,14 @@ class NineSlice(
          * The border is inset 1px on each side to cover the outer edge of the edge slots.
          */
         fun drawSlotGrid(graphics: GuiGraphics, x: Int, y: Int, cols: Int, rows: Int) {
+            // Direct blit at native size — 1 blit per slot instead of 9
             for (r in 0 until rows) {
                 for (c in 0 until cols) {
-                    SLOT.draw(graphics, x + c * 18, y + r * 18, 18, 18)
+                    graphics.blit(
+                        GUI_ATLAS, x + c * 18, y + r * 18,
+                        SLOT.u.toFloat(), SLOT.v.toFloat(),
+                        18, 18, 256, 256
+                    )
                 }
             }
             INVENTORY_BORDER.draw(graphics, x - 2, y - 2, cols * 18 + 4, rows * 18 + 4)

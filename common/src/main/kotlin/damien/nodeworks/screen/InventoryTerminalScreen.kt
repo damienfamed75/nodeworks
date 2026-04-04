@@ -3,8 +3,11 @@ package damien.nodeworks.screen
 import com.mojang.blaze3d.platform.InputConstants
 import damien.nodeworks.config.ClientConfig
 import damien.nodeworks.network.InvTerminalClickPayload
+import damien.nodeworks.network.InvTerminalSlotClickPayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.SlicedButton
+import damien.nodeworks.screen.widget.VirtualSlot
+import damien.nodeworks.screen.widget.VirtualSlotGrid
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
@@ -16,8 +19,8 @@ import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.ItemStack
 
 /**
- * Client-side screen for the Inventory Terminal — Phase 1.
- * 9-slice GUI with virtual scrollable item grid, layout toggle, and player inventory.
+ * Client-side screen for the Inventory Terminal.
+ * Uses VirtualSlotGrid — zero MC Slot objects. Fully dynamic layout.
  */
 class InventoryTerminalScreen(
     menu: InventoryTerminalMenu,
@@ -50,25 +53,25 @@ class InventoryTerminalScreen(
     private val INV_GAP = 4
     private val SCROLLBAR_W = 8
     private val SIDE_BTN_W = 20
-    private val SIDE_BTN_GAP = 2
+    private val INV_BOTTOM_PAD = 6
+
+    // ========== Virtual Grids ==========
+
+    private lateinit var networkGrid: VirtualSlotGrid
+    private lateinit var playerMainGrid: VirtualSlotGrid
+    private lateinit var playerHotbarGrid: VirtualSlotGrid
 
     // ========== Computed positions ==========
 
     private var gridX = 0
     private var gridY = 0
-    private var gridW = 0
-    private var gridH = 0
     private var searchX = 0
     private var searchY = 0
     private var searchW = 0
-    private var invX = 0
-    private var invY = 0
-    private var scrollbarX = 0
 
     // ========== State ==========
 
     val repo = InventoryRepo()
-    private var hoveredNetworkEntry: InventoryRepo.RepoEntry? = null
     private var scrollOffset = 0
     private var maxScroll = 0
     private var draggingScrollbar = false
@@ -76,26 +79,17 @@ class InventoryTerminalScreen(
     private var cachedNetworkColor: Int? = null
     private var itemStackCache = HashMap<String, ItemStack>()
 
-    // Slot offset within the GUI (relative to leftPos/topPos) — must match menu
-    private val SLOT_OFFSET_X = 9  // 1px into the slot border
-    private val INV_BOTTOM_PAD = 6
-
     init {
         computeLayout()
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
 
-    /** Compute the player inventory Y offset (relative to topPos) for the current layout. */
-    private fun playerInvYOffset(): Int {
-        return TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD + layout.rows * SLOT_SIZE + GRID_PAD
-    }
-
     private fun computeLayout() {
-        gridW = layout.cols * SLOT_SIZE
-        gridH = layout.rows * SLOT_SIZE
+        val gridW = layout.cols * SLOT_SIZE
+        val gridH = layout.rows * SLOT_SIZE
         imageWidth = GRID_PAD + 4 + gridW + 2 + SCROLLBAR_W + GRID_PAD + 4
-        imageHeight = playerInvYOffset() + 76 + INV_BOTTOM_PAD
+        imageHeight = TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD + gridH + GRID_PAD + 76 + INV_BOTTOM_PAD
     }
 
     override fun init() {
@@ -104,18 +98,34 @@ class InventoryTerminalScreen(
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
-        // Compute absolute positions
+        // Compute positions
         gridX = leftPos + GRID_PAD + 4
         gridY = topPos + TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD
-        scrollbarX = gridX + gridW + 2
         searchX = gridX
         searchY = topPos + TOP_BAR_H + SEARCH_PAD
-        searchW = gridW + SCROLLBAR_W + 2
+        searchW = layout.cols * SLOT_SIZE + SCROLLBAR_W + 2
 
-        // Reposition player inventory slots to match layout
-        repositionSlots()
-        invX = gridX
-        invY = gridY + gridH + GRID_PAD
+        // Network grid
+        networkGrid = VirtualSlotGrid(layout.cols, layout.rows, VirtualSlot.GridType.NETWORK)
+        networkGrid.moveTo(gridX, gridY)
+        networkGrid.stackProvider = { slot -> getItemStackForNetworkSlot(slot.index) }
+        networkGrid.countFormatter = { slot -> getCountForNetworkSlot(slot.index) }
+
+        // Player inventory grids
+        val invX = gridX
+        val invY = gridY + layout.rows * SLOT_SIZE + GRID_PAD
+        playerMainGrid = VirtualSlotGrid(9, 3, VirtualSlot.GridType.PLAYER_MAIN, 0)
+        playerMainGrid.moveTo(invX, invY)
+        val localPlayer = Minecraft.getInstance().player
+        playerMainGrid.stackProvider = { slot ->
+            localPlayer?.inventory?.getItem(slot.index + 9) ?: ItemStack.EMPTY
+        }
+
+        playerHotbarGrid = VirtualSlotGrid(9, 1, VirtualSlot.GridType.PLAYER_HOTBAR, 0)
+        playerHotbarGrid.moveTo(invX, invY + 3 * 18 + INV_GAP)
+        playerHotbarGrid.stackProvider = { slot ->
+            localPlayer?.inventory?.getItem(slot.index) ?: ItemStack.EMPTY
+        }
 
         // Search box
         searchBox = EditBox(font, searchX, searchY, searchW, SEARCH_H - 2, Component.literal("Search"))
@@ -136,15 +146,14 @@ class InventoryTerminalScreen(
         ) { _ ->
             layout = Layout.entries[(layout.ordinal + 1) % Layout.entries.size]
             ClientConfig.invTerminalLayout = layout.name
-            // Save to server
+            // Save to server block entity
             val pos = menu.terminalPos
             if (pos != null) {
                 PlatformServices.clientNetworking.sendToServer(
                     damien.nodeworks.network.SetLayoutPayload(pos, layout.ordinal)
                 )
             }
-            // Reposition slots and rebuild
-            repositionSlots()
+            // Seamless relayout — just rebuild widgets
             rebuildWidgets()
         })
     }
@@ -171,67 +180,76 @@ class InventoryTerminalScreen(
         } else -1
         NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor)
 
-        // Item grid background
-        NineSlice.drawSlotGrid(graphics, gridX, gridY, layout.cols, layout.rows)
+        // Network item grid
+        networkGrid.renderBackground(graphics)
 
         // Scrollbar
         maxScroll = maxOf(0, (repo.viewSize + layout.cols - 1) / layout.cols - layout.rows)
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, maxScroll))
+        val scrollbarX = gridX + layout.cols * SLOT_SIZE + 2
+        val gridH = layout.rows * SLOT_SIZE
         NineSlice.SCROLLBAR_TRACK.draw(graphics, scrollbarX, gridY, SCROLLBAR_W, gridH)
         if (maxScroll > 0) {
-            val thumbH = maxOf(12, gridH * layout.rows / ((repo.viewSize + layout.cols - 1) / layout.cols).coerceAtLeast(1))
+            val totalRows = (repo.viewSize + layout.cols - 1) / layout.cols
+            val thumbH = maxOf(12, gridH * layout.rows / totalRows.coerceAtLeast(1))
             val thumbY = gridY + (gridH - thumbH) * scrollOffset / maxScroll
             val thumbSlice = if (draggingScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
             thumbSlice.draw(graphics, scrollbarX, thumbY, SCROLLBAR_W, thumbH)
         }
 
         // Player inventory
-        NineSlice.drawPlayerInventory(graphics, invX, invY, INV_GAP)
+        NineSlice.drawPlayerInventory(graphics, playerMainGrid.x, playerMainGrid.y, INV_GAP)
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.render(graphics, mouseX, mouseY, partialTick)
 
-        // Render items in the virtual grid
-        var hoveredEntry: InventoryRepo.RepoEntry? = null
-        for (row in 0 until layout.rows) {
-            for (col in 0 until layout.cols) {
-                val viewIndex = (scrollOffset + row) * layout.cols + col
-                val entry = repo.getViewEntry(viewIndex) ?: continue
+        // Render network items
+        networkGrid.renderItems(graphics, scrollOffset, repo.viewSize)
 
-                val sx = gridX + col * SLOT_SIZE + 1
-                val sy = gridY + row * SLOT_SIZE + 1
+        // Render player inventory items
+        playerMainGrid.renderItems(graphics)
+        playerHotbarGrid.renderItems(graphics)
 
-                // Get or create cached ItemStack
+        // Hover highlights (single pass)
+        networkGrid.renderHoverHighlight(graphics, mouseX, mouseY, scrollOffset)
+        playerMainGrid.renderHoverHighlight(graphics, mouseX, mouseY)
+        playerHotbarGrid.renderHoverHighlight(graphics, mouseX, mouseY)
+
+        // Tooltips
+        val hoveredNetwork = networkGrid.getSlotAt(mouseX, mouseY, scrollOffset)
+        if (hoveredNetwork != null) {
+            val entry = repo.getViewEntry(hoveredNetwork.index)
+            if (entry != null) {
                 val stack = getItemStack(entry.info.itemId)
-                if (stack.isEmpty) continue
-
-                graphics.renderItem(stack, sx, sy)
-                val countText = if (entry.info.count > 1) formatCount(entry.info.count) else null
-                if (countText != null) {
-                    graphics.renderItemDecorations(font, stack, sx, sy, countText)
+                if (!stack.isEmpty) {
+                    val lines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
+                    lines.add(Component.literal("Network: ${formatCount(entry.info.count)}").withStyle { it.withColor(0xAAAAAA) })
+                    graphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 }
-
-                // Hover highlight
-                if (mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16) {
-                    hoveredEntry = entry
-                    graphics.fill(sx, sy, sx + 16, sy + 16, 0x80FFFFFF.toInt())
+            }
+        } else {
+            // Player inventory tooltip
+            val hoveredMain = playerMainGrid.getSlotAt(mouseX, mouseY)
+            val hoveredHotbar = playerHotbarGrid.getSlotAt(mouseX, mouseY)
+            val hoveredPlayer = hoveredMain ?: hoveredHotbar
+            if (hoveredPlayer != null) {
+                val invIndex = if (hoveredPlayer.gridType == VirtualSlot.GridType.PLAYER_MAIN) hoveredPlayer.index + 9 else hoveredPlayer.index
+                val stack = Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY
+                if (!stack.isEmpty) {
+                    graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
                 }
             }
         }
 
-        this.hoveredNetworkEntry = hoveredEntry
-        renderTooltip(graphics, mouseX, mouseY)
-
-        // Network item tooltip
-        val hovered = this.hoveredNetworkEntry
-        if (hovered != null) {
-            val stack = getItemStack(hovered.info.itemId)
-            if (!stack.isEmpty) {
-                val tooltipLines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
-                tooltipLines.add(Component.literal("Network: ${formatCount(hovered.info.count)}").withStyle { it.withColor(0xAAAAAA) })
-                graphics.renderTooltip(font, tooltipLines, java.util.Optional.empty(), mouseX, mouseY)
-            }
+        // Render carried item on cursor
+        val carried = menu.carried
+        if (!carried.isEmpty) {
+            graphics.pose().pushPose()
+            graphics.pose().translate(0f, 0f, 300f)
+            graphics.renderItem(carried, mouseX - 8, mouseY - 8)
+            graphics.renderItemDecorations(font, carried, mouseX - 8, mouseY - 8)
+            graphics.pose().popPose()
         }
     }
 
@@ -246,22 +264,20 @@ class InventoryTerminalScreen(
         val my = mouseY.toInt()
 
         // Scrollbar drag
+        val scrollbarX = gridX + layout.cols * SLOT_SIZE + 2
+        val gridH = layout.rows * SLOT_SIZE
         if (mx >= scrollbarX && mx < scrollbarX + SCROLLBAR_W && my >= gridY && my < gridY + gridH && maxScroll > 0) {
             draggingScrollbar = true
             return true
         }
 
-        // Grid click
-        if (mx >= gridX + 1 && mx < gridX + gridW && my >= gridY + 1 && my < gridY + gridH) {
-            val col = (mx - gridX - 1) / SLOT_SIZE
-            val row = (my - gridY - 1) / SLOT_SIZE
-            val viewIndex = (scrollOffset + row) * layout.cols + col
-            val entry = repo.getViewEntry(viewIndex)
-
+        // Network grid click
+        val networkSlot = networkGrid.getSlotAt(mx, my, scrollOffset)
+        if (networkSlot != null) {
+            val entry = repo.getViewEntry(networkSlot.index)
             if (menu.carried.isEmpty && entry != null) {
-                val isShift = hasShiftDown()
                 val action = when {
-                    isShift -> 3
+                    hasShiftDown() -> 3
                     button == 1 -> 2
                     else -> 0
                 }
@@ -277,6 +293,23 @@ class InventoryTerminalScreen(
             }
         }
 
+        // Player inventory click
+        val mainSlot = playerMainGrid.getSlotAt(mx, my)
+        val hotbarSlot = playerHotbarGrid.getSlotAt(mx, my)
+        val playerSlot = mainSlot ?: hotbarSlot
+        if (playerSlot != null) {
+            val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
+            val action = when {
+                hasShiftDown() -> 2
+                button == 1 -> 1
+                else -> 0
+            }
+            PlatformServices.clientNetworking.sendToServer(
+                InvTerminalSlotClickPayload(menu.containerId, virtualIndex, action)
+            )
+            return true
+        }
+
         // Deselect search if clicking elsewhere
         if (searchBox.isFocused) {
             if (!(mx >= searchX && mx < searchX + searchW && my >= searchY && my < searchY + SEARCH_H)) {
@@ -289,7 +322,9 @@ class InventoryTerminalScreen(
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
         if (draggingScrollbar && maxScroll > 0) {
-            val thumbH = maxOf(12, gridH * layout.rows / ((repo.viewSize + layout.cols - 1) / layout.cols).coerceAtLeast(1))
+            val gridH = layout.rows * SLOT_SIZE
+            val totalRows = (repo.viewSize + layout.cols - 1) / layout.cols
+            val thumbH = maxOf(12, gridH * layout.rows / totalRows.coerceAtLeast(1))
             val scrollRange = gridH - thumbH
             if (scrollRange > 0) {
                 val relY = (mouseY.toInt() - gridY - thumbH / 2).toFloat() / scrollRange
@@ -328,46 +363,17 @@ class InventoryTerminalScreen(
         return super.charTyped(codePoint, modifiers)
     }
 
-    companion object {
-        // Reflection fields for moving slot positions (Slot.x/y are final)
-        private val SLOT_X_FIELD: java.lang.reflect.Field? by lazy {
-            try {
-                net.minecraft.world.inventory.Slot::class.java.getDeclaredField("x").also { it.isAccessible = true }
-            } catch (_: Exception) { null }
-        }
-        private val SLOT_Y_FIELD: java.lang.reflect.Field? by lazy {
-            try {
-                net.minecraft.world.inventory.Slot::class.java.getDeclaredField("y").also { it.isAccessible = true }
-            } catch (_: Exception) { null }
-        }
-
-        private fun moveSlot(slot: net.minecraft.world.inventory.Slot, x: Int, y: Int) {
-            try {
-                // Try direct assignment first (works with Fabric access widener)
-                slot.x = x
-                slot.y = y
-            } catch (_: Throwable) {
-                // Fallback to reflection (NeoForge)
-                SLOT_X_FIELD?.setInt(slot, x)
-                SLOT_Y_FIELD?.setInt(slot, y)
-            }
-        }
-    }
-
-    /** Reposition player inventory slots to match current layout. */
-    private fun repositionSlots() {
-        computeLayout()
-        val slotX = GRID_PAD + 4 + 1  // relative to leftPos, +1 for slot border
-        val slotY = playerInvYOffset() + 1
-        for (i in 0 until 27) {
-            moveSlot(menu.slots[i], slotX + (i % 9) * 18, slotY + (i / 9) * 18)
-        }
-        for (i in 27 until 36) {
-            moveSlot(menu.slots[i], slotX + (i - 27) * 18, slotY + 3 * 18 + 4)
-        }
-    }
-
     // ========== Helpers ==========
+
+    private fun getItemStackForNetworkSlot(viewIndex: Int): ItemStack {
+        val entry = repo.getViewEntry(viewIndex) ?: return ItemStack.EMPTY
+        return getItemStack(entry.info.itemId)
+    }
+
+    private fun getCountForNetworkSlot(viewIndex: Int): String? {
+        val entry = repo.getViewEntry(viewIndex) ?: return null
+        return if (entry.info.count > 1) formatCount(entry.info.count) else null
+    }
 
     private fun getItemStack(itemId: String): ItemStack {
         return itemStackCache.getOrPut(itemId) {

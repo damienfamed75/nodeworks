@@ -1,5 +1,0 @@
-accessWidener	v2	named
-
-# Allow reassigning Slot x/y for dynamic GUI layouts
-mutable	field	net/minecraft/world/inventory/Slot	x	I
-mutable	field	net/minecraft/world/inventory/Slot	y	I

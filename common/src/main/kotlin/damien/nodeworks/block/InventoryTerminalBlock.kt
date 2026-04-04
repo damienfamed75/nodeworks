@@ -57,14 +57,12 @@ class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(propertie
             return InteractionResult.SUCCESS
         }
 
-        val entity = level.getBlockEntity(pos) as? InventoryTerminalBlockEntity
-        val layoutIndex = entity?.layoutIndex ?: 0
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.inventory_terminal"),
-            InventoryTerminalOpenData(pos, pos, layoutIndex),
+            InventoryTerminalOpenData(pos),
             InventoryTerminalOpenData.STREAM_CODEC,
-            { syncId, inv, _ -> InventoryTerminalMenu.createServer(syncId, inv, serverLevel, pos, layoutIndex) }
+            { syncId, inv, _ -> InventoryTerminalMenu.createServer(syncId, inv, serverLevel, pos) }
         )
 
         return InteractionResult.SUCCESS
