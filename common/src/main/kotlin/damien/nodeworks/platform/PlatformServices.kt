@@ -84,7 +84,8 @@ data class ItemInfo(
     val name: String,
     val count: Long,
     val maxStackSize: Int,
-    val hasData: Boolean
+    val hasData: Boolean,
+    val isCraftable: Boolean = false
 ) {
     val stackable: Boolean get() = maxStackSize > 1
 }

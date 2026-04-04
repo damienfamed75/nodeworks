@@ -76,7 +76,8 @@ class InventoryRepo {
                         name = syncEntry.name ?: syncEntry.itemId,
                         count = syncEntry.count,
                         maxStackSize = syncEntry.maxStackSize,
-                        hasData = syncEntry.hasData
+                        hasData = syncEntry.hasData,
+                        isCraftable = syncEntry.craftable
                     )
                 )
             } else if (existing != null) {
@@ -137,8 +138,8 @@ class InventoryRepo {
     private fun matchesFilter(info: ItemInfo): Boolean {
         return when (filterMode) {
             FilterMode.STORAGE -> info.count > 0
-            FilterMode.RECIPES -> true // TODO: check isCraftable in Phase 3
-            FilterMode.BOTH -> true
+            FilterMode.RECIPES -> info.isCraftable
+            FilterMode.BOTH -> info.count > 0 || info.isCraftable
         }
     }
 

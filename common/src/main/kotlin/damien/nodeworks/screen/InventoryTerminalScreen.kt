@@ -267,6 +267,25 @@ class InventoryTerminalScreen(
         // Render network items
         networkGrid.renderItems(graphics, scrollOffset, repo.viewSize)
 
+        // Craftable overlays
+        val altHeld = hasAltDown()
+        for ((i, slot) in networkGrid.slots.withIndex()) {
+            val viewIndex = scrollOffset * layout.cols + i
+            val entry = repo.getViewEntry(viewIndex) ?: continue
+            if (entry.info.isCraftable) {
+                val ix = slot.x + 1
+                val iy = slot.y + 1
+                if (entry.info.count == 0L) {
+                    // Ghost item — dim overlay
+                    graphics.fill(ix, iy, ix + 16, iy + 16, 0x80000000.toInt())
+                }
+                if (altHeld) {
+                    // Show + icon on craftable items
+                    Icons.CRAFT_PLUS.draw(graphics, ix + 8, iy - 2, 8)
+                }
+            }
+        }
+
         // Render player inventory items
         playerMainGrid.renderItems(graphics)
         playerHotbarGrid.renderItems(graphics)
@@ -285,6 +304,9 @@ class InventoryTerminalScreen(
                 if (!stack.isEmpty) {
                     val lines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
                     lines.add(Component.literal("Network: ${formatCount(entry.info.count)}").withStyle { it.withColor(0xAAAAAA) })
+                    if (entry.info.isCraftable) {
+                        lines.add(Component.literal("Craftable").withStyle { it.withColor(0x55FF55) })
+                    }
                     graphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 }
             }

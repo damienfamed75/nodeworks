@@ -22,7 +22,8 @@ data class InventorySyncPayload(
         val name: String?,
         val count: Long,
         val maxStackSize: Int,
-        val hasData: Boolean
+        val hasData: Boolean,
+        val craftable: Boolean = false
     )
 
     companion object {
@@ -42,6 +43,7 @@ data class InventorySyncPayload(
                         buf.writeUtf(entry.name ?: "", 256)
                         buf.writeVarInt(entry.maxStackSize)
                         buf.writeBoolean(entry.hasData)
+                        buf.writeBoolean(entry.craftable)
                     }
                     buf.writeVarLong(entry.count)
                 }
@@ -60,19 +62,22 @@ data class InventorySyncPayload(
                     val name: String?
                     val maxStackSize: Int
                     val hasData: Boolean
+                    val craftable: Boolean
                     if (hasItemId) {
                         itemId = buf.readUtf(256)
                         name = buf.readUtf(256)
                         maxStackSize = buf.readVarInt()
                         hasData = buf.readBoolean()
+                        craftable = buf.readBoolean()
                     } else {
                         itemId = null
                         name = null
                         maxStackSize = 64
                         hasData = false
+                        craftable = false
                     }
                     val count = buf.readVarLong()
-                    SyncEntry(serial, itemId, name, count, maxStackSize, hasData)
+                    SyncEntry(serial, itemId, name, count, maxStackSize, hasData, craftable)
                 }
                 val removedCount = buf.readVarInt()
                 val removedSerials = (0 until removedCount).map { buf.readVarLong() }
