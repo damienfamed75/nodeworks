@@ -225,7 +225,8 @@ class InventoryTerminalMenu(
                     name = entry.info.name,
                     count = entry.info.count,
                     maxStackSize = entry.info.maxStackSize,
-                    hasData = entry.info.hasData
+                    hasData = entry.info.hasData,
+                    craftable = entry.info.isCraftable
                 )
             }
             sendToClient(serverPlayer, InventorySyncPayload(true, entries, emptyList()))
@@ -247,7 +248,8 @@ class InventoryTerminalMenu(
                 name = entry.info.name,
                 count = entry.info.count,
                 maxStackSize = entry.info.maxStackSize,
-                hasData = entry.info.hasData
+                hasData = entry.info.hasData,
+                craftable = entry.info.isCraftable
             )
         }
         sendToClient(serverPlayer, InventorySyncPayload(false, entries, removed))
