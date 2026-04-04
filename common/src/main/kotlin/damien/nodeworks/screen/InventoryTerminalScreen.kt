@@ -161,7 +161,7 @@ class InventoryTerminalScreen(
     // ========== Rendering ==========
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
-        // Window frame
+        // Window frame (stretched for performance — large area)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         // Title bar with network color
@@ -197,8 +197,17 @@ class InventoryTerminalScreen(
             thumbSlice.draw(graphics, scrollbarX, thumbY, SCROLLBAR_W, thumbH)
         }
 
-        // Player inventory
-        NineSlice.drawPlayerInventory(graphics, playerMainGrid.x, playerMainGrid.y, INV_GAP)
+        // Player inventory (use direct slot blits for performance)
+        val slotU = NineSlice.SLOT.u.toFloat()
+        val slotV = NineSlice.SLOT.v.toFloat()
+        for (slot in playerMainGrid.slots) {
+            graphics.blit(NineSlice.GUI_ATLAS, slot.x, slot.y, slotU, slotV, 18, 18, 256, 256)
+        }
+        for (slot in playerHotbarGrid.slots) {
+            graphics.blit(NineSlice.GUI_ATLAS, slot.x, slot.y, slotU, slotV, 18, 18, 256, 256)
+        }
+        NineSlice.INVENTORY_BORDER.drawStretched(graphics, playerMainGrid.x - 2, playerMainGrid.y - 2, 9 * 18 + 4, 3 * 18 + 4)
+        NineSlice.INVENTORY_BORDER.drawStretched(graphics, playerHotbarGrid.x - 2, playerHotbarGrid.y - 2, 9 * 18 + 4, 18 + 4)
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -370,9 +379,12 @@ class InventoryTerminalScreen(
         return getItemStack(entry.info.itemId)
     }
 
+    private val countStringCache = HashMap<Long, String>()
+
     private fun getCountForNetworkSlot(viewIndex: Int): String? {
         val entry = repo.getViewEntry(viewIndex) ?: return null
-        return if (entry.info.count > 1) formatCount(entry.info.count) else null
+        if (entry.info.count <= 1) return null
+        return countStringCache.getOrPut(entry.info.count) { formatCount(entry.info.count) }
     }
 
     private fun getItemStack(itemId: String): ItemStack {
