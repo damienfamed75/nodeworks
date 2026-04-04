@@ -41,7 +41,8 @@ class NineSlice(
     val top: Int,
     val bottom: Int,
     val texW: Int = 256,
-    val texH: Int = 256
+    val texH: Int = 256,
+    val tile: Boolean = true
 ) {
     /**
      * Draw this 9-slice tinted with an RGB color. Supports semi-transparent atlas pixels.
@@ -65,6 +66,33 @@ class NineSlice(
         drawInner(graphics, x, y, width, height)
     }
 
+    /** Draw with stretching instead of tiling, regardless of the tile flag. Better performance for large areas. */
+    fun drawStretched(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
+        val savedTile = tile
+        try {
+            // Temporarily force stretch mode
+            drawInnerStretched(graphics, x, y, width, height)
+        } finally {}
+    }
+
+    private fun drawInnerStretched(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
+        val midSrcW = srcWidth - left - right
+        val midSrcH = srcHeight - top - bottom
+        val midDstW = width - left - right
+        val midDstH = height - top - bottom
+        if (midDstW <= 0 || midDstH <= 0) { blitRegion(graphics, x, y, width, height, u, v, srcWidth, srcHeight); return }
+        val cx = x + left; val cy = y + top; val srcCx = u + left; val srcCy = v + top
+        blitRegion(graphics, x, y, left, top, u, v, left, top)
+        blitRegion(graphics, cx + midDstW, y, right, top, srcCx + midSrcW, v, right, top)
+        blitRegion(graphics, x, cy + midDstH, left, bottom, u, srcCy + midSrcH, left, bottom)
+        blitRegion(graphics, cx + midDstW, cy + midDstH, right, bottom, srcCx + midSrcW, srcCy + midSrcH, right, bottom)
+        blitRegion(graphics, cx, y, midDstW, top, srcCx, v, midSrcW, top)
+        blitRegion(graphics, cx, cy + midDstH, midDstW, bottom, srcCx, srcCy + midSrcH, midSrcW, bottom)
+        blitRegion(graphics, x, cy, left, midDstH, u, srcCy, left, midSrcH)
+        blitRegion(graphics, cx + midDstW, cy, right, midDstH, srcCx + midSrcW, srcCy, right, midSrcH)
+        blitRegion(graphics, cx, cy, midDstW, midDstH, srcCx, srcCy, midSrcW, midSrcH)
+    }
+
     private fun drawInner(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
         val midSrcW = srcWidth - left - right
         val midSrcH = srcHeight - top - bottom
@@ -82,26 +110,27 @@ class NineSlice(
         val srcCx = u + left
         val srcCy = v + top
 
-        // Top-left corner
+        // 4 corners (fixed size, 1 blit each)
         blitRegion(graphics, x, y, left, top, u, v, left, top)
-        // Top edge (tile horizontally)
-        tileH(graphics, cx, y, midDstW, top, srcCx, v, midSrcW, top)
-        // Top-right corner
         blitRegion(graphics, cx + midDstW, y, right, top, srcCx + midSrcW, v, right, top)
-
-        // Left edge (tile vertically)
-        tileV(graphics, x, cy, left, midDstH, u, srcCy, left, midSrcH)
-        // Center (tile both axes)
-        tileBoth(graphics, cx, cy, midDstW, midDstH, srcCx, srcCy, midSrcW, midSrcH)
-        // Right edge (tile vertically)
-        tileV(graphics, cx + midDstW, cy, right, midDstH, srcCx + midSrcW, srcCy, right, midSrcH)
-
-        // Bottom-left corner
         blitRegion(graphics, x, cy + midDstH, left, bottom, u, srcCy + midSrcH, left, bottom)
-        // Bottom edge (tile horizontally)
-        tileH(graphics, cx, cy + midDstH, midDstW, bottom, srcCx, srcCy + midSrcH, midSrcW, bottom)
-        // Bottom-right corner
         blitRegion(graphics, cx + midDstW, cy + midDstH, right, bottom, srcCx + midSrcW, srcCy + midSrcH, right, bottom)
+
+        if (tile) {
+            // Tiled edges and center (more blits, preserves texture pattern)
+            tileH(graphics, cx, y, midDstW, top, srcCx, v, midSrcW, top)
+            tileH(graphics, cx, cy + midDstH, midDstW, bottom, srcCx, srcCy + midSrcH, midSrcW, bottom)
+            tileV(graphics, x, cy, left, midDstH, u, srcCy, left, midSrcH)
+            tileV(graphics, cx + midDstW, cy, right, midDstH, srcCx + midSrcW, srcCy, right, midSrcH)
+            tileBoth(graphics, cx, cy, midDstW, midDstH, srcCx, srcCy, midSrcW, midSrcH)
+        } else {
+            // Stretched edges and center (9 blits total, best performance)
+            blitRegion(graphics, cx, y, midDstW, top, srcCx, v, midSrcW, top)
+            blitRegion(graphics, cx, cy + midDstH, midDstW, bottom, srcCx, srcCy + midSrcH, midSrcW, bottom)
+            blitRegion(graphics, x, cy, left, midDstH, u, srcCy, left, midSrcH)
+            blitRegion(graphics, cx + midDstW, cy, right, midDstH, srcCx + midSrcW, srcCy, right, midSrcH)
+            blitRegion(graphics, cx, cy, midDstW, midDstH, srcCx, srcCy, midSrcW, midSrcH)
+        }
     }
 
     /** Tile a source region horizontally to fill drawW, at fixed drawH. */
