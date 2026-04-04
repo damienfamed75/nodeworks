@@ -11,8 +11,14 @@ import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.AbstractContainerMenu
+import net.minecraft.world.inventory.CraftingContainer
+import net.minecraft.world.inventory.ResultContainer
+import net.minecraft.world.inventory.ResultSlot
 import net.minecraft.world.inventory.Slot
+import net.minecraft.world.inventory.TransientCraftingContainer
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.crafting.CraftingRecipe
+import net.minecraft.world.item.crafting.RecipeType
 
 /**
  * Server-side menu for the Inventory Terminal.
@@ -32,23 +38,17 @@ class InventoryTerminalMenu(
     private var needsImmediateSync = false
     private var tickCounter = 0
 
-    companion object {
-        fun createServer(syncId: Int, inv: Inventory, level: ServerLevel, nodePos: BlockPos): InventoryTerminalMenu {
-            val menu = InventoryTerminalMenu(syncId, inv, level, nodePos)
-            menu.snapshot = NetworkDiscovery.discoverNetwork(level, nodePos)
-            menu.cache = NetworkInventoryCache.getOrCreate(level, nodePos)
-            return menu
-        }
+    // Crafting grid
+    val craftingContainer = TransientCraftingContainer(this, 3, 3)
+    val resultContainer = ResultContainer()
 
-        fun clientFactory(syncId: Int, inv: Inventory, data: InventoryTerminalOpenData): InventoryTerminalMenu {
-            return InventoryTerminalMenu(syncId, inv, null, data.terminalPos)
-        }
-    }
+    // Slot index constants
+    // 0-35: hidden player inventory slots (for sync)
+    // 36-44: crafting input slots
+    // 45: crafting output slot
 
     init {
-        // Hidden MC Slots for inventory sync only — positioned off-screen.
-        // These are never rendered (VirtualSlotGrid handles rendering).
-        // MC's broadcastChanges() uses these to detect and sync inventory changes to the client.
+        // Hidden MC Slots for inventory sync only (slots 0-35)
         for (row in 0..2) {
             for (col in 0..8) {
                 addSlot(Slot(playerInventory, col + row * 9 + 9, -999, -999))
@@ -57,9 +57,65 @@ class InventoryTerminalMenu(
         for (col in 0..8) {
             addSlot(Slot(playerInventory, col, -999, -999))
         }
+
+        // Crafting input slots (slots 36-44) — positioned off-screen, screen renders them
+        for (row in 0..2) {
+            for (col in 0..2) {
+                addSlot(Slot(craftingContainer, col + row * 3, -999, -999))
+            }
+        }
+
+        // Crafting output slot (slot 45)
+        addSlot(ResultSlot(playerInventory.player, craftingContainer, resultContainer, 0, -999, -999))
     }
 
-    override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY
+    /** Called when crafting grid contents change — recompute the result. */
+    override fun slotsChanged(container: net.minecraft.world.Container) {
+        if (container === craftingContainer) {
+            val level = serverLevel ?: playerInventory.player.level()
+            val recipe = level.recipeManager
+                .getRecipeFor(RecipeType.CRAFTING, craftingContainer.asCraftInput(), level)
+            if (recipe.isPresent) {
+                resultContainer.setItem(0, recipe.get().value().assemble(craftingContainer.asCraftInput(), level.registryAccess()))
+            } else {
+                resultContainer.setItem(0, ItemStack.EMPTY)
+            }
+        }
+        super.slotsChanged(container)
+    }
+
+    fun createServer(level: ServerLevel, nodePos: BlockPos) {
+        snapshot = NetworkDiscovery.discoverNetwork(level, nodePos)
+        cache = NetworkInventoryCache.getOrCreate(level, nodePos)
+    }
+
+    companion object {
+        const val PLAYER_SLOT_COUNT = 36
+        const val CRAFT_INPUT_START = 36
+        const val CRAFT_OUTPUT_SLOT = 45
+
+        fun createServer(syncId: Int, inv: Inventory, level: ServerLevel, nodePos: BlockPos): InventoryTerminalMenu {
+            val menu = InventoryTerminalMenu(syncId, inv, level, nodePos)
+            menu.createServer(level, nodePos)
+            return menu
+        }
+
+        fun clientFactory(syncId: Int, inv: Inventory, data: InventoryTerminalOpenData): InventoryTerminalMenu {
+            return InventoryTerminalMenu(syncId, inv, null, data.terminalPos)
+        }
+    }
+
+    override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
+        if (slotIndex == CRAFT_OUTPUT_SLOT) {
+            val slot = slots[slotIndex]
+            if (!slot.hasItem()) return ItemStack.EMPTY
+            val result = slot.item.copy()
+            if (!playerInventory.add(result.copy())) return ItemStack.EMPTY
+            slot.onTake(player, result)
+            return result
+        }
+        return ItemStack.EMPTY
+    }
 
     /**
      * Handle a click on the network item grid.
@@ -210,6 +266,12 @@ class InventoryTerminalMenu(
     }
 
     override fun stillValid(player: Player): Boolean = true
+
+    override fun removed(player: Player) {
+        super.removed(player)
+        // Return crafting grid items to player
+        clearContainer(player, craftingContainer)
+    }
 
     override fun broadcastChanges() {
         super.broadcastChanges()
