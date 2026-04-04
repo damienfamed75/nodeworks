@@ -70,6 +70,14 @@ class InventoryTerminalScreen(
     private var searchY = 0
     private var searchW = 0
 
+    // ========== Crafting ==========
+
+    private var craftingCollapsed = ClientConfig.invTerminalCraftingCollapsed
+    private var craftX = 0
+    private var craftY = 0
+    private val CRAFT_H = 58 // 3×18 = 54 + 4 padding
+    private val CRAFT_COLLAPSED_H = 14
+
     // ========== State ==========
 
     val repo = InventoryRepo().apply {
@@ -92,8 +100,9 @@ class InventoryTerminalScreen(
     private fun computeLayout() {
         val gridW = layout.cols * SLOT_SIZE
         val gridH = layout.rows * SLOT_SIZE
+        val craftAreaH = if (craftingCollapsed) CRAFT_COLLAPSED_H else CRAFT_H
         imageWidth = GRID_PAD + 4 + gridW + 2 + SCROLLBAR_W + GRID_PAD + 4
-        imageHeight = TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD + gridH + GRID_PAD + 76 + INV_BOTTOM_PAD
+        imageHeight = TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD + gridH + GRID_PAD + craftAreaH + GRID_PAD + 76 + INV_BOTTOM_PAD
     }
 
     override fun init() {
@@ -115,9 +124,16 @@ class InventoryTerminalScreen(
         networkGrid.stackProvider = { slot -> getItemStackForNetworkSlot(slot.index) }
         networkGrid.countFormatter = { slot -> getCountForNetworkSlot(slot.index) }
 
-        // Player inventory grids
-        val invX = gridX
-        val invY = gridY + layout.rows * SLOT_SIZE + GRID_PAD
+        // Crafting area position — centered in window
+        val craftAreaH = if (craftingCollapsed) CRAFT_COLLAPSED_H else CRAFT_H
+        val craftTotalW = 3 * 18 + 16 + 18 // 3x3 grid + arrow gap + output slot
+        craftX = leftPos + (imageWidth - craftTotalW) / 2
+        craftY = gridY + layout.rows * SLOT_SIZE + GRID_PAD
+
+        // Player inventory grids — centered in window
+        val invTotalW = 9 * 18
+        val invX = leftPos + (imageWidth - invTotalW) / 2
+        val invY = craftY + craftAreaH + GRID_PAD
         playerMainGrid = VirtualSlotGrid(9, 3, VirtualSlot.GridType.PLAYER_MAIN, 0)
         playerMainGrid.moveTo(invX, invY)
         val localPlayer = Minecraft.getInstance().player
@@ -245,6 +261,45 @@ class InventoryTerminalScreen(
             thumbSlice.draw(graphics, scrollbarX, thumbY, SCROLLBAR_W, thumbH)
         }
 
+        // Crafting area
+        if (!craftingCollapsed) {
+            // 3x3 crafting grid
+            val slotU = NineSlice.SLOT.u.toFloat()
+            val slotV = NineSlice.SLOT.v.toFloat()
+            for (row in 0..2) {
+                for (col in 0..2) {
+                    graphics.blit(NineSlice.GUI_ATLAS, craftX + col * 18, craftY + row * 18, slotU, slotV, 18, 18, 256, 256)
+                }
+            }
+            // Arrow
+            graphics.drawString(font, "\u2192", craftX + 3 * 18 + 4, craftY + 18 + 4, 0xFFAAAAAA.toInt())
+            // Output slot
+            graphics.blit(NineSlice.GUI_ATLAS, craftX + 3 * 18 + 16, craftY + 18, slotU, slotV, 18, 18, 256, 256)
+
+            // Render crafting items (from the real MC slots)
+            for (i in 0..8) {
+                val stack = menu.craftingContainer.getItem(i)
+                if (!stack.isEmpty) {
+                    val sx = craftX + (i % 3) * 18 + 1
+                    val sy = craftY + (i / 3) * 18 + 1
+                    graphics.renderItem(stack, sx, sy)
+                    if (stack.count > 1) graphics.renderItemDecorations(font, stack, sx, sy)
+                }
+            }
+            // Output
+            val resultStack = menu.resultContainer.getItem(0)
+            if (!resultStack.isEmpty) {
+                val sx = craftX + 3 * 18 + 17
+                val sy = craftY + 19
+                graphics.renderItem(resultStack, sx, sy)
+                if (resultStack.count > 1) graphics.renderItemDecorations(font, resultStack, sx, sy)
+            }
+        }
+
+        // Crafting collapse toggle — to the left of the crafting area
+        val collapseIcon = if (craftingCollapsed) Icons.EXPAND_IDLE else Icons.COLLAPSE_IDLE
+        collapseIcon.draw(graphics, craftX - 20, craftY + 1)
+
         // Player inventory (use direct slot blits for performance)
         val slotU = NineSlice.SLOT.u.toFloat()
         val slotV = NineSlice.SLOT.v.toFloat()
@@ -295,6 +350,22 @@ class InventoryTerminalScreen(
         playerMainGrid.renderHoverHighlight(graphics, mouseX, mouseY)
         playerHotbarGrid.renderHoverHighlight(graphics, mouseX, mouseY)
 
+        // Crafting slot hover highlights
+        if (!craftingCollapsed) {
+            for (i in 0..8) {
+                val sx = craftX + (i % 3) * 18 + 1
+                val sy = craftY + (i / 3) * 18 + 1
+                if (mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16) {
+                    graphics.fill(sx, sy, sx + 16, sy + 16, 0x80FFFFFF.toInt())
+                }
+            }
+            val ox = craftX + 3 * 18 + 17
+            val oy = craftY + 19
+            if (mouseX >= ox && mouseX < ox + 16 && mouseY >= oy && mouseY < oy + 16) {
+                graphics.fill(ox, oy, ox + 16, oy + 16, 0x80FFFFFF.toInt())
+            }
+        }
+
         // Tooltips
         val hoveredNetwork = networkGrid.getSlotAt(mouseX, mouseY, scrollOffset)
         if (hoveredNetwork != null) {
@@ -311,15 +382,45 @@ class InventoryTerminalScreen(
                 }
             }
         } else {
+            // Crafting slot tooltip
+            var craftTooltipShown = false
+            if (!craftingCollapsed) {
+                for (i in 0..8) {
+                    val sx = craftX + (i % 3) * 18 + 1
+                    val sy = craftY + (i / 3) * 18 + 1
+                    if (mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16) {
+                        val stack = menu.craftingContainer.getItem(i)
+                        if (!stack.isEmpty) {
+                            graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                            craftTooltipShown = true
+                        }
+                        break
+                    }
+                }
+                if (!craftTooltipShown) {
+                    val ox = craftX + 3 * 18 + 17
+                    val oy = craftY + 19
+                    if (mouseX >= ox && mouseX < ox + 16 && mouseY >= oy && mouseY < oy + 16) {
+                        val stack = menu.resultContainer.getItem(0)
+                        if (!stack.isEmpty) {
+                            graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                            craftTooltipShown = true
+                        }
+                    }
+                }
+            }
+
             // Player inventory tooltip
-            val hoveredMain = playerMainGrid.getSlotAt(mouseX, mouseY)
-            val hoveredHotbar = playerHotbarGrid.getSlotAt(mouseX, mouseY)
-            val hoveredPlayer = hoveredMain ?: hoveredHotbar
-            if (hoveredPlayer != null) {
-                val invIndex = if (hoveredPlayer.gridType == VirtualSlot.GridType.PLAYER_MAIN) hoveredPlayer.index + 9 else hoveredPlayer.index
-                val stack = Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY
-                if (!stack.isEmpty) {
-                    graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+            if (!craftTooltipShown) {
+                val hoveredMain = playerMainGrid.getSlotAt(mouseX, mouseY)
+                val hoveredHotbar = playerHotbarGrid.getSlotAt(mouseX, mouseY)
+                val hoveredPlayer = hoveredMain ?: hoveredHotbar
+                if (hoveredPlayer != null) {
+                    val invIndex = if (hoveredPlayer.gridType == VirtualSlot.GridType.PLAYER_MAIN) hoveredPlayer.index + 9 else hoveredPlayer.index
+                    val stack = Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY
+                    if (!stack.isEmpty) {
+                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                    }
                 }
             }
         }
@@ -344,6 +445,35 @@ class InventoryTerminalScreen(
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
+
+        // Crafting collapse toggle
+        if (mx >= craftX - 20 && mx < craftX - 4 && my >= craftY + 1 && my < craftY + 17) {
+            craftingCollapsed = !craftingCollapsed
+            ClientConfig.invTerminalCraftingCollapsed = craftingCollapsed
+            rebuildWidgets()
+            return true
+        }
+
+        // Crafting grid click (use MC's slot click for real slots)
+        if (!craftingCollapsed) {
+            // 3x3 input grid
+            for (i in 0..8) {
+                val sx = craftX + (i % 3) * 18 + 1
+                val sy = craftY + (i / 3) * 18 + 1
+                if (mx >= sx && mx < sx + 16 && my >= sy && my < sy + 16) {
+                    slotClicked(menu.slots[InventoryTerminalMenu.CRAFT_INPUT_START + i], InventoryTerminalMenu.CRAFT_INPUT_START + i, button, net.minecraft.world.inventory.ClickType.PICKUP)
+                    return true
+                }
+            }
+            // Output slot
+            val ox = craftX + 3 * 18 + 17
+            val oy = craftY + 19
+            if (mx >= ox && mx < ox + 16 && my >= oy && my < oy + 16) {
+                val clickType = if (hasShiftDown()) net.minecraft.world.inventory.ClickType.QUICK_MOVE else net.minecraft.world.inventory.ClickType.PICKUP
+                slotClicked(menu.slots[InventoryTerminalMenu.CRAFT_OUTPUT_SLOT], InventoryTerminalMenu.CRAFT_OUTPUT_SLOT, button, clickType)
+                return true
+            }
+        }
 
         // Scrollbar drag
         val scrollbarX = gridX + layout.cols * SLOT_SIZE + 2
