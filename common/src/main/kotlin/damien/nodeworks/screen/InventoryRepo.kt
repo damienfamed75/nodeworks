@@ -6,6 +6,11 @@ import damien.nodeworks.platform.ItemInfo
 /**
  * Client-side mirror of the network inventory. Receives delta updates from the server
  * and maintains a sorted/filtered view for the terminal screen.
+ *
+ * Supports JEI-style search syntax:
+ * - Plain text: search by item name
+ * - @mod: filter by mod/namespace (e.g. @minecraft)
+ * - #tag: filter by item tag (e.g. #forge:ingots) — future, currently matches itemId
  */
 class InventoryRepo {
 
@@ -14,6 +19,9 @@ class InventoryRepo {
         val info: ItemInfo
     )
 
+    enum class SortMode { ALPHA, COUNT_DESC, COUNT_ASC }
+    enum class FilterMode { STORAGE, RECIPES, BOTH }
+
     /** All entries keyed by serial. */
     private val entries = LinkedHashMap<Long, RepoEntry>()
 
@@ -21,30 +29,30 @@ class InventoryRepo {
     var view: List<RepoEntry> = emptyList()
         private set
 
+    private var viewDirty = true
+
     /** Current search filter text. */
     var searchText: String = ""
         set(value) {
             if (field != value) {
                 field = value
-                updateView()
+                viewDirty = true
             }
         }
 
-    /** Sort mode. */
-    enum class SortMode { NAME, COUNT, MOD }
-    var sortMode: SortMode = SortMode.NAME
+    var sortMode: SortMode = SortMode.ALPHA
         set(value) {
             if (field != value) {
                 field = value
-                updateView()
+                viewDirty = true
             }
         }
 
-    var sortAscending: Boolean = true
+    var filterMode: FilterMode = FilterMode.BOTH
         set(value) {
             if (field != value) {
                 field = value
-                updateView()
+                viewDirty = true
             }
         }
 
@@ -54,16 +62,13 @@ class InventoryRepo {
             entries.clear()
         }
 
-        // Remove deleted entries
         for (serial in payload.removedSerials) {
             entries.remove(serial)
         }
 
-        // Add or update entries
         for (syncEntry in payload.entries) {
             val existing = entries[syncEntry.serial]
             if (syncEntry.itemId != null) {
-                // Full entry (new or replacement)
                 entries[syncEntry.serial] = RepoEntry(
                     serial = syncEntry.serial,
                     info = ItemInfo(
@@ -75,41 +80,77 @@ class InventoryRepo {
                     )
                 )
             } else if (existing != null) {
-                // Amount-only update
                 entries[syncEntry.serial] = existing.copy(
                     info = existing.info.copy(count = syncEntry.count)
                 )
             }
         }
 
-        updateView()
+        viewDirty = true
     }
 
-    /** Rebuild the filtered/sorted view. */
-    fun updateView() {
-        val search = searchText.lowercase().trim()
+    /** Rebuild the filtered/sorted view if dirty. Call once per frame before reading view. */
+    fun ensureUpdated() {
+        if (viewDirty) {
+            viewDirty = false
+            rebuildView()
+        }
+    }
+
+    private fun rebuildView() {
+        val search = searchText.trim()
 
         view = entries.values
-            .filter { entry ->
-                if (search.isEmpty()) true
-                else {
-                    val info = entry.info
-                    info.name.lowercase().contains(search) ||
-                    info.itemId.lowercase().contains(search)
-                }
-            }
-            .let { list ->
-                val comparator = when (sortMode) {
-                    SortMode.NAME -> compareBy<RepoEntry> { it.info.name }
-                    SortMode.COUNT -> compareBy { it.info.count }
-                    SortMode.MOD -> compareBy { it.info.itemId.substringBefore(":") }
-                }
-                if (sortAscending) list.sortedWith(comparator)
-                else list.sortedWith(comparator.reversed())
-            }
+            .asSequence()
+            .filter { entry -> matchesSearch(entry.info, search) }
+            .filter { entry -> matchesFilter(entry.info) }
+            .sortedWith(getComparator())
+            .toList()
     }
 
-    /** Get entry at a specific index in the view (for virtual slot rendering). */
+    private fun matchesSearch(info: ItemInfo, search: String): Boolean {
+        if (search.isEmpty()) return true
+
+        // Parse search tokens (space-separated, each can be @mod, #tag, or plain text)
+        val tokens = search.split(" ").filter { it.isNotEmpty() }
+        return tokens.all { token ->
+            when {
+                token.startsWith("@") -> {
+                    // Mod filter: @minecraft matches "minecraft:stone"
+                    val mod = token.substring(1).lowercase()
+                    info.itemId.lowercase().substringBefore(":").contains(mod)
+                }
+                token.startsWith("#") -> {
+                    // Tag filter: matches against itemId for now
+                    val tag = token.substring(1).lowercase()
+                    info.itemId.lowercase().contains(tag) || info.name.lowercase().contains(tag)
+                }
+                else -> {
+                    // Plain text: match name or itemId
+                    val lower = token.lowercase()
+                    info.name.lowercase().contains(lower) || info.itemId.lowercase().contains(lower)
+                }
+            }
+        }
+    }
+
+    private fun matchesFilter(info: ItemInfo): Boolean {
+        return when (filterMode) {
+            FilterMode.STORAGE -> info.count > 0
+            FilterMode.RECIPES -> true // TODO: check isCraftable in Phase 3
+            FilterMode.BOTH -> true
+        }
+    }
+
+    private fun getComparator(): Comparator<RepoEntry> {
+        return when (sortMode) {
+            SortMode.ALPHA -> compareBy { it.info.name.lowercase() }
+            SortMode.COUNT_DESC -> compareByDescending { it.info.count }
+            SortMode.COUNT_ASC -> compareBy { it.info.count }
+        }
+    }
+
+    /** Get entry at a specific index in the view. */
     fun getViewEntry(index: Int): RepoEntry? {
         return if (index in view.indices) view[index] else null
     }

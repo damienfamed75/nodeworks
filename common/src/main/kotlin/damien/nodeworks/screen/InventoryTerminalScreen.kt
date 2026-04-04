@@ -53,6 +53,7 @@ class InventoryTerminalScreen(
     private val INV_GAP = 4
     private val SCROLLBAR_W = 8
     private val SIDE_BTN_W = 20
+    private val SIDE_BTN_GAP = 2
     private val INV_BOTTOM_PAD = 6
 
     // ========== Virtual Grids ==========
@@ -71,7 +72,10 @@ class InventoryTerminalScreen(
 
     // ========== State ==========
 
-    val repo = InventoryRepo()
+    val repo = InventoryRepo().apply {
+        sortMode = InventoryRepo.SortMode.entries.firstOrNull { it.name == ClientConfig.invTerminalSortMode } ?: InventoryRepo.SortMode.ALPHA
+        filterMode = InventoryRepo.FilterMode.entries.firstOrNull { it.name == ClientConfig.invTerminalFilterMode } ?: InventoryRepo.FilterMode.BOTH
+    }
     private var scrollOffset = 0
     private var maxScroll = 0
     private var draggingScrollbar = false
@@ -139,21 +143,64 @@ class InventoryTerminalScreen(
         }
         addRenderableWidget(searchBox)
 
-        // Side button: layout toggle
+        // Side buttons
         val sideBtnX = leftPos - SIDE_BTN_W - 4
+        var sideBtnY = topPos + TOP_BAR_H + 2
+
+        // Layout toggle
         addRenderableWidget(SlicedButton.create(
-            sideBtnX, topPos + TOP_BAR_H + 2, SIDE_BTN_W, SIDE_BTN_W, "", layout.icon
+            sideBtnX, sideBtnY, SIDE_BTN_W, SIDE_BTN_W, "", layout.icon
         ) { _ ->
             layout = Layout.entries[(layout.ordinal + 1) % Layout.entries.size]
             ClientConfig.invTerminalLayout = layout.name
-            // Save to server block entity
             val pos = menu.terminalPos
             if (pos != null) {
                 PlatformServices.clientNetworking.sendToServer(
                     damien.nodeworks.network.SetLayoutPayload(pos, layout.ordinal)
                 )
             }
-            // Seamless relayout — just rebuild widgets
+            rebuildWidgets()
+        })
+        sideBtnY += SIDE_BTN_W + SIDE_BTN_GAP
+
+        // Sort mode toggle
+        val sortIcon = when (repo.sortMode) {
+            InventoryRepo.SortMode.ALPHA -> Icons.SORT_ALPHA
+            InventoryRepo.SortMode.COUNT_DESC -> Icons.SORT_COUNT_DESC
+            InventoryRepo.SortMode.COUNT_ASC -> Icons.SORT_COUNT_ASC
+        }
+        addRenderableWidget(SlicedButton.create(
+            sideBtnX, sideBtnY, SIDE_BTN_W, SIDE_BTN_W, "", sortIcon
+        ) { _ ->
+            repo.sortMode = InventoryRepo.SortMode.entries[(repo.sortMode.ordinal + 1) % InventoryRepo.SortMode.entries.size]
+            ClientConfig.invTerminalSortMode = repo.sortMode.name
+            scrollOffset = 0
+            rebuildWidgets()
+        })
+        sideBtnY += SIDE_BTN_W + SIDE_BTN_GAP
+
+        // Filter mode toggle
+        val filterIcon = when (repo.filterMode) {
+            InventoryRepo.FilterMode.STORAGE -> Icons.FILTER_STORAGE
+            InventoryRepo.FilterMode.RECIPES -> Icons.FILTER_RECIPES
+            InventoryRepo.FilterMode.BOTH -> Icons.FILTER_BOTH
+        }
+        addRenderableWidget(SlicedButton.create(
+            sideBtnX, sideBtnY, SIDE_BTN_W, SIDE_BTN_W, "", filterIcon
+        ) { _ ->
+            repo.filterMode = InventoryRepo.FilterMode.entries[(repo.filterMode.ordinal + 1) % InventoryRepo.FilterMode.entries.size]
+            ClientConfig.invTerminalFilterMode = repo.filterMode.name
+            scrollOffset = 0
+            rebuildWidgets()
+        })
+        sideBtnY += SIDE_BTN_W + SIDE_BTN_GAP
+
+        // Auto-focus search toggle
+        val autoFocusIcon = if (ClientConfig.invTerminalAutoFocusSearch) Icons.AUTO_FOCUS_ON else Icons.AUTO_FOCUS_OFF
+        addRenderableWidget(SlicedButton.create(
+            sideBtnX, sideBtnY, SIDE_BTN_W, SIDE_BTN_W, "", autoFocusIcon
+        ) { _ ->
+            ClientConfig.invTerminalAutoFocusSearch = !ClientConfig.invTerminalAutoFocusSearch
             rebuildWidgets()
         })
     }
@@ -184,6 +231,7 @@ class InventoryTerminalScreen(
         networkGrid.renderBackground(graphics)
 
         // Scrollbar
+        repo.ensureUpdated()
         maxScroll = maxOf(0, (repo.viewSize + layout.cols - 1) / layout.cols - layout.rows)
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, maxScroll))
         val scrollbarX = gridX + layout.cols * SLOT_SIZE + 2
@@ -212,6 +260,9 @@ class InventoryTerminalScreen(
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.render(graphics, mouseX, mouseY, partialTick)
+
+        // Ensure repo view is up-to-date before reading
+        repo.ensureUpdated()
 
         // Render network items
         networkGrid.renderItems(graphics, scrollOffset, repo.viewSize)

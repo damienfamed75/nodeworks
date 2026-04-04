@@ -76,7 +76,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         // Row 0:  Checkmark    X            ArrowRight   ArrowLeft     Unpinned    Pinned       RedstoneIgnore RedstoneActive RedstoneInactive GlowSquare GlowCircle GlowDot GlowCreeper GlowCat GlowNone
         // Row 1:  IO Card      Storage Card Redstone Card Variable     CrystalInactive CrystalActive LayoutSmall LayoutWide LayoutTall LayoutLarge SmallScrew
         // Row 2:  CopyIdle     CopyHover    CopyPressed  TrashIdle     TrashHover  TrashPressed CollapseIdle CollapseHover CollapsePressed ExpandIdle ExpandHover ExpandPressed
-        // Row 3+: (free)
+        // Row 3:  SortAlpha    SortCountDesc SortCountAsc FilterStorage FilterRecipes FilterBoth AutoFocusOn AutoFocusOff CraftInProgress CraftComplete CraftPlus AutoPullOn AutoPullOff
         // =====================================================================
 
         // Row 0 — General UI icons
@@ -123,5 +123,20 @@ class Icons private constructor(val col: Int, val row: Int) {
         val EXPAND_IDLE = Icons(9, 2)
         val EXPAND_HOVER = Icons(10, 2)
         val EXPAND_PRESSED = Icons(11, 2)
+
+        // Row 3 — Inventory Terminal icons
+        val SORT_ALPHA          = Icons(0, 3)
+        val SORT_COUNT_DESC     = Icons(1, 3)
+        val SORT_COUNT_ASC      = Icons(2, 3)
+        val FILTER_STORAGE      = Icons(3, 3)
+        val FILTER_RECIPES      = Icons(4, 3)
+        val FILTER_BOTH         = Icons(5, 3)
+        val AUTO_FOCUS_ON       = Icons(6, 3)
+        val AUTO_FOCUS_OFF      = Icons(7, 3)
+        val CRAFTING_IN_PROGRESS = Icons(8, 3)
+        val CRAFTING_COMPLETE   = Icons(9, 3)
+        val CRAFT_PLUS          = Icons(10, 3)
+        val AUTO_PULL_ON        = Icons(11, 3)
+        val AUTO_PULL_OFF       = Icons(12, 3)
     }
 }
