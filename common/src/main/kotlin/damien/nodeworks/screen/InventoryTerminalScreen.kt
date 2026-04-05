@@ -91,6 +91,12 @@ class InventoryTerminalScreen(
     private var lastClickSlotType = -1
     private var lastClickSlotIndex = -1
 
+    // Craft dialogue state
+    private var craftDialogueItemId: String? = null
+    private var craftDialogueItemName: String = ""
+    private var craftDialogueCount: String = "1"
+    private var craftDialogueField: EditBox? = null
+
     // Slot drag state (works across crafting grid and player inventory)
     private var slotDragButton = -1       // -1 = not dragging, 0 = left, 1 = right
     private var slotDragShift = false     // shift-drag: move items out
@@ -169,6 +175,16 @@ class InventoryTerminalScreen(
             searchBox.isFocused = true
         }
         addRenderableWidget(searchBox)
+
+        // Craft dialogue count field (hidden until dialogue opens)
+        val dialogDw = 140
+        val dialogDx = leftPos + (imageWidth - dialogDw) / 2
+        val dialogDy = topPos + (imageHeight - 60) / 2
+        craftDialogueField = EditBox(font, dialogDx + 46, dialogDy + 25, 86, 12, Component.literal("Count"))
+        craftDialogueField!!.setMaxLength(4)
+        craftDialogueField!!.value = "1"
+        craftDialogueField!!.visible = craftDialogueItemId != null
+        addRenderableWidget(craftDialogueField!!)
 
         // Side buttons
         val sideBtnX = leftPos - SIDE_BTN_W - 4
@@ -356,6 +372,50 @@ class InventoryTerminalScreen(
         playerMainGrid.renderItems(graphics)
         playerHotbarGrid.renderItems(graphics)
 
+        // Set hoveredSlot for JEI R/U key support
+        val networkHover = networkGrid.getSlotAt(mouseX, mouseY, scrollOffset)
+        if (networkHover != null) {
+            val entry = repo.getViewEntry(networkHover.index)
+            if (entry != null) {
+                val id = net.minecraft.resources.ResourceLocation.tryParse(entry.info.itemId)
+                if (id != null) {
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
+                    if (item != null) {
+                        val tempContainer = net.minecraft.world.SimpleContainer(1)
+                        tempContainer.setItem(0, ItemStack(item))
+                        hoveredSlot = net.minecraft.world.inventory.Slot(tempContainer, 0, networkHover.x - leftPos, networkHover.y - topPos)
+                    }
+                }
+            }
+        } else {
+            // Check crafting grid
+            val craftSlot = getCraftSlotAt(mouseX, mouseY)
+            if (craftSlot >= 0) {
+                val slot = menu.slots[InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot]
+                hoveredSlot = slot
+            } else if (isCraftOutputAt(mouseX, mouseY)) {
+                hoveredSlot = menu.slots[InventoryTerminalMenu.CRAFT_OUTPUT_SLOT]
+            } else {
+                // Check player inventory
+                val mainSlot = playerMainGrid.getSlotAt(mouseX, mouseY)
+                val hotbarSlot = playerHotbarGrid.getSlotAt(mouseX, mouseY)
+                val playerSlot = mainSlot ?: hotbarSlot
+                if (playerSlot != null) {
+                    val invIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index + 9 else playerSlot.index
+                    val stack = Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY
+                    if (!stack.isEmpty) {
+                        val tempContainer = net.minecraft.world.SimpleContainer(1)
+                        tempContainer.setItem(0, stack.copy())
+                        hoveredSlot = net.minecraft.world.inventory.Slot(tempContainer, 0, playerSlot.x - leftPos, playerSlot.y - topPos)
+                    } else {
+                        hoveredSlot = null
+                    }
+                } else {
+                    hoveredSlot = null
+                }
+            }
+        }
+
         // Hover highlights (single pass)
         networkGrid.renderHoverHighlight(graphics, mouseX, mouseY, scrollOffset)
         playerMainGrid.renderHoverHighlight(graphics, mouseX, mouseY)
@@ -458,6 +518,47 @@ class InventoryTerminalScreen(
             }
         }
 
+        // Craft dialogue overlay
+        if (craftDialogueItemId != null) {
+            val dw = 140
+            val dh = 60
+            val dx = leftPos + (imageWidth - dw) / 2
+            val dy = topPos + (imageHeight - dh) / 2
+
+            graphics.pose().pushPose()
+            graphics.pose().translate(0f, 0f, 400f)
+            NineSlice.PANEL_INSET.draw(graphics, dx, dy, dw, dh)
+            NineSlice.CONTENT_BORDER.draw(graphics, dx, dy, dw, dh)
+
+            // Item icon + name
+            val stack = getItemStack(craftDialogueItemId!!)
+            if (!stack.isEmpty) {
+                graphics.renderItem(stack, dx + 6, dy + 6)
+            }
+            graphics.drawString(font, craftDialogueItemName, dx + 26, dy + 10, 0xFFFFFFFF.toInt())
+
+            // Count label
+            graphics.drawString(font, "Count:", dx + 6, dy + 28, 0xFFAAAAAA.toInt())
+
+            // Craft / Cancel buttons
+            val craftBtnX = dx + 6
+            val cancelBtnX = dx + dw / 2 + 2
+            val btnY = dy + dh - 18
+            val btnW = dw / 2 - 8
+            val craftHover = mouseX >= craftBtnX && mouseX < craftBtnX + btnW && mouseY >= btnY && mouseY < btnY + 14
+            val cancelHover = mouseX >= cancelBtnX && mouseX < cancelBtnX + btnW && mouseY >= btnY && mouseY < btnY + 14
+            val craftSlice = if (craftHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
+            val cancelSlice = if (cancelHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
+            craftSlice.draw(graphics, craftBtnX, btnY, btnW, 14)
+            cancelSlice.draw(graphics, cancelBtnX, btnY, btnW, 14)
+            val craftColor = if (craftHover) 0xFF88FF88.toInt() else 0xFF55CC55.toInt()
+            val cancelColor = if (cancelHover) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
+            graphics.drawString(font, "Craft", craftBtnX + (btnW - font.width("Craft")) / 2, btnY + 3, craftColor)
+            graphics.drawString(font, "Cancel", cancelBtnX + (btnW - font.width("Cancel")) / 2, btnY + 3, cancelColor)
+
+            graphics.pose().popPose()
+        }
+
         // Render carried item on cursor
         val carried = menu.carried
         if (!carried.isEmpty) {
@@ -473,11 +574,51 @@ class InventoryTerminalScreen(
         // Don't render default labels
     }
 
+
     // ========== Input ==========
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
+
+        // Craft dialogue buttons
+        if (craftDialogueItemId != null) {
+            val dw = 140
+            val dh = 60
+            val dx = leftPos + (imageWidth - dw) / 2
+            val dy = topPos + (imageHeight - dh) / 2
+            val craftBtnX = dx + 6
+            val cancelBtnX = dx + dw / 2 + 2
+            val btnY = dy + dh - 18
+            val btnW = dw / 2 - 8
+
+            if (mx >= craftBtnX && mx < craftBtnX + btnW && my >= btnY && my < btnY + 14) {
+                // Craft button
+                val count = craftDialogueField?.value?.toIntOrNull() ?: 1
+                if (count > 0) {
+                    PlatformServices.clientNetworking.sendToServer(
+                        damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
+                    )
+                }
+                craftDialogueItemId = null
+                craftDialogueField?.visible = false
+                return true
+            }
+            if (mx >= cancelBtnX && mx < cancelBtnX + btnW && my >= btnY && my < btnY + 14) {
+                // Cancel button
+                craftDialogueItemId = null
+                craftDialogueField?.visible = false
+                return true
+            }
+            // Click inside dialogue — consume
+            if (mx >= dx && mx < dx + dw && my >= dy && my < dy + dh) {
+                return super.mouseClicked(mouseX, mouseY, button)
+            }
+            // Click outside — close
+            craftDialogueItemId = null
+            craftDialogueField?.visible = false
+            return true
+        }
 
         // Crafting collapse toggle
         if (mx >= craftX - 20 && mx < craftX - 4 && my >= craftY + 1 && my < craftY + 17) {
@@ -567,7 +708,16 @@ class InventoryTerminalScreen(
         val networkSlot = networkGrid.getSlotAt(mx, my, scrollOffset)
         if (networkSlot != null) {
             val entry = repo.getViewEntry(networkSlot.index)
-            if (menu.carried.isEmpty && entry != null) {
+            if (entry != null && entry.info.isCraftable && (hasAltDown() || entry.info.count == 0L)) {
+                // Alt+click or click on zero-count craftable: open craft dialogue
+                craftDialogueItemId = entry.info.itemId
+                craftDialogueItemName = entry.info.name
+                craftDialogueField?.value = "1"
+                craftDialogueField?.visible = true
+                craftDialogueField?.isFocused = true
+                return true
+            }
+            if (menu.carried.isEmpty && entry != null && entry.info.count > 0) {
                 val action = when {
                     hasShiftDown() -> 3
                     button == 1 -> 2
@@ -747,6 +897,28 @@ class InventoryTerminalScreen(
     }
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        // Craft dialogue keys
+        if (craftDialogueItemId != null) {
+            if (keyCode == InputConstants.KEY_ESCAPE) {
+                craftDialogueItemId = null
+                craftDialogueField?.visible = false
+                return true
+            }
+            if (keyCode == InputConstants.KEY_RETURN) {
+                val count = craftDialogueField?.value?.toIntOrNull() ?: 1
+                if (count > 0) {
+                    PlatformServices.clientNetworking.sendToServer(
+                        damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
+                    )
+                }
+                craftDialogueItemId = null
+                craftDialogueField?.visible = false
+                return true
+            }
+            // Let the field handle the input
+            return craftDialogueField?.keyPressed(keyCode, scanCode, modifiers) ?: false
+        }
+
         if (searchBox.isFocused) {
             if (keyCode == InputConstants.KEY_ESCAPE) {
                 searchBox.isFocused = false
@@ -758,10 +930,25 @@ class InventoryTerminalScreen(
     }
 
     override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+        if (craftDialogueItemId != null && craftDialogueField?.isFocused == true) {
+            // Only allow digits
+            if (codePoint.isDigit()) {
+                return craftDialogueField?.charTyped(codePoint, modifiers) ?: false
+            }
+            return true
+        }
         if (searchBox.isFocused) {
             return searchBox.charTyped(codePoint, modifiers)
         }
         return super.charTyped(codePoint, modifiers)
+    }
+
+    /** For JEI: get the item ID of the hovered network grid item. */
+    fun getHoveredNetworkItemId(mx: Int, my: Int): String? {
+        repo.ensureUpdated()
+        val slot = networkGrid.getSlotAt(mx, my, scrollOffset) ?: return null
+        val entry = repo.getViewEntry(slot.index) ?: return null
+        return entry.info.itemId
     }
 
     // ========== Slot Helpers ==========

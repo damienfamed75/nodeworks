@@ -179,6 +179,21 @@ data class InvTerminalDistributePayload(val containerId: Int, val slotType: Int,
 }
 
 /**
+ * C2S: Request automated network crafting (Alt+click).
+ * Server allocates a CraftingCore and initiates crafting via CraftingHelper.
+ */
+data class InvTerminalCraftPayload(val containerId: Int, val itemId: String, val count: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalCraftPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "inv_terminal_craft"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalCraftPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.itemId, 256); buf.writeVarInt(p.count) },
+            { buf -> InvTerminalCraftPayload(buf.readVarInt(), buf.readUtf(256), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
  * C2S: Double-click collect — gather matching items from crafting grid and player inventory onto cursor.
  */
 data class InvTerminalCollectPayload(val containerId: Int, val itemId: String) : CustomPacketPayload {
