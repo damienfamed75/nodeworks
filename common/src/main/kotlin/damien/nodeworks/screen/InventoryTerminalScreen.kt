@@ -87,6 +87,9 @@ class InventoryTerminalScreen(
     private var scrollOffset = 0
     private var maxScroll = 0
     private var draggingScrollbar = false
+    private var lastClickTime = 0L
+    private var lastClickSlotType = -1
+    private var lastClickSlotIndex = -1
 
     // Slot drag state (works across crafting grid and player inventory)
     private var slotDragButton = -1       // -1 = not dragging, 0 = left, 1 = right
@@ -484,11 +487,38 @@ class InventoryTerminalScreen(
             return true
         }
 
+        // Double-click collect check
+        val now = net.minecraft.Util.getMillis()
+        fun checkDoubleClick(slotType: Int, slotIndex: Int, itemId: String): Boolean {
+            val isDoubleClick = button == 0
+                && now - lastClickTime < 400
+                && lastClickSlotType == slotType
+                && lastClickSlotIndex == slotIndex
+                && !menu.carried.isEmpty  // must have picked up from first click
+            lastClickTime = now
+            lastClickSlotType = slotType
+            lastClickSlotIndex = slotIndex
+            if (isDoubleClick) {
+                lastClickTime = 0 // prevent triple-click
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.InvTerminalCollectPayload(menu.containerId, itemId)
+                )
+                return true
+            }
+            return false
+        }
+
         // Crafting grid click
         if (!craftingCollapsed) {
             val craftSlot = getCraftSlotAt(mx, my)
             if (craftSlot >= 0) {
                 val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
+                // Double-click collect — works with item on cursor (from first click)
+                val collectItem = if (!menu.carried.isEmpty) menu.carried else menu.craftingContainer.getItem(craftSlot)
+                if (!collectItem.isEmpty) {
+                    val craftItemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(collectItem.item)?.toString() ?: ""
+                    if (checkDoubleClick(0, craftSlot, craftItemId)) return true
+                }
                 if (hasShiftDown()) {
                     // Shift-click: move to player inventory
                     slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ClickType.QUICK_MOVE)
@@ -561,6 +591,13 @@ class InventoryTerminalScreen(
         val playerSlot = mainSlot ?: hotbarSlot
         if (playerSlot != null) {
             val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
+            val invIndex = if (virtualIndex < 27) virtualIndex + 9 else virtualIndex - 27
+            // Double-click collect — works with item on cursor (from first click)
+            val collectItem = if (!menu.carried.isEmpty) menu.carried else (Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY)
+            if (!collectItem.isEmpty) {
+                val playerItemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(collectItem.item)?.toString() ?: ""
+                if (checkDoubleClick(1, virtualIndex, playerItemId)) return true
+            }
             if (hasShiftDown()) {
                 // Shift-click: insert into network
                 PlatformServices.clientNetworking.sendToServer(

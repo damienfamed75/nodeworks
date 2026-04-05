@@ -367,6 +367,55 @@ class InventoryTerminalMenu(
         playerInventory.setChanged()
     }
 
+    /**
+     * Double-click collect: gather all matching items from crafting grid and player inventory onto cursor.
+     */
+    fun handleCollect(player: Player, itemId: String) {
+        val carried = carried
+        val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: return
+        val maxStack = item.getDefaultMaxStackSize()
+
+        // Start with what's on cursor (may already have items from first click)
+        val result: ItemStack
+        if (carried.isEmpty) {
+            result = ItemStack(item, 0)
+            setCarried(result)
+        } else if (ItemStack.isSameItem(carried, ItemStack(item))) {
+            result = carried
+        } else {
+            return // different item on cursor
+        }
+
+        // Collect from crafting grid
+        for (i in 0 until craftingContainer.containerSize) {
+            if (result.count >= maxStack) break
+            val stack = craftingContainer.getItem(i)
+            if (!stack.isEmpty && ItemStack.isSameItemSameComponents(result, stack)) {
+                val take = minOf(stack.count, maxStack - result.count)
+                result.grow(take)
+                stack.shrink(take)
+                if (stack.isEmpty) craftingContainer.setItem(i, ItemStack.EMPTY)
+            }
+        }
+
+        // Collect from player inventory
+        for (i in 0 until playerInventory.containerSize) {
+            if (result.count >= maxStack) break
+            val stack = playerInventory.getItem(i)
+            if (!stack.isEmpty && ItemStack.isSameItemSameComponents(result, stack)) {
+                val take = minOf(stack.count, maxStack - result.count)
+                result.grow(take)
+                stack.shrink(take)
+                if (stack.isEmpty) playerInventory.setItem(i, ItemStack.EMPTY)
+            }
+        }
+
+        setCarried(result)
+        slotsChanged(craftingContainer)
+        playerInventory.setChanged()
+    }
+
     override fun stillValid(player: Player): Boolean = true
 
     override fun removed(player: Player) {
