@@ -114,6 +114,16 @@ class InventoryTerminalMenu(
             slot.onTake(player, result)
             return result
         }
+        // Crafting input slots: move back to player inventory
+        if (slotIndex in CRAFT_INPUT_START until CRAFT_OUTPUT_SLOT) {
+            val slot = slots[slotIndex]
+            if (!slot.hasItem()) return ItemStack.EMPTY
+            val stack = slot.item.copy()
+            if (!playerInventory.add(stack)) return ItemStack.EMPTY
+            slot.set(ItemStack.EMPTY)
+            playerInventory.setChanged()
+            return stack
+        }
         return ItemStack.EMPTY
     }
 
@@ -263,6 +273,78 @@ class InventoryTerminalMenu(
         playerInventory.setChanged()
         // Force immediate network inventory sync if we inserted into network
         if (action == 2) needsImmediateSync = true
+    }
+
+    /**
+     * Fill the crafting grid with items from a JEI recipe.
+     * Returns items from the old grid to the player inventory first.
+     */
+    fun handleCraftGridFill(player: Player, grid: List<String>) {
+        // Return current crafting grid items to player
+        for (i in 0 until craftingContainer.containerSize) {
+            val stack = craftingContainer.getItem(i)
+            if (!stack.isEmpty) {
+                if (!playerInventory.add(stack.copy())) {
+                    player.drop(stack, false)
+                }
+                craftingContainer.setItem(i, ItemStack.EMPTY)
+            }
+        }
+
+        // Fill with new recipe
+        for ((i, itemId) in grid.withIndex()) {
+            if (i >= 9 || itemId.isEmpty()) continue
+            val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+
+            // Try to find the item in player inventory first
+            val invSlot = playerInventory.findSlotMatchingItem(ItemStack(item))
+            if (invSlot >= 0) {
+                val taken = playerInventory.getItem(invSlot).split(1)
+                craftingContainer.setItem(i, taken)
+            }
+            // TODO: auto-pull from network if enabled
+        }
+
+        slotsChanged(craftingContainer)
+        playerInventory.setChanged()
+    }
+
+    /**
+     * Distribute the carried item evenly across the specified crafting slot indices.
+     * Used for left-click drag.
+     */
+    fun handleDistribute(player: Player, slotIndices: List<Int>) {
+        val carried = carried
+        if (carried.isEmpty || slotIndices.isEmpty()) return
+
+        val validSlots = slotIndices.filter { it in CRAFT_INPUT_START until CRAFT_OUTPUT_SLOT }
+        if (validSlots.isEmpty()) return
+
+        val total = carried.count
+        val perSlot = total / validSlots.size
+        val remainder = total % validSlots.size
+        if (perSlot <= 0) return
+
+        var distributed = 0
+        for ((idx, slotIndex) in validSlots.withIndex()) {
+            val slot = slots[slotIndex]
+            val amount = perSlot + if (idx < remainder) 1 else 0
+            val existing = slot.item
+            if (existing.isEmpty) {
+                slot.set(carried.copyWithCount(amount))
+            } else if (ItemStack.isSameItemSameComponents(existing, carried) && existing.count + amount <= existing.maxStackSize) {
+                existing.grow(amount)
+            } else {
+                continue
+            }
+            distributed += amount
+        }
+
+        carried.shrink(distributed)
+        if (carried.isEmpty) setCarried(ItemStack.EMPTY)
+        slotsChanged(craftingContainer)
+        playerInventory.setChanged()
     }
 
     override fun stillValid(player: Player): Boolean = true

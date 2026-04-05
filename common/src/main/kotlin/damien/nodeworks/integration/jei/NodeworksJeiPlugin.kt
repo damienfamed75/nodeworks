@@ -44,6 +44,10 @@ class NodeworksJeiPlugin : IModPlugin {
             ProcessingSetTransferHandler(),
             RecipeTypes.CRAFTING
         )
+        registration.addRecipeTransferHandler(
+            InventoryTerminalTransferHandler(),
+            RecipeTypes.CRAFTING
+        )
     }
 
     override fun registerGuiHandlers(registration: IGuiHandlerRegistration) {
@@ -51,6 +55,51 @@ class NodeworksJeiPlugin : IModPlugin {
             ProcessingSetScreen::class.java,
             ProcessingSetGhostHandler()
         )
+    }
+}
+
+// ── Inventory Terminal: recipe transfer (+) ──
+
+class InventoryTerminalTransferHandler : IRecipeTransferHandler<damien.nodeworks.screen.InventoryTerminalMenu, RecipeHolder<CraftingRecipe>> {
+
+    override fun getContainerClass(): Class<out damien.nodeworks.screen.InventoryTerminalMenu> =
+        damien.nodeworks.screen.InventoryTerminalMenu::class.java
+
+    override fun getMenuType(): Optional<MenuType<damien.nodeworks.screen.InventoryTerminalMenu>> =
+        Optional.of(ModScreenHandlers.INVENTORY_TERMINAL)
+
+    override fun getRecipeType(): RecipeType<RecipeHolder<CraftingRecipe>> =
+        RecipeTypes.CRAFTING
+
+    override fun transferRecipe(
+        container: damien.nodeworks.screen.InventoryTerminalMenu,
+        recipe: RecipeHolder<CraftingRecipe>,
+        recipeSlots: IRecipeSlotsView,
+        player: Player,
+        maxTransfer: Boolean,
+        doTransfer: Boolean
+    ): IRecipeTransferError? {
+        if (doTransfer) {
+            val grid = Array(9) { "" }
+            val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
+
+            for ((index, slotView) in inputSlots.withIndex()) {
+                if (index >= 9) break
+                val displayed = slotView.displayedIngredient
+                if (displayed.isPresent) {
+                    val ingredient = displayed.get().ingredient
+                    if (ingredient is ItemStack && !ingredient.isEmpty) {
+                        grid[index] = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: ""
+                    }
+                }
+            }
+
+            PlatformServices.clientNetworking.sendToServer(
+                damien.nodeworks.network.InvTerminalCraftGridPayload(container.containerId, grid.toList())
+            )
+        }
+
+        return null
     }
 }
 

@@ -87,6 +87,13 @@ class InventoryTerminalScreen(
     private var scrollOffset = 0
     private var maxScroll = 0
     private var draggingScrollbar = false
+
+    // Slot drag state (works across crafting grid and player inventory)
+    private var slotDragButton = -1       // -1 = not dragging, 0 = left, 1 = right
+    private var slotDragShift = false     // shift-drag: move items out
+    private var slotDragStack = ItemStack.EMPTY // snapshot of carried stack at drag start
+    private data class DragSlotRef(val menuSlotIndex: Int) // for crafting slots (real MC slots)
+    private val slotDragVisited = mutableListOf<DragSlotRef>()
     private lateinit var searchBox: EditBox
     private var cachedNetworkColor: Int? = null
     private var itemStackCache = HashMap<String, ItemStack>()
@@ -350,18 +357,36 @@ class InventoryTerminalScreen(
         playerMainGrid.renderHoverHighlight(graphics, mouseX, mouseY)
         playerHotbarGrid.renderHoverHighlight(graphics, mouseX, mouseY)
 
-        // Crafting slot hover highlights
-        if (!craftingCollapsed) {
-            for (i in 0..8) {
-                val sx = craftX + (i % 3) * 18 + 1
-                val sy = craftY + (i / 3) * 18 + 1
-                if (mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16) {
-                    graphics.fill(sx, sy, sx + 16, sy + 16, 0x80FFFFFF.toInt())
+        // Left-drag preview: show distributed items in crafting slots
+        if (slotDragButton == 0 && !slotDragShift && slotDragVisited.size > 1 && !slotDragStack.isEmpty) {
+            val total = slotDragStack.count
+            val perSlot = total / slotDragVisited.size
+            val remainder = total % slotDragVisited.size
+            for ((idx, ref) in slotDragVisited.withIndex()) {
+                val i = ref.menuSlotIndex - InventoryTerminalMenu.CRAFT_INPUT_START
+                if (i < 0 || i > 8) continue
+                val amount = perSlot + if (idx < remainder) 1 else 0
+                if (amount > 0) {
+                    val sx = craftX + (i % 3) * 18 + 1
+                    val sy = craftY + (i / 3) * 18 + 1
+                    val previewStack = slotDragStack.copyWithCount(amount)
+                    graphics.renderItem(previewStack, sx, sy)
+                    graphics.renderItemDecorations(font, previewStack, sx, sy)
                 }
             }
-            val ox = craftX + 3 * 18 + 17
-            val oy = craftY + 19
-            if (mouseX >= ox && mouseX < ox + 16 && mouseY >= oy && mouseY < oy + 16) {
+        }
+
+        // Crafting slot hover highlights
+        if (!craftingCollapsed) {
+            val hoveredCraft = getCraftSlotAt(mouseX, mouseY)
+            if (hoveredCraft >= 0) {
+                val sx = craftX + (hoveredCraft % 3) * 18 + 1
+                val sy = craftY + (hoveredCraft / 3) * 18 + 1
+                graphics.fill(sx, sy, sx + 16, sy + 16, 0x80FFFFFF.toInt())
+            }
+            if (isCraftOutputAt(mouseX, mouseY)) {
+                val ox = craftX + 3 * 18 + 17
+                val oy = craftY + 19
                 graphics.fill(ox, oy, ox + 16, oy + 16, 0x80FFFFFF.toInt())
             }
         }
@@ -385,27 +410,18 @@ class InventoryTerminalScreen(
             // Crafting slot tooltip
             var craftTooltipShown = false
             if (!craftingCollapsed) {
-                for (i in 0..8) {
-                    val sx = craftX + (i % 3) * 18 + 1
-                    val sy = craftY + (i / 3) * 18 + 1
-                    if (mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16) {
-                        val stack = menu.craftingContainer.getItem(i)
-                        if (!stack.isEmpty) {
-                            graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
-                            craftTooltipShown = true
-                        }
-                        break
+                val hoveredCraft = getCraftSlotAt(mouseX, mouseY)
+                if (hoveredCraft >= 0) {
+                    val stack = menu.craftingContainer.getItem(hoveredCraft)
+                    if (!stack.isEmpty) {
+                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                        craftTooltipShown = true
                     }
-                }
-                if (!craftTooltipShown) {
-                    val ox = craftX + 3 * 18 + 17
-                    val oy = craftY + 19
-                    if (mouseX >= ox && mouseX < ox + 16 && mouseY >= oy && mouseY < oy + 16) {
-                        val stack = menu.resultContainer.getItem(0)
-                        if (!stack.isEmpty) {
-                            graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
-                            craftTooltipShown = true
-                        }
+                } else if (isCraftOutputAt(mouseX, mouseY)) {
+                    val stack = menu.resultContainer.getItem(0)
+                    if (!stack.isEmpty) {
+                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                        craftTooltipShown = true
                     }
                 }
             }
@@ -454,21 +470,41 @@ class InventoryTerminalScreen(
             return true
         }
 
-        // Crafting grid click (use MC's slot click for real slots)
+        // Crafting grid click
         if (!craftingCollapsed) {
-            // 3x3 input grid
-            for (i in 0..8) {
-                val sx = craftX + (i % 3) * 18 + 1
-                val sy = craftY + (i / 3) * 18 + 1
-                if (mx >= sx && mx < sx + 16 && my >= sy && my < sy + 16) {
-                    slotClicked(menu.slots[InventoryTerminalMenu.CRAFT_INPUT_START + i], InventoryTerminalMenu.CRAFT_INPUT_START + i, button, net.minecraft.world.inventory.ClickType.PICKUP)
-                    return true
+            val craftSlot = getCraftSlotAt(mx, my)
+            if (craftSlot >= 0) {
+                val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
+                if (hasShiftDown()) {
+                    // Shift-click: move to player inventory
+                    slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ClickType.QUICK_MOVE)
+                    // Start shift-drag for dragging over more slots
+                    slotDragButton = button
+                    slotDragShift = true
+                    slotDragVisited.clear()
+                    slotDragVisited.add(DragSlotRef(slotIdx))
+                } else if (!menu.carried.isEmpty && button == 1) {
+                    // Right-click: place one item, start right-drag
+                    slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ClickType.PICKUP)
+                    slotDragButton = 1
+                    slotDragShift = false
+                    slotDragVisited.clear()
+                    slotDragVisited.add(DragSlotRef(slotIdx))
+                } else if (!menu.carried.isEmpty && button == 0) {
+                    // Left-click: start left-drag (defer action to release)
+                    slotDragButton = 0
+                    slotDragShift = false
+                    slotDragStack = menu.carried.copy()
+                    slotDragVisited.clear()
+                    slotDragVisited.add(DragSlotRef(slotIdx))
+                } else {
+                    // Normal click (pickup or swap)
+                    slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ClickType.PICKUP)
                 }
+                return true
             }
             // Output slot
-            val ox = craftX + 3 * 18 + 17
-            val oy = craftY + 19
-            if (mx >= ox && mx < ox + 16 && my >= oy && my < oy + 16) {
+            if (isCraftOutputAt(mx, my)) {
                 val clickType = if (hasShiftDown()) net.minecraft.world.inventory.ClickType.QUICK_MOVE else net.minecraft.world.inventory.ClickType.PICKUP
                 slotClicked(menu.slots[InventoryTerminalMenu.CRAFT_OUTPUT_SLOT], InventoryTerminalMenu.CRAFT_OUTPUT_SLOT, button, clickType)
                 return true
@@ -533,6 +569,30 @@ class InventoryTerminalScreen(
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        // Slot drag across crafting grid
+        if (slotDragButton >= 0 && !craftingCollapsed) {
+            val mx = mouseX.toInt()
+            val my = mouseY.toInt()
+            val craftSlot = getCraftSlotAt(mx, my)
+            if (craftSlot >= 0) {
+                val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
+                val ref = DragSlotRef(slotIdx)
+                if (ref !in slotDragVisited) {
+                    slotDragVisited.add(ref)
+                    if (slotDragShift) {
+                        // Shift-drag: move each slot to player inventory
+                        slotClicked(menu.slots[slotIdx], slotIdx, 0, net.minecraft.world.inventory.ClickType.QUICK_MOVE)
+                    } else if (slotDragButton == 1 && !menu.carried.isEmpty) {
+                        // Right-drag: place one item per slot
+                        slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ClickType.PICKUP)
+                    } else if (slotDragButton == 0) {
+                        // Left-drag: just track the slot, distribute on release
+                    }
+                }
+            }
+            return true
+        }
+
         if (draggingScrollbar && maxScroll > 0) {
             val gridH = layout.rows * SLOT_SIZE
             val totalRows = (repo.viewSize + layout.cols - 1) / layout.cols
@@ -548,6 +608,27 @@ class InventoryTerminalScreen(
     }
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // Finish left-drag distribute
+        if (slotDragButton == 0 && !slotDragShift && slotDragVisited.isNotEmpty() && !slotDragStack.isEmpty) {
+            if (slotDragVisited.size == 1) {
+                // Single click — place all via normal PICKUP
+                val ref = slotDragVisited.first()
+                slotClicked(menu.slots[ref.menuSlotIndex], ref.menuSlotIndex, 0, net.minecraft.world.inventory.ClickType.PICKUP)
+            } else {
+                // Multi-slot drag — send distribute packet to server
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.InvTerminalDistributePayload(
+                        menu.containerId,
+                        slotDragVisited.map { it.menuSlotIndex }
+                    )
+                )
+            }
+        }
+        slotDragButton = -1
+        slotDragShift = false
+        slotDragStack = ItemStack.EMPTY
+        slotDragVisited.clear()
+
         draggingScrollbar = false
         return super.mouseReleased(mouseX, mouseY, button)
     }
@@ -573,6 +654,28 @@ class InventoryTerminalScreen(
             return searchBox.charTyped(codePoint, modifiers)
         }
         return super.charTyped(codePoint, modifiers)
+    }
+
+    // ========== Slot Helpers ==========
+
+    /** Find the crafting input slot index (0-8) at the mouse position, or -1. */
+    private fun getCraftSlotAt(mx: Int, my: Int): Int {
+        if (craftingCollapsed) return -1
+        // Full 18x18 hit area per slot (no dead zones between slots)
+        val relX = mx - craftX
+        val relY = my - craftY
+        if (relX < 0 || relX >= 3 * 18 || relY < 0 || relY >= 3 * 18) return -1
+        val col = relX / 18
+        val row = relY / 18
+        return row * 3 + col
+    }
+
+    /** Find the crafting output slot at mouse position. */
+    private fun isCraftOutputAt(mx: Int, my: Int): Boolean {
+        if (craftingCollapsed) return false
+        val ox = craftX + 3 * 18 + 16
+        val oy = craftY + 18
+        return mx >= ox && mx < ox + 18 && my >= oy && my < oy + 18
     }
 
     // ========== Helpers ==========
