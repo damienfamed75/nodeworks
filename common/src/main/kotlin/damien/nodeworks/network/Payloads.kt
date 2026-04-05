@@ -164,12 +164,15 @@ data class InvTerminalCraftGridPayload(val containerId: Int, val grid: List<Stri
  * C2S: Distribute carried item evenly across specified crafting slot indices.
  * Used for left-click drag in the crafting grid.
  */
-data class InvTerminalDistributePayload(val containerId: Int, val slotIndices: List<Int>) : CustomPacketPayload {
+/**
+ * slotType: 0 = crafting grid, 1 = player inventory (virtual indices 0-35)
+ */
+data class InvTerminalDistributePayload(val containerId: Int, val slotType: Int, val slotIndices: List<Int>) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<InvTerminalDistributePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "inv_terminal_distribute"))
         val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalDistributePayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.slotIndices.size); for (i in p.slotIndices) buf.writeVarInt(i) },
-            { buf -> InvTerminalDistributePayload(buf.readVarInt(), (0 until buf.readVarInt()).map { buf.readVarInt() }) }
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.slotType); buf.writeVarInt(p.slotIndices.size); for (i in p.slotIndices) buf.writeVarInt(i) },
+            { buf -> InvTerminalDistributePayload(buf.readVarInt(), buf.readVarInt(), (0 until buf.readVarInt()).map { buf.readVarInt() }) }
         )
     }
     override fun type() = TYPE

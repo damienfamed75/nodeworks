@@ -92,7 +92,8 @@ class InventoryTerminalScreen(
     private var slotDragButton = -1       // -1 = not dragging, 0 = left, 1 = right
     private var slotDragShift = false     // shift-drag: move items out
     private var slotDragStack = ItemStack.EMPTY // snapshot of carried stack at drag start
-    private data class DragSlotRef(val menuSlotIndex: Int) // for crafting slots (real MC slots)
+    // slotType: 0=crafting, 1=player inventory. index: menu slot index for crafting, virtual index for player
+    private data class DragSlotRef(val slotType: Int, val index: Int)
     private val slotDragVisited = mutableListOf<DragSlotRef>()
     private lateinit var searchBox: EditBox
     private var cachedNetworkColor: Int? = null
@@ -357,21 +358,34 @@ class InventoryTerminalScreen(
         playerMainGrid.renderHoverHighlight(graphics, mouseX, mouseY)
         playerHotbarGrid.renderHoverHighlight(graphics, mouseX, mouseY)
 
-        // Left-drag preview: show distributed items in crafting slots
+        // Left-drag preview: show distributed items
         if (slotDragButton == 0 && !slotDragShift && slotDragVisited.size > 1 && !slotDragStack.isEmpty) {
             val total = slotDragStack.count
             val perSlot = total / slotDragVisited.size
             val remainder = total % slotDragVisited.size
             for ((idx, ref) in slotDragVisited.withIndex()) {
-                val i = ref.menuSlotIndex - InventoryTerminalMenu.CRAFT_INPUT_START
-                if (i < 0 || i > 8) continue
                 val amount = perSlot + if (idx < remainder) 1 else 0
-                if (amount > 0) {
+                if (amount <= 0) continue
+                val previewStack = slotDragStack.copyWithCount(amount)
+
+                if (ref.slotType == 0) {
+                    // Crafting slot
+                    val i = ref.index - InventoryTerminalMenu.CRAFT_INPUT_START
+                    if (i < 0 || i > 8) continue
                     val sx = craftX + (i % 3) * 18 + 1
                     val sy = craftY + (i / 3) * 18 + 1
-                    val previewStack = slotDragStack.copyWithCount(amount)
                     graphics.renderItem(previewStack, sx, sy)
                     graphics.renderItemDecorations(font, previewStack, sx, sy)
+                } else {
+                    // Player inventory slot
+                    val virtualIdx = ref.index
+                    val grid = if (virtualIdx < 27) playerMainGrid else playerHotbarGrid
+                    val gridIdx = if (virtualIdx < 27) virtualIdx else virtualIdx - 27
+                    if (gridIdx < grid.slots.size) {
+                        val slot = grid.slots[gridIdx]
+                        graphics.renderItem(previewStack, slot.x + 1, slot.y + 1)
+                        graphics.renderItemDecorations(font, previewStack, slot.x + 1, slot.y + 1)
+                    }
                 }
             }
         }
@@ -482,21 +496,21 @@ class InventoryTerminalScreen(
                     slotDragButton = button
                     slotDragShift = true
                     slotDragVisited.clear()
-                    slotDragVisited.add(DragSlotRef(slotIdx))
+                    slotDragVisited.add(DragSlotRef(0, slotIdx))
                 } else if (!menu.carried.isEmpty && button == 1) {
                     // Right-click: place one item, start right-drag
                     slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ClickType.PICKUP)
                     slotDragButton = 1
                     slotDragShift = false
                     slotDragVisited.clear()
-                    slotDragVisited.add(DragSlotRef(slotIdx))
+                    slotDragVisited.add(DragSlotRef(0, slotIdx))
                 } else if (!menu.carried.isEmpty && button == 0) {
                     // Left-click: start left-drag (defer action to release)
                     slotDragButton = 0
                     slotDragShift = false
                     slotDragStack = menu.carried.copy()
                     slotDragVisited.clear()
-                    slotDragVisited.add(DragSlotRef(slotIdx))
+                    slotDragVisited.add(DragSlotRef(0, slotIdx))
                 } else {
                     // Normal click (pickup or swap)
                     slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ClickType.PICKUP)
@@ -547,14 +561,39 @@ class InventoryTerminalScreen(
         val playerSlot = mainSlot ?: hotbarSlot
         if (playerSlot != null) {
             val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
-            val action = when {
-                hasShiftDown() -> 2
-                button == 1 -> 1
-                else -> 0
+            if (hasShiftDown()) {
+                // Shift-click: insert into network
+                PlatformServices.clientNetworking.sendToServer(
+                    InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 2)
+                )
+                // Start shift-drag
+                slotDragButton = button
+                slotDragShift = true
+                slotDragVisited.clear()
+                slotDragVisited.add(DragSlotRef(1, virtualIndex))
+            } else if (!menu.carried.isEmpty && button == 0) {
+                // Left-click with items: start left-drag
+                slotDragButton = 0
+                slotDragShift = false
+                slotDragStack = menu.carried.copy()
+                slotDragVisited.clear()
+                slotDragVisited.add(DragSlotRef(1, virtualIndex))
+            } else if (!menu.carried.isEmpty && button == 1) {
+                // Right-click with items: place one, start right-drag
+                PlatformServices.clientNetworking.sendToServer(
+                    InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 1)
+                )
+                slotDragButton = 1
+                slotDragShift = false
+                slotDragVisited.clear()
+                slotDragVisited.add(DragSlotRef(1, virtualIndex))
+            } else {
+                // Normal click
+                val action = if (button == 1) 1 else 0
+                PlatformServices.clientNetworking.sendToServer(
+                    InvTerminalSlotClickPayload(menu.containerId, virtualIndex, action)
+                )
             }
-            PlatformServices.clientNetworking.sendToServer(
-                InvTerminalSlotClickPayload(menu.containerId, virtualIndex, action)
-            )
             return true
         }
 
@@ -569,27 +608,51 @@ class InventoryTerminalScreen(
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
-        // Slot drag across crafting grid
-        if (slotDragButton >= 0 && !craftingCollapsed) {
+        // Slot drag across crafting grid and player inventory
+        if (slotDragButton >= 0) {
             val mx = mouseX.toInt()
             val my = mouseY.toInt()
-            val craftSlot = getCraftSlotAt(mx, my)
-            if (craftSlot >= 0) {
-                val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
-                val ref = DragSlotRef(slotIdx)
+
+            // Check crafting grid
+            if (!craftingCollapsed) {
+                val craftSlot = getCraftSlotAt(mx, my)
+                if (craftSlot >= 0) {
+                    val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
+                    val ref = DragSlotRef(0, slotIdx)
+                    if (ref !in slotDragVisited) {
+                        slotDragVisited.add(ref)
+                        if (slotDragShift) {
+                            slotClicked(menu.slots[slotIdx], slotIdx, 0, net.minecraft.world.inventory.ClickType.QUICK_MOVE)
+                        } else if (slotDragButton == 1 && !menu.carried.isEmpty) {
+                            slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ClickType.PICKUP)
+                        }
+                    }
+                    return true
+                }
+            }
+
+            // Check player inventory
+            val mainSlot = playerMainGrid.getSlotAt(mx, my)
+            val hotbarSlot = playerHotbarGrid.getSlotAt(mx, my)
+            val playerSlot = mainSlot ?: hotbarSlot
+            if (playerSlot != null) {
+                val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
+                val ref = DragSlotRef(1, virtualIndex)
                 if (ref !in slotDragVisited) {
                     slotDragVisited.add(ref)
                     if (slotDragShift) {
-                        // Shift-drag: move each slot to player inventory
-                        slotClicked(menu.slots[slotIdx], slotIdx, 0, net.minecraft.world.inventory.ClickType.QUICK_MOVE)
+                        PlatformServices.clientNetworking.sendToServer(
+                            InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 2)
+                        )
                     } else if (slotDragButton == 1 && !menu.carried.isEmpty) {
-                        // Right-drag: place one item per slot
-                        slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ClickType.PICKUP)
-                    } else if (slotDragButton == 0) {
-                        // Left-drag: just track the slot, distribute on release
+                        PlatformServices.clientNetworking.sendToServer(
+                            InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 1)
+                        )
                     }
                 }
+                return true
             }
+
             return true
         }
 
@@ -611,15 +674,23 @@ class InventoryTerminalScreen(
         // Finish left-drag distribute
         if (slotDragButton == 0 && !slotDragShift && slotDragVisited.isNotEmpty() && !slotDragStack.isEmpty) {
             if (slotDragVisited.size == 1) {
-                // Single click — place all via normal PICKUP
+                // Single click — place all
                 val ref = slotDragVisited.first()
-                slotClicked(menu.slots[ref.menuSlotIndex], ref.menuSlotIndex, 0, net.minecraft.world.inventory.ClickType.PICKUP)
+                if (ref.slotType == 0) {
+                    slotClicked(menu.slots[ref.index], ref.index, 0, net.minecraft.world.inventory.ClickType.PICKUP)
+                } else {
+                    // Player inventory: send via packet
+                    PlatformServices.clientNetworking.sendToServer(
+                        damien.nodeworks.network.InvTerminalSlotClickPayload(menu.containerId, ref.index, 0)
+                    )
+                }
             } else {
                 // Multi-slot drag — send distribute packet to server
+                val slotType = slotDragVisited.first().slotType
                 PlatformServices.clientNetworking.sendToServer(
                     damien.nodeworks.network.InvTerminalDistributePayload(
-                        menu.containerId,
-                        slotDragVisited.map { it.menuSlotIndex }
+                        menu.containerId, slotType,
+                        slotDragVisited.map { it.index }
                     )
                 )
             }
