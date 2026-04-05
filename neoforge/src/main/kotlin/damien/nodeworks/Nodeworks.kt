@@ -221,6 +221,24 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
+        registrar.playToServer(InvTerminalDistributePayload.TYPE, InvTerminalDistributePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleDistribute(player, payload.slotIndices)
+                }
+            }
+        }
+        registrar.playToServer(InvTerminalCraftGridPayload.TYPE, InvTerminalCraftGridPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleCraftGridFill(player, payload.grid)
+                }
+            }
+        }
 
         registrar.playToServer(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC) { payload, context ->
             context.enqueueWork {

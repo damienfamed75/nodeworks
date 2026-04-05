@@ -124,19 +124,15 @@ class VirtualSlotGrid(
     private val hitSlot = VirtualSlot(0, slotType)
 
     fun getSlotAt(mouseX: Int, mouseY: Int, scrollOffset: Int = 0): VirtualSlot? {
-        // Fast bounds check before iterating
-        if (mouseX < x + 1 || mouseX >= x + cols * 18 || mouseY < y + 1 || mouseY >= y + rows * 18) return null
+        // Full 18x18 hit area per slot (no dead zones between slots)
+        if (mouseX < x || mouseX >= x + cols * 18 || mouseY < y || mouseY >= y + rows * 18) return null
 
-        val col = (mouseX - x - 1) / 18
-        val row = (mouseY - y - 1) / 18
+        val col = (mouseX - x) / 18
+        val row = (mouseY - y) / 18
         if (col < 0 || col >= cols || row < 0 || row >= rows) return null
 
         val i = row * cols + col
         val slot = slots[i]
-        val ix = slot.x + 1
-        val iy = slot.y + 1
-        // Verify we're within the 16x16 item area (not in the 1px border)
-        if (mouseX < ix || mouseX >= ix + 16 || mouseY < iy || mouseY >= iy + 16) return null
 
         hitSlot.index = if (slotType == VirtualSlot.GridType.NETWORK) scrollOffset * cols + i else slot.index
         hitSlot.x = slot.x

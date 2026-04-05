@@ -78,6 +78,8 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(InvTerminalSlotClickPayload.TYPE, InvTerminalSlotClickPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalCraftGridPayload.TYPE, InvTerminalCraftGridPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalDistributePayload.TYPE, InvTerminalDistributePayload.CODEC)
         PayloadTypeRegistry.playC2S().register(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC)
@@ -230,6 +232,22 @@ object TerminalPackets {
             val menu = player.containerMenu
             if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
                 menu.handlePlayerSlotClick(player, payload.slotIndex, payload.action)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalDistributePayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleDistribute(player, payload.slotIndices)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalCraftGridPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleCraftGridFill(player, payload.grid)
             }
         }
 

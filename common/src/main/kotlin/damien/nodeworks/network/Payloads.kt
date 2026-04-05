@@ -146,6 +146,36 @@ data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val
 }
 
 /**
+ * C2S: Fill the Inventory Terminal crafting grid with a recipe from JEI.
+ * grid: 9 item IDs (empty string = empty slot)
+ */
+data class InvTerminalCraftGridPayload(val containerId: Int, val grid: List<String>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalCraftGridPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "inv_terminal_craft_grid"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalCraftGridPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); for (id in p.grid) buf.writeUtf(id, 256) },
+            { buf -> InvTerminalCraftGridPayload(buf.readVarInt(), (0 until 9).map { buf.readUtf(256) }) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * C2S: Distribute carried item evenly across specified crafting slot indices.
+ * Used for left-click drag in the crafting grid.
+ */
+data class InvTerminalDistributePayload(val containerId: Int, val slotIndices: List<Int>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalDistributePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "inv_terminal_distribute"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalDistributePayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.slotIndices.size); for (i in p.slotIndices) buf.writeVarInt(i) },
+            { buf -> InvTerminalDistributePayload(buf.readVarInt(), (0 until buf.readVarInt()).map { buf.readVarInt() }) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
  * C2S: Click on a player inventory slot in the Inventory Terminal.
  * action: 0=left click, 1=right click, 2=shift-click
  */
