@@ -179,6 +179,20 @@ data class InvTerminalDistributePayload(val containerId: Int, val slotType: Int,
 }
 
 /**
+ * C2S: Double-click collect — gather matching items from crafting grid and player inventory onto cursor.
+ */
+data class InvTerminalCollectPayload(val containerId: Int, val itemId: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalCollectPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "inv_terminal_collect"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalCollectPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.itemId, 256) },
+            { buf -> InvTerminalCollectPayload(buf.readVarInt(), buf.readUtf(256)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
  * C2S: Click on a player inventory slot in the Inventory Terminal.
  * action: 0=left click, 1=right click, 2=shift-click
  */
