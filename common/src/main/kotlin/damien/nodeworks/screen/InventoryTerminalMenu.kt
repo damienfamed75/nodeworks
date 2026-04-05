@@ -314,36 +314,56 @@ class InventoryTerminalMenu(
      * Distribute the carried item evenly across the specified crafting slot indices.
      * Used for left-click drag.
      */
-    fun handleDistribute(player: Player, slotIndices: List<Int>) {
+    /**
+     * Distribute carried item evenly across slots.
+     * slotType 0 = crafting grid (slot indices are menu slot indices)
+     * slotType 1 = player inventory (slot indices are virtual: 0-26=main, 27-35=hotbar)
+     */
+    fun handleDistribute(player: Player, slotType: Int, slotIndices: List<Int>) {
         val carried = carried
         if (carried.isEmpty || slotIndices.isEmpty()) return
 
-        val validSlots = slotIndices.filter { it in CRAFT_INPUT_START until CRAFT_OUTPUT_SLOT }
-        if (validSlots.isEmpty()) return
-
         val total = carried.count
-        val perSlot = total / validSlots.size
-        val remainder = total % validSlots.size
+        val count = slotIndices.size
+        val perSlot = total / count
+        val remainder = total % count
         if (perSlot <= 0) return
 
         var distributed = 0
-        for ((idx, slotIndex) in validSlots.withIndex()) {
-            val slot = slots[slotIndex]
+        for ((idx, slotIndex) in slotIndices.withIndex()) {
             val amount = perSlot + if (idx < remainder) 1 else 0
-            val existing = slot.item
-            if (existing.isEmpty) {
-                slot.set(carried.copyWithCount(amount))
-            } else if (ItemStack.isSameItemSameComponents(existing, carried) && existing.count + amount <= existing.maxStackSize) {
-                existing.grow(amount)
-            } else {
-                continue
+
+            when (slotType) {
+                0 -> {
+                    // Crafting grid
+                    if (slotIndex !in CRAFT_INPUT_START until CRAFT_OUTPUT_SLOT) continue
+                    val slot = slots[slotIndex]
+                    val existing = slot.item
+                    if (existing.isEmpty) {
+                        slot.set(carried.copyWithCount(amount))
+                    } else if (ItemStack.isSameItemSameComponents(existing, carried) && existing.count + amount <= existing.maxStackSize) {
+                        existing.grow(amount)
+                    } else continue
+                }
+                1 -> {
+                    // Player inventory (virtual index → real inv index)
+                    if (slotIndex < 0 || slotIndex >= 36) continue
+                    val invIndex = if (slotIndex < 27) slotIndex + 9 else slotIndex - 27
+                    val existing = playerInventory.getItem(invIndex)
+                    if (existing.isEmpty) {
+                        playerInventory.setItem(invIndex, carried.copyWithCount(amount))
+                    } else if (ItemStack.isSameItemSameComponents(existing, carried) && existing.count + amount <= existing.maxStackSize) {
+                        existing.grow(amount)
+                    } else continue
+                }
+                else -> continue
             }
             distributed += amount
         }
 
         carried.shrink(distributed)
         if (carried.isEmpty) setCarried(ItemStack.EMPTY)
-        slotsChanged(craftingContainer)
+        if (slotType == 0) slotsChanged(craftingContainer)
         playerInventory.setChanged()
     }
 

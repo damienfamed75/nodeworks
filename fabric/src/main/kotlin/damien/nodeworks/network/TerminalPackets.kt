@@ -239,7 +239,7 @@ object TerminalPackets {
             val player = context.player()
             val menu = player.containerMenu
             if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
-                menu.handleDistribute(player, payload.slotIndices)
+                menu.handleDistribute(player, payload.slotType, payload.slotIndices)
             }
         }
 
