@@ -55,6 +55,8 @@ class NodeworksJeiPlugin : IModPlugin {
             ProcessingSetScreen::class.java,
             ProcessingSetGhostHandler()
         )
+
+        // JEI item focus for Inventory Terminal handled via screen's getSlotUnderMouse override
     }
 }
 
@@ -268,3 +270,4 @@ class ProcessingSetGhostHandler : IGhostIngredientHandler<ProcessingSetScreen> {
         }
     }
 }
+

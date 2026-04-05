@@ -221,6 +221,15 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
+        registrar.playToServer(InvTerminalCraftPayload.TYPE, InvTerminalCraftPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleCraftRequest(player, payload.itemId, payload.count)
+                }
+            }
+        }
         registrar.playToServer(InvTerminalCollectPayload.TYPE, InvTerminalCollectPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()

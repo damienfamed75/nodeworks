@@ -297,13 +297,32 @@ class InventoryTerminalMenu(
             val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
 
-            // Try to find the item in player inventory first
+            // Try player inventory first, then pull from network
             val invSlot = playerInventory.findSlotMatchingItem(ItemStack(item))
             if (invSlot >= 0) {
                 val taken = playerInventory.getItem(invSlot).split(1)
                 craftingContainer.setItem(i, taken)
+            } else {
+                // Pull from network storage
+                val lvl = serverLevel ?: continue
+                val snap = snapshot ?: continue
+                val c = cache
+                var extracted = 0L
+                for (card in NetworkStorageHelper.getStorageCards(snap)) {
+                    if (extracted >= 1) break
+                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+                    val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
+                        storage, { it == itemId }, 1
+                    )
+                    if (amount > 0) {
+                        c?.onExtracted(itemId, false, amount)
+                        extracted += amount
+                    }
+                }
+                if (extracted > 0) {
+                    craftingContainer.setItem(i, ItemStack(item, 1))
+                }
             }
-            // TODO: auto-pull from network if enabled
         }
 
         slotsChanged(craftingContainer)
@@ -414,6 +433,68 @@ class InventoryTerminalMenu(
         setCarried(result)
         slotsChanged(craftingContainer)
         playerInventory.setChanged()
+    }
+
+    /**
+     * Handle an automated craft request (Alt+click).
+     * Finds a CraftingCore, allocates it, and initiates crafting via CraftingHelper.
+     */
+    fun handleCraftRequest(player: Player, itemId: String, count: Int) {
+        val lvl = serverLevel ?: return
+        val snap = snapshot ?: return
+        if (count <= 0 || count > 999) return
+
+        // Find an available CraftingCore
+        val cpu = snap.cpus.firstOrNull { cpu ->
+            val entity = lvl.getBlockEntity(cpu.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity
+            entity != null && !entity.isCrafting
+        }
+        if (cpu == null) {
+            (player as? ServerPlayer)?.sendSystemMessage(
+                net.minecraft.network.chat.Component.literal("No crafting CPU available!")
+            )
+            return
+        }
+
+        // Initiate crafting
+        try {
+            val result = damien.nodeworks.script.CraftingHelper.craft(
+                itemId, count, lvl, snap,
+                cache = cache,
+                cpuPos = cpu.pos
+            )
+            if (result != null) {
+                if (result.pendingJob != null) {
+                    // Async processing (furnace, etc.) — items are being processed
+                    (player as? ServerPlayer)?.sendSystemMessage(
+                        net.minecraft.network.chat.Component.literal("Processing ${result.count}x ${result.outputName}...")
+                    )
+                    // CPU will be released when the handler completes
+                } else {
+                    // Synchronous craft complete — release CPU buffer to storage
+                    val cpuEntity = lvl.getBlockEntity(cpu.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity
+                    if (cpuEntity != null) {
+                        damien.nodeworks.script.CraftingHelper.releaseCraftResult(
+                            result.copy(cpu = cpuEntity, level = lvl, snapshot = snap, cache = cache)
+                        )
+                    }
+                    (player as? ServerPlayer)?.sendSystemMessage(
+                        net.minecraft.network.chat.Component.literal("Crafted ${result.count}x ${result.outputName}")
+                    )
+                }
+            } else {
+                val reason = damien.nodeworks.script.CraftingHelper.lastFailReason ?: "unknown"
+                (player as? ServerPlayer)?.sendSystemMessage(
+                    net.minecraft.network.chat.Component.literal("Failed to craft: $reason")
+                )
+            }
+        } catch (e: Exception) {
+            (player as? ServerPlayer)?.sendSystemMessage(
+                net.minecraft.network.chat.Component.literal("Craft error: ${e.message}")
+            )
+        }
+
+        needsImmediateSync = true
     }
 
     override fun stillValid(player: Player): Boolean = true
