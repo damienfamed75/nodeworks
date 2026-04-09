@@ -91,6 +91,17 @@ class InventoryTerminalScreen(
     private var lastClickSlotType = -1
     private var lastClickSlotIndex = -1
 
+    // Pinned crafting row
+    data class PinnedCraft(val itemId: String, val name: String, val count: Int, var status: PinnedStatus, var seenTick: Long = 0)
+    enum class PinnedStatus { IN_PROGRESS, COMPLETE }
+    val pinnedCrafts: MutableList<PinnedCraft>
+    private val MAX_PINNED get() = layout.cols
+
+    companion object {
+        // Persist pinned crafts per terminal position across screen open/close
+        private val pinnedCraftsCache = HashMap<net.minecraft.core.BlockPos, MutableList<PinnedCraft>>()
+    }
+
     // Craft dialogue state
     private var craftDialogueItemId: String? = null
     private var craftDialogueItemName: String = ""
@@ -112,6 +123,13 @@ class InventoryTerminalScreen(
         computeLayout()
         inventoryLabelY = -9999
         titleLabelY = -9999
+        // Restore pinned crafts from cache
+        val pos = menu.terminalPos
+        pinnedCrafts = if (pos != null) {
+            pinnedCraftsCache.getOrPut(pos) { mutableListOf() }
+        } else {
+            mutableListOf()
+        }
     }
 
     private fun computeLayout() {
@@ -177,10 +195,10 @@ class InventoryTerminalScreen(
         addRenderableWidget(searchBox)
 
         // Craft dialogue count field (hidden until dialogue opens)
-        val dialogDw = 140
+        val dialogDw = 160
         val dialogDx = leftPos + (imageWidth - dialogDw) / 2
-        val dialogDy = topPos + (imageHeight - 60) / 2
-        craftDialogueField = EditBox(font, dialogDx + 46, dialogDy + 25, 86, 12, Component.literal("Count"))
+        val dialogDy = topPos + (imageHeight - 70) / 2
+        craftDialogueField = EditBox(font, dialogDx + 24, dialogDy + 28, dialogDw - 48, 12, Component.literal("Count"))
         craftDialogueField!!.setMaxLength(4)
         craftDialogueField!!.value = "1"
         craftDialogueField!!.visible = craftDialogueItemId != null
@@ -270,12 +288,20 @@ class InventoryTerminalScreen(
         } else -1
         NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor)
 
-        // Network item grid
+        // Network item grid background
         networkGrid.renderBackground(graphics)
+
+        // Pinned row: lighter background overlay per slot (preserves slot borders)
+        for (c in 0 until layout.cols) {
+            val sx = networkGrid.x + c * 18 + 1
+            val sy = networkGrid.y + 1
+            graphics.fill(sx, sy, sx + 16, sy + 16, 0x30FFFFFF.toInt())
+        }
 
         // Scrollbar
         repo.ensureUpdated()
-        maxScroll = maxOf(0, (repo.viewSize + layout.cols - 1) / layout.cols - layout.rows)
+        val availableRows = layout.rows - 1 // first row always reserved for pinned
+        maxScroll = maxOf(0, (repo.viewSize + layout.cols - 1) / layout.cols - availableRows)
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, maxScroll))
         val scrollbarX = gridX + layout.cols * SLOT_SIZE + 2
         val gridH = layout.rows * SLOT_SIZE
@@ -341,18 +367,48 @@ class InventoryTerminalScreen(
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        // Hide the craft dialogue field from normal rendering — we render it manually at higher Z
+        val fieldWasVisible = craftDialogueField?.visible ?: false
+        if (fieldWasVisible) craftDialogueField?.visible = false
         super.render(graphics, mouseX, mouseY, partialTick)
+        if (fieldWasVisible) craftDialogueField?.visible = true
 
         // Ensure repo view is up-to-date before reading
         repo.ensureUpdated()
+        updatePinnedCrafts()
 
-        // Render network items
-        networkGrid.renderItems(graphics, scrollOffset, repo.viewSize)
+        // Pinned crafting row (always visible as first row)
+        val pinnedY = networkGrid.y + 1
+        for ((i, pinned) in pinnedCrafts.withIndex()) {
+            if (i >= layout.cols) break
+            val sx = networkGrid.x + i * 18 + 1
+            val stack = getItemStack(pinned.itemId)
+            if (!stack.isEmpty) {
+                graphics.renderItem(stack, sx, pinnedY)
+                if (pinned.count > 1) {
+                    graphics.renderItemDecorations(font, stack, sx, pinnedY, formatCount(pinned.count.toLong()))
+                }
+                // Status overlay icon
+                graphics.pose().pushPose()
+                graphics.pose().translate(0f, 0f, 200f)
+                val statusIcon = if (pinned.status == PinnedStatus.IN_PROGRESS) Icons.CRAFTING_IN_PROGRESS else Icons.CRAFTING_COMPLETE
+                statusIcon.draw(graphics, sx + 8, pinnedY - 2, 8)
+                graphics.pose().popPose()
+            }
+        }
+        // Separator line below pinned row
+        val sepY = networkGrid.y + 18
+        graphics.fill(networkGrid.x, sepY, networkGrid.x + layout.cols * 18, sepY + 1, 0xFF444444.toInt())
 
-        // Craftable overlays
+        // Render network items (skip first row — reserved for pinned)
+        networkGrid.renderItems(graphics, scrollOffset, repo.viewSize, 1)
+
+        // Craftable overlays (skip pinned row)
         val altHeld = hasAltDown()
         for ((i, slot) in networkGrid.slots.withIndex()) {
-            val viewIndex = scrollOffset * layout.cols + i
+            val row = i / layout.cols
+            if (row < 1) continue // skip pinned row
+            val viewIndex = scrollOffset * layout.cols + (i - layout.cols)
             val entry = repo.getViewEntry(viewIndex) ?: continue
             if (entry.info.isCraftable) {
                 val ix = slot.x + 1
@@ -373,9 +429,11 @@ class InventoryTerminalScreen(
         playerHotbarGrid.renderItems(graphics)
 
         // Set hoveredSlot for JEI R/U key support
-        val networkHover = networkGrid.getSlotAt(mouseX, mouseY, scrollOffset)
-        if (networkHover != null) {
-            val entry = repo.getViewEntry(networkHover.index)
+        val networkHover = networkGrid.getSlotAt(mouseX, mouseY, 0)
+        if (networkHover != null && networkHover.index / layout.cols >= 1) {
+            // Row 2+ = network items
+            val viewIndex = scrollOffset * layout.cols + (networkHover.index - layout.cols)
+            val entry = repo.getViewEntry(viewIndex)
             if (entry != null) {
                 val id = net.minecraft.resources.ResourceLocation.tryParse(entry.info.itemId)
                 if (id != null) {
@@ -469,9 +527,11 @@ class InventoryTerminalScreen(
         }
 
         // Tooltips
-        val hoveredNetwork = networkGrid.getSlotAt(mouseX, mouseY, scrollOffset)
-        if (hoveredNetwork != null) {
-            val entry = repo.getViewEntry(hoveredNetwork.index)
+        val hoveredNetwork = networkGrid.getSlotAt(mouseX, mouseY, 0)
+        val hoveredIsNetworkItem = hoveredNetwork != null && hoveredNetwork.index / layout.cols >= 1
+        if (hoveredIsNetworkItem) {
+            val viewIndex = scrollOffset * layout.cols + (hoveredNetwork!!.index - layout.cols)
+            val entry = repo.getViewEntry(viewIndex)
             if (entry != null) {
                 val stack = getItemStack(entry.info.itemId)
                 if (!stack.isEmpty) {
@@ -483,7 +543,7 @@ class InventoryTerminalScreen(
                     graphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 }
             }
-        } else {
+        } else if (!hoveredIsNetworkItem) {
             // Crafting slot tooltip
             var craftTooltipShown = false
             if (!craftingCollapsed) {
@@ -520,8 +580,8 @@ class InventoryTerminalScreen(
 
         // Craft dialogue overlay
         if (craftDialogueItemId != null) {
-            val dw = 140
-            val dh = 60
+            val dw = 160
+            val dh = 70
             val dx = leftPos + (imageWidth - dw) / 2
             val dy = topPos + (imageHeight - dh) / 2
 
@@ -537,8 +597,23 @@ class InventoryTerminalScreen(
             }
             graphics.drawString(font, craftDialogueItemName, dx + 26, dy + 10, 0xFFFFFFFF.toInt())
 
-            // Count label
-            graphics.drawString(font, "Count:", dx + 6, dy + 28, 0xFFAAAAAA.toInt())
+            // Render the count field at the popup's Z level
+            craftDialogueField?.let { field ->
+                if (field.visible) field.renderWidget(graphics, mouseX, mouseY, 0f)
+            }
+
+            // Count stepper: [-] [field] [+]
+            val stepperY = dy + 28
+            val minusBtnX = dx + 6
+            val plusBtnX = dx + dw - 22
+            val stepBtnW = 16
+            val stepBtnH = 14
+            val minusHover = mouseX >= minusBtnX && mouseX < minusBtnX + stepBtnW && mouseY >= stepperY && mouseY < stepperY + stepBtnH
+            val plusHover = mouseX >= plusBtnX && mouseX < plusBtnX + stepBtnW && mouseY >= stepperY && mouseY < stepperY + stepBtnH
+            (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, minusBtnX, stepperY, stepBtnW, stepBtnH)
+            (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, plusBtnX, stepperY, stepBtnW, stepBtnH)
+            graphics.drawString(font, "-", minusBtnX + (stepBtnW - font.width("-")) / 2, stepperY + 3, if (minusHover) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt())
+            graphics.drawString(font, "+", plusBtnX + (stepBtnW - font.width("+")) / 2, stepperY + 3, if (plusHover) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt())
 
             // Craft / Cancel buttons
             val craftBtnX = dx + 6
@@ -583,14 +658,33 @@ class InventoryTerminalScreen(
 
         // Craft dialogue buttons
         if (craftDialogueItemId != null) {
-            val dw = 140
-            val dh = 60
+            val dw = 160
+            val dh = 70
             val dx = leftPos + (imageWidth - dw) / 2
             val dy = topPos + (imageHeight - dh) / 2
             val craftBtnX = dx + 6
             val cancelBtnX = dx + dw / 2 + 2
             val btnY = dy + dh - 18
             val btnW = dw / 2 - 8
+
+            // Stepper buttons
+            val stepperY = dy + 28
+            val minusBtnX = dx + 6
+            val plusBtnX = dx + dw - 22
+            val stepBtnW = 16
+            val stepBtnH = 14
+            if (mx >= minusBtnX && mx < minusBtnX + stepBtnW && my >= stepperY && my < stepperY + stepBtnH) {
+                val current = craftDialogueField?.value?.toIntOrNull() ?: 1
+                val step = if (hasShiftDown()) 10 else 1
+                craftDialogueField?.value = maxOf(1, current - step).toString()
+                return true
+            }
+            if (mx >= plusBtnX && mx < plusBtnX + stepBtnW && my >= stepperY && my < stepperY + stepBtnH) {
+                val current = craftDialogueField?.value?.toIntOrNull() ?: 1
+                val step = if (hasShiftDown()) 10 else 1
+                craftDialogueField?.value = minOf(999, current + step).toString()
+                return true
+            }
 
             if (mx >= craftBtnX && mx < craftBtnX + btnW && my >= btnY && my < btnY + 14) {
                 // Craft button
@@ -599,6 +693,10 @@ class InventoryTerminalScreen(
                     PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
                     )
+                    // Add to pinned crafts
+                    if (pinnedCrafts.size < MAX_PINNED) {
+                        pinnedCrafts.add(PinnedCraft(craftDialogueItemId!!, craftDialogueItemName, count, PinnedStatus.IN_PROGRESS))
+                    }
                 }
                 craftDialogueItemId = null
                 craftDialogueField?.visible = false
@@ -705,11 +803,27 @@ class InventoryTerminalScreen(
         }
 
         // Network grid click
-        val networkSlot = networkGrid.getSlotAt(mx, my, scrollOffset)
+        val networkSlot = networkGrid.getSlotAt(mx, my, 0) // raw grid position
         if (networkSlot != null) {
-            val entry = repo.getViewEntry(networkSlot.index)
+            val gridRow = networkSlot.index / layout.cols
+
+            // First row = pinned crafts area
+            if (gridRow == 0) {
+                val pinnedIdx = networkSlot.index % layout.cols
+                if (pinnedIdx < pinnedCrafts.size) {
+                    val pinned = pinnedCrafts[pinnedIdx]
+                    if (pinned.status == PinnedStatus.COMPLETE) {
+                        // Click completed pinned item to dismiss
+                        pinnedCrafts.removeAt(pinnedIdx)
+                    }
+                }
+                return true
+            }
+
+            // Row 2+: network items (offset by 1 row for pinned)
+            val viewIndex = scrollOffset * layout.cols + (networkSlot.index - layout.cols)
+            val entry = repo.getViewEntry(viewIndex)
             if (entry != null && entry.info.isCraftable && (hasAltDown() || entry.info.count == 0L)) {
-                // Alt+click or click on zero-count craftable: open craft dialogue
                 craftDialogueItemId = entry.info.itemId
                 craftDialogueItemName = entry.info.name
                 craftDialogueField?.value = "1"
@@ -910,6 +1024,9 @@ class InventoryTerminalScreen(
                     PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
                     )
+                    if (pinnedCrafts.size < MAX_PINNED) {
+                        pinnedCrafts.add(PinnedCraft(craftDialogueItemId!!, craftDialogueItemName, count, PinnedStatus.IN_PROGRESS))
+                    }
                 }
                 craftDialogueItemId = null
                 craftDialogueField?.visible = false
@@ -941,6 +1058,29 @@ class InventoryTerminalScreen(
             return searchBox.charTyped(codePoint, modifiers)
         }
         return super.charTyped(codePoint, modifiers)
+    }
+
+    /** Check if any pinned crafts are now complete based on network inventory state. */
+    fun updatePinnedCrafts() {
+        val now = System.currentTimeMillis()
+        val iter = pinnedCrafts.iterator()
+        while (iter.hasNext()) {
+            val pinned = iter.next()
+            if (pinned.status == PinnedStatus.IN_PROGRESS) {
+                // Check if the item appeared/increased in network storage
+                repo.ensureUpdated()
+                val entry = repo.view.firstOrNull { it.info.itemId == pinned.itemId }
+                if (entry != null && entry.info.count > 0) {
+                    pinned.status = PinnedStatus.COMPLETE
+                    pinned.seenTick = now
+                }
+            } else if (pinned.status == PinnedStatus.COMPLETE) {
+                // Dismiss after 5 seconds of being visible
+                if (now - pinned.seenTick > 5000) {
+                    iter.remove()
+                }
+            }
+        }
     }
 
     /** For JEI: get the item ID of the hovered network grid item. */

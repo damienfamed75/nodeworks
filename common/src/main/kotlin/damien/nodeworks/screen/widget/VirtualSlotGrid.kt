@@ -80,19 +80,24 @@ class VirtualSlotGrid(
     // Reusable slot for provider callbacks — avoids per-frame allocations
     private val tempSlot = VirtualSlot(0, slotType)
 
-    fun renderItems(graphics: GuiGraphics, scrollOffset: Int = 0, totalItems: Int = slots.size) {
+    fun renderItems(graphics: GuiGraphics, scrollOffset: Int = 0, totalItems: Int = slots.size, skipRows: Int = 0) {
         val font = Minecraft.getInstance().font
         val provider = stackProvider ?: return
         val formatter = countFormatter
 
         for ((i, slot) in slots.withIndex()) {
+            // Skip reserved rows (e.g. for pinned crafts)
+            val row = i / cols
+            if (row < skipRows) continue
+
             val viewIndex = if (slotType == VirtualSlot.GridType.NETWORK) {
-                scrollOffset * cols + i
+                scrollOffset * cols + (i - skipRows * cols)
             } else {
                 slot.index
             }
 
             if (slotType == VirtualSlot.GridType.NETWORK && viewIndex >= totalItems) continue
+            if (viewIndex < 0) continue
 
             // Reuse temp slot to avoid allocation
             tempSlot.index = viewIndex

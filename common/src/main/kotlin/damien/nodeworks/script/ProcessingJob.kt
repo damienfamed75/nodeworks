@@ -62,7 +62,13 @@ class ProcessingJob(
                 scheduler.addPendingJob(SchedulerImpl.PendingJob(
                     pollFn = { tryExtract(getters) },
                     timeoutAt = scheduler.currentTick + timeoutTicks,
-                    onComplete = { success -> pendingResult.complete(success) },
+                    onComplete = { success ->
+                        if (!success) {
+                            // Timeout or error — release CPU with whatever is in the buffer
+                            releaseCpu()
+                        }
+                        pendingResult.complete(success)
+                    },
                     label = "pull:${api.name}"
                 ))
 
@@ -71,6 +77,24 @@ class ProcessingJob(
         })
 
         return table
+    }
+
+    /** Flush CPU buffer to network storage and mark idle. */
+    private fun releaseCpu() {
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos)
+        val leftovers = cpu.clearBuffer()
+        for ((bufItemId, bufCount) in leftovers) {
+            val bufId = net.minecraft.resources.ResourceLocation.tryParse(bufItemId) ?: continue
+            val bufItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(bufId) ?: continue
+            var rem = bufCount
+            while (rem > 0) {
+                val batch = minOf(rem, bufItem.getDefaultMaxStackSize())
+                val stack = net.minecraft.world.item.ItemStack(bufItem, batch)
+                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, null)
+                rem -= if (inserted > 0) inserted else batch
+            }
+        }
+        cpu.setCrafting(false)
     }
 
     private val isStale: Boolean get() = cpu.jobGeneration != startGeneration
@@ -88,9 +112,8 @@ class ProcessingJob(
             if (available < needed) return false
         }
 
-        // Items are ready — extract and route appropriately
-        val stale = isStale
-        val snapshot = if (stale) damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos) else null
+        // Items are ready — extract and route to network storage directly
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos)
 
         for ((outputId, needed) in remaining.toList()) {
             var stillNeeded = needed.toLong()
@@ -101,21 +124,33 @@ class ProcessingJob(
                     storage, { CardHandle.matchesFilter(it, outputId) }, stillNeeded
                 )
                 if (extracted > 0) {
-                    if (stale) {
-                        // Job was cancelled — return items to network storage
-                        val id = net.minecraft.resources.ResourceLocation.tryParse(outputId)
-                        val item = id?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.get(it) }
-                        if (item != null) {
-                            NetworkStorageHelper.insertItemStack(level, snapshot!!, net.minecraft.world.item.ItemStack(item, extracted.toInt()), null)
-                        }
-                    } else {
-                        cpu.addToBuffer(outputId, extracted.toInt())
+                    // Route extracted items directly to network storage
+                    val id = net.minecraft.resources.ResourceLocation.tryParse(outputId)
+                    val item = id?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.get(it) }
+                    if (item != null) {
+                        NetworkStorageHelper.insertItemStack(level, snapshot, net.minecraft.world.item.ItemStack(item, extracted.toInt()), null)
                     }
                     stillNeeded -= extracted
                 }
             }
         }
         remaining.clear()
+
+        // Flush any remaining CPU buffer contents to network and release the CPU
+        val leftovers = cpu.clearBuffer()
+        for ((bufItemId, bufCount) in leftovers) {
+            val bufId = net.minecraft.resources.ResourceLocation.tryParse(bufItemId) ?: continue
+            val bufItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(bufId) ?: continue
+            var rem = bufCount
+            while (rem > 0) {
+                val batch = minOf(rem, bufItem.getDefaultMaxStackSize())
+                val stack = net.minecraft.world.item.ItemStack(bufItem, batch)
+                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, null)
+                rem -= if (inserted > 0) inserted else batch
+            }
+        }
+        cpu.setCrafting(false)
+
         return true
     }
 }
