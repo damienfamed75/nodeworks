@@ -63,8 +63,8 @@ class ProcessingJob(
                     pollFn = { tryExtract(getters) },
                     timeoutAt = scheduler.currentTick + timeoutTicks,
                     onComplete = { success ->
-                        if (!success) {
-                            // Timeout or error — release CPU with whatever is in the buffer
+                        cpu.pendingJobCount = maxOf(0, cpu.pendingJobCount - 1)
+                        if (cpu.pendingJobCount <= 0) {
                             releaseCpu()
                         }
                         pendingResult.complete(success)
@@ -136,20 +136,9 @@ class ProcessingJob(
         }
         remaining.clear()
 
-        // Flush any remaining CPU buffer contents to network and release the CPU
-        val leftovers = cpu.clearBuffer()
-        for ((bufItemId, bufCount) in leftovers) {
-            val bufId = net.minecraft.resources.ResourceLocation.tryParse(bufItemId) ?: continue
-            val bufItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(bufId) ?: continue
-            var rem = bufCount
-            while (rem > 0) {
-                val batch = minOf(rem, bufItem.getDefaultMaxStackSize())
-                val stack = net.minecraft.world.item.ItemStack(bufItem, batch)
-                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, null)
-                rem -= if (inserted > 0) inserted else batch
-            }
-        }
-        cpu.setCrafting(false)
+        // CPU release is handled by onComplete callback, not here.
+        // tryExtract may be called from the immediate path (job:pull succeeds instantly)
+        // where pendingJobCount was never incremented, so we must not touch it here.
 
         return true
     }

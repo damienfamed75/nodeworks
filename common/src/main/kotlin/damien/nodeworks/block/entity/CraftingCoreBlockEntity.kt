@@ -58,6 +58,9 @@ class CraftingCoreBlockEntity(
     var jobGeneration: Int = 0
         private set
 
+    /** Number of in-flight processing jobs using this CPU. Only release when it reaches 0. */
+    var pendingJobCount: Int = 0
+
     // --- Buffer operations ---
 
     fun addToBuffer(itemId: String, count: Int): Boolean {

@@ -230,6 +230,15 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
+        registrar.playToServer(CraftQueueExtractPayload.TYPE, CraftQueueExtractPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleQueueExtract(player, payload.entryId, payload.action)
+                }
+            }
+        }
         registrar.playToServer(InvTerminalCollectPayload.TYPE, InvTerminalCollectPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
@@ -372,6 +381,15 @@ class Nodeworks(modBus: IEventBus) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.DiagnosticMenu && menu.containerId == payload.containerId) {
                     menu.craftTree = payload.tree
+                }
+            }
+        }
+
+        registrar.playToClient(CraftQueueSyncPayload.TYPE, CraftQueueSyncPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val screen = net.minecraft.client.Minecraft.getInstance().screen
+                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
+                    screen.handleQueueSync(payload)
                 }
             }
         }

@@ -383,3 +383,63 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
     }
     override fun type() = TYPE
 }
+
+/**
+ * S2C: Sync craft queue entries to the client for the reserved row.
+ */
+data class CraftQueueSyncPayload(val containerId: Int, val entries: List<QueueEntry>) : CustomPacketPayload {
+    data class QueueEntry(
+        val id: Int,
+        val itemId: String,
+        val name: String,
+        val totalRequested: Int,
+        val readyCount: Int,
+        val availableCount: Int,
+        val isComplete: Boolean
+    )
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CraftQueueSyncPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "craft_queue_sync"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CraftQueueSyncPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                buf.writeVarInt(p.entries.size)
+                for (e in p.entries) {
+                    buf.writeVarInt(e.id)
+                    buf.writeUtf(e.itemId, 256)
+                    buf.writeUtf(e.name, 256)
+                    buf.writeVarInt(e.totalRequested)
+                    buf.writeVarInt(e.readyCount)
+                    buf.writeVarInt(e.availableCount)
+                    buf.writeBoolean(e.isComplete)
+                }
+            },
+            { buf ->
+                val containerId = buf.readVarInt()
+                val size = buf.readVarInt()
+                val entries = (0 until size).map {
+                    QueueEntry(
+                        buf.readVarInt(), buf.readUtf(256), buf.readUtf(256),
+                        buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean()
+                    )
+                }
+                CraftQueueSyncPayload(containerId, entries)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * C2S: Extract ready items from a craft queue slot.
+ * action: 0=extract to cursor, 1=shift to inventory, 2=extract half
+ */
+data class CraftQueueExtractPayload(val containerId: Int, val entryId: Int, val action: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CraftQueueExtractPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "craft_queue_extract"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CraftQueueExtractPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.entryId); buf.writeVarInt(p.action) },
+            { buf -> CraftQueueExtractPayload(buf.readVarInt(), buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}

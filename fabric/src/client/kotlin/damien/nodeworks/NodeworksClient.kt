@@ -127,5 +127,12 @@ object NodeworksClient : ClientModInitializer {
                 menu.craftTree = payload.tree
             }
         }
+
+        ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.CraftQueueSyncPayload.TYPE) { payload, context ->
+            val screen = Minecraft.getInstance().screen
+            if (screen is InventoryTerminalScreen) {
+                screen.handleQueueSync(payload)
+            }
+        }
     }
 }
