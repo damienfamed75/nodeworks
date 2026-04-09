@@ -91,16 +91,14 @@ class InventoryTerminalScreen(
     private var lastClickSlotType = -1
     private var lastClickSlotIndex = -1
 
-    // Pinned crafting row
-    data class PinnedCraft(val itemId: String, val name: String, val count: Int, var status: PinnedStatus, var seenTick: Long = 0)
-    enum class PinnedStatus { IN_PROGRESS, COMPLETE }
-    val pinnedCrafts: MutableList<PinnedCraft>
+    // Server-driven craft queue for the reserved row
+    data class QueueSlot(
+        val id: Int, val itemId: String, val name: String,
+        val totalRequested: Int, val readyCount: Int, val availableCount: Int,
+        val isComplete: Boolean
+    )
+    var craftQueue: List<QueueSlot> = emptyList()
     private val MAX_PINNED get() = layout.cols
-
-    companion object {
-        // Persist pinned crafts per terminal position across screen open/close
-        private val pinnedCraftsCache = HashMap<net.minecraft.core.BlockPos, MutableList<PinnedCraft>>()
-    }
 
     // Craft dialogue state
     private var craftDialogueItemId: String? = null
@@ -123,13 +121,6 @@ class InventoryTerminalScreen(
         computeLayout()
         inventoryLabelY = -9999
         titleLabelY = -9999
-        // Restore pinned crafts from cache
-        val pos = menu.terminalPos
-        pinnedCrafts = if (pos != null) {
-            pinnedCraftsCache.getOrPut(pos) { mutableListOf() }
-        } else {
-            mutableListOf()
-        }
     }
 
     private fun computeLayout() {
@@ -375,25 +366,37 @@ class InventoryTerminalScreen(
 
         // Ensure repo view is up-to-date before reading
         repo.ensureUpdated()
-        updatePinnedCrafts()
 
-        // Pinned crafting row (always visible as first row)
+        // Craft queue reserved row (always visible as first row)
         val pinnedY = networkGrid.y + 1
-        for ((i, pinned) in pinnedCrafts.withIndex()) {
+        for ((i, slot) in craftQueue.withIndex()) {
             if (i >= layout.cols) break
             val sx = networkGrid.x + i * 18 + 1
-            val stack = getItemStack(pinned.itemId)
+            val stack = getItemStack(slot.itemId)
             if (!stack.isEmpty) {
-                graphics.renderItem(stack, sx, pinnedY)
-                if (pinned.count > 1) {
-                    graphics.renderItemDecorations(font, stack, sx, pinnedY, formatCount(pinned.count.toLong()))
+                if (slot.availableCount <= 0) {
+                    // Pending: gray overlay + dim item + queued count in gray
+                    graphics.renderItem(stack, sx, pinnedY)
+                    graphics.fill(sx, pinnedY, sx + 16, pinnedY + 16, 0x80000000.toInt())
+                    graphics.pose().pushPose()
+                    graphics.pose().translate(0f, 0f, 200f)
+                    val countStr = formatCount(slot.totalRequested.toLong())
+                    graphics.drawString(font, countStr, sx + 17 - font.width(countStr), pinnedY + 9, 0xFF888888.toInt(), true)
+                    Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 8, pinnedY - 2, 8)
+                    graphics.pose().popPose()
+                } else {
+                    // Items available — render normally with available count
+                    graphics.renderItem(stack, sx, pinnedY)
+                    if (slot.availableCount > 1) {
+                        graphics.renderItemDecorations(font, stack, sx, pinnedY, formatCount(slot.availableCount.toLong()))
+                    }
+                    // Status icon
+                    graphics.pose().pushPose()
+                    graphics.pose().translate(0f, 0f, 200f)
+                    val icon = if (slot.isComplete) Icons.CRAFTING_COMPLETE else Icons.CRAFTING_IN_PROGRESS
+                    icon.draw(graphics, sx + 8, pinnedY - 2, 8)
+                    graphics.pose().popPose()
                 }
-                // Status overlay icon
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 200f)
-                val statusIcon = if (pinned.status == PinnedStatus.IN_PROGRESS) Icons.CRAFTING_IN_PROGRESS else Icons.CRAFTING_COMPLETE
-                statusIcon.draw(graphics, sx + 8, pinnedY - 2, 8)
-                graphics.pose().popPose()
             }
         }
         // Separator line below pinned row
@@ -528,8 +531,25 @@ class InventoryTerminalScreen(
 
         // Tooltips
         val hoveredNetwork = networkGrid.getSlotAt(mouseX, mouseY, 0)
+        val hoveredIsQueueSlot = hoveredNetwork != null && hoveredNetwork.index / layout.cols == 0
         val hoveredIsNetworkItem = hoveredNetwork != null && hoveredNetwork.index / layout.cols >= 1
-        if (hoveredIsNetworkItem) {
+
+        if (hoveredIsQueueSlot) {
+            val queueIdx = hoveredNetwork!!.index % layout.cols
+            if (queueIdx < craftQueue.size) {
+                val slot = craftQueue[queueIdx]
+                val stack = getItemStack(slot.itemId)
+                if (!stack.isEmpty) {
+                    val lines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
+                    val statusStr = if (slot.isComplete) "Complete" else "Crafting..."
+                    lines.add(Component.literal("$statusStr (${slot.readyCount}/${slot.totalRequested})").withStyle { it.withColor(if (slot.isComplete) 0x55FF55 else 0xFFAA00) })
+                    if (slot.availableCount > 0) {
+                        lines.add(Component.literal("Click to extract ${slot.availableCount}").withStyle { it.withColor(0xAAAAAA) })
+                    }
+                    graphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY)
+                }
+            }
+        } else if (hoveredIsNetworkItem) {
             val viewIndex = scrollOffset * layout.cols + (hoveredNetwork!!.index - layout.cols)
             val entry = repo.getViewEntry(viewIndex)
             if (entry != null) {
@@ -693,10 +713,7 @@ class InventoryTerminalScreen(
                     PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
                     )
-                    // Add to pinned crafts
-                    if (pinnedCrafts.size < MAX_PINNED) {
-                        pinnedCrafts.add(PinnedCraft(craftDialogueItemId!!, craftDialogueItemName, count, PinnedStatus.IN_PROGRESS))
-                    }
+                    // Queue entry will be synced from server via CraftQueueSyncPayload
                 }
                 craftDialogueItemId = null
                 craftDialogueField?.visible = false
@@ -807,14 +824,20 @@ class InventoryTerminalScreen(
         if (networkSlot != null) {
             val gridRow = networkSlot.index / layout.cols
 
-            // First row = pinned crafts area
+            // First row = craft queue reserved area
             if (gridRow == 0) {
-                val pinnedIdx = networkSlot.index % layout.cols
-                if (pinnedIdx < pinnedCrafts.size) {
-                    val pinned = pinnedCrafts[pinnedIdx]
-                    if (pinned.status == PinnedStatus.COMPLETE) {
-                        // Click completed pinned item to dismiss
-                        pinnedCrafts.removeAt(pinnedIdx)
+                val queueIdx = networkSlot.index % layout.cols
+                if (queueIdx < craftQueue.size) {
+                    val slot = craftQueue[queueIdx]
+                    if (slot.availableCount > 0) {
+                        val action = when {
+                            hasShiftDown() -> 1  // shift to inventory
+                            button == 1 -> 2     // right click = half
+                            else -> 0            // left click = full stack to cursor
+                        }
+                        PlatformServices.clientNetworking.sendToServer(
+                            damien.nodeworks.network.CraftQueueExtractPayload(menu.containerId, slot.id, action)
+                        )
                     }
                 }
                 return true
@@ -1024,9 +1047,6 @@ class InventoryTerminalScreen(
                     PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
                     )
-                    if (pinnedCrafts.size < MAX_PINNED) {
-                        pinnedCrafts.add(PinnedCraft(craftDialogueItemId!!, craftDialogueItemName, count, PinnedStatus.IN_PROGRESS))
-                    }
                 }
                 craftDialogueItemId = null
                 craftDialogueField?.visible = false
@@ -1060,26 +1080,10 @@ class InventoryTerminalScreen(
         return super.charTyped(codePoint, modifiers)
     }
 
-    /** Check if any pinned crafts are now complete based on network inventory state. */
-    fun updatePinnedCrafts() {
-        val now = System.currentTimeMillis()
-        val iter = pinnedCrafts.iterator()
-        while (iter.hasNext()) {
-            val pinned = iter.next()
-            if (pinned.status == PinnedStatus.IN_PROGRESS) {
-                // Check if the item appeared/increased in network storage
-                repo.ensureUpdated()
-                val entry = repo.view.firstOrNull { it.info.itemId == pinned.itemId }
-                if (entry != null && entry.info.count > 0) {
-                    pinned.status = PinnedStatus.COMPLETE
-                    pinned.seenTick = now
-                }
-            } else if (pinned.status == PinnedStatus.COMPLETE) {
-                // Dismiss after 5 seconds of being visible
-                if (now - pinned.seenTick > 5000) {
-                    iter.remove()
-                }
-            }
+    /** Handle server sync of craft queue state. */
+    fun handleQueueSync(payload: damien.nodeworks.network.CraftQueueSyncPayload) {
+        craftQueue = payload.entries.map { e ->
+            QueueSlot(e.id, e.itemId, e.name, e.totalRequested, e.readyCount, e.availableCount, e.isComplete)
         }
     }
 

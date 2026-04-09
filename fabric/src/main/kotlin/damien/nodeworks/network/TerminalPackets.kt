@@ -92,6 +92,8 @@ object TerminalPackets {
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(BufferSyncPayload.TYPE, BufferSyncPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(CraftPreviewResponsePayload.TYPE, CraftPreviewResponsePayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(CraftQueueSyncPayload.TYPE, CraftQueueSyncPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(CraftQueueExtractPayload.TYPE, CraftQueueExtractPayload.CODEC)
     }
 
     fun registerServerHandlers() {
@@ -250,6 +252,14 @@ object TerminalPackets {
             val menu = player.containerMenu
             if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
                 menu.handleCollect(player, payload.itemId)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(CraftQueueExtractPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleQueueExtract(player, payload.entryId, payload.action)
             }
         }
 
