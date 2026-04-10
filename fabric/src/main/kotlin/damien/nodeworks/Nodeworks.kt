@@ -136,12 +136,17 @@ object Nodeworks : ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register { server ->
             tickCount++
             TerminalPackets.tickAll(server, tickCount)
+            damien.nodeworks.script.ResumeScheduler.tick(tickCount)
             for (cache in damien.nodeworks.script.NetworkInventoryCache.getAll()) {
                 cache.tick()
             }
             for (level in server.allLevels) {
                 damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
             }
+        }
+
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register { _ ->
+            damien.nodeworks.script.ResumeScheduler.onServerStop()
         }
 
         logger.info("Nodeworks initialized")

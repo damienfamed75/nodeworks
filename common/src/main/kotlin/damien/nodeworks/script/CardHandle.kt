@@ -230,6 +230,12 @@ class CardHandle private constructor(
         // Internal: allows insert() to access this handle's storage as a destination
         table.set("_getStorage", StorageGetter { self.getItemStorage() })
 
+        // Internal: target coordinates for job persistence (resume after restart)
+        val cap = card.capability
+        val resolvedFace = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
+        table.set("_targetPos", LuaValue.valueOf(cap.adjacentPos.asLong().toDouble()))
+        table.set("_targetFace", LuaValue.valueOf(resolvedFace.ordinal))
+
         return table
     }
 

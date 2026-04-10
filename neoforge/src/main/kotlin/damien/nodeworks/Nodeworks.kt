@@ -55,6 +55,7 @@ class Nodeworks(modBus: IEventBus) {
 
         // Register game events on the NeoForge event bus
         NeoForge.EVENT_BUS.addListener(::onServerTick)
+        NeoForge.EVENT_BUS.addListener(::onServerStopping)
         NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
         NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
 
@@ -407,12 +408,17 @@ class Nodeworks(modBus: IEventBus) {
     private fun onServerTick(event: ServerTickEvent.Post) {
         tickCount++
         NeoForgeTerminalPackets.tickAll(event.server, tickCount)
+        damien.nodeworks.script.ResumeScheduler.tick(tickCount)
         for (cache in damien.nodeworks.script.NetworkInventoryCache.getAll()) {
             cache.tick()
         }
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }
+    }
+
+    private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
+        damien.nodeworks.script.ResumeScheduler.onServerStop()
     }
 
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {
