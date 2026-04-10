@@ -41,6 +41,7 @@ class ProcessingJob(
         table.set("pull", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val getters = mutableListOf<CardHandle.StorageGetter>()
+                val pullTargets = mutableListOf<Pair<net.minecraft.core.BlockPos, net.minecraft.core.Direction>>()
                 for (i in 2..args.narg()) {
                     val arg = args.arg(i)
                     if (!arg.istable()) throw LuaError("job:pull() expects CardHandle arguments")
@@ -49,6 +50,15 @@ class ProcessingJob(
                         getters.add(ref)
                     } else {
                         throw LuaError("job:pull() expects CardHandle arguments from network:get()")
+                    }
+                    // Capture target coordinates for persistence
+                    val posVal = arg.get("_targetPos")
+                    val faceVal = arg.get("_targetFace")
+                    if (!posVal.isnil() && !faceVal.isnil()) {
+                        pullTargets.add(
+                            net.minecraft.core.BlockPos.of(posVal.todouble().toLong()) to
+                                net.minecraft.core.Direction.values()[faceVal.toint()]
+                        )
                     }
                 }
                 if (getters.isEmpty()) throw LuaError("job:pull() requires at least one card argument")
@@ -59,7 +69,10 @@ class ProcessingJob(
                     return LuaValue.TRUE
                 }
 
-                // Not ready — register for polling each tick
+                // Async — persist pull targets on CPU for resume after restart
+                cpu.addPendingOp(api.outputs, pullTargets)
+
+                // Register for polling each tick
                 val timeoutTicks = if (api.timeout > 0) api.timeout.toLong() else 6000L
                 scheduler.addPendingJob(SchedulerImpl.PendingJob(
                     pollFn = { tryExtract(getters) },
@@ -118,6 +131,25 @@ class ProcessingJob(
             }
         }
         remaining.clear()
+        cpu.completePendingOp()
         return true
+    }
+
+    /**
+     * Public entry for resume — start polling with pre-built getters.
+     * Same logic as job:pull() but bypasses the Lua API.
+     */
+    fun startPoll(getters: List<CardHandle.StorageGetter>) {
+        if (tryExtract(getters)) {
+            pendingResult.complete(true)
+            return
+        }
+        val timeoutTicks = if (api.timeout > 0) api.timeout.toLong() else 6000L
+        scheduler.addPendingJob(SchedulerImpl.PendingJob(
+            pollFn = { tryExtract(getters) },
+            timeoutAt = scheduler.currentTick + timeoutTicks,
+            onComplete = { success -> pendingResult.complete(success) },
+            label = "resume:${api.name}"
+        ))
     }
 }

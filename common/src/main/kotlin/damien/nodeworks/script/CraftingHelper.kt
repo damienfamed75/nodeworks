@@ -127,6 +127,7 @@ object CraftingHelper {
                 return null
             }
             cpu.setCrafting(true, identifier.substringAfter(':').replace('_', ' '))
+            cpu.setOriginalCraft(identifier, count)
         }
 
         // Try Instruction Set (3x3 crafting) first
@@ -259,6 +260,7 @@ object CraftingHelper {
                 }
             }
         }
+        cpu.clearAllCraftState()
         cpu.setCrafting(false)
     }
 

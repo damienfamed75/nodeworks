@@ -69,4 +69,10 @@ object CraftQueueManager {
     fun clearPlayer(playerUUID: UUID) {
         queues.remove(playerUUID)
     }
+
+    /** Clear all queues (e.g., on server restart / new world load). */
+    fun clearAll() {
+        queues.clear()
+        nextId.set(0)
+    }
 }
