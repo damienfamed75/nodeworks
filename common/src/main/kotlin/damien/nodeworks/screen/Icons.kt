@@ -158,5 +158,6 @@ class Icons private constructor(val col: Int, val row: Int) {
         val AUTO_PULL_OFF       = Icons(12, 3)
         val CRAFTING_GRID_CLEAR = Icons(13, 3)
         val CRAFTING_GRID_DISTRIBUTE = Icons(14, 3)
+        val RESERVED_SLOT = Icons(15, 3)
     }
 }

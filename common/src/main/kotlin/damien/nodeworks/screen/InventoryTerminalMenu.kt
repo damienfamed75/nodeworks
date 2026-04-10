@@ -38,6 +38,11 @@ class InventoryTerminalMenu(
     private var needsImmediateSync = false
     private var tickCounter = 0
 
+    // Chunked full sync state
+    private var fullSyncChunks: List<List<InventorySyncPayload.SyncEntry>>? = null
+    private var fullSyncChunkIndex = 0
+    private val FULL_SYNC_CHUNK_SIZE = 200
+
     // Crafting grid
     var autoPull: Boolean = false
     private var autoPullPattern: List<String>? = null  // captured right before craft output is taken
@@ -753,7 +758,8 @@ class InventoryTerminalMenu(
         val reserved = CraftQueueManager.getReservedCounts(serverPlayer.uuid)
 
         if (needsFullSync) {
-            val entries = c.getAllEntries().map { entry ->
+            // Build all entries and split into chunks
+            val allEntries = c.getAllEntries().map { entry ->
                 val deduct = reserved[entry.info.itemId] ?: 0
                 InventorySyncPayload.SyncEntry(
                     serial = entry.serial,
@@ -765,9 +771,29 @@ class InventoryTerminalMenu(
                     craftable = entry.info.isCraftable
                 )
             }
-            sendToClient(serverPlayer, InventorySyncPayload(true, entries, emptyList()))
+            fullSyncChunks = allEntries.chunked(FULL_SYNC_CHUNK_SIZE)
+            fullSyncChunkIndex = 0
             sendQueueSync(serverPlayer, queue)
             needsFullSync = false
+            // Don't return — fall through to send first chunk below
+        }
+
+        // Send one chunk per tick during a full sync
+        val chunks = fullSyncChunks
+        if (chunks != null) {
+            val totalChunks = chunks.size.coerceAtLeast(1)
+            val chunk = if (fullSyncChunkIndex < chunks.size) chunks[fullSyncChunkIndex] else emptyList()
+            sendToClient(serverPlayer, InventorySyncPayload(
+                fullUpdate = true,
+                entries = chunk,
+                removedSerials = emptyList(),
+                chunkIndex = fullSyncChunkIndex,
+                totalChunks = totalChunks
+            ))
+            fullSyncChunkIndex++
+            if (fullSyncChunkIndex >= totalChunks) {
+                fullSyncChunks = null // done
+            }
             return
         }
 

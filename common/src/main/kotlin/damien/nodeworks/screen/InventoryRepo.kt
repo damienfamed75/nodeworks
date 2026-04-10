@@ -56,17 +56,43 @@ class InventoryRepo {
             }
         }
 
-    /** Handle a sync packet from the server. */
+    /** Whether a chunked full sync is in progress. */
+    var isLoadingFullSync = false
+        private set
+
+    /**
+     * Handle a sync packet from the server.
+     * Full syncs may arrive in multiple chunks — entries are buffered and
+     * the view is only rebuilt after the final chunk arrives.
+     */
     fun handleUpdate(payload: InventorySyncPayload) {
         if (payload.fullUpdate) {
-            entries.clear()
-        }
+            // First chunk of a full sync: clear existing entries
+            if (payload.chunkIndex == 0) {
+                entries.clear()
+                isLoadingFullSync = payload.totalChunks > 1
+            }
 
-        for (serial in payload.removedSerials) {
-            entries.remove(serial)
-        }
+            // Apply this chunk's entries
+            applyEntries(payload.entries)
 
-        for (syncEntry in payload.entries) {
+            // Last chunk: mark loading complete and rebuild view
+            if (payload.chunkIndex >= payload.totalChunks - 1) {
+                isLoadingFullSync = false
+                viewDirty = true
+            }
+        } else {
+            // Delta update — apply immediately
+            for (serial in payload.removedSerials) {
+                entries.remove(serial)
+            }
+            applyEntries(payload.entries)
+            viewDirty = true
+        }
+    }
+
+    private fun applyEntries(syncEntries: List<InventorySyncPayload.SyncEntry>) {
+        for (syncEntry in syncEntries) {
             val existing = entries[syncEntry.serial]
             if (syncEntry.itemId != null) {
                 entries[syncEntry.serial] = RepoEntry(
@@ -86,8 +112,6 @@ class InventoryRepo {
                 )
             }
         }
-
-        viewDirty = true
     }
 
     /** Rebuild the filtered/sorted view if dirty. Call once per frame before reading view. */
