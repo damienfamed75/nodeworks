@@ -416,29 +416,56 @@ class InventoryTerminalScreen(
         // Batch icon rendering to avoid per-call RenderSystem state changes
         Icons.beginBatch()
 
-        // Craft queue reserved row (always visible as first row)
+        // Reserved slot icons on empty pinned slots
         val pinnedY = networkGrid.y + 1
         val iconSize = 10
+        for (c in 0 until layout.cols) {
+            if (c < craftQueue.size) continue  // slot occupied by a queue entry
+            val sx = networkGrid.x + c * 18 + 1
+            graphics.pose().pushPose()
+            graphics.pose().translate(0f, 0f, 200f)
+            Icons.RESERVED_SLOT.draw(graphics, sx + 17 - iconSize, pinnedY - 1, iconSize)
+            graphics.pose().popPose()
+        }
+
+        // Craft queue reserved row (always visible as first row)
         for ((i, slot) in craftQueue.withIndex()) {
             if (i >= layout.cols) break
             val sx = networkGrid.x + i * 18 + 1
             val stack = getItemStack(slot.itemId)
             if (!stack.isEmpty) {
                 if (slot.availableCount <= 0) {
-                    // Pending: gray overlay + dim item + queued count in gray
+                    // Pending: gray overlay + dim item + queued count in gray (0.5x scale)
                     graphics.renderItem(stack, sx, pinnedY)
                     graphics.fill(sx, pinnedY, sx + 16, pinnedY + 16, 0x80000000.toInt())
                     graphics.pose().pushPose()
                     graphics.pose().translate(0f, 0f, 200f)
                     val countStr = formatCount(slot.totalRequested.toLong())
-                    graphics.drawString(font, countStr, sx + 17 - font.width(countStr), pinnedY + 9, 0xFF888888.toInt(), true)
+                    val scale = 0.5f
+                    graphics.pose().scale(scale, scale, 1f)
+                    val tw = font.width(countStr)
+                    val cx = ((sx + 16).toFloat() / scale - tw).toInt()
+                    val cy = ((pinnedY + 16).toFloat() / scale - font.lineHeight).toInt()
+                    graphics.drawString(font, countStr, cx, cy, 0xFF888888.toInt(), true)
+                    graphics.pose().popPose()
+                    graphics.pose().pushPose()
+                    graphics.pose().translate(0f, 0f, 200f)
                     Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 17 - iconSize, pinnedY - 1, iconSize)
                     graphics.pose().popPose()
                 } else {
-                    // Items available — render normally with available count
+                    // Items available — render normally with available count (0.5x scale)
                     graphics.renderItem(stack, sx, pinnedY)
                     if (slot.availableCount > 1) {
-                        graphics.renderItemDecorations(font, stack, sx, pinnedY, formatCount(slot.availableCount.toLong()))
+                        val countStr = formatCount(slot.availableCount.toLong())
+                        val scale = 0.5f
+                        graphics.pose().pushPose()
+                        graphics.pose().translate(0f, 0f, 200f)
+                        graphics.pose().scale(scale, scale, 1f)
+                        val tw = font.width(countStr)
+                        val cx = ((sx + 16).toFloat() / scale - tw).toInt()
+                        val cy = ((pinnedY + 16).toFloat() / scale - font.lineHeight).toInt()
+                        graphics.drawString(font, countStr, cx, cy, 0xFFFFFFFF.toInt(), true)
+                        graphics.pose().popPose()
                     }
                     // Status icon
                     graphics.pose().pushPose()
