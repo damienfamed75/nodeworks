@@ -138,5 +138,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         val CRAFT_PLUS          = Icons(10, 3)
         val AUTO_PULL_ON        = Icons(11, 3)
         val AUTO_PULL_OFF       = Icons(12, 3)
+        val CRAFTING_GRID_CLEAR = Icons(13, 3)
+        val CRAFTING_GRID_DISTRIBUTE = Icons(14, 3)
     }
 }
