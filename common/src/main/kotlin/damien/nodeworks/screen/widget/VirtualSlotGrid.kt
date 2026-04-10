@@ -114,7 +114,17 @@ class VirtualSlotGrid(
 
             val customCount = formatter?.invoke(tempSlot)
             if (customCount != null) {
-                graphics.renderItemDecorations(font, stack, ix, iy, customCount)
+                // Render scaled count text (0.5x) anchored to bottom-right of slot
+                val pose = graphics.pose()
+                pose.pushPose()
+                pose.translate(0f, 0f, 200f)
+                val scale = 0.5f
+                pose.scale(scale, scale, 1f)
+                val textWidth = font.width(customCount)
+                val sx = ((ix + 16).toFloat() / scale - textWidth).toInt()
+                val sy = ((iy + 16).toFloat() / scale - font.lineHeight).toInt()
+                graphics.drawString(font, customCount, sx, sy, 0xFFFFFFFF.toInt(), true)
+                pose.popPose()
             } else if (stack.count > 1) {
                 graphics.renderItemDecorations(font, stack, ix, iy)
             }
