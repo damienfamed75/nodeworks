@@ -38,8 +38,6 @@ class InventoryTerminalMenu(
     private var needsImmediateSync = false
     private var tickCounter = 0
 
-    // No need to track async crafts — ProcessingJob self-releases the CPU
-
     // Crafting grid
     val craftingContainer = TransientCraftingContainer(this, 3, 3)
     val resultContainer = ResultContainer()
@@ -189,6 +187,18 @@ class InventoryTerminalMenu(
                     val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, carried, c)
                     if (inserted > 0) {
                         carried.shrink(inserted)
+                        if (carried.isEmpty) setCarried(ItemStack.EMPTY)
+                    }
+                }
+            }
+            4 -> {
+                // Right-click insert: deposit one item
+                val carried = carried
+                if (!carried.isEmpty) {
+                    val single = carried.copyWithCount(1)
+                    val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, single, c)
+                    if (inserted > 0) {
+                        carried.shrink(1)
                         if (carried.isEmpty) setCarried(ItemStack.EMPTY)
                     }
                 }
@@ -441,122 +451,73 @@ class InventoryTerminalMenu(
      * Handle an automated craft request (Alt+click).
      * Finds a CraftingCore, allocates it, and initiates crafting via CraftingHelper.
      */
+    /**
+     * Handle an automated craft request (Alt+click).
+     * Mirrors the scripting terminal's network:craft(id, n):store() flow exactly:
+     *   1. CraftingHelper.craft() finds a CPU, extracts ingredients, crafts (sync or async)
+     *   2. Items stay in CPU buffer throughout
+     *   3. releaseCraftResult flushes buffer → network and releases CPU
+     */
     fun handleCraftRequest(player: Player, itemId: String, count: Int) {
         val lvl = serverLevel ?: return
         val snap = snapshot ?: return
         if (count <= 0 || count > 999) return
 
-        // Find an available CraftingCore
-        val cpu = snap.cpus.firstOrNull { cpu ->
-            val entity = lvl.getBlockEntity(cpu.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity
-            entity != null && !entity.isCrafting
-        }
-        if (cpu == null) {
-            (player as? ServerPlayer)?.sendSystemMessage(
-                net.minecraft.network.chat.Component.literal("No crafting CPU available!")
-            )
-            return
-        }
-
-        val cpuEntity = lvl.getBlockEntity(cpu.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity
-        if (cpuEntity == null) return
-
-        // Determine output-per-operation for queue tracking
-        val outputPerOp = computeOutputPerOperation(itemId, lvl, snap)
-
-        // Create queue entry
+        // Create queue entry (pending until the whole job completes)
         val itemName = net.minecraft.resources.ResourceLocation.tryParse(itemId)?.path?.replace('_', ' ') ?: itemId
-        val entry = CraftQueueManager.addEntry(player.uuid, itemId, itemName, count, outputPerOp)
-
-        // Mark CPU as crafting
-        cpuEntity.setCrafting(true, itemName)
+        val entry = CraftQueueManager.addEntry(player.uuid, itemId, itemName, count)
 
         try {
+            // Let CraftingHelper find and manage its own CPU — same as network:craft()
+            damien.nodeworks.script.CraftingHelper.currentPendingJob = null
             val result = damien.nodeworks.script.CraftingHelper.craft(
                 itemId, count, lvl, snap,
-                cache = cache,
-                cpuPos = cpu.pos,
-                onUnitComplete = { success ->
-                    if (success) {
-                        entry.completedOps++
-                        entry.dirty = true
-                    }
-                }
+                cache = cache
             )
-            if (result != null) {
-                // Synchronous craft complete — mark all operations done
-                entry.completedOps = (count + outputPerOp - 1) / outputPerOp
-                entry.dirty = true
-                releaseCpu(cpuEntity, lvl, snap)
-            } else {
+            val pending = damien.nodeworks.script.CraftingHelper.currentPendingJob
+            damien.nodeworks.script.CraftingHelper.currentPendingJob = null
+
+            if (result == null && pending == null) {
+                // Total failure — no recipe, no CPU, etc.
+                CraftQueueManager.getQueue(player.uuid).remove(entry)
                 val reason = damien.nodeworks.script.CraftingHelper.lastFailReason
-                if (reason != null) {
-                    // Failed — remove queue entry and release CPU
-                    CraftQueueManager.getQueue(player.uuid).remove(entry)
-                    releaseCpu(cpuEntity, lvl, snap)
-                    (player as? ServerPlayer)?.sendSystemMessage(
-                        net.minecraft.network.chat.Component.literal("Failed to craft: $reason")
-                    )
+                (player as? ServerPlayer)?.sendSystemMessage(
+                    net.minecraft.network.chat.Component.literal("Failed to craft: ${reason ?: "Unknown"}")
+                )
+                needsImmediateSync = true
+                return
+            }
+
+            // Build a CraftResult for the release — same as the scripting terminal
+            val craftResult = result ?: run {
+                val id = net.minecraft.resources.ResourceLocation.tryParse(itemId)
+                val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) else null
+                val name = if (item != null) ItemStack(item).hoverName.string else itemId
+                damien.nodeworks.script.CraftingHelper.CraftResult(
+                    itemId, name, count,
+                    cpu = snap.cpus.firstOrNull()?.let { lvl.getBlockEntity(it.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity },
+                    level = lvl, snapshot = snap, cache = cache
+                )
+            }
+
+            if (pending == null || pending.isComplete) {
+                // Synchronous — release immediately (flush buffer → network, free CPU)
+                damien.nodeworks.script.CraftingHelper.releaseCraftResult(craftResult)
+                entry.completedOps = 1
+                entry.dirty = true
+            } else {
+                // Async — release when the pending job completes (same as :store())
+                pending.onCompleteCallback = { _ ->
+                    damien.nodeworks.script.CraftingHelper.releaseCraftResult(craftResult)
+                    entry.completedOps = 1
+                    entry.dirty = true
                 }
-                // else: async processing — callback will update entry.completedOps
             }
         } catch (e: Exception) {
             CraftQueueManager.getQueue(player.uuid).remove(entry)
-            releaseCpu(cpuEntity, lvl, snap)
         }
 
         needsImmediateSync = true
-    }
-
-    /** Determine how many items one crafting operation produces for the given item. */
-    private fun computeOutputPerOperation(itemId: String, lvl: ServerLevel, snap: damien.nodeworks.network.NetworkSnapshot): Int {
-        // Check processing API first
-        val processingMatch = snap.findProcessingApi(itemId)
-        if (processingMatch != null) {
-            return processingMatch.api.outputs.firstOrNull { it.first == itemId }?.second ?: 1
-        }
-        // Check instruction set
-        val instructionMatch = snap.findInstructionSet(itemId)
-        if (instructionMatch != null) {
-            val recipe = instructionMatch.instructionSet.recipe
-            val items = recipe.map { rid ->
-                if (rid.isEmpty()) ItemStack.EMPTY
-                else {
-                    val id = net.minecraft.resources.ResourceLocation.tryParse(rid) ?: return 1
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: return 1
-                    ItemStack(item, 1)
-                }
-            }
-            val input = net.minecraft.world.item.crafting.CraftingInput.of(3, 3, items)
-            return lvl.recipeManager
-                .getRecipeFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING, input, lvl)
-                .map { it.value().assemble(input, lvl.registryAccess()).count }
-                .orElse(1)
-        }
-        return 1
-    }
-
-    /** Release a CPU: move buffer to storage and mark idle. */
-    private fun releaseCpu(
-        cpuEntity: damien.nodeworks.block.entity.CraftingCoreBlockEntity?,
-        lvl: ServerLevel,
-        snap: damien.nodeworks.network.NetworkSnapshot
-    ) {
-        if (cpuEntity == null) return
-        val leftovers = cpuEntity.clearBuffer()
-        for ((bufItemId, bufCount) in leftovers) {
-            val bufId = net.minecraft.resources.ResourceLocation.tryParse(bufItemId) ?: continue
-            val bufItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(bufId) ?: continue
-            var remaining = bufCount
-            while (remaining > 0) {
-                val batch = minOf(remaining, bufItem.getDefaultMaxStackSize())
-                val stack = ItemStack(bufItem, batch)
-                val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
-                remaining -= inserted
-                if (inserted == 0) break
-            }
-        }
-        cpuEntity.setCrafting(false)
     }
 
     override fun stillValid(player: Player): Boolean = true
@@ -631,6 +592,12 @@ class InventoryTerminalMenu(
             queue.remove(entry)
         }
 
+        // Force queue sync to client so removed/updated entries are reflected
+        val serverPlayer = playerInventory.player as? ServerPlayer
+        if (serverPlayer != null) {
+            sendQueueSync(serverPlayer, queue)
+        }
+
         playerInventory.setChanged()
         needsImmediateSync = true
     }
@@ -702,9 +669,10 @@ class InventoryTerminalMenu(
 
     private fun sendQueueSync(player: ServerPlayer, queue: List<CraftQueueManager.CraftQueueEntry>) {
         val entries = queue.map { e ->
+            val readyCount = if (e.isComplete) e.totalRequested else 0
             damien.nodeworks.network.CraftQueueSyncPayload.QueueEntry(
                 id = e.id, itemId = e.itemId, name = e.itemName,
-                totalRequested = e.totalRequested, readyCount = e.readyCount,
+                totalRequested = e.totalRequested, readyCount = readyCount,
                 availableCount = e.availableCount, isComplete = e.isComplete
             )
         }

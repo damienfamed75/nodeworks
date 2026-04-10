@@ -369,6 +369,7 @@ class InventoryTerminalScreen(
 
         // Craft queue reserved row (always visible as first row)
         val pinnedY = networkGrid.y + 1
+        val iconSize = 10
         for ((i, slot) in craftQueue.withIndex()) {
             if (i >= layout.cols) break
             val sx = networkGrid.x + i * 18 + 1
@@ -382,7 +383,7 @@ class InventoryTerminalScreen(
                     graphics.pose().translate(0f, 0f, 200f)
                     val countStr = formatCount(slot.totalRequested.toLong())
                     graphics.drawString(font, countStr, sx + 17 - font.width(countStr), pinnedY + 9, 0xFF888888.toInt(), true)
-                    Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 8, pinnedY - 2, 8)
+                    Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 17 - iconSize, pinnedY - 1, iconSize)
                     graphics.pose().popPose()
                 } else {
                     // Items available — render normally with available count
@@ -394,7 +395,7 @@ class InventoryTerminalScreen(
                     graphics.pose().pushPose()
                     graphics.pose().translate(0f, 0f, 200f)
                     val icon = if (slot.isComplete) Icons.CRAFTING_COMPLETE else Icons.CRAFTING_IN_PROGRESS
-                    icon.draw(graphics, sx + 8, pinnedY - 2, 8)
+                    icon.draw(graphics, sx + 17 - iconSize, pinnedY - 1, iconSize)
                     graphics.pose().popPose()
                 }
             }
@@ -421,8 +422,11 @@ class InventoryTerminalScreen(
                     graphics.fill(ix, iy, ix + 16, iy + 16, 0x80000000.toInt())
                 }
                 if (altHeld) {
-                    // Show + icon on craftable items
-                    Icons.CRAFT_PLUS.draw(graphics, ix + 8, iy - 2, 8)
+                    // Show + icon on craftable items (above item Z layer)
+                    graphics.pose().pushPose()
+                    graphics.pose().translate(0f, 0f, 200f)
+                    Icons.CRAFT_PLUS.draw(graphics, ix + 17 - iconSize, iy - 1, iconSize)
+                    graphics.pose().popPose()
                 }
             }
         }
@@ -865,8 +869,9 @@ class InventoryTerminalScreen(
                 )
                 return true
             } else if (!menu.carried.isEmpty) {
+                val insertAction = if (button == 1) 4 else 1  // right=one, left=all
                 PlatformServices.clientNetworking.sendToServer(
-                    InvTerminalClickPayload(menu.containerId, "", 1)
+                    InvTerminalClickPayload(menu.containerId, "", insertAction)
                 )
                 return true
             }
