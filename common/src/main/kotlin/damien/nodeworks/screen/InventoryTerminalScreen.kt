@@ -123,6 +123,8 @@ class InventoryTerminalScreen(
         titleLabelY = -9999
     }
 
+    private var syncedAutoPull = false
+
     private fun computeLayout() {
         val gridW = layout.cols * SLOT_SIZE
         val gridH = layout.rows * SLOT_SIZE
@@ -255,6 +257,37 @@ class InventoryTerminalScreen(
             ClientConfig.invTerminalAutoFocusSearch = !ClientConfig.invTerminalAutoFocusSearch
             rebuildWidgets()
         })
+
+        // Crafting grid utility buttons (left of 3x3 grid, only when expanded)
+        if (!craftingCollapsed) {
+            val ubX = craftX - 18
+            val ubW = 16
+            val ubH = 16
+
+            // Auto-pull toggle (persists client-side + syncs to server)
+            val autoPullIcon = if (ClientConfig.invTerminalAutoPull) Icons.AUTO_PULL_ON else Icons.AUTO_PULL_OFF
+            addRenderableWidget(SlicedButton.create(ubX, craftY + 1, ubW, ubH, "", autoPullIcon) { _ ->
+                ClientConfig.invTerminalAutoPull = !ClientConfig.invTerminalAutoPull
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 2)
+                )
+                rebuildWidgets()
+            })
+
+            // Distribute/balance
+            addRenderableWidget(SlicedButton.create(ubX, craftY + 19, ubW, ubH, "", Icons.CRAFTING_GRID_DISTRIBUTE) { _ ->
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 0)
+                )
+            })
+
+            // Clear to network
+            addRenderableWidget(SlicedButton.create(ubX, craftY + 37, ubW, ubH, "", Icons.CRAFTING_GRID_CLEAR) { _ ->
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 1)
+                )
+            })
+        }
     }
 
     // ========== Rendering ==========
@@ -342,7 +375,9 @@ class InventoryTerminalScreen(
 
         // Crafting collapse toggle — to the left of the crafting area
         val collapseIcon = if (craftingCollapsed) Icons.EXPAND_IDLE else Icons.COLLAPSE_IDLE
-        collapseIcon.draw(graphics, craftX - 20, craftY + 1)
+        collapseIcon.draw(graphics, craftX - 30, craftY + 1)
+
+        // Utility buttons are SlicedButton widgets — rendered automatically
 
         // Player inventory (use direct slot blits for performance)
         val slotU = NineSlice.SLOT.u.toFloat()
@@ -358,6 +393,16 @@ class InventoryTerminalScreen(
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        // Sync persisted auto-pull state to server on first render
+        if (!syncedAutoPull) {
+            syncedAutoPull = true
+            if (ClientConfig.invTerminalAutoPull) {
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 2)
+                )
+            }
+        }
+
         // Hide the craft dialogue field from normal rendering — we render it manually at higher Z
         val fieldWasVisible = craftDialogueField?.visible ?: false
         if (fieldWasVisible) craftDialogueField?.visible = false
@@ -587,6 +632,28 @@ class InventoryTerminalScreen(
                 }
             }
 
+            // Utility button tooltips
+            if (!craftTooltipShown && !craftingCollapsed) {
+                val ubX = craftX - 18
+                val ubW = 16
+                val ubH = 16
+                if (mouseX >= ubX && mouseX < ubX + ubW) {
+                    val tip = when {
+                        mouseY >= craftY + 1 && mouseY < craftY + 1 + ubH -> {
+                            val state = if (damien.nodeworks.config.ClientConfig.invTerminalAutoPull) "On" else "Off"
+                            "Auto-pull: $state"
+                        }
+                        mouseY >= craftY + 19 && mouseY < craftY + 19 + ubH -> "Distribute evenly"
+                        mouseY >= craftY + 37 && mouseY < craftY + 37 + ubH -> "Clear to network"
+                        else -> null
+                    }
+                    if (tip != null) {
+                        graphics.renderTooltip(font, Component.literal(tip), mouseX, mouseY)
+                        craftTooltipShown = true
+                    }
+                }
+            }
+
             // Player inventory tooltip
             if (!craftTooltipShown) {
                 val hoveredMain = playerMainGrid.getSlotAt(mouseX, mouseY)
@@ -739,13 +806,15 @@ class InventoryTerminalScreen(
             return true
         }
 
-        // Crafting collapse toggle
-        if (mx >= craftX - 20 && mx < craftX - 4 && my >= craftY + 1 && my < craftY + 17) {
+        // Crafting collapse toggle (moved further left)
+        if (mx >= craftX - 30 && mx < craftX - 14 && my >= craftY + 1 && my < craftY + 17) {
             craftingCollapsed = !craftingCollapsed
             ClientConfig.invTerminalCraftingCollapsed = craftingCollapsed
             rebuildWidgets()
             return true
         }
+
+        // Crafting utility buttons are SlicedButton widgets — click handled automatically
 
         // Double-click collect check
         val now = net.minecraft.Util.getMillis()

@@ -21,9 +21,12 @@ class SlicedButton(
     private var hoverTextColor: Int = 0xFFFFFFFF.toInt()
 ) : AbstractWidget(x, y, w, h, label) {
 
+    private var pressed = false
+
     override fun renderWidget(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         val slice = when {
             !active -> NineSlice.BUTTON
+            pressed -> NineSlice.BUTTON_ACTIVE
             isHovered -> NineSlice.BUTTON_HOVER
             else -> NineSlice.BUTTON
         }
@@ -35,18 +38,31 @@ class SlicedButton(
 
         if (icon != null) {
             val iconSize = minOf(height - 4, 12)
-            val totalW = iconSize + 2 + font.width(text)
-            val startX = x + (width - totalW) / 2
             val iconY = y + (height - iconSize) / 2
-            icon.draw(graphics, startX, iconY, iconSize)
-            graphics.drawString(font, text, startX + iconSize + 2, y + (height - font.lineHeight) / 2 + 1, color)
+            if (text.isEmpty()) {
+                // Icon-only: center the icon
+                val iconX = x + (width - iconSize) / 2
+                icon.draw(graphics, iconX, iconY, iconSize)
+            } else {
+                val totalW = iconSize + 2 + font.width(text)
+                val startX = x + (width - totalW) / 2
+                icon.draw(graphics, startX, iconY, iconSize)
+                graphics.drawString(font, text, startX + iconSize + 2, y + (height - font.lineHeight) / 2 + 1, color)
+            }
         } else {
             graphics.drawString(font, text, x + (width - font.width(text)) / 2, y + (height - font.lineHeight) / 2 + 1, color)
         }
     }
 
     override fun onClick(mouseX: Double, mouseY: Double) {
-        onPress(this)
+        pressed = true
+    }
+
+    override fun onRelease(mouseX: Double, mouseY: Double) {
+        if (pressed) {
+            pressed = false
+            onPress(this)
+        }
     }
 
     override fun updateWidgetNarration(output: NarrationElementOutput) {

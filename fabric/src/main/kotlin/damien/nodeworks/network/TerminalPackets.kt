@@ -86,6 +86,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalCraftGridActionPayload.TYPE, InvTerminalCraftGridActionPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CraftPreviewRequestPayload.TYPE, CraftPreviewRequestPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
@@ -260,6 +261,14 @@ object TerminalPackets {
             val menu = player.containerMenu
             if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
                 menu.handleQueueExtract(player, payload.entryId, payload.action)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalCraftGridActionPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleCraftGridAction(player, payload.action)
             }
         }
 

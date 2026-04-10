@@ -39,6 +39,10 @@ class InventoryTerminalMenu(
     private var tickCounter = 0
 
     // Crafting grid
+    var autoPull: Boolean = false
+    private var autoPullPattern: List<String>? = null  // captured right before craft output is taken
+    private var suppressSlotsChanged = false
+    private var pendingAutoPull = false  // deferred to next tick to avoid MC packet reconciliation conflicts
     val craftingContainer = TransientCraftingContainer(this, 3, 3)
     val resultContainer = ResultContainer()
 
@@ -71,6 +75,7 @@ class InventoryTerminalMenu(
 
     /** Called when crafting grid contents change — recompute the result. */
     override fun slotsChanged(container: net.minecraft.world.Container) {
+        if (suppressSlotsChanged) return
         if (container === craftingContainer) {
             val level = serverLevel ?: playerInventory.player.level()
             val recipe = level.recipeManager
@@ -109,9 +114,12 @@ class InventoryTerminalMenu(
         if (slotIndex == CRAFT_OUTPUT_SLOT) {
             val slot = slots[slotIndex]
             if (!slot.hasItem()) return ItemStack.EMPTY
+            // Snapshot pattern BEFORE onTake consumes ingredients
+            if (autoPull) autoPullPattern = snapshotCraftPattern()
             val result = slot.item.copy()
             if (!playerInventory.add(result.copy())) return ItemStack.EMPTY
             slot.onTake(player, result)
+            if (autoPull) pendingAutoPull = true
             return result
         }
         // Crafting input slots: move back to player inventory
@@ -125,6 +133,24 @@ class InventoryTerminalMenu(
             return stack
         }
         return ItemStack.EMPTY
+    }
+
+    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
+        // Capture the grid pattern BEFORE super.clicked() consumes ingredients
+        if (slotId == CRAFT_OUTPUT_SLOT && !resultContainer.getItem(0).isEmpty && autoPull) {
+            autoPullPattern = snapshotCraftPattern()
+        }
+        super.clicked(slotId, button, clickType, player)
+        if (autoPullPattern != null) {
+            pendingAutoPull = true
+        }
+    }
+
+    private fun snapshotCraftPattern(): List<String> {
+        return (0 until craftingContainer.containerSize).map { i ->
+            val stack = craftingContainer.getItem(i)
+            if (stack.isEmpty) "" else net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString()
+        }
     }
 
     /**
@@ -342,6 +368,108 @@ class InventoryTerminalMenu(
     }
 
     /**
+     * Crafting grid utility actions.
+     * action 0 = distribute/balance items evenly across slots of the same type
+     * action 1 = clear grid, depositing all items into network storage
+     */
+    fun handleCraftGridAction(player: Player, action: Int) {
+        when (action) {
+            0 -> {
+                // Distribute: group slots by item type, split evenly within each group
+                val groups = mutableMapOf<String, MutableList<Int>>() // itemKey → slot indices
+                for (i in 0 until craftingContainer.containerSize) {
+                    val stack = craftingContainer.getItem(i)
+                    if (!stack.isEmpty) {
+                        val key = ItemStack.hashItemAndComponents(stack).toString()
+                        groups.getOrPut(key) { mutableListOf() }.add(i)
+                    }
+                }
+                for ((_, slotIndices) in groups) {
+                    if (slotIndices.size < 2) continue
+                    val template = craftingContainer.getItem(slotIndices[0])
+                    val total = slotIndices.sumOf { craftingContainer.getItem(it).count }
+                    val perSlot = total / slotIndices.size
+                    val remainder = total % slotIndices.size
+                    for ((idx, slotIndex) in slotIndices.withIndex()) {
+                        val amount = perSlot + if (idx < remainder) 1 else 0
+                        craftingContainer.setItem(slotIndex, template.copyWithCount(amount))
+                    }
+                }
+                slotsChanged(craftingContainer)
+            }
+            1 -> {
+                // Clear: deposit all crafting grid items into network storage
+                val lvl = serverLevel ?: return
+                val snap = snapshot ?: return
+                for (i in 0 until craftingContainer.containerSize) {
+                    val stack = craftingContainer.getItem(i)
+                    if (!stack.isEmpty) {
+                        val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                        if (inserted > 0) {
+                            stack.shrink(inserted)
+                            if (stack.isEmpty) craftingContainer.setItem(i, ItemStack.EMPTY)
+                        }
+                    }
+                }
+                slotsChanged(craftingContainer)
+                needsImmediateSync = true
+            }
+            2 -> {
+                // Toggle auto-pull
+                autoPull = !autoPull
+            }
+        }
+    }
+
+    /**
+     * After a crafting result is taken, refill empty grid slots from network storage.
+     * Only runs when autoPull is enabled.
+     */
+    private fun autoPullRefill() {
+        if (!autoPull) return
+        val lvl = serverLevel ?: return
+        val snap = snapshot ?: return
+        val c = cache
+        val pattern = autoPullPattern ?: return
+        autoPullPattern = null
+
+        // Suppress slotsChanged during refill — intermediate states can match
+        // different recipes and corrupt lastCraftPattern
+        suppressSlotsChanged = true
+        try {
+            for ((i, itemId) in pattern.withIndex()) {
+                if (itemId.isEmpty()) continue
+                val current = craftingContainer.getItem(i)
+                if (!current.isEmpty) continue
+
+                var extracted = 0L
+                for (card in NetworkStorageHelper.getStorageCards(snap)) {
+                    if (extracted >= 1) break
+                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+                    val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
+                        storage, { it == itemId }, 1
+                    )
+                    if (amount > 0) {
+                        c?.onExtracted(itemId, false, amount)
+                        extracted += amount
+                    }
+                }
+                if (extracted > 0) {
+                    val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+                    craftingContainer.setItem(i, ItemStack(item, 1))
+                }
+            }
+        } finally {
+            suppressSlotsChanged = false
+        }
+
+        // Single slotsChanged call with the final grid state
+        slotsChanged(craftingContainer)
+        needsImmediateSync = true
+    }
+
+    /**
      * Distribute the carried item evenly across the specified crafting slot indices.
      * Used for left-click drag.
      */
@@ -358,11 +486,12 @@ class InventoryTerminalMenu(
         val count = slotIndices.size
         val perSlot = total / count
         val remainder = total % count
-        if (perSlot <= 0) return
+        if (perSlot <= 0 && remainder <= 0) return
 
         var distributed = 0
         for ((idx, slotIndex) in slotIndices.withIndex()) {
             val amount = perSlot + if (idx < remainder) 1 else 0
+            if (amount <= 0) continue
 
             when (slotType) {
                 0 -> {
@@ -603,6 +732,12 @@ class InventoryTerminalMenu(
     }
 
     override fun broadcastChanges() {
+        // Process deferred auto-pull (must happen after MC's click packet reconciliation)
+        if (pendingAutoPull) {
+            pendingAutoPull = false
+            autoPullRefill()
+        }
+
         super.broadcastChanges()
 
         val serverPlayer = playerInventory.player as? ServerPlayer ?: return

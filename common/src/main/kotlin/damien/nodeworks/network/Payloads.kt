@@ -161,6 +161,21 @@ data class InvTerminalCraftGridPayload(val containerId: Int, val grid: List<Stri
 }
 
 /**
+ * C2S: Crafting grid utility action.
+ * action 0 = distribute/balance items evenly, 1 = clear grid to network
+ */
+data class InvTerminalCraftGridActionPayload(val containerId: Int, val action: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalCraftGridActionPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "inv_terminal_craft_grid_action"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalCraftGridActionPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.action) },
+            { buf -> InvTerminalCraftGridActionPayload(buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
  * C2S: Distribute carried item evenly across specified crafting slot indices.
  * Used for left-click drag in the crafting grid.
  */
