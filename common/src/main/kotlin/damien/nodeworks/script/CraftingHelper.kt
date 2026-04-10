@@ -100,8 +100,7 @@ object CraftingHelper {
         cpuPos: BlockPos? = null,
         processingHandlers: Map<String, LuaFunction>? = null,
         callerScheduler: SchedulerImpl? = null,
-        traceLog: ((String) -> Unit)? = null,
-        onUnitComplete: ((Boolean) -> Unit)? = null
+        traceLog: ((String) -> Unit)? = null
     ): CraftResult? {
         if (depth == 0) lastFailReason = null
 
@@ -143,6 +142,13 @@ object CraftingHelper {
             for (i in 0 until count) {
                 if (!craftOnce(recipe, match, level, snapshot, depth, cache, cpu, processingHandlers, callerScheduler, traceLog)) break
                 totalCrafted++
+            }
+
+            // Check if an async assembly job is pending (prereqs needed async processing)
+            val pending = currentPendingJob?.takeIf { !it.isComplete }
+            if (pending != null) {
+                // Assembly job will handle flushing buffer, releasing CPU, and calling onUnitComplete
+                return null
             }
 
             if (totalCrafted == 0) {
@@ -187,7 +193,7 @@ object CraftingHelper {
                 }
                 var totalCrafted = 0
                 for (i in 0 until count) {
-                    if (!craftViaProcessing(apiMatch, handler, handlerEngine, level, snapshot, depth, cache, cpu, processingHandlers, isRecursive = cpuPos != null, callerScheduler = callerScheduler, traceLog = traceLog, onUnitComplete = onUnitComplete)) break
+                    if (!craftViaProcessing(apiMatch, handler, handlerEngine, level, snapshot, depth, cache, cpu, processingHandlers, isRecursive = cpuPos != null, callerScheduler = callerScheduler, traceLog = traceLog)) break
                     totalCrafted++
                 }
 
@@ -360,7 +366,7 @@ object CraftingHelper {
                 label = "assembly:${match.instructionSet.outputItemId}"
             ))
 
-            return true // signals "started, pending"
+            return true // signals "started, pending async assembly"
         }
 
         // Phase 2: All prerequisites available — extract and assemble immediately
@@ -437,8 +443,7 @@ object CraftingHelper {
         processingHandlers: Map<String, LuaFunction>?,
         isRecursive: Boolean = false,
         callerScheduler: SchedulerImpl? = null,
-        traceLog: ((String) -> Unit)? = null,
-        onUnitComplete: ((Boolean) -> Unit)? = null
+        traceLog: ((String) -> Unit)? = null
     ): Boolean {
         val api = apiMatch.api
 
@@ -504,10 +509,7 @@ object CraftingHelper {
             if (api.serial) activeSerialJobs.add(api.name)
 
             val pending = PendingHandlerJob()
-            pending.onCompleteCallback = { success ->
-                if (api.serial) activeSerialJobs.remove(api.name)
-                onUnitComplete?.invoke(success)
-            }
+            pending.onCompleteCallback = { if (api.serial) activeSerialJobs.remove(api.name) }
             val job = ProcessingJob(api, cpu, level, scheduler, pending)
             val jobTable = job.toLuaTable()
 
@@ -551,7 +553,6 @@ object CraftingHelper {
 
             // job:pull() registered a pending poll (async — outputs not ready yet)
             // Store pending job — caller (craftOnce or network:craft) will wait on it
-            cpu.pendingJobCount++
             currentPendingJob = pending
             return true
         } catch (e: org.luaj.vm2.LuaError) {

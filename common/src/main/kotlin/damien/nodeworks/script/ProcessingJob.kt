@@ -11,8 +11,10 @@ import org.luaj.vm2.lib.*
  * Represents a processing job context passed as the first argument to handler functions.
  *
  * job:pull(card, ...) checks if outputs are available. If ready, extracts atomically
- * and signals completion. If not, registers a pending poll on the scheduler.
- * Handler runs synchronously on the server thread — no coroutines.
+ * into the CPU buffer and signals completion. If not, registers a pending poll on the scheduler.
+ *
+ * Items stay in the CPU buffer — the caller (releaseCraftResult / finishCrafting) is
+ * responsible for flushing them to network storage and releasing the CPU.
  */
 class ProcessingJob(
     private val api: ProcessingStorageBlockEntity.ProcessingApiInfo,
@@ -62,13 +64,7 @@ class ProcessingJob(
                 scheduler.addPendingJob(SchedulerImpl.PendingJob(
                     pollFn = { tryExtract(getters) },
                     timeoutAt = scheduler.currentTick + timeoutTicks,
-                    onComplete = { success ->
-                        cpu.pendingJobCount = maxOf(0, cpu.pendingJobCount - 1)
-                        if (cpu.pendingJobCount <= 0) {
-                            releaseCpu()
-                        }
-                        pendingResult.complete(success)
-                    },
+                    onComplete = { success -> pendingResult.complete(success) },
                     label = "pull:${api.name}"
                 ))
 
@@ -77,24 +73,6 @@ class ProcessingJob(
         })
 
         return table
-    }
-
-    /** Flush CPU buffer to network storage and mark idle. */
-    private fun releaseCpu() {
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos)
-        val leftovers = cpu.clearBuffer()
-        for ((bufItemId, bufCount) in leftovers) {
-            val bufId = net.minecraft.resources.ResourceLocation.tryParse(bufItemId) ?: continue
-            val bufItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(bufId) ?: continue
-            var rem = bufCount
-            while (rem > 0) {
-                val batch = minOf(rem, bufItem.getDefaultMaxStackSize())
-                val stack = net.minecraft.world.item.ItemStack(bufItem, batch)
-                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, null)
-                rem -= if (inserted > 0) inserted else batch
-            }
-        }
-        cpu.setCrafting(false)
     }
 
     private val isStale: Boolean get() = cpu.jobGeneration != startGeneration
@@ -112,8 +90,9 @@ class ProcessingJob(
             if (available < needed) return false
         }
 
-        // Items are ready — extract and route to network storage directly
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos)
+        // Items are ready — extract into CPU buffer (or network if job was cancelled)
+        val stale = isStale
+        val snapshot = if (stale) damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos) else null
 
         for ((outputId, needed) in remaining.toList()) {
             var stillNeeded = needed.toLong()
@@ -124,22 +103,21 @@ class ProcessingJob(
                     storage, { CardHandle.matchesFilter(it, outputId) }, stillNeeded
                 )
                 if (extracted > 0) {
-                    // Route extracted items directly to network storage
-                    val id = net.minecraft.resources.ResourceLocation.tryParse(outputId)
-                    val item = id?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.get(it) }
-                    if (item != null) {
-                        NetworkStorageHelper.insertItemStack(level, snapshot, net.minecraft.world.item.ItemStack(item, extracted.toInt()), null)
+                    if (stale) {
+                        // Job was cancelled — return items to network storage
+                        val id = net.minecraft.resources.ResourceLocation.tryParse(outputId)
+                        val item = id?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.get(it) }
+                        if (item != null) {
+                            NetworkStorageHelper.insertItemStack(level, snapshot!!, net.minecraft.world.item.ItemStack(item, extracted.toInt()), null)
+                        }
+                    } else {
+                        cpu.addToBuffer(outputId, extracted.toInt())
                     }
                     stillNeeded -= extracted
                 }
             }
         }
         remaining.clear()
-
-        // CPU release is handled by onComplete callback, not here.
-        // tryExtract may be called from the immediate path (job:pull succeeds instantly)
-        // where pendingJobCount was never incremented, so we must not touch it here.
-
         return true
     }
 }

@@ -6,6 +6,10 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Global server-side craft queue storage, keyed by player UUID.
  * Survives menu close/reopen but not server restart.
+ *
+ * Each entry represents one craft request. The job is either pending (completedOps=0)
+ * or complete (completedOps=1). Items go through the CPU buffer and are flushed to
+ * network storage atomically when the whole job finishes — same as network:craft():store().
  */
 object CraftQueueManager {
 
@@ -14,15 +18,13 @@ object CraftQueueManager {
         val itemId: String,
         val itemName: String,
         val totalRequested: Int,
-        val outputPerOperation: Int,
         @Volatile var completedOps: Int = 0,
         var takenCount: Int = 0,
         var seenComplete: Boolean = false,
         var dirty: Boolean = true
     ) {
-        val readyCount: Int get() = completedOps * outputPerOperation
-        val availableCount: Int get() = maxOf(0, readyCount - takenCount)
-        val isComplete: Boolean get() = readyCount >= totalRequested
+        val isComplete: Boolean get() = completedOps > 0
+        val availableCount: Int get() = if (isComplete) maxOf(0, totalRequested - takenCount) else 0
     }
 
     private val queues = HashMap<UUID, MutableList<CraftQueueEntry>>()
@@ -36,15 +38,13 @@ object CraftQueueManager {
         playerUUID: UUID,
         itemId: String,
         itemName: String,
-        totalRequested: Int,
-        outputPerOperation: Int
+        totalRequested: Int
     ): CraftQueueEntry {
         val entry = CraftQueueEntry(
             id = nextId.incrementAndGet(),
             itemId = itemId,
             itemName = itemName,
-            totalRequested = totalRequested,
-            outputPerOperation = outputPerOperation
+            totalRequested = totalRequested
         )
         getQueue(playerUUID).add(entry)
         return entry
