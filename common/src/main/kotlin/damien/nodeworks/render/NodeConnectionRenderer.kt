@@ -34,9 +34,13 @@ object NodeConnectionRenderer {
     /** How often to refresh line-of-sight cache (ticks). */
     private const val LOS_REFRESH_INTERVAL = 10
 
+    /** Max raycasts per tick during incremental LOS refresh. */
+    private const val LOS_RAYCASTS_PER_TICK = 10
+
     // Line-of-sight cache: (min(a,b), max(a,b)) → blocked?
     private val losCache = HashMap<Long, Boolean>()
     private var losRefreshTick = 0L
+    private var losRefreshIndex = 0  // tracks progress through incremental refresh
 
     // Set of block positions reachable from any controller through unblocked connections
     private val reachablePositions = HashSet<BlockPos>()
@@ -117,30 +121,52 @@ object NodeConnectionRenderer {
         return lo.asLong() xor (hi.asLong() * 31)
     }
 
-    /** Refresh the LOS cache and reachability set. Called from render() every N ticks. */
+    /**
+     * Incrementally refresh the LOS cache — processes a limited number of raycasts per tick
+     * to avoid frame spikes. When all connections are checked, rebuilds reachability via BFS.
+     */
     private fun refreshLosCache(level: net.minecraft.world.level.Level) {
-        losCache.clear()
-
-        // Check LOS for all connections
+        // Build a flat list of connection pairs to check (skip already-cached)
+        val pairs = mutableListOf<Pair<BlockPos, BlockPos>>()
         for (nodePos in knownNodes) {
             if (!level.isLoaded(nodePos)) continue
             val connectable = level.getBlockEntity(nodePos) as? damien.nodeworks.network.Connectable ?: continue
             for (targetPos in connectable.getConnections()) {
-                val key = connectionKey(nodePos, targetPos)
-                if (losCache.containsKey(key)) continue
-                if (!level.isLoaded(targetPos)) { losCache[key] = true; continue }
-                val blocked = !damien.nodeworks.network.NodeConnectionHelper.checkLineOfSight(level, nodePos, targetPos)
-                losCache[key] = blocked
+                if (!isLessThan(nodePos, targetPos)) continue
+                pairs.add(nodePos to targetPos)
             }
         }
 
-        // BFS from all controllers through unblocked connections
-        reachablePositions.clear()
-        for (nodePos in knownNodes) {
-            if (!level.isLoaded(nodePos)) continue
-            val entity = level.getBlockEntity(nodePos)
-            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
-                bfsReachable(level, nodePos)
+        // Process up to LOS_RAYCASTS_PER_TICK raycasts starting from losRefreshIndex
+        var count = 0
+        while (losRefreshIndex < pairs.size && count < LOS_RAYCASTS_PER_TICK) {
+            val (a, b) = pairs[losRefreshIndex]
+            val key = connectionKey(a, b)
+            if (!level.isLoaded(b)) {
+                losCache[key] = true
+            } else {
+                val blocked = !damien.nodeworks.network.NodeConnectionHelper.checkLineOfSight(level, a, b)
+                losCache[key] = blocked
+            }
+            losRefreshIndex++
+            count++
+        }
+
+        // When all done, rebuild reachability and reset for next cycle
+        if (losRefreshIndex >= pairs.size) {
+            losRefreshIndex = 0
+            // Purge stale keys from losCache for removed connections
+            val validKeys = pairs.map { connectionKey(it.first, it.second) }.toHashSet()
+            losCache.keys.retainAll(validKeys)
+
+            // BFS from all controllers through unblocked connections
+            reachablePositions.clear()
+            for (nodePos in knownNodes) {
+                if (!level.isLoaded(nodePos)) continue
+                val entity = level.getBlockEntity(nodePos)
+                if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
+                    bfsReachable(level, nodePos)
+                }
             }
         }
     }
@@ -184,9 +210,9 @@ object NodeConnectionRenderer {
         val mc = Minecraft.getInstance()
         val level = mc.level ?: return
 
-        // Refresh LOS cache periodically
+        // Incrementally refresh LOS cache — processes a few raycasts per tick
         val tick = mc.level?.gameTime ?: 0L
-        if (tick - losRefreshTick >= LOS_REFRESH_INTERVAL) {
+        if (tick != losRefreshTick) {
             losRefreshTick = tick
             refreshLosCache(level)
         }
@@ -196,11 +222,18 @@ object NodeConnectionRenderer {
 
         val pose = poseStack.last()
 
-        // Collect all connection pairs with their network color
+        // Collect visible connection pairs with their network color
         val connections = mutableListOf<ConnectionPair>()
         val colorCache = HashMap<BlockPos, Int>()
+        // Distance cull: skip nodes beyond 64 blocks (connections are max 8 blocks, so 64 is generous)
+        val maxDistSq = 64.0 * 64.0
 
         for (nodePos in knownNodes) {
+            val dx = nodePos.x + 0.5 - cameraPos.x
+            val dy = nodePos.y + 0.5 - cameraPos.y
+            val dz = nodePos.z + 0.5 - cameraPos.z
+            if (dx * dx + dy * dy + dz * dz > maxDistSq) continue
+
             if (!level.isLoaded(nodePos)) continue
             val connectable = level.getBlockEntity(nodePos) as? damien.nodeworks.network.Connectable ?: continue
 
@@ -213,6 +246,7 @@ object NodeConnectionRenderer {
             for (targetPos in connectable.getConnections()) {
                 if (!isLessThan(nodePos, targetPos)) continue
                 if (!level.isLoaded(targetPos)) continue
+
                 val blocked = isConnectionBlocked(nodePos, targetPos) ||
                     !isReachable(nodePos) || !isReachable(targetPos)
                 connections.add(ConnectionPair(nodePos, targetPos, color, blocked))
@@ -379,50 +413,53 @@ object NodeConnectionRenderer {
         val vc = consumers.getBuffer(renderType)
         val pose = poseStack.last()
 
-        // 4 corners at each end: ±axis1 ± axis2
-        // c0 = -a1 -a2, c1 = +a1 -a2, c2 = +a1 +a2, c3 = -a1 +a2
-        fun corner(baseX: Float, baseY: Float, baseZ: Float, s1: Float, s2: Float): Triple<Float, Float, Float> {
-            return Triple(
-                baseX + a1x * hw * s1 + a2x * hw * s2,
-                baseY + a1y * hw * s1 + a2y * hw * s2,
-                baseZ + a1z * hw * s1 + a2z * hw * s2
-            )
-        }
+        // 4 corners at each end: ±axis1 ± axis2 — inline to avoid Triple allocations
+        val f0x = fromX - a1x * hw - a2x * hw; val f0y = fromY - a1y * hw - a2y * hw; val f0z = fromZ - a1z * hw - a2z * hw
+        val f1x = fromX + a1x * hw - a2x * hw; val f1y = fromY + a1y * hw - a2y * hw; val f1z = fromZ + a1z * hw - a2z * hw
+        val f2x = fromX + a1x * hw + a2x * hw; val f2y = fromY + a1y * hw + a2y * hw; val f2z = fromZ + a1z * hw + a2z * hw
+        val f3x = fromX - a1x * hw + a2x * hw; val f3y = fromY - a1y * hw + a2y * hw; val f3z = fromZ - a1z * hw + a2z * hw
+        val t0x = toX - a1x * hw - a2x * hw; val t0y = toY - a1y * hw - a2y * hw; val t0z = toZ - a1z * hw - a2z * hw
+        val t1x = toX + a1x * hw - a2x * hw; val t1y = toY + a1y * hw - a2y * hw; val t1z = toZ + a1z * hw - a2z * hw
+        val t2x = toX + a1x * hw + a2x * hw; val t2y = toY + a1y * hw + a2y * hw; val t2z = toZ + a1z * hw + a2z * hw
+        val t3x = toX - a1x * hw + a2x * hw; val t3y = toY - a1y * hw + a2y * hw; val t3z = toZ - a1z * hw + a2z * hw
 
-        val f0 = corner(fromX, fromY, fromZ, -1f, -1f)
-        val f1 = corner(fromX, fromY, fromZ,  1f, -1f)
-        val f2 = corner(fromX, fromY, fromZ,  1f,  1f)
-        val f3 = corner(fromX, fromY, fromZ, -1f,  1f)
-        val t0 = corner(toX, toY, toZ, -1f, -1f)
-        val t1 = corner(toX, toY, toZ,  1f, -1f)
-        val t2 = corner(toX, toY, toZ,  1f,  1f)
-        val t3 = corner(toX, toY, toZ, -1f,  1f)
-
-        // 4 sides of the prism (each a quad, rendered double-sided)
-        fun quad(
-            ax: Float, ay: Float, az: Float, bx: Float, by: Float, bz: Float,
-            cx: Float, cy: Float, cz: Float, dx2: Float, dy2: Float, dz2: Float
-        ) {
-            // Front
-            vc.addVertex(pose, ax, ay, az).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, bx, by, bz).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, cx, cy, cz).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, dx2, dy2, dz2).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-            // Back
-            vc.addVertex(pose, bx, by, bz).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, ax, ay, az).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, dx2, dy2, dz2).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, cx, cy, cz).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        }
-
+        // 4 sides of the prism (front + back = 8 vertices per side)
         // Side 1: f0→f1 to t0→t1
-        quad(f0.first, f0.second, f0.third, f1.first, f1.second, f1.third, t1.first, t1.second, t1.third, t0.first, t0.second, t0.third)
+        vc.addVertex(pose, f0x, f0y, f0z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f1x, f1y, f1z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t1x, t1y, t1z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t0x, t0y, t0z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f1x, f1y, f1z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f0x, f0y, f0z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t0x, t0y, t0z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t1x, t1y, t1z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         // Side 2: f1→f2 to t1→t2
-        quad(f1.first, f1.second, f1.third, f2.first, f2.second, f2.third, t2.first, t2.second, t2.third, t1.first, t1.second, t1.third)
+        vc.addVertex(pose, f1x, f1y, f1z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f2x, f2y, f2z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t2x, t2y, t2z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t1x, t1y, t1z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f2x, f2y, f2z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f1x, f1y, f1z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t1x, t1y, t1z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t2x, t2y, t2z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         // Side 3: f2→f3 to t2→t3
-        quad(f2.first, f2.second, f2.third, f3.first, f3.second, f3.third, t3.first, t3.second, t3.third, t2.first, t2.second, t2.third)
+        vc.addVertex(pose, f2x, f2y, f2z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f3x, f3y, f3z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t3x, t3y, t3z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t2x, t2y, t2z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f3x, f3y, f3z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f2x, f2y, f2z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t2x, t2y, t2z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t3x, t3y, t3z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         // Side 4: f3→f0 to t3→t0
-        quad(f3.first, f3.second, f3.third, f0.first, f0.second, f0.third, t0.first, t0.second, t0.third, t3.first, t3.second, t3.third)
+        vc.addVertex(pose, f3x, f3y, f3z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f0x, f0y, f0z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t0x, t0y, t0z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t3x, t3y, t3z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f0x, f0y, f0z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, f3x, f3y, f3z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t3x, t3y, t3z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+        vc.addVertex(pose, t0x, t0y, t0z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
     }
 
     private fun renderBillboardBeam(
