@@ -8,65 +8,83 @@ import net.minecraft.resources.ResourceLocation
  *
  * Each icon occupies a 16x16 cell on a 256x256 texture, addressed by column and row.
  *
- * @param col Column index (0-based, each column = 16px)
- * @param row Row index (0-based, each row = 16px)
+ * For batch rendering (multiple icons per frame), wrap calls in beginBatch/endBatch
+ * to avoid redundant RenderSystem state changes.
  */
 class Icons private constructor(val col: Int, val row: Int) {
 
     val u: Int get() = col * 16
     val v: Int get() = row * 16
 
-    /**
-     * Draw this icon at full 16x16 size.
-     */
+    /** Draw this icon at full 16x16 size. */
     fun draw(graphics: GuiGraphics, x: Int, y: Int) {
-        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        if (!batching) {
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        }
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        if (!batching) {
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        }
     }
 
-    /**
-     * Draw this icon scaled to a custom size.
-     */
+    /** Draw this icon scaled to a custom size. */
     fun draw(graphics: GuiGraphics, x: Int, y: Int, size: Int) {
-        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        if (!batching) {
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        }
         graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        if (!batching) {
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        }
     }
 
-    /**
-     * Draw the center 8x8 of this icon (cropped 4px inset), useful for small inline icons.
-     */
+    /** Draw the center 8x8 of this icon (cropped 4px inset). */
     fun drawSmall(graphics: GuiGraphics, x: Int, y: Int) {
         graphics.blit(ATLAS, x, y, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
     }
 
-    /**
-     * Draw the center portion of this icon scaled to a custom size.
-     */
+    /** Draw the center portion of this icon scaled to a custom size. */
     fun drawSmall(graphics: GuiGraphics, x: Int, y: Int, size: Int) {
         graphics.blit(ATLAS, x, y, size, size, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
     }
 
-    /**
-     * Draw this icon tinted with an RGB color. Respects the icon's alpha channel.
-     */
+    /** Draw this icon tinted with an RGB color. Respects the icon's alpha channel. */
     fun drawTinted(graphics: GuiGraphics, x: Int, y: Int, color: Int, alpha: Float = 1f) {
         val r = ((color shr 16) and 0xFF) / 255f
         val g = ((color shr 8) and 0xFF) / 255f
         val b = (color and 0xFF) / 255f
-        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        if (!batching) {
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        }
         com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
         com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        if (!batching) {
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        }
     }
 
     companion object {
         val ATLAS: ResourceLocation = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+
+        /** Whether we're in a batch — skips per-call enableBlend/disableBlend. */
+        private var batching = false
+
+        /** Call before rendering multiple icons to avoid redundant RenderSystem state changes. */
+        fun beginBatch() {
+            batching = true
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        }
+
+        /** Call after rendering multiple icons to restore state. */
+        fun endBatch() {
+            batching = false
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        }
 
         // =====================================================================
         // Atlas Layout Reference (icons.png, 256x256, 16x16 per cell)
@@ -76,7 +94,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         // Row 0:  Checkmark    X            ArrowRight   ArrowLeft     Unpinned    Pinned       RedstoneIgnore RedstoneActive RedstoneInactive GlowSquare GlowCircle GlowDot GlowCreeper GlowCat GlowNone
         // Row 1:  IO Card      Storage Card Redstone Card Variable     CrystalInactive CrystalActive LayoutSmall LayoutWide LayoutTall LayoutLarge SmallScrew
         // Row 2:  CopyIdle     CopyHover    CopyPressed  TrashIdle     TrashHover  TrashPressed CollapseIdle CollapseHover CollapsePressed ExpandIdle ExpandHover ExpandPressed
-        // Row 3:  SortAlpha    SortCountDesc SortCountAsc FilterStorage FilterRecipes FilterBoth AutoFocusOn AutoFocusOff CraftInProgress CraftComplete CraftPlus AutoPullOn AutoPullOff
+        // Row 3:  SortAlpha    SortCountDesc SortCountAsc FilterStorage FilterRecipes FilterBoth AutoFocusOn AutoFocusOff CraftInProgress CraftComplete CraftPlus AutoPullOn AutoPullOff CraftGridClear CraftGridDistribute
         // =====================================================================
 
         // Row 0 — General UI icons

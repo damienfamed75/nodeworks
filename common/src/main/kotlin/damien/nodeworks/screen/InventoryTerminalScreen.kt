@@ -116,6 +116,8 @@ class InventoryTerminalScreen(
     private lateinit var searchBox: EditBox
     private var cachedNetworkColor: Int? = null
     private var itemStackCache = HashMap<String, ItemStack>()
+    // Reused container for JEI hoveredSlot — avoids allocating new SimpleContainer every frame
+    private val hoverContainer = net.minecraft.world.SimpleContainer(1)
 
     init {
         computeLayout()
@@ -322,8 +324,7 @@ class InventoryTerminalScreen(
             graphics.fill(sx, sy, sx + 16, sy + 16, 0x30FFFFFF.toInt())
         }
 
-        // Scrollbar
-        repo.ensureUpdated()
+        // Scrollbar (repo.ensureUpdated() called once in render(), not here)
         val availableRows = layout.rows - 1 // first row always reserved for pinned
         maxScroll = maxOf(0, (repo.viewSize + layout.cols - 1) / layout.cols - availableRows)
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, maxScroll))
@@ -332,7 +333,7 @@ class InventoryTerminalScreen(
         NineSlice.SCROLLBAR_TRACK.draw(graphics, scrollbarX, gridY, SCROLLBAR_W, gridH)
         if (maxScroll > 0) {
             val totalRows = (repo.viewSize + layout.cols - 1) / layout.cols
-            val thumbH = maxOf(12, gridH * layout.rows / totalRows.coerceAtLeast(1))
+            val thumbH = maxOf(12, gridH * availableRows / totalRows.coerceAtLeast(1))
             val thumbY = gridY + (gridH - thumbH) * scrollOffset / maxScroll
             val thumbSlice = if (draggingScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
             thumbSlice.draw(graphics, scrollbarX, thumbY, SCROLLBAR_W, thumbH)
@@ -412,6 +413,9 @@ class InventoryTerminalScreen(
         // Ensure repo view is up-to-date before reading
         repo.ensureUpdated()
 
+        // Batch icon rendering to avoid per-call RenderSystem state changes
+        Icons.beginBatch()
+
         // Craft queue reserved row (always visible as first row)
         val pinnedY = networkGrid.y + 1
         val iconSize = 10
@@ -476,6 +480,8 @@ class InventoryTerminalScreen(
             }
         }
 
+        Icons.endBatch()
+
         // Render player inventory items
         playerMainGrid.renderItems(graphics)
         playerHotbarGrid.renderItems(graphics)
@@ -491,9 +497,8 @@ class InventoryTerminalScreen(
                 if (id != null) {
                     val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
                     if (item != null) {
-                        val tempContainer = net.minecraft.world.SimpleContainer(1)
-                        tempContainer.setItem(0, ItemStack(item))
-                        hoveredSlot = net.minecraft.world.inventory.Slot(tempContainer, 0, networkHover.x - leftPos, networkHover.y - topPos)
+                        hoverContainer.setItem(0, ItemStack(item))
+                        hoveredSlot = net.minecraft.world.inventory.Slot(hoverContainer, 0, networkHover.x - leftPos, networkHover.y - topPos)
                     }
                 }
             }
@@ -514,9 +519,8 @@ class InventoryTerminalScreen(
                     val invIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index + 9 else playerSlot.index
                     val stack = Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY
                     if (!stack.isEmpty) {
-                        val tempContainer = net.minecraft.world.SimpleContainer(1)
-                        tempContainer.setItem(0, stack.copy())
-                        hoveredSlot = net.minecraft.world.inventory.Slot(tempContainer, 0, playerSlot.x - leftPos, playerSlot.y - topPos)
+                        hoverContainer.setItem(0, stack.copy())
+                        hoveredSlot = net.minecraft.world.inventory.Slot(hoverContainer, 0, playerSlot.x - leftPos, playerSlot.y - topPos)
                     } else {
                         hoveredSlot = null
                     }
@@ -1056,8 +1060,9 @@ class InventoryTerminalScreen(
 
         if (draggingScrollbar && maxScroll > 0) {
             val gridH = layout.rows * SLOT_SIZE
+            val availableRows = layout.rows - 1
             val totalRows = (repo.viewSize + layout.cols - 1) / layout.cols
-            val thumbH = maxOf(12, gridH * layout.rows / totalRows.coerceAtLeast(1))
+            val thumbH = maxOf(12, gridH * availableRows / totalRows.coerceAtLeast(1))
             val scrollRange = gridH - thumbH
             if (scrollRange > 0) {
                 val relY = (mouseY.toInt() - gridY - thumbH / 2).toFloat() / scrollRange
