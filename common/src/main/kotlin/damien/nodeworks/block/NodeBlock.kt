@@ -119,14 +119,16 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         }
 
         // Default: open node side inventory
+        // Shift+Right Click opens the opposite side
+        val openSide = if (player.isCrouching) side.opposite else side
         val serverPlayer = player as ServerPlayer
-        val sideName = side.name.replaceFirstChar { it.uppercase() }
+        val sideName = openSide.name.replaceFirstChar { it.uppercase() }
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.node_side", sideName),
-            NodeSideOpenData(pos, side.ordinal),
+            NodeSideOpenData(pos, openSide.ordinal),
             NodeSideOpenData.STREAM_CODEC,
-            { syncId, inv, p -> NodeSideScreenHandler(syncId, inv, blockEntity, side, pos, ContainerLevelAccess.create(level, pos)) }
+            { syncId, inv, p -> NodeSideScreenHandler(syncId, inv, blockEntity, openSide, pos, ContainerLevelAccess.create(level, pos)) }
         )
 
         return InteractionResult.SUCCESS

@@ -510,6 +510,18 @@ data class CraftQueueExtractPayload(val containerId: Int, val entryId: Int, val 
     override fun type() = TYPE
 }
 
+/** C2S: Switch to a different side in the Node GUI via tab click. */
+data class SwitchNodeSidePayload(val nodePos: BlockPos, val sideOrdinal: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SwitchNodeSidePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "switch_node_side"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SwitchNodeSidePayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.nodePos); buf.writeVarInt(p.sideOrdinal) },
+            { buf -> SwitchNodeSidePayload(buf.readBlockPos(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /** S2C: Open the debug crafting core screen with fake data. */
 class DebugCraftingCorePayload : CustomPacketPayload {
     companion object {
