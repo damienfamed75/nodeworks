@@ -47,12 +47,12 @@ object FlatColorItemRenderer {
         stack: ItemStack,
         x: Int, y: Int,
         color: Int,
-        alpha: Int = 200
+        alpha: Int = 200,
+        scale: Float = 1f
     ) {
         if (stack.isEmpty) return
         val rt = renderType
         if (rt == null) {
-            // Shader not loaded — fall back to tinted render (imperfect but functional)
             val r = ((color shr 16) and 0xFF) / 255f
             val g = ((color shr 8) and 0xFF) / 255f
             val b = (color and 0xFF) / 255f
@@ -70,8 +70,8 @@ object FlatColorItemRenderer {
 
         val pose = graphics.pose()
         pose.pushPose()
-        pose.translate(x + 8f, y + 8f, 150f)
-        pose.scale(16f, -16f, 16f)
+        pose.translate(x + 8f * scale, y + 8f * scale, 50f)
+        pose.scale(16f * scale, -16f * scale, 16f * scale)
 
         val proxy = object : MultiBufferSource {
             override fun getBuffer(ignored: RenderType): VertexConsumer {
