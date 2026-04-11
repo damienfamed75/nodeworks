@@ -141,7 +141,7 @@ class CraftTreeGraph {
     ) {
         val font = Minecraft.getInstance().font
         val lineColor = 0xFF444444.toInt()
-        val activeLineColor = 0xFFFFAA00.toInt()
+        val activeLineColor = 0xFFFF8212.toInt()
         val time = (System.currentTimeMillis() % 10000) / 1000f
 
         for ((node, pos) in layout.positions) {
@@ -171,7 +171,7 @@ class CraftTreeGraph {
                     if (totalLen > 0) {
                         val dotCount = maxOf(1, totalLen / 12)
                         for (d in 0 until dotCount) {
-                            val t = ((time * 0.5f + d.toFloat() / dotCount) % 1f)
+                            val t = ((time * 0.25f + d.toFloat() / dotCount) % 1f)
                             val pos2 = (t * totalLen).toInt()
                             val seg1 = cy - midY  // vertical from child up
                             val seg2 = kotlin.math.abs(cx - sx)  // horizontal
@@ -192,7 +192,15 @@ class CraftTreeGraph {
                                 dotX = sx
                                 dotY = midY - vPos
                             }
-                            graphics.fill(dotX - 1, dotY - 1, dotX + 2, dotY + 2, 0xFFFFCC44.toInt())
+                            graphics.pose().pushPose()
+                            graphics.pose().translate(-7.5f, -7.5f, 0f)
+                            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+                            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+                            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 0.8f, 0.27f, 1f)
+                            graphics.blit(Icons.ATLAS, dotX, dotY, Icons.GLOW_CIRCLE.u.toFloat(), Icons.GLOW_CIRCLE.v.toFloat(), 16, 16, 256, 256)
+                            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+                            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+                            graphics.pose().popPose()
                         }
                     }
                 }
