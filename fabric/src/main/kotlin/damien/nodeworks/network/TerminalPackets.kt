@@ -97,6 +97,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playS2C().register(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC)
         PayloadTypeRegistry.playS2C().register(DebugCraftingCorePayload.TYPE, DebugCraftingCorePayload.CODEC)
         PayloadTypeRegistry.playS2C().register(DebugInventoryTerminalPayload.TYPE, DebugInventoryTerminalPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SwitchNodeSidePayload.TYPE, SwitchNodeSidePayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CraftQueueExtractPayload.TYPE, CraftQueueExtractPayload.CODEC)
     }
 
@@ -195,6 +196,15 @@ object TerminalPackets {
             if (stack.item is StorageCard) {
                 StorageCard.setPriority(stack, payload.priority)
                 nodeEntity.setChanged()
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SwitchNodeSidePayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.NodeSideScreenHandler) {
+                val side = Direction.entries.getOrNull(payload.sideOrdinal) ?: return@registerGlobalReceiver
+                menu.switchSide(side)
             }
         }
 
