@@ -98,12 +98,10 @@ class CraftingCoreScreen(
         contentLeft: Int, contentTop: Int,
         mouseX: Int, mouseY: Int
     ) {
-        // Status
-        val craftItemName = coreEntity?.currentCraftItem ?: ""
+        // Status line
         val statusLabel = when {
             !menu.isFormed -> "Not Formed"
-            menu.isCrafting && craftItemName.isNotEmpty() -> "Crafting: $craftItemName"
-            menu.isCrafting -> "Crafting..."
+            menu.isCrafting -> "Crafting"
             else -> "Idle"
         }
         val statusColor = when {
@@ -112,13 +110,25 @@ class CraftingCoreScreen(
             else -> 0xFFAAAAAA.toInt()
         }
         graphics.drawString(font, "Status:", contentLeft, contentTop, 0xFFAAAAAA.toInt())
-        val statusX = contentLeft + font.width("Status:") + 4
-        val maxStatusW = LEFT_PANEL_W - font.width("Status:") - 8
-        val statusTrimmed = if (font.width(statusLabel) > maxStatusW) font.plainSubstrByWidth(statusLabel, maxStatusW - 4) + ".." else statusLabel
-        graphics.drawString(font, statusTrimmed, statusX, contentTop, statusColor)
+        graphics.drawString(font, statusLabel, contentLeft + font.width("Status:") + 4, contentTop, statusColor)
+
+        // Job line (only when crafting)
+        var nextY = contentTop + 12
+        if (menu.isCrafting) {
+            val originalId = coreEntity?.originalCraftId ?: ""
+            val originalCount = coreEntity?.originalCraftCount ?: 0
+            val craftName = coreEntity?.currentCraftItem ?: originalId.substringAfter(':').replace('_', ' ')
+            val jobLabel = if (originalCount > 1) "$craftName (x$originalCount)" else craftName
+            graphics.drawString(font, "Job:", contentLeft, nextY, 0xFFAAAAAA.toInt())
+            val jobX = contentLeft + font.width("Job:") + 4
+            val maxJobW = LEFT_PANEL_W - font.width("Job:") - 8
+            val jobTrimmed = if (font.width(jobLabel) > maxJobW) font.plainSubstrByWidth(jobLabel, maxJobW - 4) + ".." else jobLabel
+            graphics.drawString(font, jobTrimmed, jobX, nextY, 0xFFFFCC44.toInt())
+            nextY += 12
+        }
 
         // Buffer bar
-        val barTop = contentTop + 14
+        val barTop = nextY + 2
         graphics.drawString(font, "Buffer:", contentLeft, barTop, 0xFFAAAAAA.toInt())
         val barX = contentLeft + font.width("Buffer:") + 4
         val barW = LEFT_PANEL_W - font.width("Buffer:") - 8
@@ -141,23 +151,44 @@ class CraftingCoreScreen(
         // Cancel button visibility
         cancelButton?.visible = menu.isCrafting || menu.bufferUsed > 0
 
-        // Buffer contents
-        val contentsTop = contentTop + 66
+        // Cancel button position (moves with layout)
+        cancelButton?.y = barTop + barH + 6
+
+        // Buffer section — always visible with border and scrollbar track
+        val bufferLabelTop = barTop + barH + 24
+        graphics.drawString(font, "Buffer:", contentLeft, bufferLabelTop, 0xFFAAAAAA.toInt())
+
+        val gridTop = bufferLabelTop + 12
+        val gridBottom = topPos + imageHeight - PADDING
+        val gridH = gridBottom - gridTop
+        val slotSize = 18
+        val scrollbarW = 6
+        val gridW = LEFT_PANEL_W - scrollbarW - 8
+        val cols = maxOf(1, gridW / slotSize)
+
+        // Inset around the buffer area + scrollbar
+        val sbX = contentLeft + gridW + 4
+        NineSlice.PANEL_INSET.draw(graphics, contentLeft - 2, gridTop - 2, gridW + scrollbarW + 8, gridH + 4)
+
+        // Scrollbar track (always visible, inside the inset)
+        NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, gridTop, scrollbarW, gridH)
+
         if (!menu.isFormed) {
-            graphics.drawString(font, "Place Crafting Storage", contentLeft, contentsTop, 0xFF888888.toInt())
-            graphics.drawString(font, "adjacent to form CPU", contentLeft, contentsTop + 11, 0xFF888888.toInt())
-        } else if (menu.bufferUsed > 0) {
-            graphics.drawString(font, "Buffer:", contentLeft, contentsTop, 0xFFAAAAAA.toInt())
-            renderBufferGrid(graphics, contentLeft, contentsTop + 12, LEFT_PANEL_W)
+            graphics.drawString(font, "Not formed", contentLeft + 4, gridTop + 4, 0xFF888888.toInt())
+        } else {
+            renderBufferGrid(graphics, contentLeft, gridTop, gridW, gridH, cols, sbX, scrollbarW)
         }
     }
 
-    private fun renderBufferGrid(graphics: GuiGraphics, startX: Int, startY: Int, panelW: Int) {
+    private fun renderBufferGrid(
+        graphics: GuiGraphics,
+        startX: Int, startY: Int,
+        gridW: Int, gridH: Int,
+        cols: Int, sbX: Int, scrollbarW: Int
+    ) {
         val contents = menu.clientBufferContents
         val slotSize = 18
-        val cols = maxOf(1, (panelW - 6) / slotSize)
-        val availHeight = topPos + imageHeight - startY - PADDING
-        val rows = maxOf(1, availHeight / slotSize)
+        val rows = maxOf(1, gridH / slotSize)
         val totalRows = (contents.size + cols - 1) / cols
         val maxScroll = maxOf(0, totalRows - rows)
         bufferScrollOffset = bufferScrollOffset.coerceIn(0, maxScroll)
@@ -200,14 +231,25 @@ class CraftingCoreScreen(
 
         graphics.disableScissor()
 
-        // Scrollbar
-        if (totalRows > rows) {
-            val sbX = startX + cols * slotSize + 2
-            val sbH = rows * slotSize
-            val thumbH = maxOf(6, sbH * rows / totalRows)
-            val thumbY = startY + (sbH - thumbH) * bufferScrollOffset / maxScroll
-            graphics.fill(sbX, startY, sbX + 3, startY + sbH, 0xFF1A1A1A.toInt())
-            graphics.fill(sbX, thumbY, sbX + 3, thumbY + thumbH, 0xFF555555.toInt())
+        // Scrollbar thumb (always visible — grayed out when not scrollable)
+        if (maxScroll > 0) {
+            val thumbH = maxOf(8, gridH * rows / totalRows)
+            val thumbY = startY + (gridH - thumbH) * bufferScrollOffset / maxScroll
+            NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, thumbY, scrollbarW, thumbH)
+        } else {
+            // Grayed thumb sized as if there's one extra row to scroll
+            val fakeThumbH = maxOf(8, gridH * rows / (rows + 1))
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.6f, 0.6f, 0.6f, 0.5f)
+            NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, startY, scrollbarW, fakeThumbH)
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        }
+
+        // Empty state
+        if (contents.isEmpty()) {
+            graphics.drawString(font, "Empty", startX + 4, startY + 4, 0xFF555555.toInt())
         }
     }
 
