@@ -164,6 +164,10 @@ object NodeworksClient : ClientModInitializer {
             damien.nodeworks.command.DebugScreens.openCraftingCore()
         }
 
+        ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.DebugInventoryTerminalPayload.TYPE) { _, _ ->
+            damien.nodeworks.command.DebugScreens.openInventoryTerminal()
+        }
+
         ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.CraftQueueSyncPayload.TYPE) { payload, context ->
             val screen = Minecraft.getInstance().screen
             if (screen is InventoryTerminalScreen) {

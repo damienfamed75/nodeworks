@@ -96,6 +96,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playS2C().register(CraftQueueSyncPayload.TYPE, CraftQueueSyncPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC)
         PayloadTypeRegistry.playS2C().register(DebugCraftingCorePayload.TYPE, DebugCraftingCorePayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(DebugInventoryTerminalPayload.TYPE, DebugInventoryTerminalPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CraftQueueExtractPayload.TYPE, CraftQueueExtractPayload.CODEC)
     }
 

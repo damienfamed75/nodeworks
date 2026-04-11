@@ -521,3 +521,15 @@ class DebugCraftingCorePayload : CustomPacketPayload {
     }
     override fun type() = TYPE
 }
+
+/** S2C: Open the debug inventory terminal screen with fake data. */
+class DebugInventoryTerminalPayload : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<DebugInventoryTerminalPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "debug_inventory_terminal"))
+        val CODEC: StreamCodec<FriendlyByteBuf, DebugInventoryTerminalPayload> = CustomPacketPayload.codec(
+            { _, _ -> },
+            { _ -> DebugInventoryTerminalPayload() }
+        )
+    }
+    override fun type() = TYPE
+}
