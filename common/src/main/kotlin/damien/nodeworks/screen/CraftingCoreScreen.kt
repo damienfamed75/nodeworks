@@ -2,10 +2,16 @@ package damien.nodeworks.screen
 
 import damien.nodeworks.network.CancelCraftPayload
 import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.screen.widget.CraftTreeGraph
+import damien.nodeworks.screen.widget.SlicedButton
+import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.item.ItemStack
 
 class CraftingCoreScreen(
     menu: CraftingCoreMenu,
@@ -13,7 +19,17 @@ class CraftingCoreScreen(
     title: Component
 ) : AbstractContainerScreen<CraftingCoreMenu>(menu, playerInventory, title) {
 
+    companion object {
+        private const val LEFT_PANEL_W = 130
+        private const val DIVIDER_W = 1
+        private const val RIGHT_PANEL_W = 160
+        private const val PADDING = 6
+        private const val TOP_BAR_H = 20
+    }
+
     private var bufferScrollOffset = 0
+    private var cancelButton: SlicedButton? = null
+    private val craftGraph = CraftTreeGraph()
 
     private fun formatCount(count: Int): String = when {
         count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
@@ -22,8 +38,8 @@ class CraftingCoreScreen(
     }
 
     init {
-        imageWidth = 180
-        imageHeight = 140
+        imageWidth = LEFT_PANEL_W + DIVIDER_W + RIGHT_PANEL_W + PADDING * 2
+        imageHeight = 190
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -32,25 +48,57 @@ class CraftingCoreScreen(
         super.init()
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
+
+        val btnX = leftPos + PADDING + 2
+        val btnY = topPos + TOP_BAR_H + 48
+        cancelButton = SlicedButton.createColored(btnX, btnY, 54, 14, "Cancel",
+            0xFFFF8888.toInt(), 0xFFFFAAAA.toInt()
+        ) { _ ->
+            PlatformServices.clientNetworking.sendToServer(CancelCraftPayload(menu.corePos))
+        }
+        addRenderableWidget(cancelButton!!)
     }
 
+    // ========== Background Rendering ==========
+
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
-        // Dark background
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFF2B2B2B.toInt())
+        NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
-        // Top bar
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + 20, 0xFF3C3C3C.toInt())
-        graphics.fill(leftPos, topPos + 19, leftPos + imageWidth, topPos + 20, 0xFF555555.toInt())
-        graphics.drawString(font, title, leftPos + 6, topPos + 6, 0xFFFFFFFF.toInt())
+        // Title bar with network color
+        val mc = Minecraft.getInstance()
+        val coreEntity = mc.level?.getBlockEntity(menu.corePos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity
+        val networkColor = coreEntity?.networkId?.let {
+            damien.nodeworks.network.NetworkSettingsRegistry.getColor(it)
+        } ?: 0x888888
+        NineSlice.drawTitleBar(graphics, font, Component.literal("Crafting CPU"), leftPos, topPos, imageWidth, trimColor = networkColor)
 
-        val contentLeft = leftPos + 8
-        val contentTop = topPos + 26
+        val contentTop = topPos + TOP_BAR_H + PADDING
+        val contentLeft = leftPos + PADDING
 
-        // Status + current craft item
-        val mc = net.minecraft.client.Minecraft.getInstance()
-        val level = mc.level
-        val coreEntity = level?.getBlockEntity(menu.corePos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity
+        // --- Left panel ---
+        renderInfoPanel(graphics, coreEntity, contentLeft, contentTop, mouseX, mouseY)
 
+        // --- Vertical divider ---
+        val dividerX = leftPos + PADDING + LEFT_PANEL_W
+        graphics.fill(dividerX, topPos + TOP_BAR_H, dividerX + DIVIDER_W, topPos + imageHeight - PADDING, 0xFF444444.toInt())
+
+        // --- Right panel: Craft tree graph ---
+        val treeLeft = dividerX + DIVIDER_W + 1
+        val treeTop = topPos + TOP_BAR_H + 1
+        val treeW = RIGHT_PANEL_W - 1
+        val treeH = imageHeight - TOP_BAR_H - PADDING - 1
+
+        craftGraph.activeSteps = menu.activeSteps
+        craftGraph.render(graphics, menu.craftTree, treeLeft, treeTop, treeW, treeH)
+    }
+
+    private fun renderInfoPanel(
+        graphics: GuiGraphics,
+        coreEntity: damien.nodeworks.block.entity.CraftingCoreBlockEntity?,
+        contentLeft: Int, contentTop: Int,
+        mouseX: Int, mouseY: Int
+    ) {
+        // Status
         val craftItemName = coreEntity?.currentCraftItem ?: ""
         val statusLabel = when {
             !menu.isFormed -> "Not Formed"
@@ -64,25 +112,21 @@ class CraftingCoreScreen(
             else -> 0xFFAAAAAA.toInt()
         }
         graphics.drawString(font, "Status:", contentLeft, contentTop, 0xFFAAAAAA.toInt())
-        graphics.drawString(font, statusLabel, contentLeft + 50, contentTop, statusColor)
+        val statusX = contentLeft + font.width("Status:") + 4
+        val maxStatusW = LEFT_PANEL_W - font.width("Status:") - 8
+        val statusTrimmed = if (font.width(statusLabel) > maxStatusW) font.plainSubstrByWidth(statusLabel, maxStatusW - 4) + ".." else statusLabel
+        graphics.drawString(font, statusTrimmed, statusX, contentTop, statusColor)
 
         // Buffer bar
-        val barTop = contentTop + 16
+        val barTop = contentTop + 14
         graphics.drawString(font, "Buffer:", contentLeft, barTop, 0xFFAAAAAA.toInt())
-
-        val barX = contentLeft + 50
-        val barW = imageWidth - 66
+        val barX = contentLeft + font.width("Buffer:") + 4
+        val barW = LEFT_PANEL_W - font.width("Buffer:") - 8
         val barH = 10
 
-        // Bar background
-        graphics.fill(barX, barTop, barX + barW, barTop + barH, 0xFF1E1E1E.toInt())
-        // Inset border
-        graphics.fill(barX - 1, barTop - 1, barX + barW + 1, barTop, 0xFF555555.toInt())
-        graphics.fill(barX - 1, barTop - 1, barX, barTop + barH + 1, 0xFF555555.toInt())
-        graphics.fill(barX + barW, barTop - 1, barX + barW + 1, barTop + barH + 1, 0xFF3C3C3C.toInt())
-        graphics.fill(barX - 1, barTop + barH, barX + barW + 1, barTop + barH + 1, 0xFF3C3C3C.toInt())
+        NineSlice.CONTENT_BORDER.draw(graphics, barX - 2, barTop - 2, barW + 4, barH + 4)
+        graphics.fill(barX, barTop, barX + barW, barTop + barH, 0xFF1A1A1A.toInt())
 
-        // Fill
         if (menu.bufferCapacity > 0) {
             val fillW = (barW * menu.bufferUsed.toLong() / menu.bufferCapacity).toInt().coerceAtMost(barW)
             if (fillW > 0) {
@@ -90,111 +134,149 @@ class CraftingCoreScreen(
                 graphics.fill(barX, barTop, barX + fillW, barTop + barH, fillColor)
             }
         }
-
-        // Count text
         val countText = "${menu.bufferUsed} / ${menu.bufferCapacity}"
         val countWidth = font.width(countText)
         graphics.drawString(font, countText, barX + (barW - countWidth) / 2, barTop + 1, 0xFFFFFFFF.toInt())
 
-        // Cancel button (only when crafting)
-        val btnTop = barTop + 14
-        if (menu.isCrafting || menu.bufferUsed > 0) {
-            val btnX = contentLeft
-            val btnW = 50
-            val btnH = 14
-            val hovered = mouseX >= btnX && mouseX < btnX + btnW && mouseY >= btnTop && mouseY < btnTop + btnH
-            val bg = if (hovered) 0xFF553333.toInt() else 0xFF442222.toInt()
-            graphics.fill(btnX, btnTop, btnX + btnW, btnTop + btnH, bg)
-            graphics.fill(btnX, btnTop, btnX + btnW, btnTop + 1, 0xFF664444.toInt())
-            graphics.fill(btnX, btnTop + btnH - 1, btnX + btnW, btnTop + btnH, 0xFF331111.toInt())
-            val textW = font.width("Cancel")
-            graphics.drawString(font, "Cancel", btnX + (btnW - textW) / 2, btnTop + 3, 0xFFFF8888.toInt())
-        }
+        // Cancel button visibility
+        cancelButton?.visible = menu.isCrafting || menu.bufferUsed > 0
 
-        // Buffer contents or capacity info
-        val contentsTop = btnTop + 18
+        // Buffer contents
+        val contentsTop = contentTop + 66
         if (!menu.isFormed) {
-            graphics.drawString(font, "Place Crafting Storage adjacent", contentLeft, contentsTop, 0xFF888888.toInt())
-            graphics.drawString(font, "to form the CPU", contentLeft, contentsTop + 11, 0xFF888888.toInt())
+            graphics.drawString(font, "Place Crafting Storage", contentLeft, contentsTop, 0xFF888888.toInt())
+            graphics.drawString(font, "adjacent to form CPU", contentLeft, contentsTop + 11, 0xFF888888.toInt())
         } else if (menu.bufferUsed > 0) {
             graphics.drawString(font, "Buffer:", contentLeft, contentsTop, 0xFFAAAAAA.toInt())
-            run {
-                val contents = menu.clientBufferContents
-                val startX = contentLeft
-                val startY = contentsTop + 12
-                val slotSize = 18
-                val cols = (imageWidth - 24) / slotSize  // leave room for scrollbar
-                val availHeight = topPos + imageHeight - startY - 4
-                val rows = maxOf(1, availHeight / slotSize)
-                val totalRows = (contents.size + cols - 1) / cols
-                val maxScroll = maxOf(0, totalRows - rows)
-                bufferScrollOffset = bufferScrollOffset.coerceIn(0, maxScroll)
-
-                graphics.enableScissor(startX, startY, startX + cols * slotSize, startY + rows * slotSize)
-                // Pass 1: backgrounds + items
-                for ((i, entry) in contents.withIndex()) {
-                    val row = i / cols - bufferScrollOffset
-                    val col = i % cols
-                    if (row < 0 || row >= rows) continue
-                    val ix = startX + col * slotSize
-                    val iy = startY + row * slotSize
-                    val id = net.minecraft.resources.ResourceLocation.tryParse(entry.first) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
-                    val stack = net.minecraft.world.item.ItemStack(item, 1)
-                    graphics.fill(ix, iy, ix + 16, iy + 16, 0xFF1A1A1A.toInt())
-                    graphics.renderItem(stack, ix, iy)
-                }
-                // Pass 2: count text on top of all items
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 200f)
-                for ((i, entry) in contents.withIndex()) {
-                    val row = i / cols - bufferScrollOffset
-                    val col = i % cols
-                    if (row < 0 || row >= rows) continue
-                    val ix = startX + col * slotSize
-                    val iy = startY + row * slotSize
-                    val countText = formatCount(entry.second)
-                    graphics.drawString(font, countText, ix + 17 - font.width(countText), iy + 9, 0xFFFFFFFF.toInt(), true)
-                }
-                graphics.pose().popPose()
-                graphics.disableScissor()
-
-                // Scrollbar
-                if (totalRows > rows) {
-                    val sbX = startX + cols * slotSize + 2
-                    val sbH = rows * slotSize
-                    val thumbH = maxOf(6, sbH * rows / totalRows)
-                    val thumbY = startY + (sbH - thumbH) * bufferScrollOffset / maxScroll
-                    graphics.fill(sbX, startY, sbX + 3, startY + sbH, 0xFF1A1A1A.toInt())
-                    graphics.fill(sbX, thumbY, sbX + 3, thumbY + thumbH, 0xFF555555.toInt())
-                }
-            }
+            renderBufferGrid(graphics, contentLeft, contentsTop + 12, LEFT_PANEL_W)
         }
     }
+
+    private fun renderBufferGrid(graphics: GuiGraphics, startX: Int, startY: Int, panelW: Int) {
+        val contents = menu.clientBufferContents
+        val slotSize = 18
+        val cols = maxOf(1, (panelW - 6) / slotSize)
+        val availHeight = topPos + imageHeight - startY - PADDING
+        val rows = maxOf(1, availHeight / slotSize)
+        val totalRows = (contents.size + cols - 1) / cols
+        val maxScroll = maxOf(0, totalRows - rows)
+        bufferScrollOffset = bufferScrollOffset.coerceIn(0, maxScroll)
+
+        graphics.enableScissor(startX, startY, startX + cols * slotSize, startY + rows * slotSize)
+
+        for ((i, entry) in contents.withIndex()) {
+            val row = i / cols - bufferScrollOffset
+            val col = i % cols
+            if (row < 0 || row >= rows) continue
+            val ix = startX + col * slotSize
+            val iy = startY + row * slotSize
+            val id = ResourceLocation.tryParse(entry.first) ?: continue
+            val item = BuiltInRegistries.ITEM.get(id) ?: continue
+            val stack = ItemStack(item, 1)
+            NineSlice.SLOT.draw(graphics, ix - 1, iy - 1, 18, 18)
+            graphics.renderItem(stack, ix, iy)
+        }
+
+        // Count text at higher Z with 0.5x scale
+        graphics.pose().pushPose()
+        graphics.pose().translate(0f, 0f, 200f)
+        val scale = 0.5f
+        graphics.pose().scale(scale, scale, 1f)
+        for ((i, entry) in contents.withIndex()) {
+            val row = i / cols - bufferScrollOffset
+            val col = i % cols
+            if (row < 0 || row >= rows) continue
+            val ix = startX + col * slotSize
+            val iy = startY + row * slotSize
+            if (entry.second > 1) {
+                val ct = formatCount(entry.second)
+                val tw = font.width(ct)
+                val cx = ((ix + 16).toFloat() / scale - tw).toInt()
+                val cy = ((iy + 16).toFloat() / scale - font.lineHeight).toInt()
+                graphics.drawString(font, ct, cx, cy, 0xFFFFFFFF.toInt(), true)
+            }
+        }
+        graphics.pose().popPose()
+
+        graphics.disableScissor()
+
+        // Scrollbar
+        if (totalRows > rows) {
+            val sbX = startX + cols * slotSize + 2
+            val sbH = rows * slotSize
+            val thumbH = maxOf(6, sbH * rows / totalRows)
+            val thumbY = startY + (sbH - thumbH) * bufferScrollOffset / maxScroll
+            graphics.fill(sbX, startY, sbX + 3, startY + sbH, 0xFF1A1A1A.toInt())
+            graphics.fill(sbX, thumbY, sbX + 3, thumbY + thumbH, 0xFF555555.toInt())
+        }
+    }
+
+    // ========== Overlay Rendering ==========
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.render(graphics, mouseX, mouseY, partialTick)
+
+        // Buffer item tooltips
+        val contents = menu.clientBufferContents
+        if (contents.isNotEmpty()) {
+            val contentLeft = leftPos + PADDING
+            val contentsTop = topPos + TOP_BAR_H + PADDING + 66 + 12
+            val slotSize = 18
+            val cols = maxOf(1, (LEFT_PANEL_W - 6) / slotSize)
+            for ((i, entry) in contents.withIndex()) {
+                val row = i / cols - bufferScrollOffset
+                val col = i % cols
+                val ix = contentLeft + col * slotSize
+                val iy = contentsTop + row * slotSize
+                if (mouseX >= ix && mouseX < ix + 16 && mouseY >= iy && mouseY < iy + 16) {
+                    val id = ResourceLocation.tryParse(entry.first) ?: continue
+                    val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                    val stack = ItemStack(item, entry.second)
+                    graphics.renderTooltip(font, stack, mouseX, mouseY)
+                    break
+                }
+            }
+        }
     }
 
+    // ========== Input ==========
+
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        if (menu.bufferUsed > 0) {
+        val dividerX = leftPos + PADDING + LEFT_PANEL_W
+
+        if (mouseX < dividerX) {
             bufferScrollOffset -= scrollY.toInt()
             return true
+        } else {
+            val treeLeft = dividerX + DIVIDER_W + 1
+            val treeW = RIGHT_PANEL_W - 1
+            val centerX = treeLeft + treeW / 2f
+            val treeTop = topPos + TOP_BAR_H + 1
+            val treeH = imageHeight - TOP_BAR_H - PADDING - 1
+            val centerY = treeTop + treeH / 2f
+            return craftGraph.onMouseScrolled(mouseX, mouseY, scrollY, centerX, centerY)
         }
-        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        if (menu.isCrafting || menu.bufferUsed > 0) {
-            val contentLeft = leftPos + 8
-            val btnTop = topPos + 26 + 16 + 14
-            val btnW = 50
-            val btnH = 14
-            if (mouseX >= contentLeft && mouseX < contentLeft + btnW && mouseY >= btnTop && mouseY < btnTop + btnH) {
-                PlatformServices.clientNetworking.sendToServer(CancelCraftPayload(menu.corePos))
-                return true
-            }
+        val dividerX = leftPos + PADDING + LEFT_PANEL_W
+        if (mouseX >= dividerX && mouseY >= topPos + TOP_BAR_H && mouseY < topPos + imageHeight - PADDING) {
+            return craftGraph.onMouseClicked(mouseX, mouseY)
         }
         return super.mouseClicked(mouseX, mouseY, button)
+    }
+
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (craftGraph.dragging) {
+            craftGraph.onMouseReleased()
+        }
+        return super.mouseReleased(mouseX, mouseY, button)
+    }
+
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        if (craftGraph.dragging) {
+            return craftGraph.onMouseDragged(mouseX, mouseY)
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
     }
 }

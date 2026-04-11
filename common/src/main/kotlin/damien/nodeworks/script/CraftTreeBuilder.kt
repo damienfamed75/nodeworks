@@ -66,7 +66,6 @@ object CraftTreeBuilder {
                 if (ingInStorage >= needed) {
                     listOf(CraftTreeNode(ingId, getItemName(ingId), needed, "storage", "", "storage", ingInStorage, emptyList()))
                 } else if (ingInStorage > 0) {
-                    // Split: some from storage, rest needs crafting
                     val fromStorage = CraftTreeNode(ingId, getItemName(ingId), ingInStorage, "storage", "", "storage", ingInStorage, emptyList())
                     val toCraft = needed - ingInStorage
                     val crafted = buildCraftTree(ingId, toCraft, level, snapshot, depth + 1, visited)

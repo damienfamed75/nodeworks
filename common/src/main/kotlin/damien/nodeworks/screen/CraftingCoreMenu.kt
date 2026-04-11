@@ -16,7 +16,7 @@ class CraftingCoreMenu(
     val corePos: BlockPos,
     private val data: ContainerData = SimpleContainerData(DATA_SLOTS),
     private val serverEntity: CraftingCoreBlockEntity? = null,
-    private val packetSender: ((BufferSyncPayload) -> Unit)? = null
+    private val packetSender: ((net.minecraft.network.protocol.common.custom.CustomPacketPayload) -> Unit)? = null
 ) : AbstractContainerMenu(ModScreenHandlers.CRAFTING_CORE, syncId) {
 
     companion object {
@@ -44,13 +44,9 @@ class CraftingCoreMenu(
                 override fun set(index: Int, value: Int) {}
                 override fun getCount(): Int = DATA_SLOTS
             }
-            // Create a packet sender that uses the player's connection
-            // This is platform-agnostic — both Fabric and NeoForge support ServerPlayer.connection
             val player = playerInventory.player as? net.minecraft.server.level.ServerPlayer
-            val sender: ((BufferSyncPayload) -> Unit)? = if (player != null) { payload ->
-                // Use the vanilla custom payload packet wrapper
-                val packet = net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(payload)
-                player.connection.send(packet)
+            val sender: ((net.minecraft.network.protocol.common.custom.CustomPacketPayload) -> Unit)? = if (player != null) { payload ->
+                player.connection.send(net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(payload))
             } else null
             return CraftingCoreMenu(syncId, entity.blockPos, data, entity, sender)
         }
@@ -64,8 +60,15 @@ class CraftingCoreMenu(
     /** Client-side buffer contents, populated by BufferSyncPayload handler. */
     var clientBufferContents: List<Pair<String, Int>> = emptyList()
 
+    /** Client-side craft tree, populated by CraftingCpuTreePayload handler. */
+    var craftTree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
+
+    /** Client-side active step item IDs (highlighted in the tree). */
+    var activeSteps: Set<String> = emptySet()
+
     private var syncTimer = 0
     private var lastBufferHash = 0
+    private var lastTreeHash = 0
 
     init {
         addDataSlots(data)
@@ -80,12 +83,51 @@ class CraftingCoreMenu(
         if (++syncTimer < BUFFER_SYNC_INTERVAL) return
         syncTimer = 0
 
+        // Sync buffer contents
         val contents = entity.getBufferContents()
         val hash = contents.hashCode()
-        if (hash == lastBufferHash) return
-        lastBufferHash = hash
+        if (hash != lastBufferHash) {
+            lastBufferHash = hash
+            sender(BufferSyncPayload(containerId, contents.entries.map { it.key to it.value }))
+        }
 
-        sender(BufferSyncPayload(containerId, contents.entries.map { it.key to it.value }))
+        // Sync craft tree
+        syncCraftTree(entity)
+    }
+
+    private fun syncCraftTree(entity: CraftingCoreBlockEntity) {
+        val sender = packetSender ?: return
+        val level = entity.level as? net.minecraft.server.level.ServerLevel ?: return
+
+        var tree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode?
+        val steps: List<String>
+
+        if (entity.isCrafting && entity.originalCraftId.isNotEmpty()) {
+            // Use the tree snapshot taken at craft start — reflects original storage state
+            tree = entity.craftTreeSnapshot
+            if (tree == null) {
+                // Fallback: build now (e.g., after world reload where transient field was lost)
+                val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, entity.blockPos)
+                tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(
+                    entity.originalCraftId, entity.originalCraftCount, level, snapshot
+                )
+                entity.craftTreeSnapshot = tree
+            }
+
+            // Active steps update every sync cycle
+            steps = entity.pendingOutputs.map { it.first }.distinct().ifEmpty {
+                if (entity.pendingCount > 0) emptyList() else listOf(entity.originalCraftId)
+            }
+        } else {
+            tree = null
+            steps = emptyList()
+        }
+
+        val treeHash = (tree?.hashCode() ?: 0) + steps.hashCode()
+        if (treeHash == lastTreeHash) return
+        lastTreeHash = treeHash
+
+        sender(damien.nodeworks.network.CraftingCpuTreePayload(containerId, tree, steps))
     }
 
     override fun quickMoveStack(player: Player, index: Int): ItemStack = ItemStack.EMPTY
