@@ -43,6 +43,29 @@ object NodeworksClient : ClientModInitializer {
             if (damien.nodeworks.item.LinkCrystalItem.isEncoded(stack)) 1.0f else 0.0f
         }
 
+        // Register custom shaders
+        net.fabricmc.fabric.api.client.rendering.v1.CoreShaderRegistrationCallback.EVENT.register { ctx ->
+            val location = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "flat_color_item")
+            ctx.register(location, com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY) { shader ->
+                damien.nodeworks.render.FlatColorItemRenderer.shaderInstance = shader
+                damien.nodeworks.render.FlatColorItemRenderer.renderType = net.minecraft.client.renderer.RenderType.create(
+                    "nodeworks_flat_color_item",
+                    com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY,
+                    com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS,
+                    1536, false, true,
+                    net.minecraft.client.renderer.RenderType.CompositeState.builder()
+                        .setShaderState(net.minecraft.client.renderer.RenderStateShard.ShaderStateShard { shader })
+                        .setTextureState(net.minecraft.client.renderer.RenderStateShard.TextureStateShard(
+                            net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS, false, false))
+                        .setTransparencyState(net.minecraft.client.renderer.RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+                        .setCullState(net.minecraft.client.renderer.RenderStateShard.NO_CULL)
+                        .setLightmapState(net.minecraft.client.renderer.RenderStateShard.LIGHTMAP)
+                        .setOverlayState(net.minecraft.client.renderer.RenderStateShard.OVERLAY)
+                        .createCompositeState(true)
+                )
+            }
+        }
+
         NodeConnectionRenderer.register()
         net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry.register(
             damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL
