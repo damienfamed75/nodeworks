@@ -78,15 +78,14 @@ class CraftingCoreScreen(
         // --- Left panel ---
         renderInfoPanel(graphics, coreEntity, contentLeft, contentTop, mouseX, mouseY)
 
-        // --- Vertical divider ---
-        val dividerX = leftPos + PADDING + LEFT_PANEL_W
-        graphics.fill(dividerX, topPos + TOP_BAR_H, dividerX + DIVIDER_W, topPos + imageHeight - PADDING, 0xFF444444.toInt())
-
         // --- Right panel: Craft tree graph ---
-        val treeLeft = dividerX + DIVIDER_W + 1
-        val treeTop = topPos + TOP_BAR_H + 1
-        val treeW = RIGHT_PANEL_W + 1
-        val treeH = imageHeight - TOP_BAR_H - PADDING + 1
+        val treeLeft = leftPos + PADDING + LEFT_PANEL_W + 2
+        val treeTop = topPos + TOP_BAR_H + 3
+        val treeW = RIGHT_PANEL_W - 1
+        val treeH = imageHeight - TOP_BAR_H - PADDING - 3
+
+        // Inset background for tree area
+        NineSlice.PANEL_INSET.draw(graphics, treeLeft - 2, treeTop - 2, treeW + 4, treeH + 4)
 
         craftGraph.activeSteps = menu.activeSteps
         craftGraph.render(graphics, menu.craftTree, treeLeft, treeTop, treeW, treeH)
