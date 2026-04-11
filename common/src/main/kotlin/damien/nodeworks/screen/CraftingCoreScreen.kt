@@ -30,6 +30,16 @@ class CraftingCoreScreen(
     private var bufferScrollOffset = 0
     private var cancelButton: SlicedButton? = null
     private val craftGraph = CraftTreeGraph()
+    // Cached grid position for tooltip hit detection and scrollbar drag
+    private var bufferGridX = 0
+    private var bufferGridY = 0
+    private var bufferGridCols = 6
+    private var bufferGridRows = 5
+    private var bufferSbX = 0
+    private var bufferSbW = 6
+    private var bufferGridH = 0
+    private var bufferMaxScroll = 0
+    private var draggingBufferScrollbar = false
 
     private fun formatCount(count: Int): String = when {
         count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
@@ -79,9 +89,9 @@ class CraftingCoreScreen(
         renderInfoPanel(graphics, coreEntity, contentLeft, contentTop, mouseX, mouseY)
 
         // --- Right panel: Craft tree graph ---
-        val treeLeft = leftPos + PADDING + LEFT_PANEL_W + 2
+        val treeLeft = leftPos + PADDING + LEFT_PANEL_W - 4
         val treeTop = topPos + TOP_BAR_H + 3
-        val treeW = RIGHT_PANEL_W - 1
+        val treeW = RIGHT_PANEL_W + 5
         val treeH = imageHeight - TOP_BAR_H - PADDING - 3
 
         // Inset background for tree area
@@ -130,7 +140,7 @@ class CraftingCoreScreen(
         val barTop = nextY + 2
         graphics.drawString(font, "Buffer:", contentLeft, barTop, 0xFFAAAAAA.toInt())
         val barX = contentLeft + font.width("Buffer:") + 4
-        val barW = LEFT_PANEL_W - font.width("Buffer:") - 8
+        val barW = LEFT_PANEL_W - font.width("Buffer:") - 16
         val barH = 10
 
         NineSlice.CONTENT_BORDER.draw(graphics, barX - 2, barTop - 2, barW + 4, barH + 4)
@@ -144,8 +154,15 @@ class CraftingCoreScreen(
             }
         }
         val countText = "${menu.bufferUsed} / ${menu.bufferCapacity}"
-        val countWidth = font.width(countText)
-        graphics.drawString(font, countText, barX + (barW - countWidth) / 2, barTop + 1, 0xFFFFFFFF.toInt())
+        val scale = 0.5f
+        val countWidth = (font.width(countText) * scale).toInt()
+        graphics.pose().pushPose()
+        graphics.pose().translate(0f, 0f, 10f)
+        graphics.pose().scale(scale, scale, 1f)
+        val cx = ((barX + (barW - countWidth) / 2f) / scale).toInt()
+        val cy = ((barTop + (barH - font.lineHeight * scale) / 2f + 1f) / scale).toInt()
+        graphics.drawString(font, countText, cx, cy, 0xFFFFFFFF.toInt(), true)
+        graphics.pose().popPose()
 
         // Cancel button visibility
         cancelButton?.visible = menu.isCrafting || menu.bufferUsed > 0
@@ -167,11 +184,19 @@ class CraftingCoreScreen(
         val cols = bufferCols
 
         // Inset around the buffer area + scrollbar
-        val sbX = contentLeft + gridW + 4
-        NineSlice.PANEL_INSET.draw(graphics, contentLeft - 2, gridTop - 2, gridW + scrollbarW + 10, gridH + 4)
+        val sbX = contentLeft + gridW
+        NineSlice.PANEL_INSET.draw(graphics, contentLeft - 2, gridTop - 2, gridW + scrollbarW + 4, gridH + 4)
 
         // Scrollbar track (always visible, inside the inset)
         NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, gridTop, scrollbarW, gridH)
+
+        bufferGridX = contentLeft
+        bufferGridY = gridTop
+        bufferGridCols = cols
+        bufferGridRows = gridH / 18
+        bufferSbX = sbX
+        bufferSbW = scrollbarW
+        bufferGridH = gridH
 
         if (!menu.isFormed) {
             graphics.drawString(font, "Not formed", contentLeft + 4, gridTop + 4, 0xFF888888.toInt())
@@ -191,6 +216,7 @@ class CraftingCoreScreen(
         val rows = maxOf(1, gridH / slotSize)
         val totalRows = (contents.size + cols - 1) / cols
         val maxScroll = maxOf(0, totalRows - rows)
+        bufferMaxScroll = maxScroll
         bufferScrollOffset = bufferScrollOffset.coerceIn(0, maxScroll)
 
         graphics.enableScissor(startX, startY, startX + cols * slotSize, startY + rows * slotSize)
@@ -261,15 +287,13 @@ class CraftingCoreScreen(
         // Buffer item tooltips
         val contents = menu.clientBufferContents
         if (contents.isNotEmpty()) {
-            val contentLeft = leftPos + PADDING
-            val contentsTop = topPos + TOP_BAR_H + PADDING + 66 + 12
             val slotSize = 18
-            val cols = maxOf(1, (LEFT_PANEL_W - 6) / slotSize)
             for ((i, entry) in contents.withIndex()) {
-                val row = i / cols - bufferScrollOffset
-                val col = i % cols
-                val ix = contentLeft + col * slotSize
-                val iy = contentsTop + row * slotSize
+                val row = i / bufferGridCols - bufferScrollOffset
+                val col = i % bufferGridCols
+                if (row < 0 || row >= bufferGridRows) continue
+                val ix = bufferGridX + col * slotSize
+                val iy = bufferGridY + row * slotSize
                 if (mouseX >= ix && mouseX < ix + 16 && mouseY >= iy && mouseY < iy + 16) {
                     val id = ResourceLocation.tryParse(entry.first) ?: continue
                     val item = BuiltInRegistries.ITEM.get(id) ?: continue
@@ -301,6 +325,18 @@ class CraftingCoreScreen(
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
+
+        // Buffer scrollbar click
+        if (bufferMaxScroll > 0 && mx >= bufferSbX && mx < bufferSbX + bufferSbW &&
+            my >= bufferGridY && my < bufferGridY + bufferGridH) {
+            draggingBufferScrollbar = true
+            updateBufferScrollFromMouse(my)
+            return true
+        }
+
+        // Tree graph click
         val dividerX = leftPos + PADDING + LEFT_PANEL_W
         if (mouseX >= dividerX && mouseY >= topPos + TOP_BAR_H && mouseY < topPos + imageHeight - PADDING) {
             return craftGraph.onMouseClicked(mouseX, mouseY)
@@ -309,6 +345,7 @@ class CraftingCoreScreen(
     }
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        draggingBufferScrollbar = false
         if (craftGraph.dragging) {
             craftGraph.onMouseReleased()
         }
@@ -316,9 +353,24 @@ class CraftingCoreScreen(
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        if (draggingBufferScrollbar && bufferMaxScroll > 0) {
+            updateBufferScrollFromMouse(mouseY.toInt())
+            return true
+        }
         if (craftGraph.dragging) {
             return craftGraph.onMouseDragged(mouseX, mouseY)
         }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+    }
+
+    private fun updateBufferScrollFromMouse(mouseY: Int) {
+        val rows = bufferGridRows
+        val totalRows = (menu.clientBufferContents.size + bufferGridCols - 1) / bufferGridCols
+        val thumbH = maxOf(8, bufferGridH * rows / totalRows)
+        val scrollRange = bufferGridH - thumbH
+        if (scrollRange > 0) {
+            val relY = (mouseY - bufferGridY - thumbH / 2).toFloat() / scrollRange
+            bufferScrollOffset = (relY * bufferMaxScroll).toInt().coerceIn(0, bufferMaxScroll)
+        }
     }
 }
