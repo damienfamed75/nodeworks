@@ -124,6 +124,11 @@ object Nodeworks : ModInitializer {
         TerminalPackets.registerPayloads()
         TerminalPackets.registerServerHandlers()
 
+        // Debug command
+        net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
+            damien.nodeworks.command.NwDebugCommand.register(dispatcher)
+        }
+
         // Soul Sand + Milk Bucket interaction
         net.fabricmc.fabric.api.event.player.UseBlockCallback.EVENT.register { player, world, hand, hitResult ->
             damien.nodeworks.item.SoulSandInteraction.onUseItemOnBlock(player, world, hitResult.blockPos, player.getItemInHand(hand))
