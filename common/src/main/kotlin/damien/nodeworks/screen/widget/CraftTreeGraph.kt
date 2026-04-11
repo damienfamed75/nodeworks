@@ -224,11 +224,23 @@ class CraftTreeGraph {
 
                     // Render flat-color silhouette glow behind the item
                     if (highlightColor != null) {
-                        val offsets = arrayOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
-                        for ((ox, oy) in offsets) {
+                        val model = Minecraft.getInstance().itemRenderer.getModel(stack, null, null, 0)
+                        if (model.isGui3d) {
+                            // 3D block: single scaled copy
+                            val glowScale = 1.12f
+                            val offset = (16 * (glowScale - 1f)) / 2f
                             damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
-                                graphics, stack, iconX + ox, iconY + oy, highlightColor, 200
+                                graphics, stack, (iconX - offset).toInt(), (iconY - offset).toInt(),
+                                highlightColor, 200, glowScale
                             )
+                        } else {
+                            // 2D flat item: 4-offset outline
+                            val offsets = arrayOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
+                            for ((ox, oy) in offsets) {
+                                damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
+                                    graphics, stack, iconX + ox, iconY + oy, highlightColor, 200
+                                )
+                            }
                         }
                     }
 
