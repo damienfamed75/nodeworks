@@ -31,7 +31,7 @@ object DebugScreens {
         data.set(3, 1)     // isCrafting
         val menu = CraftingCoreMenu(999, BlockPos.ZERO, data)
 
-        // Fake buffer: 30 item types, ~5000 total
+        // Fake buffer: 60 item types to test scrolling
         val fakeBuffer = mutableListOf<Pair<String, Int>>()
         val items = listOf(
             "minecraft:iron_ingot" to 2048, "minecraft:gold_ingot" to 512,
@@ -48,7 +48,26 @@ object DebugScreens {
             "minecraft:leather" to 28, "minecraft:rabbit_hide" to 12,
             "minecraft:blaze_rod" to 8, "minecraft:ender_pearl" to 4,
             "minecraft:ghast_tear" to 2, "minecraft:magma_cream" to 6,
-            "minecraft:slime_ball" to 20, "minecraft:phantom_membrane" to 3
+            "minecraft:slime_ball" to 20, "minecraft:phantom_membrane" to 3,
+            "minecraft:oak_log" to 512, "minecraft:spruce_log" to 256,
+            "minecraft:birch_log" to 128, "minecraft:dark_oak_log" to 64,
+            "minecraft:oak_planks" to 1024, "minecraft:cobblestone" to 4096,
+            "minecraft:stone" to 2048, "minecraft:granite" to 512,
+            "minecraft:diorite" to 256, "minecraft:andesite" to 384,
+            "minecraft:sand" to 640, "minecraft:gravel" to 320,
+            "minecraft:clay_ball" to 96, "minecraft:brick" to 192,
+            "minecraft:nether_brick" to 80, "minecraft:obsidian" to 32,
+            "minecraft:glass" to 256, "minecraft:glass_pane" to 512,
+            "minecraft:iron_block" to 16, "minecraft:gold_block" to 8,
+            "minecraft:diamond_block" to 4, "minecraft:emerald_block" to 2,
+            "minecraft:stick" to 1024, "minecraft:torch" to 384,
+            "minecraft:arrow" to 256, "minecraft:bow" to 3,
+            "minecraft:fishing_rod" to 2, "minecraft:shears" to 1,
+            "minecraft:bucket" to 12, "minecraft:water_bucket" to 6,
+            "minecraft:lava_bucket" to 3, "minecraft:milk_bucket" to 4,
+            "minecraft:bread" to 48, "minecraft:apple" to 24,
+            "minecraft:golden_apple" to 8, "minecraft:cooked_beef" to 64,
+            "minecraft:porkchop" to 32, "minecraft:egg" to 16
         )
         for ((id, count) in items) fakeBuffer.add(id to count)
         menu.clientBufferContents = fakeBuffer
