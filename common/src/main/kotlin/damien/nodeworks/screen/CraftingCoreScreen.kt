@@ -20,7 +20,7 @@ class CraftingCoreScreen(
 ) : AbstractContainerScreen<CraftingCoreMenu>(menu, playerInventory, title) {
 
     companion object {
-        private const val LEFT_PANEL_W = 130
+        private const val LEFT_PANEL_W = 126  // 6 cols × 18px + 6px scrollbar + 10px padding
         private const val DIVIDER_W = 1
         private const val RIGHT_PANEL_W = 160
         private const val PADDING = 6
@@ -39,7 +39,7 @@ class CraftingCoreScreen(
 
     init {
         imageWidth = LEFT_PANEL_W + DIVIDER_W + RIGHT_PANEL_W + PADDING * 2
-        imageHeight = 190
+        imageHeight = 194
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -85,8 +85,8 @@ class CraftingCoreScreen(
         // --- Right panel: Craft tree graph ---
         val treeLeft = dividerX + DIVIDER_W + 1
         val treeTop = topPos + TOP_BAR_H + 1
-        val treeW = RIGHT_PANEL_W - 1
-        val treeH = imageHeight - TOP_BAR_H - PADDING - 1
+        val treeW = RIGHT_PANEL_W + 1
+        val treeH = imageHeight - TOP_BAR_H - PADDING + 1
 
         craftGraph.activeSteps = menu.activeSteps
         craftGraph.render(graphics, menu.craftTree, treeLeft, treeTop, treeW, treeH)
@@ -159,16 +159,17 @@ class CraftingCoreScreen(
         graphics.drawString(font, "Buffer:", contentLeft, bufferLabelTop, 0xFFAAAAAA.toInt())
 
         val gridTop = bufferLabelTop + 12
-        val gridBottom = topPos + imageHeight - PADDING
-        val gridH = gridBottom - gridTop
         val slotSize = 18
+        val bufferCols = 6
+        val bufferRows = 5
         val scrollbarW = 6
-        val gridW = LEFT_PANEL_W - scrollbarW - 8
-        val cols = maxOf(1, gridW / slotSize)
+        val gridW = bufferCols * slotSize
+        val gridH = bufferRows * slotSize
+        val cols = bufferCols
 
         // Inset around the buffer area + scrollbar
         val sbX = contentLeft + gridW + 4
-        NineSlice.PANEL_INSET.draw(graphics, contentLeft - 2, gridTop - 2, gridW + scrollbarW + 8, gridH + 4)
+        NineSlice.PANEL_INSET.draw(graphics, contentLeft - 2, gridTop - 2, gridW + scrollbarW + 10, gridH + 4)
 
         // Scrollbar track (always visible, inside the inset)
         NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, gridTop, scrollbarW, gridH)
