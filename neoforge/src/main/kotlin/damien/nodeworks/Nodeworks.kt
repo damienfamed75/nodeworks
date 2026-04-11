@@ -392,6 +392,12 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToClient(DebugInventoryTerminalPayload.TYPE, DebugInventoryTerminalPayload.CODEC) { _, context ->
+            context.enqueueWork {
+                damien.nodeworks.command.DebugScreens.openInventoryTerminal()
+            }
+        }
+
         registrar.playToClient(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork

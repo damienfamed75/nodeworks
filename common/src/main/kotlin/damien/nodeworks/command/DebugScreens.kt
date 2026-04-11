@@ -1,12 +1,17 @@
 package damien.nodeworks.command
 
+import damien.nodeworks.network.InventorySyncPayload
 import damien.nodeworks.screen.CraftingCoreMenu
 import damien.nodeworks.screen.CraftingCoreScreen
+import damien.nodeworks.screen.InventoryTerminalMenu
+import damien.nodeworks.screen.InventoryTerminalScreen
 import damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
 import net.minecraft.world.inventory.SimpleContainerData
+import net.minecraft.world.item.ItemStack
 
 /**
  * Opens debug GUI screens with fake data for visual testing.
@@ -88,5 +93,46 @@ object DebugScreens {
         // Open the screen
         val screen = CraftingCoreScreen(menu, player.inventory, Component.literal("Crafting CPU"))
         mc.setScreen(screen)
+    }
+
+    fun openInventoryTerminal() {
+        val mc = Minecraft.getInstance()
+        val player = mc.player ?: return
+
+        val menu = InventoryTerminalMenu(998, player.inventory, null, BlockPos.ZERO)
+
+        // Build a sync payload with every registered item, billions of counts
+        val entries = mutableListOf<InventorySyncPayload.SyncEntry>()
+        var serial = 1L
+        val random = java.util.Random(42)
+
+        for (item in BuiltInRegistries.ITEM) {
+            val id = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+            val stack = ItemStack(item)
+            if (stack.isEmpty) continue
+            val name = stack.hoverName.string
+            val count = when (random.nextInt(10)) {
+                0 -> random.nextLong(1_000_000_000, 10_000_000_000)  // billions
+                1 -> random.nextLong(1_000_000, 999_999_999)          // millions
+                2 -> random.nextLong(1_000, 999_999)                  // thousands
+                3 -> 0L                                                // craftable only (phantom)
+                else -> random.nextLong(1, 999)                       // normal small amounts
+            }
+            val craftable = random.nextInt(4) == 0  // 25% chance craftable
+            entries.add(InventorySyncPayload.SyncEntry(
+                serial = serial++,
+                itemId = id,
+                name = name,
+                count = count,
+                maxStackSize = item.getDefaultMaxStackSize(),
+                hasData = false,
+                craftable = craftable
+            ))
+        }
+
+        // Open the screen and populate via handleUpdate
+        val screen = InventoryTerminalScreen(menu, player.inventory, Component.literal("Inventory Terminal"))
+        mc.setScreen(screen)
+        screen.repo.handleUpdate(InventorySyncPayload(true, entries, emptyList()))
     }
 }

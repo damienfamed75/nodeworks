@@ -16,16 +16,21 @@ object NwDebugCommand {
             Commands.literal("nwdebug")
                 .requires { it.hasPermission(2) }
                 .then(Commands.literal("craftingcore").executes(::openDebugCraftingCore))
+                .then(Commands.literal("inventoryterminal").executes(::openDebugInventoryTerminal))
         )
     }
 
-    private fun openDebugCraftingCore(ctx: CommandContext<CommandSourceStack>): Int {
-        val player = ctx.source.playerOrException
-        // Send a packet to the client to open the debug screen
-        val packet = net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(
-            damien.nodeworks.network.DebugCraftingCorePayload()
-        )
-        (player as net.minecraft.server.level.ServerPlayer).connection.send(packet)
+    private fun sendDebugPayload(ctx: CommandContext<CommandSourceStack>, payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload): Int {
+        val player = ctx.source.playerOrException as net.minecraft.server.level.ServerPlayer
+        player.connection.send(net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(payload))
         return 1
+    }
+
+    private fun openDebugCraftingCore(ctx: CommandContext<CommandSourceStack>): Int {
+        return sendDebugPayload(ctx, damien.nodeworks.network.DebugCraftingCorePayload())
+    }
+
+    private fun openDebugInventoryTerminal(ctx: CommandContext<CommandSourceStack>): Int {
+        return sendDebugPayload(ctx, damien.nodeworks.network.DebugInventoryTerminalPayload())
     }
 }
