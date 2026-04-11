@@ -198,33 +198,51 @@ class CraftTreeGraph {
                 }
             }
 
-            // Storage node: green highlight (completed, no animation)
-            if (isStorage) {
-                graphics.fill(sx - 10, sy - 2, sx + 10, sy + 20, 0x3055FF55.toInt())
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
-                Icons.CHECKMARK.draw(graphics, sx + 6, sy - 4, 10)
-                graphics.pose().popPose()
-            }
-            // Active step highlight + in-progress icon
-            else if (isActive) {
-                graphics.fill(sx - 10, sy - 2, sx + 10, sy + 20, 0x30FFAA00.toInt())
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
-                Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 6, sy - 4, 10)
-                graphics.pose().popPose()
+            // Determine highlight color
+            val highlightColor: Int? = when {
+                isStorage -> 0xFF55FF55.toInt()  // green
+                isActive -> 0xFFFFAA00.toInt()   // amber
+                else -> null
             }
 
-            // Item icon
-            val itemId = ResourceLocation.tryParse(node.itemId)
-            if (itemId != null) {
-                val item = BuiltInRegistries.ITEM.get(itemId)
+            // Item icon with per-pixel glow highlight
+            val itemResId = ResourceLocation.tryParse(node.itemId)
+            if (itemResId != null) {
+                val item = BuiltInRegistries.ITEM.get(itemResId)
                 if (item != null) {
-                    graphics.renderItem(ItemStack(item), sx - 8, sy)
+                    val stack = ItemStack(item)
+                    val iconX = sx - 8
+                    val iconY = sy
+
+                    // Render flat-color silhouette glow behind the item (1px offsets)
+                    if (highlightColor != null) {
+                        val offsets = arrayOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
+                        for ((ox, oy) in offsets) {
+                            damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
+                                graphics, stack, iconX + ox, iconY + oy, highlightColor, 200
+                            )
+                        }
+                    }
+
+                    // Render actual item icon
+                    graphics.renderItem(stack, iconX, iconY)
                     if (node.count > 1) {
                         graphics.drawString(font, "x${node.count}", sx + 9, sy + 9, WHITE, true)
                     }
                 }
+            }
+
+            // Status icon overlay
+            if (isStorage) {
+                graphics.pose().pushPose()
+                graphics.pose().translate(0f, 0f, 300f)
+                Icons.CHECKMARK.draw(graphics, sx + 6, sy - 4, 10)
+                graphics.pose().popPose()
+            } else if (isActive) {
+                graphics.pose().pushPose()
+                graphics.pose().translate(0f, 0f, 300f)
+                Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 6, sy - 4, 10)
+                graphics.pose().popPose()
             }
 
             // Source icon below item (half-scale)

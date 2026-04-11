@@ -37,6 +37,7 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterRenderers)
         modBus.addListener(::onRegisterMenuScreens)
         modBus.addListener(::onRegisterBlockColors)
+        modBus.addListener(::onRegisterShaders)
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
@@ -127,6 +128,31 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.DIAGNOSTIC) { menu, inventory, title ->
             damien.nodeworks.screen.DiagnosticScreen(menu, inventory, title)
+        }
+    }
+
+    private fun onRegisterShaders(event: net.neoforged.neoforge.client.event.RegisterShadersEvent) {
+        val location = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "flat_color_item")
+        event.registerShader(
+            net.minecraft.client.renderer.ShaderInstance(event.resourceProvider, location, com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY)
+        ) { shader ->
+            damien.nodeworks.render.FlatColorItemRenderer.shaderInstance = shader
+            // Create the custom RenderType using the loaded shader
+            damien.nodeworks.render.FlatColorItemRenderer.renderType = net.minecraft.client.renderer.RenderType.create(
+                "nodeworks_flat_color_item",
+                com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY,
+                com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS,
+                1536, false, true,
+                net.minecraft.client.renderer.RenderType.CompositeState.builder()
+                    .setShaderState(net.minecraft.client.renderer.RenderStateShard.ShaderStateShard { shader })
+                    .setTextureState(net.minecraft.client.renderer.RenderStateShard.TextureStateShard(
+                        net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS, false, false))
+                    .setTransparencyState(net.minecraft.client.renderer.RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+                    .setCullState(net.minecraft.client.renderer.RenderStateShard.NO_CULL)
+                    .setLightmapState(net.minecraft.client.renderer.RenderStateShard.LIGHTMAP)
+                    .setOverlayState(net.minecraft.client.renderer.RenderStateShard.OVERLAY)
+                    .createCompositeState(true)
+            )
         }
     }
 
