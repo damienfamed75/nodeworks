@@ -68,6 +68,9 @@ class CraftingCoreBlockEntity(
     var originalCraftCount: Int = 0
         private set
 
+    /** Craft tree snapshot taken at craft start — reflects the original storage state. Not persisted. */
+    @Transient var craftTreeSnapshot: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
+
     /** Expected outputs per operation: list of (itemId, count). */
     var pendingOutputs: List<Pair<String, Int>> = emptyList()
         private set
@@ -124,6 +127,7 @@ class CraftingCoreBlockEntity(
     fun clearAllCraftState() {
         originalCraftId = ""
         originalCraftCount = 0
+        craftTreeSnapshot = null
         clearPendingJob()
     }
 

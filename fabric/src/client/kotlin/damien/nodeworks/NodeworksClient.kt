@@ -128,6 +128,15 @@ object NodeworksClient : ClientModInitializer {
             }
         }
 
+        ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.CraftingCpuTreePayload.TYPE) { payload, context ->
+            val player = Minecraft.getInstance().player ?: return@registerGlobalReceiver
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                menu.craftTree = payload.tree
+                menu.activeSteps = payload.activeSteps.toSet()
+            }
+        }
+
         ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.CraftQueueSyncPayload.TYPE) { payload, context ->
             val screen = Minecraft.getInstance().screen
             if (screen is InventoryTerminalScreen) {

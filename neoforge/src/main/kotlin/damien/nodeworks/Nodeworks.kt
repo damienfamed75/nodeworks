@@ -385,6 +385,17 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToClient(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                    menu.craftTree = payload.tree
+                    menu.activeSteps = payload.activeSteps.toSet()
+                }
+            }
+        }
+
         registrar.playToClient(CraftPreviewResponsePayload.TYPE, CraftPreviewResponsePayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork

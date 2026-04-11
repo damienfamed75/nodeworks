@@ -400,6 +400,57 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
 }
 
 /**
+ * S2C: Craft tree + active steps for the Crafting CPU GUI.
+ */
+data class CraftingCpuTreePayload(
+    val containerId: Int,
+    val tree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode?,
+    val activeSteps: List<String>
+) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CraftingCpuTreePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "crafting_cpu_tree"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CraftingCpuTreePayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                buf.writeBoolean(p.tree != null)
+                if (p.tree != null) writeNode(buf, p.tree)
+                buf.writeVarInt(p.activeSteps.size)
+                for (s in p.activeSteps) buf.writeUtf(s, 256)
+            },
+            { buf ->
+                val containerId = buf.readVarInt()
+                val hasTree = buf.readBoolean()
+                val tree = if (hasTree) readNode(buf) else null
+                val stepCount = buf.readVarInt()
+                val activeSteps = (0 until stepCount).map { buf.readUtf(256) }
+                CraftingCpuTreePayload(containerId, tree, activeSteps)
+            }
+        )
+
+        private fun writeNode(buf: FriendlyByteBuf, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode) {
+            buf.writeUtf(node.itemId, 256)
+            buf.writeUtf(node.itemName, 128)
+            buf.writeVarInt(node.count)
+            buf.writeUtf(node.source, 32)
+            buf.writeUtf(node.templateName, 64)
+            buf.writeUtf(node.resolvedBy, 32)
+            buf.writeVarInt(node.inStorage)
+            buf.writeVarInt(node.children.size)
+            for (child in node.children) writeNode(buf, child)
+        }
+
+        private fun readNode(buf: FriendlyByteBuf): damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode {
+            return damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(
+                buf.readUtf(256), buf.readUtf(128), buf.readVarInt(),
+                buf.readUtf(32), buf.readUtf(64), buf.readUtf(32), buf.readVarInt(),
+                (0 until buf.readVarInt()).map { readNode(buf) }
+            )
+        }
+    }
+    override fun type() = TYPE
+}
+
+/**
  * S2C: Sync craft queue entries to the client for the reserved row.
  */
 data class CraftQueueSyncPayload(val containerId: Int, val entries: List<QueueEntry>) : CustomPacketPayload {

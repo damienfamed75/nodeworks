@@ -128,6 +128,8 @@ object CraftingHelper {
             }
             cpu.setCrafting(true, identifier.substringAfter(':').replace('_', ' '))
             cpu.setOriginalCraft(identifier, count)
+            // Snapshot the craft tree NOW — before ingredients are extracted from storage
+            cpu.craftTreeSnapshot = CraftTreeBuilder.buildCraftTree(identifier, count, level, snapshot)
         }
 
         // Try Instruction Set (3x3 crafting) first
