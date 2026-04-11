@@ -509,3 +509,15 @@ data class CraftQueueExtractPayload(val containerId: Int, val entryId: Int, val 
     }
     override fun type() = TYPE
 }
+
+/** S2C: Open the debug crafting core screen with fake data. */
+class DebugCraftingCorePayload : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<DebugCraftingCorePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "debug_crafting_core"))
+        val CODEC: StreamCodec<FriendlyByteBuf, DebugCraftingCorePayload> = CustomPacketPayload.codec(
+            { _, _ -> },
+            { _ -> DebugCraftingCorePayload() }
+        )
+    }
+    override fun type() = TYPE
+}

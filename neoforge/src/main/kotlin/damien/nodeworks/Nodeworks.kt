@@ -58,6 +58,7 @@ class Nodeworks(modBus: IEventBus) {
         NeoForge.EVENT_BUS.addListener(::onServerStopping)
         NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
         NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
+        NeoForge.EVENT_BUS.addListener(::onRegisterCommands)
 
         // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber)
         damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
@@ -385,6 +386,12 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToClient(DebugCraftingCorePayload.TYPE, DebugCraftingCorePayload.CODEC) { _, context ->
+            context.enqueueWork {
+                damien.nodeworks.command.DebugScreens.openCraftingCore()
+            }
+        }
+
         registrar.playToClient(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
@@ -426,6 +433,10 @@ class Nodeworks(modBus: IEventBus) {
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }
+    }
+
+    private fun onRegisterCommands(event: net.neoforged.neoforge.event.RegisterCommandsEvent) {
+        damien.nodeworks.command.NwDebugCommand.register(event.dispatcher)
     }
 
     private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
