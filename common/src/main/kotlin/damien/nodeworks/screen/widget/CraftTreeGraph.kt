@@ -222,7 +222,7 @@ class CraftTreeGraph {
                     val iconX = sx - 8
                     val iconY = sy
 
-                    // Render flat-color silhouette glow behind the item (1px offsets)
+                    // Render flat-color silhouette glow behind the item
                     if (highlightColor != null) {
                         val offsets = arrayOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
                         for ((ox, oy) in offsets) {
@@ -232,7 +232,7 @@ class CraftTreeGraph {
                         }
                     }
 
-                    // Render actual item icon
+                    // Render actual item icon (on top of the glow — covers the flat color center)
                     graphics.renderItem(stack, iconX, iconY)
                     if (node.count > 1) {
                         graphics.drawString(font, "x${node.count}", sx + 9, sy + 9, WHITE, true)
