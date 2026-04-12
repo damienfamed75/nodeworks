@@ -12,6 +12,7 @@
   "item.nodeworks.diagnostic_tool": "Diagnostic Tool",
   "container.nodeworks.diagnostic": "Network Diagnostic",
   "item.nodeworks.card_programmer": "Card Programmer",
+  "item.nodeworks.blank_card": "Blank Card",
   "container.nodeworks.card_programmer": "Card Programmer",
   "container.nodeworks.storage_card": "Storage Card",
   "message.nodeworks.diagnostic_no_network": "No network block found",
