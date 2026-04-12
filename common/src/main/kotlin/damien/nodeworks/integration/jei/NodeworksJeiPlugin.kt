@@ -3,6 +3,7 @@ package damien.nodeworks.integration.jei
 import damien.nodeworks.network.SetInstructionGridPayload
 import damien.nodeworks.network.SetProcessingApiSlotPayload
 import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.registry.ModItems
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.screen.ProcessingSetScreen
@@ -18,6 +19,9 @@ import mezz.jei.api.recipe.RecipeType
 import mezz.jei.api.recipe.transfer.IRecipeTransferError
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandler
 import mezz.jei.api.registration.IGuiHandlerRegistration
+import mezz.jei.api.registration.IRecipeCatalystRegistration
+import mezz.jei.api.registration.IRecipeCategoryRegistration
+import mezz.jei.api.registration.IRecipeRegistration
 import mezz.jei.api.registration.IRecipeTransferRegistration
 import net.minecraft.client.renderer.Rect2i
 import net.minecraft.core.registries.BuiltInRegistries
@@ -25,6 +29,7 @@ import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.MenuType
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.Items
 import net.minecraft.world.item.crafting.CraftingRecipe
 import net.minecraft.world.item.crafting.RecipeHolder
 import java.util.Optional
@@ -57,6 +62,36 @@ class NodeworksJeiPlugin : IModPlugin {
         )
 
         // JEI item focus for Inventory Terminal handled via screen's getSlotUnderMouse override
+    }
+
+    override fun registerCategories(registration: IRecipeCategoryRegistration) {
+        registration.addRecipeCategories(
+            MilkySoulBallRecipeCategory(registration.jeiHelpers.guiHelper)
+        )
+    }
+
+    override fun registerRecipes(registration: IRecipeRegistration) {
+        registration.addRecipes(
+            MilkySoulBallRecipeCategory.RECIPE_TYPE,
+            listOf(
+                MilkySoulBallRecipe(
+                    ItemStack(Items.MILK_BUCKET),
+                    ItemStack(Items.SOUL_SAND),
+                    ItemStack(ModItems.MILKY_SOUL_BALL, 4)
+                )
+            )
+        )
+    }
+
+    override fun registerRecipeCatalysts(registration: IRecipeCatalystRegistration) {
+        registration.addRecipeCatalyst(
+            ItemStack(Items.MILK_BUCKET),
+            MilkySoulBallRecipeCategory.RECIPE_TYPE
+        )
+        registration.addRecipeCatalyst(
+            ItemStack(Items.SOUL_SAND),
+            MilkySoulBallRecipeCategory.RECIPE_TYPE
+        )
     }
 }
 
