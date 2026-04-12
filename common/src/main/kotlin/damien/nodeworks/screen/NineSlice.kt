@@ -72,7 +72,8 @@ class NineSlice(
         try {
             // Temporarily force stretch mode
             drawInnerStretched(graphics, x, y, width, height)
-        } finally {}
+        } finally {
+        }
     }
 
     private fun drawInnerStretched(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
@@ -80,8 +81,13 @@ class NineSlice(
         val midSrcH = srcHeight - top - bottom
         val midDstW = width - left - right
         val midDstH = height - top - bottom
-        if (midDstW <= 0 || midDstH <= 0) { blitRegion(graphics, x, y, width, height, u, v, srcWidth, srcHeight); return }
-        val cx = x + left; val cy = y + top; val srcCx = u + left; val srcCy = v + top
+        if (midDstW <= 0 || midDstH <= 0) {
+            blitRegion(graphics, x, y, width, height, u, v, srcWidth, srcHeight); return
+        }
+        val cx = x + left;
+        val cy = y + top;
+        val srcCx = u + left;
+        val srcCy = v + top
         blitRegion(graphics, x, y, left, top, u, v, left, top)
         blitRegion(graphics, cx + midDstW, y, right, top, srcCx + midSrcW, v, right, top)
         blitRegion(graphics, x, cy + midDstH, left, bottom, u, srcCy + midSrcH, left, bottom)
@@ -308,6 +314,9 @@ class NineSlice(
 
         val WINDOW_FRAME = NineSlice(GUI_ATLAS, 0, 0, 24, 24, 3, 3, 3, 3)
         val WINDOW_RECESSED = NineSlice(GUI_ATLAS, 24, 0, 24, 24, 3, 3, 5, 3)
+        val CARD_PROGRAMMER_FRAME = NineSlice(GUI_ATLAS, 48, 0, 24, 24, 3, 3, 3, 3)
+        val CARD_PROGRAMMER_TOP_BAR = NineSlice(GUI_ATLAS, 72, 0, 24, 24, 5, 5, 5, 16)
+        val CARD_PROGRAMMER_RECESSED = NineSlice(GUI_ATLAS, 96, 0, 24, 24, 3, 3, 5, 3)
         val TOP_BAR = NineSlice(GUI_ATLAS, 0, 24, 24, 24, 3, 3, 3, 3)
         val TITLE_TRIM = NineSlice(GUI_ATLAS, 24, 24, 24, 24, 3, 3, 3, 3)
         val TAB_ACTIVE = NineSlice(GUI_ATLAS, 0, 48, 24, 16, 3, 3, 3, 2)

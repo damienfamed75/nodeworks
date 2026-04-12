@@ -56,8 +56,20 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
         }
 
         fun setCounter(stack: ItemStack, counter: Int) {
-            val tag = CompoundTag()
+            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
             tag.putInt("counter", counter.coerceAtLeast(0))
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+        }
+
+        fun getCopyName(stack: ItemStack): Boolean {
+            val data = stack.get(DataComponents.CUSTOM_DATA) ?: return true
+            val tag = data.copyTag()
+            return if (tag.contains("copy_name")) tag.getBoolean("copy_name") else true
+        }
+
+        fun setCopyName(stack: ItemStack, value: Boolean) {
+            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
+            tag.putBoolean("copy_name", value)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
 
