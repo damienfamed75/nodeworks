@@ -98,6 +98,12 @@ object ModItems {
         Item.Properties().stacksTo(1)
     )
 
+    val BLANK_CARD: Item = register(
+        "blank_card",
+        ::Item,
+        Item.Properties().stacksTo(16)
+    )
+
     private fun register(
         id: String,
         factory: (Item.Properties) -> Item,

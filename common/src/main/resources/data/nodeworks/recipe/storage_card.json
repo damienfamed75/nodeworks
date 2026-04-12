@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "nodeworks:blank_card" },
+    { "item": "minecraft:purple_dye" },
+    { "item": "minecraft:chest" }
+  ],
+  "result": {
+    "id": "nodeworks:storage_card",
+    "count": 1
+  }
+}

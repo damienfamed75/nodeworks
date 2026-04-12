@@ -41,6 +41,7 @@ object ModCreativeTab {
                 output.accept(ModItems.NETWORK_WRENCH)
                 output.accept(ModItems.DIAGNOSTIC_TOOL)
                 output.accept(ModItems.CARD_PROGRAMMER)
+                output.accept(ModItems.BLANK_CARD)
                 output.accept(ModItems.IO_CARD)
                 output.accept(ModItems.STORAGE_CARD)
                 output.accept(ModItems.REDSTONE_CARD)
