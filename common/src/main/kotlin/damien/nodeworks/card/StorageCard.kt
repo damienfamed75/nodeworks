@@ -1,17 +1,51 @@
 package damien.nodeworks.card
 
+import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.screen.StorageCardMenu
+import damien.nodeworks.screen.StorageCardOpenData
+import net.minecraft.ChatFormatting
 import net.minecraft.core.component.DataComponents
 import net.minecraft.nbt.CompoundTag
+import net.minecraft.network.chat.Component
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.InteractionResultHolder
+import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.TooltipFlag
 import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.level.Level
 
 /**
  * Storage Card — registers an adjacent container as passive network storage.
  * Items in storage-card inventories are discoverable by the entire network
  * and available for crafting via Recipe Cards.
+ *
+ * Right-click in air to set priority (0-99).
  */
 class StorageCard(properties: Properties) : NodeCard(properties) {
     override val cardType: String = "storage"
+
+    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResultHolder<ItemStack> {
+        val stack = player.getItemInHand(hand)
+        if (level.isClientSide) return InteractionResultHolder.success(stack)
+
+        val serverPlayer = player as ServerPlayer
+        PlatformServices.menu.openExtendedMenu(
+            serverPlayer,
+            Component.translatable("container.nodeworks.storage_card"),
+            StorageCardOpenData(hand.ordinal),
+            StorageCardOpenData.STREAM_CODEC,
+            { syncId, inv, _ -> StorageCardMenu(syncId, inv, hand) }
+        )
+        return InteractionResultHolder.consume(stack)
+    }
+
+    override fun appendHoverText(stack: ItemStack, context: TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {
+        super.appendHoverText(stack, context, tooltip, flag)
+        val priority = getPriority(stack)
+        tooltip.add(Component.literal("Priority: $priority").withStyle(ChatFormatting.GRAY))
+    }
 
     companion object {
         fun getPriority(stack: ItemStack): Int {
@@ -20,7 +54,7 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         }
 
         fun setPriority(stack: ItemStack, priority: Int) {
-            val clamped = priority.coerceIn(0, 99)
+            val clamped = priority.coerceIn(0, 999)
             val tag = CompoundTag()
             tag.putInt("priority", clamped)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))

@@ -103,6 +103,16 @@ object Nodeworks : ModInitializer {
             ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "diagnostic")),
             ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.DiagnosticMenu.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.DiagnosticOpenData.STREAM_CODEC)
         )
+        ModScreenHandlers.CARD_PROGRAMMER = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "card_programmer")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.CardProgrammerMenu.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.CardProgrammerOpenData.STREAM_CODEC)
+        )
+        ModScreenHandlers.STORAGE_CARD = Registry.register(
+            BuiltInRegistries.MENU,
+            ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "storage_card")),
+            ExtendedScreenHandlerType({ syncId, inv, data -> damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data) }, damien.nodeworks.screen.StorageCardOpenData.STREAM_CODEC)
+        )
 
         ModBlocks.initialize()
         ModBlockEntities.initialize()

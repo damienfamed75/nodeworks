@@ -1,0 +1,211 @@
+package damien.nodeworks.screen
+
+import damien.nodeworks.card.NodeCard
+import damien.nodeworks.card.StorageCard
+import damien.nodeworks.item.CardProgrammerItem
+import damien.nodeworks.registry.ModScreenHandlers
+import net.minecraft.core.component.DataComponents
+import net.minecraft.network.chat.Component
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.SimpleContainer
+import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.entity.player.Player
+import net.minecraft.world.inventory.AbstractContainerMenu
+import net.minecraft.world.inventory.ClickType
+import net.minecraft.world.inventory.ContainerData
+import net.minecraft.world.inventory.SimpleContainerData
+import net.minecraft.world.inventory.Slot
+import net.minecraft.world.item.ItemStack
+
+class CardProgrammerMenu(
+    syncId: Int,
+    private val playerInventory: Inventory,
+    private val hand: InteractionHand?
+) : AbstractContainerMenu(ModScreenHandlers.CARD_PROGRAMMER, syncId) {
+
+    private val templateContainer = SimpleContainer(1)
+    val counterData: ContainerData = SimpleContainerData(1)
+
+    init {
+        // Load template + counter from programmer item (server side only)
+        if (hand != null) {
+            val programmerStack = playerInventory.player.getItemInHand(hand)
+            val template = CardProgrammerItem.getTemplate(programmerStack)
+            if (!template.isEmpty) templateContainer.setItem(0, template.copy())
+            counterData.set(0, CardProgrammerItem.getCounter(programmerStack))
+        }
+
+        // Slot 0: Template — card stays here
+        addSlot(TemplateSlot(templateContainer, 0, 33, 39))
+
+        // Slot 1: Input — accepts matching cards, auto-ejects after processing
+        addSlot(InputSlot(SimpleContainer(1), 0, 121, 39))
+
+        // Player inventory (slots 2-37)
+        for (row in 0 until 3) {
+            for (col in 0 until 9) {
+                addSlot(Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 103 + row * 18))
+            }
+        }
+        // Hotbar (slots 38-46)
+        for (col in 0 until 9) {
+            addSlot(Slot(playerInventory, col, 9 + col * 18, 161))
+        }
+
+        addDataSlots(counterData)
+    }
+
+    fun getCounter(): Int = counterData.get(0)
+    fun setCounter(value: Int) { counterData.set(0, value.coerceAtLeast(0)) }
+
+    fun hasTemplate(): Boolean = !templateContainer.getItem(0).isEmpty
+    fun getTemplate(): ItemStack = templateContainer.getItem(0)
+
+    private fun isValidInput(stack: ItemStack): Boolean {
+        if (!hasTemplate()) return false
+        val template = getTemplate()
+        return stack.item is NodeCard && stack.item.javaClass == template.item.javaClass
+    }
+
+    private fun applyTemplate(stack: ItemStack) {
+        val template = getTemplate()
+        if (template.isEmpty) return
+
+        // Copy priority (StorageCard)
+        if (template.item is StorageCard && stack.item is StorageCard) {
+            StorageCard.setPriority(stack, StorageCard.getPriority(template))
+        }
+
+        // Copy name with counter suffix
+        val templateName = template.get(DataComponents.CUSTOM_NAME)
+        val counter = getCounter()
+        if (templateName != null) {
+            val baseName = templateName.string
+            stack.set(DataComponents.CUSTOM_NAME, Component.literal("${baseName}_${counter}"))
+        }
+
+        setCounter(counter + 1)
+    }
+
+    /** Handle counter +/- buttons via the built-in clickMenuButton mechanism. */
+    override fun clickMenuButton(player: Player, id: Int): Boolean {
+        when (id) {
+            0 -> setCounter(getCounter() - 1)
+            1 -> setCounter(getCounter() + 1)
+        }
+        return true
+    }
+
+    override fun clicked(slotIndex: Int, button: Int, clickType: ClickType, player: Player) {
+        // Intercept regular clicks on the input slot (slot 1)
+        if (slotIndex == 1 && clickType == ClickType.PICKUP) {
+            val carried = carried
+            if (!carried.isEmpty && isValidInput(carried)) {
+                val modified = carried.copyWithCount(1)
+                applyTemplate(modified)
+                if (!player.inventory.add(modified)) {
+                    if (!player.level().isClientSide) {
+                        player.drop(modified, false)
+                    }
+                }
+                carried.shrink(1)
+                broadcastChanges()
+                return
+            }
+        }
+        super.clicked(slotIndex, button, clickType, player)
+    }
+
+    override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
+        val slot = slots.getOrNull(slotIndex) ?: return ItemStack.EMPTY
+        if (!slot.hasItem()) return ItemStack.EMPTY
+
+        val stack = slot.item
+        val original = stack.copy()
+
+        when {
+            slotIndex == 0 -> {
+                // Template → player inventory
+                if (!moveItemStackTo(stack, 2, slots.size, true)) return ItemStack.EMPTY
+            }
+            slotIndex == 1 -> {
+                // Input → player inventory (shouldn't normally have items)
+                if (!moveItemStackTo(stack, 2, slots.size, true)) return ItemStack.EMPTY
+            }
+            slotIndex >= 2 -> {
+                // Player inventory → template or process
+                if (stack.item is NodeCard) {
+                    if (!hasTemplate()) {
+                        // No template — place as template
+                        if (!moveItemStackTo(stack, 0, 1, false)) return ItemStack.EMPTY
+                    } else if (isValidInput(stack)) {
+                        // Has template — apply settings in-place
+                        applyTemplate(stack)
+                        slot.setChanged()
+                        return ItemStack.EMPTY
+                    } else {
+                        return ItemStack.EMPTY
+                    }
+                } else {
+                    return ItemStack.EMPTY
+                }
+            }
+        }
+
+        if (stack.isEmpty) slot.set(ItemStack.EMPTY) else slot.setChanged()
+        return original
+    }
+
+    override fun removed(player: Player) {
+        super.removed(player)
+        if (player.level().isClientSide) return
+        saveToProgrammer(player)
+    }
+
+    private fun saveToProgrammer(player: Player) {
+        if (hand == null) return
+        val programmerStack = player.getItemInHand(hand)
+        if (programmerStack.item !is CardProgrammerItem) return
+        CardProgrammerItem.setTemplate(programmerStack, templateContainer.getItem(0))
+        CardProgrammerItem.setCounter(programmerStack, getCounter())
+    }
+
+    override fun stillValid(player: Player): Boolean {
+        if (hand == null) return true
+        return player.getItemInHand(hand).item is CardProgrammerItem
+    }
+
+    fun getNextName(): String {
+        val template = getTemplate()
+        if (template.isEmpty) return ""
+        val templateName = template.get(DataComponents.CUSTOM_NAME)
+        return if (templateName != null) {
+            "${templateName.string}_${getCounter()}"
+        } else {
+            ""
+        }
+    }
+
+    private inner class TemplateSlot(container: SimpleContainer, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
+        override fun mayPlace(stack: ItemStack): Boolean = stack.item is NodeCard
+
+        override fun setChanged() {
+            super.setChanged()
+            // Reset counter when template changes
+            if (item.isEmpty) {
+                setCounter(0)
+            }
+        }
+    }
+
+    private inner class InputSlot(container: SimpleContainer, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
+        override fun mayPlace(stack: ItemStack): Boolean = isValidInput(stack)
+    }
+
+    companion object {
+        fun clientFactory(syncId: Int, playerInventory: Inventory, data: CardProgrammerOpenData): CardProgrammerMenu {
+            val hand = if (data.handOrdinal < InteractionHand.entries.size) InteractionHand.entries[data.handOrdinal] else null
+            return CardProgrammerMenu(syncId, playerInventory, hand)
+        }
+    }
+}

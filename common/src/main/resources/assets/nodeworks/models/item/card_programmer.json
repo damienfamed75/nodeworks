@@ -1,0 +1,11 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "nodeworks:item/card_programmer"
+  },
+  "overrides": [
+    { "predicate": { "nodeworks:card_type": 1 }, "model": "nodeworks:item/card_programmer_storage" },
+    { "predicate": { "nodeworks:card_type": 2 }, "model": "nodeworks:item/card_programmer_io" },
+    { "predicate": { "nodeworks:card_type": 3 }, "model": "nodeworks:item/card_programmer_redstone" }
+  ]
+}

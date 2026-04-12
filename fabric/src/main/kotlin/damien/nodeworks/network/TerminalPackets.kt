@@ -73,7 +73,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(DeleteScriptTabPayload.TYPE, DeleteScriptTabPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
-        PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
+        // SetStoragePriorityPayload removed — priority is now per-card via StorageCard GUI
         PayloadTypeRegistry.playC2S().register(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC)
@@ -183,19 +183,6 @@ object TerminalPackets {
                 InstructionSetOpenData.STREAM_CODEC
             ) { syncId, inv, p ->
                 InstructionSetScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)
-            }
-        }
-
-        ServerPlayNetworking.registerGlobalReceiver(SetStoragePriorityPayload.TYPE) { payload, context ->
-            val player = context.player()
-            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
-            val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@registerGlobalReceiver
-            val side = Direction.entries[payload.sideOrdinal]
-            val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
-            val stack = nodeEntity.getItem(globalSlot)
-            if (stack.item is StorageCard) {
-                StorageCard.setPriority(stack, payload.priority)
-                nodeEntity.setChanged()
             }
         }
 

@@ -187,6 +187,22 @@ class Nodeworks(modBus: IEventBus) {
                     damien.nodeworks.screen.DiagnosticMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.CARD_PROGRAMMER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "card_programmer")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.CardProgrammerOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.CardProgrammerMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.STORAGE_CARD = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "storage_card")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.StorageCardOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -212,7 +228,7 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
-        registrar.playToServer(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC, NeoForgeTerminalPackets::handleSetStoragePriority)
+        // SetStoragePriorityPayload removed — priority is now per-card via StorageCard GUI
         registrar.playToServer(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC, NeoForgeTerminalPackets::handleOpenInstructionSet)
         registrar.playToServer(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC, NeoForgeTerminalPackets::handleSetInstructionGrid)
         registrar.playToServer(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC) { payload, context ->
