@@ -208,7 +208,20 @@ class CardProgrammerMenu(
             if (item.isEmpty) {
                 setCounter(0)
             }
+            // Sync template to the held programmer item so its texture updates immediately
+            syncTemplateToProgrammer()
         }
+    }
+
+    /** Writes the current template slot contents to the held programmer item's CONTAINER component.
+     *  Triggers a client-side re-evaluation of the card_type model predicate so the texture swaps immediately. */
+    private fun syncTemplateToProgrammer() {
+        if (hand == null) return
+        val player = playerInventory.player
+        if (player.level().isClientSide) return
+        val programmerStack = player.getItemInHand(hand)
+        if (programmerStack.item !is CardProgrammerItem) return
+        CardProgrammerItem.setTemplate(programmerStack, templateContainer.getItem(0))
     }
 
     private inner class InputSlot(container: SimpleContainer, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
