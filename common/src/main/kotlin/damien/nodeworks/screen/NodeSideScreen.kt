@@ -1,11 +1,9 @@
 package damien.nodeworks.screen
 
-import damien.nodeworks.card.StorageCard
 import damien.nodeworks.network.*
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.NodeSideScreenHandler
 
-import damien.nodeworks.screen.widget.SlicedButton
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.core.Direction
@@ -37,9 +35,6 @@ class NodeSideScreen(
         private val SIDE_LABELS = arrayOf("D", "U", "N", "S", "W", "E")
     }
 
-    private var priorityValue = 0
-    private var hasStorageCard = false
-
     /** Cached facing block item for rendering. */
     private var facingBlockStack: ItemStack = ItemStack.EMPTY
     private var facingBlockName: String = ""
@@ -56,27 +51,7 @@ class NodeSideScreen(
 
     override fun init() {
         super.init()
-        detectStorageCard()
         updateFacingBlock()
-        addPriorityButtons()
-    }
-
-    private fun addPriorityButtons() {
-        if (hasStorageCard) {
-            addRenderableWidget(SlicedButton.create(
-                leftPos + 120, topPos + CARD_AREA_Y + 20, 14, 14, "-"
-            ) { _ ->
-                priorityValue = (priorityValue - 1).coerceIn(0, 99)
-                sendPriorityUpdate()
-            })
-
-            addRenderableWidget(SlicedButton.create(
-                leftPos + 155, topPos + CARD_AREA_Y + 20, 14, 14, "+"
-            ) { _ ->
-                priorityValue = (priorityValue + 1).coerceIn(0, 99)
-                sendPriorityUpdate()
-            })
-        }
     }
 
     private fun updateFacingBlock() {
@@ -93,68 +68,22 @@ class NodeSideScreen(
         }
     }
 
-    private fun detectStorageCard() {
-        val activeStart = menu.activeSide.ordinal * 9
-        for (i in activeStart until activeStart + 9) {
-            val stack = menu.getSlot(i).item
-            if (stack.item is StorageCard) {
-                hasStorageCard = true
-                priorityValue = StorageCard.getPriority(stack)
-                return
-            }
-        }
-        hasStorageCard = false
-    }
-
-    private fun findStorageCardSlot(): Int {
-        val activeStart = menu.activeSide.ordinal * 9
-        for (i in activeStart until activeStart + 9) {
-            val stack = menu.getSlot(i).item
-            if (stack.item is StorageCard) return i - activeStart
-        }
-        return -1
-    }
-
-    private fun sendPriorityUpdate() {
-        val slot = findStorageCardSlot()
-        if (slot < 0) return
-        PlatformServices.clientNetworking.sendToServer(
-            SetStoragePriorityPayload(
-                menu.getNodePos(),
-                menu.activeSide.ordinal,
-                slot,
-                priorityValue
-            )
-        )
-    }
-
     private fun switchToSide(newSide: Direction) {
-        // Update menu (client-side)
         menu.switchSide(newSide)
 
-        // Notify server
         PlatformServices.clientNetworking.sendToServer(
             SwitchNodeSidePayload(menu.getNodePos(), newSide.ordinal)
         )
 
-        // Update title
         val sideName = newSide.name.replaceFirstChar { it.uppercase() }
         sideTitle = Component.translatable("container.nodeworks.node_side", sideName)
 
-        // Refresh state for the new side
         updateFacingBlock()
-        val prevHas = hasStorageCard
-        detectStorageCard()
-        if (prevHas != hasStorageCard) {
-            rebuildWidgets()
-        }
     }
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
-        // Window frame
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
-        // Top bar with network color trim (gray if disconnected)
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getNodePos())
         val trimColor = if (reachable) {
             val nodeEntity = net.minecraft.client.Minecraft.getInstance().level?.getBlockEntity(menu.getNodePos()) as? damien.nodeworks.network.Connectable
@@ -164,34 +93,21 @@ class NodeSideScreen(
         }
         NineSlice.drawTitleBar(graphics, font, sideTitle, leftPos, topPos, imageWidth, TOP_BAR_H, trimColor)
 
-        // Tab row — 6 side tabs
         renderTabs(graphics, mouseX, mouseY, trimColor)
 
-        // 3x3 card slot grid
         NineSlice.drawSlotGrid(graphics, leftPos + CARD_GRID_X, topPos + CARD_AREA_Y, 3, 3)
 
-        // Facing block icon + label (left of card grid)
         renderFacingBlock(graphics)
 
-        // Priority controls
-        if (hasStorageCard) {
-            graphics.drawString(font, "Priority", leftPos + 118, topPos + CARD_AREA_Y + 10, 0xFFAAAAAA.toInt())
-            val px = leftPos + 134
-            val py = topPos + CARD_AREA_Y + 22
-            graphics.drawString(font, "$priorityValue", px + (14 - font.width("$priorityValue")) / 2, py + 3, 0xFFFFFFFF.toInt())
-        }
-
-        // Inventory label
         graphics.drawString(font, "Inventory", leftPos + INV_X, topPos + INV_LABEL_Y, 0xFFAAAAAA.toInt())
 
-        // Player inventory (3x9 + hotbar)
         NineSlice.drawPlayerInventory(graphics, leftPos + INV_X, topPos + INV_Y, HOTBAR_GAP)
     }
 
     private fun renderTabs(graphics: GuiGraphics, mouseX: Int, mouseY: Int, trimColor: Int) {
         val currentSide = menu.activeSide.ordinal
         val tabCount = 6
-        val totalW = imageWidth - 6  // 3px inset on each side
+        val totalW = imageWidth - 6
         val tabW = totalW / tabCount
         val startX = leftPos + 3
         val tabY = topPos + TAB_ROW_Y
@@ -208,12 +124,10 @@ class NodeSideScreen(
             }
             slice.draw(graphics, tx, tabY, tabW, TAB_H)
 
-            // Tint active tab with network color
             if (isActive && trimColor >= 0) {
                 NineSlice.TAB_TRIM.drawTinted(graphics, tx, tabY, tabW, TAB_H, trimColor, 0.7f)
             }
 
-            // Label
             val label = SIDE_LABELS[i]
             val labelColor = if (isActive) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
             val labelX = tx + (tabW - font.width(label)) / 2
@@ -226,18 +140,14 @@ class NodeSideScreen(
         val labelX = leftPos + 8
         val iconY = topPos + CARD_AREA_Y + 18
 
-        // "Facing" label
         graphics.drawString(font, "Facing", labelX, topPos + CARD_AREA_Y + 6, 0xFFAAAAAA.toInt())
 
-        // Block icon (16x16)
         if (!facingBlockStack.isEmpty) {
             graphics.renderItem(facingBlockStack, leftPos + 22, iconY)
         } else {
-            // Air or unloaded — show "Air" text
             graphics.drawString(font, "Air", labelX + 4, iconY + 4, 0xFF666666.toInt())
         }
 
-        // Block name (truncated to fit)
         val maxNameW = CARD_GRID_X - 10
         var displayName = facingBlockName
         if (font.width(displayName) > maxNameW) {
@@ -250,18 +160,11 @@ class NodeSideScreen(
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        val prevHas = hasStorageCard
-        detectStorageCard()
-        if (prevHas != hasStorageCard) {
-            rebuildWidgets()
-        }
-
         super.render(graphics, mouseX, mouseY, partialTick)
         renderTooltip(graphics, mouseX, mouseY)
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        // Check tab clicks
         if (button == 0) {
             val currentSide = menu.activeSide.ordinal
             val tabCount = 6

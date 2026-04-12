@@ -156,21 +156,6 @@ object NeoForgeTerminalPackets {
         }
     }
 
-    fun handleSetStoragePriority(payload: SetStoragePriorityPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            val player = context.player()
-            val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@enqueueWork
-            val side = Direction.entries[payload.sideOrdinal]
-            val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
-            val stack = nodeEntity.getItem(globalSlot)
-            if (stack.item is StorageCard) {
-                StorageCard.setPriority(stack, payload.priority)
-                nodeEntity.setChanged()
-            }
-        }
-    }
-
     fun handleSetLayout(payload: SetLayoutPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()

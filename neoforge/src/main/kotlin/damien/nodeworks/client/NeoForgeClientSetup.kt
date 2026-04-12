@@ -75,6 +75,21 @@ object NeoForgeClientSetup {
                 if (damien.nodeworks.item.LinkCrystalItem.isEncoded(stack)) 1.0f else 0.0f
             }
 
+            // Register Card Programmer model predicate — changes texture based on template card type
+            net.minecraft.client.renderer.item.ItemProperties.register(
+                damien.nodeworks.registry.ModItems.CARD_PROGRAMMER,
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "card_type")
+            ) { stack, _, _, _ ->
+                val template = damien.nodeworks.item.CardProgrammerItem.getTemplate(stack)
+                if (template.isEmpty) 0.0f
+                else when ((template.item as? damien.nodeworks.card.NodeCard)?.cardType) {
+                    "storage" -> 1.0f
+                    "io" -> 2.0f
+                    "redstone" -> 3.0f
+                    else -> 0.0f
+                }
+            }
+
             NodeConnectionRenderer.register()
         }
     }
@@ -128,6 +143,12 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.DIAGNOSTIC) { menu, inventory, title ->
             damien.nodeworks.screen.DiagnosticScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.CARD_PROGRAMMER) { menu, inventory, title ->
+            damien.nodeworks.screen.CardProgrammerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.STORAGE_CARD) { menu, inventory, title ->
+            damien.nodeworks.screen.StorageCardScreen(menu, inventory, title)
         }
     }
 

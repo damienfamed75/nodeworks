@@ -34,6 +34,8 @@ object ModScreenHandlers {
     lateinit var BROADCAST_ANTENNA: MenuType<BroadcastAntennaMenu>
     lateinit var RECEIVER_ANTENNA: MenuType<ReceiverAntennaMenu>
     lateinit var DIAGNOSTIC: MenuType<DiagnosticMenu>
+    lateinit var CARD_PROGRAMMER: MenuType<damien.nodeworks.screen.CardProgrammerMenu>
+    lateinit var STORAGE_CARD: MenuType<damien.nodeworks.screen.StorageCardMenu>
 
     fun initialize() {
         // Platform module must call registerAll() before this

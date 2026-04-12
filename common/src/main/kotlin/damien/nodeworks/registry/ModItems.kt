@@ -92,6 +92,12 @@ object ModItems {
         Item.Properties().stacksTo(16)
     )
 
+    val CARD_PROGRAMMER: Item = register(
+        "card_programmer",
+        { props -> damien.nodeworks.item.CardProgrammerItem(props) },
+        Item.Properties().stacksTo(1)
+    )
+
     private fun register(
         id: String,
         factory: (Item.Properties) -> Item,
