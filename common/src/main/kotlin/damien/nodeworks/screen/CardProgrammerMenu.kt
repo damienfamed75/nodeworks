@@ -24,7 +24,8 @@ class CardProgrammerMenu(
 ) : AbstractContainerMenu(ModScreenHandlers.CARD_PROGRAMMER, syncId) {
 
     private val templateContainer = SimpleContainer(1)
-    val counterData: ContainerData = SimpleContainerData(1)
+    /** [0] = counter, [1] = copyName (1 = on, 0 = off) */
+    val counterData: ContainerData = SimpleContainerData(2)
 
     init {
         // Load template + counter from programmer item (server side only)
@@ -33,23 +34,28 @@ class CardProgrammerMenu(
             val template = CardProgrammerItem.getTemplate(programmerStack)
             if (!template.isEmpty) templateContainer.setItem(0, template.copy())
             counterData.set(0, CardProgrammerItem.getCounter(programmerStack))
+            counterData.set(1, if (CardProgrammerItem.getCopyName(programmerStack)) 1 else 0)
+        } else {
+            counterData.set(1, 1) // default on for client dummy
         }
 
-        // Slot 0: Template — card stays here
-        addSlot(TemplateSlot(templateContainer, 0, 33, 39))
+        // Slot positions match the black 18x18 squares in card_programmer_bg.png (176x100, natural size).
 
-        // Slot 1: Input — accepts matching cards, auto-ejects after processing
-        addSlot(InputSlot(SimpleContainer(1), 0, 121, 39))
+        // Slot 0: Template — left black square at source (52, 18) + programmer Y offset of 2
+        addSlot(TemplateSlot(templateContainer, 0, 53, 21))
 
-        // Player inventory (slots 2-37)
+        // Slot 1: Input — right black square at source (106, 18) + programmer Y offset of 2
+        addSlot(InputSlot(SimpleContainer(1), 0, 107, 21))
+
+        // Player inventory (slots 2-37) — standard inventory frame below programmer
         for (row in 0 until 3) {
             for (col in 0 until 9) {
-                addSlot(Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 103 + row * 18))
+                addSlot(Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 123 + row * 18))
             }
         }
         // Hotbar (slots 38-46)
         for (col in 0 until 9) {
-            addSlot(Slot(playerInventory, col, 9 + col * 18, 161))
+            addSlot(Slot(playerInventory, col, 9 + col * 18, 181))
         }
 
         addDataSlots(counterData)
@@ -57,6 +63,9 @@ class CardProgrammerMenu(
 
     fun getCounter(): Int = counterData.get(0)
     fun setCounter(value: Int) { counterData.set(0, value.coerceAtLeast(0)) }
+
+    fun getCopyName(): Boolean = counterData.get(1) != 0
+    fun setCopyName(value: Boolean) { counterData.set(1, if (value) 1 else 0) }
 
     fun hasTemplate(): Boolean = !templateContainer.getItem(0).isEmpty
     fun getTemplate(): ItemStack = templateContainer.getItem(0)
@@ -76,22 +85,25 @@ class CardProgrammerMenu(
             StorageCard.setPriority(stack, StorageCard.getPriority(template))
         }
 
-        // Copy name with counter suffix
-        val templateName = template.get(DataComponents.CUSTOM_NAME)
-        val counter = getCounter()
-        if (templateName != null) {
-            val baseName = templateName.string
-            stack.set(DataComponents.CUSTOM_NAME, Component.literal("${baseName}_${counter}"))
+        // Copy name with counter suffix (only if copy-name is enabled)
+        if (getCopyName()) {
+            val templateName = template.get(DataComponents.CUSTOM_NAME)
+            val counter = getCounter()
+            if (templateName != null) {
+                val baseName = templateName.string
+                stack.set(DataComponents.CUSTOM_NAME, Component.literal("${baseName}_${counter}"))
+            }
+            setCounter(counter + 1)
         }
-
-        setCounter(counter + 1)
     }
 
-    /** Handle counter +/- buttons via the built-in clickMenuButton mechanism. */
+    /** Handle counter +/- buttons, copy-name toggle, and direct counter set via clickMenuButton. */
     override fun clickMenuButton(player: Player, id: Int): Boolean {
-        when (id) {
-            0 -> setCounter(getCounter() - 1)
-            1 -> setCounter(getCounter() + 1)
+        when {
+            id == 0 -> setCounter(getCounter() - 1)
+            id == 1 -> setCounter(getCounter() + 1)
+            id == 2 -> setCopyName(!getCopyName())
+            id in 100..10099 -> setCounter(id - 100) // direct value set (0-9999)
         }
         return true
     }
@@ -168,6 +180,7 @@ class CardProgrammerMenu(
         if (programmerStack.item !is CardProgrammerItem) return
         CardProgrammerItem.setTemplate(programmerStack, templateContainer.getItem(0))
         CardProgrammerItem.setCounter(programmerStack, getCounter())
+        CardProgrammerItem.setCopyName(programmerStack, getCopyName())
     }
 
     override fun stillValid(player: Player): Boolean {
