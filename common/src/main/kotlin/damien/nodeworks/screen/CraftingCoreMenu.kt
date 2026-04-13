@@ -20,25 +20,54 @@ class CraftingCoreMenu(
 ) : AbstractContainerMenu(ModScreenHandlers.CRAFTING_CORE, syncId) {
 
     companion object {
-        const val DATA_SLOTS = 4
+        // ContainerData layout:
+        //   [0][1] = bufferUsed (hi, lo) — Long packed as two Ints
+        //   [2][3] = bufferCapacity (hi, lo)
+        //   [4]    = bufferTypesUsed (small int)
+        //   [5]    = bufferTypesCapacity
+        //   [6]    = isFormed (0/1)
+        //   [7]    = isCrafting (0/1)
+        const val DATA_SLOTS = 8
+        private const val IDX_USED_HI = 0
+        private const val IDX_USED_LO = 1
+        private const val IDX_CAP_HI = 2
+        private const val IDX_CAP_LO = 3
+        private const val IDX_TYPES_USED = 4
+        private const val IDX_TYPES_CAP = 5
+        private const val IDX_FORMED = 6
+        private const val IDX_CRAFTING = 7
+
         private const val BUFFER_SYNC_INTERVAL = 20
+
+        private fun longHi(v: Long): Int = (v ushr 32).toInt()
+        private fun longLo(v: Long): Int = v.toInt()
+        private fun packLong(hi: Int, lo: Int): Long =
+            (hi.toLong() shl 32) or (lo.toLong() and 0xFFFFFFFFL)
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: CraftingCoreOpenData): CraftingCoreMenu {
             val data = SimpleContainerData(DATA_SLOTS)
-            data.set(0, openData.bufferUsed)
-            data.set(1, openData.bufferCapacity)
-            data.set(2, if (openData.isFormed) 1 else 0)
-            data.set(3, if (openData.isCrafting) 1 else 0)
+            data.set(IDX_USED_HI, longHi(openData.bufferUsed))
+            data.set(IDX_USED_LO, longLo(openData.bufferUsed))
+            data.set(IDX_CAP_HI, longHi(openData.bufferCapacity))
+            data.set(IDX_CAP_LO, longLo(openData.bufferCapacity))
+            data.set(IDX_TYPES_USED, openData.bufferTypesUsed)
+            data.set(IDX_TYPES_CAP, openData.bufferTypesCapacity)
+            data.set(IDX_FORMED, if (openData.isFormed) 1 else 0)
+            data.set(IDX_CRAFTING, if (openData.isCrafting) 1 else 0)
             return CraftingCoreMenu(syncId, openData.pos, data)
         }
 
         fun createServer(syncId: Int, playerInventory: Inventory, entity: CraftingCoreBlockEntity): CraftingCoreMenu {
             val data = object : ContainerData {
                 override fun get(index: Int): Int = when (index) {
-                    0 -> entity.bufferUsed
-                    1 -> entity.bufferCapacity
-                    2 -> if (entity.isFormed) 1 else 0
-                    3 -> if (entity.isCrafting) 1 else 0
+                    IDX_USED_HI -> longHi(entity.bufferUsed)
+                    IDX_USED_LO -> longLo(entity.bufferUsed)
+                    IDX_CAP_HI -> longHi(entity.bufferCapacity)
+                    IDX_CAP_LO -> longLo(entity.bufferCapacity)
+                    IDX_TYPES_USED -> entity.bufferTypesUsed
+                    IDX_TYPES_CAP -> entity.bufferTypesCapacity
+                    IDX_FORMED -> if (entity.isFormed) 1 else 0
+                    IDX_CRAFTING -> if (entity.isCrafting) 1 else 0
                     else -> 0
                 }
                 override fun set(index: Int, value: Int) {}
@@ -52,13 +81,15 @@ class CraftingCoreMenu(
         }
     }
 
-    val bufferUsed: Int get() = data.get(0)
-    val bufferCapacity: Int get() = data.get(1)
-    val isFormed: Boolean get() = data.get(2) != 0
-    val isCrafting: Boolean get() = data.get(3) != 0
+    val bufferUsed: Long get() = packLong(data.get(IDX_USED_HI), data.get(IDX_USED_LO))
+    val bufferCapacity: Long get() = packLong(data.get(IDX_CAP_HI), data.get(IDX_CAP_LO))
+    val bufferTypesUsed: Int get() = data.get(IDX_TYPES_USED)
+    val bufferTypesCapacity: Int get() = data.get(IDX_TYPES_CAP)
+    val isFormed: Boolean get() = data.get(IDX_FORMED) != 0
+    val isCrafting: Boolean get() = data.get(IDX_CRAFTING) != 0
 
     /** Client-side buffer contents, populated by BufferSyncPayload handler. */
-    var clientBufferContents: List<Pair<String, Int>> = emptyList()
+    var clientBufferContents: List<Pair<String, Long>> = emptyList()
 
     /** Client-side craft tree, populated by CraftingCpuTreePayload handler. */
     var craftTree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
@@ -106,15 +137,17 @@ class CraftingCoreMenu(
             // Use the tree snapshot taken at craft start — reflects original storage state
             tree = entity.craftTreeSnapshot
             if (tree == null) {
-                // Fallback: build now (e.g., after world reload where transient field was lost)
+                // Fallback: build now (e.g., after world reload where transient field was lost).
+                // CraftTreeBuilder.buildCraftTree currently takes Int; down-cast for now.
+                // (Long propagation in CraftTreeBuilder tracked separately.)
                 val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, entity.blockPos)
+                val clampedCount = entity.originalCraftCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(
-                    entity.originalCraftId, entity.originalCraftCount, level, snapshot
+                    entity.originalCraftId, clampedCount, level, snapshot
                 )
                 entity.craftTreeSnapshot = tree
             }
 
-            // Active steps update every sync cycle
             steps = entity.pendingOutputs.map { it.first }.distinct().ifEmpty {
                 if (entity.pendingCount > 0) emptyList() else listOf(entity.originalCraftId)
             }

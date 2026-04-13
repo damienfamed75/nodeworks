@@ -3,9 +3,12 @@ package damien.nodeworks.block.entity
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
+import damien.nodeworks.script.cpu.BufferState
+import damien.nodeworks.script.cpu.CpuRules
 import net.minecraft.core.BlockPos
 import net.minecraft.core.HolderLookup
 import net.minecraft.nbt.CompoundTag
+import net.minecraft.nbt.Tag
 import net.minecraft.network.protocol.Packet
 import net.minecraft.network.protocol.game.ClientGamePacketListener
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket
@@ -17,9 +20,12 @@ import java.util.UUID
 
 /**
  * Crafting Core — the brain of a multiblock Crafting CPU.
- * Connects to the network via laser. Discovers adjacent Crafting Storage blocks
- * to determine buffer capacity. Executes crafting jobs with items held in an
- * internal buffer to prevent race conditions.
+ *
+ * Discovers CPU components (Buffer, Co-Processor, Substrate, Stabilizer) via free-form
+ * adjacency BFS. Holds the buffer (both count and unique-types limits, Long-safe) and
+ * drives craft execution.
+ *
+ * See docs/design/crafting-cpu.md for design rationale; [CpuRules] for tunables.
  */
 class CraftingCoreBlockEntity(
     pos: BlockPos,
@@ -30,21 +36,27 @@ class CraftingCoreBlockEntity(
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
 
-    // --- Buffer ---
+    // =====================================================================
+    // Buffer (dual-axis: count + unique types, Long-safe item counts)
+    // =====================================================================
 
-    companion object {
-        const val BASE_CAPACITY = 256
-    }
+    /**
+     * The CPU's in-flight item buffer. Encapsulates both count and types limits,
+     * handles Long arithmetic, and owns its own NBT format. See [BufferState].
+     */
+    val bufferState = BufferState()
 
-    /** Virtual item buffer: itemId → count. Private to this CPU during crafting. */
-    private val buffer = mutableMapOf<String, Int>()
+    /** Total items currently held (Long-safe for networks with billions of items). */
+    val bufferUsed: Long get() = bufferState.count
 
-    /** Current total items in buffer. */
-    val bufferUsed: Int get() = buffer.values.sum()
+    /** Count-axis capacity. */
+    val bufferCapacity: Long get() = bufferState.countCapacity
 
-    /** Max buffer capacity (base + adjacent Crafting Storage blocks). */
-    var bufferCapacity: Int = BASE_CAPACITY
-        private set
+    /** Number of unique item types currently held. */
+    val bufferTypesUsed: Int get() = bufferState.types
+
+    /** Unique-types capacity. */
+    val bufferTypesCapacity: Int get() = bufferState.typesCapacity
 
     /** Whether a crafting job is currently running. */
     var isCrafting: Boolean = false
@@ -58,21 +70,24 @@ class CraftingCoreBlockEntity(
     var jobGeneration: Int = 0
         private set
 
-    // --- Pending processing job metadata (persisted for resume after restart) ---
+    // =====================================================================
+    // Pending processing job metadata (persisted for resume after restart)
+    // =====================================================================
 
     /** The top-level item ID that was originally requested (e.g. "minecraft:iron_helmet"). */
     var originalCraftId: String = ""
         private set
 
-    /** The top-level count originally requested. */
-    var originalCraftCount: Int = 0
+    /** The top-level count originally requested. Long-safe for bulk crafts. */
+    var originalCraftCount: Long = 0L
         private set
 
     /** Craft tree snapshot taken at craft start — reflects the original storage state. Not persisted. */
-    @Transient var craftTreeSnapshot: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
+    @Transient
+    var craftTreeSnapshot: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
 
-    /** Expected outputs per operation: list of (itemId, count). */
-    var pendingOutputs: List<Pair<String, Int>> = emptyList()
+    /** Expected outputs per operation: list of (itemId, count). Long-safe. */
+    var pendingOutputs: List<Pair<String, Long>> = emptyList()
         private set
 
     /** Number of async processing operations still pending. */
@@ -84,10 +99,11 @@ class CraftingCoreBlockEntity(
         private set
 
     /** Whether resume has been scheduled this session (prevents duplicate resume). */
-    @Transient var resumeScheduled: Boolean = false
+    @Transient
+    var resumeScheduled: Boolean = false
 
     /** Set the top-level craft request for resume after restart. Called once per craft. */
-    fun setOriginalCraft(itemId: String, count: Int) {
+    fun setOriginalCraft(itemId: String, count: Long) {
         if (originalCraftId.isEmpty()) {
             originalCraftId = itemId
             originalCraftCount = count
@@ -99,7 +115,7 @@ class CraftingCoreBlockEntity(
      * Called when job:pull() registers an async poll. Captures the pull target
      * coordinates and increments the pending count.
      */
-    fun addPendingOp(outputs: List<Pair<String, Int>>, pullTargets: List<Pair<BlockPos, net.minecraft.core.Direction>>) {
+    fun addPendingOp(outputs: List<Pair<String, Long>>, pullTargets: List<Pair<BlockPos, net.minecraft.core.Direction>>) {
         if (pendingOutputs.isEmpty()) pendingOutputs = outputs
         if (pendingPullTargets.isEmpty() && pullTargets.isNotEmpty()) pendingPullTargets = pullTargets
         pendingCount++
@@ -113,7 +129,7 @@ class CraftingCoreBlockEntity(
         else setChanged()
     }
 
-    /** Wipe all pending job metadata (but keep originalCraft — cleared by clearOriginalCraft). */
+    /** Wipe all pending job metadata (but keep originalCraft — cleared by clearAllCraftState). */
     fun clearPendingJob() {
         if (pendingOutputs.isNotEmpty() || pendingCount > 0 || pendingPullTargets.isNotEmpty()) {
             pendingOutputs = emptyList()
@@ -126,41 +142,49 @@ class CraftingCoreBlockEntity(
     /** Wipe everything including the original craft request. Called when the entire craft is done or cancelled. */
     fun clearAllCraftState() {
         originalCraftId = ""
-        originalCraftCount = 0
+        originalCraftCount = 0L
         craftTreeSnapshot = null
         clearPendingJob()
     }
 
-    // --- Buffer operations ---
+    // =====================================================================
+    // Buffer operations — all count parameters/returns are Long
+    // =====================================================================
 
-    fun addToBuffer(itemId: String, count: Int): Boolean {
-        if (bufferUsed + count > bufferCapacity) return false
-        buffer[itemId] = (buffer[itemId] ?: 0) + count
+    /**
+     * Insert [count] of [itemId] into the buffer.
+     *
+     * Returns true on success, false if either the count or types limit would be exceeded.
+     * Failure is atomic: nothing is inserted if the check fails.
+     */
+    fun addToBuffer(itemId: String, count: Long): Boolean {
+        if (!bufferState.insert(itemId, count)) return false
         setChanged()
         return true
     }
 
-    fun removeFromBuffer(itemId: String, count: Int): Int {
-        val has = buffer[itemId] ?: 0
-        val removed = minOf(has, count)
-        if (removed > 0) {
-            val remaining = has - removed
-            if (remaining > 0) buffer[itemId] = remaining else buffer.remove(itemId)
-            setChanged()
-        }
+    /**
+     * Remove up to [count] of [itemId] from the buffer.
+     * Returns the amount actually removed (≤ count; 0 if nothing to remove).
+     */
+    fun removeFromBuffer(itemId: String, count: Long): Long {
+        val removed = bufferState.extract(itemId, count)
+        if (removed > 0) setChanged()
         return removed
     }
 
-    fun getBufferCount(itemId: String): Int = buffer[itemId] ?: 0
+    fun getBufferCount(itemId: String): Long = bufferState.get(itemId)
 
-    fun getBufferContents(): Map<String, Int> = buffer.toMap()
+    fun getBufferContents(): Map<String, Long> = bufferState.contents()
 
-    fun clearBuffer(): Map<String, Int> {
-        val contents = buffer.toMap()
-        buffer.clear()
-        setChanged()
+    fun clearBuffer(): Map<String, Long> {
+        val contents = bufferState.clear()
+        if (contents.isNotEmpty()) setChanged()
         return contents
     }
+
+    /** Returns true if [count] [itemId] can be accepted right now (doesn't modify state). */
+    fun canAccept(itemId: String, count: Long): Boolean = bufferState.canAccept(itemId, count)
 
     fun setCrafting(crafting: Boolean, itemName: String = "") {
         isCrafting = crafting
@@ -176,8 +200,8 @@ class CraftingCoreBlockEntity(
             val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
             var remaining = count
-            while (remaining > 0) {
-                val batch = minOf(remaining, item.getDefaultMaxStackSize())
+            while (remaining > 0L) {
+                val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
                 val stack = net.minecraft.world.item.ItemStack(item, batch)
                 // Try to insert into network storage via connected nodes
                 val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
@@ -186,9 +210,11 @@ class CraftingCoreBlockEntity(
                     remaining -= inserted
                 } else {
                     // Can't insert to storage — drop as item entity
-                    net.minecraft.world.Containers.dropItemStack(lvl,
-                        worldPosition.x + 0.5, worldPosition.y + 1.0, worldPosition.z + 0.5, stack)
-                    remaining -= batch
+                    net.minecraft.world.Containers.dropItemStack(
+                        lvl,
+                        worldPosition.x + 0.5, worldPosition.y + 1.0, worldPosition.z + 0.5, stack
+                    )
+                    remaining -= batch.toLong()
                 }
             }
         }
@@ -197,40 +223,56 @@ class CraftingCoreBlockEntity(
         setCrafting(false)
     }
 
-    // --- Multiblock detection ---
+    // =====================================================================
+    // Multiblock detection (free-form adjacency BFS)
+    // =====================================================================
 
-    /**
-     * Scans adjacent blocks to find Crafting Storage blocks and compute total capacity.
-     * Called when the block is placed, a neighbor changes, or on world load.
-     */
-    /** Whether the CPU has at least one Crafting Storage block (required to be active). */
+    /** Whether the CPU has at least one Buffer block (required to be active). */
     var isFormed: Boolean = false
         private set
 
+    /**
+     * BFS through the adjacency graph starting from the Core. Discovers every
+     * [CpuComponentBlockEntity] and accumulates per-type contributions.
+     *
+     * Capped by [CpuRules.COMPONENTS_PER_CPU_CAP] to bound work on chunk load.
+     */
     fun recalculateCapacity() {
-        var total = 0
-        var storageCount = 0
+        var totalCount = CpuRules.CORE_BASE_COUNT
+        var totalTypes = CpuRules.CORE_BASE_TYPES
+        var bufferCount = 0
+
         val visited = mutableSetOf(worldPosition)
         val queue = ArrayDeque<BlockPos>()
         queue.add(worldPosition)
+        var discovered = 0
 
-        while (queue.isNotEmpty()) {
+        while (queue.isNotEmpty() && discovered < CpuRules.COMPONENTS_PER_CPU_CAP) {
             val pos = queue.removeFirst()
             for (dir in net.minecraft.core.Direction.entries) {
                 val neighbor = pos.relative(dir)
                 if (neighbor in visited) continue
                 visited.add(neighbor)
-                val entity = level?.getBlockEntity(neighbor)
-                if (entity is CraftingStorageBlockEntity) {
-                    total += entity.storageCapacity
-                    storageCount++
-                    queue.add(neighbor) // Continue searching from this storage block
+                val entity = level?.getBlockEntity(neighbor) ?: continue
+                if (entity is CpuComponentBlockEntity) {
+                    queue.add(neighbor)
+                    discovered++
+                    if (entity is CraftingStorageBlockEntity) {
+                        totalCount += entity.storageCapacity
+                        totalTypes += entity.storageTypes
+                        bufferCount++
+                    }
+                    // Future: Co-Processor, Substrate, Stabilizer contribution accumulates here
                 }
             }
         }
 
-        isFormed = storageCount > 0
-        bufferCapacity = if (isFormed) BASE_CAPACITY + total else 0
+        isFormed = bufferCount > 0
+        if (isFormed) {
+            bufferState.setCapacities(totalCount, totalTypes)
+        } else {
+            bufferState.setCapacities(0L, 0)
+        }
         markDirtyAndSync()
         updateBlockState()
     }
@@ -250,7 +292,9 @@ class CraftingCoreBlockEntity(
         }
     }
 
-    // --- Connectable ---
+    // =====================================================================
+    // Connectable
+    // =====================================================================
 
     override fun getConnections(): Set<BlockPos> = connections.toSet()
 
@@ -268,21 +312,22 @@ class CraftingCoreBlockEntity(
 
     override fun hasConnection(pos: BlockPos): Boolean = connections.contains(pos)
 
-    // --- Lifecycle ---
+    // =====================================================================
+    // Lifecycle
+    // =====================================================================
 
     override fun setLevel(level: net.minecraft.world.level.Level) {
         super.setLevel(level)
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
-            // Don't recalculateCapacity here — neighbors may not be loaded yet.
-            // Schedule resume of pending jobs (deferred — neighbors need time to load)
+            // Defer recalc — neighbors may not be loaded yet.
+            // Schedule resume of pending jobs
             if (isCrafting && pendingCount > 0 && pendingPullTargets.isNotEmpty() && !resumeScheduled) {
                 resumeScheduled = true
                 // Defer 2 seconds (40 ticks) to ensure chunk neighbors are loaded
                 damien.nodeworks.script.ResumeScheduler.scheduler.addPendingJob(
                     damien.nodeworks.script.SchedulerImpl.PendingJob(
                         pollFn = pollFnResume@{
-                            // Wait until tick 40+ before attempting resume
                             if (damien.nodeworks.script.ResumeScheduler.scheduler.currentTick < 40) return@pollFnResume false
                             resumePendingJobs()
                             true
@@ -305,8 +350,10 @@ class CraftingCoreBlockEntity(
         if (pendingCount <= 0 || pendingPullTargets.isEmpty()) return
 
         val logger = org.slf4j.LoggerFactory.getLogger("nodeworks-resume")
-        logger.info("CPU at {}: resuming {} pending ops with {} pull targets",
-            worldPosition, pendingCount, pendingPullTargets.size)
+        logger.info(
+            "CPU at {}: resuming {} pending ops with {} pull targets",
+            worldPosition, pendingCount, pendingPullTargets.size
+        )
 
         // Build fresh storage getters from persisted coordinates
         val getters = pendingPullTargets.map { (pos, face) ->
@@ -315,20 +362,21 @@ class CraftingCoreBlockEntity(
             }
         }
 
-        // Synthetic API info — only outputs matter for polling
+        // Synthetic API info — only outputs matter for polling.
+        // ProcessingApiInfo.outputs is (String, Int). We down-cast our Long pendingOutputs
+        // for the synthetic API (the underlying processing pipeline will be refactored in
+        // a later phase to handle Long end-to-end).
+        val syntheticOutputs = pendingOutputs.map { it.first to it.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt() }
         val apiInfo = damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo(
             name = "resume",
             inputs = emptyList(),
-            outputs = pendingOutputs,
+            outputs = syntheticOutputs,
             timeout = 6000
         )
-
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
 
         for (i in 0 until pendingCount) {
             val pending = damien.nodeworks.script.CraftingHelper.PendingHandlerJob()
             pending.onCompleteCallback = {
-                // When all pending pull ops are done, re-invoke the original craft
                 if (this.pendingCount <= 0) {
                     onPendingPullsComplete(lvl, logger)
                 }
@@ -360,11 +408,14 @@ class CraftingCoreBlockEntity(
 
         logger.info("CPU at {}: pulls complete, re-invoking craft('{}', {})", worldPosition, craftId, craftCount)
 
-        // Re-invoke craft with the original request, reusing this CPU
+        // Re-invoke craft with the original request, reusing this CPU.
+        // CraftingHelper.craft signature still takes Int — caller-side cast is narrowed.
+        // (Helper will be updated to Long in a later phase of the refactor.)
         val snap = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
         damien.nodeworks.script.CraftingHelper.currentPendingJob = null
+        val clampedCount = craftCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val result = damien.nodeworks.script.CraftingHelper.craft(
-            craftId, craftCount, lvl, snap,
+            craftId, clampedCount, lvl, snap,
             cpuPos = worldPosition,
             callerScheduler = damien.nodeworks.script.ResumeScheduler.scheduler
         )
@@ -372,17 +423,14 @@ class CraftingCoreBlockEntity(
         damien.nodeworks.script.CraftingHelper.currentPendingJob = null
 
         if (result != null) {
-            // Craft completed synchronously — flush buffer and release CPU
             logger.info("CPU at {}: re-craft completed synchronously", worldPosition)
             flushBufferAndRelease(lvl)
         } else if (pending != null) {
-            // Async — wait for it, then flush
             pending.onCompleteCallback = { _ ->
                 flushBufferAndRelease(lvl)
                 logger.info("CPU at {}: re-craft async completed", worldPosition)
             }
         } else {
-            // Craft failed — flush and release
             val reason = damien.nodeworks.script.CraftingHelper.lastFailReason
             logger.warn("CPU at {}: re-craft failed: {}", worldPosition, reason)
             flushBufferAndRelease(lvl)
@@ -397,11 +445,11 @@ class CraftingCoreBlockEntity(
             val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
             var remaining = count
-            while (remaining > 0) {
-                val batch = minOf(remaining, item.getDefaultMaxStackSize())
+            while (remaining > 0L) {
+                val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
                 val stack = net.minecraft.world.item.ItemStack(item, batch)
                 val inserted = damien.nodeworks.script.NetworkStorageHelper.insertItemStack(lvl, snap, stack, null)
-                remaining -= inserted
+                remaining -= inserted.toLong()
                 if (inserted == 0) break
             }
         }
@@ -424,30 +472,27 @@ class CraftingCoreBlockEntity(
         level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
     }
 
-    // --- Serialization ---
+    // =====================================================================
+    // Serialization
+    // =====================================================================
 
     override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
         super.saveAdditional(tag, registries)
         tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        tag.putInt("bufferCapacity", bufferCapacity)
         tag.putBoolean("isFormed", isFormed)
         tag.putBoolean("isCrafting", isCrafting)
         tag.putString("currentCraftItem", currentCraftItem)
         networkId?.let { tag.putString("networkId", it.toString()) }
 
-        // Save buffer contents
-        if (buffer.isNotEmpty()) {
-            val bufferTag = CompoundTag()
-            for ((itemId, count) in buffer) {
-                bufferTag.putInt(itemId, count)
-            }
-            tag.put("buffer", bufferTag)
-        }
+        // Buffer state (items + capacities, Long-safe, handles legacy format on load)
+        val bufferTag = CompoundTag()
+        bufferState.saveToNBT(bufferTag)
+        tag.put("bufferState", bufferTag)
 
         // Save original craft request + pending job metadata (server-only)
         if (originalCraftId.isNotEmpty()) {
             tag.putString("originalCraftId", originalCraftId)
-            tag.putInt("originalCraftCount", originalCraftCount)
+            tag.putLong("originalCraftCount", originalCraftCount)
         }
         if (pendingCount > 0) {
             tag.putInt("pendingCount", pendingCount)
@@ -455,7 +500,7 @@ class CraftingCoreBlockEntity(
             outputsTag.putInt("size", pendingOutputs.size)
             for ((i, pair) in pendingOutputs.withIndex()) {
                 outputsTag.putString("id$i", pair.first)
-                outputsTag.putInt("ct$i", pair.second)
+                outputsTag.putLong("ct$i", pair.second)
             }
             tag.put("pendingOutputs", outputsTag)
 
@@ -475,7 +520,6 @@ class CraftingCoreBlockEntity(
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
         }
-        bufferCapacity = if (tag.contains("bufferCapacity")) tag.getInt("bufferCapacity") else 0
         isFormed = tag.getBoolean("isFormed")
         isCrafting = tag.getBoolean("isCrafting")
         currentCraftItem = if (tag.contains("currentCraftItem")) tag.getString("currentCraftItem") else ""
@@ -483,24 +527,40 @@ class CraftingCoreBlockEntity(
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
 
-        buffer.clear()
-        if (tag.contains("buffer")) {
-            val bufferTag = tag.getCompound("buffer")
-            for (key in bufferTag.allKeys) {
-                buffer[key] = bufferTag.getInt(key)
+        // Load buffer — new format first, legacy format as fallback
+        when {
+            tag.contains("bufferState", Tag.TAG_COMPOUND.toInt()) -> {
+                bufferState.loadFromNBT(tag.getCompound("bufferState"))
+            }
+            tag.contains("buffer", Tag.TAG_COMPOUND.toInt()) -> {
+                // Legacy pre-Phase-1 format: top-level "buffer" compound with Int counts
+                bufferState.loadFromNBT(tag.getCompound("buffer"))
+                // Legacy capacity (Int) — migrate if present
+                if (tag.contains("bufferCapacity", Tag.TAG_INT.toInt())) {
+                    val legacyCap = tag.getInt("bufferCapacity").toLong()
+                    bufferState.setCapacities(legacyCap, CpuRules.CORE_BASE_TYPES)
+                }
             }
         }
 
         // Load original craft request + pending job metadata
         originalCraftId = if (tag.contains("originalCraftId")) tag.getString("originalCraftId") else ""
-        originalCraftCount = if (tag.contains("originalCraftCount")) tag.getInt("originalCraftCount") else 0
+        originalCraftCount = when {
+            tag.contains("originalCraftCount", Tag.TAG_LONG.toInt()) -> tag.getLong("originalCraftCount")
+            tag.contains("originalCraftCount", Tag.TAG_INT.toInt()) -> tag.getInt("originalCraftCount").toLong()
+            else -> 0L
+        }
         pendingCount = if (tag.contains("pendingCount")) tag.getInt("pendingCount") else 0
         if (pendingCount > 0 && tag.contains("pendingOutputs")) {
             val outputsTag = tag.getCompound("pendingOutputs")
             val size = outputsTag.getInt("size")
             pendingOutputs = (0 until size).mapNotNull { i ->
                 val id = outputsTag.getString("id$i")
-                val ct = outputsTag.getInt("ct$i")
+                val ct = when {
+                    outputsTag.contains("ct$i", Tag.TAG_LONG.toInt()) -> outputsTag.getLong("ct$i")
+                    outputsTag.contains("ct$i", Tag.TAG_INT.toInt()) -> outputsTag.getInt("ct$i").toLong()
+                    else -> 0L
+                }
                 if (id.isNotEmpty()) id to ct else null
             }
         } else {
@@ -511,7 +571,7 @@ class CraftingCoreBlockEntity(
             val size = targetsTag.getInt("size")
             pendingPullTargets = (0 until size).map { i ->
                 BlockPos.of(targetsTag.getLong("p$i")) to
-                    net.minecraft.core.Direction.values()[targetsTag.getInt("f$i")]
+                        net.minecraft.core.Direction.values()[targetsTag.getInt("f$i")]
             }
         } else {
             pendingPullTargets = emptyList()

@@ -129,8 +129,8 @@ data class ControllerSnapshot(
 
 data class CpuSnapshot(
     val pos: BlockPos,
-    val bufferUsed: Int,
-    val bufferCapacity: Int,
+    val bufferUsed: Long,
+    val bufferCapacity: Long,
     val isBusy: Boolean
 )
 
@@ -165,7 +165,7 @@ data class NetworkSnapshot(
     fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
 
     /** Find an available (not busy) Crafting CPU with enough buffer capacity. */
-    fun findAvailableCpu(requiredCapacity: Int = 0): CpuSnapshot? =
+    fun findAvailableCpu(requiredCapacity: Long = 0L): CpuSnapshot? =
         cpus.firstOrNull { !it.isBusy && it.bufferCapacity - it.bufferUsed >= requiredCapacity }
 
     /** Find a card by alias (custom or auto-generated) across the entire network. */

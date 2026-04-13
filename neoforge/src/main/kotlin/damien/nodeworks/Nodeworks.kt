@@ -412,6 +412,15 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToClient(CraftRequestErrorPayload.TYPE, CraftRequestErrorPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val screen = net.minecraft.client.Minecraft.getInstance().screen
+                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
+                    screen.setCraftError(payload.message)
+                }
+            }
+        }
+
         registrar.playToClient(DebugCraftingCorePayload.TYPE, DebugCraftingCorePayload.CODEC) { _, context ->
             context.enqueueWork {
                 damien.nodeworks.command.DebugScreens.openCraftingCore()

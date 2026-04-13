@@ -597,12 +597,14 @@ class InventoryTerminalMenu(
         val snap = snapshot ?: return
         if (count <= 0 || count > 999) return
 
-        // Create queue entry (pending until the whole job completes)
         val itemName = net.minecraft.resources.ResourceLocation.tryParse(itemId)?.path?.replace('_', ' ') ?: itemId
+
+        // Create queue entry (pending until the whole job completes)
         val entry = CraftQueueManager.addEntry(player.uuid, itemId, itemName, count)
 
         try {
-            // Let CraftingHelper find and manage its own CPU — same as network:craft()
+            // CraftingHelper.craft does feasibility-aware CPU selection across every CPU on
+            // the network. On failure, lastFailReason carries the player-facing message.
             damien.nodeworks.script.CraftingHelper.currentPendingJob = null
             val result = damien.nodeworks.script.CraftingHelper.craft(
                 itemId, count, lvl, snap,
@@ -612,12 +614,10 @@ class InventoryTerminalMenu(
             damien.nodeworks.script.CraftingHelper.currentPendingJob = null
 
             if (result == null && pending == null) {
-                // Total failure — no recipe, no CPU, etc.
+                // Total failure — no feasible CPU, missing recipe, etc.
                 CraftQueueManager.getQueue(player.uuid).remove(entry)
                 val reason = damien.nodeworks.script.CraftingHelper.lastFailReason
-                (player as? ServerPlayer)?.sendSystemMessage(
-                    net.minecraft.network.chat.Component.literal("Failed to craft: ${reason ?: "Unknown"}")
-                )
+                sendCraftError(player, reason ?: "Failed to start craft.")
                 needsImmediateSync = true
                 return
             }
@@ -652,6 +652,16 @@ class InventoryTerminalMenu(
         }
 
         needsImmediateSync = true
+    }
+
+    /** Send a craft rejection message to the client for display in the craft prompt. */
+    private fun sendCraftError(player: Player, message: String) {
+        val serverPlayer = player as? ServerPlayer ?: return
+        serverPlayer.connection.send(
+            net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(
+                damien.nodeworks.network.CraftRequestErrorPayload(containerId, message)
+            )
+        )
     }
 
     override fun stillValid(player: Player): Boolean = true

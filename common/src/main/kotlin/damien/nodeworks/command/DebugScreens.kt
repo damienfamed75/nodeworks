@@ -32,7 +32,7 @@ object DebugScreens {
         val menu = CraftingCoreMenu(999, BlockPos.ZERO, data)
 
         // Fake buffer: 60 item types to test scrolling
-        val fakeBuffer = mutableListOf<Pair<String, Int>>()
+        val fakeBuffer = mutableListOf<Pair<String, Long>>()
         val items = listOf(
             "minecraft:iron_ingot" to 2048, "minecraft:gold_ingot" to 512,
             "minecraft:diamond" to 256, "minecraft:emerald" to 128,
@@ -69,7 +69,7 @@ object DebugScreens {
             "minecraft:golden_apple" to 8, "minecraft:cooked_beef" to 64,
             "minecraft:porkchop" to 32, "minecraft:egg" to 16
         )
-        for ((id, count) in items) fakeBuffer.add(id to count)
+        for ((id, count) in items) fakeBuffer.add(id to count.toLong())
         menu.clientBufferContents = fakeBuffer
 
         // Fake craft tree: netherite sword with deep prerequisites

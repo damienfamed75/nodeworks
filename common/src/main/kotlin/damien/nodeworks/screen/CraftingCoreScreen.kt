@@ -41,9 +41,10 @@ class CraftingCoreScreen(
     private var bufferMaxScroll = 0
     private var draggingBufferScrollbar = false
 
-    private fun formatCount(count: Int): String = when {
-        count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
-        count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+    private fun formatCount(count: Long): String = when {
+        count >= 1_000_000_000L -> String.format("%.1fB", count / 1_000_000_000.0)
+        count >= 1_000_000L -> String.format("%.1fM", count / 1_000_000.0)
+        count >= 1_000L -> String.format("%.1fK", count / 1_000.0)
         else -> count.toString()
     }
 
@@ -146,14 +147,14 @@ class CraftingCoreScreen(
         NineSlice.CONTENT_BORDER.draw(graphics, barX - 2, barTop - 2, barW + 4, barH + 4)
         graphics.fill(barX, barTop, barX + barW, barTop + barH, 0xFF1A1A1A.toInt())
 
-        if (menu.bufferCapacity > 0) {
-            val fillW = (barW * menu.bufferUsed.toLong() / menu.bufferCapacity).toInt().coerceAtMost(barW)
+        if (menu.bufferCapacity > 0L) {
+            val fillW = (barW * menu.bufferUsed / menu.bufferCapacity).toInt().coerceAtMost(barW)
             if (fillW > 0) {
-                val fillColor = if (menu.bufferUsed > menu.bufferCapacity * 0.9) 0xFFFF5555.toInt() else 0xFF55AA55.toInt()
+                val fillColor = if (menu.bufferUsed > menu.bufferCapacity * 9L / 10L) 0xFFFF5555.toInt() else 0xFF55AA55.toInt()
                 graphics.fill(barX, barTop, barX + fillW, barTop + barH, fillColor)
             }
         }
-        val countText = "${menu.bufferUsed} / ${menu.bufferCapacity}"
+        val countText = "${formatCount(menu.bufferUsed)} / ${formatCount(menu.bufferCapacity)}"
         val scale = 0.5f
         val countWidth = (font.width(countText) * scale).toInt()
         graphics.pose().pushPose()
@@ -163,6 +164,12 @@ class CraftingCoreScreen(
         val cy = ((barTop + (barH - font.lineHeight * scale) / 2f + 1f) / scale).toInt()
         graphics.drawString(font, countText, cx, cy, 0xFFFFFFFF.toInt(), true)
         graphics.pose().popPose()
+
+        // Types axis (dual-axis buffer) — rendered below the count bar
+        val typesTop = barTop + barH + 2
+        val typesText = "Types: ${menu.bufferTypesUsed} / ${menu.bufferTypesCapacity}"
+        val typesColor = if (menu.bufferTypesUsed >= menu.bufferTypesCapacity) 0xFFFF5555.toInt() else 0xFFAAAAAA.toInt()
+        graphics.drawString(font, typesText, contentLeft, typesTop, typesColor)
 
         // Cancel button visibility
         cancelButton?.visible = menu.isCrafting || menu.bufferUsed > 0
@@ -297,7 +304,7 @@ class CraftingCoreScreen(
                 if (mouseX >= ix && mouseX < ix + 16 && mouseY >= iy && mouseY < iy + 16) {
                     val id = ResourceLocation.tryParse(entry.first) ?: continue
                     val item = BuiltInRegistries.ITEM.get(id) ?: continue
-                    val stack = ItemStack(item, entry.second)
+                    val stack = ItemStack(item, entry.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                     graphics.renderTooltip(font, stack, mouseX, mouseY)
                     break
                 }

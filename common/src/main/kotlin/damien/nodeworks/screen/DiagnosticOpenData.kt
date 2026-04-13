@@ -22,8 +22,8 @@ data class DiagnosticOpenData(
 
     data class CpuInfo(
         val pos: BlockPos,
-        val bufferUsed: Int,
-        val bufferCapacity: Int,
+        val bufferUsed: Long,
+        val bufferCapacity: Long,
         val isCrafting: Boolean,
         val currentCraftItem: String,
         val isFormed: Boolean
@@ -76,7 +76,7 @@ data class DiagnosticOpenData(
                 val craftableItems = (0 until craftableCount).map { buf.readUtf(256) }
                 val cpuCount = buf.readVarInt()
                 val cpuInfos = (0 until cpuCount).map {
-                    CpuInfo(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(), buf.readUtf(64), buf.readBoolean())
+                    CpuInfo(buf.readBlockPos(), buf.readVarLong(), buf.readVarLong(), buf.readBoolean(), buf.readUtf(64), buf.readBoolean())
                 }
                 val termCount = buf.readVarInt()
                 val terminalInfos = (0 until termCount).map {
@@ -125,8 +125,8 @@ data class DiagnosticOpenData(
                 buf.writeVarInt(data.cpuInfos.size)
                 for (cpu in data.cpuInfos) {
                     buf.writeBlockPos(cpu.pos)
-                    buf.writeVarInt(cpu.bufferUsed)
-                    buf.writeVarInt(cpu.bufferCapacity)
+                    buf.writeVarLong(cpu.bufferUsed)
+                    buf.writeVarLong(cpu.bufferCapacity)
                     buf.writeBoolean(cpu.isCrafting)
                     buf.writeUtf(cpu.currentCraftItem, 64)
                     buf.writeBoolean(cpu.isFormed)

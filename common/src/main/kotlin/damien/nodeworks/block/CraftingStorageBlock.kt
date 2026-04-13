@@ -1,7 +1,7 @@
 package damien.nodeworks.block
 
 import com.mojang.serialization.MapCodec
-import damien.nodeworks.block.entity.CraftingCoreBlockEntity
+import damien.nodeworks.block.entity.CpuComponentBlockEntity
 import damien.nodeworks.block.entity.CraftingStorageBlockEntity
 import net.minecraft.core.BlockPos
 import net.minecraft.world.InteractionResult
@@ -34,23 +34,14 @@ class CraftingStorageBlock(properties: Properties) : BaseEntityBlock(properties)
 
     override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, neighborPos: BlockPos, movedByPiston: Boolean) {
         super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston)
-        // Notify adjacent cores to recalculate when neighbors change
-        val entity = level.getBlockEntity(pos) as? CraftingStorageBlockEntity ?: return
-        for (dir in net.minecraft.core.Direction.entries) {
-            val neighbor = pos.relative(dir)
-            val core = level.getBlockEntity(neighbor) as? CraftingCoreBlockEntity ?: continue
-            core.recalculateCapacity()
-        }
+        level.getBlockEntity(pos) as? CraftingStorageBlockEntity ?: return
+        // Walk the entire component chain so cores multiple blocks away still get notified
+        CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.recalculateCapacity() }
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
-        // Notify adjacent cores that capacity changed
         if (!level.isClientSide) {
-            for (dir in net.minecraft.core.Direction.entries) {
-                val neighbor = pos.relative(dir)
-                val core = level.getBlockEntity(neighbor) as? CraftingCoreBlockEntity ?: continue
-                core.recalculateCapacity()
-            }
+            CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.recalculateCapacity() }
         }
         return super.playerWillDestroy(level, pos, state, player)
     }
