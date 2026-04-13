@@ -45,6 +45,20 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
         return CraftingCoreBlockEntity(pos, state)
     }
 
+    override fun <T : BlockEntity> getTicker(
+        level: Level,
+        state: BlockState,
+        blockEntityType: net.minecraft.world.level.block.entity.BlockEntityType<T>
+    ): net.minecraft.world.level.block.entity.BlockEntityTicker<T>? {
+        // Server-side ticker drives the per-CPU CraftScheduler each tick.
+        if (level.isClientSide) return null
+        return net.minecraft.world.level.block.entity.BlockEntityTicker { lvl, _, _, be ->
+            if (be is CraftingCoreBlockEntity && lvl is net.minecraft.server.level.ServerLevel) {
+                be.serverTick(lvl)
+            }
+        }
+    }
+
     override fun useWithoutItem(
         state: BlockState,
         level: Level,

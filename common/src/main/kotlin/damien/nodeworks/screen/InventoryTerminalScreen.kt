@@ -52,6 +52,11 @@ class InventoryTerminalScreen(
     private val GRID_PAD = 4
     private val INV_GAP = 4
     private val SCROLLBAR_W = 8
+
+    /** After clicking Craft, wait this many ms for a server error before assuming
+     *  success and closing the dialog. Generous enough for laggy connections;
+     *  short enough that players don't notice. */
+    private val CRAFT_CLOSE_DELAY_MS = 500L
     private val SIDE_BTN_W = 20
     private val SIDE_BTN_GAP = 2
     private val INV_BOTTOM_PAD = 6
@@ -109,10 +114,27 @@ class InventoryTerminalScreen(
     // Craft error returned from the server (e.g. CPU buffer cannot fit the job)
     private var craftError: String? = null
 
-    /** Called by the client packet handler when the server rejects a craft request. */
+    /** Remembered details of the last craft attempt — used to re-open the dialog
+     *  if the server sends a late error after the dialog has already auto-closed. */
+    private var lastAttemptItemId: String? = null
+    private var lastAttemptItemName: String = ""
+    private var lastAttemptCount: Int = 1
+
+    /** Absolute ms deadline after which the dialog auto-closes (treating no error
+     *  arriving as success). 0 = no pending close scheduled. */
+    private var craftCloseAfterMs: Long = 0
+
+    /** Called by the client packet handler when the server rejects a craft request.
+     *  Re-opens the dialog if it has already been auto-closed. */
     fun setCraftError(message: String) {
         craftError = message
-        // Make sure the prompt is open so the error is visible
+        craftCloseAfterMs = 0  // cancel any pending auto-close
+        if (craftDialogueItemId == null && lastAttemptItemId != null) {
+            craftDialogueItemId = lastAttemptItemId
+            craftDialogueItemName = lastAttemptItemName
+            craftDialogueField?.value = lastAttemptCount.toString()
+            craftDialogueField?.visible = true
+        }
     }
 
     // Slot drag state (works across crafting grid and player inventory)
@@ -410,6 +432,16 @@ class InventoryTerminalScreen(
                 PlatformServices.clientNetworking.sendToServer(
                     damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 2)
                 )
+            }
+        }
+
+        // Auto-close the craft dialog after CRAFT_CLOSE_DELAY_MS if no error arrived.
+        // [setCraftError] clears this deadline if a late error lands.
+        if (craftCloseAfterMs > 0L && System.currentTimeMillis() >= craftCloseAfterMs) {
+            craftCloseAfterMs = 0L
+            if (craftError == null && craftDialogueItemId != null) {
+                craftDialogueItemId = null
+                craftDialogueField?.visible = false
             }
         }
 
@@ -834,14 +866,19 @@ class InventoryTerminalScreen(
             }
 
             if (mx >= craftBtnX && mx < craftBtnX + btnW && my >= btnY && my < btnY + 14) {
-                // Craft button — clear previous error, send request, keep dialog open so
-                // a server-side rejection can surface as an error in this same prompt.
+                // Craft button. Clear prior error, send request, and schedule an auto-close:
+                // if no error arrives within the window, the dialog closes optimistically.
+                // [setCraftError] re-opens the dialog if a late error comes in.
                 craftError = null
                 val count = craftDialogueField?.value?.toIntOrNull() ?: 1
                 if (count > 0) {
+                    lastAttemptItemId = craftDialogueItemId
+                    lastAttemptItemName = craftDialogueItemName
+                    lastAttemptCount = count
                     PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
                     )
+                    craftCloseAfterMs = System.currentTimeMillis() + CRAFT_CLOSE_DELAY_MS
                 }
                 return true
             }

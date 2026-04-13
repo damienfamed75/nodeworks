@@ -4,7 +4,10 @@ import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.script.cpu.BufferState
+import damien.nodeworks.script.cpu.CpuOpExecutor
 import damien.nodeworks.script.cpu.CpuRules
+import damien.nodeworks.script.cpu.CraftPlan
+import damien.nodeworks.script.cpu.CraftScheduler
 import net.minecraft.core.BlockPos
 import net.minecraft.core.HolderLookup
 import net.minecraft.nbt.CompoundTag
@@ -45,6 +48,34 @@ class CraftingCoreBlockEntity(
      * handles Long arithmetic, and owns its own NBT format. See [BufferState].
      */
     val bufferState = BufferState()
+
+    // =====================================================================
+    // Scheduler — per-CPU operation scheduler
+    // =====================================================================
+
+    /** Executor that translates [Operation]s into real side effects on this CPU. */
+    private val opExecutor: CpuOpExecutor = CpuOpExecutor(this)
+
+    /** The scheduler that drives all in-flight crafts for this CPU.
+     *  Phase 2 uses a single thread; Phase 3 adds one per Co-Processor. */
+    val scheduler: CraftScheduler = CraftScheduler(threadCount = 1, executor = opExecutor)
+
+    /**
+     * Submit a planned craft to this CPU's scheduler. Runs immediately if a thread
+     * is idle, otherwise queues. [onComplete] fires exactly once when the plan
+     * reaches DONE (true) or FAILED (false). Safe to call from any server-side context.
+     */
+    fun submitCraft(plan: CraftPlan, currentTick: Long, onComplete: ((Boolean) -> Unit)? = null) {
+        onComplete?.let { opExecutor.registerCompletionListener(plan, it) }
+        scheduler.submit(plan, currentTick)
+        setCrafting(true, plan.rootItemId.substringAfter(':').replace('_', ' '))
+        setOriginalCraft(plan.rootItemId, plan.rootCount)
+    }
+
+    /** Per-tick entry point — called by the block's BlockEntityTicker. */
+    fun serverTick(level: ServerLevel) {
+        scheduler.tick(level.gameTime)
+    }
 
     /** Total items currently held (Long-safe for networks with billions of items). */
     val bufferUsed: Long get() = bufferState.count
@@ -192,31 +223,18 @@ class CraftingCoreBlockEntity(
         markDirtyAndSync()
     }
 
-    /** Cancel the current job: drop buffer contents as items and reset state. */
+    /** Cancel the current job: abort all scheduler threads and drop any in-flight buffer
+     *  contents as item entities. We don't return the buffer to network storage because
+     *  buffer may contain freshly-crafted finished products; silently routing those into
+     *  storage would be a dupe from the player's perspective. */
     fun cancelJob() {
-        val lvl = level as? net.minecraft.server.level.ServerLevel ?: return
-        val contents = clearBuffer()
-        for ((itemId, count) in contents) {
-            val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
-            var remaining = count
-            while (remaining > 0L) {
-                val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
-                val stack = net.minecraft.world.item.ItemStack(item, batch)
-                // Try to insert into network storage via connected nodes
-                val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
-                val inserted = damien.nodeworks.script.NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, null)
-                if (inserted > 0) {
-                    remaining -= inserted
-                } else {
-                    // Can't insert to storage — drop as item entity
-                    net.minecraft.world.Containers.dropItemStack(
-                        lvl,
-                        worldPosition.x + 0.5, worldPosition.y + 1.0, worldPosition.z + 0.5, stack
-                    )
-                    remaining -= batch.toLong()
-                }
-            }
+        if (level !is net.minecraft.server.level.ServerLevel) return
+        opExecutor.userCancelledDropInWorld = true
+        try {
+            // scheduler.cancelAll → executor.onPlanFailed → dropBufferInWorld (flag above)
+            scheduler.cancelAll("Cancelled by player")
+        } finally {
+            opExecutor.userCancelledDropInWorld = false
         }
         jobGeneration++
         clearAllCraftState()
@@ -489,6 +507,11 @@ class CraftingCoreBlockEntity(
         bufferState.saveToNBT(bufferTag)
         tag.put("bufferState", bufferTag)
 
+        // Scheduler state (active threads + backlog) — survives mid-craft world reload
+        val schedulerTag = CompoundTag()
+        scheduler.saveToNBT(schedulerTag)
+        tag.put("scheduler", schedulerTag)
+
         // Save original craft request + pending job metadata (server-only)
         if (originalCraftId.isNotEmpty()) {
             tag.putString("originalCraftId", originalCraftId)
@@ -543,6 +566,11 @@ class CraftingCoreBlockEntity(
             }
         }
 
+        // Scheduler state — loaded if present (may not exist for pre-Phase-2 saves)
+        if (tag.contains("scheduler", Tag.TAG_COMPOUND.toInt())) {
+            scheduler.loadFromNBT(tag.getCompound("scheduler"))
+        }
+
         // Load original craft request + pending job metadata
         originalCraftId = if (tag.contains("originalCraftId")) tag.getString("originalCraftId") else ""
         originalCraftCount = when {
@@ -587,6 +615,7 @@ class CraftingCoreBlockEntity(
         tag.remove("pendingCount")
         tag.remove("pendingOutputs")
         tag.remove("pendingPullTargets")
+        tag.remove("scheduler")
         return tag
     }
 

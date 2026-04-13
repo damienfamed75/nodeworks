@@ -622,6 +622,14 @@ class InventoryTerminalMenu(
                 return
             }
 
+            // Recipes with output count > 1 (e.g. ingot → 9 nuggets) and processing handlers
+            // that batch outputs actually deliver at least one full batch. Reflect that in
+            // the queue entry so the reserved slot shows the real delivered count.
+            if (result != null && result.count > entry.totalRequested) {
+                entry.totalRequested = result.count
+                entry.dirty = true
+            }
+
             // Build a CraftResult for the release — same as the scripting terminal
             val craftResult = result ?: run {
                 val id = net.minecraft.resources.ResourceLocation.tryParse(itemId)
@@ -637,14 +645,24 @@ class InventoryTerminalMenu(
             if (pending == null || pending.isComplete) {
                 // Synchronous — release immediately (flush buffer → network, free CPU)
                 damien.nodeworks.script.CraftingHelper.releaseCraftResult(craftResult)
-                entry.completedOps = 1
+                if (pending == null || pending.success) {
+                    entry.completedOps = 1
+                } else {
+                    CraftQueueManager.getQueue(player.uuid).remove(entry)
+                }
                 entry.dirty = true
             } else {
                 // Async — release when the pending job completes (same as :store())
-                pending.onCompleteCallback = { _ ->
+                pending.onCompleteCallback = { success ->
                     damien.nodeworks.script.CraftingHelper.releaseCraftResult(craftResult)
-                    entry.completedOps = 1
+                    if (success) {
+                        entry.completedOps = 1
+                    } else {
+                        // Cancelled or failed — drop the entry so nothing can be extracted
+                        CraftQueueManager.getQueue(player.uuid).remove(entry)
+                    }
                     entry.dirty = true
+                    needsImmediateSync = true
                 }
             }
         } catch (e: Exception) {
