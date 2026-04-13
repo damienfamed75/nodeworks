@@ -62,12 +62,20 @@ object CraftTreeBuilder {
                 ingredientCounts[ingredient] = (ingredientCounts[ingredient] ?: 0) + 1
             }
 
+            // Recipes can yield >1 per craft (e.g. 1 ingot → 9 nuggets). Scale ingredient
+            // demand by the number of crafts actually needed, and round the node's own
+            // count up to a full batch — you can't craft fractions, so a request for 1
+            // nugget via a 1→9 recipe actually produces (and delivers) 9.
+            val perBatch = resolveRecipeOutputCount(recipe, level).coerceAtLeast(1)
+            val batches = (count + perBatch - 1) / perBatch
+            val actualCount = batches * perBatch
+
             val children = ingredientCounts.flatMap { (ingId, ingCount) ->
-                resolveIngredient(ingId, ingCount * count, level, snapshot, depth, visited, reserved)
+                resolveIngredient(ingId, ingCount * batches, level, snapshot, depth, visited, reserved)
             }
 
             visited.remove(itemId)
-            return CraftTreeNode(itemId, itemName, count, "craft_template", alias, "", availableFromStorage, children)
+            return CraftTreeNode(itemId, itemName, actualCount, "craft_template", alias, "", availableFromStorage, children)
         }
 
         // 2. Try Processing Set
@@ -84,13 +92,19 @@ object CraftTreeBuilder {
             val handlerEngine = PlatformServices.modState.findProcessingEngine(level, searchPositions, api.name)
             val hasHandler = handlerEngine != null
 
+            // Processing APIs can yield >1 per batch (e.g. a smelting handler that produces
+            // 9 nuggets per ingot). Round request up to a whole batch, same as Instruction Sets.
+            val perBatch = api.outputs.firstOrNull { it.first == itemId }?.second?.coerceAtLeast(1) ?: 1
+            val batches = (count + perBatch - 1) / perBatch
+            val actualCount = batches * perBatch
+
             val children = api.inputs.flatMap { (ingId, ingCount) ->
-                resolveIngredient(ingId, ingCount * count, level, snapshot, depth, visited, reserved)
+                resolveIngredient(ingId, ingCount * batches, level, snapshot, depth, visited, reserved)
             }
 
             val source = if (hasHandler) "process_template" else "process_no_handler"
             visited.remove(itemId)
-            return CraftTreeNode(itemId, itemName, count, source, api.name, resolvedBy, availableFromStorage, children)
+            return CraftTreeNode(itemId, itemName, actualCount, source, api.name, resolvedBy, availableFromStorage, children)
         }
 
         // 3. Fall back to storage — but only for the portion that isn't already reserved
@@ -160,6 +174,26 @@ object CraftTreeBuilder {
             }
         }
         return ""
+    }
+
+    /** Assemble the 9-slot pattern against the vanilla RecipeManager and return the per-craft
+     *  output count. Returns 1 if no matching recipe (safe default — planner will still fail
+     *  downstream with a clearer error). */
+    private fun resolveRecipeOutputCount(recipe: List<String>, level: ServerLevel): Int {
+        val rm = level.recipeManager ?: return 1
+        val items = recipe.map { itemId ->
+            if (itemId.isEmpty()) ItemStack.EMPTY
+            else {
+                val id = ResourceLocation.tryParse(itemId) ?: return 1
+                val item = BuiltInRegistries.ITEM.get(id) ?: return 1
+                ItemStack(item, 1)
+            }
+        }
+        val input = net.minecraft.world.item.crafting.CraftingInput.of(3, 3, items)
+        val holder = rm.getRecipeFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING, input, level).orElse(null)
+            ?: return 1
+        val result = holder.value().assemble(input, level.registryAccess())
+        return if (result.isEmpty) 1 else result.count
     }
 
     private fun getItemName(itemId: String): String {

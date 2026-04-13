@@ -17,7 +17,7 @@ object CraftQueueManager {
         val id: Int,
         val itemId: String,
         val itemName: String,
-        val totalRequested: Int,
+        var totalRequested: Int,
         @Volatile var completedOps: Int = 0,
         var takenCount: Int = 0,
         var seenComplete: Boolean = false,
