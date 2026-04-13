@@ -61,7 +61,15 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
         damien.nodeworks.platform.PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             net.minecraft.network.chat.Component.translatable("container.nodeworks.crafting_core"),
-            damien.nodeworks.screen.CraftingCoreOpenData(pos, entity.bufferUsed, entity.bufferCapacity, entity.isFormed, entity.isCrafting),
+            damien.nodeworks.screen.CraftingCoreOpenData(
+                pos,
+                entity.bufferUsed,
+                entity.bufferCapacity,
+                entity.bufferTypesUsed,
+                entity.bufferTypesCapacity,
+                entity.isFormed,
+                entity.isCrafting
+            ),
             damien.nodeworks.screen.CraftingCoreOpenData.STREAM_CODEC,
             { syncId, inv, _ -> damien.nodeworks.screen.CraftingCoreMenu.createServer(syncId, inv, entity) }
         )
@@ -90,10 +98,10 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
                     val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
                     val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
                     var remaining = count
-                    while (remaining > 0) {
-                        val dropCount = minOf(remaining, item.getDefaultMaxStackSize())
+                    while (remaining > 0L) {
+                        val dropCount = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
                         Containers.dropItemStack(level, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, ItemStack(item, dropCount))
-                        remaining -= dropCount
+                        remaining -= dropCount.toLong()
                     }
                 }
             }

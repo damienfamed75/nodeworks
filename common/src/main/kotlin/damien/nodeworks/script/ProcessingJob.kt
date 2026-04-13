@@ -70,7 +70,7 @@ class ProcessingJob(
                 }
 
                 // Async — persist pull targets on CPU for resume after restart
-                cpu.addPendingOp(api.outputs, pullTargets)
+                cpu.addPendingOp(api.outputs.map { it.first to it.second.toLong() }, pullTargets)
 
                 // Register for polling each tick
                 val timeoutTicks = if (api.timeout > 0) api.timeout.toLong() else 6000L
@@ -124,7 +124,7 @@ class ProcessingJob(
                             NetworkStorageHelper.insertItemStack(level, snapshot!!, net.minecraft.world.item.ItemStack(item, extracted.toInt()), null)
                         }
                     } else {
-                        cpu.addToBuffer(outputId, extracted.toInt())
+                        cpu.addToBuffer(outputId, extracted)
                     }
                     stillNeeded -= extracted
                 }

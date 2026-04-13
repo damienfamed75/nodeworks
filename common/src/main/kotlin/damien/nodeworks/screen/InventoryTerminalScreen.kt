@@ -106,6 +106,15 @@ class InventoryTerminalScreen(
     private var craftDialogueCount: String = "1"
     private var craftDialogueField: EditBox? = null
 
+    // Craft error returned from the server (e.g. CPU buffer cannot fit the job)
+    private var craftError: String? = null
+
+    /** Called by the client packet handler when the server rejects a craft request. */
+    fun setCraftError(message: String) {
+        craftError = message
+        // Make sure the prompt is open so the error is visible
+    }
+
     // Slot drag state (works across crafting grid and player inventory)
     private var slotDragButton = -1       // -1 = not dragging, 0 = left, 1 = right
     private var slotDragShift = false     // shift-drag: move items out
@@ -703,7 +712,12 @@ class InventoryTerminalScreen(
         // Craft dialogue overlay
         if (craftDialogueItemId != null) {
             val dw = 160
-            val dh = 70
+            // If an error is present, word-wrap it and expand the dialog height to fit
+            val errorWrapLines: List<net.minecraft.util.FormattedCharSequence> = craftError?.let {
+                font.split(Component.literal(it), dw - 12)
+            } ?: emptyList()
+            val errorHeight = if (errorWrapLines.isNotEmpty()) errorWrapLines.size * (font.lineHeight + 1) + 6 else 0
+            val dh = 70 + errorHeight
             val dx = leftPos + (imageWidth - dw) / 2
             val dy = topPos + (imageHeight - dh) / 2
 
@@ -719,8 +733,11 @@ class InventoryTerminalScreen(
             }
             graphics.drawString(font, craftDialogueItemName, dx + 26, dy + 10, 0xFFFFFFFF.toInt())
 
-            // Render the count field at the popup's Z level
+            // Keep the count field aligned with the (dynamic) dialog — when an error expands
+            // the dialog height, `dy` shifts up to stay centered, so the field must follow.
             craftDialogueField?.let { field ->
+                field.x = dx + 24
+                field.y = dy + 28
                 if (field.visible) field.renderWidget(graphics, mouseX, mouseY, 0f)
             }
 
@@ -736,6 +753,14 @@ class InventoryTerminalScreen(
             (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, plusBtnX, stepperY, stepBtnW, stepBtnH)
             graphics.drawString(font, "-", minusBtnX + (stepBtnW - font.width("-")) / 2, stepperY + 3, if (minusHover) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt())
             graphics.drawString(font, "+", plusBtnX + (stepBtnW - font.width("+")) / 2, stepperY + 3, if (plusHover) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt())
+
+            // Error text between the stepper and the action buttons
+            if (errorWrapLines.isNotEmpty()) {
+                val errorTop = dy + 46
+                for ((i, line) in errorWrapLines.withIndex()) {
+                    graphics.drawString(font, line, dx + 6, errorTop + i * (font.lineHeight + 1), 0xFFFF6666.toInt(), false)
+                }
+            }
 
             // Craft / Cancel buttons
             val craftBtnX = dx + 6
@@ -809,21 +834,21 @@ class InventoryTerminalScreen(
             }
 
             if (mx >= craftBtnX && mx < craftBtnX + btnW && my >= btnY && my < btnY + 14) {
-                // Craft button
+                // Craft button — clear previous error, send request, keep dialog open so
+                // a server-side rejection can surface as an error in this same prompt.
+                craftError = null
                 val count = craftDialogueField?.value?.toIntOrNull() ?: 1
                 if (count > 0) {
                     PlatformServices.clientNetworking.sendToServer(
                         damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
                     )
-                    // Queue entry will be synced from server via CraftQueueSyncPayload
                 }
-                craftDialogueItemId = null
-                craftDialogueField?.visible = false
                 return true
             }
             if (mx >= cancelBtnX && mx < cancelBtnX + btnW && my >= btnY && my < btnY + 14) {
                 // Cancel button
                 craftDialogueItemId = null
+                craftError = null
                 craftDialogueField?.visible = false
                 return true
             }
@@ -833,6 +858,7 @@ class InventoryTerminalScreen(
             }
             // Click outside — close
             craftDialogueItemId = null
+            craftError = null
             craftDialogueField?.visible = false
             return true
         }
@@ -956,6 +982,7 @@ class InventoryTerminalScreen(
                 craftDialogueField?.value = "1"
                 craftDialogueField?.visible = true
                 craftDialogueField?.isFocused = true
+                craftError = null  // fresh dialog, no stale error
                 return true
             }
             if (menu.carried.isEmpty && entry != null && entry.info.count > 0) {

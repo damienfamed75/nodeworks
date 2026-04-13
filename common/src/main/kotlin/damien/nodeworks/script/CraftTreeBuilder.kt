@@ -31,18 +31,21 @@ object CraftTreeBuilder {
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         depth: Int = 0,
-        visited: MutableSet<String> = mutableSetOf()
+        visited: MutableSet<String> = mutableSetOf(),
+        reserved: MutableMap<String, Int> = mutableMapOf()
     ): CraftTreeNode {
         if (depth > 20) {
             return CraftTreeNode(itemId, getItemName(itemId), count, "missing", "", "recursion limit", 0, emptyList())
         }
 
         val itemName = getItemName(itemId)
-        val inStorage = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
+        val inStorageTotal = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
+        val reservedAmount = reserved[itemId] ?: 0
+        val availableFromStorage = maxOf(0, inStorageTotal - reservedAmount)
 
         // Prevent infinite loops for circular recipes
         if (itemId in visited) {
-            return CraftTreeNode(itemId, itemName, count, "storage", "", "circular", inStorage, emptyList())
+            return CraftTreeNode(itemId, itemName, count, "storage", "", "circular", availableFromStorage, emptyList())
         }
         visited.add(itemId)
 
@@ -59,24 +62,12 @@ object CraftTreeBuilder {
                 ingredientCounts[ingredient] = (ingredientCounts[ingredient] ?: 0) + 1
             }
 
-            // Multiply by count needed, split between storage and crafting
             val children = ingredientCounts.flatMap { (ingId, ingCount) ->
-                val needed = ingCount * count
-                val ingInStorage = NetworkStorageHelper.countItems(level, snapshot, ingId).toInt()
-                if (ingInStorage >= needed) {
-                    listOf(CraftTreeNode(ingId, getItemName(ingId), needed, "storage", "", "storage", ingInStorage, emptyList()))
-                } else if (ingInStorage > 0) {
-                    val fromStorage = CraftTreeNode(ingId, getItemName(ingId), ingInStorage, "storage", "", "storage", ingInStorage, emptyList())
-                    val toCraft = needed - ingInStorage
-                    val crafted = buildCraftTree(ingId, toCraft, level, snapshot, depth + 1, visited)
-                    listOf(fromStorage, crafted)
-                } else {
-                    listOf(buildCraftTree(ingId, needed, level, snapshot, depth + 1, visited))
-                }
+                resolveIngredient(ingId, ingCount * count, level, snapshot, depth, visited, reserved)
             }
 
             visited.remove(itemId)
-            return CraftTreeNode(itemId, itemName, count, "craft_template", alias, "", inStorage, children)
+            return CraftTreeNode(itemId, itemName, count, "craft_template", alias, "", availableFromStorage, children)
         }
 
         // 2. Try Processing Set
@@ -85,45 +76,67 @@ object CraftTreeBuilder {
             val api = apiMatch.api
             val isSubnet = apiMatch.apiStorage.remoteTerminalPositions != null
             val resolvedBy = if (isSubnet) {
-                // Try to find the subnet's network name via the broadcast antenna's provider network
                 val subnetName = findSubnetName(level, apiMatch.apiStorage.pos)
                 if (subnetName.isNotEmpty()) "subnet: $subnetName" else "subnet"
             } else "local"
 
-            // Check if a handler actually exists
             val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
             val handlerEngine = PlatformServices.modState.findProcessingEngine(level, searchPositions, api.name)
             val hasHandler = handlerEngine != null
 
             val children = api.inputs.flatMap { (ingId, ingCount) ->
-                val needed = ingCount * count
-                val ingInStorage = NetworkStorageHelper.countItems(level, snapshot, ingId).toInt()
-                if (ingInStorage >= needed) {
-                    listOf(CraftTreeNode(ingId, getItemName(ingId), needed, "storage", "", "storage", ingInStorage, emptyList()))
-                } else if (ingInStorage > 0) {
-                    val fromStorage = CraftTreeNode(ingId, getItemName(ingId), ingInStorage, "storage", "", "storage", ingInStorage, emptyList())
-                    val toCraft = needed - ingInStorage
-                    val crafted = buildCraftTree(ingId, toCraft, level, snapshot, depth + 1, visited)
-                    listOf(fromStorage, crafted)
-                } else {
-                    listOf(buildCraftTree(ingId, needed, level, snapshot, depth + 1, visited))
-                }
+                resolveIngredient(ingId, ingCount * count, level, snapshot, depth, visited, reserved)
             }
 
             val source = if (hasHandler) "process_template" else "process_no_handler"
             visited.remove(itemId)
-            return CraftTreeNode(itemId, itemName, count, source, api.name, resolvedBy, inStorage, children)
+            return CraftTreeNode(itemId, itemName, count, source, api.name, resolvedBy, availableFromStorage, children)
         }
 
-        // 3. Check if available in storage
-        if (inStorage >= count) {
+        // 3. Fall back to storage — but only for the portion that isn't already reserved
+        if (availableFromStorage >= count) {
+            reserved[itemId] = reservedAmount + count
             visited.remove(itemId)
-            return CraftTreeNode(itemId, itemName, count, "storage", "", "storage", inStorage, emptyList())
+            return CraftTreeNode(itemId, itemName, count, "storage", "", "storage", availableFromStorage, emptyList())
         }
 
-        // 4. No recipe found
+        // 4. No recipe and no (unreserved) storage — genuinely missing
         visited.remove(itemId)
-        return CraftTreeNode(itemId, itemName, count, "missing", "", "", inStorage, emptyList())
+        return CraftTreeNode(itemId, itemName, count, "missing", "", "", availableFromStorage, emptyList())
+    }
+
+    /**
+     * Resolve a single ingredient request: split into a "from storage" node and/or a
+     * recursive "to craft" subtree, respecting the reservation map to prevent double-counting
+     * the same storage items across sibling ingredient requests.
+     */
+    private fun resolveIngredient(
+        ingId: String,
+        needed: Int,
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        depth: Int,
+        visited: MutableSet<String>,
+        reserved: MutableMap<String, Int>
+    ): List<CraftTreeNode> {
+        val ingInStorage = NetworkStorageHelper.countItems(level, snapshot, ingId).toInt()
+        val ingReserved = reserved[ingId] ?: 0
+        val ingAvailable = maxOf(0, ingInStorage - ingReserved)
+
+        return when {
+            ingAvailable >= needed -> {
+                reserved[ingId] = ingReserved + needed
+                listOf(CraftTreeNode(ingId, getItemName(ingId), needed, "storage", "", "storage", ingAvailable, emptyList()))
+            }
+            ingAvailable > 0 -> {
+                reserved[ingId] = ingReserved + ingAvailable
+                val fromStorage = CraftTreeNode(ingId, getItemName(ingId), ingAvailable, "storage", "", "storage", ingAvailable, emptyList())
+                val toCraft = needed - ingAvailable
+                val crafted = buildCraftTree(ingId, toCraft, level, snapshot, depth + 1, visited, reserved)
+                listOf(fromStorage, crafted)
+            }
+            else -> listOf(buildCraftTree(ingId, needed, level, snapshot, depth + 1, visited, reserved))
+        }
     }
 
     /** Find the network name of the subnet that a broadcast antenna belongs to. */

@@ -188,16 +188,16 @@ class CardHandle private constructor(
                     val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
                         ?: return LuaValue.valueOf(0)
                     var totalMoved = 0
-                    var remaining = amount.toInt()
-                    while (remaining > 0) {
-                        val batch = minOf(remaining, item.getDefaultMaxStackSize())
+                    var remaining: Long = amount
+                    while (remaining > 0L) {
+                        val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong())
                         val extracted = bufSrc.extract(batch)
-                        if (extracted == 0) break
-                        val stack = net.minecraft.world.item.ItemStack(item, extracted)
+                        if (extracted == 0L) break
+                        val stack = net.minecraft.world.item.ItemStack(item, extracted.toInt())
                         val inserted = PlatformServices.storage.insertItemStack(destStorage, stack)
                         totalMoved += inserted
-                        remaining -= inserted
-                        if (inserted < extracted) break // dest full
+                        remaining -= inserted.toLong()
+                        if (inserted.toLong() < extracted) break // dest full
                     }
                     return LuaValue.valueOf(totalMoved)
                 }

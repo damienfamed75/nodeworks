@@ -109,27 +109,19 @@ object CraftingHelper {
             return null
         }
 
-        // Find a CPU — reuse the one passed in (recursive call) or find a new one
+        // Find a CPU — reuse the one passed in (recursive call) or select one
+        // that can fit the craft (feasibility-aware selection across every CPU on the network).
         val cpu: CraftingCoreBlockEntity
         if (cpuPos != null) {
             cpu = level.getBlockEntity(cpuPos) as? CraftingCoreBlockEntity ?: return null
         } else {
-            val cpuSnapshot = snapshot.findAvailableCpu() ?: run {
-                lastFailReason = "No available Crafting CPU on network"
-                return null
-            }
-            cpu = level.getBlockEntity(cpuSnapshot.pos) as? CraftingCoreBlockEntity ?: run {
-                lastFailReason = "Crafting CPU block entity missing"
-                return null
-            }
-            if (!cpu.isFormed) {
-                lastFailReason = "Crafting CPU is not formed (needs adjacent Crafting Storage)"
-                return null
-            }
+            // Build the craft tree once — used for feasibility and saved as the tree snapshot
+            val tree = CraftTreeBuilder.buildCraftTree(identifier, count, level, snapshot)
+            val selected = selectFeasibleCpu(level, snapshot, tree) ?: return null
+            cpu = selected
             cpu.setCrafting(true, identifier.substringAfter(':').replace('_', ' '))
-            cpu.setOriginalCraft(identifier, count)
-            // Snapshot the craft tree NOW — before ingredients are extracted from storage
-            cpu.craftTreeSnapshot = CraftTreeBuilder.buildCraftTree(identifier, count, level, snapshot)
+            cpu.setOriginalCraft(identifier, count.toLong())
+            cpu.craftTreeSnapshot = tree
         }
 
         // Try Instruction Set (3x3 crafting) first
@@ -251,11 +243,11 @@ object CraftingHelper {
             val id = ResourceLocation.tryParse(itemId) ?: continue
             val item = BuiltInRegistries.ITEM.get(id) ?: continue
             var remaining = count
-            while (remaining > 0) {
-                val batchSize = minOf(remaining, item.getDefaultMaxStackSize())
+            while (remaining > 0L) {
+                val batchSize = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
                 val stack = ItemStack(item, batchSize)
                 val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, cache)
-                remaining -= inserted
+                remaining -= inserted.toLong()
                 if (inserted == 0) {
                     logger.warn("Could not return {} x{} from CPU buffer to storage", itemId, remaining)
                     break
@@ -294,20 +286,20 @@ object CraftingHelper {
 
         for ((itemId, needed) in ingredientCounts) {
             // First, extract what's already in storage into the buffer
-            val inBuffer = cpu.getBufferCount(itemId)
-            val inStorage = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
-            val canExtract = minOf(needed - inBuffer, inStorage).toLong()
+            val inBuffer: Long = cpu.getBufferCount(itemId)
+            val inStorage: Long = NetworkStorageHelper.countItems(level, snapshot, itemId)
+            val canExtract: Long = minOf(needed.toLong() - inBuffer, inStorage).coerceAtLeast(0L)
             val shortId = itemId.substringAfter(':')
-            if (canExtract > 0) {
+            if (canExtract > 0L) {
                 var remaining = canExtract
                 for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-                    if (remaining <= 0) break
+                    if (remaining <= 0L) break
                     val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
                     val extracted = PlatformServices.storage.extractItems(
                         storage, { CardHandle.matchesFilter(it, itemId) }, remaining
                     )
-                    if (extracted > 0) {
-                        cpu.addToBuffer(itemId, extracted.toInt())
+                    if (extracted > 0L) {
+                        cpu.addToBuffer(itemId, extracted)
                         cache?.onExtracted(itemId, false, extracted)
                         remaining -= extracted
                     }
@@ -315,11 +307,11 @@ object CraftingHelper {
             }
 
             // Now craft what's still missing
-            var have = cpu.getBufferCount(itemId)
-            var toCraft = needed - have
+            var have: Long = cpu.getBufferCount(itemId)
+            var toCraft: Long = needed.toLong() - have
             var asyncCount = 0
 
-            while (toCraft > 0) {
+            while (toCraft > 0L) {
                 currentPendingJob = null
                 val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler, traceLog)
                 if (subResult == null || subResult.count == 0) {
@@ -327,7 +319,7 @@ object CraftingHelper {
                     if (pending != null) {
                         pendingPrereqs.add(pending)
                         asyncCount++
-                        toCraft -= 1
+                        toCraft -= 1L
                     } else {
                         traceLog?.invoke("[craft] Missing ingredient '$shortId' for '${match.instructionSet.outputItemId.substringAfter(':')}' — no recipe found")
                         return false
@@ -335,7 +327,7 @@ object CraftingHelper {
                 } else {
                     // Sync craft succeeded — re-check buffer
                     have = cpu.getBufferCount(itemId)
-                    toCraft = needed - have
+                    toCraft = needed.toLong() - have
                 }
             }
             if (asyncCount > 0) {
@@ -389,7 +381,7 @@ object CraftingHelper {
         // All ingredients should already be in the buffer
         // (extracted from storage + crafted by prerequisites)
         for ((itemId, needed) in ingredientCounts) {
-            val removed = cpu.removeFromBuffer(itemId, needed)
+            val removed = cpu.removeFromBuffer(itemId, needed.toLong())
             if (removed < needed) {
                 logger.warn("Buffer underflow: needed {} of '{}' but only had {}", needed, itemId, removed)
                 return false
@@ -420,9 +412,59 @@ object CraftingHelper {
 
         // Insert crafted result into CPU buffer (not storage — caller releases via connect/store)
         val outputId = BuiltInRegistries.ITEM.getKey(result.item)?.toString() ?: return false
-        cpu.addToBuffer(outputId, result.count)
+        cpu.addToBuffer(outputId, result.count.toLong())
 
         return true
+    }
+
+    /**
+     * Select a CPU on the network that can fit the given craft tree in its buffer.
+     *
+     * Iterates every CPU, prefers formed+free+feasible. Sets [lastFailReason] with a
+     * specific message on failure:
+     *   - "No Crafting CPU on the network" — no CPUs exist
+     *   - the feasibility reason from the highest-capacity CPU — nothing big enough
+     *   - "All suitable Crafting CPUs are busy" — feasible CPU exists but in use
+     *
+     * Returns the chosen CPU, or null on failure.
+     */
+    private fun selectFeasibleCpu(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        tree: CraftTreeBuilder.CraftTreeNode
+    ): CraftingCoreBlockEntity? {
+        val cpuSnaps = snapshot.cpus
+        if (cpuSnaps.isEmpty()) {
+            lastFailReason = "No Crafting CPU on the network."
+            return null
+        }
+
+        // Sort CPUs by descending count capacity so the first feasibility reason we record
+        // is from the most capable CPU — the most informative rejection for the player.
+        val ordered = cpuSnaps.sortedByDescending { it.bufferCapacity }
+
+        var bestInfeasibleReason: String? = null
+        var feasibleButBusy = false
+
+        for (cpuSnap in ordered) {
+            val cpu = level.getBlockEntity(cpuSnap.pos) as? CraftingCoreBlockEntity ?: continue
+            if (!cpu.isFormed) continue
+
+            val feasibility = damien.nodeworks.script.cpu.CpuFeasibility.check(tree, cpu)
+            if (feasibility.ok) {
+                if (!cpuSnap.isBusy) return cpu
+                feasibleButBusy = true
+            } else if (bestInfeasibleReason == null) {
+                bestInfeasibleReason = feasibility.reason
+            }
+        }
+
+        lastFailReason = when {
+            feasibleButBusy -> "All suitable Crafting CPUs are busy. Wait or add more CPUs."
+            bestInfeasibleReason != null -> bestInfeasibleReason
+            else -> "No Crafting CPU on the network has enough buffer capacity."
+        }
+        return null
     }
 
     private fun findAnyScheduler(level: ServerLevel, snapshot: NetworkSnapshot): SchedulerImpl? {
@@ -453,9 +495,9 @@ object CraftingHelper {
 
         // Check/craft prerequisites for each input
         for ((itemId, needed) in api.inputs) {
-            val inBuffer = cpu.getBufferCount(itemId)
-            val inStorage = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
-            var have = inBuffer + inStorage
+            val inBuffer: Long = cpu.getBufferCount(itemId)
+            val inStorage: Long = NetworkStorageHelper.countItems(level, snapshot, itemId)
+            var have: Long = inBuffer + inStorage
 
             while (have < needed) {
                 val subResult = craft(itemId, 1, level, snapshot, depth + 1, cache, cpu.blockPos, processingHandlers, callerScheduler, traceLog)
@@ -463,30 +505,30 @@ object CraftingHelper {
                     traceLog?.invoke("[craft] Missing ingredient '${itemId.substringAfter(':')}' for '${api.name}' — no recipe found")
                     return false
                 }
-                have = cpu.getBufferCount(itemId) + NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
+                have = cpu.getBufferCount(itemId) + NetworkStorageHelper.countItems(level, snapshot, itemId)
             }
         }
 
         // Extract input items from storage into CPU buffer
         for ((itemId, needed) in api.inputs) {
-            val inBuffer = cpu.getBufferCount(itemId)
-            val fromStorage = maxOf(0, needed - inBuffer)
+            val inBuffer: Long = cpu.getBufferCount(itemId)
+            val fromStorage: Long = maxOf(0L, needed.toLong() - inBuffer)
 
-            if (fromStorage > 0) {
-                var remaining = fromStorage.toLong()
+            if (fromStorage > 0L) {
+                var remaining = fromStorage
                 for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-                    if (remaining <= 0) break
+                    if (remaining <= 0L) break
                     val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
                     val extracted = PlatformServices.storage.extractItems(
                         storage, { CardHandle.matchesFilter(it, itemId) }, remaining
                     )
-                    if (extracted > 0) {
-                        cpu.addToBuffer(itemId, extracted.toInt())
+                    if (extracted > 0L) {
+                        cpu.addToBuffer(itemId, extracted)
                         cache?.onExtracted(itemId, false, extracted)
                         remaining -= extracted
                     }
                 }
-                if (remaining > 0) {
+                if (remaining > 0L) {
                     logger.warn("Failed to extract all '{}' for processing", itemId)
                     return false
                 }
@@ -530,7 +572,7 @@ object CraftingHelper {
                     filter = itemId,
                     sourceStorage = { null },
                     level = level,
-                    bufferSource = BufferSource(cpu, itemId, count)
+                    bufferSource = BufferSource(cpu, itemId, count.toLong())
                 )))
             }
             // Update CPU display to show the active sub-craft

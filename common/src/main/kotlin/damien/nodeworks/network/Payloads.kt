@@ -295,7 +295,7 @@ data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int,
  * S2C: Sync buffer contents from a Crafting Core to the client with the GUI open.
  * Sent only to the player viewing the menu, throttled to once per second.
  */
-data class BufferSyncPayload(val containerId: Int, val entries: List<Pair<String, Int>>) : CustomPacketPayload {
+data class BufferSyncPayload(val containerId: Int, val entries: List<Pair<String, Long>>) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<BufferSyncPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "buffer_sync"))
         val CODEC: StreamCodec<FriendlyByteBuf, BufferSyncPayload> = CustomPacketPayload.codec(
@@ -304,15 +304,31 @@ data class BufferSyncPayload(val containerId: Int, val entries: List<Pair<String
                 buf.writeVarInt(p.entries.size)
                 for ((id, count) in p.entries) {
                     buf.writeUtf(id, 256)
-                    buf.writeVarInt(count)
+                    buf.writeVarLong(count)
                 }
             },
             { buf ->
                 val containerId = buf.readVarInt()
                 val size = buf.readVarInt()
-                val entries = (0 until size).map { buf.readUtf(256) to buf.readVarInt() }
+                val entries = (0 until size).map { buf.readUtf(256) to buf.readVarLong() }
                 BufferSyncPayload(containerId, entries)
             }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * S2C: Feedback to the client when an auto-craft request from the Inventory Terminal
+ * is rejected server-side (e.g. CPU buffer won't fit the job). Displayed in the craft
+ * prompt overlay.
+ */
+data class CraftRequestErrorPayload(val containerId: Int, val message: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CraftRequestErrorPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "craft_request_error"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CraftRequestErrorPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.message, 512) },
+            { buf -> CraftRequestErrorPayload(buf.readVarInt(), buf.readUtf(512)) }
         )
     }
     override fun type() = TYPE

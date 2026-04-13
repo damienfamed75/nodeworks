@@ -4,22 +4,39 @@ import net.minecraft.core.BlockPos
 import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 
+/**
+ * Initial CPU state sent to the client on menu open.
+ * Counts are Long-safe; type counts are Int (small).
+ * Live updates after open are pushed via BufferSyncPayload.
+ */
 data class CraftingCoreOpenData(
     val pos: BlockPos,
-    val bufferUsed: Int,
-    val bufferCapacity: Int,
+    val bufferUsed: Long,
+    val bufferCapacity: Long,
+    val bufferTypesUsed: Int,
+    val bufferTypesCapacity: Int,
     val isFormed: Boolean,
     val isCrafting: Boolean
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, CraftingCoreOpenData> = object : StreamCodec<FriendlyByteBuf, CraftingCoreOpenData> {
             override fun decode(buf: FriendlyByteBuf): CraftingCoreOpenData {
-                return CraftingCoreOpenData(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(), buf.readBoolean())
+                return CraftingCoreOpenData(
+                    buf.readBlockPos(),
+                    buf.readVarLong(),
+                    buf.readVarLong(),
+                    buf.readVarInt(),
+                    buf.readVarInt(),
+                    buf.readBoolean(),
+                    buf.readBoolean()
+                )
             }
             override fun encode(buf: FriendlyByteBuf, data: CraftingCoreOpenData) {
                 buf.writeBlockPos(data.pos)
-                buf.writeVarInt(data.bufferUsed)
-                buf.writeVarInt(data.bufferCapacity)
+                buf.writeVarLong(data.bufferUsed)
+                buf.writeVarLong(data.bufferCapacity)
+                buf.writeVarInt(data.bufferTypesUsed)
+                buf.writeVarInt(data.bufferTypesCapacity)
                 buf.writeBoolean(data.isFormed)
                 buf.writeBoolean(data.isCrafting)
             }

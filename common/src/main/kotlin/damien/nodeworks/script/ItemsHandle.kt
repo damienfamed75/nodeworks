@@ -22,10 +22,10 @@ import org.luaj.vm2.lib.*
 class BufferSource(
     private val cpu: damien.nodeworks.block.entity.CraftingCoreBlockEntity,
     val itemId: String,
-    private var remaining: Int
+    private var remaining: Long
 ) {
     /** Extract up to [maxCount] items from the buffer. Returns actual count extracted. */
-    fun extract(maxCount: Int): Int {
+    fun extract(maxCount: Long): Long {
         val toExtract = minOf(maxCount, remaining)
         val removed = cpu.removeFromBuffer(itemId, toExtract)
         remaining -= removed
