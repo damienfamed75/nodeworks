@@ -112,6 +112,120 @@ class NeoForgeStorageService : StorageService {
         return stack.count - leftover.count
     }
 
+    override fun tryInsertAll(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, count: Long): Boolean {
+        if (count <= 0L) return true
+        if (count > Int.MAX_VALUE.toLong()) return false
+        val handler = (dest as NeoForgeItemStorageHandle).handler
+        val stack = ItemStack(item, count.toInt())
+        // Simulate first — insertItemStacked with simulate=true returns leftover WITHOUT
+        // mutating the handler. On a single-threaded server, the subsequent real insert
+        // sees the same state the sim did, so a successful sim guarantees a successful commit.
+        val sim = ItemHandlerHelper.insertItemStacked(handler, stack.copy(), true)
+        if (!sim.isEmpty) return false
+        val real = ItemHandlerHelper.insertItemStacked(handler, stack.copy(), false)
+        if (!real.isEmpty) {
+            // Unexpected divergence between sim and real. Extract back exactly what we placed
+            // to keep the atomic contract; matches on item type which is unambiguous (the stack
+            // we passed in has no NBT components, so matches are straightforward).
+            val inserted = stack.count - real.count
+            extractByItem(handler, item, inserted)
+            return false
+        }
+        return true
+    }
+
+    override fun tryMoveAll(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (String) -> Boolean,
+        count: Long
+    ): Boolean {
+        if (count <= 0L) return true
+        val src = (source as NeoForgeItemStorageHandle).handler
+        val dst = (dest as NeoForgeItemStorageHandle).handler
+
+        // Phase 1 — real extract from source, collecting exactly `count` matching items.
+        // If source doesn't have enough, put what we took right back and return false.
+        val extracted = mutableListOf<ItemStack>()
+        var remaining = count
+        for (slot in 0 until src.slots) {
+            if (remaining <= 0L) break
+            val s = src.getStackInSlot(slot)
+            if (s.isEmpty) continue
+            val itemId = BuiltInRegistries.ITEM.getKey(s.item)?.toString() ?: continue
+            if (!filter(itemId)) continue
+            val take = minOf(remaining, s.count.toLong()).toInt()
+            val e = src.extractItem(slot, take, false)
+            if (e.isEmpty) continue
+            extracted.add(e)
+            remaining -= e.count.toLong()
+        }
+        if (remaining > 0L) {
+            restoreToSource(src, extracted)
+            return false
+        }
+
+        // Phase 2 — atomic insert into dest, per item type. Sim-then-commit in sequence is
+        // safe on a single-threaded server: each commit updates state so the next item type's
+        // sim correctly reflects prior commits' effects.
+        val byItem = extracted.groupBy { it.item }
+            .mapValues { (_, stacks) -> stacks.sumOf { it.count } }
+        val committedToDst = mutableListOf<Pair<net.minecraft.world.item.Item, Int>>()
+        for ((item, amount) in byItem) {
+            val stack = ItemStack(item, amount)
+            val sim = ItemHandlerHelper.insertItemStacked(dst, stack.copy(), true)
+            if (!sim.isEmpty) {
+                // Won't fit. Unwind: extract what we already committed to dst, plus put the
+                // extracted items back into source.
+                for ((it2, amt2) in committedToDst) extractByItem(dst, it2, amt2)
+                restoreToSource(src, extracted)
+                return false
+            }
+            val real = ItemHandlerHelper.insertItemStacked(dst, stack.copy(), false)
+            if (!real.isEmpty) {
+                // Sim/real divergence — take back what did land and unwind everything.
+                val landed = amount - real.count
+                if (landed > 0) extractByItem(dst, item, landed)
+                for ((it2, amt2) in committedToDst) extractByItem(dst, it2, amt2)
+                restoreToSource(src, extracted)
+                return false
+            }
+            committedToDst.add(item to amount)
+        }
+        return true
+    }
+
+    /** Put a list of stacks back into [src] in slot order. Should always succeed fully on a
+     *  single-threaded server since the items came from this handler a moment ago. Any genuine
+     *  overflow drops on the floor rather than looping forever — better than hanging. */
+    private fun restoreToSource(src: IItemHandler, stacks: List<ItemStack>) {
+        for (s in stacks) {
+            val leftover = ItemHandlerHelper.insertItemStacked(src, s.copy(), false)
+            if (!leftover.isEmpty) {
+                // Defensive: the source somehow can't receive items it just emitted.
+                // Log once and leak rather than corrupt more state.
+                org.slf4j.LoggerFactory.getLogger("nodeworks-neoforge-storage").warn(
+                    "tryMoveAll rollback: source refused returning {} x{}. State may diverge.",
+                    s.item, leftover.count
+                )
+            }
+        }
+    }
+
+    /** Remove up to [amount] of [item] from [handler] by iterating slots. Safe because
+     *  we only extract items whose type matches what we explicitly placed. */
+    private fun extractByItem(handler: IItemHandler, item: net.minecraft.world.item.Item, amount: Int) {
+        var remaining = amount
+        for (slot in 0 until handler.slots) {
+            if (remaining <= 0) break
+            val s = handler.getStackInSlot(slot)
+            if (s.isEmpty || s.item != item) continue
+            val take = minOf(remaining, s.count)
+            val e = handler.extractItem(slot, take, false)
+            remaining -= e.count
+        }
+    }
+
     override fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String? {
         val handler = (storage as NeoForgeItemStorageHandle).handler
         for (slot in 0 until handler.slots) {

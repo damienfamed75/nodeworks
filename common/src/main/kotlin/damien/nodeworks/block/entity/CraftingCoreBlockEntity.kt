@@ -60,6 +60,10 @@ class CraftingCoreBlockEntity(
      *  Phase 2 uses a single thread; Phase 3 adds one per Co-Processor. */
     val scheduler: CraftScheduler = CraftScheduler(threadCount = 1, executor = opExecutor)
 
+    /** Number of Co-Processor blocks discovered in the last multiblock scan. */
+    var coProcessorCount: Int = 0
+        private set
+
     /**
      * Submit a planned craft to this CPU's scheduler. Runs immediately if a thread
      * is idle, otherwise queues. [onComplete] fires exactly once when the plan
@@ -259,6 +263,7 @@ class CraftingCoreBlockEntity(
         var totalCount = CpuRules.CORE_BASE_COUNT
         var totalTypes = CpuRules.CORE_BASE_TYPES
         var bufferCount = 0
+        var coProcessors = 0
 
         val visited = mutableSetOf(worldPosition)
         val queue = ArrayDeque<BlockPos>()
@@ -275,17 +280,28 @@ class CraftingCoreBlockEntity(
                 if (entity is CpuComponentBlockEntity) {
                     queue.add(neighbor)
                     discovered++
-                    if (entity is CraftingStorageBlockEntity) {
-                        totalCount += entity.storageCapacity
-                        totalTypes += entity.storageTypes
-                        bufferCount++
+                    when (entity) {
+                        is CraftingStorageBlockEntity -> {
+                            totalCount += entity.storageCapacity
+                            totalTypes += entity.storageTypes
+                            bufferCount++
+                        }
+                        is CoProcessorBlockEntity -> {
+                            coProcessors++
+                        }
                     }
-                    // Future: Co-Processor, Substrate, Stabilizer contribution accumulates here
+                    // Future: Substrate, Stabilizer contribution accumulates here
                 }
             }
         }
 
         isFormed = bufferCount > 0
+        coProcessorCount = coProcessors
+        // Core always contributes 1 thread; each Co-Processor adds THREADS_PER_COPROCESSOR.
+        // Scheduler reads threadCount dynamically per tick, so growing is immediate; a shrink
+        // waits until in-flight async ops finish (their slots release naturally next tick).
+        scheduler.threadCount = 1 + coProcessors * CpuRules.THREADS_PER_COPROCESSOR
+
         if (isFormed) {
             bufferState.setCapacities(totalCount, totalTypes)
         } else {

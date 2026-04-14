@@ -5,36 +5,36 @@ import net.minecraft.nbt.ListTag
 import net.minecraft.nbt.Tag
 
 /**
- * Per-CPU craft driver. Owns one or more [CraftThread]s, dispatches operations to an
- * [OpExecutor], and advances state every server tick.
+ * Per-CPU craft driver. Holds at most one active [CraftPlan] plus a backlog of
+ * submitted-but-not-yet-running plans, and executes ready ops every server tick.
  *
- * The scheduler is deliberately **pure orchestration** — it does not know about
- * Minecraft item handlers, network storage, or block entities. All side effects
- * (grabbing items, invoking handlers, executing recipes) go through [OpExecutor],
- * which the Core implements.
+ * **Threading model (Phase 3, Option A — shared ready queue):**
+ * The scheduler does NOT assign ops to named threads. Instead, [threadCount]
+ * acts as a parallelism budget: per tick we start up to [threadCount] ready ops,
+ * minus any currently-[inProgress] async ops (which still hold a slot). Any
+ * available execution slot can pick up any ready op — co-processors don't
+ * "own" branches. This is strictly more parallelism-friendly than per-thread
+ * plan assignment, and keeps the state machine centralized here.
  *
- * Behavior per [tick]:
- *   1. For every thread, schedule any ops whose deps just became satisfied
- *      (assigns `readyAt = currentTick + opCost(throttle)`).
- *   2. Execute ready ops across threads, fairly rotated, up to [CpuRules.OPS_PER_TICK_CAP].
- *      Executor returns [OpResult.Completed] (move on), [OpResult.InProgress] (try next tick),
- *      or [OpResult.Failed] (abort the thread).
- *   3. Chained ops (cost-0): after completing an op, the downstream ops' [readyAt] becomes
- *      the current tick, so the loop picks them up in the same pass — full-chain-in-one-tick
- *      at high throttle.
- *   4. Finalize done threads; pull in backlog plans.
+ * [threadCount] is updated externally whenever the CPU's multiblock is
+ * recalculated ([damien.nodeworks.block.entity.CraftingCoreBlockEntity.recalculateCapacity]).
+ * Growing is immediate; shrinking takes effect on the next tick — in-flight async
+ * ops always finish, so removing a Co-Processor mid-craft never strands state.
+ *
+ * All scheduler state lives on the server thread (driven by [BlockEntityTicker]).
+ * No locks needed: the CPU BE is only ticked by the server's main thread.
  */
 class CraftScheduler(
-    private val threadCount: Int,
+    @Volatile var threadCount: Int,
     private val executor: OpExecutor
 ) {
 
     sealed class OpResult {
         /** Op fully finished. Scheduler marks it completed and chains downstream. */
         object Completed : OpResult()
-        /** Async op still running. Scheduler leaves it un-completed; re-invokes next tick. */
+        /** Async op still running. Scheduler leaves it pending; re-invokes next tick. */
         object InProgress : OpResult()
-        /** Op failed. Scheduler aborts the thread with [reason]. */
+        /** Op failed. Scheduler aborts the plan with [reason]. */
         data class Failed(val reason: String) : OpResult()
     }
 
@@ -42,8 +42,7 @@ class CraftScheduler(
         /** Current throttle multiplier. Scheduler calls [CpuRules.opCost] on this. */
         val currentThrottle: Float
 
-        /** Execute a single op. The scheduler only consults the return value — do not
-         *  call any state methods on the thread directly. */
+        /** Execute a single op. The scheduler only consults the return value. */
         fun execute(op: Operation): OpResult
 
         /** Called when a plan reaches the DONE state (all terminal ops completed). */
@@ -53,129 +52,240 @@ class CraftScheduler(
         fun onPlanFailed(plan: CraftPlan, reason: String) {}
     }
 
-    private val threads: List<CraftThread> = List(threadCount) { CraftThread(it) }
+    enum class State { IDLE, RUNNING, DONE, FAILED }
+
+    private var plan: CraftPlan? = null
+    private var state: State = State.IDLE
+    private var failureReason: String? = null
+    /** Completed op IDs within the current plan. */
+    private val completed: MutableSet<Int> = HashSet()
+    /** Op IDs currently being executed asynchronously (hold a slot until they resolve). */
+    private val inProgressIds: MutableSet<Int> = HashSet()
+
     private val backlog: ArrayDeque<CraftPlan> = ArrayDeque()
 
-    val allThreads: List<CraftThread> get() = threads
-    val queuedPlans: List<CraftPlan> get() = backlog.toList()
+    // --- Public query API ---
 
-    /** Submit a craft. Runs immediately on an idle thread, else queues. */
+    val isIdle: Boolean get() = state == State.IDLE
+    val currentPlan: CraftPlan? get() = plan
+    val queuedPlans: List<CraftPlan> get() = backlog.toList()
+    val progress: Pair<Int, Int> get() = completed.size to (plan?.ops?.size ?: 0)
+    val currentState: State get() = state
+    val currentFailureReason: String? get() = failureReason
+
+    /** Submit a craft. Runs immediately if idle, else queues. */
     fun submit(plan: CraftPlan, currentTick: Long) {
-        val idle = threads.firstOrNull { it.isIdle }
-        if (idle != null) {
-            idle.assign(plan, currentTick)
+        if (state == State.IDLE) {
+            assignPlan(plan, currentTick)
         } else {
             backlog.addLast(plan)
         }
     }
 
-    /** Cancel everything. Caller is responsible for unreserving items. */
+    /** Cancel everything — active plan and backlog. Caller releases reserved items via onPlanFailed. */
     fun cancelAll(reason: String) {
-        for (t in threads) {
-            if (t.isRunning) {
-                val p = t.plan
-                t.abort(reason)
-                if (p != null) executor.onPlanFailed(p, reason)
-            }
-            t.clear()
+        val active = plan
+        if (active != null && state == State.RUNNING) {
+            state = State.FAILED
+            failureReason = reason
+            executor.onPlanFailed(active, reason)
         }
+        plan = null
+        completed.clear()
+        inProgressIds.clear()
+        state = State.IDLE
         while (backlog.isNotEmpty()) {
-            val p = backlog.removeFirst()
-            executor.onPlanFailed(p, reason)
+            executor.onPlanFailed(backlog.removeFirst(), reason)
         }
     }
 
-    /** Drive the scheduler forward by one server tick. */
+    // --- Per-tick driver ---
+
+    /** Drive the scheduler forward by one server tick. Call from the BE's ticker. */
     fun tick(currentTick: Long) {
         val opCost = CpuRules.opCost(executor.currentThrottle)
         var opsThisTick = 0
 
-        // Initial scheduling pass — any thread with fresh deps satisfied gets readyAt set.
-        for (t in threads) t.scheduleNewlyReadyOps(currentTick, opCost)
+        if (state == State.RUNNING) {
+            scheduleNewlyReadyOps(currentTick, opCost)
 
-        // Execute ops, rotating across threads. The outer `progress` loop enables cost-0
-        // chaining within a single tick: completing an op schedules its downstreams at
-        // `currentTick`, then the loop re-checks all threads and picks them up.
-        var progress = true
-        while (progress && opsThisTick < CpuRules.OPS_PER_TICK_CAP) {
-            progress = false
-            for (t in threads) {
-                if (opsThisTick >= CpuRules.OPS_PER_TICK_CAP) break
-                if (!t.isRunning) continue
-                val ready = t.readyOps(currentTick)
-                if (ready.isEmpty()) continue
+            // Parallel-execution loop. We keep looping as long as ready ops became
+            // available (cost-0 chaining) AND there's slot budget AND we haven't hit
+            // the per-tick cap (which exists to protect TPS against pathological crafts).
+            var progress = true
+            // threadCount caps parallelism PER ROUND — up to N ops can start together.
+            // Chained cost-0 downstream ops become ready mid-round and picked up next round,
+            // so a long linear chain still finishes in one tick at high throttle.
+            while (progress && opsThisTick < CpuRules.OPS_PER_TICK_CAP && state == State.RUNNING) {
+                progress = false
+                var opsThisRound = 0
+                val ready = readyOps(currentTick).take(threadCount)
+                if (ready.isEmpty()) break
+
                 for (op in ready) {
                     if (opsThisTick >= CpuRules.OPS_PER_TICK_CAP) break
                     val result = executor.execute(op)
                     opsThisTick++
+                    opsThisRound++
                     when (result) {
                         is OpResult.Completed -> {
                             op.inProgress = false
-                            t.markCompleted(op.id)
+                            markCompleted(op.id)
                             progress = true
                         }
                         is OpResult.InProgress -> {
                             op.inProgress = true
-                            // Don't increment progress — async op will check again next tick
+                            // Op stays in readyOps for future ticks; slot was spent here.
                         }
                         is OpResult.Failed -> {
-                            val p = t.plan
-                            t.abort(result.reason)
+                            val p = plan
+                            state = State.FAILED
+                            failureReason = result.reason
                             if (p != null) executor.onPlanFailed(p, result.reason)
                             break
                         }
                     }
                 }
-                // Newly-ready downstream ops — schedule them for same-tick chaining
-                t.scheduleNewlyReadyOps(currentTick, opCost)
+                scheduleNewlyReadyOps(currentTick, opCost)
             }
         }
 
-        // Finalize threads: both DONE (success) and FAILED (abort) return to IDLE so
-        // future crafts can be submitted. onPlanFailed already fired in-line in step 2
-        // during abort — we don't re-fire it here.
-        for (t in threads) {
-            when {
-                t.isDone -> {
-                    val p = t.plan
-                    t.clear()
-                    if (p != null) executor.onPlanCompleted(p)
-                    if (backlog.isNotEmpty()) t.assign(backlog.removeFirst(), currentTick)
-                }
-                t.isFailed -> {
-                    t.clear()
-                    if (backlog.isNotEmpty()) t.assign(backlog.removeFirst(), currentTick)
-                }
+        // Finalize: return to IDLE and pull in backlog. onPlanFailed already fired in-line
+        // during a Failed op result; onPlanCompleted fires here for the success path.
+        when (state) {
+            State.DONE -> {
+                val finished = plan
+                reset()
+                if (finished != null) executor.onPlanCompleted(finished)
+                if (backlog.isNotEmpty()) assignPlan(backlog.removeFirst(), currentTick)
+            }
+            State.FAILED -> {
+                reset()
+                if (backlog.isNotEmpty()) assignPlan(backlog.removeFirst(), currentTick)
+            }
+            else -> { /* still running or idle */ }
+        }
+    }
+
+    // --- Internal op-graph helpers ---
+
+    private fun assignPlan(p: CraftPlan, currentTick: Long) {
+        plan = p
+        completed.clear()
+        inProgressIds.clear()
+        failureReason = null
+        // Reset per-op ephemeral state so a resumed plan doesn't inherit stale flags
+        for (op in p.ops) {
+            op.readyAt = -1L
+            op.inProgress = false
+        }
+        state = if (p.ops.isEmpty()) State.DONE else State.RUNNING
+    }
+
+    private fun reset() {
+        plan = null
+        completed.clear()
+        inProgressIds.clear()
+        state = State.IDLE
+        failureReason = null
+    }
+
+    private fun markCompleted(opId: Int) {
+        val p = plan ?: return
+        if (opId in completed) return
+        completed.add(opId)
+        if (p.terminalOpIds.all { it in completed }) {
+            state = State.DONE
+        }
+    }
+
+    /** Ops whose dependencies are met and whose readyAt ≤ currentTick.
+     *  Already-in-progress async ops are INCLUDED — they're re-dispatched each tick so
+     *  their `execute` call can poll the async state. Each dispatch counts as one op
+     *  against the parallelism budget (threadCount). */
+    private fun readyOps(currentTick: Long): List<Operation> {
+        val p = plan ?: return emptyList()
+        val out = mutableListOf<Operation>()
+        for (op in p.ops) {
+            if (op.id in completed) continue
+            if (op.dependsOn.any { it !in completed }) continue
+            if (op.readyAt < 0L) continue
+            if (op.readyAt > currentTick) continue
+            out += op
+        }
+        return out
+    }
+
+    /** Assign [Operation.readyAt] for any op whose dependencies just became satisfied. */
+    private fun scheduleNewlyReadyOps(currentTick: Long, opCost: Int) {
+        val p = plan ?: return
+        for (op in p.ops) {
+            if (op.id in completed) continue
+            if (op.readyAt >= 0L) continue
+            if (op.dependsOn.all { it in completed }) {
+                op.readyAt = currentTick + opCost
             }
         }
     }
 
-    // =====================================================================
-    // Serialization
-    // =====================================================================
+    // --- Serialization ---
 
     fun saveToNBT(tag: CompoundTag) {
-        val tList = ListTag()
-        for (t in threads) {
-            val tt = CompoundTag()
-            t.saveToNBT(tt)
-            tList.add(tt)
+        tag.putString("state", state.name)
+        failureReason?.let { tag.putString("failReason", it) }
+        val compArr = IntArray(completed.size)
+        var i = 0
+        for (id in completed) compArr[i++] = id
+        tag.putIntArray("completed", compArr)
+        val progArr = IntArray(inProgressIds.size)
+        i = 0
+        for (id in inProgressIds) progArr[i++] = id
+        tag.putIntArray("inProgress", progArr)
+        plan?.let {
+            val planTag = CompoundTag()
+            it.saveToNBT(planTag)
+            tag.put("plan", planTag)
         }
-        tag.put("threads", tList)
         val bList = ListTag()
-        for (plan in backlog) {
+        for (p in backlog) {
             val pp = CompoundTag()
-            plan.saveToNBT(pp)
+            p.saveToNBT(pp)
             bList.add(pp)
         }
         tag.put("backlog", bList)
     }
 
     fun loadFromNBT(tag: CompoundTag) {
-        val tList = tag.getList("threads", Tag.TAG_COMPOUND.toInt())
-        for (i in 0 until minOf(tList.size, threads.size)) {
-            threads[i].loadFromNBT(tList.getCompound(i))
+        // Backward-compat: old format wrote per-thread state under "threads". If that's
+        // what's on disk, take the first thread's plan+completed as our scheduler state
+        // and drop the rest — under the new model there's only one plan at a time.
+        if (tag.contains("threads", Tag.TAG_LIST.toInt())) {
+            val threads = tag.getList("threads", Tag.TAG_COMPOUND.toInt())
+            if (threads.size > 0) {
+                val first = threads.getCompound(0)
+                state = runCatching { State.valueOf(first.getString("state")) }.getOrDefault(State.IDLE)
+                failureReason = first.getString("failReason").takeIf { it.isNotEmpty() }
+                completed.clear()
+                (first.getIntArray("completed") ?: IntArray(0)).forEach { completed.add(it) }
+                plan = if (first.contains("plan", Tag.TAG_COMPOUND.toInt())) {
+                    CraftPlan.loadFromNBT(first.getCompound("plan"))
+                } else null
+                inProgressIds.clear()
+                // Re-derive inProgress flags from the loaded plan (legacy save had no set)
+                plan?.ops?.forEach { if (it.inProgress) inProgressIds.add(it.id) }
+            }
+        } else {
+            state = runCatching { State.valueOf(tag.getString("state")) }.getOrDefault(State.IDLE)
+            failureReason = tag.getString("failReason").takeIf { it.isNotEmpty() }
+            completed.clear()
+            (tag.getIntArray("completed") ?: IntArray(0)).forEach { completed.add(it) }
+            inProgressIds.clear()
+            (tag.getIntArray("inProgress") ?: IntArray(0)).forEach { inProgressIds.add(it) }
+            plan = if (tag.contains("plan", Tag.TAG_COMPOUND.toInt())) {
+                CraftPlan.loadFromNBT(tag.getCompound("plan"))
+            } else null
         }
+
         backlog.clear()
         val bList = tag.getList("backlog", Tag.TAG_COMPOUND.toInt())
         for (i in 0 until bList.size) {

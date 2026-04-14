@@ -26,6 +26,15 @@ class ProcessingJob(
     private val remaining = api.outputs.map { it.first to it.second }.toMutableList()
     private val startGeneration = cpu.jobGeneration
 
+    /** Pulls registered during the most recent handler invocation. The CPU reads this
+     *  to cancel them if the handler failed to move its inputs (see
+     *  [damien.nodeworks.script.cpu.CpuOpExecutor.executeProcess] retry path). */
+    val invocationPulls: MutableList<SchedulerImpl.PendingJob> = mutableListOf()
+
+    /** Called by the CPU at the start of each handler invocation so the pull list
+     *  only reflects *this* invocation's registrations (not previous attempts). */
+    fun resetInvocationPulls() { invocationPulls.clear() }
+
     fun toLuaTable(): LuaTable {
         val table = LuaTable()
 
@@ -74,12 +83,14 @@ class ProcessingJob(
 
                 // Register for polling each tick
                 val timeoutTicks = if (api.timeout > 0) api.timeout.toLong() else 6000L
-                scheduler.addPendingJob(SchedulerImpl.PendingJob(
+                val pending = SchedulerImpl.PendingJob(
                     pollFn = { tryExtract(getters) },
                     timeoutAt = scheduler.currentTick + timeoutTicks,
                     onComplete = { success -> pendingResult.complete(success) },
                     label = "pull:${api.name}"
-                ))
+                )
+                scheduler.addPendingJob(pending)
+                invocationPulls.add(pending)
 
                 return LuaValue.NIL
             }

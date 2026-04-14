@@ -43,6 +43,7 @@
   "block.nodeworks.crafting_core": "Crafting Core",
   "container.nodeworks.crafting_core": "Crafting CPU",
   "block.nodeworks.crafting_storage": "Crafting Storage",
+  "block.nodeworks.co_processor": "Co-Processor",
   "item.nodeworks.processing_set": "Processing Set",
   "container.nodeworks.processing_set": "Processing Set",
   "block.nodeworks.processing_storage": "Processing Storage",

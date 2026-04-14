@@ -772,7 +772,8 @@ class AutocompletePopup(
             suggest("find(", "find(filter: string) → ItemsHandle?"),
             suggest("findEach(", "findEach(filter: string) → ItemsHandle[]"),
             suggest("count(", "count(filter: string) → number"),
-            suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
+            suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)"),
+            suggest("tryInsert(", "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)"),
             suggest("craft(", "craft(id: string, count?: number) → CraftBuilder"),
             suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
             run {
@@ -806,7 +807,8 @@ class AutocompletePopup(
             "CardHandle" -> listOf(
                 suggest("find(", "find(filter: string) → ItemsHandle?"),
                 suggest("findEach(", "findEach(filter: string) → ItemsHandle[]"),
-                suggest("insert(", "insert(items: ItemsHandle, count?: number) → number"),
+                suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)"),
+                suggest("tryInsert(", "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)"),
                 suggest("count(", "count(filter: string) → number"),
                 suggest("face(", "face(side: string) → CardHandle"),
                 suggest("slots(", "slots(...: number) → CardHandle")
@@ -955,7 +957,10 @@ class AutocompletePopup(
         val params = buildString {
             append("job: Job")
             if (api != null) {
-                for ((itemId, _) in api.inputs) {
+                // Dedup by itemId — if a recipe consumes two raw_iron, the planner aggregates
+                // to a single handler arg. Autocomplete signature must match.
+                val uniqueInputs = LinkedHashSet<String>().apply { for ((itemId, _) in api.inputs) add(itemId) }
+                for (itemId in uniqueInputs) {
                     append(", ")
                     append(itemIdToParamName(itemId))
                     append(": ItemsHandle")

@@ -89,6 +89,49 @@ class FabricStorageService : StorageService {
         }
     }
 
+    override fun tryInsertAll(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, count: Long): Boolean {
+        if (count <= 0L) return true
+        val dst = (dest as FabricItemStorageHandle).storage
+        val variant = ItemVariant.of(item)
+        net.fabricmc.fabric.api.transfer.v1.transaction.Transaction.openOuter().use { transaction ->
+            val inserted = dst.insert(variant, count, transaction)
+            if (inserted < count) {
+                // Don't call commit — the try-with-resources closes without committing,
+                // which aborts the transaction. No mutations to dst are visible.
+                return false
+            }
+            transaction.commit()
+            return true
+        }
+    }
+
+    override fun tryMoveAll(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (String) -> Boolean,
+        count: Long
+    ): Boolean {
+        if (count <= 0L) return true
+        val src = (source as FabricItemStorageHandle).storage
+        val dst = (dest as FabricItemStorageHandle).storage
+        net.fabricmc.fabric.api.transfer.v1.transaction.Transaction.openOuter().use { transaction ->
+            val moved = try {
+                StorageUtil.move(src, dst, { variant ->
+                    val itemId = BuiltInRegistries.ITEM.getKey(variant.item)?.toString() ?: return@move false
+                    filter(itemId)
+                }, count, transaction)
+            } catch (_: Exception) {
+                0L
+            }
+            if (moved < count) {
+                // No commit → auto-abort at scope end. Both src and dst unchanged.
+                return false
+            }
+            transaction.commit()
+            return true
+        }
+    }
+
     override fun findFirstItem(storage: ItemStorageHandle, filter: (String) -> Boolean): String? {
         val src = (storage as FabricItemStorageHandle).storage
         for (view in src) {

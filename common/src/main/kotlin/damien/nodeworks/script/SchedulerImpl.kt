@@ -82,6 +82,11 @@ class SchedulerImpl(
         pendingJobs.add(job)
     }
 
+    /** Remove a pending poll registered via [addPendingJob]. Returns true if it was
+     *  present. Called by the CPU to unwind `job:pull` side effects when the handler's
+     *  inserts failed and we're about to retry the invocation. */
+    fun removePendingJob(job: PendingJob): Boolean = pendingJobs.remove(job)
+
     fun initialize(startTick: Long) {
         currentTick = startTick
     }

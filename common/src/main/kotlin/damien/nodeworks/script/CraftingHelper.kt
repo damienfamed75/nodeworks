@@ -243,15 +243,7 @@ object CraftingHelper {
 
             // Live check against the scheduler — snapshot's isBusy may be stale for
             // crafts submitted between snapshot build and this check.
-            val hasIdleThread = cpu.scheduler.allThreads.any { it.isIdle }
-            if (hasIdleThread) return cpu
-            logger.warn(
-                "CPU at {} feasible but no idle thread. states={} isCrafting={} backlog={}",
-                cpu.blockPos,
-                cpu.scheduler.allThreads.map { it.state },
-                cpu.isCrafting,
-                cpu.scheduler.queuedPlans.size
-            )
+            if (cpu.scheduler.isIdle) return cpu
             feasibleButBusy = true
         }
 
