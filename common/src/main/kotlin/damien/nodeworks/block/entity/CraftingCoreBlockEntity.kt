@@ -94,6 +94,15 @@ class CraftingCoreBlockEntity(
      * reaches DONE (true) or FAILED (false). Safe to call from any server-side context.
      */
     fun submitCraft(plan: CraftPlan, currentTick: Long, onComplete: ((Boolean) -> Unit)? = null) {
+        // Wipe ALL stale resume info — opIds are plan-scoped (planner starts at 0) and any
+        // entry left over from a previous craft will collide with this plan's op IDs and
+        // incorrectly trigger the resume path (which skips handler invocation).
+        // The save/load resume flow does NOT go through here — it restores the same plan
+        // it saved, with the matching opResumeInfo intact, via NBT.
+        if (opResumeInfo.isNotEmpty()) {
+            opResumeInfo.clear()
+            setChanged()
+        }
         onComplete?.let { opExecutor.registerCompletionListener(plan, it) }
         scheduler.submit(plan, currentTick)
         setCrafting(true, plan.rootItemId.substringAfter(':').replace('_', ' '))
@@ -198,6 +207,33 @@ class CraftingCoreBlockEntity(
         else setChanged()
     }
 
+    /** Per-op resume state — captured when a Process op's handler registers a pull, used
+     *  on world reload to restart polling without re-invoking the handler. The handler's
+     *  side effects (items placed in machines) survive the reload as actual block state;
+     *  we just need to keep watching for the outputs to arrive. */
+    data class OpResumeInfo(
+        val processingApiName: String,
+        val outputs: List<Pair<String, Long>>,
+        val pullTargets: List<Pair<BlockPos, net.minecraft.core.Direction>>
+    )
+
+    /** Keyed by Operation.id. Persisted across save/load. */
+    val opResumeInfo: MutableMap<Int, OpResumeInfo> = mutableMapOf()
+
+    /** Called by [damien.nodeworks.script.ProcessingJob] when a handler registers job:pull
+     *  for the Process op identified by [opId]. */
+    fun setOpResume(opId: Int, info: OpResumeInfo) {
+        if (opId < 0) return
+        opResumeInfo[opId] = info
+        setChanged()
+    }
+
+    /** Called by [damien.nodeworks.script.ProcessingJob] when its pulls finish for [opId]. */
+    fun clearOpResume(opId: Int) {
+        if (opId < 0) return
+        if (opResumeInfo.remove(opId) != null) setChanged()
+    }
+
     /** Wipe all pending job metadata (but keep originalCraft — cleared by clearAllCraftState). */
     fun clearPendingJob() {
         if (pendingOutputs.isNotEmpty() || pendingCount > 0 || pendingPullTargets.isNotEmpty()) {
@@ -214,6 +250,12 @@ class CraftingCoreBlockEntity(
         originalCraftCount = 0L
         craftTreeSnapshot = null
         clearPendingJob()
+        // Op IDs are plan-scoped (planner starts at 0). Stale entries would collide with
+        // the next plan's op IDs and incorrectly trigger the resume path.
+        if (opResumeInfo.isNotEmpty()) {
+            opResumeInfo.clear()
+            setChanged()
+        }
     }
 
     // =====================================================================
@@ -382,7 +424,14 @@ class CraftingCoreBlockEntity(
             NodeConnectionHelper.trackNode(level, worldPosition)
             // Defer recalc — neighbors may not be loaded yet.
             // Schedule resume of pending jobs
-            if (isCrafting && pendingCount > 0 && pendingPullTargets.isNotEmpty() && !resumeScheduled) {
+            // Legacy resume path — only fires when there's no per-op resume info AND no
+            // persisted scheduler plan. Per-op resume (handled in CpuOpExecutor.executeProcess)
+            // is the canonical recovery for new saves; the legacy path stays for compat with
+            // pre-Phase-3 saves where Process state wasn't tracked per op.
+            if (isCrafting && pendingCount > 0 && pendingPullTargets.isNotEmpty() &&
+                !resumeScheduled &&
+                opResumeInfo.isEmpty() && scheduler.currentPlan == null
+            ) {
                 resumeScheduled = true
                 // Defer 2 seconds (40 ticks) to ensure chunk neighbors are loaded
                 damien.nodeworks.script.ResumeScheduler.scheduler.addPendingJob(
@@ -577,6 +626,37 @@ class CraftingCoreBlockEntity(
             }
             tag.put("pendingPullTargets", targetsTag)
         }
+
+        // Per-op resume info — survives save/load so an in-progress smelt can pick up where
+        // it left off without re-invoking the handler (which would try to insert items
+        // again that are already in the machine).
+        org.slf4j.LoggerFactory.getLogger("nodeworks-resume-debug").info(
+            "CPU at {} SAVE: opResumeInfo size={}", worldPosition, opResumeInfo.size
+        )
+        if (opResumeInfo.isNotEmpty()) {
+            val list = net.minecraft.nbt.ListTag()
+            for ((opId, info) in opResumeInfo) {
+                val c = CompoundTag()
+                c.putInt("op", opId)
+                c.putString("api", info.processingApiName)
+                val outs = CompoundTag()
+                outs.putInt("size", info.outputs.size)
+                for ((i, pair) in info.outputs.withIndex()) {
+                    outs.putString("id$i", pair.first)
+                    outs.putLong("ct$i", pair.second)
+                }
+                c.put("outputs", outs)
+                val tgts = CompoundTag()
+                tgts.putInt("size", info.pullTargets.size)
+                for ((i, pair) in info.pullTargets.withIndex()) {
+                    tgts.putLong("p$i", pair.first.asLong())
+                    tgts.putInt("f$i", pair.second.ordinal)
+                }
+                c.put("targets", tgts)
+                list.add(c)
+            }
+            tag.put("opResumeInfo", list)
+        }
     }
 
     override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
@@ -647,6 +727,38 @@ class CraftingCoreBlockEntity(
             pendingPullTargets = emptyList()
         }
         resumeScheduled = false
+
+        // Per-op resume info — restore so executeProcess can poll without re-invoking handlers.
+        opResumeInfo.clear()
+        val hasResumeTag = tag.contains("opResumeInfo", Tag.TAG_LIST.toInt())
+        org.slf4j.LoggerFactory.getLogger("nodeworks-resume-debug").info(
+            "CPU at {} LOAD: hasResumeTag={}", worldPosition, hasResumeTag
+        )
+        if (hasResumeTag) {
+            val list = tag.getList("opResumeInfo", Tag.TAG_COMPOUND.toInt())
+            for (i in 0 until list.size) {
+                val c = list.getCompound(i)
+                val opId = c.getInt("op")
+                val api = c.getString("api")
+                val outs = c.getCompound("outputs")
+                val outSize = outs.getInt("size")
+                val outputs = (0 until outSize).mapNotNull { j ->
+                    val id = outs.getString("id$j")
+                    if (id.isEmpty()) null else id to outs.getLong("ct$j")
+                }
+                val tgts = c.getCompound("targets")
+                val tgtSize = tgts.getInt("size")
+                val targets = (0 until tgtSize).map { j ->
+                    BlockPos.of(tgts.getLong("p$j")) to
+                            net.minecraft.core.Direction.values()[tgts.getInt("f$j")]
+                }
+                opResumeInfo[opId] = OpResumeInfo(api, outputs, targets)
+            }
+        }
+        org.slf4j.LoggerFactory.getLogger("nodeworks-resume-debug").info(
+            "CPU at {} LOAD: opResumeInfo final size={} entries={}", worldPosition, opResumeInfo.size,
+            opResumeInfo.entries.map { "op${it.key}->${it.value.processingApiName} outs=${it.value.outputs}" }
+        )
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {
