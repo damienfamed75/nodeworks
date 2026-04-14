@@ -21,9 +21,13 @@ class ProcessingJob(
     private val cpu: CraftingCoreBlockEntity,
     private val level: ServerLevel,
     private val scheduler: SchedulerImpl,
-    private val pendingResult: CraftingHelper.PendingHandlerJob
+    private val pendingResult: CraftingHelper.PendingHandlerJob,
+    /** Override of how many output items this invocation should collect before completing.
+     *  Defaults to the API's per-batch output count. Parallel (non-serial) APIs pass the
+     *  full bulk count here so one handler invocation can wait for the full batch worth. */
+    overrideOutputs: List<Pair<String, Int>>? = null
 ) {
-    private val remaining = api.outputs.map { it.first to it.second }.toMutableList()
+    private val remaining = (overrideOutputs ?: api.outputs).map { it.first to it.second }.toMutableList()
     private val startGeneration = cpu.jobGeneration
 
     /** Pulls registered during the most recent handler invocation. The CPU reads this
@@ -101,38 +105,35 @@ class ProcessingJob(
 
     private val isStale: Boolean get() = cpu.jobGeneration != startGeneration
 
+    /**
+     * Incremental: each poll grabs whatever's currently available for each declared output
+     * and decrements the remaining count. Only returns true (job complete) once every
+     * declared count has been fully collected. For a 4-ingot smelt on a furnace that emits
+     * one ingot every few seconds, this means we pull each ingot as it arrives instead of
+     * waiting for all 4 to pile up and blocking subsequent smelts.
+     */
     private fun tryExtract(getters: List<CardHandle.StorageGetter>): Boolean {
-        for ((outputId, needed) in remaining) {
-            var available = 0L
-            for (getter in getters) {
-                val storage = getter.getStorage() ?: continue
-                available += PlatformServices.storage.countItems(storage) {
-                    CardHandle.matchesFilter(it, outputId)
-                }
-                if (available >= needed) break
-            }
-            if (available < needed) return false
-        }
-
-        // Items are ready — extract into CPU buffer (or network if job was cancelled)
         val stale = isStale
         val snapshot = if (stale) damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, cpu.blockPos) else null
 
-        for ((outputId, needed) in remaining.toList()) {
+        val iter = remaining.listIterator()
+        while (iter.hasNext()) {
+            val (outputId, needed) = iter.next()
             var stillNeeded = needed.toLong()
+            val filter: (String) -> Boolean = { id -> CardHandle.matchesFilter(id, outputId) }
             for (getter in getters) {
-                if (stillNeeded <= 0) break
+                if (stillNeeded <= 0L) break
                 val storage = getter.getStorage() ?: continue
-                val extracted = PlatformServices.storage.extractItems(
-                    storage, { CardHandle.matchesFilter(it, outputId) }, stillNeeded
-                )
-                if (extracted > 0) {
+                val extracted = PlatformServices.storage.extractItems(storage, filter, stillNeeded)
+                if (extracted > 0L) {
                     if (stale) {
-                        // Job was cancelled — return items to network storage
-                        val id = net.minecraft.resources.ResourceLocation.tryParse(outputId)
-                        val item = id?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.get(it) }
+                        val rl = net.minecraft.resources.ResourceLocation.tryParse(outputId)
+                        val item = rl?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.get(it) }
                         if (item != null) {
-                            NetworkStorageHelper.insertItemStack(level, snapshot!!, net.minecraft.world.item.ItemStack(item, extracted.toInt()), null)
+                            NetworkStorageHelper.insertItemStack(
+                                level, snapshot!!,
+                                net.minecraft.world.item.ItemStack(item, extracted.toInt()), null
+                            )
                         }
                     } else {
                         cpu.addToBuffer(outputId, extracted)
@@ -140,10 +141,18 @@ class ProcessingJob(
                     stillNeeded -= extracted
                 }
             }
+            if (stillNeeded <= 0L) {
+                iter.remove()
+            } else {
+                iter.set(outputId to stillNeeded.toInt())
+            }
         }
-        remaining.clear()
-        cpu.completePendingOp()
-        return true
+
+        if (remaining.isEmpty()) {
+            cpu.completePendingOp()
+            return true
+        }
+        return false
     }
 
     /**

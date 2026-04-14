@@ -90,8 +90,9 @@ object NeoForgeTerminalPackets {
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(terminal.getScriptsCopy())) {
-                activeEngines[globalPos] = engine
+            activeEngines[globalPos] = engine
+            if (!engine.start(terminal.getScriptsCopy())) {
+                activeEngines.remove(globalPos)
             }
         }
     }
@@ -231,9 +232,11 @@ object NeoForgeTerminalPackets {
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
+            activeEngines[gp] = engine
             if (engine.start(terminal.getScriptsCopy())) {
-                activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
+            } else {
+                activeEngines.remove(gp)
             }
         }
     }

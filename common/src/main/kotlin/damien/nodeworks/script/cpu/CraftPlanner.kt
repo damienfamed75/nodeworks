@@ -63,54 +63,36 @@ object CraftPlanner {
                 }
                 "storage" -> {
                     val pullId = newId()
-                    ops += Operation.Pull(
+                    val op = Operation.Pull(
                         id = pullId,
                         dependsOn = emptyList(),
                         itemId = node.itemId,
                         amount = node.count.toLong()
                     )
+                    op.outputNodeId = node.nodeId
+                    ops += op
                     outputOpOf[nodeKey] = pullId
                 }
                 "process_template" -> {
-                    // Each processing-API invocation produces `api.outputs[output]` items per
-                    // batch. If we need N of an item and each batch produces K, we emit
-                    // ceil(N/K) Process ops — one per handler invocation. This keeps each
-                    // handler invocation matched to a single batch, just like the old recursive
-                    // craft code did, and avoids the bug where a single Process op expects
-                    // the handler to produce N outputs but the handler only knows how to do K.
-                    val apiMatch = snapshot.findProcessingApi(node.itemId)
-                    val outputPerBatch = apiMatch?.api?.outputs
-                        ?.firstOrNull { it.first == node.itemId }?.second?.toLong()
-                        ?.coerceAtLeast(1L) ?: 1L
+                    // One Process op per tree node. The executor iterates the handler N times
+                    // internally (N = ceil(totalNeeded / api.outputs-per-batch)), so parallelism
+                    // comes from the tree having multiple distinct process_template nodes — not
+                    // from splitting a single branch into competing ops. Same-item branches in
+                    // different parts of the tree (e.g. two recipes each needing iron ingots)
+                    // become two ops that co-processors can run concurrently.
                     val inputDeps = node.children.mapNotNull { outputOpOf[IdentityKey(it)] }
-                    val totalInputs = aggregateByItem(node.children)
-                    val totalNeeded = node.count.toLong()
-                    val batchCount = (totalNeeded + outputPerBatch - 1) / outputPerBatch
-
-                    var lastProcessId = -1
-                    for (batch in 0 until batchCount) {
-                        val producedSoFar = batch * outputPerBatch
-                        val thisOutput = minOf(outputPerBatch, totalNeeded - producedSoFar)
-                        // Split inputs proportionally across batches; last batch takes the
-                        // remainder so totals always match exactly.
-                        val batchInputs = totalInputs.mapIndexed { _, (id, total) ->
-                            val per = total / batchCount
-                            val rem = total - per * batchCount
-                            id to if (batch == batchCount - 1) per + rem else per
-                        }
-                        val processId = newId()
-                        ops += Operation.Process(
-                            id = processId,
-                            dependsOn = inputDeps,
-                            processingApiName = node.templateName,
-                            inputs = batchInputs,
-                            outputs = listOf(node.itemId to thisOutput)
-                        )
-                        lastProcessId = processId
-                    }
-                    // Downstream ops only need the last batch to complete to see the full
-                    // count in buffer (previous batches already deposited their items).
-                    if (lastProcessId >= 0) outputOpOf[nodeKey] = lastProcessId
+                    val inputs = aggregateByItem(node.children)
+                    val processId = newId()
+                    val op = Operation.Process(
+                        id = processId,
+                        dependsOn = inputDeps,
+                        processingApiName = node.templateName,
+                        inputs = inputs,
+                        outputs = listOf(node.itemId to node.count.toLong())
+                    )
+                    op.outputNodeId = node.nodeId
+                    ops += op
+                    outputOpOf[nodeKey] = processId
                 }
                 "craft_template" -> {
                     val inputDeps = node.children.mapNotNull { outputOpOf[IdentityKey(it)] }
@@ -124,7 +106,7 @@ object CraftPlanner {
                         )
 
                     val executeId = newId()
-                    ops += Operation.Execute(
+                    val op = Operation.Execute(
                         id = executeId,
                         dependsOn = inputDeps,
                         recipe = recipe,
@@ -132,6 +114,8 @@ object CraftPlanner {
                         outputCount = node.count.toLong(),
                         executions = node.count.toLong()
                     )
+                    op.outputNodeId = node.nodeId
+                    ops += op
                     outputOpOf[nodeKey] = executeId
                 }
                 else -> {
@@ -144,13 +128,16 @@ object CraftPlanner {
             ?: return PlanResult(null, true, "Planner produced no root op.")
 
         val deliverId = newId()
-        ops += Operation.Deliver(
+        val deliverOp = Operation.Deliver(
             id = deliverId,
             dependsOn = listOf(rootOpId),
             itemId = tree.itemId,
             amount = tree.count.toLong(),
             toReservedSlot = true
         )
+        // Deliver finishing means the root tree node is fully complete.
+        deliverOp.outputNodeId = tree.nodeId
+        ops += deliverOp
 
         return PlanResult(
             plan = CraftPlan(

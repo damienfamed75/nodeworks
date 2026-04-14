@@ -37,7 +37,11 @@ class CraftingCoreMenu(
         private const val IDX_FORMED = 6
         private const val IDX_CRAFTING = 7
 
+        // Buffer sync runs slower (it's mostly inventory state, doesn't need to be smooth);
+        // tree sync runs faster while the player has the GUI open so active-node highlights
+        // and progression dots feel responsive (5 ticks ≈ 4 updates/sec).
         private const val BUFFER_SYNC_INTERVAL = 20
+        private const val TREE_SYNC_INTERVAL = 5
 
         private fun longHi(v: Long): Int = (v ushr 32).toInt()
         private fun longLo(v: Long): Int = v.toInt()
@@ -94,10 +98,14 @@ class CraftingCoreMenu(
     /** Client-side craft tree, populated by CraftingCpuTreePayload handler. */
     var craftTree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
 
-    /** Client-side active step item IDs (highlighted in the tree). */
-    var activeSteps: Set<String> = emptySet()
+    /** Client-side active node IDs — currently being worked on, amber-highlighted. */
+    var activeNodeIds: Set<Int> = emptySet()
 
-    private var syncTimer = 0
+    /** Client-side completed node IDs — green-highlighted (this branch is done). */
+    var completedNodeIds: Set<Int> = emptySet()
+
+    private var bufferSyncTimer = 0
+    private var treeSyncTimer = 0
     private var lastBufferHash = 0
     private var lastTreeHash = 0
 
@@ -111,19 +119,19 @@ class CraftingCoreMenu(
         val entity = serverEntity ?: return
         val sender = packetSender ?: return
 
-        if (++syncTimer < BUFFER_SYNC_INTERVAL) return
-        syncTimer = 0
-
-        // Sync buffer contents
-        val contents = entity.getBufferContents()
-        val hash = contents.hashCode()
-        if (hash != lastBufferHash) {
-            lastBufferHash = hash
-            sender(BufferSyncPayload(containerId, contents.entries.map { it.key to it.value }))
+        if (++bufferSyncTimer >= BUFFER_SYNC_INTERVAL) {
+            bufferSyncTimer = 0
+            val contents = entity.getBufferContents()
+            val hash = contents.hashCode()
+            if (hash != lastBufferHash) {
+                lastBufferHash = hash
+                sender(BufferSyncPayload(containerId, contents.entries.map { it.key to it.value }))
+            }
         }
-
-        // Sync craft tree
-        syncCraftTree(entity)
+        if (++treeSyncTimer >= TREE_SYNC_INTERVAL) {
+            treeSyncTimer = 0
+            syncCraftTree(entity)
+        }
     }
 
     private fun syncCraftTree(entity: CraftingCoreBlockEntity) {
@@ -131,15 +139,12 @@ class CraftingCoreMenu(
         val level = entity.level as? net.minecraft.server.level.ServerLevel ?: return
 
         var tree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode?
-        val steps: List<String>
+        val active: List<Int>
+        val done: List<Int>
 
         if (entity.isCrafting && entity.originalCraftId.isNotEmpty()) {
-            // Use the tree snapshot taken at craft start — reflects original storage state
             tree = entity.craftTreeSnapshot
             if (tree == null) {
-                // Fallback: build now (e.g., after world reload where transient field was lost).
-                // CraftTreeBuilder.buildCraftTree currently takes Int; down-cast for now.
-                // (Long propagation in CraftTreeBuilder tracked separately.)
                 val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, entity.blockPos)
                 val clampedCount = entity.originalCraftCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(
@@ -147,20 +152,20 @@ class CraftingCoreMenu(
                 )
                 entity.craftTreeSnapshot = tree
             }
-
-            steps = entity.pendingOutputs.map { it.first }.distinct().ifEmpty {
-                if (entity.pendingCount > 0) emptyList() else listOf(entity.originalCraftId)
-            }
+            active = entity.activeNodeIds.toList()
+            done = entity.completedNodeIds.toList()
         } else {
             tree = null
-            steps = emptyList()
+            active = emptyList()
+            done = emptyList()
         }
 
-        val treeHash = (tree?.hashCode() ?: 0) + steps.hashCode()
+        // Hash includes both sets so any change in active/done triggers a resend.
+        val treeHash = (tree?.hashCode() ?: 0) xor active.hashCode() xor (done.hashCode() shl 1)
         if (treeHash == lastTreeHash) return
         lastTreeHash = treeHash
 
-        sender(damien.nodeworks.network.CraftingCpuTreePayload(containerId, tree, steps))
+        sender(damien.nodeworks.network.CraftingCpuTreePayload(containerId, tree, active, done))
     }
 
     override fun quickMoveStack(player: Player, index: Int): ItemStack = ItemStack.EMPTY

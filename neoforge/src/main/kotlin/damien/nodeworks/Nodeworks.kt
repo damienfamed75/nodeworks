@@ -439,7 +439,8 @@ class Nodeworks(modBus: IEventBus) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
                     menu.craftTree = payload.tree
-                    menu.activeSteps = payload.activeSteps.toSet()
+                    menu.activeNodeIds = payload.activeNodeIds.toSet()
+                    menu.completedNodeIds = payload.completedNodeIds.toSet()
                 }
             }
         }
