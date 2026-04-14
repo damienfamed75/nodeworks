@@ -74,6 +74,33 @@ interface StorageService {
     /** Insert an ItemStack into storage. Returns count actually inserted. */
     fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int
 
+    /**
+     * Insert exactly [count] items of [item] into [dest] atomically.
+     *
+     * Either inserts all [count] and returns true, or inserts nothing and returns false —
+     * never leaves a partial state. Used by `:insert` to guarantee items can't be duped or
+     * deleted on a half-successful move.
+     *
+     * The implementation uses the platform's native transaction/simulation primitives so
+     * simulation reflects the real post-insert state (accumulating effects of each stack-sized
+     * batch). Cheap: O(destination slots) regardless of item count.
+     */
+    fun tryInsertAll(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, count: Long): Boolean
+
+    /**
+     * Move up to [count] items matching [filter] from [source] to [dest] atomically.
+     *
+     * Either moves exactly [count] and returns true, or moves nothing and returns false.
+     * If [source] lacks [count] matching items, returns false without touching either side.
+     * If [dest] can't accept the full amount, returns false without touching either side.
+     */
+    fun tryMoveAll(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (String) -> Boolean,
+        count: Long
+    ): Boolean
+
     /** Get a slotted view of the storage, or null if not slotted. */
     fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle?
 }

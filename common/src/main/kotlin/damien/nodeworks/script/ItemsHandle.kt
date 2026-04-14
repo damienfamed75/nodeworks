@@ -31,6 +31,15 @@ class BufferSource(
         remaining -= removed
         return removed
     }
+
+    /** Put previously-extracted items back into the buffer. Used by `card:insert`'s
+     *  atomic rollback when the destination refused a partial amount. */
+    fun returnUnused(count: Long) {
+        if (count <= 0L) return
+        if (cpu.addToBuffer(itemId, count)) {
+            remaining += count
+        }
+    }
 }
 
 class ItemsHandle(

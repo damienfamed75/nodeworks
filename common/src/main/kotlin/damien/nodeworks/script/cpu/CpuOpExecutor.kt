@@ -36,9 +36,24 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
 
     private val logger = LoggerFactory.getLogger("nodeworks-cpu-executor")
 
-    /** Per-op async state for Process ops. Keyed by op id. */
-    private data class ProcessState(val pending: CraftingHelper.PendingHandlerJob)
+    /** Per-op async state for Process ops currently waiting on their `job:pull` callbacks. */
+    private data class ProcessState(
+        val pending: CraftingHelper.PendingHandlerJob,
+        val processingJob: damien.nodeworks.script.ProcessingJob,
+        val handler: org.luaj.vm2.LuaFunction,
+        val luaArgs: List<org.luaj.vm2.LuaValue>,
+        val scheduler: damien.nodeworks.script.SchedulerImpl
+    )
     private val processState = mutableMapOf<Int, ProcessState>()
+
+    /** Cumulative handler retries per op — survives across [processState] entries being
+     *  added/removed each retry cycle so the cap is on TOTAL attempts for the op. */
+    private val processRetries = mutableMapOf<Int, Int>()
+
+    /** Seconds between handler retries when inputs went unmoved. One second feels like
+     *  "the CPU is waiting for something" without being laggy. */
+    private val RETRY_BACKOFF_TICKS = 20L
+    private val MAX_HANDLER_RETRIES = 50
 
     /** Caller-supplied completion listeners. Not persisted — on world reload resumed
      *  plans complete silently (the caller's session is gone anyway). */
@@ -232,23 +247,25 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         lvl: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ): CraftScheduler.OpResult {
-        // If we've already invoked the handler, we're just polling the pending job.
+        // If we've already invoked the handler, we're either polling the pending job OR
+        // waiting out a retry backoff to re-invoke the handler.
         val existing = processState[op.id]
         if (existing != null) {
-            return when {
-                !existing.pending.isComplete -> CraftScheduler.OpResult.InProgress
-                existing.pending.success -> {
-                    processState.remove(op.id)
-                    CraftScheduler.OpResult.Completed
-                }
-                else -> {
-                    processState.remove(op.id)
-                    CraftScheduler.OpResult.Failed("Processing handler failed: ${op.processingApiName}")
-                }
+            if (existing.pending.isComplete) {
+                val ok = existing.pending.success
+                processState.remove(op.id)
+                processRetries.remove(op.id)
+                return if (ok) CraftScheduler.OpResult.Completed
+                else CraftScheduler.OpResult.Failed("Processing handler failed: ${op.processingApiName}")
             }
+            // Retry backoff expired? If op.readyAt was bumped forward we'd already be waiting;
+            // this branch is the normal "still polling" case.
+            return CraftScheduler.OpResult.InProgress
         }
 
-        // First invocation: resolve API + handler and invoke.
+        // -----------------------------------------------------------------
+        // First invocation (or retry with re-resolved state): resolve handler + invoke + check
+        // -----------------------------------------------------------------
         val outputItemId = op.outputs.firstOrNull()?.first
             ?: return CraftScheduler.OpResult.Failed("Process op has no outputs declared")
         val apiMatch = snapshot.findProcessingApi(outputItemId)
@@ -262,8 +279,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val handler = handlerEngine.processingHandlers[apiMatch.api.name]
             ?: return CraftScheduler.OpResult.Failed("Handler not registered: ${apiMatch.api.name}")
 
-        // Verify inputs are in buffer (should be — prior Pull ops placed them there).
-        for ((id, amount) in op.inputs) {
+        // Inputs arrive pre-aggregated by the planner, but defend against bugs: collapse duplicates.
+        val aggregatedInputs = op.inputs.groupBy({ it.first }, { it.second })
+            .mapValues { (_, counts) -> counts.sum() }
+        for ((id, amount) in aggregatedInputs) {
             if (cpu.getBufferCount(id) < amount) {
                 return CraftScheduler.OpResult.Failed(
                     "Process input missing: $id x$amount (buffer has ${cpu.getBufferCount(id)})"
@@ -273,7 +292,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
 
         // Serial mode: only one handler per named API runs concurrently across the whole server.
         if (apiMatch.api.serial && apiMatch.api.name in CraftingHelper.activeSerialJobsView) {
-            return CraftScheduler.OpResult.InProgress  // try again next tick
+            return CraftScheduler.OpResult.InProgress
         }
 
         val pending = CraftingHelper.PendingHandlerJob()
@@ -286,9 +305,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val job = ProcessingJob(apiMatch.api, cpu, lvl, scheduler, pending)
         val jobTable = job.toLuaTable()
 
-        // Build Lua args: job + one ItemsHandle per input (drawing from the CPU buffer)
+        // Build Lua args: job + one ItemsHandle per unique input (post-aggregation).
         val luaArgs = mutableListOf<LuaValue>(jobTable)
-        for ((itemId, count) in op.inputs) {
+        for ((itemId, count) in aggregatedInputs) {
             val id = ResourceLocation.tryParse(itemId)
                 ?: return CraftScheduler.OpResult.Failed("Bad input item id: $itemId")
             val item = BuiltInRegistries.ITEM.get(id)
@@ -312,34 +331,135 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
 
         cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
 
+        val state = ProcessState(
+            pending = pending,
+            processingJob = job,
+            handler = handler,
+            luaArgs = luaArgs,
+            scheduler = scheduler
+        )
+        return invokeHandlerAndAnalyze(op, state, aggregatedInputs, apiMatch.api.name)
+    }
+
+    /**
+     * Invoke the handler once and inspect the side effects.
+     *
+     * The core safety guarantee: after this returns, the CPU buffer either
+     *   (a) has the declared inputs fully consumed, or
+     *   (b) has exactly as many of each input as it started with (handler made zero moves).
+     * The partial case is a contract violation — we fail the op loudly and the buffer flushes
+     * back to storage on onPlanFailed.
+     *
+     * For case (b), we cancel any `job:pull` calls the handler registered (they're now
+     * watching for items that will never arrive) and re-run the op later via readyAt backoff.
+     */
+    private fun invokeHandlerAndAnalyze(
+        op: Operation.Process,
+        state: ProcessState,
+        declaredInputs: Map<String, Long>,
+        apiName: String
+    ): CraftScheduler.OpResult {
+        val pre = declaredInputs.mapValues { (id, _) -> cpu.getBufferCount(id) }
+
+        state.processingJob.resetInvocationPulls()
         val result = try {
-            when (luaArgs.size) {
-                1 -> handler.call(luaArgs[0])
-                2 -> handler.call(luaArgs[0], luaArgs[1])
-                3 -> handler.call(luaArgs[0], luaArgs[1], luaArgs[2])
-                else -> handler.invoke(LuaValue.varargsOf(luaArgs.toTypedArray())).arg1()
+            when (state.luaArgs.size) {
+                1 -> state.handler.call(state.luaArgs[0])
+                2 -> state.handler.call(state.luaArgs[0], state.luaArgs[1])
+                3 -> state.handler.call(state.luaArgs[0], state.luaArgs[1], state.luaArgs[2])
+                else -> state.handler.invoke(LuaValue.varargsOf(state.luaArgs.toTypedArray())).arg1()
             }
         } catch (e: org.luaj.vm2.LuaError) {
-            logger.warn("Processing handler error for '{}': {}", apiMatch.api.name, e.message)
+            logger.warn("Processing handler error for '{}': {}", apiName, e.message)
+            cancelInvocationPulls(state)
             return CraftScheduler.OpResult.Failed("Handler threw: ${e.message}")
         }
 
-        // Handler returned explicit false → immediate failure
+        // Explicit false return → immediate retry (handler opted into deferral)
         if (!result.isnil() && result.isboolean() && !result.toboolean()) {
-            return CraftScheduler.OpResult.Failed("Handler returned false: ${apiMatch.api.name}")
+            cancelInvocationPulls(state)
+            return scheduleRetry(op, state, "handler returned false")
         }
 
-        // If the handler completed its pulls synchronously (items were immediately available),
-        // mark Completed. Otherwise we're waiting on the scheduler to poll.
-        if (pending.isComplete) {
-            return if (pending.success) {
-                CraftScheduler.OpResult.Completed
-            } else {
-                CraftScheduler.OpResult.Failed("Pending job failed synchronously: ${apiMatch.api.name}")
+        // Conservation check — diff buffer vs pre-invocation
+        var allConsumed = true
+        var anyConsumed = false
+        var stranded: String? = null
+        for ((id, required) in declaredInputs) {
+            val preCount = pre[id] ?: 0L
+            val now = cpu.getBufferCount(id)
+            val consumed = preCount - now  // items that actually left the buffer
+            when {
+                consumed == required -> anyConsumed = true
+                consumed == 0L -> allConsumed = false
+                else -> { // partial move for this input
+                    stranded = id
+                    allConsumed = false
+                }
             }
         }
 
-        processState[op.id] = ProcessState(pending)
+        if (stranded != null) {
+            // Partial consumption — contract violation. Fail loudly; onPlanFailed flushes.
+            cancelInvocationPulls(state)
+            return CraftScheduler.OpResult.Failed(
+                "Handler '$apiName' partially consumed input '$stranded' — " +
+                "all inputs must move together (use :hasSpaceFor or restructure the handler)."
+            )
+        }
+
+        if (!allConsumed) {
+            // Nothing moved. Unwind pulls and retry later.
+            cancelInvocationPulls(state)
+            return scheduleRetry(op, state, "destination unavailable")
+        }
+
+        // All inputs consumed. Handler must have registered at least one pull — otherwise
+        // the declared outputs have no path to the buffer.
+        if (state.processingJob.invocationPulls.isEmpty() && !state.pending.isComplete) {
+            return CraftScheduler.OpResult.Failed(
+                "Handler '$apiName' consumed inputs without calling job:pull. " +
+                "Outputs can never arrive."
+            )
+        }
+
+        if (state.pending.isComplete) {
+            return if (state.pending.success) CraftScheduler.OpResult.Completed
+            else CraftScheduler.OpResult.Failed("Pending job failed synchronously: $apiName")
+        }
+
+        processState[op.id] = state
+        return CraftScheduler.OpResult.InProgress
+    }
+
+    private fun cancelInvocationPulls(state: ProcessState) {
+        for (pull in state.processingJob.invocationPulls) {
+            state.scheduler.removePendingJob(pull)
+        }
+        state.processingJob.invocationPulls.clear()
+    }
+
+    private fun scheduleRetry(
+        op: Operation.Process,
+        state: ProcessState,
+        reason: String
+    ): CraftScheduler.OpResult {
+        val count = (processRetries[op.id] ?: 0) + 1
+        processRetries[op.id] = count
+        if (count > MAX_HANDLER_RETRIES) {
+            processRetries.remove(op.id)
+            return CraftScheduler.OpResult.Failed(
+                "Processing handler '${op.processingApiName}' couldn't progress for " +
+                "$MAX_HANDLER_RETRIES retries ($reason). Destinations may be permanently unavailable."
+            )
+        }
+        val lvl = cpu.level
+        val now = if (lvl is ServerLevel) lvl.gameTime else 0L
+        op.readyAt = now + RETRY_BACKOFF_TICKS
+        // Explicitly remove processState so the next dispatch re-invokes the handler fresh
+        // rather than polling a never-completing pending. state is discarded here — the retry
+        // builds a fresh ProcessingJob + pending next time.
+        processState.remove(op.id)
         return CraftScheduler.OpResult.InProgress
     }
 

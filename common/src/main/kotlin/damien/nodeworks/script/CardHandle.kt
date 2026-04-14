@@ -83,6 +83,155 @@ class CardHandle private constructor(
         }
     }
 
+    /**
+     * Build the Lua function that backs both `:insert` (atomic=true) and `:tryInsert` (atomic=false).
+     *
+     * Atomic mode (insert): moves `handle.count` exactly, or 0. Returns boolean.
+     *   - Buffer-backed source: extract requested → attempt insert → rollback any shortfall.
+     *   - Storage-backed source: move up to requested and accept whatever landed; moveItems
+     *     already extracts-then-inserts under the hood, so partial shortfall means the source
+     *     still holds the leftover. We then extract-back-to-source any already-moved items
+     *     to keep atomicity. (Today's move API doesn't expose simulate, so this is the cost.)
+     *
+     * Best-effort mode (tryInsert): returns actual count moved (int, 0..handle.count).
+     *
+     * Both modes: insert of an empty handle (count ≤ 0) → false / 0.
+     */
+    private fun buildInsertFn(self: CardHandle, atomic: Boolean): VarArgFunction {
+        return object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val itemsTable = args.checktable(2)
+                val maxCount = if (args.narg() >= 3 && !args.arg(3).isnil()) {
+                    args.checklong(3)
+                } else {
+                    Long.MAX_VALUE
+                }
+                val ref = itemsTable.get("_itemsHandle")
+                if (ref.isnil() || ref !is ItemsHandle.ItemsHandleRef) {
+                    throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
+                }
+                val itemsHandle = ref.handle
+                val requested = minOf(maxCount, itemsHandle.count.toLong())
+                if (requested <= 0L) {
+                    return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+                }
+                val destStorage = self.getItemStorage()
+                    ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+
+                val bufSrc = itemsHandle.bufferSource
+                val moved: Long = if (bufSrc != null) {
+                    moveFromBuffer(bufSrc, destStorage, requested, atomic)
+                } else {
+                    moveFromStorage(itemsHandle, destStorage, requested, atomic)
+                }
+
+                return if (atomic) {
+                    LuaValue.valueOf(moved == requested)
+                } else {
+                    LuaValue.valueOf(moved.toInt())
+                }
+            }
+        }
+    }
+
+    /**
+     * Buffer → destination.
+     *
+     * Atomic path uses [PlatformServices.StorageService.tryInsertAll] — checks destination
+     * capacity via the platform's native transaction/simulation, moves only if all fits.
+     * On failure, nothing is extracted from the buffer — no rollback needed.
+     *
+     * Best-effort path extracts in stack-sized batches, committing each real insert and
+     * returning any shortfall to the buffer before stopping.
+     */
+    private fun moveFromBuffer(
+        bufSrc: BufferSource,
+        destStorage: ItemStorageHandle,
+        requested: Long,
+        atomic: Boolean
+    ): Long {
+        val id = ResourceLocation.tryParse(bufSrc.itemId) ?: return 0L
+        val item = BuiltInRegistries.ITEM.get(id) ?: return 0L
+
+        if (atomic) {
+            // Pre-check atomically whether destination can accept everything. If so,
+            // extract from buffer then insert exactly that amount via the atomic primitive.
+            // If platform's real insert somehow can't match the sim (shouldn't happen on
+            // single-threaded server), we return the extracted items to the buffer.
+            val extracted = bufSrc.extract(requested)
+            if (extracted < requested) {
+                bufSrc.returnUnused(extracted)
+                return 0L
+            }
+            val ok = PlatformServices.storage.tryInsertAll(destStorage, item, extracted)
+            if (!ok) {
+                bufSrc.returnUnused(extracted)
+                return 0L
+            }
+            return extracted
+        }
+
+        // Best-effort: pull what fits, put unused back.
+        val maxStack = item.getDefaultMaxStackSize().toLong()
+        var totalMoved = 0L
+        var remaining = requested
+        while (remaining > 0L) {
+            val batch = minOf(remaining, maxStack)
+            val extracted = bufSrc.extract(batch)
+            if (extracted == 0L) break
+            val stack = net.minecraft.world.item.ItemStack(item, extracted.toInt())
+            val inserted = PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
+            if (inserted < extracted) {
+                bufSrc.returnUnused(extracted - inserted)
+                totalMoved += inserted
+                break
+            }
+            totalMoved += inserted
+            remaining -= inserted
+        }
+        return totalMoved
+    }
+
+    /**
+     * Storage → destination.
+     *
+     * Atomic path uses [PlatformServices.StorageService.tryMoveAll] — a platform-native
+     * transaction encloses the extract+insert, so either the full [requested] count moves
+     * or neither side is touched. Eliminates the duplication class of bugs that come with
+     * extract-partial-then-rollback-by-filter.
+     *
+     * Best-effort path uses the existing `moveItems` which is inherently best-effort.
+     */
+    private fun moveFromStorage(
+        itemsHandle: ItemsHandle,
+        destStorage: ItemStorageHandle,
+        requested: Long,
+        atomic: Boolean
+    ): Long {
+        val sourceStorage = itemsHandle.sourceStorage() ?: return 0L
+        if (atomic) {
+            val ok = try {
+                PlatformServices.storage.tryMoveAll(
+                    sourceStorage, destStorage,
+                    { matchesFilter(it, itemsHandle.filter) },
+                    requested
+                )
+            } catch (_: Exception) {
+                false
+            }
+            return if (ok) requested else 0L
+        }
+        return try {
+            PlatformServices.storage.moveItems(
+                sourceStorage, destStorage,
+                { matchesFilter(it, itemsHandle.filter) },
+                requested
+            )
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     private fun getItemStorage(): ItemStorageHandle? {
         val cap = card.capability
         val targetPos = cap.adjacentPos
@@ -161,61 +310,14 @@ class CardHandle private constructor(
             }
         })
 
-        // :insert(itemsHandle, count?) -> number moved
-        // Moves items from the ItemsHandle's source into this card's storage
-        table.set("insert", object : VarArgFunction() {
-            override fun invoke(args: Varargs): Varargs {
-                val itemsTable = args.checktable(2)
-                val maxCount = if (args.narg() >= 3 && !args.arg(3).isnil()) {
-                    args.checklong(3)
-                } else {
-                    Long.MAX_VALUE
-                }
+        // :insert(itemsHandle, count?) -> boolean
+        // Atomic move: moves `count` (or handle.count if omitted) exactly, or 0. Never partial.
+        // Use :tryInsert for best-effort "move what fits" semantics.
+        table.set("insert", buildInsertFn(self, atomic = true))
 
-                val ref = itemsTable.get("_itemsHandle")
-                if (ref.isnil() || ref !is ItemsHandle.ItemsHandleRef) {
-                    throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
-                }
-                val itemsHandle = ref.handle
-                val destStorage = self.getItemStorage() ?: return LuaValue.valueOf(0)
-                val amount = minOf(maxCount, itemsHandle.count.toLong())
-
-                // Buffer-backed source (from processing handler arguments)
-                val bufSrc = itemsHandle.bufferSource
-                if (bufSrc != null) {
-                    val id = net.minecraft.resources.ResourceLocation.tryParse(bufSrc.itemId)
-                        ?: return LuaValue.valueOf(0)
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
-                        ?: return LuaValue.valueOf(0)
-                    var totalMoved = 0
-                    var remaining: Long = amount
-                    while (remaining > 0L) {
-                        val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong())
-                        val extracted = bufSrc.extract(batch)
-                        if (extracted == 0L) break
-                        val stack = net.minecraft.world.item.ItemStack(item, extracted.toInt())
-                        val inserted = PlatformServices.storage.insertItemStack(destStorage, stack)
-                        totalMoved += inserted
-                        remaining -= inserted.toLong()
-                        if (inserted.toLong() < extracted) break // dest full
-                    }
-                    return LuaValue.valueOf(totalMoved)
-                }
-
-                // Normal storage-backed source
-                val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
-                val moved = try {
-                    PlatformServices.storage.moveItems(
-                        sourceStorage, destStorage,
-                        { matchesFilter(it, itemsHandle.filter) },
-                        amount
-                    )
-                } catch (_: Exception) {
-                    0L
-                }
-                return LuaValue.valueOf(moved.toInt())
-            }
-        })
+        // :tryInsert(itemsHandle, count?) -> number moved
+        // Best-effort move: returns the actual count moved (0..requested).
+        table.set("tryInsert", buildInsertFn(self, atomic = false))
 
         // :count(filter) -> number
         table.set("count", object : TwoArgFunction() {

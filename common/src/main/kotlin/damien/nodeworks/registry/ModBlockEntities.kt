@@ -9,6 +9,7 @@ import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.block.entity.BroadcastAntennaBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
+import damien.nodeworks.block.entity.CoProcessorBlockEntity
 import damien.nodeworks.block.entity.CraftingStorageBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
@@ -55,6 +56,11 @@ object ModBlockEntities {
     val CRAFTING_STORAGE: BlockEntityType<CraftingStorageBlockEntity> = register(
         "crafting_storage",
         PlatformServices.blockEntity.createBlockEntityType(::CraftingStorageBlockEntity, ModBlocks.CRAFTING_STORAGE)
+    )
+
+    val CO_PROCESSOR: BlockEntityType<CoProcessorBlockEntity> = register(
+        "co_processor",
+        PlatformServices.blockEntity.createBlockEntityType(::CoProcessorBlockEntity, ModBlocks.CO_PROCESSOR)
     )
 
     val PROCESSING_STORAGE: BlockEntityType<ProcessingStorageBlockEntity> = register(

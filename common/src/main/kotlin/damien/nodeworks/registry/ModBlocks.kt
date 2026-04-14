@@ -8,6 +8,7 @@ import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.BroadcastAntennaBlock
 import damien.nodeworks.block.CraftingCoreBlock
+import damien.nodeworks.block.CoProcessorBlock
 import damien.nodeworks.block.CraftingStorageBlock
 import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
@@ -76,6 +77,14 @@ object ModBlocks {
     val CRAFTING_STORAGE: Block = register(
         "crafting_storage",
         ::CraftingStorageBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val CO_PROCESSOR: Block = register(
+        "co_processor",
+        ::CoProcessorBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()
