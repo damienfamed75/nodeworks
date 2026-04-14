@@ -121,6 +121,8 @@ class Icons private constructor(val col: Int, val row: Int) {
         val LAYOUT_LARGE = Icons(9, 1)
         val SMALL_SCREW = Icons(10, 1)
         val NETWORK = Icons(11, 1)
+        val FIRE = Icons(12, 1)
+        val SNOWBALL = Icons(13, 1)
 
         // Row 1 — Card type icons
         val IO_CARD = Icons(0, 1)

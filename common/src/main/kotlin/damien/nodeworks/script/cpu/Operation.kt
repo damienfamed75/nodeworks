@@ -28,6 +28,11 @@ sealed class Operation {
     abstract val id: Int
     abstract val dependsOn: List<Int>
 
+    /** Per-op base tick cost at throttle 1.0×. [CpuRules.opCost] scales this down as the
+     *  CPU gets better-cooled. Different op types have different base costs — see
+     *  [CpuRules] for the rationale. */
+    abstract val baseCost: Int
+
     /** The tick at which this op becomes ready to execute. -1 = deps not yet all satisfied. */
     var readyAt: Long = -1L
 
@@ -47,7 +52,9 @@ sealed class Operation {
         override val dependsOn: List<Int>,
         val itemId: String,
         val amount: Long
-    ) : Operation()
+    ) : Operation() {
+        override val baseCost: Int get() = CpuRules.PULL_BASE_COST
+    }
 
     /**
      * Invoke a Processing-Set handler (Lua) with the listed inputs, and asynchronously
@@ -64,7 +71,9 @@ sealed class Operation {
         val processingApiName: String,
         val inputs: List<Pair<String, Long>>,
         val outputs: List<Pair<String, Long>>
-    ) : Operation()
+    ) : Operation() {
+        override val baseCost: Int get() = CpuRules.PROCESS_BASE_COST
+    }
 
     /** Run a vanilla-style 3x3 crafting recipe. Ingredients are consumed from the buffer;
      *  the output lands back in the buffer. [executions] allows bulk crafting in one op. */
@@ -76,7 +85,9 @@ sealed class Operation {
         val outputItemId: String,
         val outputCount: Long,
         val executions: Long
-    ) : Operation()
+    ) : Operation() {
+        override val baseCost: Int get() = CpuRules.EXECUTE_BASE_COST
+    }
 
     /** Move [amount] of [itemId] from the CPU buffer to network storage (or a reserved slot). */
     data class Deliver(
@@ -85,7 +96,9 @@ sealed class Operation {
         val itemId: String,
         val amount: Long,
         val toReservedSlot: Boolean
-    ) : Operation()
+    ) : Operation() {
+        override val baseCost: Int get() = CpuRules.DELIVER_BASE_COST
+    }
 
     // =====================================================================
     // Serialization

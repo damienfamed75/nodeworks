@@ -27,6 +27,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.CRAFTING_CORE)
                 output.accept(ModBlocks.CRAFTING_STORAGE)
                 output.accept(ModBlocks.CO_PROCESSOR)
+                output.accept(ModBlocks.STABILIZER)
                 output.accept(ModBlocks.BROADCAST_ANTENNA)
                 output.accept(ModBlocks.RECEIVER_ANTENNA)
 
