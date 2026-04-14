@@ -36,11 +36,13 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
 
     private val logger = LoggerFactory.getLogger("nodeworks-cpu-executor")
 
-    /** Per-op async state for Process ops currently waiting on their `job:pull` callbacks. */
+    /** Per-op async state for Process ops currently waiting on their `job:pull` callbacks.
+     *  [handler] and [luaArgs] are null/empty for resume-path entries that never invoke
+     *  the handler (items are already in the machine; we only poll). */
     private data class ProcessState(
         val pending: CraftingHelper.PendingHandlerJob,
         val processingJob: damien.nodeworks.script.ProcessingJob,
-        val handler: org.luaj.vm2.LuaFunction,
+        val handler: org.luaj.vm2.LuaFunction?,
         val luaArgs: List<org.luaj.vm2.LuaValue>,
         val scheduler: damien.nodeworks.script.SchedulerImpl
     )
@@ -297,74 +299,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             ?: return CraftScheduler.OpResult.Failed("Process op has no outputs declared")
 
         // RESUME PATH — checked FIRST and independently of handler resolution. On world
-        // reload the terminal script may not have started yet (auto-run lags BE ticking),
-        // so the handler isn't registered. But resume doesn't need the handler — items are
-        // physically in the machine and we just need to poll the persisted target coords.
-        // Use the global ResumeScheduler so we don't depend on a script engine being up.
-        val resumeInfo = cpu.opResumeInfo[op.id]
-
-        org.slf4j.LoggerFactory.getLogger("nodeworks-resume-debug").info(
-            "executeProcess op={} (api={}) resumeInfo={} bufferContents={}",
-            op.id, op.processingApiName, resumeInfo,
-            cpu.getBufferContents()
-        )
-
-        if (resumeInfo != null) {
-            processBatchProgress.getOrPut(op.id) {
-                val outputTotal = resumeInfo.outputs.firstOrNull { it.first == outputItemId }?.second
-                    ?: op.outputs.first().second
-                BatchProgress(
-                    totalBatches = 1L,
-                    batchesDone = 0L,
-                    perBatchInputs = emptyList(),
-                    outputItemId = outputItemId,
-                    outputPerBatch = outputTotal
-                )
-            }
-            val resumeScheduler = damien.nodeworks.script.ResumeScheduler.scheduler
-            val pending = CraftingHelper.PendingHandlerJob()
-            val syntheticApi = damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo(
-                name = resumeInfo.processingApiName,
-                inputs = emptyList(),
-                outputs = resumeInfo.outputs.map {
-                    it.first to it.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                },
-                timeout = 6000,
-                serial = false
-            )
-            val resumeJob = ProcessingJob(syntheticApi, cpu, lvl, resumeScheduler, pending, null, op.id)
-            val getters = resumeInfo.pullTargets.map { (pos, face) ->
-                damien.nodeworks.script.CardHandle.StorageGetter {
-                    PlatformServices.storage.getItemStorage(lvl, pos, face)
-                }
-            }
-            cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
-            resumeJob.startPoll(getters)
-            // Stash a placeholder ProcessState — we don't need the handler/luaArgs here
-            // because the resume path never re-invokes the handler.
-            val state = ProcessState(
-                pending = pending,
-                processingJob = resumeJob,
-                handler = org.luaj.vm2.LuaValue.NIL as? org.luaj.vm2.LuaFunction
-                    ?: object : org.luaj.vm2.LuaFunction() {
-                        override fun call(): org.luaj.vm2.LuaValue = org.luaj.vm2.LuaValue.NIL
-                    },
-                luaArgs = emptyList(),
-                scheduler = resumeScheduler
-            )
-            processState[op.id] = state
-            return if (pending.isComplete) {
-                processState.remove(op.id)
-                if (pending.success) {
-                    processBatchProgress[op.id]?.let { it.batchesDone = it.totalBatches }
-                    CraftScheduler.OpResult.Completed
-                } else {
-                    CraftScheduler.OpResult.Failed("Resume polling failed: ${resumeInfo.processingApiName}")
-                }
-            } else {
-                CraftScheduler.OpResult.InProgress
-            }
-        }
+        // reload the terminal script may not have auto-started yet, so the handler isn't
+        // registered. Resume doesn't need it: items are physically in machines, we just
+        // poll the persisted target coords on the global ResumeScheduler (always ticking).
+        cpu.opResumeInfo[op.id]?.let { return startResumePoll(op, it, lvl, outputItemId) }
 
         // FRESH PATH — needs the handler resolved.
         val apiMatch = snapshot.findProcessingApi(outputItemId)
@@ -372,11 +310,14 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
         val handlerEngine = PlatformServices.modState
             .findProcessingEngine(lvl, searchPositions, apiMatch.api.name) as? ScriptEngine
-            ?: return CraftScheduler.OpResult.Failed(
-                "No handler loaded for '${apiMatch.api.name}' — start the terminal script first"
-            )
+        if (handlerEngine == null) {
+            // Handler not loaded yet — common right after world load, before terminal auto-run.
+            // Back off and retry; handler should appear once the terminal script is running.
+            // Counts against MAX_HANDLER_RETRIES so a truly-missing handler still fails cleanly.
+            return scheduleHandlerWaitRetry(op, "handler engine not yet available")
+        }
         val handler = handlerEngine.processingHandlers[apiMatch.api.name]
-            ?: return CraftScheduler.OpResult.Failed("Handler not registered: ${apiMatch.api.name}")
+            ?: return scheduleHandlerWaitRetry(op, "handler '${apiMatch.api.name}' not registered yet")
         val scheduler = handlerEngine.scheduler
 
         // FRESH INVOCATION PATH
@@ -485,12 +426,14 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val pre = declaredInputs.mapValues { (id, _) -> cpu.getBufferCount(id) }
 
         state.processingJob.resetInvocationPulls()
+        val handler = state.handler
+            ?: return CraftScheduler.OpResult.Failed("invokeHandlerAndAnalyze called with null handler")
         val result = try {
             when (state.luaArgs.size) {
-                1 -> state.handler.call(state.luaArgs[0])
-                2 -> state.handler.call(state.luaArgs[0], state.luaArgs[1])
-                3 -> state.handler.call(state.luaArgs[0], state.luaArgs[1], state.luaArgs[2])
-                else -> state.handler.invoke(LuaValue.varargsOf(state.luaArgs.toTypedArray())).arg1()
+                1 -> handler.call(state.luaArgs[0])
+                2 -> handler.call(state.luaArgs[0], state.luaArgs[1])
+                3 -> handler.call(state.luaArgs[0], state.luaArgs[1], state.luaArgs[2])
+                else -> handler.invoke(LuaValue.varargsOf(state.luaArgs.toTypedArray())).arg1()
             }
         } catch (e: org.luaj.vm2.LuaError) {
             logger.warn("Processing handler error for '{}': {}", apiName, e.message)
@@ -555,11 +498,97 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         return CraftScheduler.OpResult.InProgress
     }
 
+    /**
+     * Resume an in-flight Process op after world reload. The handler's items survived the
+     * reload as physical machine contents (e.g. raw iron in a furnace), so we don't re-invoke
+     * the handler — we just restart polling against the persisted target coordinates and let
+     * the existing extract logic drain remaining outputs into the buffer.
+     *
+     * Polls run on the global [damien.nodeworks.script.ResumeScheduler.scheduler], independent
+     * of any terminal/script engine — the terminal's auto-run can lag CPU ticking on world load.
+     */
+    private fun startResumePoll(
+        op: Operation.Process,
+        info: damien.nodeworks.block.entity.CraftingCoreBlockEntity.OpResumeInfo,
+        lvl: ServerLevel,
+        outputItemId: String
+    ): CraftScheduler.OpResult {
+        // BatchProgress as a single-batch, no-input bulk op (items already in machine).
+        processBatchProgress.getOrPut(op.id) {
+            val outputTotal = info.outputs.firstOrNull { it.first == outputItemId }?.second
+                ?: op.outputs.first().second
+            BatchProgress(
+                totalBatches = 1L,
+                batchesDone = 0L,
+                perBatchInputs = emptyList(),
+                outputItemId = outputItemId,
+                outputPerBatch = outputTotal
+            )
+        }
+        val scheduler = damien.nodeworks.script.ResumeScheduler.scheduler
+        val pending = CraftingHelper.PendingHandlerJob()
+        val syntheticApi = damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo(
+            name = info.processingApiName,
+            inputs = emptyList(),
+            outputs = info.outputs.map {
+                it.first to it.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            },
+            timeout = 6000,
+            serial = false
+        )
+        val resumeJob = ProcessingJob(syntheticApi, cpu, lvl, scheduler, pending, null, op.id)
+        val getters = info.pullTargets.map { (pos, face) ->
+            damien.nodeworks.script.CardHandle.StorageGetter {
+                PlatformServices.storage.getItemStorage(lvl, pos, face)
+            }
+        }
+        cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
+        resumeJob.startPoll(getters)
+
+        // If startPoll completed synchronously (items already waiting in the machine when
+        // we ticked), don't bother stashing state — collapse straight to Completed/Failed.
+        if (pending.isComplete) {
+            return if (pending.success) {
+                processBatchProgress[op.id]?.let { it.batchesDone = it.totalBatches }
+                CraftScheduler.OpResult.Completed
+            } else {
+                CraftScheduler.OpResult.Failed("Resume polling failed: ${info.processingApiName}")
+            }
+        }
+        processState[op.id] = ProcessState(
+            pending = pending,
+            processingJob = resumeJob,
+            handler = null,
+            luaArgs = emptyList(),
+            scheduler = scheduler
+        )
+        return CraftScheduler.OpResult.InProgress
+    }
+
     private fun cancelInvocationPulls(state: ProcessState) {
         for (pull in state.processingJob.invocationPulls) {
             state.scheduler.removePendingJob(pull)
         }
         state.processingJob.invocationPulls.clear()
+    }
+
+    /** Back off and retry when the processing handler isn't yet registered — typical on
+     *  world load before terminal auto-run finishes. Shares [processRetries] with the
+     *  destination-full retry path so a truly-absent handler fails after MAX_HANDLER_RETRIES. */
+    private fun scheduleHandlerWaitRetry(op: Operation.Process, reason: String): CraftScheduler.OpResult {
+        val count = (processRetries[op.id] ?: 0) + 1
+        processRetries[op.id] = count
+        if (count > MAX_HANDLER_RETRIES) {
+            processRetries.remove(op.id)
+            processBatchProgress.remove(op.id)
+            return CraftScheduler.OpResult.Failed(
+                "Handler '${op.processingApiName}' never appeared after $MAX_HANDLER_RETRIES retries ($reason). " +
+                "Check the terminal script is running and registers this API."
+            )
+        }
+        val now = (cpu.level as? ServerLevel)?.gameTime ?: 0L
+        op.readyAt = now + RETRY_BACKOFF_TICKS
+        return CraftScheduler.OpResult.InProgress
     }
 
     private fun scheduleRetry(
@@ -592,6 +621,17 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     // =====================================================================
 
     override fun onPlanCompleted(plan: CraftPlan) {
+        // Defensive: should be empty by now (each op cleans on completion), but a stuck
+        // entry would leak across plans since op IDs reset to 0 each plan.
+        val planOpIds = plan.ops.map { it.id }.toSet()
+        processState.keys.retainAll { it !in planOpIds }
+        processBatchProgress.keys.retainAll { it !in planOpIds }
+        processRetries.keys.retainAll { it !in planOpIds }
+
+        // Invalidate any still-registered resume polls on the global ResumeScheduler so
+        // they stop trying to pour items into this (now-idle) CPU's buffer. Their next
+        // tryExtract will see stale jobGeneration and route pulled items to network storage.
+        cpu.invalidateInFlightPolls()
         // Any trailing buffer contents (shouldn't happen if Deliver ran) are flushed.
         flushBufferToStorage()
         cpu.clearAllCraftState()
@@ -606,6 +646,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         processBatchProgress.keys.retainAll { it !in planOpIds }
         processRetries.keys.retainAll { it !in planOpIds }
 
+        // Same rationale as onPlanCompleted — kill any still-active resume polls so they
+        // don't keep dumping items into an idle CPU's buffer.
+        cpu.invalidateInFlightPolls()
         flushBufferToStorage()
         cpu.clearAllCraftState()
         cpu.setCrafting(false)

@@ -144,9 +144,14 @@ class CraftingCoreBlockEntity(
     var currentCraftItem: String = ""
         private set
 
-    /** Incremented on each cancel — lets in-flight ProcessingJobs detect stale state. */
+    /** Incremented on each plan boundary (cancel, success, failure) so any still-active
+     *  resume polls on the global ResumeScheduler become stale and route their next pulled
+     *  items straight to network storage instead of the now-idle buffer. */
     var jobGeneration: Int = 0
         private set
+
+    /** Bump [jobGeneration] to invalidate any in-flight resume polls for this CPU. */
+    fun invalidateInFlightPolls() { jobGeneration++ }
 
     // =====================================================================
     // Pending processing job metadata (persisted for resume after restart)
@@ -221,7 +226,12 @@ class CraftingCoreBlockEntity(
     val opResumeInfo: MutableMap<Int, OpResumeInfo> = mutableMapOf()
 
     /** Called by [damien.nodeworks.script.ProcessingJob] when a handler registers job:pull
-     *  for the Process op identified by [opId]. */
+     *  for the Process op identified by [opId].
+     *
+     *  Limitation: handlers that call `job:pull` more than once per invocation get only
+     *  their LAST pull recorded for resume — overwrites are last-wins. Typical handlers
+     *  call pull once and aren't affected. Multi-pull handlers that fail to resume cleanly
+     *  fall through to the standard fail-and-flush path. */
     fun setOpResume(opId: Int, info: OpResumeInfo) {
         if (opId < 0) return
         opResumeInfo[opId] = info
@@ -630,9 +640,6 @@ class CraftingCoreBlockEntity(
         // Per-op resume info — survives save/load so an in-progress smelt can pick up where
         // it left off without re-invoking the handler (which would try to insert items
         // again that are already in the machine).
-        org.slf4j.LoggerFactory.getLogger("nodeworks-resume-debug").info(
-            "CPU at {} SAVE: opResumeInfo size={}", worldPosition, opResumeInfo.size
-        )
         if (opResumeInfo.isNotEmpty()) {
             val list = net.minecraft.nbt.ListTag()
             for ((opId, info) in opResumeInfo) {
@@ -730,11 +737,7 @@ class CraftingCoreBlockEntity(
 
         // Per-op resume info — restore so executeProcess can poll without re-invoking handlers.
         opResumeInfo.clear()
-        val hasResumeTag = tag.contains("opResumeInfo", Tag.TAG_LIST.toInt())
-        org.slf4j.LoggerFactory.getLogger("nodeworks-resume-debug").info(
-            "CPU at {} LOAD: hasResumeTag={}", worldPosition, hasResumeTag
-        )
-        if (hasResumeTag) {
+        if (tag.contains("opResumeInfo", Tag.TAG_LIST.toInt())) {
             val list = tag.getList("opResumeInfo", Tag.TAG_COMPOUND.toInt())
             for (i in 0 until list.size) {
                 val c = list.getCompound(i)
@@ -755,10 +758,13 @@ class CraftingCoreBlockEntity(
                 opResumeInfo[opId] = OpResumeInfo(api, outputs, targets)
             }
         }
-        org.slf4j.LoggerFactory.getLogger("nodeworks-resume-debug").info(
-            "CPU at {} LOAD: opResumeInfo final size={} entries={}", worldPosition, opResumeInfo.size,
-            opResumeInfo.entries.map { "op${it.key}->${it.value.processingApiName} outs=${it.value.outputs}" }
-        )
+        // Defensive cleanup: opResumeInfo entries reference op IDs that only mean anything
+        // within the loaded scheduler plan. If no plan loaded (or different ops), drop them
+        // — otherwise they'd dangle forever and could collide with the next plan's IDs.
+        val planOpIds = scheduler.currentPlan?.ops?.map { it.id }?.toSet().orEmpty()
+        if (opResumeInfo.keys.any { it !in planOpIds }) {
+            opResumeInfo.keys.retainAll(planOpIds)
+        }
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {
