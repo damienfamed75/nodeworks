@@ -27,7 +27,10 @@ class CraftingCoreMenu(
         //   [5]    = bufferTypesCapacity
         //   [6]    = isFormed (0/1)
         //   [7]    = isCrafting (0/1)
-        const val DATA_SLOTS = 8
+        //   [8]    = heatGenerated
+        //   [9]    = heatCooled
+        //   [10]   = throttle × 100 (fixed-point; e.g. 125 = 1.25×)
+        const val DATA_SLOTS = 11
         private const val IDX_USED_HI = 0
         private const val IDX_USED_LO = 1
         private const val IDX_CAP_HI = 2
@@ -36,6 +39,9 @@ class CraftingCoreMenu(
         private const val IDX_TYPES_CAP = 5
         private const val IDX_FORMED = 6
         private const val IDX_CRAFTING = 7
+        private const val IDX_HEAT_GEN = 8
+        private const val IDX_HEAT_COOL = 9
+        private const val IDX_THROTTLE_X100 = 10
 
         // Buffer sync runs slower (it's mostly inventory state, doesn't need to be smooth);
         // tree sync runs faster while the player has the GUI open so active-node highlights
@@ -72,6 +78,9 @@ class CraftingCoreMenu(
                     IDX_TYPES_CAP -> entity.bufferTypesCapacity
                     IDX_FORMED -> if (entity.isFormed) 1 else 0
                     IDX_CRAFTING -> if (entity.isCrafting) 1 else 0
+                    IDX_HEAT_GEN -> entity.heatGenerated
+                    IDX_HEAT_COOL -> entity.heatCooled
+                    IDX_THROTTLE_X100 -> (entity.throttle * 100f).toInt()
                     else -> 0
                 }
                 override fun set(index: Int, value: Int) {}
@@ -91,6 +100,9 @@ class CraftingCoreMenu(
     val bufferTypesCapacity: Int get() = data.get(IDX_TYPES_CAP)
     val isFormed: Boolean get() = data.get(IDX_FORMED) != 0
     val isCrafting: Boolean get() = data.get(IDX_CRAFTING) != 0
+    val heatGenerated: Int get() = data.get(IDX_HEAT_GEN)
+    val heatCooled: Int get() = data.get(IDX_HEAT_COOL)
+    val throttle: Float get() = data.get(IDX_THROTTLE_X100) / 100f
 
     /** Client-side buffer contents, populated by BufferSyncPayload handler. */
     var clientBufferContents: List<Pair<String, Long>> = emptyList()

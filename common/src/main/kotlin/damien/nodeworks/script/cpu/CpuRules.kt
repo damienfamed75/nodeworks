@@ -102,9 +102,20 @@ object CpuRules {
     /** Maximum throttle bonus from Substrate adjacency alone. */
     const val SUBSTRATE_BONUS_CAP: Float = 4.0f
 
-    /** Tick cost of a single op at throttle = 1.0×. Op cost scales as floor(BASE_OP_COST / throttle).
-     *  Hits zero at throttle ≥ 5.0×, at which point all ops in a craft chain resolve in the same tick. */
-    const val BASE_OP_COST: Int = 4
+    /** Per-op-type base tick cost at throttle = 1.0×.
+     *
+     *  Crafting-table assembly is the most expensive op by design — at 1.00× throttle a
+     *  basic Instruction Set takes 3 seconds, which gives the player a real reason to
+     *  invest in cooling + substrate. Item-movement ops (Pull / Deliver) are cheaper —
+     *  1 second at 1.00×. Process ops gate on external machine cook time already, so
+     *  their scheduler cost is the same as item-movement.
+     *
+     *  All costs scale down as throttle^2 so full optimization (throttle ≈ 8×) drops
+     *  even a 60-tick Execute to ~1 tick. See [opCost]. */
+    const val EXECUTE_BASE_COST: Int = 60
+    const val PULL_BASE_COST: Int = 20
+    const val DELIVER_BASE_COST: Int = 20
+    const val PROCESS_BASE_COST: Int = 20
 
     /**
      * Heat penalty multiplier — in the range [THROTTLE_FLOOR, 1.0].
@@ -158,16 +169,18 @@ object CpuRules {
     // =====================================================================
 
     /**
-     * Tick cost of a single CPU operation (Pull, Dispatch, Collect, Execute, Deliver)
-     * given the current throttle multiplier.
+     * Tick cost of a single CPU operation given its [baseCost] at 1.00× throttle and the
+     * current multiplier. Scales quadratically so the throttle feels impactful: a 2× boost
+     * quarters the cost, 8× cuts it by a factor of 64.
      *
-     * Returns 0 when ops can chain within the same tick (throttle ≥ BASE_OP_COST + 1).
-     * Never negative. Safe to schedule as `currentTick + opCost(throttle)`.
+     * Returns 0 at high enough throttle that the op can chain within the same tick —
+     * an Execute op (base 60) hits 0 around throttle 8, matching the max theoretical
+     * throttle (heat-perfect + cap cooling + cap substrate).
      */
-    fun opCost(throttle: Float): Int {
-        if (throttle <= 0f) return BASE_OP_COST  // defensive: shouldn't happen; avoid /0
-        val cost = (BASE_OP_COST.toFloat() / throttle).toInt() // floor via Int truncation
-        return cost.coerceAtLeast(0)
+    fun opCost(throttle: Float, baseCost: Int): Int {
+        if (throttle <= 0f) return baseCost
+        val scaled = (baseCost.toFloat() / (throttle * throttle)).toInt()
+        return scaled.coerceAtLeast(0)
     }
 
     // =====================================================================

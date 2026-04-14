@@ -106,11 +106,11 @@ class CraftScheduler(
 
     /** Drive the scheduler forward by one server tick. Call from the BE's ticker. */
     fun tick(currentTick: Long) {
-        val opCost = CpuRules.opCost(executor.currentThrottle)
+        val throttle = executor.currentThrottle
         var opsThisTick = 0
 
         if (state == State.RUNNING) {
-            scheduleNewlyReadyOps(currentTick, opCost)
+            scheduleNewlyReadyOps(currentTick, throttle)
 
             // Parallel-execution loop. We keep looping as long as ready ops became
             // available (cost-0 chaining) AND there's slot budget AND we haven't hit
@@ -154,7 +154,7 @@ class CraftScheduler(
                         }
                     }
                 }
-                scheduleNewlyReadyOps(currentTick, opCost)
+                scheduleNewlyReadyOps(currentTick, throttle)
             }
         }
 
@@ -263,14 +263,16 @@ class CraftScheduler(
         return picked
     }
 
-    /** Assign [Operation.readyAt] for any op whose dependencies just became satisfied. */
-    private fun scheduleNewlyReadyOps(currentTick: Long, opCost: Int) {
+    /** Assign [Operation.readyAt] for any op whose dependencies just became satisfied.
+     *  Uses the op's own [Operation.baseCost] so Execute ops (expensive) wait longer than
+     *  item-movement ops (cheap). Scales down with throttle^2 via [CpuRules.opCost]. */
+    private fun scheduleNewlyReadyOps(currentTick: Long, throttle: Float) {
         val p = plan ?: return
         for (op in p.ops) {
             if (op.id in completed) continue
             if (op.readyAt >= 0L) continue
             if (op.dependsOn.all { it in completed }) {
-                op.readyAt = currentTick + opCost
+                op.readyAt = currentTick + CpuRules.opCost(throttle, op.baseCost)
             }
         }
     }

@@ -10,6 +10,7 @@ import damien.nodeworks.block.BroadcastAntennaBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CoProcessorBlock
 import damien.nodeworks.block.CraftingStorageBlock
+import damien.nodeworks.block.StabilizerBlock
 import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -85,6 +86,14 @@ object ModBlocks {
     val CO_PROCESSOR: Block = register(
         "co_processor",
         ::CoProcessorBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val STABILIZER: Block = register(
+        "stabilizer",
+        ::StabilizerBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()

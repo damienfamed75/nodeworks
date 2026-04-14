@@ -11,6 +11,7 @@ import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
 import damien.nodeworks.block.entity.CoProcessorBlockEntity
 import damien.nodeworks.block.entity.CraftingStorageBlockEntity
+import damien.nodeworks.block.entity.StabilizerBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.Registry
@@ -61,6 +62,11 @@ object ModBlockEntities {
     val CO_PROCESSOR: BlockEntityType<CoProcessorBlockEntity> = register(
         "co_processor",
         PlatformServices.blockEntity.createBlockEntityType(::CoProcessorBlockEntity, ModBlocks.CO_PROCESSOR)
+    )
+
+    val STABILIZER: BlockEntityType<StabilizerBlockEntity> = register(
+        "stabilizer",
+        PlatformServices.blockEntity.createBlockEntityType(::StabilizerBlockEntity, ModBlocks.STABILIZER)
     )
 
     val PROCESSING_STORAGE: BlockEntityType<ProcessingStorageBlockEntity> = register(

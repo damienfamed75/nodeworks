@@ -86,7 +86,11 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         completionListeners[plan] = onComplete
     }
 
-    override val currentThrottle: Float get() = DEFAULT_THROTTLE
+    /** Read live from the CPU so heat/cooling changes (placing/breaking Stabilizers) take
+     *  effect immediately. Falls back to [DEFAULT_THROTTLE] when the CPU isn't formed. */
+    override val currentThrottle: Float
+        get() = if (cpu.isFormed) cpu.throttle.coerceAtLeast(CpuRules.THROTTLE_FLOOR)
+                else DEFAULT_THROTTLE
 
     override fun execute(op: Operation): CraftScheduler.OpResult {
         val lvl = cpu.level as? ServerLevel
@@ -694,6 +698,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         /** Phase 2 placeholder throttle — produces op cost 0, so ops chain within a single
          *  tick and existing craft timing is preserved. Phase 4 replaces this with a
          *  computation from heat/cooling/substrate state. */
+        /** Fallback throttle when the CPU isn't formed (no buffer). High enough that
+         *  [CpuRules.opCost] rounds to 0 — crafts chain instantly through the scheduler. */
         const val DEFAULT_THROTTLE: Float = 10.0f
     }
 }
