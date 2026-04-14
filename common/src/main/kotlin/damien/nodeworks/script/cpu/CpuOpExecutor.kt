@@ -293,10 +293,80 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             }
         }
 
-        // Resolve handler + API (cheap; done per invocation so nothing goes stale across
-        // retries or batches).
         val outputItemId = op.outputs.firstOrNull()?.first
             ?: return CraftScheduler.OpResult.Failed("Process op has no outputs declared")
+
+        // RESUME PATH — checked FIRST and independently of handler resolution. On world
+        // reload the terminal script may not have started yet (auto-run lags BE ticking),
+        // so the handler isn't registered. But resume doesn't need the handler — items are
+        // physically in the machine and we just need to poll the persisted target coords.
+        // Use the global ResumeScheduler so we don't depend on a script engine being up.
+        val resumeInfo = cpu.opResumeInfo[op.id]
+
+        org.slf4j.LoggerFactory.getLogger("nodeworks-resume-debug").info(
+            "executeProcess op={} (api={}) resumeInfo={} bufferContents={}",
+            op.id, op.processingApiName, resumeInfo,
+            cpu.getBufferContents()
+        )
+
+        if (resumeInfo != null) {
+            processBatchProgress.getOrPut(op.id) {
+                val outputTotal = resumeInfo.outputs.firstOrNull { it.first == outputItemId }?.second
+                    ?: op.outputs.first().second
+                BatchProgress(
+                    totalBatches = 1L,
+                    batchesDone = 0L,
+                    perBatchInputs = emptyList(),
+                    outputItemId = outputItemId,
+                    outputPerBatch = outputTotal
+                )
+            }
+            val resumeScheduler = damien.nodeworks.script.ResumeScheduler.scheduler
+            val pending = CraftingHelper.PendingHandlerJob()
+            val syntheticApi = damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo(
+                name = resumeInfo.processingApiName,
+                inputs = emptyList(),
+                outputs = resumeInfo.outputs.map {
+                    it.first to it.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                },
+                timeout = 6000,
+                serial = false
+            )
+            val resumeJob = ProcessingJob(syntheticApi, cpu, lvl, resumeScheduler, pending, null, op.id)
+            val getters = resumeInfo.pullTargets.map { (pos, face) ->
+                damien.nodeworks.script.CardHandle.StorageGetter {
+                    PlatformServices.storage.getItemStorage(lvl, pos, face)
+                }
+            }
+            cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
+            resumeJob.startPoll(getters)
+            // Stash a placeholder ProcessState — we don't need the handler/luaArgs here
+            // because the resume path never re-invokes the handler.
+            val state = ProcessState(
+                pending = pending,
+                processingJob = resumeJob,
+                handler = org.luaj.vm2.LuaValue.NIL as? org.luaj.vm2.LuaFunction
+                    ?: object : org.luaj.vm2.LuaFunction() {
+                        override fun call(): org.luaj.vm2.LuaValue = org.luaj.vm2.LuaValue.NIL
+                    },
+                luaArgs = emptyList(),
+                scheduler = resumeScheduler
+            )
+            processState[op.id] = state
+            return if (pending.isComplete) {
+                processState.remove(op.id)
+                if (pending.success) {
+                    processBatchProgress[op.id]?.let { it.batchesDone = it.totalBatches }
+                    CraftScheduler.OpResult.Completed
+                } else {
+                    CraftScheduler.OpResult.Failed("Resume polling failed: ${resumeInfo.processingApiName}")
+                }
+            } else {
+                CraftScheduler.OpResult.InProgress
+            }
+        }
+
+        // FRESH PATH — needs the handler resolved.
         val apiMatch = snapshot.findProcessingApi(outputItemId)
             ?: return CraftScheduler.OpResult.Failed("No processing API for $outputItemId")
         val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
@@ -307,11 +377,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             )
         val handler = handlerEngine.processingHandlers[apiMatch.api.name]
             ?: return CraftScheduler.OpResult.Failed("Handler not registered: ${apiMatch.api.name}")
+        val scheduler = handlerEngine.scheduler
 
-        // Compute totals once and cache per op. For parallel (non-serial) APIs we invoke
-        // the handler ONCE with the full counts — handler inserts everything into the
-        // machine and waits for the full batch to come back, which is what players expect
-        // ("dump 5 raw iron into the furnace, not one at a time"). Serial APIs loop per-batch.
+        // FRESH INVOCATION PATH
         val progress = processBatchProgress.getOrPut(op.id) {
             val totalInputs = op.inputs.groupBy({ it.first }, { it.second })
                 .mapValues { (_, counts) -> counts.sum() }
@@ -327,14 +395,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 }
             }
             if (apiMatch.api.serial) {
-                // Serial: handler invoked N times with per-batch counts; one at a time.
                 val perBatchInputs = apiMatch.api.inputs.map { (id, count) -> id to count.toLong() }
                 val batches = (outputTotal + outputPerBatch - 1) / outputPerBatch
                 BatchProgress(batches, 0L, perBatchInputs, outputItemId, outputPerBatch)
             } else {
-                // Parallel: one invocation, full total counts. The handler's ItemsHandles
-                // carry totalInputs directly; ProcessingJob waits for outputTotal, not
-                // api.outputs per-batch.
                 BatchProgress(
                     totalBatches = 1L,
                     batchesDone = 0L,
@@ -345,7 +409,6 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             }
         }
 
-        // Serial mode: only one handler per named API runs concurrently across the whole server.
         if (apiMatch.api.serial && apiMatch.api.name in CraftingHelper.activeSerialJobsView) {
             return CraftScheduler.OpResult.InProgress
         }
@@ -356,13 +419,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             pending.onCompleteCallback = { CraftingHelper.removeActiveSerialJob(apiMatch.api.name) }
         }
 
-        val scheduler = handlerEngine.scheduler
         // For parallel APIs, override the job's expected output count to the full total so
         // `job:pull` waits for the whole batch rather than a single per-API unit.
         val bulkOutputOverride = if (!apiMatch.api.serial) {
             listOf(progress.outputItemId to progress.outputPerBatch.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         } else null
-        val job = ProcessingJob(apiMatch.api, cpu, lvl, scheduler, pending, bulkOutputOverride)
+        val job = ProcessingJob(apiMatch.api, cpu, lvl, scheduler, pending, bulkOutputOverride, op.id)
         val jobTable = job.toLuaTable()
 
         // Build Lua args — per-batch for serial APIs, full total for parallel.

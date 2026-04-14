@@ -25,7 +25,12 @@ class ProcessingJob(
     /** Override of how many output items this invocation should collect before completing.
      *  Defaults to the API's per-batch output count. Parallel (non-serial) APIs pass the
      *  full bulk count here so one handler invocation can wait for the full batch worth. */
-    overrideOutputs: List<Pair<String, Int>>? = null
+    overrideOutputs: List<Pair<String, Int>>? = null,
+    /** ID of the [damien.nodeworks.script.cpu.Operation.Process] this handler invocation is
+     *  serving. -1 for non-scheduler callers (legacy / scripted resume). When set, the CPU
+     *  records per-op resume info so a world reload can pick up the polls without re-invoking
+     *  the handler (which would attempt to re-insert items already in machines). */
+    private val opId: Int = -1
 ) {
     private val remaining = (overrideOutputs ?: api.outputs).map { it.first to it.second }.toMutableList()
     private val startGeneration = cpu.jobGeneration
@@ -82,8 +87,18 @@ class ProcessingJob(
                     return LuaValue.TRUE
                 }
 
-                // Async — persist pull targets on CPU for resume after restart
+                // Async — persist pull targets on CPU for resume after restart.
+                // Per-op resume (preferred) lets the new scheduler restart polling on the
+                // exact op that was in-flight; the legacy global addPendingOp is still called
+                // for backwards compat with the legacy resume path.
                 cpu.addPendingOp(api.outputs.map { it.first to it.second.toLong() }, pullTargets)
+                if (opId >= 0) {
+                    cpu.setOpResume(opId, CraftingCoreBlockEntity.OpResumeInfo(
+                        processingApiName = api.name,
+                        outputs = remaining.map { it.first to it.second.toLong() },
+                        pullTargets = pullTargets
+                    ))
+                }
 
                 // Register for polling each tick
                 val timeoutTicks = if (api.timeout > 0) api.timeout.toLong() else 6000L
@@ -150,7 +165,15 @@ class ProcessingJob(
 
         if (remaining.isEmpty()) {
             cpu.completePendingOp()
+            cpu.clearOpResume(opId)
             return true
+        }
+        // Update per-op resume info so a save mid-stream resumes with the right remaining count.
+        if (opId >= 0 && cpu.opResumeInfo[opId] != null) {
+            val existing = cpu.opResumeInfo[opId]!!
+            cpu.setOpResume(opId, existing.copy(
+                outputs = remaining.map { it.first to it.second.toLong() }
+            ))
         }
         return false
     }
