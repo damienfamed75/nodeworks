@@ -23,7 +23,25 @@ object CraftTreeBuilder {
         val resolvedBy: String,   // "local", "subnet", "storage", ""
         val inStorage: Int,       // how many are currently in network storage
         val children: List<CraftTreeNode>
-    )
+    ) {
+        /** Stable identity within this tree, assigned by [assignNodeIds] after construction
+         *  and serialized so the client can match server-side op activity to specific nodes
+         *  (avoids the "both iron branches highlight" ambiguity of itemId-based matching). */
+        var nodeId: Int = -1
+    }
+
+    /** Walk [root] depth-first and assign sequential [CraftTreeNode.nodeId] values. */
+    fun assignNodeIds(root: CraftTreeNode) {
+        var counter = 0
+        val stack = ArrayDeque<CraftTreeNode>()
+        stack.addLast(root)
+        while (stack.isNotEmpty()) {
+            val n = stack.removeLast()
+            n.nodeId = counter++
+            // Children pushed in reverse so the assigned order matches a normal pre-order walk.
+            for (i in n.children.indices.reversed()) stack.addLast(n.children[i])
+        }
+    }
 
     fun buildCraftTree(
         itemId: String,
@@ -33,6 +51,20 @@ object CraftTreeBuilder {
         depth: Int = 0,
         visited: MutableSet<String> = mutableSetOf(),
         reserved: MutableMap<String, Int> = mutableMapOf()
+    ): CraftTreeNode {
+        val node = buildInternal(itemId, count, level, snapshot, depth, visited, reserved)
+        if (depth == 0) assignNodeIds(node)
+        return node
+    }
+
+    private fun buildInternal(
+        itemId: String,
+        count: Int,
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        depth: Int,
+        visited: MutableSet<String>,
+        reserved: MutableMap<String, Int>
     ): CraftTreeNode {
         if (depth > 20) {
             return CraftTreeNode(itemId, getItemName(itemId), count, "missing", "", "recursion limit", 0, emptyList())
@@ -146,10 +178,10 @@ object CraftTreeBuilder {
                 reserved[ingId] = ingReserved + ingAvailable
                 val fromStorage = CraftTreeNode(ingId, getItemName(ingId), ingAvailable, "storage", "", "storage", ingAvailable, emptyList())
                 val toCraft = needed - ingAvailable
-                val crafted = buildCraftTree(ingId, toCraft, level, snapshot, depth + 1, visited, reserved)
+                val crafted = buildInternal(ingId, toCraft, level, snapshot, depth + 1, visited, reserved)
                 listOf(fromStorage, crafted)
             }
-            else -> listOf(buildCraftTree(ingId, needed, level, snapshot, depth + 1, visited, reserved))
+            else -> listOf(buildInternal(ingId, needed, level, snapshot, depth + 1, visited, reserved))
         }
     }
 

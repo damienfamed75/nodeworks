@@ -46,6 +46,25 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     )
     private val processState = mutableMapOf<Int, ProcessState>()
 
+    /** Per-op batch progress for Process ops that represent multiple handler invocations
+     *  (e.g. a "smelt 5 iron" op cycles through 5 single-batch invocations internally).
+     *  Separate from [processState] because state gets rebuilt each invocation while this
+     *  persists across them. */
+    private val processBatchProgress = mutableMapOf<Int, BatchProgress>()
+
+    /** Op IDs whose handler invocation is currently active (waiting on async pulls or
+     *  mid-batch). Read by the GUI sync to highlight in-progress tree nodes. */
+    val activeProcessOpIds: Set<Int> get() = processBatchProgress.keys
+    private data class BatchProgress(
+        val totalBatches: Long,
+        var batchesDone: Long,
+        /** Inputs consumed per batch (aggregated from the op's declared total inputs). */
+        val perBatchInputs: List<Pair<String, Long>>,
+        /** Output produced per batch (aggregated from api.outputs). */
+        val outputItemId: String,
+        val outputPerBatch: Long
+    )
+
     /** Cumulative handler retries per op — survives across [processState] entries being
      *  added/removed each retry cycle so the cap is on TOTAL attempts for the op. */
     private val processRetries = mutableMapOf<Int, Int>()
@@ -247,25 +266,35 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         lvl: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ): CraftScheduler.OpResult {
-        // If we've already invoked the handler, we're either polling the pending job OR
-        // waiting out a retry backoff to re-invoke the handler.
+        // If a handler invocation is currently active (awaiting its pending pulls), just poll.
         val existing = processState[op.id]
         if (existing != null) {
             if (existing.pending.isComplete) {
                 val ok = existing.pending.success
                 processState.remove(op.id)
-                processRetries.remove(op.id)
-                return if (ok) CraftScheduler.OpResult.Completed
-                else CraftScheduler.OpResult.Failed("Processing handler failed: ${op.processingApiName}")
+                if (!ok) {
+                    processRetries.remove(op.id)
+                    processBatchProgress.remove(op.id)
+                    return CraftScheduler.OpResult.Failed("Processing handler failed: ${op.processingApiName}")
+                }
+                // One batch done. Advance progress; if more batches remain, start the next one.
+                val progress = processBatchProgress[op.id]
+                if (progress != null) {
+                    progress.batchesDone++
+                    if (progress.batchesDone >= progress.totalBatches) {
+                        processRetries.remove(op.id)
+                        processBatchProgress.remove(op.id)
+                        return CraftScheduler.OpResult.Completed
+                    }
+                }
+                // Fall through to start the next batch invocation below.
+            } else {
+                return CraftScheduler.OpResult.InProgress
             }
-            // Retry backoff expired? If op.readyAt was bumped forward we'd already be waiting;
-            // this branch is the normal "still polling" case.
-            return CraftScheduler.OpResult.InProgress
         }
 
-        // -----------------------------------------------------------------
-        // First invocation (or retry with re-resolved state): resolve handler + invoke + check
-        // -----------------------------------------------------------------
+        // Resolve handler + API (cheap; done per invocation so nothing goes stale across
+        // retries or batches).
         val outputItemId = op.outputs.firstOrNull()?.first
             ?: return CraftScheduler.OpResult.Failed("Process op has no outputs declared")
         val apiMatch = snapshot.findProcessingApi(outputItemId)
@@ -279,13 +308,39 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val handler = handlerEngine.processingHandlers[apiMatch.api.name]
             ?: return CraftScheduler.OpResult.Failed("Handler not registered: ${apiMatch.api.name}")
 
-        // Inputs arrive pre-aggregated by the planner, but defend against bugs: collapse duplicates.
-        val aggregatedInputs = op.inputs.groupBy({ it.first }, { it.second })
-            .mapValues { (_, counts) -> counts.sum() }
-        for ((id, amount) in aggregatedInputs) {
-            if (cpu.getBufferCount(id) < amount) {
-                return CraftScheduler.OpResult.Failed(
-                    "Process input missing: $id x$amount (buffer has ${cpu.getBufferCount(id)})"
+        // Compute totals once and cache per op. For parallel (non-serial) APIs we invoke
+        // the handler ONCE with the full counts — handler inserts everything into the
+        // machine and waits for the full batch to come back, which is what players expect
+        // ("dump 5 raw iron into the furnace, not one at a time"). Serial APIs loop per-batch.
+        val progress = processBatchProgress.getOrPut(op.id) {
+            val totalInputs = op.inputs.groupBy({ it.first }, { it.second })
+                .mapValues { (_, counts) -> counts.sum() }
+            val outputTotal = op.outputs.first().second
+            val outputPerBatch = apiMatch.api.outputs
+                .firstOrNull { it.first == outputItemId }?.second?.toLong()?.coerceAtLeast(1L)
+                ?: 1L
+            for ((id, amount) in totalInputs) {
+                if (cpu.getBufferCount(id) < amount) {
+                    return CraftScheduler.OpResult.Failed(
+                        "Process input missing: $id x$amount (buffer has ${cpu.getBufferCount(id)})"
+                    )
+                }
+            }
+            if (apiMatch.api.serial) {
+                // Serial: handler invoked N times with per-batch counts; one at a time.
+                val perBatchInputs = apiMatch.api.inputs.map { (id, count) -> id to count.toLong() }
+                val batches = (outputTotal + outputPerBatch - 1) / outputPerBatch
+                BatchProgress(batches, 0L, perBatchInputs, outputItemId, outputPerBatch)
+            } else {
+                // Parallel: one invocation, full total counts. The handler's ItemsHandles
+                // carry totalInputs directly; ProcessingJob waits for outputTotal, not
+                // api.outputs per-batch.
+                BatchProgress(
+                    totalBatches = 1L,
+                    batchesDone = 0L,
+                    perBatchInputs = totalInputs.map { (id, count) -> id to count },
+                    outputItemId = outputItemId,
+                    outputPerBatch = outputTotal
                 )
             }
         }
@@ -302,12 +357,17 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
 
         val scheduler = handlerEngine.scheduler
-        val job = ProcessingJob(apiMatch.api, cpu, lvl, scheduler, pending)
+        // For parallel APIs, override the job's expected output count to the full total so
+        // `job:pull` waits for the whole batch rather than a single per-API unit.
+        val bulkOutputOverride = if (!apiMatch.api.serial) {
+            listOf(progress.outputItemId to progress.outputPerBatch.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        } else null
+        val job = ProcessingJob(apiMatch.api, cpu, lvl, scheduler, pending, bulkOutputOverride)
         val jobTable = job.toLuaTable()
 
-        // Build Lua args: job + one ItemsHandle per unique input (post-aggregation).
+        // Build Lua args — per-batch for serial APIs, full total for parallel.
         val luaArgs = mutableListOf<LuaValue>(jobTable)
-        for ((itemId, count) in aggregatedInputs) {
+        for ((itemId, batchCount) in progress.perBatchInputs) {
             val id = ResourceLocation.tryParse(itemId)
                 ?: return CraftScheduler.OpResult.Failed("Bad input item id: $itemId")
             val item = BuiltInRegistries.ITEM.get(id)
@@ -317,13 +377,13 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     ItemsHandle(
                         itemId = itemId,
                         itemName = ItemStack(item).hoverName.string,
-                        count = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                        count = batchCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                         maxStackSize = item.getDefaultMaxStackSize(),
                         hasData = false,
                         filter = itemId,
                         sourceStorage = { null },
                         level = lvl,
-                        bufferSource = BufferSource(cpu, itemId, count)
+                        bufferSource = BufferSource(cpu, itemId, batchCount)
                     )
                 )
             )
@@ -338,7 +398,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             luaArgs = luaArgs,
             scheduler = scheduler
         )
-        return invokeHandlerAndAnalyze(op, state, aggregatedInputs, apiMatch.api.name)
+        val perBatchInputMap = progress.perBatchInputs.toMap()
+        return invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name)
     }
 
     /**
@@ -448,6 +509,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         processRetries[op.id] = count
         if (count > MAX_HANDLER_RETRIES) {
             processRetries.remove(op.id)
+            processBatchProgress.remove(op.id)
             return CraftScheduler.OpResult.Failed(
                 "Processing handler '${op.processingApiName}' couldn't progress for " +
                 "$MAX_HANDLER_RETRIES retries ($reason). Destinations may be permanently unavailable."
@@ -475,44 +537,17 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         completionListeners.remove(plan)?.invoke(true)
     }
 
-    /** Set by [damien.nodeworks.block.entity.CraftingCoreBlockEntity.cancelJob] so that
-     *  onPlanFailed drops the buffer in-world instead of returning it to network storage.
-     *  Without this, cancelling a craft whose Execute/Process ops already produced the final
-     *  item would silently deliver that item into storage — a dupe from the player's POV. */
-    var userCancelledDropInWorld: Boolean = false
-
     override fun onPlanFailed(plan: CraftPlan, reason: String) {
         logger.warn("CPU at {}: plan for {} failed: {}", cpu.blockPos, plan.rootItemId, reason)
-        // Clear any lingering Process async state for this plan
         val planOpIds = plan.ops.map { it.id }.toSet()
         processState.keys.retainAll { it !in planOpIds }
+        processBatchProgress.keys.retainAll { it !in planOpIds }
+        processRetries.keys.retainAll { it !in planOpIds }
 
-        if (userCancelledDropInWorld) {
-            dropBufferInWorld()
-        } else {
-            flushBufferToStorage()
-        }
+        flushBufferToStorage()
         cpu.clearAllCraftState()
         cpu.setCrafting(false)
         completionListeners.remove(plan)?.invoke(false)
-    }
-
-    private fun dropBufferInWorld() {
-        val lvl = cpu.level as? ServerLevel ?: return
-        val leftovers = cpu.clearBuffer()
-        for ((itemId, count) in leftovers) {
-            val id = ResourceLocation.tryParse(itemId) ?: continue
-            val item = BuiltInRegistries.ITEM.get(id) ?: continue
-            var remaining = count
-            while (remaining > 0L) {
-                val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
-                net.minecraft.world.Containers.dropItemStack(
-                    lvl, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5,
-                    ItemStack(item, batch)
-                )
-                remaining -= batch.toLong()
-            }
-        }
     }
 
     private fun flushBufferToStorage() {

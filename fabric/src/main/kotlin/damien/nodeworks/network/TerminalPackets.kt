@@ -133,8 +133,12 @@ object TerminalPackets {
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(terminal.getScriptsCopy())) {
-                activeEngines[globalPos] = engine
+            // Register BEFORE start() so network:craft/network:handle calls in the script's
+            // top-level (or require'd modules) can look the engine up during execution.
+            // Remove on failure so we don't leave a dead engine registered.
+            activeEngines[globalPos] = engine
+            if (!engine.start(terminal.getScriptsCopy())) {
+                activeEngines.remove(globalPos)
             }
         }
 
@@ -393,9 +397,11 @@ object TerminalPackets {
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
+            activeEngines[gp] = engine
             if (engine.start(terminal.getScriptsCopy())) {
-                activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
+            } else {
+                activeEngines.remove(gp)
             }
         }
     }

@@ -107,7 +107,9 @@ object DebugScreens {
                 )
             )
         )
-        menu.activeSteps = setOf("minecraft:netherite_scrap", "minecraft:gold_ingot")
+        // Debug screen — no live op state to mirror, leave node id sets empty.
+        menu.activeNodeIds = emptySet()
+        menu.completedNodeIds = emptySet()
 
         // Open the screen
         val screen = CraftingCoreScreen(menu, player.inventory, Component.literal("Crafting CPU"))

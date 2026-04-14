@@ -403,6 +403,17 @@ class AutocompletePopup(
     /** Combined map of built-in + user-defined function return types. Rebuilt once per computeSuggestions call. */
     private var allReturnTypes: Map<String, String> = methodReturnTypes
 
+    /** Most recent full-script text stashed by [computeSuggestions] so suggestion helpers
+     *  that don't get fullText as a parameter can still inspect the script (e.g. to find
+     *  already-registered handler API names). */
+    private var cachedFullText: String = ""
+
+    /** Pull the set of API names already registered via `network:handle("X", ...)` in [text]. */
+    private fun handledApiNames(text: String): Set<String> {
+        val pattern = Regex("""network:handle\s*\(\s*"([^"]+)"""")
+        return pattern.findAll(text).map { it.groupValues[1] }.toSet()
+    }
+
     /** Build the combined return type map from built-in methods + all user function definitions. */
     private fun buildReturnTypeMap(fullText: String): Map<String, String> {
         val map = methodReturnTypes.toMutableMap()
@@ -586,6 +597,7 @@ class AutocompletePopup(
 
     private fun computeSuggestions(beforeCursor: String, fullText: String, forced: Boolean): List<Suggestion> {
         allReturnTypes = buildReturnTypeMap(fullText)
+        cachedFullText = fullText
         val currentLine = beforeCursor.substringAfterLast('\n')
 
         // Special case: network:handle("name", partial → function snippet

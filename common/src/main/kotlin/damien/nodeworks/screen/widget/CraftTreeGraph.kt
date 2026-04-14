@@ -37,10 +37,17 @@ class CraftTreeGraph {
     var lastDragX = 0.0
     var lastDragY = 0.0
 
-    /** Item IDs currently being processed — highlighted in the graph. */
-    var activeSteps: Set<String> = emptySet()
+    /** Tree node IDs of branches currently being worked on — amber highlight + flow dots. */
+    var activeNodeIds: Set<Int> = emptySet()
+
+    /** Tree node IDs of branches that have fully completed — green highlight. */
+    var completedNodeIds: Set<Int> = emptySet()
 
     private var lastTree: Any? = null
+    /** Structural hash of [lastTree]. Compared each frame so re-synced trees with the same
+     *  shape don't trigger an autoFit reset (which would wipe the user's pan/zoom every
+     *  time the server pushes a tree update — annoying with 4 Hz active-state syncs). */
+    private var lastTreeHash: Int = 0
     private var cachedLayout: TreeLayout? = null
 
     // ========== Layout ==========
@@ -112,11 +119,18 @@ class CraftTreeGraph {
             return
         }
 
-        // Cache layout, recompute on tree change
+        // Always rebuild layout when the tree reference changes (positions map is keyed by
+        // node identity, and the server pushes a fresh tree on every resync). But only
+        // auto-fit when the structure is genuinely new — preserves the user's pan/zoom
+        // across the steady-stream syncs that happen during an active craft.
         if (tree !== lastTree) {
+            val newHash = tree.hashCode()
+            val structurallyChanged = newHash != lastTreeHash
+            val firstEver = lastTree == null
             lastTree = tree
+            lastTreeHash = newHash
             cachedLayout = layoutTree(tree)
-            needsAutoFit = true
+            if (firstEver || structurallyChanged) needsAutoFit = true
         }
         val layout = cachedLayout ?: return
 
@@ -144,72 +158,99 @@ class CraftTreeGraph {
         val activeLineColor = 0xFFFF8212.toInt()
         val time = (System.currentTimeMillis() % 10000) / 1000f
 
+        // PASS 1 — draw all INACTIVE connectors. Iteration order across nodes is undefined,
+        // so without this pass split, a later node's gray connector could draw over an
+        // earlier node's amber active connector. Splitting guarantees amber + flow dots
+        // are always on top.
         for ((node, pos) in layout.positions) {
             val sx = (originX + pos.first * zoom).roundToInt()
             val sy = (originY + pos.second * zoom).roundToInt()
             val isStorage = node.source == "storage"
-            val isActive = !isStorage && node.itemId in activeSteps
-
-            // Draw L-shaped connectors to children + animated flow dots
+            val isActive = !isStorage && node.nodeId in activeNodeIds
             for (child in node.children) {
                 val childPos = layout.positions[child] ?: continue
                 val cx = (originX + childPos.first * zoom).roundToInt()
                 val cy = (originY + childPos.second * zoom).roundToInt()
                 val midY = (sy + 16 + cy) / 2
                 val childIsStorage = child.source == "storage"
-                val childActive = !childIsStorage && child.itemId in activeSteps
-                val connColor = if (childActive || isActive) activeLineColor else lineColor
+                val childActive = !childIsStorage && child.nodeId in activeNodeIds
+                if (childActive || isActive) continue  // skip — drawn in pass 2
+                graphics.fill(cx, cy, cx + 1, midY, lineColor)
+                graphics.fill(minOf(sx, cx), midY, maxOf(sx, cx) + 1, midY + 1, lineColor)
+                graphics.fill(sx, midY, sx + 1, sy + 16, lineColor)
+            }
+        }
 
-                // L-shape: child bottom → midY → parent top
-                graphics.fill(cx, cy, cx + 1, midY, connColor)       // vertical up from child
-                graphics.fill(minOf(sx, cx), midY, maxOf(sx, cx) + 1, midY + 1, connColor) // horizontal
-                graphics.fill(sx, midY, sx + 1, sy + 16, connColor)  // vertical up to parent
+        // PASS 2 — draw all ACTIVE connectors + animated flow dots on top of pass 1.
+        for ((node, pos) in layout.positions) {
+            val sx = (originX + pos.first * zoom).roundToInt()
+            val sy = (originY + pos.second * zoom).roundToInt()
+            val isStorage = node.source == "storage"
+            val isActive = !isStorage && node.nodeId in activeNodeIds
+            for (child in node.children) {
+                val childPos = layout.positions[child] ?: continue
+                val cx = (originX + childPos.first * zoom).roundToInt()
+                val cy = (originY + childPos.second * zoom).roundToInt()
+                val midY = (sy + 16 + cy) / 2
+                val childIsStorage = child.source == "storage"
+                val childActive = !childIsStorage && child.nodeId in activeNodeIds
+                if (!(childActive || isActive)) continue
+                graphics.fill(cx, cy, cx + 1, midY, activeLineColor)
+                graphics.fill(minOf(sx, cx), midY, maxOf(sx, cx) + 1, midY + 1, activeLineColor)
+                graphics.fill(sx, midY, sx + 1, sy + 16, activeLineColor)
 
-                // Animated flow dots (move upward from child to parent)
-                if (childActive || isActive) {
-                    val totalLen = (cy - midY) + kotlin.math.abs(cx - sx) + (midY - sy - 16)
-                    if (totalLen > 0) {
-                        val dotCount = maxOf(1, totalLen / 12)
-                        for (d in 0 until dotCount) {
-                            val t = ((time * 0.25f + d.toFloat() / dotCount) % 1f)
-                            val pos2 = (t * totalLen).toInt()
-                            val seg1 = cy - midY  // vertical from child up
-                            val seg2 = kotlin.math.abs(cx - sx)  // horizontal
-                            val dotX: Int
-                            val dotY: Int
-                            if (pos2 < seg1) {
-                                // On vertical segment from child
-                                dotX = cx
-                                dotY = cy - pos2
-                            } else if (pos2 < seg1 + seg2) {
-                                // On horizontal segment
-                                val hPos = pos2 - seg1
-                                dotX = if (cx < sx) cx + hPos else cx - hPos
-                                dotY = midY
-                            } else {
-                                // On vertical segment to parent
-                                val vPos = pos2 - seg1 - seg2
-                                dotX = sx
-                                dotY = midY - vPos
-                            }
-                            graphics.pose().pushPose()
-                            graphics.pose().translate(-7.5f, -7.5f, 0f)
-                            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-                            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-                            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 0.8f, 0.27f, 1f)
-                            graphics.blit(Icons.ATLAS, dotX, dotY, Icons.GLOW_CIRCLE.u.toFloat(), Icons.GLOW_CIRCLE.v.toFloat(), 16, 16, 256, 256)
-                            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-                            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-                            graphics.pose().popPose()
+                val totalLen = (cy - midY) + kotlin.math.abs(cx - sx) + (midY - sy - 16)
+                if (totalLen > 0) {
+                    // Constant pixel speed regardless of line length: dots move at
+                    // PIXELS_PER_SEC and stay DOT_SPACING_PX apart along the path.
+                    // Without this, a long line's dots sprinted while a short line's crawled.
+                    val pixelsPerSec = 15f
+                    val spacing = 12
+                    val dotCount = maxOf(1, totalLen / spacing)
+                    val cycle = (time * pixelsPerSec) % totalLen
+                    for (d in 0 until dotCount) {
+                        val pos2 = ((cycle + d * spacing).toInt()) % totalLen
+                        val seg1 = cy - midY
+                        val seg2 = kotlin.math.abs(cx - sx)
+                        val dotX: Int
+                        val dotY: Int
+                        if (pos2 < seg1) {
+                            dotX = cx; dotY = cy - pos2
+                        } else if (pos2 < seg1 + seg2) {
+                            val hPos = pos2 - seg1
+                            dotX = if (cx < sx) cx + hPos else cx - hPos
+                            dotY = midY
+                        } else {
+                            val vPos = pos2 - seg1 - seg2
+                            dotX = sx; dotY = midY - vPos
                         }
+                        graphics.pose().pushPose()
+                        graphics.pose().translate(-7.5f, -7.5f, 0f)
+                        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+                        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+                        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 0.8f, 0.27f, 1f)
+                        graphics.blit(Icons.ATLAS, dotX, dotY, Icons.GLOW_CIRCLE.u.toFloat(), Icons.GLOW_CIRCLE.v.toFloat(), 16, 16, 256, 256)
+                        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+                        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+                        graphics.pose().popPose()
                     }
                 }
             }
+        }
+
+        // PASS 3 — node icons + labels (drawn on top of all connectors).
+        for ((node, pos) in layout.positions) {
+            val sx = (originX + pos.first * zoom).roundToInt()
+            val sy = (originY + pos.second * zoom).roundToInt()
+            val isStorage = node.source == "storage"
+            val isActive = !isStorage && node.nodeId in activeNodeIds
+            val isCompleted = !isStorage && node.nodeId in completedNodeIds
 
             // Determine highlight color
             val highlightColor: Int? = when {
-                isStorage -> 0xFF55FF55.toInt()  // green
-                isActive -> 0xFFFFAA00.toInt()   // amber
+                isStorage -> 0xFF55FF55.toInt()    // green (already in storage / leaf)
+                isActive -> 0xFFFFAA00.toInt()     // amber (currently being worked on)
+                isCompleted -> 0xFF55FF55.toInt()  // green (this branch finished)
                 else -> null
             }
 
@@ -342,6 +383,7 @@ class CraftTreeGraph {
         lastTree = null
         cachedLayout = null
         dragging = false
-        activeSteps = emptySet()
+        activeNodeIds = emptySet()
+        completedNodeIds = emptySet()
     }
 }

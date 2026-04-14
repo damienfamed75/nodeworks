@@ -35,6 +35,11 @@ sealed class Operation {
      *  so subsequent ticks re-invoke the executor rather than treating the op as fresh. */
     var inProgress: Boolean = false
 
+    /** Tree node ID this op produces output for. -1 if op doesn't correspond to a tree node
+     *  (e.g. the root [Deliver]). Lets the GUI translate active-op IDs back to tree nodes
+     *  for accurate per-node highlighting (vs. ambiguous itemId matching). */
+    var outputNodeId: Int = -1
+
     /** Extract [amount] of [itemId] from network storage into the CPU buffer.
      *  Atomic reservation on the network happens immediately; scheduler gates consumption. */
     data class Pull(
@@ -90,6 +95,7 @@ sealed class Operation {
         tag.putInt("id", id)
         tag.putLong("readyAt", readyAt)
         tag.putBoolean("inProgress", inProgress)
+        tag.putInt("nodeId", outputNodeId)
         val depsArr = IntArray(dependsOn.size) { dependsOn[it] }
         tag.putIntArray("deps", depsArr)
         when (this) {
@@ -145,6 +151,7 @@ sealed class Operation {
             }
             op.readyAt = readyAt
             op.inProgress = inProgress
+            op.outputNodeId = if (tag.contains("nodeId")) tag.getInt("nodeId") else -1
             return op
         }
 

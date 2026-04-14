@@ -64,6 +64,30 @@ class CraftingCoreBlockEntity(
     var coProcessorCount: Int = 0
         private set
 
+    /** Tree node IDs (from [damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode.nodeId])
+     *  whose op is currently being worked on right now. Live view — recomputed from the
+     *  scheduler/executor state every read. */
+    val activeNodeIds: Set<Int>
+        get() {
+            val plan = scheduler.currentPlan ?: return emptySet()
+            val active = opExecutor.activeProcessOpIds
+            if (active.isEmpty()) return emptySet()
+            val out = HashSet<Int>(active.size)
+            for (op in plan.ops) if (op.id in active && op.outputNodeId >= 0) out += op.outputNodeId
+            return out
+        }
+
+    /** Tree node IDs whose op has fully completed. */
+    val completedNodeIds: Set<Int>
+        get() {
+            val plan = scheduler.currentPlan ?: return emptySet()
+            val done = scheduler.completedOpIds
+            if (done.isEmpty()) return emptySet()
+            val out = HashSet<Int>(done.size)
+            for (op in plan.ops) if (op.id in done && op.outputNodeId >= 0) out += op.outputNodeId
+            return out
+        }
+
     /**
      * Submit a planned craft to this CPU's scheduler. Runs immediately if a thread
      * is idle, otherwise queues. [onComplete] fires exactly once when the plan
@@ -76,8 +100,18 @@ class CraftingCoreBlockEntity(
         setOriginalCraft(plan.rootItemId, plan.rootCount)
     }
 
+    /** Set on first tick so we run [recalculateCapacity] exactly once after BE load — the
+     *  multiblock scan can only succeed once adjacent chunks are loaded and their BEs exist,
+     *  which isn't guaranteed during [loadAdditional] but is by the time the ticker runs. */
+    @Transient
+    private var capacityInitialized: Boolean = false
+
     /** Per-tick entry point — called by the block's BlockEntityTicker. */
     fun serverTick(level: ServerLevel) {
+        if (!capacityInitialized) {
+            capacityInitialized = true
+            recalculateCapacity()
+        }
         scheduler.tick(level.gameTime)
     }
 
@@ -227,19 +261,11 @@ class CraftingCoreBlockEntity(
         markDirtyAndSync()
     }
 
-    /** Cancel the current job: abort all scheduler threads and drop any in-flight buffer
-     *  contents as item entities. We don't return the buffer to network storage because
-     *  buffer may contain freshly-crafted finished products; silently routing those into
-     *  storage would be a dupe from the player's perspective. */
+    /** Cancel the current job: abort scheduler threads; buffer contents return to network
+     *  storage via the executor's standard onPlanFailed flush. */
     fun cancelJob() {
         if (level !is net.minecraft.server.level.ServerLevel) return
-        opExecutor.userCancelledDropInWorld = true
-        try {
-            // scheduler.cancelAll → executor.onPlanFailed → dropBufferInWorld (flag above)
-            scheduler.cancelAll("Cancelled by player")
-        } finally {
-            opExecutor.userCancelledDropInWorld = false
-        }
+        scheduler.cancelAll("Cancelled by player")
         jobGeneration++
         clearAllCraftState()
         setCrafting(false)

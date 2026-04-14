@@ -72,6 +72,9 @@ class CraftScheduler(
     val progress: Pair<Int, Int> get() = completed.size to (plan?.ops?.size ?: 0)
     val currentState: State get() = state
     val currentFailureReason: String? get() = failureReason
+    /** Read-only view of completed op IDs in the current plan. Used by the GUI to map ops
+     *  back to tree nodes for "this branch is finished" highlighting. */
+    val completedOpIds: Set<Int> get() = completed
 
     /** Submit a craft. Runs immediately if idle, else queues. */
     fun submit(plan: CraftPlan, currentTick: Long) {
@@ -119,7 +122,12 @@ class CraftScheduler(
             while (progress && opsThisTick < CpuRules.OPS_PER_TICK_CAP && state == State.RUNNING) {
                 progress = false
                 var opsThisRound = 0
-                val ready = readyOps(currentTick).take(threadCount)
+                // Prefer distinct processing APIs when multiple Process ops are ready, so
+                // a co-processor running alongside the core doesn't double up on the same
+                // machine. E.g. if (iron, iron, copper) are all ready with threadCount=2,
+                // pick (iron, copper) not (iron, iron) — the two same-type handlers would
+                // just collide on the single furnace anyway and waste retry budget.
+                val ready = pickDispatchableOps(readyOps(currentTick), threadCount)
                 if (ready.isEmpty()) break
 
                 for (op in ready) {
@@ -214,6 +222,45 @@ class CraftScheduler(
             out += op
         }
         return out
+    }
+
+    /**
+     * Pick ops to dispatch this round.
+     *
+     * Sync ops (Pull / Execute / Deliver) always go — they're cheap buffer/storage work and
+     * there's no reason to rate-limit them; doing so causes the "grabs copper first, then
+     * waits for copper to cook before grabbing iron" phenomenon players see. Async ops
+     * (Process — holds a slot across ticks while a machine cooks) consume the [limit] budget
+     * and prefer distinct processing APIs so a co-processor doesn't pile up on the same
+     * machine as the core.
+     */
+    private fun pickDispatchableOps(ready: List<Operation>, limit: Int): List<Operation> {
+        if (ready.isEmpty()) return emptyList()
+        val picked = ArrayList<Operation>()
+        val syncOps = ArrayList<Operation>()
+        val processOps = ArrayList<Operation.Process>()
+        for (op in ready) {
+            if (op is Operation.Process) processOps += op else syncOps += op
+        }
+        // All sync ops upfront.
+        picked += syncOps
+        if (limit <= 0) return picked
+        // Process ops bounded by limit, preferring distinct APIs.
+        val usedApis = HashSet<String>()
+        for (op in processOps) {
+            if (picked.size - syncOps.size >= limit) break
+            if (op.processingApiName !in usedApis) {
+                picked += op
+                usedApis += op.processingApiName
+            }
+        }
+        if (picked.size - syncOps.size < limit) {
+            for (op in processOps) {
+                if (picked.size - syncOps.size >= limit) break
+                if (op !in picked) picked += op
+            }
+        }
+        return picked
     }
 
     /** Assign [Operation.readyAt] for any op whose dependencies just became satisfied. */

@@ -98,7 +98,8 @@ class CraftingCoreScreen(
         // Inset background for tree area
         NineSlice.PANEL_INSET.draw(graphics, treeLeft - 2, treeTop - 2, treeW + 4, treeH + 4)
 
-        craftGraph.activeSteps = menu.activeSteps
+        craftGraph.activeNodeIds = menu.activeNodeIds
+        craftGraph.completedNodeIds = menu.completedNodeIds
         craftGraph.render(graphics, menu.craftTree, treeLeft, treeTop, treeW, treeH)
     }
 
@@ -122,20 +123,9 @@ class CraftingCoreScreen(
         graphics.drawString(font, "Status:", contentLeft, contentTop, 0xFFAAAAAA.toInt())
         graphics.drawString(font, statusLabel, contentLeft + font.width("Status:") + 4, contentTop, statusColor)
 
-        // Job line (only when crafting)
+        // Per-step "Job:" line removed — with co-processors, a single status string can't
+        // represent multiple branches running in parallel. The craft tree is the source of truth.
         var nextY = contentTop + 12
-        if (menu.isCrafting) {
-            val originalId = coreEntity?.originalCraftId ?: ""
-            val originalCount = coreEntity?.originalCraftCount ?: 0
-            val craftName = coreEntity?.currentCraftItem ?: originalId.substringAfter(':').replace('_', ' ')
-            val jobLabel = if (originalCount > 1) "$craftName (x$originalCount)" else craftName
-            graphics.drawString(font, "Job:", contentLeft, nextY, 0xFFAAAAAA.toInt())
-            val jobX = contentLeft + font.width("Job:") + 4
-            val maxJobW = LEFT_PANEL_W - font.width("Job:") - 8
-            val jobTrimmed = if (font.width(jobLabel) > maxJobW) font.plainSubstrByWidth(jobLabel, maxJobW - 4) + ".." else jobLabel
-            graphics.drawString(font, jobTrimmed, jobX, nextY, 0xFFFFCC44.toInt())
-            nextY += 12
-        }
 
         // Buffer bar
         val barTop = nextY + 2
@@ -166,7 +156,7 @@ class CraftingCoreScreen(
         graphics.pose().popPose()
 
         // Types axis (dual-axis buffer) — rendered below the count bar
-        val typesTop = barTop + barH + 2
+        val typesTop = barTop + barH + 4
         val typesText = "Types: ${menu.bufferTypesUsed} / ${menu.bufferTypesCapacity}"
         val typesColor = if (menu.bufferTypesUsed >= menu.bufferTypesCapacity) 0xFFFF5555.toInt() else 0xFFAAAAAA.toInt()
         graphics.drawString(font, typesText, contentLeft, typesTop, typesColor)

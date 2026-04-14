@@ -384,6 +384,7 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
             buf.writeUtf(node.templateName, 64)
             buf.writeUtf(node.resolvedBy, 32)
             buf.writeVarInt(node.inStorage)
+            buf.writeVarInt(node.nodeId)
             buf.writeVarInt(node.children.size)
             for (child in node.children) writeNode(buf, child)
         }
@@ -396,9 +397,12 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
             val templateName = buf.readUtf(64)
             val resolvedBy = buf.readUtf(32)
             val inStorage = buf.readVarInt()
+            val nodeId = buf.readVarInt()
             val childCount = buf.readVarInt()
             val children = (0 until childCount).map { readNode(buf) }
-            return damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(itemId, itemName, count, source, templateName, resolvedBy, inStorage, children)
+            val n = damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(itemId, itemName, count, source, templateName, resolvedBy, inStorage, children)
+            n.nodeId = nodeId
+            return n
         }
     }
     override fun type() = TYPE
@@ -410,7 +414,8 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
 data class CraftingCpuTreePayload(
     val containerId: Int,
     val tree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode?,
-    val activeSteps: List<String>
+    val activeNodeIds: List<Int>,
+    val completedNodeIds: List<Int>
 ) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<CraftingCpuTreePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "crafting_cpu_tree"))
@@ -419,16 +424,20 @@ data class CraftingCpuTreePayload(
                 buf.writeVarInt(p.containerId)
                 buf.writeBoolean(p.tree != null)
                 if (p.tree != null) writeNode(buf, p.tree)
-                buf.writeVarInt(p.activeSteps.size)
-                for (s in p.activeSteps) buf.writeUtf(s, 256)
+                buf.writeVarInt(p.activeNodeIds.size)
+                for (id in p.activeNodeIds) buf.writeVarInt(id)
+                buf.writeVarInt(p.completedNodeIds.size)
+                for (id in p.completedNodeIds) buf.writeVarInt(id)
             },
             { buf ->
                 val containerId = buf.readVarInt()
                 val hasTree = buf.readBoolean()
                 val tree = if (hasTree) readNode(buf) else null
-                val stepCount = buf.readVarInt()
-                val activeSteps = (0 until stepCount).map { buf.readUtf(256) }
-                CraftingCpuTreePayload(containerId, tree, activeSteps)
+                val activeCount = buf.readVarInt()
+                val active = (0 until activeCount).map { buf.readVarInt() }
+                val doneCount = buf.readVarInt()
+                val done = (0 until doneCount).map { buf.readVarInt() }
+                CraftingCpuTreePayload(containerId, tree, active, done)
             }
         )
 
@@ -440,16 +449,27 @@ data class CraftingCpuTreePayload(
             buf.writeUtf(node.templateName, 64)
             buf.writeUtf(node.resolvedBy, 32)
             buf.writeVarInt(node.inStorage)
+            buf.writeVarInt(node.nodeId)
             buf.writeVarInt(node.children.size)
             for (child in node.children) writeNode(buf, child)
         }
 
         private fun readNode(buf: FriendlyByteBuf): damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode {
-            return damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(
-                buf.readUtf(256), buf.readUtf(128), buf.readVarInt(),
-                buf.readUtf(32), buf.readUtf(64), buf.readUtf(32), buf.readVarInt(),
-                (0 until buf.readVarInt()).map { readNode(buf) }
+            val itemId = buf.readUtf(256)
+            val itemName = buf.readUtf(128)
+            val count = buf.readVarInt()
+            val source = buf.readUtf(32)
+            val templateName = buf.readUtf(64)
+            val resolvedBy = buf.readUtf(32)
+            val inStorage = buf.readVarInt()
+            val nodeId = buf.readVarInt()
+            val childCount = buf.readVarInt()
+            val children = (0 until childCount).map { readNode(buf) }
+            val node = damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(
+                itemId, itemName, count, source, templateName, resolvedBy, inStorage, children
             )
+            node.nodeId = nodeId
+            return node
         }
     }
     override fun type() = TYPE
