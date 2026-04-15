@@ -433,33 +433,54 @@ class CraftingCoreBlockEntity(
         //
         // Substrate does NOT participate: it neither generates heat nor carries cooling.
         // Its only mechanical role is the throttle bonus computed separately.
+        // Pass 1: for each Stabilizer, compute its total cooling output (base + cluster
+        // bonus from adjacent stabilizers), then divide that output across its heat-gen
+        // face-neighbors. The resulting per-face contribution is what each touched
+        // heat-gen receives from this particular stabilizer face.
+        val stabContributionPerFace = HashMap<BlockPos, Float>()
+        for (pos in stabilizerPositions) {
+            var stabNeighbors = 0
+            var heatGenNeighbors = 0
+            for (dir in net.minecraft.core.Direction.entries) {
+                val n = pos.relative(dir)
+                if (n in stabilizerPositions) stabNeighbors++
+                else if (n in heatGenPositions) heatGenNeighbors++
+            }
+            if (heatGenNeighbors <= 0) continue  // stabilizer with no heat-gen contact does nothing
+            val output = CpuRules.STABILIZER_BASE_COOLING + stabNeighbors * CpuRules.STABILIZER_CLUSTER_BONUS
+            stabContributionPerFace[pos] = output / heatGenNeighbors
+        }
+
+        // Pass 2: for each heat-gen, sum cooling contributions from adjacent stabilizer
+        // faces and compute base+hotspot heat. Per-block throttle math and overheat level
+        // are derived from the local heat vs cool comparison, exactly as before.
         val overheatLevelByPosition = HashMap<BlockPos, Int>()
         var totalHeat = 0
-        var totalCooled = 0
+        var totalCooledFloat = 0f
         for (pos in heatGenPositions) {
             val baseHeat = heatByPosition[pos] ?: 0
             var hotspotFaces = 0
-            var coolingFaces = 0
+            var cool = 0f
             for (dir in net.minecraft.core.Direction.entries) {
                 val n = pos.relative(dir)
                 if (n in heatGenPositions) hotspotFaces++
-                else if (n in stabilizerPositions) coolingFaces++
+                else cool += stabContributionPerFace[n] ?: 0f
             }
             val heat = baseHeat + hotspotFaces * CpuRules.HOTSPOT_HEAT_PER_FACE
-            val cool = coolingFaces * CpuRules.STABILIZER_COOLING_PER_FACE
             totalHeat += heat
-            totalCooled += minOf(cool, heat)  // excess cooling is wasted, not bonused
+            totalCooledFloat += minOf(cool, heat.toFloat())  // excess cooling wasted, not bonused
             // Level 0 = safe, 1 = warm (<=1/3 uncovered), 2 = hot (<=2/3), 3 = critical.
-            val deficit = heat - cool
+            val deficit = heat.toFloat() - cool
             val level = when {
-                deficit <= 0 -> 0
+                deficit <= 0f -> 0
                 heat <= 0 -> 0
-                deficit * 3 <= heat -> 1
-                deficit * 3 <= heat * 2 -> 2
+                deficit * 3f <= heat -> 1
+                deficit * 3f <= heat * 2f -> 2
                 else -> 3
             }
             overheatLevelByPosition[pos] = level
         }
+        val totalCooled = totalCooledFloat.toInt()
 
         isFormed = bufferCount > 0
         coProcessorCount = coProcessors

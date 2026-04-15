@@ -47,15 +47,25 @@ object CpuRules {
     const val THREADS_PER_COPROCESSOR: Int = 1
 
     // =====================================================================
-    // Stabilizer — cooling is PER FACE, delivered locally to face-adjacent heat-gens
+    // Stabilizer — cluster bonus + sharing penalty
     // =====================================================================
+    //
+    // Each Stabilizer produces a total cooling output = base + (adjacent stabilizers × bonus).
+    // Stabilizers amplify each other in a cluster (heatsink fins). The output is then
+    // divided evenly across the heat-gen faces that Stabilizer touches — sharing a
+    // Stabilizer between multiple heat-gens dilutes its cooling.
+    //
+    // This kills "cheese" layouts like a checkerboard of stabilizers (each stab surrounded
+    // by 6 heat-gens gets output 1, divided by 6 = 0.17 cooling per neighbor) and rewards
+    // heatsink-shaped clusters (interior stabilizers with many stab neighbors output more).
 
-    /** Cooling delivered by a single Stabilizer face directly touching a heat-generator.
-     *  A Stabilizer has at most 6 productive faces; geometry is the natural cap (no
-     *  diminishing returns formula needed). A Stabilizer's 3D position determines how
-     *  much cooling it contributes — one buried in heat-gens on all 6 sides outputs
-     *  18 cooling; one stuck on the outside with a single adjacent heat-gen outputs 3. */
-    const val STABILIZER_COOLING_PER_FACE: Int = 3
+    /** Base cooling a lone Stabilizer (no stabilizer neighbors) puts out in total. */
+    const val STABILIZER_BASE_COOLING: Float = 1.0f
+
+    /** Extra cooling added per adjacent Stabilizer face. A Stabilizer in the middle of a
+     *  wall (4 stab neighbors) outputs 1 + 4 = 5 cooling total. Max practical bonus is
+     *  5 (a stabilizer with 6 stab neighbors can't also touch a heat-gen). */
+    const val STABILIZER_CLUSTER_BONUS: Float = 1.0f
 
     // =====================================================================
     // Hotspot heat — dense heat-gen packing punishes itself
@@ -196,12 +206,7 @@ object CpuRules {
         }
         if (heatCooled < heatGenerated) {
             val deficit = heatGenerated - heatCooled
-            // Rough lower-bound estimate, ignoring diminishing returns — the real count
-            // may be a bit higher on large multiblocks.
-            // Each Stabilizer face touching a heat-gen delivers STABILIZER_COOLING_PER_FACE.
-            // Rough lower bound: enough productive faces to cover the deficit.
-            val facesNeeded = (deficit + STABILIZER_COOLING_PER_FACE - 1) / STABILIZER_COOLING_PER_FACE
-            out += "Heat deficit: $deficit. Add Stabilizer faces touching overheating blocks (~$facesNeeded faces needed)."
+            out += "Heat deficit: $deficit. Cluster Stabilizers together (walls/cubes) so each one cools better, and avoid sharing a Stabilizer between multiple heat-gens."
         }
         if (hasBuffer && substrateAdjacencies == 0) {
             out += "Place Substrate next to Buffers or Co-Processors for a throttle bonus."
