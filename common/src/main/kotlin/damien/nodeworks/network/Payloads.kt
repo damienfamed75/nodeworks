@@ -276,6 +276,18 @@ data class SetProcessingApiDataPayload(val containerId: Int, val key: String, va
     override fun type() = TYPE
 }
 
+/** C2S: Update the Processing Set's card name. */
+data class SetProcessingApiNamePayload(val containerId: Int, val name: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetProcessingApiNamePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "set_processing_api_name"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetProcessingApiNamePayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.name, 32) },
+            { buf -> SetProcessingApiNamePayload(buf.readVarInt(), buf.readUtf(32)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /**
  * C2S: Set a single ghost slot on the Processing Set by item ID.
  * slotIndex 0-8 = input, 9-11 = output. Empty string = clear slot.

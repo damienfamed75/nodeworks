@@ -145,6 +145,58 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             return customData.copyTag().getBoolean(SERIAL_KEY)
         }
 
+        /**
+         * Build the canonical handler ID for a Processing Set from its input and output
+         * layout. Inputs must already be in row-major grid order (slot 0 → 8, empty
+         * slots skipped); outputs top-to-bottom. Duplicate items in different slots are
+         * preserved — they produce distinct entries.
+         *
+         * Format: `itemId@count|itemId@count|...>>itemId@count|...`
+         *
+         * The format deliberately uses `@` and `|` — characters that never appear in
+         * vanilla or modded item IDs — so parsing is unambiguous.
+         */
+        fun canonicalId(inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>): String {
+            val inputPart = inputs.joinToString("|") { (id, c) -> "$id@$c" }
+            val outputPart = outputs.joinToString("|") { (id, c) -> "$id@$c" }
+            return "$inputPart>>$outputPart"
+        }
+
+        /**
+         * Convert an item id into a camelCase Lua identifier:
+         * `minecraft:copper_ingot` → `copperIngot`. Used for handler parameter names.
+         */
+        fun itemIdToParamName(itemId: String): String {
+            val shortId = itemId.substringAfter(':')
+            val parts = shortId.split('_')
+            return parts.mapIndexed { i, part ->
+                if (i == 0) part else part.replaceFirstChar { it.uppercase() }
+            }.joinToString("")
+        }
+
+        /**
+         * Build per-slot handler parameter names in grid order. Duplicate entries get a
+         * numeric suffix on 2nd+ occurrence so the field list in the handler's `items`
+         * table is a stable, lossless mapping from slot index to identifier.
+         *
+         * Example: `[copper, gold, copper]` → `[copperIngot, goldIngot, copperIngot2]`.
+         *
+         * Used by both the CPU runtime (to key the `items` LuaTable passed to handlers)
+         * and the script editor autocomplete (to suggest valid `items.` field names).
+         * Keeping the rule in one place guarantees they stay in sync.
+         */
+        fun buildHandlerParamNames(inputs: List<Pair<String, Int>>): List<String> {
+            val result = mutableListOf<String>()
+            val occurrence = mutableMapOf<String, Int>()
+            for ((itemId, _) in inputs) {
+                val base = itemIdToParamName(itemId)
+                val n = (occurrence[base] ?: 0) + 1
+                occurrence[base] = n
+                result.add(if (n == 1) base else "$base$n")
+            }
+            return result
+        }
+
         /** Save the processing recipe to the card stack. */
         fun setRecipe(stack: ItemStack, name: String, inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>, timeout: Int, serial: Boolean = false) {
             val tag = CompoundTag()

@@ -85,6 +85,7 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetProcessingApiNamePayload.TYPE, SetProcessingApiNamePayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(InvTerminalCraftGridActionPayload.TYPE, InvTerminalCraftGridActionPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC)
@@ -331,6 +332,14 @@ object TerminalPackets {
                     "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
                     "timeout" -> menu.setTimeout(payload.value)
                 }
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetProcessingApiNamePayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                menu.cardName = payload.name.take(32)
             }
         }
 

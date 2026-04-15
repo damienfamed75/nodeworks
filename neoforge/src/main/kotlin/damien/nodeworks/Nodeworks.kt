@@ -349,6 +349,16 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToServer(SetProcessingApiNamePayload.TYPE, SetProcessingApiNamePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                    menu.cardName = payload.name.take(32)
+                }
+            }
+        }
+
 
         registrar.playToServer(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC) { payload, context ->
             context.enqueueWork {

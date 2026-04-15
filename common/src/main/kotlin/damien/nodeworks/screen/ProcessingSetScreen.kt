@@ -35,7 +35,6 @@ class ProcessingSetScreen(
     fun getLeft(): Int = leftPos
     fun getTop(): Int = topPos
 
-    private var nameBox: EditBox? = null
     private var timeoutBox: EditBox? = null
 
     init {
@@ -51,13 +50,8 @@ class ProcessingSetScreen(
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
-        // Name field
-        nameBox = EditBox(font, leftPos + 140, topPos + 4, 54, 14, Component.empty()).also {
-            it.setMaxLength(32)
-            it.setValue(menu.cardName)
-            it.setResponder { value -> menu.cardName = value }
-            addRenderableWidget(it)
-        }
+        // No custom name field — the handler key is now the auto-generated canonical
+        // recipe ID (see ProcessingSet.canonicalId and docs/design/processing-set-handler-ux.md).
 
         // Timeout field — dark-themed EditBox
         timeoutBox = EditBox(font, leftPos + 60, topPos + 94, 40, 14, Component.empty()).also {
@@ -86,7 +80,6 @@ class ProcessingSetScreen(
         graphics.fill(x, y, x + w, y + TOP_BAR_H, TOP_BAR_COLOR)
         graphics.fill(x, y + TOP_BAR_H - 1, x + w, y + TOP_BAR_H, TOP_BAR_LINE)
         graphics.drawString(font, title, x + 6, y + 6, WHITE)
-        graphics.drawString(font, "Name:", x + 112, y + 6, LABEL_COLOR)
 
         // === Input section ===
         graphics.drawString(font, "Inputs", x + 8, y + 24, LABEL_COLOR)
@@ -212,6 +205,13 @@ class ProcessingSetScreen(
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
+        // Clicking outside the timeout EditBox unfocuses it so keystrokes like 'E' close
+        // the inventory instead of being swallowed by a stale-focus box.
+        timeoutBox?.let { box ->
+            val inBox = mx >= box.x && mx < box.x + box.width && my >= box.y && my < box.y + box.height
+            if (!inBox && box.isFocused) box.isFocused = false
+        }
+
         // Serial toggle click
         val serialX = leftPos + 140
         val serialY = topPos + 96
@@ -221,5 +221,16 @@ class ProcessingSetScreen(
         }
 
         return super.mouseClicked(mouseX, mouseY, button)
+    }
+
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        val tBox = timeoutBox
+        if (tBox != null && tBox.isFocused) {
+            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers)  // ESC
+            // All other keys route to the EditBox so typing 'E' doesn't close the GUI.
+            tBox.keyPressed(keyCode, scanCode, modifiers)
+            return true
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers)
     }
 }

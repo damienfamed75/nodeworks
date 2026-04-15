@@ -16,6 +16,7 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.crafting.CraftingInput
 import net.minecraft.world.item.crafting.RecipeType
+import org.luaj.vm2.LuaTable
 import org.luaj.vm2.LuaValue
 import org.slf4j.LoggerFactory
 
@@ -348,14 +349,21 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 }
             }
             if (apiMatch.api.serial) {
+                // Serial: one handler invocation per batch. Each invocation receives the
+                // api's per-slot inputs exactly as declared (preserves order + duplicates).
                 val perBatchInputs = apiMatch.api.inputs.map { (id, count) -> id to count.toLong() }
                 val batches = (outputTotal + outputPerBatch - 1) / outputPerBatch
                 BatchProgress(batches, 0L, perBatchInputs, outputItemId, outputPerBatch)
             } else {
+                // Parallel: one handler invocation handles the whole demand. Scale each
+                // slot's declared count by the number of batches needed to satisfy the
+                // total output (ceiling division), preserving slot order + duplicates.
+                val batches = (outputTotal + outputPerBatch - 1) / outputPerBatch
+                val perBatchInputs = apiMatch.api.inputs.map { (id, count) -> id to (count.toLong() * batches) }
                 BatchProgress(
                     totalBatches = 1L,
                     batchesDone = 0L,
-                    perBatchInputs = totalInputs.map { (id, count) -> id to count },
+                    perBatchInputs = perBatchInputs,
                     outputItemId = outputItemId,
                     outputPerBatch = outputTotal
                 )
@@ -380,14 +388,31 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val job = ProcessingJob(apiMatch.api, cpu, lvl, scheduler, pending, bulkOutputOverride, op.id)
         val jobTable = job.toLuaTable()
 
-        // Build Lua args — per-batch for serial APIs, full total for parallel.
-        val luaArgs = mutableListOf<LuaValue>(jobTable)
-        for ((itemId, batchCount) in progress.perBatchInputs) {
+        // Build the handler's single `items: InputItems` argument — a Lua table keyed by
+        // per-slot parameter name (camelCase with numeric suffix on duplicates). Each
+        // value is a full ItemsHandle bound to a per-slot BufferSource so per-slot
+        // atomic extraction works correctly when the same item appears in multiple slots.
+        //
+        // perBatchInputs is authoritative for slot ORDER (row-major) and COUNT per slot.
+        // apiMatch.api.inputs provides the same ordering — we use ProcessingSet's shared
+        // naming helper to keep the autocomplete editor's view in perfect sync with what
+        // the runtime actually binds.
+        val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(apiMatch.api.inputs)
+        if (paramNames.size != progress.perBatchInputs.size) {
+            return CraftScheduler.OpResult.Failed(
+                "Processing handler arg mismatch: ${paramNames.size} param names vs " +
+                "${progress.perBatchInputs.size} input slots"
+            )
+        }
+        val itemsTable = LuaTable()
+        for ((idx, slotData) in progress.perBatchInputs.withIndex()) {
+            val (itemId, batchCount) = slotData
             val id = ResourceLocation.tryParse(itemId)
                 ?: return CraftScheduler.OpResult.Failed("Bad input item id: $itemId")
             val item = BuiltInRegistries.ITEM.get(id)
                 ?: return CraftScheduler.OpResult.Failed("Unknown input item: $itemId")
-            luaArgs.add(
+            itemsTable.set(
+                paramNames[idx],
                 ItemsHandle.toLuaTable(
                     ItemsHandle(
                         itemId = itemId,
@@ -403,6 +428,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 )
             )
         }
+        val luaArgs: List<LuaValue> = listOf(jobTable, itemsTable)
 
         cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
 
@@ -413,7 +439,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             luaArgs = luaArgs,
             scheduler = scheduler
         )
-        val perBatchInputMap = progress.perBatchInputs.toMap()
+        // Aggregate per-slot inputs by item id for the conservation check. With the new
+        // per-slot format, duplicate entries like [cu@1, au@1, cu@1] collapse to
+        // {cu: 2, au: 1} — the buffer-delta check only cares about totals per item.
+        val perBatchInputMap = progress.perBatchInputs
+            .groupBy { it.first }
+            .mapValues { (_, pairs) -> pairs.sumOf { it.second } }
         return invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name)
     }
 

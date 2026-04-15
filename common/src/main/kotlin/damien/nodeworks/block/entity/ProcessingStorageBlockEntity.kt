@@ -77,13 +77,14 @@ class ProcessingStorageBlockEntity(
         for (i in 0 until activeSlotCount) {
             val stack = items[i]
             if (stack.isEmpty || stack.item !is ProcessingSet) continue
-            val explicitName = ProcessingSet.getCardName(stack)
             val inputs = ProcessingSet.getInputs(stack)
             val outputs = ProcessingSet.getOutputs(stack)
             val timeout = ProcessingSet.getTimeout(stack)
             val serial = ProcessingSet.isSerial(stack)
             if (outputs.isEmpty()) continue
-            val name = explicitName.ifEmpty { generateAutoName(outputs) }
+            // Always use the canonical recipe-derived id; the NBT-stored `name` field
+            // is vestigial and may hold legacy pre-Phase-A values from older worlds.
+            val name = ProcessingSet.canonicalId(inputs, outputs)
             result.add(ProcessingApiInfo(name, inputs, outputs, timeout, serial))
         }
         return result

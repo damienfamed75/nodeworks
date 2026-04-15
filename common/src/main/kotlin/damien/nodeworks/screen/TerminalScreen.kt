@@ -1136,15 +1136,21 @@ class TerminalScreen(
                     }
 
                     InputConstants.KEY_RETURN, InputConstants.KEY_TAB -> {
-                        val result = autocomplete.accept()
+                        val textBeforeAccept = editor.value
+                        val cursorAtAccept = editor.getCursorPosition()
+                        val afterCursor = textBeforeAccept.substring(cursorAtAccept)
+                        val result = autocomplete.accept(afterCursor)
                         if (result != null) {
                             // Suppress autocomplete updates during insertion
                             suppressAutocomplete = true
-                            // Delete the typed prefix by manipulating text directly
-                            val text = editor.value
-                            val cursorPos = editor.getCursorPosition()
+                            // Delete the typed prefix by manipulating text directly. Also
+                            // consume auto-pair chars following the cursor for full-block
+                            // snippets (see AutocompletePopup.consumesAutoclose).
+                            val text = textBeforeAccept
+                            val cursorPos = cursorAtAccept
                             val deleteStart = cursorPos - result.deleteCount
-                            val newText = text.substring(0, deleteStart) + result.insertText + text.substring(cursorPos)
+                            val deleteEnd = (cursorPos + result.consumeAfter).coerceAtMost(text.length)
+                            val newText = text.substring(0, deleteStart) + result.insertText + text.substring(deleteEnd)
                             editor.setValueKeepScroll(newText, deleteStart + result.cursorOffset)
                             suppressAutocomplete = false
                             // Trigger autocomplete at new cursor position (e.g. inside quotes after snippet)

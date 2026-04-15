@@ -271,7 +271,11 @@ class ProcessingSetScreenHandler(
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is ProcessingSet) {
-                    ProcessingSet.setRecipe(stack, cardName, inputs, outputs, timeout, serial)
+                    // Name is now derived from the recipe layout — the canonical ID is
+                    // the unique handler key. Custom naming is gone. See
+                    // docs/design/processing-set-handler-ux.md.
+                    val canonical = ProcessingSet.canonicalId(inputs, outputs)
+                    ProcessingSet.setRecipe(stack, canonical, inputs, outputs, timeout, serial)
                 }
             }
             is SaveMode.ClientDummy -> {}
