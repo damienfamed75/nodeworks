@@ -1072,10 +1072,17 @@ class DiagnosticScreen(
             }
         }
 
-        // Details
-        if (block.details.isNotEmpty()) {
+        // Details — pull out the __error: prefix into its own dedicated section
+        // at the top so it's the first thing the player sees.
+        val errorDetail = block.details.firstOrNull { it.startsWith("__error:") }
+        if (errorDetail != null) {
+            rows.add(InspectorRow(RowType.H2, "Error"))
+            rows.add(InspectorRow(RowType.PROPERTY, errorDetail.removePrefix("__error:"), 0xFFFF8888.toInt()))
+        }
+        val visibleDetails = block.details.filter { !it.startsWith("__error:") }
+        if (visibleDetails.isNotEmpty()) {
             rows.add(InspectorRow(RowType.H2, "Details"))
-            for (detail in block.details) {
+            for (detail in visibleDetails) {
                 rows.add(InspectorRow(RowType.PROPERTY, detail, GRAY))
             }
         }
@@ -1341,6 +1348,17 @@ class DiagnosticScreen(
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.33f, 0.8f, 1f, 1f) // cyan tint
             graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256)
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        }
+
+        // Warning indicator (top-right corner of block) when the block has an
+        // undismissed error — currently only Crafting Cores emit this via the
+        // "__error:" detail prefix. renderItem draws at a higher Z than normal
+        // blits, so we translate the pose up to sit on top of the block icon.
+        if (block.details.any { it.startsWith("__error:") }) {
+            graphics.pose().pushPose()
+            graphics.pose().translate(0f, 0f, 200f)
+            Icons.WARNING.draw(graphics, sx + 3, sy - 11, 10)
+            graphics.pose().popPose()
         }
 
         // Hover detection (16x16 area)
