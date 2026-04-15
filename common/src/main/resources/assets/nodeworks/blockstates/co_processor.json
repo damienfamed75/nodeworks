@@ -1,1 +1,8 @@
-{"variants":{"":{"model":"nodeworks:block/co_processor"}}}
+{
+  "variants": {
+    "formed=false,overheating=false": { "model": "nodeworks:block/co_processor" },
+    "formed=false,overheating=true":  { "model": "nodeworks:block/co_processor" },
+    "formed=true,overheating=false":  { "model": "nodeworks:block/co_processor_on" },
+    "formed=true,overheating=true":   { "model": "nodeworks:block/co_processor_overheating" }
+  }
+}

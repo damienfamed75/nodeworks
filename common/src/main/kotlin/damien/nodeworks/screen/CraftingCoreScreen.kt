@@ -133,9 +133,6 @@ class CraftingCoreScreen(
         val cool = menu.heatCooled
         val centerX = x + w / 2
 
-        // Center tick to anchor the bar visually
-        graphics.fill(centerX, y - 1, centerX + 1, y + barH + 1, 0xFF666666.toInt())
-
         // Always fill the entire bar — the split position encodes the heat/coolant ratio.
         // Red from the left up to splitX, blue from splitX to the right. When heat == cool
         // (including 0/0), the split is at the center: left half red, right half blue.

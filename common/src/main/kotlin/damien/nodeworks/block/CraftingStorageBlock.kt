@@ -12,6 +12,8 @@ import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.block.state.properties.BooleanProperty
 import net.minecraft.world.phys.BlockHitResult
 
 /**
@@ -23,6 +25,24 @@ class CraftingStorageBlock(properties: Properties) : BaseEntityBlock(properties)
 
     companion object {
         val CODEC: MapCodec<CraftingStorageBlock> = simpleCodec(::CraftingStorageBlock)
+
+        /** Driven by the CPU Core's recalculateCapacity — mirrors the Core's formed state
+         *  so the emissive variant lights up whenever this Buffer is part of an active CPU. */
+        val FORMED: BooleanProperty = BooleanProperty.create("formed")
+
+        /** True when this block's cooling received from adjacent Stabilizer faces is less
+         *  than its heat (base + hotspot). Drives the red emissive variant. */
+        val OVERHEATING: BooleanProperty = BooleanProperty.create("overheating")
+    }
+
+    init {
+        registerDefaultState(stateDefinition.any()
+            .setValue(FORMED, false)
+            .setValue(OVERHEATING, false))
+    }
+
+    override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
+        builder.add(FORMED, OVERHEATING)
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
@@ -35,8 +55,16 @@ class CraftingStorageBlock(properties: Properties) : BaseEntityBlock(properties)
     override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, neighborPos: BlockPos, movedByPiston: Boolean) {
         super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston)
         level.getBlockEntity(pos) as? CraftingStorageBlockEntity ?: return
-        // Walk the entire component chain so cores multiple blocks away still get notified
-        CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.recalculateCapacity() }
+        val cores = CpuComponentBlockEntity.findConnectedCores(level, pos)
+        if (cores.isEmpty()) {
+            // Orphaned — self-clear formed + overheating since no Core can push the update.
+            var next = state
+            if (next.getValue(FORMED)) next = next.setValue(FORMED, false)
+            if (next.getValue(OVERHEATING)) next = next.setValue(OVERHEATING, false)
+            if (next !== state) level.setBlock(pos, next, Block.UPDATE_ALL)
+        } else {
+            cores.forEach { it.recalculateCapacity() }
+        }
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {

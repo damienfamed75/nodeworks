@@ -1,1 +1,1 @@
-{"parent":"minecraft:block/cube_all","textures":{"all":"nodeworks:block/crafting_storage","particle":"nodeworks:block/crafting_storage"}}
+{"parent":"minecraft:block/cube_all","textures":{"all":"nodeworks:block/co_processor","particle":"nodeworks:block/co_processor"}}
