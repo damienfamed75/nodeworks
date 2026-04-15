@@ -21,12 +21,14 @@ import net.minecraft.world.item.ItemStack
  */
 object RecipeHintRenderer {
 
-    /** Vertical space required for one hint line. 18px fits a 16px item with 1px top/bottom
-     *  pad — matches vanilla inventory slot spacing (18×18 slot, 16×16 item inset 1px). */
-    const val HINT_HEIGHT: Int = 18
-    /** Item icon size in pixels. `renderItem` always emits a 16×16 quad — using any smaller
-     *  value causes icons to overlap the next entry because layout and render disagree. */
-    private const val ICON_SIZE: Int = 16
+    /** Vertical space required for one hint line. 16px fits a 14px item with 1px top/bottom
+     *  pad — ~10% smaller than the vanilla 18×16 slot proportions. */
+    const val HINT_HEIGHT: Int = 16
+    /** Visible item icon size in pixels. `renderItem` always emits a 16×16 quad, so we
+     *  scale it via pose.scale to render at this size. */
+    private const val ICON_SIZE: Int = 14
+    /** Pose scale applied around `renderItem` to shrink the native 16×16 quad to ICON_SIZE. */
+    private const val ITEM_SCALE: Float = ICON_SIZE / 16f  // 0.875 = 14/16
     /** Gap between adjacent ingredient entries. Width is always ICON_SIZE regardless of
      *  whether a count badge is shown, so spacing stays consistent across the row. */
     private const val ENTRY_GAP: Int = 2
@@ -35,7 +37,7 @@ object RecipeHintRenderer {
     private const val ARROW_LEFT_PAD: Int = 2
     private const val ARROW_RIGHT_PAD: Int = 2
     /** Width reserved for the Icons.ARROW_RIGHT glyph when drawn at ICON_SIZE, tinted gray. */
-    private const val ARROW_ICON_SIZE: Int = 12
+    private const val ARROW_ICON_SIZE: Int = 11
     private const val ARROW_TINT: Int = 0xFF888888.toInt()
 
     /**
@@ -167,18 +169,24 @@ object RecipeHintRenderer {
         if (cx + ICON_SIZE > right) return null
 
         val stack = ItemStack(item, count.coerceAtMost(64).coerceAtLeast(1))
-        graphics.renderItem(stack, cx, iconY)
+        // Scale the 16×16 native item render down to ICON_SIZE via pose.scale. Translate
+        // first so the scale's origin is at the icon's top-left.
+        graphics.pose().pushPose()
+        graphics.pose().translate(cx.toFloat(), iconY.toFloat(), 0f)
+        graphics.pose().scale(ITEM_SCALE, ITEM_SCALE, 1f)
+        graphics.renderItem(stack, 0, 0)
+        graphics.pose().popPose()
 
-        // Count badge positioned exactly like vanilla's ItemRenderer stack-count overlay:
-        // right-aligned within the 16-wide icon (1px inset from the right edge), baseline
-        // 9px down from the icon's top. White text with drop shadow. Hidden when 1.
+        // Count badge — vanilla-style positioning, scaled for the smaller icon. Vanilla
+        // uses (cx + 17 - W, cy + 9) for a 16-wide cell; for our 14-wide cell that's
+        // (cx + 15 - W, cy + 7) — same proportions, scaled down ~10%.
         if (count > 1) {
             val countText = count.toString()
             graphics.drawString(
                 font,
                 countText,
-                cx + 17 - font.width(countText),
-                iconY + 9,
+                cx + (ICON_SIZE + 1) - font.width(countText),
+                iconY + 7,
                 0xFFFFFFFF.toInt(),
                 true
             )
