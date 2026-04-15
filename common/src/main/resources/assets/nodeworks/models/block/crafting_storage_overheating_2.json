@@ -2,9 +2,9 @@
   "parent": "minecraft:block/block",
   "render_type": "cutout",
   "textures": {
-    "all": "nodeworks:block/co_processor",
-    "emissive": "nodeworks:block/co_processor_overheating_emissive",
-    "particle": "nodeworks:block/co_processor"
+    "all": "nodeworks:block/crafting_storage",
+    "emissive": "nodeworks:block/crafting_storage_overheating_emissive_2",
+    "particle": "nodeworks:block/crafting_storage"
   },
   "elements": [
     {

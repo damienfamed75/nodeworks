@@ -1,8 +1,12 @@
 {
   "variants": {
-    "formed=false,overheating=false": { "model": "nodeworks:block/crafting_storage" },
-    "formed=false,overheating=true":  { "model": "nodeworks:block/crafting_storage" },
-    "formed=true,overheating=false":  { "model": "nodeworks:block/crafting_storage_on" },
-    "formed=true,overheating=true":   { "model": "nodeworks:block/crafting_storage_overheating" }
+    "formed=false,overheat_level=0": { "model": "nodeworks:block/crafting_storage" },
+    "formed=false,overheat_level=1": { "model": "nodeworks:block/crafting_storage" },
+    "formed=false,overheat_level=2": { "model": "nodeworks:block/crafting_storage" },
+    "formed=false,overheat_level=3": { "model": "nodeworks:block/crafting_storage" },
+    "formed=true,overheat_level=0":  { "model": "nodeworks:block/crafting_storage_on" },
+    "formed=true,overheat_level=1":  { "model": "nodeworks:block/crafting_storage_overheating_0" },
+    "formed=true,overheat_level=2":  { "model": "nodeworks:block/crafting_storage_overheating_1" },
+    "formed=true,overheat_level=3":  { "model": "nodeworks:block/crafting_storage_overheating_2" }
   }
 }
