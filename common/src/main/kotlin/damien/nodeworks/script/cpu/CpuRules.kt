@@ -191,14 +191,14 @@ object CpuRules {
     ): List<String> {
         val out = mutableListOf<String>()
         if (!hasBuffer) {
-            out += "Add at least one Buffer block to enable crafting."
+            out += "Add at least one Crafting Buffer to enable crafting."
         }
         if (heatCooled < heatGenerated) {
             val deficit = heatGenerated - heatCooled
-            out += "Heat deficit: $deficit. Cluster Stabilizers together (walls/cubes) so each one cools better, and avoid sharing a Stabilizer between multiple heat-gens."
+            out += "Heat deficit: $deficit. Cluster Crafting Coolant together (walls/cubes) so each one cools better, and avoid sharing one between multiple heat-gens."
         }
         if (hasBuffer && substrateAdjacencies == 0) {
-            out += "Place Substrate next to Buffers or Co-Processors for a throttle bonus."
+            out += "Place Crafting Substrate next to Buffers or Co-Processors for a throttle bonus."
         }
         return out
     }
