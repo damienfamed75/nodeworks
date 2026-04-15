@@ -43,6 +43,12 @@ class AutocompletePopup(
     private var scrollOffset: Int = 0
     private val maxVisible: Int = 8
 
+    /** Optional resolver for the on-screen Y of a line's BOTTOM (relative to the editor's
+     *  top-left), accounting for decoration heights above each line. Set by the caller
+     *  after constructing the editor; without this the popup falls back to uniform line
+     *  height and lands above the cursor whenever decorations push lines down. */
+    var lineBottomYResolver: ((lineIdx: Int) -> Int)? = null
+
     // ========== Public API ==========
 
     fun update(text: String, cursorPos: Int, editorX: Int, editorY: Int, forced: Boolean = false, editorScrollY: Int = 0) {
@@ -72,7 +78,17 @@ class AutocompletePopup(
         val cursorXOffset = font.width(lineText)
 
         popupX = editorX + 4 + cursorXOffset
-        popupY = editorY + (lineAtCursor + 1) * font.lineHeight + 4 - editorScrollY
+        // Use the editor's variable-height line layout when available so the popup lands
+        // just below the cursor's text row even when recipe-hint decorations push lines
+        // down. Resolver path uses a 1-px gap (the resolver already returns content-Y
+        // accounting for the editor's internal textTop padding); fallback path keeps the
+        // legacy 4-px gap to match historical behavior on callers without a resolver.
+        val resolver = lineBottomYResolver
+        popupY = if (resolver != null) {
+            editorY + resolver(lineAtCursor) + 1 - editorScrollY
+        } else {
+            editorY + (lineAtCursor + 1) * font.lineHeight + 4 - editorScrollY
+        }
     }
 
     fun hide() {
@@ -1028,7 +1044,11 @@ class AutocompletePopup(
         val handleLookback = Regex("""network:handle\s*\(\s*"([^"]+)"\s*,\s*$""")
         for (event in events) {
             if (event.isFuncOpen) {
-                val lookbackStart = (event.pos - 200).coerceAtLeast(0)
+                // Lookback must comfortably fit a full canonical recipe id (which can run
+                // hundreds of chars for recipes with many slots — 9 inputs + 3 outputs
+                // with modded namespaces can hit ~600 chars). 4096 covers any realistic
+                // recipe and keeps regex cost bounded.
+                val lookbackStart = (event.pos - 4096).coerceAtLeast(0)
                 val lookback = beforeCursor.substring(lookbackStart, event.pos)
                 val match = handleLookback.find(lookback)
                 scopeStack.add(match?.groupValues?.get(1))
@@ -1262,18 +1282,15 @@ class AutocompletePopup(
         api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo
     ): Suggestion {
         val canonicalId = api.name
-        // Uniform 2-arg signature. `items: InputItems` is a typed table whose fields
-        // are populated from the recipe's per-slot inputs; the editor resolves field
-        // names for `items.` autocomplete from the enclosing handle's recipe id.
+        // Uniform 2-arg signature. The editor folds the canonical id to "..." when the
+        // cursor isn't inside the string, so keeping `function(...)` on the same line as
+        // `network:handle(` produces a clean one-liner header:
         //
-        // Pattern (inside a `network:handle(` call at 4-space indent):
-        //
-        //     network:handle("<id>",
-        //         function(job: Job, items: InputItems)
-        //             <cursor>
-        //         end)
-        val beforeCursor = "$canonicalId\",\n    function(job: Job, items: InputItems)\n        "
-        val afterCursor = "\n    end)"
+        //     network:handle("...", function(job: Job, items: InputItems)
+        //         <cursor>
+        //     end)
+        val beforeCursor = "$canonicalId\", function(job: Job, items: InputItems)\n    "
+        val afterCursor = "\nend)"
         val fullSnippet = beforeCursor + afterCursor
         return Suggestion(
             insertText = canonicalId,

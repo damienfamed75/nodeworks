@@ -49,6 +49,25 @@ class ScriptEditor(
     // Callbacks
     private var valueListener: ((String) -> Unit)? = null
 
+    /**
+     * A character range on a line that should render as a short replacement string when
+     * the cursor isn't inside it. The buffer text itself is unchanged — folding is purely
+     * a display layer. When the cursor falls inside [startCol, endCol), the fold is
+     * automatically suppressed so the player can see and edit the underlying text.
+     *
+     * Both startCol and endCol are 0-based column positions on the same line (raw chars,
+     * not display chars). `endCol` is exclusive.
+     */
+    data class Fold(val startCol: Int, val endCol: Int, val display: String)
+
+    /** Folds that *might* apply to [lineIdx]. The editor automatically suppresses any
+     *  fold whose range contains the current cursor (so the player can still type inside
+     *  it). Default returns nothing — folding is opt-in by the caller. */
+    var foldsForLine: (lineIdx: Int) -> List<Fold> = { emptyList() }
+
+    /** Color folds render in. Same dim grey used for syntax comments to read as metadata. */
+    private val FOLD_COLOR: Int = 0xFF5C6370.toInt()
+
     /** How many extra pixels of vertical space to leave ABOVE [lineIdx] for a decoration
      *  (e.g. an inline recipe-icon hint). Default 0 — no decoration. Returning >0 for a
      *  given line shifts that line and everything after it downward by the returned px.
@@ -171,10 +190,14 @@ class ScriptEditor(
     }
 
     /** Y-offset (in content coordinates, before scroll) of the TOP of line [lineIdx]'s
-     *  text row — i.e. immediately AFTER that line's decoration (if any). */
+     *  text row — i.e. immediately AFTER that line's decoration (if any).
+     *
+     *  Calling with `lineIdx == lines.size` is valid: it returns the total content
+     *  height (= bottom of the last line). Callers that want "Y just past line N" pass
+     *  `N + 1` and rely on this behavior. */
     fun yTopOfLine(lineIdx: Int): Int {
         ensureDecorationCache()
-        val clamped = lineIdx.coerceIn(0, lines.lastIndex)
+        val clamped = lineIdx.coerceIn(0, lines.size)
         return cumulativeY[clamped]
     }
 
@@ -196,6 +219,131 @@ class ScriptEditor(
     fun totalContentHeight(): Int {
         ensureDecorationCache()
         return cumulativeY[lines.size]
+    }
+
+    /** Y-offset of the BOTTOM of line [lineIdx]'s text row — excludes any decoration
+     *  band above the *next* line. Use this for things that want to anchor "directly
+     *  under this line" without being pushed down by a following decoration row. */
+    fun yBottomOfLine(lineIdx: Int): Int {
+        return yTopOfLine(lineIdx) + lineHeight
+    }
+
+    // --- Fold helpers ---
+    //
+    // Cursor / mouse / render math goes through these instead of `font.width(line.substring(...))`
+    // directly, so a folded range visually collapses to its display string while the
+    // underlying buffer text stays intact. Folds containing the cursor are auto-suppressed
+    // so editing inside one always reveals the raw text.
+
+    /** Folds for [lineIdx] with any range containing the cursor removed (sorted by startCol). */
+    private fun activeFoldsForLine(lineIdx: Int): List<Fold> {
+        val all = foldsForLine(lineIdx)
+        if (all.isEmpty()) return emptyList()
+        val (curLine, curCol) = cursorToLineCol(cursor)
+        val cursorOnThisLine = curLine == lineIdx
+        // Also suppress when the selection spans into a fold so the player can see what
+        // they're selecting.
+        val (selOnLine, selStartCol, selEndCol) = if (hasSelection) {
+            val s = cursorToLineCol(selectionStart)
+            val e = cursorToLineCol(selectionEnd)
+            if (s.first <= lineIdx && e.first >= lineIdx) {
+                val sCol = if (s.first < lineIdx) 0 else s.second
+                val eCol = if (e.first > lineIdx) Int.MAX_VALUE else e.second
+                Triple(true, sCol, eCol)
+            } else Triple(false, 0, 0)
+        } else Triple(false, 0, 0)
+        return all
+            .filter { fold ->
+                val cursorInside = cursorOnThisLine && curCol in fold.startCol..fold.endCol
+                val selInside = selOnLine && selStartCol < fold.endCol && selEndCol > fold.startCol
+                !cursorInside && !selInside
+            }
+            .sortedBy { it.startCol }
+    }
+
+    /** Display X (in line-local pixels, before scrollX) of column [col] on [lineIdx],
+     *  accounting for active folds. If [col] falls inside a fold, returns the fold's
+     *  start X (cursor visually pinned to the fold's leading edge). */
+    private fun xOfCol(lineIdx: Int, col: Int): Int {
+        val line = lines.getOrNull(lineIdx) ?: return 0
+        val folds = activeFoldsForLine(lineIdx)
+        var x = 0
+        var c = 0
+        for (fold in folds) {
+            if (col <= fold.startCol) break
+            if (col >= fold.endCol) {
+                x += font.width(line.substring(c, fold.startCol))
+                x += font.width(fold.display)
+                c = fold.endCol
+            } else {
+                // col inside fold (shouldn't normally happen — fold would be suppressed —
+                // but guard for safety): return fold's start X.
+                x += font.width(line.substring(c, fold.startCol))
+                return x
+            }
+        }
+        x += font.width(line.substring(c, col.coerceAtMost(line.length)))
+        return x
+    }
+
+    /** Reverse of [xOfCol]: given a display X position (line-local, scrollX removed),
+     *  returns the raw column index. Halves of characters bias toward the next column,
+     *  matching vanilla EditBox feel. Clicks landing on a fold's display string put the
+     *  cursor at the fold's start so the player can begin editing inside it. */
+    private fun colAtX(lineIdx: Int, relX: Int): Int {
+        val line = lines.getOrNull(lineIdx) ?: return 0
+        val folds = activeFoldsForLine(lineIdx)
+        var px = 0
+        var c = 0
+        for (fold in folds) {
+            // chars [c, fold.startCol) at raw widths
+            for (i in c until fold.startCol) {
+                val charW = font.width(line[i].toString())
+                if (px + charW / 2 > relX) return i
+                px += charW
+            }
+            val displayW = font.width(fold.display)
+            // Click on the display: land cursor at fold start so typing reveals the fold.
+            if (px + displayW / 2 > relX) return fold.startCol
+            px += displayW
+            c = fold.endCol
+        }
+        for (i in c until line.length) {
+            val charW = font.width(line[i].toString())
+            if (px + charW / 2 > relX) return i
+            px += charW
+        }
+        return line.length
+    }
+
+    /** Return [tokens] with any active fold ranges substituted by a single display token
+     *  in [FOLD_COLOR]. Token text outside fold ranges is preserved. Assumes tokens
+     *  cover [line] in order with no overlaps (true for the editor's tokenizer). */
+    private fun applyFolds(lineIdx: Int, tokens: List<Token>): List<Token> {
+        val folds = activeFoldsForLine(lineIdx)
+        if (folds.isEmpty()) return tokens
+        val out = mutableListOf<Token>()
+        var c = 0
+        for (token in tokens) {
+            val tokenStart = c
+            val tokenEnd = c + token.text.length
+            var local = 0
+            for (fold in folds) {
+                if (fold.endCol <= tokenStart || fold.startCol >= tokenEnd) continue
+                val foldStartLocal = (fold.startCol - tokenStart).coerceAtLeast(0)
+                val foldEndLocal = (fold.endCol - tokenStart).coerceAtMost(token.text.length)
+                if (local < foldStartLocal) {
+                    out.add(Token(token.text.substring(local, foldStartLocal), token.color, token.type))
+                }
+                out.add(Token(fold.display, FOLD_COLOR, token.type))
+                local = foldEndLocal
+            }
+            if (local < token.text.length) {
+                out.add(Token(token.text.substring(local), token.color, token.type))
+            }
+            c = tokenEnd
+        }
+        return out
     }
 
     /** Convert absolute cursor position to (line, column). */
@@ -226,17 +374,9 @@ class ScriptEditor(
         val lineBodyTop = yTopOfLine(lineIdx)
         if (relY < lineBodyTop) return null
         val line = lines[lineIdx]
-        val relX = mx - textLeft + scrollX
+        val relX = (mx - textLeft + scrollX).toInt()
+        val col = colAtX(lineIdx, relX)
 
-        // Find column
-        var col = 0
-        var w = 0f
-        for (ch in line) {
-            val charW = font.width(ch.toString()).toFloat()
-            if (w + charW / 2 > relX) break
-            w += charW
-            col++
-        }
         if (col >= line.length) return null
         val ch = line[col]
         if (!ch.isLetterOrDigit() && ch != '_') return null
@@ -253,18 +393,8 @@ class ScriptEditor(
     private fun screenToCursor(mx: Double, my: Double): Int {
         val relY = my - textTop + scrollY
         val lineIdx = lineAtContentY(relY.toInt()).coerceIn(0, lines.size - 1)
-        val line = lines[lineIdx]
-        val relX = mx - textLeft + scrollX
-
-        // Find column by measuring character widths
-        var col = 0
-        var w = 0f
-        for (ch in line) {
-            val charW = font.width(ch.toString()).toFloat()
-            if (w + charW / 2 > relX) break
-            w += charW
-            col++
-        }
+        val relX = (mx - textLeft + scrollX).toInt()
+        val col = colAtX(lineIdx, relX)
         return lineColToCursor(lineIdx, col)
     }
 
@@ -310,7 +440,8 @@ class ScriptEditor(
             val line = lines[lineIdx]
             val lineStart = lineColToCursor(lineIdx, 0)
 
-            // Selection highlight
+            // Selection highlight (uses fold-aware xOfCol so selections across folds
+            // align with the visually rendered text).
             if (hasSelection) {
                 val selS = selectionStart
                 val selE = selectionEnd
@@ -318,14 +449,15 @@ class ScriptEditor(
                 if (selS < lineEnd && selE > lineStart) {
                     val hlStart = maxOf(selS - lineStart, 0)
                     val hlEnd = minOf(selE - lineStart, line.length)
-                    val x0 = textLeft + font.width(line.substring(0, hlStart)) - scrollX
-                    val x1 = textLeft + font.width(line.substring(0, hlEnd)) - scrollX
+                    val x0 = textLeft + xOfCol(lineIdx, hlStart) - scrollX
+                    val x1 = textLeft + xOfCol(lineIdx, hlEnd) - scrollX
                     graphics.fill(x0, lineY, x1, lineY + lineHeight, SELECTION_BG)
                 }
             }
 
-            // Syntax-highlighted text
-            val tokens = tokenize(line, inBlockComment)
+            // Syntax-highlighted text — fold-aware. applyFolds() splices the raw token
+            // stream so any active fold renders as its short display string in FOLD_COLOR.
+            val tokens = applyFolds(lineIdx, tokenize(line, inBlockComment))
             var tx = textLeft - scrollX
             for (token in tokens) {
                 if (token.type == TokenType.BLOCK_COMMENT_START) inBlockComment = true
@@ -340,7 +472,7 @@ class ScriptEditor(
             val elapsed = System.currentTimeMillis() - cursorBlinkTime
             if ((elapsed / CURSOR_BLINK_MS) % 2 == 0L) {
                 val cursorY = textTop + yTopOfLine(curLine) - scrollY
-                val cursorX = textLeft + font.width(lines[curLine].substring(0, curCol)) - scrollX
+                val cursorX = textLeft + xOfCol(curLine, curCol) - scrollX
                 graphics.fill(cursorX, cursorY, cursorX + 1, cursorY + lineHeight, CURSOR_COLOR)
             }
         }
@@ -659,8 +791,8 @@ class ScriptEditor(
         if (cursorY > viewBottom) scrollY = cursorY - (height - padding * 2 - lineHeight)
         scrollY = scrollY.coerceAtLeast(0)
 
-        // Horizontal
-        val cursorPixelX = font.width(lines[line].substring(0, col))
+        // Horizontal — fold-aware so scrolling tracks the cursor's actual on-screen X.
+        val cursorPixelX = xOfCol(line, col)
         val viewWidth = width - padding * 2
         val viewLeft = scrollX
         val viewRight = scrollX + viewWidth - 2 // small margin for cursor
