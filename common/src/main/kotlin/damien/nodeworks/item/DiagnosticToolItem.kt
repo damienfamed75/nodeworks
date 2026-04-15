@@ -110,6 +110,12 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                     details.add("Buffer: ${entity.bufferUsed} / ${entity.bufferCapacity}")
                     details.add("Formed: ${if (entity.isFormed) "yes" else "no"}")
                     if (entity.isCrafting) details.add("Crafting: ${entity.currentCraftItem}")
+                    details.add("Efficiency: ${(entity.throttle * 100f).toInt()}%")
+                    if (entity.lastFailureReason.isNotEmpty()) {
+                        // Prefixed marker so the diagnostic screen can pick this out and
+                        // render the warning icon in the topology view + error styling.
+                        details.add("__error:${entity.lastFailureReason}")
+                    }
                 }
                 is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> {
                     val sets = entity.getAllInstructionSets()
