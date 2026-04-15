@@ -433,7 +433,7 @@ class CraftingCoreBlockEntity(
         //
         // Substrate does NOT participate: it neither generates heat nor carries cooling.
         // Its only mechanical role is the throttle bonus computed separately.
-        val overheatingByPosition = HashMap<BlockPos, Boolean>()
+        val overheatLevelByPosition = HashMap<BlockPos, Int>()
         var totalHeat = 0
         var totalCooled = 0
         for (pos in heatGenPositions) {
@@ -449,7 +449,16 @@ class CraftingCoreBlockEntity(
             val cool = coolingFaces * CpuRules.STABILIZER_COOLING_PER_FACE
             totalHeat += heat
             totalCooled += minOf(cool, heat)  // excess cooling is wasted, not bonused
-            overheatingByPosition[pos] = (cool < heat)
+            // Level 0 = safe, 1 = warm (<=1/3 uncovered), 2 = hot (<=2/3), 3 = critical.
+            val deficit = heat - cool
+            val level = when {
+                deficit <= 0 -> 0
+                heat <= 0 -> 0
+                deficit * 3 <= heat -> 1
+                deficit * 3 <= heat * 2 -> 2
+                else -> 3
+            }
+            overheatLevelByPosition[pos] = level
         }
 
         isFormed = bufferCount > 0
@@ -473,7 +482,7 @@ class CraftingCoreBlockEntity(
         // state actually changes.
         updateHeatGenBlockStates(
             coProcessorPositions, bufferPositions,
-            isFormed, overheatingByPosition
+            isFormed, overheatLevelByPosition
         )
 
         markDirtyAndSync()
@@ -484,30 +493,30 @@ class CraftingCoreBlockEntity(
         coProcessorPositions: List<BlockPos>,
         bufferPositions: List<BlockPos>,
         formed: Boolean,
-        overheatingByPosition: Map<BlockPos, Boolean>
+        overheatLevelByPosition: Map<BlockPos, Int>
     ) {
         val lvl = level ?: return
         val coFormed = damien.nodeworks.block.CoProcessorBlock.FORMED
-        val coOverheating = damien.nodeworks.block.CoProcessorBlock.OVERHEATING
+        val coLevel = damien.nodeworks.block.CoProcessorBlock.OVERHEAT_LEVEL
         for (p in coProcessorPositions) {
             val s = lvl.getBlockState(p)
             if (s.block !is damien.nodeworks.block.CoProcessorBlock) continue
-            // An unformed CPU has no meaningful overheating signal — keep it false.
-            val wantOver = formed && (overheatingByPosition[p] == true)
+            // An unformed CPU has no meaningful overheat signal — pin level to 0.
+            val wantLevel = if (formed) (overheatLevelByPosition[p] ?: 0) else 0
             var next = s
             if (next.getValue(coFormed) != formed) next = next.setValue(coFormed, formed)
-            if (next.getValue(coOverheating) != wantOver) next = next.setValue(coOverheating, wantOver)
+            if (next.getValue(coLevel) != wantLevel) next = next.setValue(coLevel, wantLevel)
             if (next !== s) lvl.setBlock(p, next, Block.UPDATE_ALL)
         }
         val bufFormed = damien.nodeworks.block.CraftingStorageBlock.FORMED
-        val bufOverheating = damien.nodeworks.block.CraftingStorageBlock.OVERHEATING
+        val bufLevel = damien.nodeworks.block.CraftingStorageBlock.OVERHEAT_LEVEL
         for (p in bufferPositions) {
             val s = lvl.getBlockState(p)
             if (s.block !is damien.nodeworks.block.CraftingStorageBlock) continue
-            val wantOver = formed && (overheatingByPosition[p] == true)
+            val wantLevel = if (formed) (overheatLevelByPosition[p] ?: 0) else 0
             var next = s
             if (next.getValue(bufFormed) != formed) next = next.setValue(bufFormed, formed)
-            if (next.getValue(bufOverheating) != wantOver) next = next.setValue(bufOverheating, wantOver)
+            if (next.getValue(bufLevel) != wantLevel) next = next.setValue(bufLevel, wantLevel)
             if (next !== s) lvl.setBlock(p, next, Block.UPDATE_ALL)
         }
     }
