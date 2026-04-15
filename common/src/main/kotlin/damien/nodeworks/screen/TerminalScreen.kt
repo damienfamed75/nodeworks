@@ -418,8 +418,31 @@ class TerminalScreen(
             }
         }
 
+        // Fold the long canonical recipe id inside `network:handle("...")` to "..." while
+        // the cursor isn't sitting inside the string. The full id stays in the buffer and
+        // re-appears the moment the cursor enters the range, so editing still works.
+        // Combined with the inline icon hint above, players can keep handle calls on a
+        // single visual line even for recipes with many ingredients.
+        editor.foldsForLine = { lineIdx ->
+            val line = editor.getLine(lineIdx)
+            val match = Regex("""network:handle\s*\(\s*"([^"]+)"""").find(line)
+            if (match != null && match.groupValues[1].contains(">>")) {
+                val idRange = match.groups[1]!!.range
+                listOf(damien.nodeworks.screen.widget.ScriptEditor.Fold(idRange.first, idRange.last + 1, "..."))
+            } else emptyList()
+        }
+
         autocomplete =
             AutocompletePopup(font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis) { scripts }
+        // Position popups directly under the cursor's text row. Using yBottomOfLine
+        // (instead of yTopOfLine of the next line) deliberately excludes any decoration
+        // band above the following line — that band sits BETWEEN cursor and next line and
+        // shouldn't push the popup further down.
+        // The +4 here is the editor's internal textTop padding (yBottomOfLine is content-
+        // relative; editorY in update() is the widget top, not the content top).
+        autocomplete.lineBottomYResolver = { lineIdx ->
+            editor.yBottomOfLine(lineIdx) + 4
+        }
 
         // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 5
