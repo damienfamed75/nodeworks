@@ -103,85 +103,6 @@ class CraftingCoreScreen(
         craftGraph.render(graphics, menu.craftTree, treeLeft, treeTop, treeW, treeH)
     }
 
-    /**
-     * Heat / cooling balance indicator — a two-sided bar with a neutral center line.
-     * Visual encoding:
-     *   - Bar fills toward the LEFT (blue) when cooling > heat (throttle > 1× → overclocked).
-     *   - Bar fills toward the RIGHT (red) when heat > cooling (throttle < 1× → penalized).
-     *   - Empty bar means balanced (no generators, or exactly matched cooling).
-     * Hovering over it would be nice but the current screen has no tooltip helper, so we
-     * render the numeric values under the bar instead.
-     */
-    /**
-     * Heat / coolant balance bar — matches the buffer progress bar's height. Layout:
-     *   [heat left-aligned]     [throttle center, larger]     [coolant right-aligned]
-     * The bar itself fills blue from the center-left on cooling excess, red from the
-     * center-right on heat deficit. Placeholder numbers now; icons will replace them later.
-     */
-    private fun renderHeatBalance(
-        graphics: net.minecraft.client.gui.GuiGraphics,
-        x: Int,
-        y: Int,
-        w: Int
-    ) {
-        val font = net.minecraft.client.Minecraft.getInstance().font
-        val barH = 10  // matches the buffer progress bar so the two line up visually
-        NineSlice.CONTENT_BORDER.draw(graphics, x - 2, y - 2, w + 4, barH + 4)
-        graphics.fill(x, y, x + w, y + barH, 0xFF1A1A1A.toInt())
-
-        val heat = menu.heatGenerated
-        val cool = menu.heatCooled
-        val centerX = x + w / 2
-
-        // Always fill the entire bar — the split position encodes the heat/coolant ratio.
-        // Red from the left up to splitX, blue from splitX to the right. When heat == cool
-        // (including 0/0), the split is at the center: left half red, right half blue.
-        val total = heat + cool
-        val splitX = if (total == 0) x + w / 2
-                     else x + (heat.toFloat() / total.toFloat() * w).toInt()
-        if (splitX > x) graphics.fill(x, y, splitX, y + barH, 0xFFFF5555.toInt())
-        if (splitX < x + w) graphics.fill(splitX, y, x + w, y + barH, 0xFF5588FF.toInt())
-
-        // Icons + numbers inside the bar. Layout:
-        //   [🔥 heat]  ←bar fill→  [cool ❄]
-        // Icons are 8px, centered vertically in the 10-px tall bar.
-        val iconSize = 8
-        val iconY = y + (barH - iconSize) / 2
-        Icons.FIRE.drawSmall(graphics, x + 1, iconY, iconSize)
-        Icons.SNOWBALL.drawSmall(graphics, x + w - iconSize - 1, iconY, iconSize)
-
-        graphics.pose().pushPose()
-        graphics.pose().translate(0f, 0f, 10f)
-        val smallScale = 0.5f
-        graphics.pose().scale(smallScale, smallScale, 1f)
-        val heatStr = heat.toString()
-        val coolStr = cool.toString()
-        val textY = ((y + (barH - font.lineHeight * smallScale) / 2f + 1f) / smallScale).toInt()
-        // Heat number sits right after the fire icon.
-        val heatX = ((x + iconSize + 2).toFloat() / smallScale).toInt()
-        graphics.drawString(font, heatStr, heatX, textY, 0xFFFFFFFF.toInt(), true)
-        // Cool number sits just left of the snowball icon, right-aligned.
-        val coolStrW = (font.width(coolStr) * smallScale).toInt()
-        val coolX = ((x + w - iconSize - coolStrW - 2).toFloat() / smallScale).toInt()
-        graphics.drawString(font, coolStr, coolX, textY, 0xFFFFFFFF.toInt(), true)
-        graphics.pose().popPose()
-
-        // Throttle in the center at full scale — this is the number players care about.
-        val throttleText = String.format("%.2f\u00d7", menu.throttle)
-        val throttleColor = when {
-            heat == 0 && cool == 0 -> 0xFFFFFFFF.toInt()
-            menu.throttle >= 1f -> 0xFFCCEEFF.toInt()
-            else -> 0xFFFFCCCC.toInt()
-        }
-        val tW = font.width(throttleText)
-        val tX = centerX - tW / 2
-        val tY = y + (barH - font.lineHeight) / 2 + 1
-        graphics.pose().pushPose()
-        graphics.pose().translate(0f, 0f, 10f)
-        graphics.drawString(font, throttleText, tX, tY, throttleColor, true)
-        graphics.pose().popPose()
-    }
-
     private fun renderInfoPanel(
         graphics: GuiGraphics,
         coreEntity: damien.nodeworks.block.entity.CraftingCoreBlockEntity?,
@@ -202,12 +123,20 @@ class CraftingCoreScreen(
         graphics.drawString(font, "Status:", contentLeft, contentTop, 0xFFAAAAAA.toInt())
         graphics.drawString(font, statusLabel, contentLeft + font.width("Status:") + 4, contentTop, statusColor)
 
-        // Per-step "Job:" line removed — with co-processors, a single status string can't
-        // represent multiple branches running in parallel. The craft tree is the source of truth.
-        var nextY = contentTop + 12
+        // Efficiency line — throttle as percentage. Replaces the old heat/coolant bar since
+        // per-block emissives already show which blocks overheat; this is the one number
+        // the player can't see in the world.
+        val effPct = (menu.throttle * 100f).toInt()
+        val effColor = when {
+            menu.throttle >= 1f -> 0xFFCCEEFF.toInt()
+            menu.throttle > 0f -> 0xFFFFCCCC.toInt()
+            else -> 0xFFAAAAAA.toInt()
+        }
+        graphics.drawString(font, "Efficiency:", contentLeft, contentTop + 12, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, "$effPct%", contentLeft + font.width("Efficiency:") + 4, contentTop + 12, effColor)
 
         // Buffer bar
-        val barTop = nextY + 2
+        val barTop = contentTop + 26
         graphics.drawString(font, "Buffer:", contentLeft, barTop, 0xFFAAAAAA.toInt())
         val barX = contentLeft + font.width("Buffer:") + 4
         val barW = LEFT_PANEL_W - font.width("Buffer:") - 16
@@ -240,26 +169,12 @@ class CraftingCoreScreen(
         val typesColor = if (menu.bufferTypesUsed >= menu.bufferTypesCapacity) 0xFFFF5555.toInt() else 0xFFAAAAAA.toInt()
         graphics.drawString(font, typesText, contentLeft, typesTop, typesColor)
 
-        // Heat / cooling balance — a two-sided bar. Center = balanced. Right-red = heat
-        // deficit (throttle < 1). Left-blue = cooling excess (throttle > 1, "overclocked").
-        // Width of the filled portion corresponds to how far throttle is from 1.0×.
-        val balanceTop = typesTop + 12
-        renderHeatBalance(graphics, contentLeft, balanceTop, LEFT_PANEL_W - 8)
-
-        // Cancel button visibility
+        // Cancel button — positioned under the types line; heat bar removed.
         cancelButton?.visible = menu.isCrafting || menu.bufferUsed > 0
+        cancelButton?.y = typesTop + 12
 
-        // Cancel button position — just below the heat bar (which is now 10 px tall like
-        // the buffer bar, with text overlaid inside it).
-        cancelButton?.y = balanceTop + 12
-
-        // Buffer section — always visible with border and scrollbar track.
-        // Position accounts for: types line (14px), heat bar (14px incl frame+gap),
-        // cancel button row (20px).
-        val bufferLabelTop = barTop + barH + 42
-        graphics.drawString(font, "Buffer:", contentLeft, bufferLabelTop, 0xFFAAAAAA.toInt())
-
-        val gridTop = bufferLabelTop + 12
+        // Buffer grid — label dropped since the fill bar above already says "Buffer:".
+        val gridTop = typesTop + 12 + 18
         val slotSize = 18
         val bufferCols = 6
         val bufferRows = 5
