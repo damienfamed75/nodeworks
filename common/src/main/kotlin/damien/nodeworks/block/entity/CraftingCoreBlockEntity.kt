@@ -72,7 +72,7 @@ class CraftingCoreBlockEntity(
     var heatCooled: Int = 0
         private set
 
-    /** Current throttle multiplier — heatPenalty × coolingBonus. Fed to [CpuRules.opCost]
+    /** Current throttle multiplier — heatPenalty × substrateBonus. Fed to [CpuRules.opCost]
      *  by the [damien.nodeworks.script.cpu.CpuOpExecutor] every op. Recalculated whenever
      *  the multiblock changes. Range ≈ [THROTTLE_FLOOR, COOLING_BONUS_CAP]. */
     var throttle: Float = 1.0f
