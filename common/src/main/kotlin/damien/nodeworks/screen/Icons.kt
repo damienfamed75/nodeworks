@@ -97,6 +97,23 @@ class Icons private constructor(val col: Int, val row: Int) {
         }
     }
 
+    /** Draw this icon tinted and scaled to a custom size. */
+    fun drawTinted(graphics: GuiGraphics, x: Int, y: Int, size: Int, color: Int, alpha: Float = 1f) {
+        val r = ((color shr 16) and 0xFF) / 255f
+        val g = ((color shr 8) and 0xFF) / 255f
+        val b = (color and 0xFF) / 255f
+        if (!batching) {
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
+            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        }
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
+        graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        if (!batching) {
+            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+        }
+    }
+
     companion object {
         val ATLAS: ResourceLocation = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
 

@@ -169,14 +169,32 @@ class ProcessingSetScreenHandler(
         if (slotId in 0 until TOTAL_GHOST_SLOTS) {
             val carried = carried
             if (carried.isEmpty) {
+                // Empty-handed click clears the ghost slot and resets its count to 1.
                 when {
-                    slotId < INPUT_SLOTS -> inputGrid.setItem(slotId, ItemStack.EMPTY)
-                    else -> outputGrid.setItem(slotId - INPUT_SLOTS, ItemStack.EMPTY)
+                    slotId < INPUT_SLOTS -> {
+                        inputGrid.setItem(slotId, ItemStack.EMPTY)
+                        data.set(slotId, 1)
+                    }
+                    else -> {
+                        val outIdx = slotId - INPUT_SLOTS
+                        outputGrid.setItem(outIdx, ItemStack.EMPTY)
+                        data.set(INPUT_SLOTS + outIdx, 1)
+                    }
                 }
             } else {
+                // Populate slot AND inherit the clicked stack's count so the recipe
+                // picks up "4 ingots" when the player clicked with a stack of 4.
+                val inheritedCount = carried.count.coerceAtLeast(1)
                 when {
-                    slotId < INPUT_SLOTS -> inputGrid.setItem(slotId, ItemStack(carried.item, 1))
-                    else -> outputGrid.setItem(slotId - INPUT_SLOTS, ItemStack(carried.item, 1))
+                    slotId < INPUT_SLOTS -> {
+                        inputGrid.setItem(slotId, ItemStack(carried.item, 1))
+                        data.set(slotId, inheritedCount)
+                    }
+                    else -> {
+                        val outIdx = slotId - INPUT_SLOTS
+                        outputGrid.setItem(outIdx, ItemStack(carried.item, 1))
+                        data.set(INPUT_SLOTS + outIdx, inheritedCount)
+                    }
                 }
             }
             return
