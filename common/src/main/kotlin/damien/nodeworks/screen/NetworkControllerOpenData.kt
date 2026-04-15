@@ -9,7 +9,8 @@ data class NetworkControllerOpenData(
     val networkColor: Int,
     val networkName: String,
     val redstoneMode: Int,
-    val nodeGlowStyle: Int
+    val nodeGlowStyle: Int,
+    val handlerRetryLimit: Int
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, NetworkControllerOpenData> = object : StreamCodec<FriendlyByteBuf, NetworkControllerOpenData> {
@@ -18,6 +19,7 @@ data class NetworkControllerOpenData(
                     buf.readBlockPos(),
                     buf.readVarInt(),
                     buf.readUtf(32),
+                    buf.readVarInt(),
                     buf.readVarInt(),
                     buf.readVarInt()
                 )
@@ -28,6 +30,7 @@ data class NetworkControllerOpenData(
                 buf.writeUtf(data.networkName, 32)
                 buf.writeVarInt(data.redstoneMode)
                 buf.writeVarInt(data.nodeGlowStyle)
+                buf.writeVarInt(data.handlerRetryLimit)
             }
         }
     }

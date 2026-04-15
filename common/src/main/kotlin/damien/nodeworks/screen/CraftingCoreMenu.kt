@@ -16,7 +16,8 @@ class CraftingCoreMenu(
     val corePos: BlockPos,
     private val data: ContainerData = SimpleContainerData(DATA_SLOTS),
     private val serverEntity: CraftingCoreBlockEntity? = null,
-    private val packetSender: ((net.minecraft.network.protocol.common.custom.CustomPacketPayload) -> Unit)? = null
+    private val packetSender: ((net.minecraft.network.protocol.common.custom.CustomPacketPayload) -> Unit)? = null,
+    initialFailureReason: String = ""
 ) : AbstractContainerMenu(ModScreenHandlers.CRAFTING_CORE, syncId) {
 
     companion object {
@@ -64,7 +65,7 @@ class CraftingCoreMenu(
             data.set(IDX_TYPES_CAP, openData.bufferTypesCapacity)
             data.set(IDX_FORMED, if (openData.isFormed) 1 else 0)
             data.set(IDX_CRAFTING, if (openData.isCrafting) 1 else 0)
-            return CraftingCoreMenu(syncId, openData.pos, data)
+            return CraftingCoreMenu(syncId, openData.pos, data, initialFailureReason = openData.lastFailureReason)
         }
 
         fun createServer(syncId: Int, playerInventory: Inventory, entity: CraftingCoreBlockEntity): CraftingCoreMenu {
@@ -90,7 +91,7 @@ class CraftingCoreMenu(
             val sender: ((net.minecraft.network.protocol.common.custom.CustomPacketPayload) -> Unit)? = if (player != null) { payload ->
                 player.connection.send(net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(payload))
             } else null
-            return CraftingCoreMenu(syncId, entity.blockPos, data, entity, sender)
+            return CraftingCoreMenu(syncId, entity.blockPos, data, entity, sender, entity.lastFailureReason)
         }
     }
 
@@ -116,10 +117,15 @@ class CraftingCoreMenu(
     /** Client-side completed node IDs — green-highlighted (this branch is done). */
     var completedNodeIds: Set<Int> = emptySet()
 
+    /** Last-craft-failure reason for the footer bar. Initialized from openData; kept in
+     *  sync via [damien.nodeworks.network.CpuFailurePayload] pushes. */
+    var lastFailureReason: String = initialFailureReason
+
     private var bufferSyncTimer = 0
     private var treeSyncTimer = 0
     private var lastBufferHash = 0
     private var lastTreeHash = 0
+    private var lastSentFailure: String = initialFailureReason
 
     init {
         addDataSlots(data)
@@ -143,6 +149,13 @@ class CraftingCoreMenu(
         if (++treeSyncTimer >= TREE_SYNC_INTERVAL) {
             treeSyncTimer = 0
             syncCraftTree(entity)
+        }
+        // Failure-reason sync — sent any time the string changes. Not throttled; changes
+        // only fire on plan boundaries (rare).
+        val currentFailure = entity.lastFailureReason
+        if (currentFailure != lastSentFailure) {
+            lastSentFailure = currentFailure
+            sender(damien.nodeworks.network.CpuFailurePayload(containerId, currentFailure))
         }
     }
 

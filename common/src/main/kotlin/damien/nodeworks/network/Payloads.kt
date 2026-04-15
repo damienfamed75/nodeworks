@@ -295,6 +295,21 @@ data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int,
  * S2C: Sync buffer contents from a Crafting Core to the client with the GUI open.
  * Sent only to the player viewing the menu, throttled to once per second.
  */
+/**
+ * S2C: Live update of the Crafting Core's last-failure text. Sent when the reason string
+ * changes (on failure, or cleared on successful craft).
+ */
+data class CpuFailurePayload(val containerId: Int, val reason: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<CpuFailurePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "cpu_failure"))
+        val CODEC: StreamCodec<FriendlyByteBuf, CpuFailurePayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.reason, 256) },
+            { buf -> CpuFailurePayload(buf.readVarInt(), buf.readUtf(256)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 data class BufferSyncPayload(val containerId: Int, val entries: List<Pair<String, Long>>) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<BufferSyncPayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "buffer_sync"))
@@ -341,6 +356,18 @@ data class CancelCraftPayload(val pos: BlockPos) : CustomPacketPayload {
         val CODEC: StreamCodec<FriendlyByteBuf, CancelCraftPayload> = CustomPacketPayload.codec(
             { p, buf -> buf.writeBlockPos(p.pos) },
             { buf -> CancelCraftPayload(buf.readBlockPos()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: Dismiss the last-failure text on a Crafting Core (clears the floating error bar). */
+data class DismissCpuFailurePayload(val pos: BlockPos) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<DismissCpuFailurePayload> = CustomPacketPayload.Type(ResourceLocation.fromNamespaceAndPath("nodeworks", "dismiss_cpu_failure"))
+        val CODEC: StreamCodec<FriendlyByteBuf, DismissCpuFailurePayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos) },
+            { buf -> DismissCpuFailurePayload(buf.readBlockPos()) }
         )
     }
     override fun type() = TYPE

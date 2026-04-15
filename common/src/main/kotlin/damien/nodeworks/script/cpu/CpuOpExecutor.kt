@@ -74,7 +74,15 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     /** Seconds between handler retries when inputs went unmoved. One second feels like
      *  "the CPU is waiting for something" without being laggy. */
     private val RETRY_BACKOFF_TICKS = 20L
-    private val MAX_HANDLER_RETRIES = 50
+
+    /** Per-op retry cap. Read live from the Network Controller for this CPU's network so
+     *  players can tune it in the Controller GUI without a server restart. Falls back to
+     *  50 if no Controller is reachable (legacy default). */
+    private fun maxHandlerRetries(): Int {
+        val lvl = cpu.level ?: return 50
+        return damien.nodeworks.render.NodeConnectionRenderer
+            .findController(lvl, cpu.blockPos)?.handlerRetryLimit ?: 50
+    }
 
     /** Caller-supplied completion listeners. Not persisted — on world reload resumed
      *  plans complete silently (the caller's session is gone anyway). */
@@ -317,7 +325,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         if (handlerEngine == null) {
             // Handler not loaded yet — common right after world load, before terminal auto-run.
             // Back off and retry; handler should appear once the terminal script is running.
-            // Counts against MAX_HANDLER_RETRIES so a truly-missing handler still fails cleanly.
+            // Counts against the Controller's retry cap so a truly-missing handler still fails cleanly.
             return scheduleHandlerWaitRetry(op, "handler engine not yet available")
         }
         val handler = handlerEngine.processingHandlers[apiMatch.api.name]
@@ -578,15 +586,16 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
 
     /** Back off and retry when the processing handler isn't yet registered — typical on
      *  world load before terminal auto-run finishes. Shares [processRetries] with the
-     *  destination-full retry path so a truly-absent handler fails after MAX_HANDLER_RETRIES. */
+     *  destination-full retry path so a truly-absent handler fails after the configured cap. */
     private fun scheduleHandlerWaitRetry(op: Operation.Process, reason: String): CraftScheduler.OpResult {
         val count = (processRetries[op.id] ?: 0) + 1
         processRetries[op.id] = count
-        if (count > MAX_HANDLER_RETRIES) {
+        val cap = maxHandlerRetries()
+        if (count > cap) {
             processRetries.remove(op.id)
             processBatchProgress.remove(op.id)
             return CraftScheduler.OpResult.Failed(
-                "Handler '${op.processingApiName}' never appeared after $MAX_HANDLER_RETRIES retries ($reason). " +
+                "Handler '${op.processingApiName}' never appeared after $cap retries ($reason). " +
                 "Check the terminal script is running and registers this API."
             )
         }
@@ -602,12 +611,13 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     ): CraftScheduler.OpResult {
         val count = (processRetries[op.id] ?: 0) + 1
         processRetries[op.id] = count
-        if (count > MAX_HANDLER_RETRIES) {
+        val cap = maxHandlerRetries()
+        if (count > cap) {
             processRetries.remove(op.id)
             processBatchProgress.remove(op.id)
             return CraftScheduler.OpResult.Failed(
                 "Processing handler '${op.processingApiName}' couldn't progress for " +
-                "$MAX_HANDLER_RETRIES retries ($reason). Destinations may be permanently unavailable."
+                "$cap retries ($reason). Destinations may be permanently unavailable."
             )
         }
         val lvl = cpu.level
@@ -617,6 +627,18 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // rather than polling a never-completing pending. state is discarded here — the retry
         // builds a fresh ProcessingJob + pending next time.
         processState.remove(op.id)
+        // Also clear per-op resume info set by the handler's job:pull(). Without this, the
+        // next dispatch would take the resume path (startResumePoll polls target coords)
+        // instead of re-invoking the handler — meaning a full machine never gets another
+        // insert attempt. Per-op resume is only meaningful when items actually reached the
+        // machine; on a failed-move retry, we're starting fresh.
+        cpu.clearOpResume(op.id)
+        // Keep the GUI showing "Crafting" through the backoff window. Without this the
+        // Status line can drop to "Idle" between retries if something downstream of the
+        // handler invocation cleared the flag — defensive belt-and-suspenders.
+        val itemLabel = op.outputs.firstOrNull()?.first
+            ?.substringAfter(':')?.replace('_', ' ') ?: cpu.currentCraftItem
+        cpu.setCrafting(true, itemLabel)
         return CraftScheduler.OpResult.InProgress
     }
 
@@ -638,6 +660,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         cpu.invalidateInFlightPolls()
         // Any trailing buffer contents (shouldn't happen if Deliver ran) are flushed.
         flushBufferToStorage()
+        // A successful craft clears any lingering failure message from a previous failed run.
+        if (cpu.lastFailureReason.isNotEmpty()) cpu.lastFailureReason = ""
         cpu.clearAllCraftState()
         cpu.setCrafting(false)
         completionListeners.remove(plan)?.invoke(true)
@@ -654,6 +678,23 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // don't keep dumping items into an idle CPU's buffer.
         cpu.invalidateInFlightPolls()
         flushBufferToStorage()
+        // Store the reason on the CPU BE so the GUI can surface it. Cancellation by the
+        // player isn't really a failure to debug — skip those.
+        if (!reason.startsWith("Cancelled")) {
+            val itemName = plan.rootItemId.substringAfter(':').replace('_', ' ')
+            cpu.lastFailureReason = "$itemName × ${plan.rootCount}: $reason"
+        }
+        // Chat-notify the submitter if known and still online.
+        val lvl = cpu.level
+        val submitter = plan.submitterUuid
+        if (!reason.startsWith("Cancelled") && submitter != null && lvl is ServerLevel) {
+            val player = lvl.server.playerList.getPlayer(submitter)
+            player?.sendSystemMessage(
+                net.minecraft.network.chat.Component.literal(
+                    "[Crafting CPU] ${plan.rootItemId} × ${plan.rootCount} failed: $reason"
+                ).withStyle(net.minecraft.ChatFormatting.RED)
+            )
+        }
         cpu.clearAllCraftState()
         cpu.setCrafting(false)
         completionListeners.remove(plan)?.invoke(false)

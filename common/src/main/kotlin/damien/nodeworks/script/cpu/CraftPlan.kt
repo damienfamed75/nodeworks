@@ -17,7 +17,11 @@ data class CraftPlan(
     val rootItemId: String,
     val rootCount: Long,
     val ops: List<Operation>,
-    val terminalOpIds: Set<Int>
+    val terminalOpIds: Set<Int>,
+    /** UUID of the player who submitted this craft. Null for programmatic/resume submissions.
+     *  Used by [damien.nodeworks.script.cpu.CpuOpExecutor.onPlanFailed] to chat-notify the
+     *  submitter when the plan fails. */
+    val submitterUuid: java.util.UUID? = null
 ) {
     /** O(1) lookup by op id. Built once. */
     private val byId: Map<Int, Operation> = ops.associateBy { it.id }
@@ -38,6 +42,7 @@ data class CraftPlan(
         var i = 0
         for (t in terminalOpIds) terms[i++] = t
         tag.putIntArray("terminals", terms)
+        submitterUuid?.let { tag.putUUID("submitter", it) }
     }
 
     companion object {
@@ -48,7 +53,8 @@ data class CraftPlan(
             val opsList = tag.getList("ops", Tag.TAG_COMPOUND.toInt())
             val ops = (0 until opsList.size).mapNotNull { Operation.loadFromNBT(opsList.getCompound(it)) }
             val terms = (tag.getIntArray("terminals") ?: IntArray(0)).toSet()
-            return CraftPlan(rootItemId, rootCount, ops, terms)
+            val submitter = if (tag.hasUUID("submitter")) tag.getUUID("submitter") else null
+            return CraftPlan(rootItemId, rootCount, ops, terms, submitter)
         }
     }
 }

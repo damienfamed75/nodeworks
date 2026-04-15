@@ -82,7 +82,8 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
                 entity.bufferTypesUsed,
                 entity.bufferTypesCapacity,
                 entity.isFormed,
-                entity.isCrafting
+                entity.isCrafting,
+                entity.lastFailureReason
             ),
             damien.nodeworks.screen.CraftingCoreOpenData.STREAM_CODEC,
             { syncId, inv, _ -> damien.nodeworks.screen.CraftingCoreMenu.createServer(syncId, inv, entity) }

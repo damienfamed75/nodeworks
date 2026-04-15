@@ -132,7 +132,8 @@ object CraftingHelper {
         cpuPos: BlockPos? = null,
         processingHandlers: Map<String, LuaFunction>? = null,
         callerScheduler: SchedulerImpl? = null,
-        traceLog: ((String) -> Unit)? = null
+        traceLog: ((String) -> Unit)? = null,
+        submitterUuid: java.util.UUID? = null
     ): CraftResult? {
         lastFailReason = null
         currentPendingJob = null
@@ -182,7 +183,8 @@ object CraftingHelper {
         // 4. Save the tree snapshot for the diagnostic GUI, then submit to the scheduler.
         cpu.craftTreeSnapshot = tree
         val pending = PendingHandlerJob()
-        cpu.submitCraft(plan, level.gameTime) { success ->
+        val planWithSubmitter = if (submitterUuid != null) plan.copy(submitterUuid = submitterUuid) else plan
+        cpu.submitCraft(planWithSubmitter, level.gameTime) { success ->
             pending.complete(success)
         }
         currentPendingJob = pending

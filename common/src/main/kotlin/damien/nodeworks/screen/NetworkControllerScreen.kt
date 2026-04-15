@@ -30,16 +30,18 @@ class NetworkControllerScreen(
 
     // Property definitions
     private data class Property(val label: String, val type: PropertyType)
-    private enum class PropertyType { NAME, COLOR, REDSTONE, GLOW_STYLE }
+    private enum class PropertyType { NAME, COLOR, REDSTONE, GLOW_STYLE, HANDLER_RETRY }
 
     private val properties = listOf(
         Property("Name", PropertyType.NAME),
         Property("Color", PropertyType.COLOR),
         Property("Redstone", PropertyType.REDSTONE),
-        Property("Node Glow", PropertyType.GLOW_STYLE)
+        Property("Node Glow", PropertyType.GLOW_STYLE),
+        Property("Retries", PropertyType.HANDLER_RETRY)
     )
 
     private lateinit var nameField: EditBox
+    private lateinit var retryField: EditBox
     private var nameCheckmarkTime: Long = -1
     private val checkmarkDuration = 30L
     private var scrollOffset = 0
@@ -76,6 +78,14 @@ class NetworkControllerScreen(
         nameField.value = menu.initialName
         nameField.setBordered(true)
         addRenderableWidget(nameField)
+
+        // Retry limit field — digits only, positioned dynamically between - / + buttons.
+        retryField = EditBox(font, listLeft + LABEL_W + 4, listTop, 36, 16, Component.literal("Retries"))
+        retryField.setMaxLength(3)
+        retryField.value = menu.handlerRetryLimit.toString()
+        retryField.setBordered(true)
+        retryField.setFilter { s -> s.all { it.isDigit() } }
+        addRenderableWidget(retryField)
     }
 
     override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
@@ -178,6 +188,10 @@ class NetworkControllerScreen(
                     renderGlowStyleControl(graphics, controlX, controlY, mouseX, mouseY)
                 }
 
+                PropertyType.HANDLER_RETRY -> {
+                    renderHandlerRetryControl(graphics, controlX, controlY, mouseX, mouseY)
+                }
+
                 else -> {}
             }
         }
@@ -248,6 +262,44 @@ class NetworkControllerScreen(
         }
     }
 
+    private fun renderHandlerRetryControl(graphics: GuiGraphics, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
+        val btnW = 16
+        val btnH = 16
+        val fieldW = 36
+
+        // "-" button
+        val minusHovered = mouseX >= bx && mouseX < bx + btnW && mouseY >= by && mouseY < by + btnH
+        (if (minusHovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, bx, by, btnW, btnH)
+        val minusLabel = "-"
+        graphics.drawString(font, minusLabel, bx + (btnW - font.width(minusLabel)) / 2, by + 4, 0xFFDDDDDD.toInt())
+
+        // EditBox position + visibility; sync value from menu when not focused.
+        val fieldX = bx + btnW + 4
+        retryField.setX(fieldX)
+        retryField.setY(by)
+        retryField.width = fieldW
+        val visible = by + btnH > listTop && by < listBottom
+        retryField.visible = visible
+        if (visible && !retryField.isFocused) {
+            val current = menu.handlerRetryLimit.toString()
+            if (retryField.value != current) retryField.value = current
+        }
+
+        // "+" button
+        val plusX = fieldX + fieldW + 4
+        val plusHovered = mouseX >= plusX && mouseX < plusX + btnW && mouseY >= by && mouseY < by + btnH
+        (if (plusHovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, plusX, by, btnW, btnH)
+        val plusLabel = "+"
+        graphics.drawString(font, plusLabel, plusX + (btnW - font.width(plusLabel)) / 2, by + 4, 0xFFDDDDDD.toInt())
+    }
+
+    private fun commitRetryField() {
+        val parsed = retryField.value.toIntOrNull() ?: return
+        val clamped = parsed.coerceIn(0, 500)
+        if (clamped != menu.handlerRetryLimit) sendHandlerRetryUpdate(clamped)
+        retryField.value = clamped.toString()
+    }
+
     private var glowTooltip: String? = null
     private var glowTooltipX = 0
     private var glowTooltipY = 0
@@ -289,6 +341,16 @@ class NetworkControllerScreen(
                 return true
             }
             this.nameField.keyPressed(keyCode, scanCode, modifiers)
+            return true
+        }
+        if (this.retryField.isFocused) {
+            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers) // ESC
+            if (keyCode == 257) { // ENTER — commit retries
+                commitRetryField()
+                this.retryField.isFocused = false
+                return true
+            }
+            this.retryField.keyPressed(keyCode, scanCode, modifiers)
             return true
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
@@ -358,6 +420,33 @@ class NetworkControllerScreen(
                     }
                 }
 
+                PropertyType.HANDLER_RETRY -> {
+                    val btnW = 16
+                    val btnH = 16
+                    val fieldW = 36
+                    val step = if (hasShiftDown()) 50 else 10
+                    val current = menu.handlerRetryLimit
+                    val fieldX = controlX + btnW + 4
+                    val plusX = fieldX + fieldW + 4
+                    // Clicking outside the EditBox while it's focused commits current value.
+                    val inField = mx >= fieldX && mx < fieldX + fieldW && my >= controlY && my < controlY + btnH
+                    if (retryField.isFocused && !inField) {
+                        commitRetryField()
+                    }
+                    // Minus
+                    if (mx >= controlX && mx < controlX + btnW && my >= controlY && my < controlY + btnH) {
+                        val next = (current - step).coerceAtLeast(0)
+                        if (next != current) sendHandlerRetryUpdate(next)
+                        return true
+                    }
+                    // Plus
+                    if (mx >= plusX && mx < plusX + btnW && my >= controlY && my < controlY + btnH) {
+                        val next = (current + step).coerceAtMost(500)
+                        if (next != current) sendHandlerRetryUpdate(next)
+                        return true
+                    }
+                }
+
                 PropertyType.NAME -> {
                     val setBtnX = controlX + 104
                     val setBtnW = 26
@@ -413,6 +502,7 @@ class NetworkControllerScreen(
     override fun removed() {
         super.removed()
         sendNameUpdate(nameField.value)
+        commitRetryField()
     }
 
     private fun sendColorUpdate(color: Int) {
@@ -424,6 +514,12 @@ class NetworkControllerScreen(
     private fun sendRedstoneUpdate(mode: Int) {
         PlatformServices.clientNetworking.sendToServer(
             damien.nodeworks.network.ControllerSettingsPayload(menu.controllerPos, "redstone", mode, "")
+        )
+    }
+
+    private fun sendHandlerRetryUpdate(value: Int) {
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.ControllerSettingsPayload(menu.controllerPos, "retry", value, "")
         )
     }
 
