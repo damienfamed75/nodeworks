@@ -11,6 +11,7 @@ import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CoProcessorBlock
 import damien.nodeworks.block.CraftingStorageBlock
 import damien.nodeworks.block.StabilizerBlock
+import damien.nodeworks.block.SubstrateBlock
 import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -94,6 +95,14 @@ object ModBlocks {
     val STABILIZER: Block = register(
         "stabilizer",
         ::StabilizerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val SUBSTRATE: Block = register(
+        "substrate",
+        ::SubstrateBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()

@@ -1,1 +1,8 @@
-{"variants":{"":{"model":"nodeworks:block/crafting_storage"}}}
+{
+  "variants": {
+    "formed=false,overheating=false": { "model": "nodeworks:block/crafting_storage" },
+    "formed=false,overheating=true":  { "model": "nodeworks:block/crafting_storage" },
+    "formed=true,overheating=false":  { "model": "nodeworks:block/crafting_storage_on" },
+    "formed=true,overheating=true":   { "model": "nodeworks:block/crafting_storage_overheating" }
+  }
+}

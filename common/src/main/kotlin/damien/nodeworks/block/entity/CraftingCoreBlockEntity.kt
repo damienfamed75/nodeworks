@@ -357,7 +357,18 @@ class CraftingCoreBlockEntity(
         var bufferCount = 0
         var coProcessors = 0
         var heatGen = 0
-        var heatCool = 0
+
+        // Collect discovered component positions by type so we can do the adjacency pass
+        // after the graph walk. Substrate's contribution is *positional* — we count faces
+        // between Substrate blocks and heat-generating components (Buffer / Co-Processor).
+        val heatGenPositions = HashSet<BlockPos>()
+        // Heat value per heat-gen, so we can count which heat is "reached" by Stabilizers.
+        val heatByPosition = HashMap<BlockPos, Int>()
+        val substratePositions = HashSet<BlockPos>()
+        // HashSet so the per-heat-gen loop can test face-neighbor membership in O(1).
+        val stabilizerPositions = HashSet<BlockPos>()
+        val coProcessorPositions = ArrayList<BlockPos>()
+        val bufferPositions = ArrayList<BlockPos>()
 
         val visited = mutableSetOf(worldPosition)
         val queue = ArrayDeque<BlockPos>()
@@ -380,29 +391,76 @@ class CraftingCoreBlockEntity(
                             totalTypes += entity.storageTypes
                             bufferCount++
                             heatGen += entity.storageHeat
+                            heatGenPositions.add(neighbor)
+                            heatByPosition[neighbor] = entity.storageHeat
+                            bufferPositions.add(neighbor)
                         }
                         is CoProcessorBlockEntity -> {
                             coProcessors++
                             heatGen += entity.heat
+                            heatGenPositions.add(neighbor)
+                            heatByPosition[neighbor] = entity.heat
+                            coProcessorPositions.add(neighbor)
                         }
                         is StabilizerBlockEntity -> {
-                            heatCool += entity.coolingContribution
+                            stabilizerPositions.add(neighbor)
+                        }
+                        is SubstrateBlockEntity -> {
+                            totalTypes += CpuRules.SUBSTRATE_TYPE_CONTRIBUTION
+                            substratePositions.add(neighbor)
                         }
                     }
-                    // Future: Substrate contribution accumulates here
                 }
             }
         }
 
+        // Substrate adjacency pass — count every face where a Substrate block touches a
+        // Buffer or Co-Processor. Substrate-to-Substrate faces don't count; Substrate touching
+        // the Core itself doesn't count (Core doesn't generate heat). This is what makes
+        // placement a puzzle: packed layouts (Substrate sandwiched between components) yield
+        // more adjacencies per block than chains along one axis.
+        var substrateAdjacencies = 0
+        for (sPos in substratePositions) {
+            for (dir in net.minecraft.core.Direction.entries) {
+                if (sPos.relative(dir) in heatGenPositions) substrateAdjacencies++
+            }
+        }
+
+        // PER-HEAT-GEN LOCAL BALANCE — for each heat-generator, compute its own heat
+        // (base + hotspot adjacency penalty) and its own cooling (Stabilizer faces
+        // directly touching it × per-face rating). Every rule operates at block-adjacency
+        // distance so the player can reason about each block individually.
+        //
+        // Substrate does NOT participate: it neither generates heat nor carries cooling.
+        // Its only mechanical role is the throttle bonus computed separately.
+        val overheatingByPosition = HashMap<BlockPos, Boolean>()
+        var totalHeat = 0
+        var totalCooled = 0
+        for (pos in heatGenPositions) {
+            val baseHeat = heatByPosition[pos] ?: 0
+            var hotspotFaces = 0
+            var coolingFaces = 0
+            for (dir in net.minecraft.core.Direction.entries) {
+                val n = pos.relative(dir)
+                if (n in heatGenPositions) hotspotFaces++
+                else if (n in stabilizerPositions) coolingFaces++
+            }
+            val heat = baseHeat + hotspotFaces * CpuRules.HOTSPOT_HEAT_PER_FACE
+            val cool = coolingFaces * CpuRules.STABILIZER_COOLING_PER_FACE
+            totalHeat += heat
+            totalCooled += minOf(cool, heat)  // excess cooling is wasted, not bonused
+            overheatingByPosition[pos] = (cool < heat)
+        }
+
         isFormed = bufferCount > 0
         coProcessorCount = coProcessors
-        heatGenerated = heatGen
-        heatCooled = heatCool
-        // Throttle = heat penalty × cooling bonus × substrate bonus (Phase 5 adds substrate).
-        // Range effectively [THROTTLE_FLOOR, COOLING_BONUS_CAP]. Higher = faster ops.
-        throttle = CpuRules.heatPenalty(heatGen, heatCool) * CpuRules.coolingBonus(heatGen, heatCool)
+        heatGenerated = totalHeat
+        heatCooled = totalCooled
+        // Throttle = heatPenalty × substrateBonus. No coolingBonus — only Substrate can
+        // push throttle above 1.0×. Keeps the "what makes it faster" story crisp.
+        throttle = CpuRules.heatPenalty(totalHeat, totalCooled) *
+                   CpuRules.substrateBonus(substrateAdjacencies)
 
-        // Core always contributes 1 thread; each Co-Processor adds THREADS_PER_COPROCESSOR.
         scheduler.threadCount = 1 + coProcessors * CpuRules.THREADS_PER_COPROCESSOR
 
         if (isFormed) {
@@ -410,8 +468,48 @@ class CraftingCoreBlockEntity(
         } else {
             bufferState.setCapacities(0L, 0)
         }
+        // Push formed + overheating flags out to each heat-gen component so emissive
+        // variants reflect cooling status per block. Only issues setBlock when the
+        // state actually changes.
+        updateHeatGenBlockStates(
+            coProcessorPositions, bufferPositions,
+            isFormed, overheatingByPosition
+        )
+
         markDirtyAndSync()
         updateBlockState()
+    }
+
+    private fun updateHeatGenBlockStates(
+        coProcessorPositions: List<BlockPos>,
+        bufferPositions: List<BlockPos>,
+        formed: Boolean,
+        overheatingByPosition: Map<BlockPos, Boolean>
+    ) {
+        val lvl = level ?: return
+        val coFormed = damien.nodeworks.block.CoProcessorBlock.FORMED
+        val coOverheating = damien.nodeworks.block.CoProcessorBlock.OVERHEATING
+        for (p in coProcessorPositions) {
+            val s = lvl.getBlockState(p)
+            if (s.block !is damien.nodeworks.block.CoProcessorBlock) continue
+            // An unformed CPU has no meaningful overheating signal — keep it false.
+            val wantOver = formed && (overheatingByPosition[p] == true)
+            var next = s
+            if (next.getValue(coFormed) != formed) next = next.setValue(coFormed, formed)
+            if (next.getValue(coOverheating) != wantOver) next = next.setValue(coOverheating, wantOver)
+            if (next !== s) lvl.setBlock(p, next, Block.UPDATE_ALL)
+        }
+        val bufFormed = damien.nodeworks.block.CraftingStorageBlock.FORMED
+        val bufOverheating = damien.nodeworks.block.CraftingStorageBlock.OVERHEATING
+        for (p in bufferPositions) {
+            val s = lvl.getBlockState(p)
+            if (s.block !is damien.nodeworks.block.CraftingStorageBlock) continue
+            val wantOver = formed && (overheatingByPosition[p] == true)
+            var next = s
+            if (next.getValue(bufFormed) != formed) next = next.setValue(bufFormed, formed)
+            if (next.getValue(bufOverheating) != wantOver) next = next.setValue(bufOverheating, wantOver)
+            if (next !== s) lvl.setBlock(p, next, Block.UPDATE_ALL)
+        }
     }
 
     /**

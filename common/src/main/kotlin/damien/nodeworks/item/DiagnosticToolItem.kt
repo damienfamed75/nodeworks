@@ -131,7 +131,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                     details.add("Type: ${entity.variableType}")
                 }
                 is damien.nodeworks.block.entity.CraftingStorageBlockEntity -> {
-                    details.add("Tier: ${entity.tier}")
+                    details.add("Capacity: ${entity.storageCapacity} / ${entity.storageTypes} types")
                 }
                 else -> {}
             }

@@ -12,21 +12,25 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 
 /**
- * Buffer block (code name: CraftingStorage — kept for save-compat) — contributes
- * count capacity, unique-types capacity, and heat to an adjacent Crafting CPU.
+ * Substrate — the positional puzzle piece of the CPU. Contributes two things:
+ *  1. A small unique-type slot bonus ([CpuRules.SUBSTRATE_TYPE_CONTRIBUTION]) regardless of
+ *     placement, so adding one is never worthless.
+ *  2. A throttle bonus for every face it shares with a Buffer or Co-Processor
+ *     ([CpuRules.SUBSTRATE_BONUS_PER_FACE]). Substrate-to-Substrate faces do NOT count —
+ *     the mechanic rewards sandwiching Substrate between heat-generating components, which
+ *     forces the player to think about layout rather than block-quantity.
  *
- * Values are fixed per block ([CpuRules.BUFFER_COUNT_CAPACITY] etc.); scaling comes
- * from adding more Buffers. The puzzle is balancing the heat this generates against
- * Stabilizer cooling (which diminishes) and Substrate adjacency bonuses.
+ * No heat, no cooling — purely throttle scaling.
  */
-class CraftingStorageBlockEntity(
+class SubstrateBlockEntity(
     pos: BlockPos,
     state: BlockState
-) : BlockEntity(ModBlockEntities.CRAFTING_STORAGE, pos, state), CpuComponentBlockEntity {
+) : BlockEntity(ModBlockEntities.SUBSTRATE, pos, state), CpuComponentBlockEntity {
 
-    val storageCapacity: Long get() = CpuRules.BUFFER_COUNT_CAPACITY
-    val storageTypes: Int get() = CpuRules.BUFFER_TYPES_CAPACITY
-    val storageHeat: Int get() = CpuRules.BUFFER_HEAT
+    private fun notifyAdjacentCores() {
+        val lvl = level ?: return
+        CpuComponentBlockEntity.findConnectedCores(lvl, worldPosition).forEach { it.recalculateCapacity() }
+    }
 
     override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
         super.saveAdditional(tag, registries)
