@@ -11,9 +11,14 @@ data class ProcessingSetOpenData(
     val serial: Boolean
 ) {
     companion object {
+        // Canonical-id names can be long (9 inputs + 3 outputs × ~30 chars/slot + separators
+        // ≈ 400+ chars with modded namespaces). Use 1024 — well under FriendlyByteBuf's
+        // 32767 default cap, but big enough for any realistic recipe.
+        private const val MAX_NAME_LEN = 1024
+
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, ProcessingSetOpenData> = object : StreamCodec<FriendlyByteBuf, ProcessingSetOpenData> {
             override fun decode(buf: FriendlyByteBuf): ProcessingSetOpenData {
-                val name = buf.readUtf(64)
+                val name = buf.readUtf(MAX_NAME_LEN)
                 val inputCount = buf.readVarInt().coerceAtMost(9)
                 val inputs = (0 until inputCount).map {
                     buf.readUtf(256) to buf.readVarInt()
@@ -28,7 +33,7 @@ data class ProcessingSetOpenData(
             }
 
             override fun encode(buf: FriendlyByteBuf, data: ProcessingSetOpenData) {
-                buf.writeUtf(data.name, 64)
+                buf.writeUtf(data.name, MAX_NAME_LEN)
                 buf.writeVarInt(data.inputs.size)
                 for ((id, count) in data.inputs) {
                     buf.writeUtf(id, 256)
