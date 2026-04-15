@@ -16,7 +16,8 @@ data class CraftingCoreOpenData(
     val bufferTypesUsed: Int,
     val bufferTypesCapacity: Int,
     val isFormed: Boolean,
-    val isCrafting: Boolean
+    val isCrafting: Boolean,
+    val lastFailureReason: String
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, CraftingCoreOpenData> = object : StreamCodec<FriendlyByteBuf, CraftingCoreOpenData> {
@@ -28,7 +29,8 @@ data class CraftingCoreOpenData(
                     buf.readVarInt(),
                     buf.readVarInt(),
                     buf.readBoolean(),
-                    buf.readBoolean()
+                    buf.readBoolean(),
+                    buf.readUtf(256)
                 )
             }
             override fun encode(buf: FriendlyByteBuf, data: CraftingCoreOpenData) {
@@ -39,6 +41,7 @@ data class CraftingCoreOpenData(
                 buf.writeVarInt(data.bufferTypesCapacity)
                 buf.writeBoolean(data.isFormed)
                 buf.writeBoolean(data.isCrafting)
+                buf.writeUtf(data.lastFailureReason, 256)
             }
         }
     }

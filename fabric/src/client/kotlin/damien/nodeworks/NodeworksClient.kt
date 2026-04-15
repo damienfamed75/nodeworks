@@ -164,6 +164,14 @@ object NodeworksClient : ClientModInitializer {
             }
         }
 
+        ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.CpuFailurePayload.TYPE) { payload, context ->
+            val player = Minecraft.getInstance().player ?: return@registerGlobalReceiver
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                menu.lastFailureReason = payload.reason
+            }
+        }
+
         ClientPlayNetworking.registerGlobalReceiver(damien.nodeworks.network.CraftRequestErrorPayload.TYPE) { payload, context ->
             val screen = Minecraft.getInstance().screen
             if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {

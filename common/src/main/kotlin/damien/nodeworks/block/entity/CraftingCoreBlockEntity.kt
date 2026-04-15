@@ -158,6 +158,16 @@ class CraftingCoreBlockEntity(
     var currentCraftItem: String = ""
         private set
 
+    /** The reason the last craft plan failed (empty if none or if the last craft succeeded).
+     *  Surfaced in the CPU GUI so players can debug without tailing the server log. Cleared
+     *  on the next successful plan completion or when a new plan is submitted. */
+    var lastFailureReason: String = ""
+        set(value) {
+            field = value.take(256)
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
     /** Incremented on each plan boundary (cancel, success, failure) so any still-active
      *  resume polls on the global ResumeScheduler become stale and route their next pulled
      *  items straight to network storage instead of the now-idle buffer. */
@@ -754,6 +764,7 @@ class CraftingCoreBlockEntity(
         tag.putBoolean("isFormed", isFormed)
         tag.putBoolean("isCrafting", isCrafting)
         tag.putString("currentCraftItem", currentCraftItem)
+        if (lastFailureReason.isNotEmpty()) tag.putString("lastFailureReason", lastFailureReason)
         networkId?.let { tag.putString("networkId", it.toString()) }
 
         // Buffer state (items + capacities, Long-safe, handles legacy format on load)
@@ -828,6 +839,7 @@ class CraftingCoreBlockEntity(
         isFormed = tag.getBoolean("isFormed")
         isCrafting = tag.getBoolean("isCrafting")
         currentCraftItem = if (tag.contains("currentCraftItem")) tag.getString("currentCraftItem") else ""
+        lastFailureReason = if (tag.contains("lastFailureReason")) tag.getString("lastFailureReason") else ""
         networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }

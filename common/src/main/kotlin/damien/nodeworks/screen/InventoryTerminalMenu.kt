@@ -608,7 +608,8 @@ class InventoryTerminalMenu(
             damien.nodeworks.script.CraftingHelper.currentPendingJob = null
             val result = damien.nodeworks.script.CraftingHelper.craft(
                 itemId, count, lvl, snap,
-                cache = cache
+                cache = cache,
+                submitterUuid = player.uuid
             )
             val pending = damien.nodeworks.script.CraftingHelper.currentPendingJob
             damien.nodeworks.script.CraftingHelper.currentPendingJob = null

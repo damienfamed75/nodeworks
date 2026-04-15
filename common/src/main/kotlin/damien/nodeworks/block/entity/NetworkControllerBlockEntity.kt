@@ -65,6 +65,15 @@ class NetworkControllerBlockEntity(
             level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
 
+    /** How many times the Crafting CPU retries a Processing Set handler whose inputs
+     *  went unmoved before giving up. 0 = never retry (fail fast). Default 50. */
+    var handlerRetryLimit: Int = 50
+        set(value) {
+            field = value.coerceIn(0, 500)
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
     companion object {
         const val REDSTONE_IGNORED = 0
         const val REDSTONE_LOW = 1
@@ -131,6 +140,7 @@ class NetworkControllerBlockEntity(
         tag.putString("networkName", networkName)
         tag.putInt("redstoneMode", redstoneMode)
         tag.putInt("nodeGlowStyle", nodeGlowStyle)
+        tag.putInt("handlerRetryLimit", handlerRetryLimit)
         if (connections.isNotEmpty()) {
             tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
@@ -150,6 +160,7 @@ class NetworkControllerBlockEntity(
         networkName = tag.getString("networkName")
         redstoneMode = if (tag.contains("redstoneMode")) tag.getInt("redstoneMode") else 0
         nodeGlowStyle = if (tag.contains("nodeGlowStyle")) tag.getInt("nodeGlowStyle") else GLOW_SQUARE
+        handlerRetryLimit = if (tag.contains("handlerRetryLimit")) tag.getInt("handlerRetryLimit") else 50
         connections.clear()
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }

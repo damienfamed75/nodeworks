@@ -88,10 +88,12 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(InvTerminalCraftGridActionPayload.TYPE, InvTerminalCraftGridActionPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(DismissCpuFailurePayload.TYPE, DismissCpuFailurePayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CraftPreviewRequestPayload.TYPE, CraftPreviewRequestPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(BufferSyncPayload.TYPE, BufferSyncPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(CpuFailurePayload.TYPE, CpuFailurePayload.CODEC)
         PayloadTypeRegistry.playS2C().register(CraftPreviewResponsePayload.TYPE, CraftPreviewResponsePayload.CODEC)
         PayloadTypeRegistry.playS2C().register(CraftQueueSyncPayload.TYPE, CraftQueueSyncPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC)
@@ -303,6 +305,7 @@ object TerminalPackets {
                 "redstone" -> entity.redstoneMode = payload.intValue
                 "glow" -> entity.nodeGlowStyle = payload.intValue
                 "name" -> entity.networkName = payload.strValue
+                "retry" -> entity.handlerRetryLimit = payload.intValue
             }
         }
 
@@ -346,6 +349,14 @@ object TerminalPackets {
             if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
             val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@registerGlobalReceiver
             entity.cancelJob()
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(DismissCpuFailurePayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
+            val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@registerGlobalReceiver
+            entity.lastFailureReason = ""
         }
 
         ServerPlayNetworking.registerGlobalReceiver(CraftPreviewRequestPayload.TYPE) { payload, context ->

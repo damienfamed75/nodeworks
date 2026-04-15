@@ -22,10 +22,18 @@ class CraftingCoreScreen(
     companion object {
         private const val LEFT_PANEL_W = 126  // 6 cols × 18px + 6px scrollbar + 10px padding
         private const val DIVIDER_W = 1
-        private const val RIGHT_PANEL_W = 160
+        private const val RIGHT_PANEL_W = 240
         private const val PADDING = 6
         private const val TOP_BAR_H = 20
+        private const val FAILURE_BAR_H = 20
+        private const val FAILURE_BAR_GAP = 4  // vertical gap between main GUI and floating bar
+        private const val FAILURE_SCROLL_PX_PER_TICK = 0.5f
+        private const val FAILURE_SCROLL_PAUSE_TICKS = 40
     }
+
+    private var failureScrollOffset = 0f
+    private var failureScrollPauseTicks = 0
+    private var lastFailureText = ""
 
     private var bufferScrollOffset = 0
     private var cancelButton: SlicedButton? = null
@@ -101,6 +109,82 @@ class CraftingCoreScreen(
         craftGraph.activeNodeIds = menu.activeNodeIds
         craftGraph.completedNodeIds = menu.completedNodeIds
         craftGraph.render(graphics, menu.craftTree, treeLeft, treeTop, treeW, treeH)
+
+        // --- Floating failure bar (beneath the main GUI, doesn't shrink tree) ---
+        if (menu.lastFailureReason.isNotEmpty()) {
+            renderFailureBar(graphics, mouseX, mouseY, partialTick)
+        }
+    }
+
+    /** Bounds of the floating failure bar (shared between render + click handling). */
+    private fun failureBarBounds(): IntArray {
+        val barLeft = leftPos
+        val barW = imageWidth
+        val barTop = topPos + imageHeight + FAILURE_BAR_GAP
+        return intArrayOf(barLeft, barTop, barW, FAILURE_BAR_H)
+    }
+
+    private fun renderFailureBar(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        val (barLeft, barTop, barW, barH) = failureBarBounds().let { arrayOf(it[0], it[1], it[2], it[3]) }
+        // Frame + dark-red fill
+        NineSlice.WINDOW_FRAME.draw(graphics, barLeft, barTop, barW, barH)
+        val innerLeft = barLeft + 4
+        val innerTop = barTop + 4
+        val innerRight = barLeft + barW - 4
+        val innerBottom = barTop + barH - 4
+        graphics.fill(innerLeft, innerTop, innerRight, innerBottom, 0xFF2A1010.toInt())
+
+        // Warning icon on the left
+        val iconSize = 12
+        val iconY = barTop + (barH - iconSize) / 2
+        Icons.WARNING.draw(graphics, innerLeft + 1, iconY, iconSize)
+
+        // X dismiss button on the right — 5×5 authored icon in a 9×9 hit area for comfort.
+        val hit = 9
+        val xX = innerRight - hit - 1
+        val xY = barTop + (barH - hit) / 2
+        val xHovered = mouseX >= xX && mouseX < xX + hit && mouseY >= xY && mouseY < xY + hit
+        val tint = if (xHovered) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
+        Icons.X_SMALL.drawTopLeftTinted(graphics, xX + 2, xY + 2, 5, 5, tint)
+
+        // Scrollable text region between icon and X.
+        val textLeft = innerLeft + iconSize + 4
+        val textRight = xX - 6
+        val textAreaW = (textRight - textLeft).coerceAtLeast(1)
+        val textY = barTop + (barH - font.lineHeight) / 2 + 1
+        val text = menu.lastFailureReason
+        val fullTextW = font.width(text)
+
+        // Reset scroll state when the text itself changes.
+        if (text != lastFailureText) {
+            lastFailureText = text
+            failureScrollOffset = 0f
+            failureScrollPauseTicks = FAILURE_SCROLL_PAUSE_TICKS
+        }
+
+        if (fullTextW <= textAreaW) {
+            graphics.drawString(font, text, textLeft, textY, 0xFFFFCCCC.toInt(), false)
+        } else {
+            // Marquee: scissor to the text area, draw at negative offset, wrap with a gap.
+            val gapPx = 32
+            val loopW = fullTextW + gapPx
+            val off = ((failureScrollOffset.toInt() % loopW) + loopW) % loopW
+            graphics.enableScissor(textLeft, innerTop, textRight, innerBottom)
+            graphics.drawString(font, text, textLeft - off, textY, 0xFFFFCCCC.toInt(), false)
+            graphics.drawString(font, text, textLeft - off + loopW, textY, 0xFFFFCCCC.toInt(), false)
+            graphics.disableScissor()
+
+            // Advance scroll. partialTick is sub-tick render progress; use it for smooth motion.
+            if (failureScrollPauseTicks > 0) {
+                failureScrollPauseTicks--
+            } else {
+                failureScrollOffset += FAILURE_SCROLL_PX_PER_TICK
+                if (failureScrollOffset >= loopW) {
+                    failureScrollOffset = 0f
+                    failureScrollPauseTicks = FAILURE_SCROLL_PAUSE_TICKS
+                }
+            }
+        }
     }
 
     private fun renderInfoPanel(
@@ -327,6 +411,24 @@ class CraftingCoreScreen(
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
+
+        // Floating failure bar: dismiss-X hit test.
+        if (menu.lastFailureReason.isNotEmpty()) {
+            val b = failureBarBounds()
+            val barLeft = b[0]; val barTop = b[1]; val barW = b[2]; val barH = b[3]
+            val innerRight = barLeft + barW - 4
+            val hit = 9
+            val xX = innerRight - hit - 1
+            val xY = barTop + (barH - hit) / 2
+            if (mx >= xX && mx < xX + hit && my >= xY && my < xY + hit) {
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.DismissCpuFailurePayload(menu.corePos)
+                )
+                // Optimistic local clear so the bar disappears immediately; server echoes "".
+                menu.lastFailureReason = ""
+                return true
+            }
+        }
 
         // Buffer scrollbar click
         if (bufferMaxScroll > 0 && mx >= bufferSbX && mx < bufferSbX + bufferSbW &&

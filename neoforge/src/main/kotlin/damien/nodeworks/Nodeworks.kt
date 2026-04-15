@@ -315,6 +315,7 @@ class Nodeworks(modBus: IEventBus) {
                     "redstone" -> entity.redstoneMode = payload.intValue
                     "glow" -> entity.nodeGlowStyle = payload.intValue
                     "name" -> entity.networkName = payload.strValue
+                    "retry" -> entity.handlerRetryLimit = payload.intValue
                 }
             }
         }
@@ -356,6 +357,16 @@ class Nodeworks(modBus: IEventBus) {
                 if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
                 val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@enqueueWork
                 entity.cancelJob()
+            }
+        }
+
+        registrar.playToServer(DismissCpuFailurePayload.TYPE, DismissCpuFailurePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@enqueueWork
+                entity.lastFailureReason = ""
             }
         }
 
@@ -408,6 +419,16 @@ class Nodeworks(modBus: IEventBus) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
                     menu.clientBufferContents = payload.entries
+                }
+            }
+        }
+
+        registrar.playToClient(CpuFailurePayload.TYPE, CpuFailurePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                    menu.lastFailureReason = payload.reason
                 }
             }
         }
