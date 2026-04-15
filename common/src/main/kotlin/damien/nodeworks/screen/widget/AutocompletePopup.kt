@@ -22,7 +22,11 @@ class AutocompletePopup(
         val insertText: String,
         val displayText: String,
         val snippetText: String? = null,
-        val snippetCursor: Int = -1
+        val snippetCursor: Int = -1,
+        /** If true, the apply logic should also consume any auto-paired characters
+         *  following the cursor (e.g. the `")` from typing `handle("` with auto-pair).
+         *  Use for full-block snippets that provide their own closing punctuation. */
+        val consumesAutoclose: Boolean = false
     )
 
     var visible: Boolean = false
@@ -99,16 +103,24 @@ class AutocompletePopup(
         }
     }
 
-    data class AcceptResult(val deleteCount: Int, val insertText: String, val cursorOffset: Int = insertText.length)
+    data class AcceptResult(
+        val deleteCount: Int,
+        val insertText: String,
+        val cursorOffset: Int = insertText.length,
+        /** How many chars AFTER the cursor to also delete (to absorb auto-paired `")`
+         *  when a full-block snippet provides its own closing punctuation). */
+        val consumeAfter: Int = 0
+    )
 
-    fun accept(): AcceptResult? {
+    fun accept(textAfterCursor: String = ""): AcceptResult? {
         if (!visible || suggestions.isEmpty()) return null
         val suggestion = suggestions[selectedIndex]
         val deleteCount = prefix.length
         hide()
         if (suggestion.snippetText != null) {
             val cursorPos = if (suggestion.snippetCursor >= 0) suggestion.snippetCursor else suggestion.snippetText.length
-            return AcceptResult(deleteCount, suggestion.snippetText, cursorPos)
+            val consume = if (suggestion.consumesAutoclose) countAutocloseChars(textAfterCursor) else 0
+            return AcceptResult(deleteCount, suggestion.snippetText, cursorPos, consume)
         }
         // Auto-close parentheses: `func(` → `func()` with cursor between
         val text = suggestion.insertText
@@ -117,6 +129,14 @@ class AutocompletePopup(
             return AcceptResult(deleteCount, closed, text.length) // cursor between ( and )
         }
         return AcceptResult(deleteCount, text, text.length)
+    }
+
+    /** Count leading auto-pair chars we'd redundantly preserve otherwise. Matches the
+     *  editor's auto-pair rules: `"`, `)`, `]`, `}`. Stops at the first non-match. */
+    private fun countAutocloseChars(afterCursor: String): Int {
+        var n = 0
+        while (n < afterCursor.length && afterCursor[n] in "\")]}'") n++
+        return n.coerceAtMost(4)
     }
 
     fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
@@ -194,6 +214,13 @@ class AutocompletePopup(
         data class ResolvedMethodCall(val resolvedType: String, val partial: String) : CursorContext
         /** Property access where the receiver type has been resolved from a chain */
         data class ResolvedPropertyAccess(val resolvedType: String, val partial: String) : CursorContext
+        /** `<outerVar>.<field>.<partial>` — chain through a table-like typed variable.
+         *  Symbols are resolved in [computeSuggestions]; for InputItems the field is
+         *  an ItemsHandle, so the partial completes ItemsHandle properties. */
+        data class ChainedPropertyAccess(val outerVar: String, val field: String, val partial: String) : CursorContext
+        /** `<outerVar>.<field>:<partial>` — chained method call. Same resolution rule
+         *  as [ChainedPropertyAccess] but produces method suggestions. */
+        data class ChainedMethodCall(val outerVar: String, val field: String, val partial: String) : CursorContext
         /** Resolved exports from a module (require or local table) */
         data class ResolvedExports(val exports: List<Suggestion>, val partial: String) : CursorContext
         /** Plain word at cursor — global completions */
@@ -337,6 +364,20 @@ class AutocompletePopup(
             }
         }
 
+        // Chain method call: `<outerVar>.<field>:<partial>` (e.g. `items.copperIngot:count`).
+        // For InputItems, `field` is an ItemsHandle — resolve to ItemsHandle method list.
+        // The outerVar's type is in the symbol table, but buildSymbolTable runs in
+        // computeSuggestions; we detect the shape here and defer resolution via a
+        // dedicated ChainedMethodCall context.
+        val chainMatch = Regex("""(\w+)\.(\w+)$""").find(trimBefore)
+        if (chainMatch != null) {
+            return CursorContext.ChainedMethodCall(
+                outerVar = chainMatch.groupValues[1],
+                field = chainMatch.groupValues[2],
+                partial = partial
+            )
+        }
+
         // Simple `word:partial`
         val receiverMatch = Regex("""(\w+)$""").find(trimBefore)
         if (receiverMatch != null) {
@@ -408,6 +449,13 @@ class AutocompletePopup(
      *  already-registered handler API names). */
     private var cachedFullText: String = ""
 
+    /** Processing API whose handler body contains the cursor, or null if the cursor is
+     *  not inside a `network:handle("...", function(...) ... end)` callback. Computed
+     *  once per [computeSuggestions] call so field suggestions for `items.<tab>` can
+     *  resolve the correct recipe's per-slot parameter names. */
+    private var enclosingHandlerApi:
+        damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? = null
+
     /** Pull the set of API names already registered via `network:handle("X", ...)` in [text]. */
     private fun handledApiNames(text: String): Set<String> {
         val pattern = Regex("""network:handle\s*\(\s*"([^"]+)"""")
@@ -463,6 +511,18 @@ class AutocompletePopup(
             if (chainType != null) {
                 return CursorContext.ResolvedPropertyAccess(chainType, partial)
             }
+        }
+
+        // Chain access: `<outerVar>.<field>.<partial>` (e.g. `items.copperIngot.count`).
+        // Symbol lookup happens later in computeSuggestions where the symbol table is
+        // already built; we only parse the shape here.
+        val chainMatch = Regex("""(\w+)\.(\w+)$""").find(beforeDot)
+        if (chainMatch != null) {
+            return CursorContext.ChainedPropertyAccess(
+                outerVar = chainMatch.groupValues[1],
+                field = chainMatch.groupValues[2],
+                partial = partial
+            )
         }
 
         // Simple `word.partial`
@@ -598,6 +658,7 @@ class AutocompletePopup(
     private fun computeSuggestions(beforeCursor: String, fullText: String, forced: Boolean): List<Suggestion> {
         allReturnTypes = buildReturnTypeMap(fullText)
         cachedFullText = fullText
+        enclosingHandlerApi = findEnclosingHandlerApi(beforeCursor)
         val currentLine = beforeCursor.substringAfterLast('\n')
 
         // Special case: network:handle("name", partial → function snippet
@@ -613,6 +674,8 @@ class AutocompletePopup(
             is CursorContext.TagFilter -> suggestTag(ctx.partial)
             is CursorContext.ResolvedMethodCall -> suggestMethodsForType(ctx.resolvedType, ctx.partial)
             is CursorContext.ResolvedPropertyAccess -> suggestPropertiesForType(ctx.resolvedType, ctx.partial)
+            is CursorContext.ChainedPropertyAccess -> suggestChainedPropertyAccess(ctx, symbols)
+            is CursorContext.ChainedMethodCall -> suggestChainedMethodCall(ctx, symbols)
             is CursorContext.ResolvedExports -> fuzzy(ctx.partial, ctx.exports)
             is CursorContext.MethodCall -> suggestMethodCall(ctx, symbols, fullText)
             is CursorContext.PropertyAccess -> suggestPropertyAccess(ctx, symbols, fullText)
@@ -658,7 +721,15 @@ class AutocompletePopup(
                 fuzzyStrings(ctx.partial, faces)
             }
             ctx.funcExpr.endsWith("network:handle") -> {
-                fuzzyStrings(ctx.partial, localApiNames)
+                // Full-block snippet: accepting a suggestion inserts the whole handle()
+                // call — closing quote, comma, function signature with typed per-slot
+                // parameters, empty body, and matching closing `end)`. Cursor lands on
+                // the indented body line so the player can start typing logic immediately.
+                // See docs/design/processing-set-handler-ux.md Phase B.
+                val suggestions = localApis.map { api ->
+                    buildHandleFullSnippet(api)
+                }
+                FuzzyMatch.filter(ctx.partial, suggestions)
             }
             ctx.funcExpr.endsWith("require") -> {
                 val scriptNames = scripts().keys.filter { it != "main" }.toList()
@@ -673,6 +744,7 @@ class AutocompletePopup(
         Suggestion("number", "number"),
         Suggestion("boolean", "boolean"),
         Suggestion("any", "any"),
+        Suggestion("InputItems", "InputItems — handler input bag; access slot handles by name"),
         Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
         Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get"),
@@ -864,9 +936,109 @@ class AutocompletePopup(
                 suggest("maxStackSize", "maxStackSize: number"),
                 suggest("hasData", "hasData: boolean")
             )
+            "InputItems" -> {
+                // Fields are dynamic — derived from the enclosing `network:handle(...)`
+                // recipe. When the cursor is outside any handler body, offer no fields
+                // (the handler's items table isn't meaningful in that scope).
+                val api = enclosingHandlerApi ?: return emptyList()
+                val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputs)
+                paramNames.mapIndexed { idx, name ->
+                    val (itemId, count) = api.inputs[idx]
+                    val shortId = itemId.substringAfter(':')
+                    suggest(name, "$name: ItemsHandle ($shortId × $count)")
+                }
+            }
             else -> emptyList()
         }
         return fuzzy(partial, props)
+    }
+
+    /**
+     * Resolve chained property access like `items.copperIngot.<partial>`. Only meaningful
+     * when the outer variable is typed `InputItems` — its fields are all ItemsHandle,
+     * so the partial completes ItemsHandle properties. Other table-like types aren't
+     * supported yet (would need their own field-type map).
+     */
+    private fun suggestChainedPropertyAccess(
+        ctx: CursorContext.ChainedPropertyAccess,
+        symbols: Map<String, String>
+    ): List<Suggestion> {
+        val fieldType = resolveChainedFieldType(ctx.outerVar, ctx.field, symbols) ?: return emptyList()
+        return suggestPropertiesForType(fieldType, ctx.partial)
+    }
+
+    private fun suggestChainedMethodCall(
+        ctx: CursorContext.ChainedMethodCall,
+        symbols: Map<String, String>
+    ): List<Suggestion> {
+        val fieldType = resolveChainedFieldType(ctx.outerVar, ctx.field, symbols) ?: return emptyList()
+        return suggestMethodsForType(fieldType, ctx.partial)
+    }
+
+    /**
+     * Resolve the type of `<outerVar>.<field>` for chain access. Only InputItems is
+     * currently supported — its fields are all ItemsHandle, pulled from the enclosing
+     * handler's recipe. Validates the field exists so typos don't silently succeed.
+     * Returns null if unresolvable (unknown type, missing field, no handler context).
+     */
+    private fun resolveChainedFieldType(
+        outerVar: String,
+        field: String,
+        symbols: Map<String, String>
+    ): String? {
+        val outerType = symbols[outerVar] ?: return null
+        return when (outerType) {
+            "InputItems" -> {
+                val api = enclosingHandlerApi ?: return null
+                val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputs)
+                if (field !in paramNames) null else "ItemsHandle"
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * Walk [beforeCursor] to find the innermost open `network:handle("<id>", function(...)`
+     * whose body contains the cursor. Returns the matching [ProcessingApiInfo] from
+     * [localApis] if a live recipe matches the id, else null.
+     *
+     * Implementation:
+     * - Build a timeline of `function` opens and `end` closes over the whole beforeCursor.
+     * - At each `function` open, look back ~200 chars for `network:handle\s*\(\s*"([^"]+)"\s*,\s*$`.
+     *   If it matches, record the id on the new scope; otherwise push null.
+     * - At each `end` close, pop.
+     * - After processing, walk the stack from innermost outward for the first non-null id.
+     *
+     * Multi-line `network:handle("<id>",\n    function(...)` is handled because `\s` in
+     * the regex matches newlines. `function` tokens inside string literals or block
+     * comments are not filtered out — acceptable edge case for a best-effort heuristic.
+     */
+    private fun findEnclosingHandlerApi(
+        beforeCursor: String
+    ): damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? {
+        data class Event(val pos: Int, val isFuncOpen: Boolean)
+        val events = mutableListOf<Event>()
+        val funcPattern = Regex("""\bfunction\s*\w*\s*\(""")
+        val endPattern = Regex("""\bend\b""")
+        for (m in funcPattern.findAll(beforeCursor)) events.add(Event(m.range.first, true))
+        for (m in endPattern.findAll(beforeCursor)) events.add(Event(m.range.first, false))
+        events.sortBy { it.pos }
+
+        val scopeStack = mutableListOf<String?>()
+        val handleLookback = Regex("""network:handle\s*\(\s*"([^"]+)"\s*,\s*$""")
+        for (event in events) {
+            if (event.isFuncOpen) {
+                val lookbackStart = (event.pos - 200).coerceAtLeast(0)
+                val lookback = beforeCursor.substring(lookbackStart, event.pos)
+                val match = handleLookback.find(lookback)
+                scopeStack.add(match?.groupValues?.get(1))
+            } else {
+                if (scopeStack.isNotEmpty()) scopeStack.removeLast()
+            }
+        }
+
+        val innermostId = scopeStack.asReversed().firstOrNull { it != null } ?: return null
+        return localApis.firstOrNull { it.name == innermostId }
     }
 
     private val baseVariableMethods = listOf(
@@ -962,26 +1134,14 @@ class AutocompletePopup(
     private fun checkHandleSnippetContext(beforeCursor: String): List<Suggestion>? {
         val currentLine = beforeCursor.substringAfterLast('\n')
         val handleFnMatch = Regex("""network:handle\(\s*"([^"]+)"\s*,\s*(\w*)$""").find(currentLine) ?: return null
-        val cardName = handleFnMatch.groupValues[1]
         val partial = handleFnMatch.groupValues[2]
         customPrefix = partial
-        val api = localApis.firstOrNull { it.name == cardName }
-        val params = buildString {
-            append("job: Job")
-            if (api != null) {
-                // Dedup by itemId — if a recipe consumes two raw_iron, the planner aggregates
-                // to a single handler arg. Autocomplete signature must match.
-                val uniqueInputs = LinkedHashSet<String>().apply { for ((itemId, _) in api.inputs) add(itemId) }
-                for (itemId in uniqueInputs) {
-                    append(", ")
-                    append(itemIdToParamName(itemId))
-                    append(": ItemsHandle")
-                }
-            }
-        }
-        val body = "function($params)\n    \nend"
+        // Uniform handler signature — `job: Job, items: InputItems` regardless of recipe.
+        // Per-slot field access happens via `items.<name>` inside the body, where the
+        // editor resolves valid field names from the enclosing handle's recipe.
+        val body = "function(job: Job, items: InputItems)\n    \nend"
         val cursorPos = body.indexOf("\n    \n") + 5
-        return listOf(snippet("function(", "function($params)", body, cursorPos))
+        return listOf(snippet("function(", "function(job: Job, items: InputItems)", body, cursorPos))
     }
 
     // ========== Utility functions ==========
@@ -1089,12 +1249,39 @@ class AutocompletePopup(
         return emptyList()
     }
 
-    private fun itemIdToParamName(itemId: String): String {
-        val shortId = itemId.substringAfter(':')
-        val parts = shortId.split('_')
-        return parts.mapIndexed { i, part ->
-            if (i == 0) part else part.replaceFirstChar { it.uppercase() }
-        }.joinToString("")
+    /**
+     * Build the full-block snippet inserted when the player accepts a recipe at
+     * `network:handle("...`. Inserts the canonical id + closing quote + comma +
+     * function signature + empty body + `end)`. Cursor lands on the body line.
+     *
+     * Indentation is a static 4-space / 8-space scheme regardless of the caller's
+     * current line indent — good enough for most scripts; the player can tab-shift
+     * the block if their indent convention differs.
+     */
+    private fun buildHandleFullSnippet(
+        api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo
+    ): Suggestion {
+        val canonicalId = api.name
+        // Uniform 2-arg signature. `items: InputItems` is a typed table whose fields
+        // are populated from the recipe's per-slot inputs; the editor resolves field
+        // names for `items.` autocomplete from the enclosing handle's recipe id.
+        //
+        // Pattern (inside a `network:handle(` call at 4-space indent):
+        //
+        //     network:handle("<id>",
+        //         function(job: Job, items: InputItems)
+        //             <cursor>
+        //         end)
+        val beforeCursor = "$canonicalId\",\n    function(job: Job, items: InputItems)\n        "
+        val afterCursor = "\n    end)"
+        val fullSnippet = beforeCursor + afterCursor
+        return Suggestion(
+            insertText = canonicalId,
+            displayText = canonicalId,
+            snippetText = fullSnippet,
+            snippetCursor = beforeCursor.length,
+            consumesAutoclose = true
+        )
     }
 
     private fun extractPrefix(beforeCursor: String): String {
