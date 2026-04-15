@@ -53,7 +53,7 @@ class DiagnosticScreen(
             "controller" to "Controller",
             "terminal" to "Terminal",
             "crafting_core" to "Crafting Core",
-            "crafting_storage" to "Crafting Storage",
+            "crafting_storage" to "Crafting Buffer",
             "instruction_storage" to "Instruction Storage",
             "processing_storage" to "Processing Storage",
             "variable" to "Variable",
