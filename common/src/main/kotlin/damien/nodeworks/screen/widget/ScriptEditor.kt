@@ -49,6 +49,28 @@ class ScriptEditor(
     // Callbacks
     private var valueListener: ((String) -> Unit)? = null
 
+    /** How many extra pixels of vertical space to leave ABOVE [lineIdx] for a decoration
+     *  (e.g. an inline recipe-icon hint). Default 0 — no decoration. Returning >0 for a
+     *  given line shifts that line and everything after it downward by the returned px.
+     *
+     *  Setter invalidates the cumulative-Y cache so geometry picks up the new values
+     *  on the next render. If the callback's return values depend on external state
+     *  (e.g. the network's live recipe list), call [invalidateDecorationCache] to force
+     *  a rebuild. */
+    var decorationAboveLine: (lineIdx: Int) -> Int = { 0 }
+        set(value) {
+            field = value
+            invalidateDecorationCache()
+        }
+
+    /** Draw the decoration that sits in the reserved space above [lineIdx]. Called once per
+     *  visible line whose decoration height is > 0. (x, y) is the top-left of the
+     *  reserved region; (w, h) is its size. The editor has already scissored to the
+     *  editor bounds, so the callback can freely draw within (x, y, w, h) without
+     *  worrying about the surrounding chrome. */
+    var renderDecoration: (graphics: GuiGraphics, lineIdx: Int, x: Int, y: Int, w: Int, h: Int) -> Unit =
+        { _, _, _, _, _, _ -> }
+
     // --- Public API (matches what TerminalScreen expects) ---
 
     var value: String
@@ -67,6 +89,15 @@ class ScriptEditor(
     private fun rebuildLines(text: String) {
         lines.clear()
         lines.addAll(if (text.isEmpty()) listOf("") else text.split("\n"))
+        invalidateDecorationCache()
+    }
+
+    /** Text of line [lineIdx], or empty string if the index is out of range. Used by
+     *  decoration callbacks to inspect a specific line without re-splitting the whole
+     *  buffer every time. */
+    fun getLine(lineIdx: Int): String {
+        if (lineIdx < 0 || lineIdx >= lines.size) return ""
+        return lines[lineIdx]
     }
 
     /** Set text and cursor without resetting scroll — for autocomplete insertion. */
@@ -104,6 +135,69 @@ class ScriptEditor(
 
     private fun totalTextLength(): Int = lines.sumOf { it.length } + (lines.size - 1) // +newlines
 
+    // --- Variable-height line layout ---
+    //
+    // Line indexing uses decorations so we don't lose cursor/mouse/scroll accuracy when
+    // decorations push lines down. All geometry goes through these helpers; never
+    // multiply by lineHeight directly.
+
+    /** Cumulative Y position of each line's text-row top, i.e. `cumulativeY[i]` = y of
+     *  the top of line i's text row (after any decoration above). Rebuilt lazily when
+     *  [decorationCacheDirty] is true. `cumulativeY[lines.size]` = totalContentHeight. */
+    private var cumulativeY: IntArray = IntArray(0)
+    private var decorationCacheDirty: Boolean = true
+
+    /** Mark the decoration cache dirty — call whenever the callback's return values
+     *  may have changed (e.g. the network's recipe list updated). */
+    fun invalidateDecorationCache() {
+        decorationCacheDirty = true
+    }
+
+    private fun rebuildDecorationCache() {
+        cumulativeY = IntArray(lines.size + 1)
+        var y = 0
+        for (i in lines.indices) {
+            y += decorationAboveLine(i)
+            cumulativeY[i] = y
+            y += lineHeight
+        }
+        cumulativeY[lines.size] = y
+        decorationCacheDirty = false
+    }
+
+    private fun ensureDecorationCache() {
+        // Size change (line add/remove) invalidates implicitly via this check.
+        if (decorationCacheDirty || cumulativeY.size != lines.size + 1) rebuildDecorationCache()
+    }
+
+    /** Y-offset (in content coordinates, before scroll) of the TOP of line [lineIdx]'s
+     *  text row — i.e. immediately AFTER that line's decoration (if any). */
+    fun yTopOfLine(lineIdx: Int): Int {
+        ensureDecorationCache()
+        val clamped = lineIdx.coerceIn(0, lines.lastIndex)
+        return cumulativeY[clamped]
+    }
+
+    /** Convert a Y offset in content space (scroll already removed) to a line index.
+     *  The decoration zone above a line resolves to that line's index. */
+    fun lineAtContentY(contentY: Int): Int {
+        if (contentY < 0) return 0
+        ensureDecorationCache()
+        // Binary search: find last line whose (decoration + body) still starts at or below contentY.
+        // cumulativeY[i] = top of line i's body; (cumulativeY[i] - decorationAboveLine(i)) = top of decoration band.
+        for (i in lines.indices) {
+            val bodyBottom = cumulativeY[i] + lineHeight
+            if (contentY < bodyBottom) return i
+        }
+        return lines.lastIndex
+    }
+
+    /** Total content height including all decorations and all line bodies. */
+    fun totalContentHeight(): Int {
+        ensureDecorationCache()
+        return cumulativeY[lines.size]
+    }
+
     /** Convert absolute cursor position to (line, column). */
     fun cursorToLineCol(pos: Int): Pair<Int, Int> {
         var remaining = pos
@@ -126,8 +220,11 @@ class ScriptEditor(
     /** Get the word under the given screen coordinates, or null if not over a word. */
     fun getWordAt(mx: Double, my: Double): String? {
         val relY = my - textTop + scrollY
-        val lineIdx = (relY / lineHeight).toInt()
+        val lineIdx = lineAtContentY(relY.toInt())
         if (lineIdx < 0 || lineIdx >= lines.size) return null
+        // Don't treat clicks on the decoration band as being on text.
+        val lineBodyTop = yTopOfLine(lineIdx)
+        if (relY < lineBodyTop) return null
         val line = lines[lineIdx]
         val relX = mx - textLeft + scrollX
 
@@ -155,7 +252,7 @@ class ScriptEditor(
     /** Convert screen coordinates to cursor position. */
     private fun screenToCursor(mx: Double, my: Double): Int {
         val relY = my - textTop + scrollY
-        val lineIdx = (relY / lineHeight).toInt().coerceIn(0, lines.size - 1)
+        val lineIdx = lineAtContentY(relY.toInt()).coerceIn(0, lines.size - 1)
         val line = lines[lineIdx]
         val relX = mx - textLeft + scrollX
 
@@ -189,7 +286,7 @@ class ScriptEditor(
         var inBlockComment = false
 
         for (lineIdx in 0 until lines.size) {
-            val lineY = textTop + lineIdx * lineHeight - scrollY
+            val lineY = textTop + yTopOfLine(lineIdx) - scrollY
             if (lineY + lineHeight < y) {
                 // Track block comment state for off-screen lines
                 val tokens = tokenize(lines[lineIdx], inBlockComment)
@@ -200,6 +297,15 @@ class ScriptEditor(
                 continue
             }
             if (lineY > y + height) break
+
+            // Draw any decoration sitting above this line's text row.
+            val decoH = decorationAboveLine(lineIdx)
+            if (decoH > 0) {
+                val decoY = lineY - decoH
+                if (decoY + decoH > y && decoY < y + height) {
+                    renderDecoration(graphics, lineIdx, textLeft, decoY, width - padding * 2, decoH)
+                }
+            }
 
             val line = lines[lineIdx]
             val lineStart = lineColToCursor(lineIdx, 0)
@@ -233,7 +339,7 @@ class ScriptEditor(
         if (isFocused) {
             val elapsed = System.currentTimeMillis() - cursorBlinkTime
             if ((elapsed / CURSOR_BLINK_MS) % 2 == 0L) {
-                val cursorY = textTop + curLine * lineHeight - scrollY
+                val cursorY = textTop + yTopOfLine(curLine) - scrollY
                 val cursorX = textLeft + font.width(lines[curLine].substring(0, curCol)) - scrollX
                 graphics.fill(cursorX, cursorY, cursorX + 1, cursorY + lineHeight, CURSOR_COLOR)
             }
@@ -415,7 +521,7 @@ class ScriptEditor(
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
         if (!isMouseOver(mouseX, mouseY)) return false
         this.scrollY = (this.scrollY - (scrollY * lineHeight * 3).toInt())
-            .coerceIn(0, maxOf(0, lines.size * lineHeight - (height - padding * 2)))
+            .coerceIn(0, maxOf(0, totalContentHeight() - (height - padding * 2)))
         return true
     }
 
@@ -544,8 +650,9 @@ class ScriptEditor(
     private fun ensureCursorVisible() {
         val (line, col) = cursorToLineCol(cursor)
 
-        // Vertical
-        val cursorY = line * lineHeight
+        // Vertical — use the cursor line's decorated top so scrolling also reveals the
+        // decoration sitting above, not just the text row.
+        val cursorY = yTopOfLine(line) - decorationAboveLine(line)
         val viewTop = scrollY
         val viewBottom = scrollY + height - padding * 2 - lineHeight
         if (cursorY < viewTop) scrollY = cursorY

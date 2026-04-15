@@ -184,6 +184,9 @@ class ProcessingStorageBlockEntity(
         if (!result.isEmpty) {
             if (slot == UPGRADE_SLOT) recalculateUpgradeLevel()
             setChanged()
+            // Push update so the Script Terminal's client-side scan sees the new set of
+            // recipes without requiring a world reload or re-open of the storage block.
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
         return result
     }
@@ -199,6 +202,7 @@ class ProcessingStorageBlockEntity(
             items[slot] = stack
             if (slot == UPGRADE_SLOT) recalculateUpgradeLevel()
             setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
     }
 

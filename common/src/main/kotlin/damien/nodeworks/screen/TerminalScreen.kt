@@ -399,6 +399,25 @@ class TerminalScreen(
         }
         addRenderableWidget(editor)
 
+        // Inline recipe-hint decorations. When a line contains a `network:handle("<id>"`
+        // call whose id is a canonical recipe, reserve a hint row above that line and
+        // render the recipe as item icons → arrow → output icons.
+        editor.decorationAboveLine = { lineIdx ->
+            val line = editor.getLine(lineIdx)
+            if (damien.nodeworks.screen.widget.RecipeHintRenderer.detectHandleId(line) != null) {
+                damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT
+            } else 0
+        }
+        editor.renderDecoration = { graphics, lineIdx, hintX, hintY, hintW, hintH ->
+            val line = editor.getLine(lineIdx)
+            val id = damien.nodeworks.screen.widget.RecipeHintRenderer.detectHandleId(line)
+            if (id != null) {
+                damien.nodeworks.screen.widget.RecipeHintRenderer.render(
+                    graphics, font, id, hintX, hintY, hintW, hintH
+                )
+            }
+        }
+
         autocomplete =
             AutocompletePopup(font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis) { scripts }
 
@@ -1002,7 +1021,9 @@ class TerminalScreen(
 
         graphics.enableScissor(gutterX, gutterTop, editorX - 1, gutterBottom)
         for (line in 1..totalLines) {
-            val y = innerTop + (line - 1) * lineHeight
+            // Use the editor's line-Y helper so gutter numbers align with text rows even
+            // when decorations (recipe-icon hints) push specific lines down.
+            val y = innerTop + editor.yTopOfLine(line - 1)
             if (y + lineHeight < gutterTop) continue
             if (y > gutterBottom) break
 
