@@ -412,8 +412,11 @@ class TerminalScreen(
             val line = editor.getLine(lineIdx)
             val id = damien.nodeworks.screen.widget.RecipeHintRenderer.detectHandleId(line)
             if (id != null) {
+                // Flag handlers whose recipe id doesn't match any registered processing
+                // set on the network — visible cue that the handler will never fire.
+                val isValid = localApis.any { it.name == id }
                 damien.nodeworks.screen.widget.RecipeHintRenderer.render(
-                    graphics, font, id, hintX, hintY, hintW, hintH
+                    graphics, font, id, hintX, hintY, hintW, hintH, valid = isValid
                 )
             }
         }

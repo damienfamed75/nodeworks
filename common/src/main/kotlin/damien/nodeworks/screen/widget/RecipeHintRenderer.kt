@@ -83,7 +83,11 @@ object RecipeHintRenderer {
     /**
      * Render the icon strip for [canonicalId] inside the rectangle (x, y, w, h). The
      * strip is left-aligned and truncated with a trailing ellipsis if it would overflow
-     * [w]. Icons render at 12 px, counts in small text to the right of each icon.
+     * [w]. Icons render at ICON_SIZE px, counts in small text right-aligned per vanilla.
+     *
+     * When [valid] is false, the band is tinted red and prefixed with a warning icon so
+     * the player can spot a `network:handle("…")` whose recipe isn't currently registered
+     * on any reachable Processing Storage block.
      */
     fun render(
         graphics: GuiGraphics,
@@ -92,7 +96,8 @@ object RecipeHintRenderer {
         x: Int,
         y: Int,
         w: Int,
-        h: Int
+        h: Int,
+        valid: Boolean = true
     ) {
         val parsed = parse(canonicalId) ?: return
         val (inputs, outputs) = parsed
@@ -109,10 +114,10 @@ object RecipeHintRenderer {
         // near clip plane and makes it disappear entirely.
         com.mojang.blaze3d.systems.RenderSystem.depthMask(false)
         try {
-            // ARGB: alpha 0x50, mid-grey 0x505050 — enough contrast against the editor's
-            // near-black background that the hint band reads as a distinct metadata row
-            // without drawing attention away from the code itself.
-            graphics.fill(x, y, x + w, y + h, 0x50505050)
+            // Background — neutral grey when valid, dark red when the handler doesn't
+            // match any known recipe so the row visually flags the problem.
+            val bgColor = if (valid) 0x50505050 else 0x60601515
+            graphics.fill(x, y, x + w, y + h, bgColor)
             val iconY = y + (h - ICON_SIZE) / 2
             val textY = y + (h - font.lineHeight) / 2 + 1
             val right = x + w
@@ -120,6 +125,13 @@ object RecipeHintRenderer {
 
             Icons.beginBatch()
             try {
+                // Warning prefix when invalid. Sized to ICON_SIZE so it sits in the same
+                // visual row as the ingredient icons and clearly signals "this is broken".
+                if (!valid) {
+                    val warnY = y + (h - ICON_SIZE) / 2
+                    Icons.WARNING.draw(graphics, cx, warnY, ICON_SIZE)
+                    cx += ICON_SIZE + ENTRY_GAP
+                }
                 for ((idx, entry) in inputs.withIndex()) {
                     val advance = drawEntry(graphics, font, entry, cx, iconY, textY, right)
                         ?: return finishWithEllipsis(graphics, font, cx, textY)
