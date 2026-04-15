@@ -4,11 +4,14 @@ import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.BlockPos
+import net.minecraft.core.particles.DustParticleOptions
+import net.minecraft.util.RandomSource
 import net.minecraft.world.Containers
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
+import org.joml.Vector3f
 import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
@@ -43,6 +46,29 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity {
         return CraftingCoreBlockEntity(pos, state)
+    }
+
+    /** Emit red redstone-dust particles around the Core whenever a craft failure is
+     *  undismissed — gives a visible-from-distance cue to find the stuck CPU without
+     *  a GUI. Scales with the player's particle setting automatically because vanilla
+     *  animateTick runs at the client's random-tick rate. */
+    override fun animateTick(state: BlockState, level: Level, pos: BlockPos, random: RandomSource) {
+        val entity = level.getBlockEntity(pos) as? CraftingCoreBlockEntity ?: return
+        if (entity.lastFailureReason.isEmpty()) return
+        // Pulse-like emission: density modulated by sine wave (sparse → dense → sparse).
+        val phase = kotlin.math.sin((level.gameTime % 1000L).toFloat() * 0.15f)
+        val density = 1 + ((phase * 0.5f + 0.5f) * 3f).toInt()  // 1..4 spawns per animateTick
+        val opts = DustParticleOptions(Vector3f(1.0f, 0.15f, 0.15f), 1.0f)
+        for (i in 0 until density) {
+            val dx = (random.nextDouble() - 0.5) * 1.2
+            val dy = (random.nextDouble() - 0.5) * 1.2
+            val dz = (random.nextDouble() - 0.5) * 1.2
+            level.addParticle(
+                opts,
+                pos.x + 0.5 + dx, pos.y + 0.5 + dy, pos.z + 0.5 + dz,
+                0.0, 0.02, 0.0
+            )
+        }
     }
 
     override fun <T : BlockEntity> getTicker(
