@@ -20,6 +20,16 @@ class StorageCardScreen(
         private const val INSET_Y = 19
         private const val INSET_W = W - 8
         private const val INSET_H = H - 24
+
+        // Stepper layout — [-] [entry] [+] with 2 px gaps, matching ProcessingSetScreen.
+        private const val STEPPER_BTN_SIZE = 14
+        private const val STEPPER_GAP = 2
+        private const val PRIORITY_FIELD_W = 26
+        private const val MINUS_X = 58
+        private const val FIELD_X = MINUS_X + STEPPER_BTN_SIZE + STEPPER_GAP     // 74
+        private const val PLUS_X = FIELD_X + PRIORITY_FIELD_W + STEPPER_GAP      // 102
+        private const val STEPPER_Y_OFFSET = 7      // y relative to INSET_Y for buttons
+        private const val FIELD_Y_OFFSET = 8        // y relative to INSET_Y for the entry
     }
 
     private var priorityField: EditBox? = null
@@ -36,9 +46,9 @@ class StorageCardScreen(
     override fun init() {
         super.init()
 
-        val fieldX = leftPos + 50
-        val fieldY = topPos + INSET_Y + 8
-        priorityField = EditBox(font, fieldX, fieldY, 40, 12, Component.literal("Priority"))
+        val fieldX = leftPos + FIELD_X
+        val fieldY = topPos + INSET_Y + FIELD_Y_OFFSET
+        priorityField = EditBox(font, fieldX, fieldY, PRIORITY_FIELD_W, 12, Component.literal("Priority"))
         priorityField!!.setMaxLength(3)
         priorityField!!.value = "${menu.getPriority()}"
         lastSyncedPriority = menu.getPriority()
@@ -92,18 +102,17 @@ class StorageCardScreen(
         // "Priority:" label
         graphics.drawString(font, "Priority:", leftPos + 10, topPos + INSET_Y + 9, 0xFFAAAAAA.toInt())
 
-        // Stepper buttons [-] and [+] flanking the field
-        val stepY = topPos + INSET_Y + 7
-        val minusX = leftPos + 94
-        val plusX = leftPos + 112
-        val btnW = 14
-        val btnH = 14
-        val minusHover = mouseX >= minusX && mouseX < minusX + btnW && mouseY >= stepY && mouseY < stepY + btnH
-        val plusHover = mouseX >= plusX && mouseX < plusX + btnW && mouseY >= stepY && mouseY < stepY + btnH
-        (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, minusX, stepY, btnW, btnH)
-        (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, plusX, stepY, btnW, btnH)
-        graphics.drawString(font, "-", minusX + (btnW - font.width("-")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
-        graphics.drawString(font, "+", plusX + (btnW - font.width("+")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
+        // Stepper buttons — [-] left of the entry, [+] right of the entry.
+        val stepY = topPos + INSET_Y + STEPPER_Y_OFFSET
+        val minusX = leftPos + MINUS_X
+        val plusX = leftPos + PLUS_X
+        val btn = STEPPER_BTN_SIZE
+        val minusHover = mouseX >= minusX && mouseX < minusX + btn && mouseY >= stepY && mouseY < stepY + btn
+        val plusHover = mouseX >= plusX && mouseX < plusX + btn && mouseY >= stepY && mouseY < stepY + btn
+        (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, minusX, stepY, btn, btn)
+        (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, plusX, stepY, btn, btn)
+        graphics.drawString(font, "-", minusX + (btn - font.width("-")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
+        graphics.drawString(font, "+", plusX + (btn - font.width("+")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -120,11 +129,11 @@ class StorageCardScreen(
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
-            val stepY = topPos + INSET_Y + 7
-            val minusX = leftPos + 94
-            val plusX = leftPos + 112
-            val btnW = 14
-            val btnH = 14
+            val stepY = topPos + INSET_Y + STEPPER_Y_OFFSET
+            val minusX = leftPos + MINUS_X
+            val plusX = leftPos + PLUS_X
+            val btnW = STEPPER_BTN_SIZE
+            val btnH = STEPPER_BTN_SIZE
             val mx = mouseX.toInt()
             val my = mouseY.toInt()
 
