@@ -2,6 +2,7 @@ package damien.nodeworks.screen
 
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.network.SetProcessingApiDataPayload
+import damien.nodeworks.network.SetProcessingApiSlotPayload
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
@@ -221,6 +222,46 @@ class ProcessingSetScreen(
         }
 
         return super.mouseClicked(mouseX, mouseY, button)
+    }
+
+    /**
+     * Scroll over a filled ghost slot to adjust its count. Scroll up = +1. Scroll down
+     * at count > 1 = -1. Scroll down at count == 1 = clear the slot entirely.
+     */
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
+        for (i in 0 until ProcessingSetScreenHandler.TOTAL_GHOST_SLOTS) {
+            val slot = menu.slots[i]
+            val sx = leftPos + slot.x
+            val sy = topPos + slot.y
+            if (mx !in sx until sx + 16 || my !in sy until sy + 16) continue
+            if (!slot.hasItem()) return false
+
+            val isInput = i < ProcessingSetScreenHandler.INPUT_SLOTS
+            val currentCount = if (isInput) {
+                menu.inputCounts[i]
+            } else {
+                menu.outputCounts[i - ProcessingSetScreenHandler.INPUT_SLOTS]
+            }
+            val delta = if (scrollY > 0) 1 else -1
+            val newCount = currentCount + delta
+
+            if (newCount <= 0) {
+                // Clear the slot entirely rather than leaving a zero-count ghost.
+                PlatformServices.clientNetworking.sendToServer(
+                    SetProcessingApiSlotPayload(menu.containerId, i, "")
+                )
+            } else {
+                val key = if (isInput) "input" else "output"
+                val slotIdx = if (isInput) i else i - ProcessingSetScreenHandler.INPUT_SLOTS
+                PlatformServices.clientNetworking.sendToServer(
+                    SetProcessingApiDataPayload(menu.containerId, key, slotIdx, newCount)
+                )
+            }
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {

@@ -21,19 +21,22 @@ import net.minecraft.world.item.ItemStack
  */
 object RecipeHintRenderer {
 
-    /** Vertical space required for one hint line, including padding top/bottom. */
-    const val HINT_HEIGHT: Int = 15
-    private const val ICON_SIZE: Int = 12
-    private const val ICON_TEXT_GAP: Int = 2
+    /** Vertical space required for one hint line. 18px fits a 16px item with 1px top/bottom
+     *  pad — matches vanilla inventory slot spacing (18×18 slot, 16×16 item inset 1px). */
+    const val HINT_HEIGHT: Int = 18
+    /** Item icon size in pixels. `renderItem` always emits a 16×16 quad — using any smaller
+     *  value causes icons to overlap the next entry because layout and render disagree. */
+    private const val ICON_SIZE: Int = 16
+    /** Gap between adjacent ingredient entries. Width is always ICON_SIZE regardless of
+     *  whether a count badge is shown, so spacing stays consistent across the row. */
     private const val ENTRY_GAP: Int = 2
-    private const val ARROW_PADDING: Int = 2
-    /** Count label is nudged to sit in the bottom-right of the icon cell, matching the
-     *  vanilla item-stack count-badge style. */
-    private const val COUNT_OFFSET_X: Int = -2
-    private const val COUNT_OFFSET_Y: Int = 2
-    /** `->` ASCII arrow — reliable across fonts, more compact than `\u2192` and always
-     *  renders. */
-    private const val ARROW: String = "->"
+    /** Horizontal slack before the crafting arrow. Negative = the arrow overlaps the
+     *  trailing space of the last input icon, visually tightening the row. */
+    private const val ARROW_LEFT_PAD: Int = 2
+    private const val ARROW_RIGHT_PAD: Int = 2
+    /** Width reserved for the Icons.ARROW_RIGHT glyph when drawn at ICON_SIZE, tinted gray. */
+    private const val ARROW_ICON_SIZE: Int = 12
+    private const val ARROW_TINT: Int = 0xFF888888.toInt()
 
     /**
      * Extract a canonical recipe id from a Lua source line, or null if the line
@@ -104,7 +107,10 @@ object RecipeHintRenderer {
         // near clip plane and makes it disappear entirely.
         com.mojang.blaze3d.systems.RenderSystem.depthMask(false)
         try {
-            graphics.fill(x, y, x + w, y + h, 0x20202020)
+            // ARGB: alpha 0x50, mid-grey 0x505050 — enough contrast against the editor's
+            // near-black background that the hint band reads as a distinct metadata row
+            // without drawing attention away from the code itself.
+            graphics.fill(x, y, x + w, y + h, 0x50505050)
             val iconY = y + (h - ICON_SIZE) / 2
             val textY = y + (h - font.lineHeight) / 2 + 1
             val right = x + w
@@ -120,11 +126,11 @@ object RecipeHintRenderer {
                 }
 
                 if (inputs.isNotEmpty() && outputs.isNotEmpty()) {
-                    cx += ARROW_PADDING
-                    val arrowW = font.width(ARROW)
-                    if (cx + arrowW > right) return finishWithEllipsis(graphics, font, cx, textY)
-                    graphics.drawString(font, ARROW, cx, textY, 0xFF888888.toInt(), false)
-                    cx += arrowW + ARROW_PADDING
+                    cx += ARROW_LEFT_PAD
+                    if (cx + ARROW_ICON_SIZE > right) return finishWithEllipsis(graphics, font, cx, textY)
+                    val arrowY = y + (h - ARROW_ICON_SIZE) / 2
+                    Icons.ARROW_RIGHT.drawTinted(graphics, cx, arrowY, ARROW_ICON_SIZE, ARROW_TINT)
+                    cx += ARROW_ICON_SIZE + ARROW_RIGHT_PAD
                 }
 
                 for ((idx, entry) in outputs.withIndex()) {
@@ -155,26 +161,29 @@ object RecipeHintRenderer {
         val (itemId, count) = entry
         val id = ResourceLocation.tryParse(itemId) ?: return 0
         val item = BuiltInRegistries.ITEM.get(id) ?: return 0
-        val countText = "\u00d7$count"
-        val countWidth = font.width(countText)
-        val advance = ICON_SIZE + ICON_TEXT_GAP + countWidth
-        if (cx + advance > right) return null
+        // Advance is ALWAYS ICON_SIZE — counts overlay the icon vanilla-style and never
+        // extend the entry's footprint. Ingredient spacing is therefore consistent
+        // regardless of whether a given slot shows a count.
+        if (cx + ICON_SIZE > right) return null
 
         val stack = ItemStack(item, count.coerceAtMost(64).coerceAtLeast(1))
-        graphics.renderItem(stack, cx, iconY - 2)
+        graphics.renderItem(stack, cx, iconY)
 
-        // Count label positioned bottom-right of the icon to mimic vanilla stack-count
-        // badges. No Z translate needed — the outer depthMask(false) guard in render()
-        // means later draws (including this label) always replace the item pixels.
-        graphics.drawString(
-            font,
-            countText,
-            cx + ICON_SIZE + ICON_TEXT_GAP + COUNT_OFFSET_X,
-            textY + COUNT_OFFSET_Y,
-            0xFFCCCCCC.toInt(),
-            false
-        )
-        return advance
+        // Count badge positioned exactly like vanilla's ItemRenderer stack-count overlay:
+        // right-aligned within the 16-wide icon (1px inset from the right edge), baseline
+        // 9px down from the icon's top. White text with drop shadow. Hidden when 1.
+        if (count > 1) {
+            val countText = count.toString()
+            graphics.drawString(
+                font,
+                countText,
+                cx + 17 - font.width(countText),
+                iconY + 9,
+                0xFFFFFFFF.toInt(),
+                true
+            )
+        }
+        return ICON_SIZE
     }
 
     private fun finishWithEllipsis(graphics: GuiGraphics, font: Font, cx: Int, textY: Int) {
