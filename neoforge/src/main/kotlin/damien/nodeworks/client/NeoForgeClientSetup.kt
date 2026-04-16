@@ -6,6 +6,7 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.ControllerRenderer
+import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
@@ -101,6 +102,7 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
@@ -200,7 +202,8 @@ object NeoForgeClientSetup {
             damien.nodeworks.registry.ModBlocks.NETWORK_CONTROLLER,
             damien.nodeworks.registry.ModBlocks.VARIABLE,
             damien.nodeworks.registry.ModBlocks.TERMINAL,
-            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE
+            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE,
+            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE
         )
     }
 }
