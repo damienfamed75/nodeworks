@@ -30,58 +30,50 @@ class ProcessingSetScreen(
         private const val WHITE = 0xFFFFFFFF.toInt()
         private const val GHOST_OVERLAY = 0x40FFFFFF.toInt()
 
-        // Layout knobs (all relative to top-left of the frame).
         private const val FRAME_W = 180
-        private const val FRAME_H = 220
+        private const val BG_H = 120  // upper panel height (matches exported PNG)
 
-        private const val TITLE_Y = 7
-        private const val SECTION_LABEL_Y = 18
+        private const val INV_PANEL_Y = 122
+        private const val INV_PANEL_H = 96
+        private const val INV_LABEL_Y = INV_PANEL_Y + 4
+        private const val INV_GRID_Y = INV_PANEL_Y + 14
+        private const val INV_X = 8
+        private const val HOTBAR_GAP = 4
+        private const val FRAME_H = INV_PANEL_Y + INV_PANEL_H
+
         private const val INPUT_COL_X = 36
         private const val OUTPUT_COL_X = 128
-        private const val INPUT_SECTION_Y = 30
-        private const val INPUT_SECTION_H = 54   // 3 rows × 18
-        private const val ARROW_ICON_SIZE = 12
-        private const val ARROW_TINT: Int = 0xFF888888.toInt()
-        private const val ARROW_OFFSET_X = -2
+        private const val INPUT_SECTION_Y = 13
+        private const val INPUT_SECTION_H = 54
 
-        // Recessed control panel (behind Timeout stepper + Parallel toggle). Matches
-        // the scripting terminal's autorun area — 4-corner screws + inset. The panel
-        // itself can be nudged vertically without disturbing the controls inside by
-        // editing PANEL_Y alone; PANEL_LABEL_Y and PANEL_CONTROL_Y are absolute.
-        private const val PANEL_X = 10
-        private const val PANEL_Y = 88
-        private const val PANEL_W = 160
-        private const val PANEL_H = 42
-        private const val PANEL_LABEL_Y = 95
-        private const val PANEL_CONTROL_Y = 109
-        private const val SCREW_SIZE = 6
-        private const val SCREW_OFFSET = 1
-
-        // Timeout stepper layout. "Timeout (ticks)" label centered above a
-        // [-] [entry] [+] row with 2 px gap between each. Step = 20 ticks per click;
-        // Shift-click = 100.
-        private const val TIMEOUT_GROUP_CENTER_X = 53
+        private const val PANEL_LABEL_Y = 83
+        private const val PANEL_CONTROL_Y = 95
         private const val TIMEOUT_STEP = 20
         private const val STEPPER_BTN_SIZE = 14
         private const val TIMEOUT_ENTRY_W = 26
         private const val STEPPER_GAP = 2
-        private const val TIMEOUT_GROUP_W = STEPPER_BTN_SIZE + STEPPER_GAP + TIMEOUT_ENTRY_W + STEPPER_GAP + STEPPER_BTN_SIZE
-        private const val TIMEOUT_MINUS_X = TIMEOUT_GROUP_CENTER_X - TIMEOUT_GROUP_W / 2
-        private const val TIMEOUT_ENTRY_X = TIMEOUT_MINUS_X + STEPPER_BTN_SIZE + STEPPER_GAP
-        private const val TIMEOUT_PLUS_X = TIMEOUT_ENTRY_X + TIMEOUT_ENTRY_W + STEPPER_GAP
-
-        // Parallel toggle layout — vanilla TOGGLE (48×16) centered in the right half of
-        // the recessed panel, with its "Parallel" label above.
-        private const val PARALLEL_GROUP_CENTER_X = 130
         private const val TOGGLE_W = 48
         private const val TOGGLE_H = 16
-        private const val TOGGLE_X = PARALLEL_GROUP_CENTER_X - TOGGLE_W / 2
+        private const val TIMEOUT_GROUP_W = STEPPER_BTN_SIZE + STEPPER_GAP + TIMEOUT_ENTRY_W + STEPPER_GAP + STEPPER_BTN_SIZE
+        private const val GROUP_GAP = 14
+        // Both groups centered as a unit: [timeout stepper] <gap> [parallel toggle]
+        private const val TOTAL_CONTROLS_W = TIMEOUT_GROUP_W + GROUP_GAP + TOGGLE_W
+        private const val CONTROLS_START_X = (FRAME_W - TOTAL_CONTROLS_W) / 2
+        private const val TIMEOUT_GROUP_CENTER_X = CONTROLS_START_X + TIMEOUT_GROUP_W / 2
+        private const val TIMEOUT_MINUS_X = CONTROLS_START_X
+        private const val TIMEOUT_ENTRY_X = TIMEOUT_MINUS_X + STEPPER_BTN_SIZE + STEPPER_GAP
+        private const val TIMEOUT_PLUS_X = TIMEOUT_ENTRY_X + TIMEOUT_ENTRY_W + STEPPER_GAP
+        private const val PARALLEL_GROUP_CENTER_X = CONTROLS_START_X + TIMEOUT_GROUP_W + GROUP_GAP + TOGGLE_W / 2
+        private const val TOGGLE_X = CONTROLS_START_X + TIMEOUT_GROUP_W + GROUP_GAP
 
-        private const val CLEAR_HIT = 9
+        private const val CLEAR_BTN_SIZE = 14
+        private const val CLEAR_BTN_X = 14
+        private const val CLEAR_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - CLEAR_BTN_SIZE) / 2
 
-        // Player inventory + hotbar (centered horizontally).
-        private const val INV_Y = FRAME_H - 4 - 18 - 4 - 18 * 3  // hotbar + gap + 3 rows above
-        private const val HOTBAR_Y = FRAME_H - 4 - 18
+
+        private val BG_TEXTURE = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+            "nodeworks", "textures/gui/processing_set_bg.png"
+        )
     }
 
     /** Public accessors for JEI ghost ingredient handler. */
@@ -126,24 +118,10 @@ class ProcessingSetScreen(
         val x = leftPos
         val y = topPos
 
-        // Outer frame — single WINDOW_FRAME, no separate top bar (matches StorageCardScreen style).
-        NineSlice.WINDOW_FRAME.draw(graphics, x, y, FRAME_W, FRAME_H)
+        // Upper panel — single blit of the pre-composited static background.
+        graphics.blit(BG_TEXTURE, x, y, 0f, 0f, FRAME_W, BG_H, FRAME_W, BG_H)
 
-        // Title + clear button share the same top-row band.
-        graphics.drawString(font, title, x + 6, y + TITLE_Y, WHITE)
-
-        val clearX = x + FRAME_W - CLEAR_HIT - 5
-        val clearY = y + 5
-        val clearHovered = mouseX in clearX until clearX + CLEAR_HIT && mouseY in clearY until clearY + CLEAR_HIT
-        val clearTint = if (clearHovered) WHITE else LABEL_COLOR
-        Icons.X_SMALL.drawTopLeftTinted(graphics, clearX + 2, clearY + 2, 5, 5, clearTint)
-
-        // Section labels above the grid.
-        graphics.drawString(font, "Inputs", x + INPUT_COL_X, y + SECTION_LABEL_Y, LABEL_COLOR)
-        graphics.drawString(font, "Output", x + OUTPUT_COL_X, y + SECTION_LABEL_Y, LABEL_COLOR)
-
-        // Input 3×3 and output column — bare SLOT frames per cell, matching the crafting
-        // terminal's crafting grid style. No background panel behind them.
+        // Slot frames drawn at runtime over the black placeholder regions in the PNG.
         for (row in 0..2) {
             for (col in 0..2) {
                 val sx = x + INPUT_COL_X + col * 18
@@ -157,74 +135,52 @@ class ProcessingSetScreen(
             NineSlice.SLOT.draw(graphics, sx - 1, sy - 1, 18, 18)
         }
 
-        // Crafting arrow — gray-tinted Icons.ARROW_RIGHT, horizontally centered in the
-        // gap between input grid (ends at INPUT_COL_X + 54 = 90) and output column
-        // (starts at OUTPUT_COL_X = 128). Vertically centered in the input section.
-        val arrowGapCenter = (INPUT_COL_X + 54 + OUTPUT_COL_X) / 2
-        val arrowIconX = x + arrowGapCenter - ARROW_ICON_SIZE / 2 + ARROW_OFFSET_X
-        val arrowIconY = y + INPUT_SECTION_Y + (INPUT_SECTION_H - ARROW_ICON_SIZE) / 2
-        Icons.ARROW_RIGHT.drawTinted(graphics, arrowIconX, arrowIconY, ARROW_ICON_SIZE, ARROW_TINT)
-
-        // ===== Recessed control panel (behind Timeout stepper + Parallel toggle) =====
-        NineSlice.WINDOW_RECESSED.draw(graphics, x + PANEL_X, y + PANEL_Y, PANEL_W, PANEL_H)
-
-        // Four corner screws just outside the recessed area — mirrors the scripting
-        // terminal's autorun area style.
-        val screwU = Icons.SMALL_SCREW.u + 5f
-        val screwV = Icons.SMALL_SCREW.v + 5f
-        val sTL_X = x + PANEL_X - SCREW_SIZE - SCREW_OFFSET
-        val sTL_Y = y + PANEL_Y - SCREW_SIZE - SCREW_OFFSET
-        val sTR_X = x + PANEL_X + PANEL_W + SCREW_OFFSET
-        val sBR_Y = y + PANEL_Y + PANEL_H + SCREW_OFFSET
-        graphics.blit(Icons.ATLAS, sTL_X, sTL_Y, screwU, screwV, SCREW_SIZE, SCREW_SIZE, 256, 256)
-        graphics.blit(Icons.ATLAS, sTR_X, sTL_Y, screwU, screwV, SCREW_SIZE, SCREW_SIZE, 256, 256)
-        graphics.blit(Icons.ATLAS, sTL_X, sBR_Y, screwU, screwV, SCREW_SIZE, SCREW_SIZE, 256, 256)
-        graphics.blit(Icons.ATLAS, sTR_X, sBR_Y, screwU, screwV, SCREW_SIZE, SCREW_SIZE, 256, 256)
-
-        // Timeout group: "Timeout (ticks)" label centered above a [-] [entry] [+] row.
+        // Text labels (can't be baked into the PNG — need MC's font renderer).
         val timeoutLabel = "Timeout (ticks)"
-        graphics.drawString(
-            font, timeoutLabel,
+        graphics.drawString(font, timeoutLabel,
             x + TIMEOUT_GROUP_CENTER_X - font.width(timeoutLabel) / 2,
-            y + PANEL_LABEL_Y,
-            LABEL_COLOR
-        )
-        val minusHovered = mouseX in (x + TIMEOUT_MINUS_X) until (x + TIMEOUT_MINUS_X + STEPPER_BTN_SIZE) &&
-                           mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
-        val plusHovered = mouseX in (x + TIMEOUT_PLUS_X) until (x + TIMEOUT_PLUS_X + STEPPER_BTN_SIZE) &&
-                          mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
-        (if (minusHovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(
-            graphics, x + TIMEOUT_MINUS_X, y + PANEL_CONTROL_Y, STEPPER_BTN_SIZE, STEPPER_BTN_SIZE
-        )
-        (if (plusHovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(
-            graphics, x + TIMEOUT_PLUS_X, y + PANEL_CONTROL_Y, STEPPER_BTN_SIZE, STEPPER_BTN_SIZE
-        )
+            y + PANEL_LABEL_Y, LABEL_COLOR)
         graphics.drawString(font, "-",
             x + TIMEOUT_MINUS_X + (STEPPER_BTN_SIZE - font.width("-")) / 2,
             y + PANEL_CONTROL_Y + 3, WHITE)
         graphics.drawString(font, "+",
             x + TIMEOUT_PLUS_X + (STEPPER_BTN_SIZE - font.width("+")) / 2,
             y + PANEL_CONTROL_Y + 3, WHITE)
-
-        // Parallel group: "Parallel" label centered above a TOGGLE switch.
-        val parallelActive = !menu.serial
-        val toggleSlice = if (parallelActive) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
         val toggleLabel = "Parallel"
-        graphics.drawString(
-            font, toggleLabel,
+        graphics.drawString(font, toggleLabel,
             x + PARALLEL_GROUP_CENTER_X - font.width(toggleLabel) / 2,
-            y + PANEL_LABEL_Y,
-            LABEL_COLOR
-        )
-        toggleSlice.draw(graphics, x + TOGGLE_X, y + PANEL_CONTROL_Y, TOGGLE_W, TOGGLE_H)
+            y + PANEL_LABEL_Y, LABEL_COLOR)
 
-        // Player inventory + hotbar — direct SLOT blit per cell (same as InventoryTerminalScreen).
-        val slotU = NineSlice.SLOT.u.toFloat()
-        val slotV = NineSlice.SLOT.v.toFloat()
-        for (i in ProcessingSetScreenHandler.TOTAL_GHOST_SLOTS until menu.slots.size) {
-            val slot = menu.slots[i]
-            graphics.blit(NineSlice.GUI_ATLAS, x + slot.x - 1, y + slot.y - 1, slotU, slotV, 18, 18, 256, 256)
-        }
+        // Buttons — drawn at runtime as 9-slice, swapping to BUTTON_HOVER on hover.
+        val clearX = x + CLEAR_BTN_X
+        val clearY = y + CLEAR_BTN_Y
+        val clearHover = mouseX in clearX until clearX + CLEAR_BTN_SIZE && mouseY in clearY until clearY + CLEAR_BTN_SIZE
+        (if (clearHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, clearX, clearY, CLEAR_BTN_SIZE, CLEAR_BTN_SIZE)
+        Icons.X_SMALL.drawTopLeftTinted(graphics,
+            clearX + (CLEAR_BTN_SIZE - 5) / 2,
+            clearY + (CLEAR_BTN_SIZE - 5) / 2,
+            5, 5, WHITE)
+
+        val minusHover = mouseX in (x + TIMEOUT_MINUS_X) until (x + TIMEOUT_MINUS_X + STEPPER_BTN_SIZE) &&
+                         mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
+        (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(
+            graphics, x + TIMEOUT_MINUS_X, y + PANEL_CONTROL_Y, STEPPER_BTN_SIZE, STEPPER_BTN_SIZE
+        )
+        val plusHover = mouseX in (x + TIMEOUT_PLUS_X) until (x + TIMEOUT_PLUS_X + STEPPER_BTN_SIZE) &&
+                        mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
+        (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(
+            graphics, x + TIMEOUT_PLUS_X, y + PANEL_CONTROL_Y, STEPPER_BTN_SIZE, STEPPER_BTN_SIZE
+        )
+
+        // Parallel toggle — dynamic state. Sits 1px above the stepper row so the
+        // switch visually aligns with the entry field's text baseline.
+        val toggleSlice = if (!menu.serial) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
+        toggleSlice.draw(graphics, x + TOGGLE_X, y + PANEL_CONTROL_Y - 1, TOGGLE_W, TOGGLE_H)
+
+        // Player inventory — separate panel.
+        NineSlice.WINDOW_FRAME.draw(graphics, x, y + INV_PANEL_Y, FRAME_W, INV_PANEL_H)
+        graphics.drawString(font, "Inventory", x + INV_X, y + INV_LABEL_Y, LABEL_COLOR)
+        NineSlice.drawPlayerInventory(graphics, x + INV_X, y + INV_GRID_Y, HOTBAR_GAP)
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -299,10 +255,10 @@ class ProcessingSetScreen(
             if (!inBox && box.isFocused) box.isFocused = false
         }
 
-        // Clear-all button (top-right).
-        val clearX = leftPos + FRAME_W - CLEAR_HIT - 5
-        val clearY = topPos + 5
-        if (mx in clearX until clearX + CLEAR_HIT && my in clearY until clearY + CLEAR_HIT) {
+        // Clear-all button (left of input grid).
+        val clearX = leftPos + CLEAR_BTN_X
+        val clearY = topPos + CLEAR_BTN_Y
+        if (mx in clearX until clearX + CLEAR_BTN_SIZE && my in clearY until clearY + CLEAR_BTN_SIZE) {
             for (i in 0 until ProcessingSetScreenHandler.TOTAL_GHOST_SLOTS) {
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(menu.containerId, i, "")
@@ -333,7 +289,7 @@ class ProcessingSetScreen(
 
         // Parallel toggle.
         val tBtnX = leftPos + TOGGLE_X
-        val tBtnY = topPos + PANEL_CONTROL_Y
+        val tBtnY = topPos + PANEL_CONTROL_Y - 1
         if (mx in tBtnX until tBtnX + TOGGLE_W && my in tBtnY until tBtnY + TOGGLE_H) {
             menu.serial = !menu.serial
             return true

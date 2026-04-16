@@ -137,13 +137,12 @@ class ProcessingSetScreenHandler(
         // (input block spans x=36..90, output column at x=128, gap 90..128 hosts the arrow).
         for (row in 0..2) {
             for (col in 0..2) {
-                addSlot(GhostSlot(inputGrid, row * 3 + col, 36 + col * 18, 30 + row * 18))
+                addSlot(GhostSlot(inputGrid, row * 3 + col, 36 + col * 18, 13 + row * 18))
             }
         }
 
-        // 3 output ghost slots — vertical column at x=128, y=30 (6 px higher than before).
         for (i in 0 until OUTPUT_SLOTS) {
-            addSlot(GhostSlot(outputGrid, i, 128, 30 + i * 18))
+            addSlot(GhostSlot(outputGrid, i, 128, 13 + i * 18))
         }
 
         // Player inventory (3 rows) — starts at x=10 so the 9-slot block (width 160)
@@ -151,12 +150,11 @@ class ProcessingSetScreenHandler(
         // at 140 to leave room for the crafting grid + recessed timeout/parallel panel.
         for (row in 0 until 3) {
             for (col in 0 until 9) {
-                addSlot(Slot(playerInventory, col + row * 9 + 9, 10 + col * 18, 140 + row * 18))
+                addSlot(Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 137 + row * 18))
             }
         }
-        // Player hotbar — same x alignment; y at 198 sits 4 px below the main inventory.
         for (col in 0 until 9) {
-            addSlot(Slot(playerInventory, col, 10 + col * 18, 198))
+            addSlot(Slot(playerInventory, col, 9 + col * 18, 195))
         }
 
         addDataSlots(data)

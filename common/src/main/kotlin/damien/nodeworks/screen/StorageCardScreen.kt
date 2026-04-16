@@ -25,16 +25,24 @@ class StorageCardScreen(
         private const val STEPPER_BTN_SIZE = 14
         private const val STEPPER_GAP = 2
         private const val PRIORITY_FIELD_W = 26
-        private const val MINUS_X = 58
-        private const val FIELD_X = MINUS_X + STEPPER_BTN_SIZE + STEPPER_GAP     // 74
-        private const val PLUS_X = FIELD_X + PRIORITY_FIELD_W + STEPPER_GAP      // 102
+        private const val LABEL_TO_BTN_GAP = 4      // gap between "Priority:" and the [-] button
         private const val STEPPER_Y_OFFSET = 7      // y relative to INSET_Y for buttons
         private const val FIELD_Y_OFFSET = 8        // y relative to INSET_Y for the entry
+
+        private const val LABEL_TEXT = "Priority:"
     }
 
     private var priorityField: EditBox? = null
     /** Tracks last known server value to detect external changes. */
     private var lastSyncedPriority = -1
+
+    // X offsets relative to leftPos, computed once in init() so the label-text width
+    // (which depends on the font) can drive layout. The whole Label + [-] + entry + [+]
+    // row is centered horizontally in the frame.
+    private var labelX = 0
+    private var minusX = 0
+    private var fieldX = 0
+    private var plusX = 0
 
     init {
         imageWidth = W
@@ -46,9 +54,18 @@ class StorageCardScreen(
     override fun init() {
         super.init()
 
-        val fieldX = leftPos + FIELD_X
+        // Center the whole "Priority: [-] [entry] [+]" row horizontally in the frame.
+        val labelW = font.width(LABEL_TEXT)
+        val rowW = labelW + LABEL_TO_BTN_GAP + STEPPER_BTN_SIZE + STEPPER_GAP +
+            PRIORITY_FIELD_W + STEPPER_GAP + STEPPER_BTN_SIZE
+        val rowStart = (W - rowW) / 2
+        labelX = rowStart
+        minusX = labelX + labelW + LABEL_TO_BTN_GAP
+        fieldX = minusX + STEPPER_BTN_SIZE + STEPPER_GAP
+        plusX = fieldX + PRIORITY_FIELD_W + STEPPER_GAP
+
         val fieldY = topPos + INSET_Y + FIELD_Y_OFFSET
-        priorityField = EditBox(font, fieldX, fieldY, PRIORITY_FIELD_W, 12, Component.literal("Priority"))
+        priorityField = EditBox(font, leftPos + fieldX, fieldY, PRIORITY_FIELD_W, 12, Component.literal("Priority"))
         priorityField!!.setMaxLength(3)
         priorityField!!.value = "${menu.getPriority()}"
         lastSyncedPriority = menu.getPriority()
@@ -99,20 +116,20 @@ class StorageCardScreen(
         // Recessed inset for priority area
         NineSlice.WINDOW_RECESSED.draw(graphics, leftPos + INSET_X, topPos + INSET_Y, INSET_W, INSET_H)
 
-        // "Priority:" label
-        graphics.drawString(font, "Priority:", leftPos + 10, topPos + INSET_Y + 9, 0xFFAAAAAA.toInt())
+        // "Priority:" label — leftmost element in the centered row.
+        graphics.drawString(font, LABEL_TEXT, leftPos + labelX, topPos + INSET_Y + 9, 0xFFAAAAAA.toInt())
 
         // Stepper buttons — [-] left of the entry, [+] right of the entry.
         val stepY = topPos + INSET_Y + STEPPER_Y_OFFSET
-        val minusX = leftPos + MINUS_X
-        val plusX = leftPos + PLUS_X
+        val mX = leftPos + minusX
+        val pX = leftPos + plusX
         val btn = STEPPER_BTN_SIZE
-        val minusHover = mouseX >= minusX && mouseX < minusX + btn && mouseY >= stepY && mouseY < stepY + btn
-        val plusHover = mouseX >= plusX && mouseX < plusX + btn && mouseY >= stepY && mouseY < stepY + btn
-        (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, minusX, stepY, btn, btn)
-        (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, plusX, stepY, btn, btn)
-        graphics.drawString(font, "-", minusX + (btn - font.width("-")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
-        graphics.drawString(font, "+", plusX + (btn - font.width("+")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
+        val minusHover = mouseX >= mX && mouseX < mX + btn && mouseY >= stepY && mouseY < stepY + btn
+        val plusHover = mouseX >= pX && mouseX < pX + btn && mouseY >= stepY && mouseY < stepY + btn
+        (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, mX, stepY, btn, btn)
+        (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, pX, stepY, btn, btn)
+        graphics.drawString(font, "-", mX + (btn - font.width("-")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
+        graphics.drawString(font, "+", pX + (btn - font.width("+")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
     }
 
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -130,14 +147,14 @@ class StorageCardScreen(
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
             val stepY = topPos + INSET_Y + STEPPER_Y_OFFSET
-            val minusX = leftPos + MINUS_X
-            val plusX = leftPos + PLUS_X
+            val mX = leftPos + minusX
+            val pX = leftPos + plusX
             val btnW = STEPPER_BTN_SIZE
             val btnH = STEPPER_BTN_SIZE
             val mx = mouseX.toInt()
             val my = mouseY.toInt()
 
-            if (mx >= minusX && mx < minusX + btnW && my >= stepY && my < stepY + btnH) {
+            if (mx >= mX && mx < mX + btnW && my >= stepY && my < stepY + btnH) {
                 val step = if (hasShiftDown()) 10 else 1
                 Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 0)
                 if (step > 1) {
