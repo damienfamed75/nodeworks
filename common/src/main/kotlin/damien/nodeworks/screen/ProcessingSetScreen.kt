@@ -152,13 +152,18 @@ class ProcessingSetScreen(
             y + PANEL_LABEL_Y, LABEL_COLOR)
 
         // Buttons — drawn at runtime as 9-slice, swapping to BUTTON_HOVER on hover.
+        // Clear button is drawn 1px shorter on its bottom and right edges so the X icon
+        // appears visually centered — the BUTTON 9-slice's bottom+right shadows otherwise
+        // push the visual center up and left.
         val clearX = x + CLEAR_BTN_X
         val clearY = y + CLEAR_BTN_Y
+        val clearDrawW = CLEAR_BTN_SIZE - 1
+        val clearDrawH = CLEAR_BTN_SIZE - 1
         val clearHover = mouseX in clearX until clearX + CLEAR_BTN_SIZE && mouseY in clearY until clearY + CLEAR_BTN_SIZE
-        (if (clearHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, clearX, clearY, CLEAR_BTN_SIZE, CLEAR_BTN_SIZE)
+        (if (clearHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, clearX, clearY, clearDrawW, clearDrawH)
         Icons.X_SMALL.drawTopLeftTinted(graphics,
-            clearX + (CLEAR_BTN_SIZE - 5) / 2,
-            clearY + (CLEAR_BTN_SIZE - 5) / 2,
+            clearX + (clearDrawW - 5) / 2,
+            clearY + (clearDrawH - 5) / 2,
             5, 5, WHITE)
 
         val minusHover = mouseX in (x + TIMEOUT_MINUS_X) until (x + TIMEOUT_MINUS_X + STEPPER_BTN_SIZE) &&

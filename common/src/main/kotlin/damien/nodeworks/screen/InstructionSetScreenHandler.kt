@@ -119,6 +119,18 @@ class InstructionSetScreenHandler(
         resultContainer.setItem(0, result)
     }
 
+    override fun clickMenuButton(player: Player, id: Int): Boolean {
+        // ID 0 — triggered by the clear-all button in InstructionSetScreen. Wipes every
+        // ghost slot in the 3×3 recipe grid and recomputes the result.
+        if (id == 0) {
+            for (i in 0..8) recipeGrid.setItem(i, ItemStack.EMPTY)
+            updateResult()
+            broadcastChanges()
+            return true
+        }
+        return false
+    }
+
     override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
         if (slotId in 0..8) {
             val carried = carried
