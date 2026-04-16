@@ -1,6 +1,7 @@
 package damien.nodeworks.integration.jei
 
 import damien.nodeworks.network.SetInstructionGridPayload
+import damien.nodeworks.network.SetProcessingApiDataPayload
 import damien.nodeworks.network.SetProcessingApiSlotPayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModItems
@@ -18,6 +19,7 @@ import mezz.jei.api.recipe.RecipeIngredientRole
 import mezz.jei.api.recipe.RecipeType
 import mezz.jei.api.recipe.transfer.IRecipeTransferError
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandler
+import mezz.jei.api.recipe.transfer.IUniversalRecipeTransferHandler
 import mezz.jei.api.registration.IGuiHandlerRegistration
 import mezz.jei.api.registration.IRecipeCatalystRegistration
 import mezz.jei.api.registration.IRecipeCategoryRegistration
@@ -45,10 +47,9 @@ class NodeworksJeiPlugin : IModPlugin {
             InstructionSetTransferHandler(),
             RecipeTypes.CRAFTING
         )
-        registration.addRecipeTransferHandler(
-            ProcessingSetTransferHandler(),
-            RecipeTypes.CRAFTING
-        )
+        // Universal handler so the Processing Set's [+] button works for any recipe
+        // category in JEI (crafting, smelting, blasting, modded machines, etc.).
+        registration.addUniversalRecipeTransferHandler(ProcessingSetTransferHandler())
         registration.addRecipeTransferHandler(
             InventoryTerminalTransferHandler(),
             RecipeTypes.CRAFTING
@@ -187,7 +188,7 @@ class InstructionSetTransferHandler : IRecipeTransferHandler<InstructionSetScree
 
 // ── Processing Set: recipe transfer (+) ──
 
-class ProcessingSetTransferHandler : IRecipeTransferHandler<ProcessingSetScreenHandler, RecipeHolder<CraftingRecipe>> {
+class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingSetScreenHandler> {
 
     override fun getContainerClass(): Class<out ProcessingSetScreenHandler> =
         ProcessingSetScreenHandler::class.java
@@ -195,55 +196,65 @@ class ProcessingSetTransferHandler : IRecipeTransferHandler<ProcessingSetScreenH
     override fun getMenuType(): Optional<MenuType<ProcessingSetScreenHandler>> =
         Optional.of(ModScreenHandlers.PROCESSING_SET)
 
-    override fun getRecipeType(): RecipeType<RecipeHolder<CraftingRecipe>> =
-        RecipeTypes.CRAFTING
-
     override fun transferRecipe(
         container: ProcessingSetScreenHandler,
-        recipe: RecipeHolder<CraftingRecipe>,
+        recipe: Any,
         recipeSlots: IRecipeSlotsView,
         player: Player,
         maxTransfer: Boolean,
         doTransfer: Boolean
     ): IRecipeTransferError? {
         if (doTransfer) {
-            // Set inputs from recipe ingredients
+            // Write every input role slot into the grid, up to INPUT_SLOTS. Works for
+            // any recipe category because we rely on the RecipeIngredientRole view JEI
+            // produces, not on the recipe's concrete Java type.
             val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
-            for ((index, slotView) in inputSlots.withIndex()) {
-                if (index >= ProcessingSetScreenHandler.INPUT_SLOTS) break
-                val displayed = slotView.displayedIngredient
-                val itemId = if (displayed.isPresent) {
-                    val ingredient = displayed.get().ingredient
-                    if (ingredient is ItemStack && !ingredient.isEmpty) {
-                        BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: ""
-                    } else ""
-                } else ""
+            for (index in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
+                val (itemId, count) = extractItemAndCount(inputSlots.getOrNull(index))
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(container.containerId, index, itemId)
                 )
+                // Always reset the count to match the recipe — otherwise stale counts
+                // from a previously-filled grid linger even when the item is replaced.
+                PlatformServices.clientNetworking.sendToServer(
+                    SetProcessingApiDataPayload(container.containerId, "input", index, count)
+                )
             }
 
-            // Set first output from recipe result
+            // Write every output role slot, up to OUTPUT_SLOTS. Furnace/smelting has 1
+            // output; crafting has 1; custom multi-output recipes can fill all three.
             val outputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.OUTPUT)
-            if (outputSlots.isNotEmpty()) {
-                val displayed = outputSlots[0].displayedIngredient
-                if (displayed.isPresent) {
-                    val ingredient = displayed.get().ingredient
-                    if (ingredient is ItemStack && !ingredient.isEmpty) {
-                        val outputId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: ""
-                        PlatformServices.clientNetworking.sendToServer(
-                            SetProcessingApiSlotPayload(
-                                container.containerId,
-                                ProcessingSetScreenHandler.INPUT_SLOTS, // first output slot
-                                outputId
-                            )
-                        )
-                    }
-                }
+            for (index in 0 until ProcessingSetScreenHandler.OUTPUT_SLOTS) {
+                val (itemId, count) = extractItemAndCount(outputSlots.getOrNull(index))
+                PlatformServices.clientNetworking.sendToServer(
+                    SetProcessingApiSlotPayload(
+                        container.containerId,
+                        ProcessingSetScreenHandler.INPUT_SLOTS + index,
+                        itemId
+                    )
+                )
+                PlatformServices.clientNetworking.sendToServer(
+                    SetProcessingApiDataPayload(container.containerId, "output", index, count)
+                )
             }
         }
 
         return null
+    }
+
+    /** Extract (itemId, count) from a JEI slot view. Returns ("", 1) if the slot is
+     *  empty or not an ItemStack ingredient. Count is clamped to at least 1 so the
+     *  Processing Set's coerceAtLeast(1) invariant is preserved. */
+    private fun extractItemAndCount(
+        slotView: mezz.jei.api.gui.ingredient.IRecipeSlotView?
+    ): Pair<String, Int> {
+        if (slotView == null) return "" to 1
+        val displayed = slotView.displayedIngredient
+        if (!displayed.isPresent) return "" to 1
+        val ingredient = displayed.get().ingredient
+        if (ingredient !is ItemStack || ingredient.isEmpty) return "" to 1
+        val id = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: ""
+        return id to ingredient.count.coerceAtLeast(1)
     }
 }
 
