@@ -8,6 +8,7 @@ import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.TerminalRenderer
 import damien.nodeworks.render.VariableRenderer
 import net.neoforged.neoforge.client.event.EntityRenderersEvent
@@ -99,6 +100,7 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
@@ -197,7 +199,8 @@ object NeoForgeClientSetup {
         event.register(colorProvider,
             damien.nodeworks.registry.ModBlocks.NETWORK_CONTROLLER,
             damien.nodeworks.registry.ModBlocks.VARIABLE,
-            damien.nodeworks.registry.ModBlocks.TERMINAL
+            damien.nodeworks.registry.ModBlocks.TERMINAL,
+            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE
         )
     }
 }

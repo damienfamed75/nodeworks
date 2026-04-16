@@ -1,5 +1,8 @@
 {
   "variants": {
-    "": { "model": "nodeworks:block/processing_storage" }
+    "facing=north": { "model": "nodeworks:block/processing_storage" },
+    "facing=south": { "model": "nodeworks:block/processing_storage", "y": 180 },
+    "facing=west":  { "model": "nodeworks:block/processing_storage", "y": 270 },
+    "facing=east":  { "model": "nodeworks:block/processing_storage", "y": 90 }
   }
 }

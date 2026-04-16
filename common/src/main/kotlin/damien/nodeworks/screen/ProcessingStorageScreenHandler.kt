@@ -2,7 +2,6 @@ package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.card.ProcessingSet
-import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.BlockPos
 import net.minecraft.world.Container
@@ -10,23 +9,34 @@ import net.minecraft.world.SimpleContainer
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.AbstractContainerMenu
-import net.minecraft.world.inventory.ContainerData
-import net.minecraft.world.inventory.SimpleContainerData
 import net.minecraft.world.inventory.Slot
 import net.minecraft.world.item.ItemStack
 
+/**
+ * Processing Storage screen handler — fixed 2 columns × 4 rows = 8 API card slots.
+ * No upgrades. Slot positions are synced with [ProcessingStorageScreen]'s layout.
+ */
 class ProcessingStorageScreenHandler(
     syncId: Int,
     playerInventory: Inventory,
     private val storageInventory: Container,
-    private val storagePos: BlockPos,
-    private val data: ContainerData = SimpleContainerData(1)
+    val storagePos: BlockPos
 ) : AbstractContainerMenu(ModScreenHandlers.PROCESSING_STORAGE, syncId) {
 
     companion object {
-        const val API_SLOT_COUNT = 36
-        const val UPGRADE_SLOT_INDEX = 36
-        const val STORAGE_SLOT_COUNT = 37
+        const val API_SLOT_COUNT = 8
+        const val COLS = 2
+        const val ROWS = 4
+
+        // Card grid — 2 cols × 4 rows, horizontally centered in a 176-wide frame.
+        // Slot origin: (70, 28). Each slot is 18×18.
+        const val GRID_X = 70
+        const val GRID_Y = 28
+
+        // Player inventory — standard 176×? layout below the card grid.
+        const val INV_X = 8
+        const val INV_Y = 114
+        const val HOTBAR_Y = 172
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: ProcessingStorageOpenData): ProcessingStorageScreenHandler {
             val dummy = SimpleContainer(ProcessingStorageBlockEntity.TOTAL_SLOTS)
@@ -34,75 +44,32 @@ class ProcessingStorageScreenHandler(
         }
 
         fun createServer(syncId: Int, playerInventory: Inventory, entity: ProcessingStorageBlockEntity, pos: BlockPos): ProcessingStorageScreenHandler {
-            val data = object : ContainerData {
-                override fun get(index: Int): Int = when (index) {
-                    0 -> entity.upgradeLevel
-                    else -> 0
-                }
-                override fun set(index: Int, value: Int) {}
-                override fun getCount(): Int = 1
-            }
-            return ProcessingStorageScreenHandler(syncId, playerInventory, entity, pos, data)
+            return ProcessingStorageScreenHandler(syncId, playerInventory, entity, pos)
         }
     }
-
-    val upgradeLevel: Int get() = data.get(0)
 
     init {
-        // 36 API card slots — 4 rows of 9
-        for (row in 0..3) {
-            for (col in 0..8) {
-                val slotIndex = row * 9 + col
-                addSlot(ApiCardSlot(storageInventory, slotIndex, 8 + col * 18, 18 + row * 18, this))
+        for (row in 0 until ROWS) {
+            for (col in 0 until COLS) {
+                val slotIndex = row * COLS + col
+                addSlot(ApiCardSlot(storageInventory, slotIndex, GRID_X + col * 18, GRID_Y + row * 18))
             }
         }
 
-        // Upgrade slot (slot 36) — only accepts MemoryUpgradeItem
-        addSlot(UpgradeSlot(storageInventory, UPGRADE_SLOT_INDEX, 152, 90))
-
-        // Player inventory (3 rows)
         for (row in 0 until 3) {
             for (col in 0 until 9) {
-                addSlot(Slot(playerInventory, col + row * 9 + 9, 8 + col * 18, 114 + row * 18))
+                addSlot(Slot(playerInventory, col + row * 9 + 9, INV_X + col * 18, INV_Y + row * 18))
             }
         }
-        // Player hotbar
         for (col in 0 until 9) {
-            addSlot(Slot(playerInventory, col, 8 + col * 18, 114 + 58))
+            addSlot(Slot(playerInventory, col, INV_X + col * 18, HOTBAR_Y))
         }
-
-        addDataSlots(data)
     }
 
-    fun isSlotActive(slotIndex: Int): Boolean {
-        if (slotIndex >= API_SLOT_COUNT) return true
-        val activeCount = when (upgradeLevel) {
-            0 -> ProcessingStorageBlockEntity.BASE_SLOTS
-            1 -> ProcessingStorageBlockEntity.UPGRADE_1_SLOTS
-            2 -> ProcessingStorageBlockEntity.UPGRADE_2_SLOTS
-            3 -> ProcessingStorageBlockEntity.UPGRADE_3_SLOTS
-            else -> ProcessingStorageBlockEntity.UPGRADE_4_SLOTS
-        }
-        return slotIndex < activeCount
-    }
-
-    private class ApiCardSlot(
-        container: Container,
-        index: Int,
-        x: Int,
-        y: Int,
-        private val handler: ProcessingStorageScreenHandler
-    ) : Slot(container, index, x, y) {
+    private class ApiCardSlot(container: Container, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
         override fun mayPlace(stack: ItemStack): Boolean {
-            return stack.item is ProcessingSet
-                && ProcessingSet.getOutputs(stack).isNotEmpty()
-                && handler.isSlotActive(index)
+            return stack.item is ProcessingSet && ProcessingSet.getOutputs(stack).isNotEmpty()
         }
-    }
-
-    private class UpgradeSlot(container: Container, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
-        override fun mayPlace(stack: ItemStack): Boolean = stack.item is MemoryUpgradeItem
-        override fun getMaxStackSize(): Int = 4
     }
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
@@ -112,13 +79,13 @@ class ProcessingStorageScreenHandler(
         val stack = slot.item
         val original = stack.copy()
 
-        if (slotIndex < STORAGE_SLOT_COUNT) {
-            if (!moveItemStackTo(stack, STORAGE_SLOT_COUNT, slots.size, true)) return ItemStack.EMPTY
+        if (slotIndex < API_SLOT_COUNT) {
+            // Card grid → player inventory
+            if (!moveItemStackTo(stack, API_SLOT_COUNT, slots.size, true)) return ItemStack.EMPTY
         } else {
+            // Player inventory → card grid (only if the item is a valid ProcessingSet)
             if (stack.item is ProcessingSet) {
                 if (!moveItemStackTo(stack, 0, API_SLOT_COUNT, false)) return ItemStack.EMPTY
-            } else if (stack.item is MemoryUpgradeItem) {
-                if (!moveItemStackTo(stack, UPGRADE_SLOT_INDEX, UPGRADE_SLOT_INDEX + 1, false)) return ItemStack.EMPTY
             } else {
                 return ItemStack.EMPTY
             }
