@@ -28,18 +28,13 @@ class InstructionStorageRenderer(context: BlockEntityRendererProvider.Context) :
         private const val CARD_W = 4
         private const val CARD_H = 1
 
-        /**
-         * Top-left texture-pixel coords for each of the 12 slot cutouts on a 16×16 front
-         * face. Row-major to match [InstructionStorageScreenHandler]'s slot index layout
-         * (2 cols × 6 rows). Adjust here if the front texture is repainted.
-         */
         private val SLOT_POSITIONS = arrayOf(
-            3 to 1,  9 to 1,     // row 0
-            3 to 3,  9 to 3,     // row 1
-            3 to 5,  9 to 5,     // row 2
-            3 to 7,  9 to 7,     // row 3
-            3 to 9,  9 to 9,     // row 4
-            3 to 11, 9 to 11     // row 5
+            3 to 1,  9 to 1,
+            3 to 3,  9 to 3,
+            3 to 5,  9 to 5,
+            3 to 7,  9 to 7,
+            3 to 9,  9 to 9,
+            3 to 11, 9 to 11
         )
 
         private const val Z_OFFSET = 0.001f
