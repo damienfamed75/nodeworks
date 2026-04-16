@@ -3,7 +3,7 @@
     "pattern": [
         "DID",
         "D D",
-        "NNN"
+        "NSN"
     ],
     "key": {
         "D": {
@@ -14,6 +14,9 @@
         },
         "N": {
             "item": "nodeworks:node"
+        },
+        "S": {
+            "item": "nodeworks:instruction_storage"
         }
     },
     "result": {
