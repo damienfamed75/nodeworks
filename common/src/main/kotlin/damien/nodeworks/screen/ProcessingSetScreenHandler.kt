@@ -54,35 +54,43 @@ class ProcessingSetScreenHandler(
 
         fun createHandheld(syncId: Int, playerInventory: Inventory, hand: InteractionHand, stack: ItemStack): ProcessingSetScreenHandler {
             val inputs = ProcessingSet.getInputs(stack)
+            val inputSlots = ProcessingSet.getInputPositions(stack)
             val outputs = ProcessingSet.getOutputs(stack)
+            val outputSlots = ProcessingSet.getOutputPositions(stack)
             val timeout = ProcessingSet.getTimeout(stack)
 
             val inputGrid = SimpleContainer(INPUT_SLOTS)
             for ((i, pair) in inputs.withIndex()) {
-                if (i >= INPUT_SLOTS) break
+                val slot = inputSlots.getOrElse(i) { i }
+                if (slot !in 0 until INPUT_SLOTS) continue
                 val id = ResourceLocation.tryParse(pair.first) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
-                inputGrid.setItem(i, ItemStack(item, 1))
+                inputGrid.setItem(slot, ItemStack(item, 1))
             }
 
             val outputGrid = SimpleContainer(OUTPUT_SLOTS)
             for ((i, pair) in outputs.withIndex()) {
-                if (i >= OUTPUT_SLOTS) break
+                val slot = outputSlots.getOrElse(i) { i }
+                if (slot !in 0 until OUTPUT_SLOTS) continue
                 val id = ResourceLocation.tryParse(pair.first) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
-                outputGrid.setItem(i, ItemStack(item, 1))
+                outputGrid.setItem(slot, ItemStack(item, 1))
             }
 
             val data = object : ContainerData {
                 private val values = IntArray(DATA_COUNT)
                 init {
+                    // Default all slot counts to 1 — empty slots also get 1 so edits
+                    // don't start from 0 and force the user to re-enter everything.
+                    for (i in 0 until INPUT_SLOTS) values[i] = 1
+                    for (i in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + i] = 1
                     for ((i, pair) in inputs.withIndex()) {
-                        if (i >= INPUT_SLOTS) break
-                        values[i] = pair.second
+                        val slot = inputSlots.getOrElse(i) { i }
+                        if (slot in 0 until INPUT_SLOTS) values[slot] = pair.second
                     }
                     for ((i, pair) in outputs.withIndex()) {
-                        if (i >= OUTPUT_SLOTS) break
-                        values[INPUT_SLOTS + i] = pair.second
+                        val slot = outputSlots.getOrElse(i) { i }
+                        if (slot in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + slot] = pair.second
                     }
                     values[DATA_TIMEOUT] = timeout
                 }
@@ -100,28 +108,32 @@ class ProcessingSetScreenHandler(
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: ProcessingSetOpenData): ProcessingSetScreenHandler {
             val inputGrid = SimpleContainer(INPUT_SLOTS)
             for ((i, pair) in openData.inputs.withIndex()) {
-                if (i >= INPUT_SLOTS) break
+                val slot = openData.inputSlots.getOrElse(i) { i }
+                if (slot !in 0 until INPUT_SLOTS) continue
                 val id = ResourceLocation.tryParse(pair.first) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
-                inputGrid.setItem(i, ItemStack(item, 1))
+                inputGrid.setItem(slot, ItemStack(item, 1))
             }
 
             val outputGrid = SimpleContainer(OUTPUT_SLOTS)
             for ((i, pair) in openData.outputs.withIndex()) {
-                if (i >= OUTPUT_SLOTS) break
+                val slot = openData.outputSlots.getOrElse(i) { i }
+                if (slot !in 0 until OUTPUT_SLOTS) continue
                 val id = ResourceLocation.tryParse(pair.first) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
-                outputGrid.setItem(i, ItemStack(item, 1))
+                outputGrid.setItem(slot, ItemStack(item, 1))
             }
 
             val data = SimpleContainerData(DATA_COUNT)
+            for (i in 0 until INPUT_SLOTS) data.set(i, 1)
+            for (i in 0 until OUTPUT_SLOTS) data.set(INPUT_SLOTS + i, 1)
             for ((i, pair) in openData.inputs.withIndex()) {
-                if (i >= INPUT_SLOTS) break
-                data.set(i, pair.second)
+                val slot = openData.inputSlots.getOrElse(i) { i }
+                if (slot in 0 until INPUT_SLOTS) data.set(slot, pair.second)
             }
             for ((i, pair) in openData.outputs.withIndex()) {
-                if (i >= OUTPUT_SLOTS) break
-                data.set(INPUT_SLOTS + i, pair.second)
+                val slot = openData.outputSlots.getOrElse(i) { i }
+                if (slot in 0 until OUTPUT_SLOTS) data.set(INPUT_SLOTS + slot, pair.second)
             }
             data.set(DATA_TIMEOUT, openData.timeout)
 
@@ -266,21 +278,25 @@ class ProcessingSetScreenHandler(
 
     private fun saveRecipe(player: Player) {
         val inputs = mutableListOf<Pair<String, Int>>()
+        val inputSlots = mutableListOf<Int>()
         for (i in 0 until INPUT_SLOTS) {
             val stack = inputGrid.getItem(i)
             if (stack.isEmpty) continue
             val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
             val count = data.get(i).coerceAtLeast(1)
             inputs.add(id to count)
+            inputSlots.add(i)
         }
 
         val outputs = mutableListOf<Pair<String, Int>>()
+        val outputSlots = mutableListOf<Int>()
         for (i in 0 until OUTPUT_SLOTS) {
             val stack = outputGrid.getItem(i)
             if (stack.isEmpty) continue
             val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
             val count = data.get(INPUT_SLOTS + i).coerceAtLeast(1)
             outputs.add(id to count)
+            outputSlots.add(i)
         }
 
         val timeout = data.get(DATA_TIMEOUT).coerceAtLeast(0)
@@ -293,7 +309,11 @@ class ProcessingSetScreenHandler(
                     // the unique handler key. Custom naming is gone. See
                     // docs/design/processing-set-handler-ux.md.
                     val canonical = ProcessingSet.canonicalId(inputs, outputs)
-                    ProcessingSet.setRecipe(stack, canonical, inputs, outputs, timeout, serial)
+                    ProcessingSet.setRecipe(
+                        stack, canonical, inputs, outputs, timeout, serial,
+                        inputPositions = inputSlots.toIntArray(),
+                        outputPositions = outputSlots.toIntArray()
+                    )
                 }
             }
             is SaveMode.ClientDummy -> {}
