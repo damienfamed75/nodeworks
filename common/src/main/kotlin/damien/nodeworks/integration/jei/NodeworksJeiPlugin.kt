@@ -242,9 +242,17 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
         return null
     }
 
-    /** Extract (itemId, count) from a JEI slot view. Returns ("", 1) if the slot is
-     *  empty or not an ItemStack ingredient. Count is clamped to at least 1 so the
-     *  Processing Set's coerceAtLeast(1) invariant is preserved. */
+    /**
+     * Extract (itemId, count) from a JEI slot view. Returns ("", 1) if the slot is
+     * empty, not an ItemStack ingredient, or carries non-default data components
+     * (e.g. potion contents, enchantments, suspicious-stew effects). Skipping those
+     * avoids placing misleading "Uncraftable Potion"/blank enchanted placeholders
+     * into the grid — the Processing Set's storage only keeps `itemId:count`, so
+     * anything data-component-dependent can't round-trip through it.
+     *
+     * Count is clamped to at least 1 so the Processing Set's coerceAtLeast(1)
+     * invariant is preserved.
+     */
     private fun extractItemAndCount(
         slotView: mezz.jei.api.gui.ingredient.IRecipeSlotView?
     ): Pair<String, Int> {
@@ -253,6 +261,8 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
         if (!displayed.isPresent) return "" to 1
         val ingredient = displayed.get().ingredient
         if (ingredient !is ItemStack || ingredient.isEmpty) return "" to 1
+        // Skip items with custom data components — we can't represent them.
+        if (!ingredient.componentsPatch.isEmpty) return "" to 1
         val id = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: ""
         return id to ingredient.count.coerceAtLeast(1)
     }

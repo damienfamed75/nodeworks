@@ -37,7 +37,11 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.processing_set"),
-            ProcessingSetOpenData(getCardName(stack), getInputs(stack), getOutputs(stack), getTimeout(stack), isSerial(stack)),
+            ProcessingSetOpenData(
+                getCardName(stack), getInputs(stack), getInputPositions(stack),
+                getOutputs(stack), getOutputPositions(stack),
+                getTimeout(stack), isSerial(stack)
+            ),
             ProcessingSetOpenData.STREAM_CODEC,
             { syncId, inv, p -> ProcessingSetScreenHandler.createHandheld(syncId, inv, hand, stack) }
         )
@@ -84,12 +88,15 @@ class ProcessingSet(properties: Properties) : Item(properties) {
     companion object {
         private const val INPUTS_KEY = "inputs"
         private const val INPUT_COUNTS_KEY = "input_counts"
+        private const val INPUT_SLOTS_KEY = "input_slots"
         private const val OUTPUTS_KEY = "outputs"
         private const val OUTPUT_COUNTS_KEY = "output_counts"
+        private const val OUTPUT_SLOTS_KEY = "output_slots"
         private const val NAME_KEY = "name"
         private const val TIMEOUT_KEY = "timeout"
         private const val SERIAL_KEY = "serial"
         const val MAX_OUTPUTS = 3
+        const val INPUT_GRID_SIZE = 9
 
         /** Get the card's registered name (used as the handler key). */
         fun getCardName(stack: ItemStack): String {
@@ -97,7 +104,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             return customData.copyTag().getString(NAME_KEY)
         }
 
-        /** Get the list of (itemId, count) input pairs. */
+        /** Get the list of (itemId, count) input pairs. Empty-ID entries are filtered. */
         fun getInputs(stack: ItemStack): List<Pair<String, Int>> {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
             val tag = customData.copyTag()
@@ -110,6 +117,26 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 val count = counts.getOrElse(i) { 1 }
                 id to count
             }
+        }
+
+        /**
+         * Grid positions (0..8) for each entry returned by [getInputs], parallel to
+         * that list. Returns sequential positions for legacy cards saved before slot
+         * tracking existed.
+         */
+        fun getInputPositions(stack: ItemStack): IntArray {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
+            val tag = customData.copyTag()
+            if (!tag.contains(INPUTS_KEY)) return IntArray(0)
+            val ids = tag.getList(INPUTS_KEY, 8)
+            val slots = if (tag.contains(INPUT_SLOTS_KEY)) tag.getIntArray(INPUT_SLOTS_KEY) else IntArray(0)
+            val result = ArrayList<Int>(ids.size)
+            for (i in 0 until ids.size) {
+                val id = ids.getString(i)
+                if (id.isEmpty()) continue
+                result.add(slots.getOrElse(i) { i })
+            }
+            return result.toIntArray()
         }
 
         /** Get the list of (itemId, count) output pairs (up to 3). */
@@ -130,6 +157,26 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 val count = counts.getOrElse(i) { 1 }
                 id to count
             }
+        }
+
+        /** Output-column positions (0..2) parallel to [getOutputs]. Sequential fallback
+         *  for legacy cards. */
+        fun getOutputPositions(stack: ItemStack): IntArray {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
+            val tag = customData.copyTag()
+            if (!tag.contains(OUTPUTS_KEY)) {
+                val output = tag.getString("output")
+                return if (output.isNotEmpty()) intArrayOf(0) else IntArray(0)
+            }
+            val ids = tag.getList(OUTPUTS_KEY, 8)
+            val slots = if (tag.contains(OUTPUT_SLOTS_KEY)) tag.getIntArray(OUTPUT_SLOTS_KEY) else IntArray(0)
+            val result = ArrayList<Int>(ids.size)
+            for (i in 0 until ids.size) {
+                val id = ids.getString(i)
+                if (id.isEmpty()) continue
+                result.add(slots.getOrElse(i) { i })
+            }
+            return result.toIntArray()
         }
 
         /** Get the timeout in ticks (0 = no timeout). */
@@ -197,8 +244,22 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             return result
         }
 
-        /** Save the processing recipe to the card stack. */
-        fun setRecipe(stack: ItemStack, name: String, inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>, timeout: Int, serial: Boolean = false) {
+        /**
+         * Save the processing recipe to the card stack. [inputPositions] maps each
+         * entry in [inputs] to its grid slot (0..8). [outputPositions] does the same
+         * for outputs (0..2). Pass `null` to default to sequential positions; this is
+         * only appropriate for legacy callers that don't care about layout.
+         */
+        fun setRecipe(
+            stack: ItemStack,
+            name: String,
+            inputs: List<Pair<String, Int>>,
+            outputs: List<Pair<String, Int>>,
+            timeout: Int,
+            serial: Boolean = false,
+            inputPositions: IntArray? = null,
+            outputPositions: IntArray? = null
+        ) {
             val tag = CompoundTag()
             tag.putString(NAME_KEY, name)
 
@@ -210,6 +271,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             }
             tag.put(INPUTS_KEY, inputIds)
             tag.putIntArray(INPUT_COUNTS_KEY, inputCounts)
+            tag.putIntArray(INPUT_SLOTS_KEY, inputPositions ?: IntArray(inputs.size) { it })
 
             val outputIds = ListTag()
             val outputCounts = IntArray(outputs.size)
@@ -219,6 +281,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             }
             tag.put(OUTPUTS_KEY, outputIds)
             tag.putIntArray(OUTPUT_COUNTS_KEY, outputCounts)
+            tag.putIntArray(OUTPUT_SLOTS_KEY, outputPositions ?: IntArray(outputs.size) { it })
 
             tag.putInt(TIMEOUT_KEY, timeout)
             tag.putBoolean(SERIAL_KEY, serial)
