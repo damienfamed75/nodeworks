@@ -1,7 +1,6 @@
 package damien.nodeworks.block.entity
 
 import damien.nodeworks.card.InstructionSet
-import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
@@ -24,11 +23,9 @@ import net.minecraft.world.level.block.state.BlockState
 import java.util.UUID
 
 /**
- * Block entity for Instruction Storage. Holds Instruction Sets and an upgrade slot.
+ * Block entity for Instruction Storage. Holds up to 12 Instruction Sets.
  * Connects to the network via laser (Connectable). Adjacent Instruction Storage blocks
  * form a cluster — the connected one discovers recipes from the entire cluster.
- *
- * Base capacity: 12 slots. Each Memory Upgrade (up to 4) adds 6 slots: 12 → 18 → 24 → 30 → 36.
  */
 class InstructionStorageBlockEntity(
     pos: BlockPos,
@@ -36,14 +33,7 @@ class InstructionStorageBlockEntity(
 ) : BlockEntity(ModBlockEntities.INSTRUCTION_STORAGE, pos, state), Container, Connectable {
 
     companion object {
-        const val BASE_SLOTS = 12
-        const val UPGRADE_1_SLOTS = 18
-        const val UPGRADE_2_SLOTS = 24
-        const val UPGRADE_3_SLOTS = 30
-        const val UPGRADE_4_SLOTS = 36
-        const val MAX_SLOTS = UPGRADE_4_SLOTS
-        const val UPGRADE_SLOT = MAX_SLOTS
-        const val TOTAL_SLOTS = MAX_SLOTS + 1
+        const val TOTAL_SLOTS = 12
     }
 
     private val items = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
@@ -51,21 +41,10 @@ class InstructionStorageBlockEntity(
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
 
-    var upgradeLevel: Int = 0
-        private set
-
-    val activeSlotCount: Int get() = when (upgradeLevel) {
-        0 -> BASE_SLOTS
-        1 -> UPGRADE_1_SLOTS
-        2 -> UPGRADE_2_SLOTS
-        3 -> UPGRADE_3_SLOTS
-        else -> UPGRADE_4_SLOTS
-    }
-
     /** Returns all non-empty Instruction Set recipes in THIS storage block. */
     fun getInstructionSets(): List<InstructionSetInfo> {
         val result = mutableListOf<InstructionSetInfo>()
-        for (i in 0 until activeSlotCount) {
+        for (i in 0 until TOTAL_SLOTS) {
             val stack = items[i]
             if (stack.isEmpty || stack.item !is InstructionSet) continue
             val recipe = InstructionSet.getRecipe(stack)
@@ -164,23 +143,23 @@ class InstructionStorageBlockEntity(
     override fun removeItem(slot: Int, amount: Int): ItemStack {
         val result = ContainerHelper.removeItem(items, slot, amount)
         if (!result.isEmpty) {
-            if (slot == UPGRADE_SLOT) recalculateUpgradeLevel()
             setChanged()
+            // Push a block update so the client's block entity (and the BER) sees the new
+            // items — without this the front-face card overlay stays stale.
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
         return result
     }
 
     override fun removeItemNoUpdate(slot: Int): ItemStack {
-        val result = ContainerHelper.takeItem(items, slot)
-        if (slot == UPGRADE_SLOT) recalculateUpgradeLevel()
-        return result
+        return ContainerHelper.takeItem(items, slot)
     }
 
     override fun setItem(slot: Int, stack: ItemStack) {
         if (slot in items.indices) {
             items[slot] = stack
-            if (slot == UPGRADE_SLOT) recalculateUpgradeLevel()
             setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
     }
 
@@ -190,16 +169,6 @@ class InstructionStorageBlockEntity(
 
     override fun clearContent() {
         items.clear()
-        upgradeLevel = 0
-    }
-
-    private fun recalculateUpgradeLevel() {
-        val upgradeStack = items[UPGRADE_SLOT]
-        upgradeLevel = if (upgradeStack.item is MemoryUpgradeItem) {
-            minOf(upgradeStack.count, 4)
-        } else {
-            0
-        }
     }
 
     // --- Serialization ---
@@ -215,7 +184,6 @@ class InstructionStorageBlockEntity(
         super.loadAdditional(tag, registries)
         items.clear()
         ContainerHelper.loadAllItems(tag, items, registries)
-        recalculateUpgradeLevel()
         networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }

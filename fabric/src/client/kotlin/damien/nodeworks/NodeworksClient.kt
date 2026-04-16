@@ -8,6 +8,7 @@ import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.ControllerRenderer
+import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.TerminalRenderer
@@ -101,7 +102,8 @@ object NodeworksClient : ClientModInitializer {
             damien.nodeworks.registry.ModBlocks.NETWORK_CONTROLLER,
             damien.nodeworks.registry.ModBlocks.VARIABLE,
             damien.nodeworks.registry.ModBlocks.TERMINAL,
-            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE
+            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE,
+            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE
         )
 
         NodeConnectionRenderer.register()
@@ -113,6 +115,7 @@ object NodeworksClient : ClientModInitializer {
         BlockEntityRendererRegistry.register(ModBlockEntities.VARIABLE, ::VariableRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.TERMINAL, ::TerminalRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
+        BlockEntityRendererRegistry.register(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
 
         MenuScreens.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)

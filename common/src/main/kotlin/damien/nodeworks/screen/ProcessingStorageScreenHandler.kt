@@ -33,10 +33,13 @@ class ProcessingStorageScreenHandler(
         const val GRID_X = 70
         const val GRID_Y = 28
 
-        // Player inventory — standard 176×? layout below the card grid.
+        // Player inventory — INV_X / INV_Y are the FRAME origin passed to drawPlayerInventory.
+        // Slot positions sit 1px inside (matches the 1px border of NineSlice.SLOT, same
+        // pattern as CardProgrammer's inventory).
         const val INV_X = 8
         const val INV_Y = 114
         const val HOTBAR_Y = 172
+        const val SLOT_INSET = 1
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: ProcessingStorageOpenData): ProcessingStorageScreenHandler {
             val dummy = SimpleContainer(ProcessingStorageBlockEntity.TOTAL_SLOTS)
@@ -58,11 +61,11 @@ class ProcessingStorageScreenHandler(
 
         for (row in 0 until 3) {
             for (col in 0 until 9) {
-                addSlot(Slot(playerInventory, col + row * 9 + 9, INV_X + col * 18, INV_Y + row * 18))
+                addSlot(Slot(playerInventory, col + row * 9 + 9, INV_X + SLOT_INSET + col * 18, INV_Y + SLOT_INSET + row * 18))
             }
         }
         for (col in 0 until 9) {
-            addSlot(Slot(playerInventory, col, INV_X + col * 18, HOTBAR_Y))
+            addSlot(Slot(playerInventory, col, INV_X + SLOT_INSET + col * 18, HOTBAR_Y + SLOT_INSET))
         }
     }
 
