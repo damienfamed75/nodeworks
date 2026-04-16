@@ -65,29 +65,27 @@ class InstructionSetScreenHandler(
     }
 
     init {
-        // 3x3 recipe grid — ghost slots (slots 0-8)
+        // 3x3 recipe grid — ghost slots (slots 0-8). Positions match InstructionSetScreen.
         for (row in 0..2) {
             for (col in 0..2) {
-                addSlot(GhostSlot(recipeGrid, row * 3 + col, 30 + col * 18, 17 + row * 18))
+                addSlot(GhostSlot(recipeGrid, row * 3 + col, 36 + col * 18, 13 + row * 18))
             }
         }
 
-        // Result slot (slot 9) — display only
-        addSlot(ResultSlot(resultContainer, 0, 118, 35))
+        // Result slot (slot 9) — display only, vertically centered on the middle row.
+        addSlot(ResultSlot(resultContainer, 0, 128, 31))
 
-        // Player inventory
-        // Player inventory (3 rows)
+        // Player inventory — matches ProcessingSetScreen layout (9 cols at x=9, inv y=95, hotbar y=153).
+        // INV_GRID_Y = 80+14 = 94, so slot y = 95. Hotbar y = 95 + 54 + 4 = 153.
         for (row in 0 until 3) {
             for (col in 0 until 9) {
-                addSlot(net.minecraft.world.inventory.Slot(playerInventory, col + row * 9 + 9, 8 + col * 18, 84 + row * 18))
+                addSlot(net.minecraft.world.inventory.Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 95 + row * 18))
             }
         }
-        // Player hotbar
         for (col in 0 until 9) {
-            addSlot(net.minecraft.world.inventory.Slot(playerInventory, col, 8 + col * 18, 84 + 58))
+            addSlot(net.minecraft.world.inventory.Slot(playerInventory, col, 9 + col * 18, 153))
         }
 
-        // Initial recipe lookup
         updateResult()
     }
 

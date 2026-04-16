@@ -1,19 +1,19 @@
 {
     "type": "minecraft:crafting_shaped",
     "pattern": [
-        "GRG",
-        "GPG",
-        "GGG"
+        "CCC",
+        "DTD",
+        "CCC"
     ],
     "key": {
-        "P": {
-            "item": "minecraft:paper"
+        "C": {
+            "item": "minecraft:copper_ingot"
         },
-        "R": {
-            "item": "minecraft:redstone"
+        "D": {
+            "item": "minecraft:deepslate"
         },
-        "G": {
-            "item": "minecraft:gold_nugget"
+        "T": {
+            "item": "minecraft:crafting_table"
         }
     },
     "result": {
