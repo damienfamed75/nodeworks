@@ -1,19 +1,22 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "III",
-    "CKC",
+    " S ",
+    "DBD",
     "III"
   ],
   "key": {
+    "S": {
+      "item": "nodeworks:instruction_set"
+    },
+    "D": {
+      "item": "minecraft:deepslate"
+    },
+    "B": {
+      "item": "minecraft:stone_button"
+    },
     "I": {
       "item": "minecraft:iron_ingot"
-    },
-    "C": {
-      "item": "minecraft:copper_ingot"
-    },
-    "K": {
-      "item": "nodeworks:instruction_set"
     }
   },
   "result": {

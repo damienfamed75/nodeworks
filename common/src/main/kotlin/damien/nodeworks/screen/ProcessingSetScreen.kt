@@ -67,7 +67,7 @@ class ProcessingSetScreen(
         private const val TOGGLE_X = CONTROLS_START_X + TIMEOUT_GROUP_W + GROUP_GAP
 
         private const val CLEAR_BTN_SIZE = 14
-        private const val CLEAR_BTN_X = 14
+        private const val CLEAR_BTN_X = 16
         private const val CLEAR_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - CLEAR_BTN_SIZE) / 2
 
 
