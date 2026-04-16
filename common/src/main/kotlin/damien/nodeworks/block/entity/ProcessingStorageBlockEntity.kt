@@ -1,7 +1,6 @@
 package damien.nodeworks.block.entity
 
 import damien.nodeworks.card.ProcessingSet
-import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
@@ -24,11 +23,9 @@ import net.minecraft.world.level.block.state.BlockState
 import java.util.UUID
 
 /**
- * Block entity for Processing Storage. Holds Processing Sets and an upgrade slot.
+ * Block entity for Processing Storage. Holds up to 8 Processing Sets.
  * Connects to the network via laser (Connectable). Adjacent Processing Storage blocks
  * form a cluster — the connected one discovers API cards from the entire cluster.
- *
- * Base capacity: 12 slots. Each Memory Upgrade (up to 4) adds 6 slots: 12 → 18 → 24 → 30 → 36.
  */
 class ProcessingStorageBlockEntity(
     pos: BlockPos,
@@ -36,14 +33,7 @@ class ProcessingStorageBlockEntity(
 ) : BlockEntity(ModBlockEntities.PROCESSING_STORAGE, pos, state), Container, Connectable {
 
     companion object {
-        const val BASE_SLOTS = 12
-        const val UPGRADE_1_SLOTS = 18
-        const val UPGRADE_2_SLOTS = 24
-        const val UPGRADE_3_SLOTS = 30
-        const val UPGRADE_4_SLOTS = 36
-        const val MAX_SLOTS = UPGRADE_4_SLOTS
-        const val UPGRADE_SLOT = MAX_SLOTS
-        const val TOTAL_SLOTS = MAX_SLOTS + 1
+        const val TOTAL_SLOTS = 8
 
         /** Generate a name from outputs, e.g. "api_iron_ingot2_copper_ingot1" */
         fun generateAutoName(outputs: List<Pair<String, Int>>): String {
@@ -60,21 +50,10 @@ class ProcessingStorageBlockEntity(
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
 
-    var upgradeLevel: Int = 0
-        private set
-
-    val activeSlotCount: Int get() = when (upgradeLevel) {
-        0 -> BASE_SLOTS
-        1 -> UPGRADE_1_SLOTS
-        2 -> UPGRADE_2_SLOTS
-        3 -> UPGRADE_3_SLOTS
-        else -> UPGRADE_4_SLOTS
-    }
-
     /** Returns all non-empty Processing Sets in THIS storage block. */
     fun getProcessingApis(): List<ProcessingApiInfo> {
         val result = mutableListOf<ProcessingApiInfo>()
-        for (i in 0 until activeSlotCount) {
+        for (i in 0 until TOTAL_SLOTS) {
             val stack = items[i]
             if (stack.isEmpty || stack.item !is ProcessingSet) continue
             val inputs = ProcessingSet.getInputs(stack)
@@ -182,7 +161,6 @@ class ProcessingStorageBlockEntity(
     override fun removeItem(slot: Int, amount: Int): ItemStack {
         val result = ContainerHelper.removeItem(items, slot, amount)
         if (!result.isEmpty) {
-            if (slot == UPGRADE_SLOT) recalculateUpgradeLevel()
             setChanged()
             // Push update so the Script Terminal's client-side scan sees the new set of
             // recipes without requiring a world reload or re-open of the storage block.
@@ -192,15 +170,12 @@ class ProcessingStorageBlockEntity(
     }
 
     override fun removeItemNoUpdate(slot: Int): ItemStack {
-        val result = ContainerHelper.takeItem(items, slot)
-        if (slot == UPGRADE_SLOT) recalculateUpgradeLevel()
-        return result
+        return ContainerHelper.takeItem(items, slot)
     }
 
     override fun setItem(slot: Int, stack: ItemStack) {
         if (slot in items.indices) {
             items[slot] = stack
-            if (slot == UPGRADE_SLOT) recalculateUpgradeLevel()
             setChanged()
             level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
@@ -212,16 +187,6 @@ class ProcessingStorageBlockEntity(
 
     override fun clearContent() {
         items.clear()
-        upgradeLevel = 0
-    }
-
-    private fun recalculateUpgradeLevel() {
-        val upgradeStack = items[UPGRADE_SLOT]
-        upgradeLevel = if (upgradeStack.item is MemoryUpgradeItem) {
-            minOf(upgradeStack.count, 4)
-        } else {
-            0
-        }
     }
 
     // --- Serialization ---
@@ -237,7 +202,6 @@ class ProcessingStorageBlockEntity(
         super.loadAdditional(tag, registries)
         items.clear()
         ContainerHelper.loadAllItems(tag, items, registries)
-        recalculateUpgradeLevel()
         networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }

@@ -9,6 +9,7 @@ import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.TerminalRenderer
 import damien.nodeworks.render.VariableRenderer
 import damien.nodeworks.screen.NodeSideScreen
@@ -81,6 +82,28 @@ object NodeworksClient : ClientModInitializer {
             }
         }
 
+        // Tint emissive overlays (tintindex 0) with the network color, mirroring
+        // the NeoForgeClientSetup registration so both loaders render the same.
+        net.fabricmc.fabric.api.client.rendering.v1.ColorProviderRegistry.BLOCK.register(
+            { _, blockGetter, pos, tintIndex ->
+                if (tintIndex == 0 && pos != null) {
+                    val entity = blockGetter?.getBlockEntity(pos)
+                    when (entity) {
+                        is damien.nodeworks.block.entity.NetworkControllerBlockEntity -> entity.networkColor
+                        is damien.nodeworks.network.Connectable -> {
+                            val level = Minecraft.getInstance().level
+                            if (level != null) NodeConnectionRenderer.findNetworkColor(level, pos) else -1
+                        }
+                        else -> -1
+                    }
+                } else -1
+            },
+            damien.nodeworks.registry.ModBlocks.NETWORK_CONTROLLER,
+            damien.nodeworks.registry.ModBlocks.VARIABLE,
+            damien.nodeworks.registry.ModBlocks.TERMINAL,
+            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE
+        )
+
         NodeConnectionRenderer.register()
         net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry.register(
             damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL
@@ -89,6 +112,7 @@ object NodeworksClient : ClientModInitializer {
         BlockEntityRendererRegistry.register(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.VARIABLE, ::VariableRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.TERMINAL, ::TerminalRenderer)
+        BlockEntityRendererRegistry.register(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
 
         MenuScreens.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)
