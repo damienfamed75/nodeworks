@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "part=middle": { "model": "nodeworks:block/antenna_segment_middle" },
+    "part=top":    { "model": "nodeworks:block/antenna_segment_top" }
+  }
+}

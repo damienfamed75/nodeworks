@@ -51,6 +51,7 @@
   "block.nodeworks.processing_storage": "Processing Storage",
   "container.nodeworks.processing_storage": "Processing Storage",
   "item.nodeworks.link_crystal": "Link Crystal",
+  "block.nodeworks.antenna_segment": "Antenna Segment",
   "block.nodeworks.broadcast_antenna": "Broadcast Antenna",
   "block.nodeworks.receiver_antenna": "Receiver Antenna",
   "container.nodeworks.broadcast_antenna": "Broadcast Antenna",

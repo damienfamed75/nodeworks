@@ -1,0 +1,49 @@
+{
+	"format_version": "1.9.0",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"ambientocclusion": false,
+	"render_type": "cutout",
+	"texture_size": [64, 48],
+	"textures": {
+		"particle": "nodeworks:block/broadcast_antenna",
+		"all": "nodeworks:block/broadcast_antenna"
+	},
+	"elements": [
+		{
+			"name": "frame",
+			"from": [4.5, 0, 4.5],
+			"to": [11.5, 16, 11.5],
+			"faces": {
+				"north": {"uv": [2.75, 0, 4.5, 5.33333], "texture": "#all"},
+				"east": {"uv": [2.75, 0, 4.5, 5.33333], "texture": "#all"},
+				"south": {"uv": [2.75, 0, 4.5, 5.33333], "texture": "#all"},
+				"west": {"uv": [2.75, 0, 4.5, 5.33333], "texture": "#all"}
+			}
+		},
+		{
+			"name": "center",
+			"from": [6.5, 0, 6.5],
+			"to": [9.5, 16, 9.5],
+			"faces": {
+				"north": {"uv": [6.25, 0, 6.75, 5.33333], "texture": "#all"},
+				"east": {"uv": [6.25, 0, 6.75, 5.33333], "texture": "#all"},
+				"south": {"uv": [6.25, 0, 6.75, 5.33333], "texture": "#all"},
+				"west": {"uv": [6.25, 0, 6.75, 5.33333], "texture": "#all"}
+			}
+		},
+		{
+			"name": "cupple",
+			"from": [5.5, 7, 5.5],
+			"to": [10.5, 9, 10.5],
+			"faces": {
+				"north": {"uv": [6, 2.33333, 6.25, 3.66667], "rotation": 270, "texture": "#all"},
+				"east": {"uv": [6, 2.33333, 6.25, 3.66667], "rotation": 270, "texture": "#all"},
+				"south": {"uv": [6, 2.33333, 6.25, 3.66667], "rotation": 270, "texture": "#all"},
+				"west": {"uv": [6, 2.33333, 6.25, 3.66667], "rotation": 270, "texture": "#all"},
+				"up": {"uv": [5, 2.33333, 6, 3.66667], "texture": "#all"},
+				"down": {"uv": [5, 2.33333, 6, 3.66667], "texture": "#all"}
+			}
+		}
+	]
+}
