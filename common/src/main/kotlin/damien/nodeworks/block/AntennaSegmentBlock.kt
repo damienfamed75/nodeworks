@@ -69,29 +69,28 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
 
     override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
         if (!state.`is`(newState.block) && !level.isClientSide) {
-            // Cascade-remove: break every segment above + the base below.
             cascadeRemove(level, pos)
         }
         super.onRemove(state, level, pos, newState, movedByPiston)
     }
 
     private fun cascadeRemove(level: Level, pos: BlockPos) {
-        // Base below (if any).
-        val basePos = findBase(level, pos)
-        if (basePos != null && basePos != pos) {
-            level.setBlock(basePos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL or Block.UPDATE_SUPPRESS_DROPS)
-        }
-        // Segments above (in either direction — we could be in the middle of the stack).
+        // Remove segments ABOVE the broken position first — the broken block is already
+        // AIR so the base's upward scan would stop at the gap if we don't clear these now.
         var cursor = pos.above()
         while (level.getBlockState(cursor).block is AntennaSegmentBlock) {
-            val s = level.getBlockState(cursor)
-            level.setBlock(cursor, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL or Block.UPDATE_SUPPRESS_DROPS)
+            level.setBlock(cursor, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
             cursor = cursor.above()
         }
+        // Remove segments BELOW (between us and the base).
         var below = pos.below()
         while (level.getBlockState(below).block is AntennaSegmentBlock) {
-            level.setBlock(below, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL or Block.UPDATE_SUPPRESS_DROPS)
+            level.setBlock(below, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
             below = below.below()
+        }
+        // Destroy the base — drops antenna item + inventory via the base's onRemove.
+        if (level.getBlockState(below).block is BroadcastAntennaBlock) {
+            level.destroyBlock(below, true)
         }
     }
 
