@@ -25,7 +25,9 @@ import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.Level
 import java.util.UUID
 
-private const val BASE_RANGE = 32.0
+/** Fallback radius used only if the paired broadcast's own effective range can't be read.
+ *  Real range is [BroadcastAntennaBlockEntity.effectiveRange] queried off the broadcast. */
+private const val BASE_RANGE = 128.0
 
 /**
  * Receiver Antenna — receives Processing Sets from a paired Broadcast Antenna.
@@ -50,23 +52,32 @@ class ReceiverAntennaBlockEntity(
 
     val isPaired: Boolean get() = pairedPos != null && pairedFrequencyId != null
 
-    /** 0=not linked, 1=linked, 2=out of range, 3=broadcast not found, 4=freq mismatch, 5=not loaded */
+    /** 0=not linked, 1=linked, 2=out of range, 3=broadcast not found, 4=freq mismatch,
+     *  5=not loaded, 6=dimension mismatch (broadcast lacks Multi-Dimension upgrade). */
     fun getConnectionStatus(level: ServerLevel): Int {
         val pos = pairedPos ?: return 0
         val dim = pairedDimension ?: return 0
         val freq = pairedFrequencyId ?: return 0
         val targetLevel = level.server.getLevel(dim) ?: return 3
         if (!targetLevel.isLoaded(pos)) return 5
+        val broadcast = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return 3
+        if (broadcast.frequencyId != freq) return 4
+
+        val sameDimension = dim == level.dimension()
+        if (!sameDimension) {
+            // Cross-dimensional pairing is gated behind the Multi-Dimension upgrade.
+            return if (broadcast.allowsCrossDimension) 1 else 6
+        }
+        // Same dimension — distance must be within broadcast's effective range.
         val dx = pos.x - worldPosition.x.toDouble()
         val dy = pos.y - worldPosition.y.toDouble()
         val dz = pos.z - worldPosition.z.toDouble()
-        if (dx * dx + dy * dy + dz * dz > BASE_RANGE * BASE_RANGE) return 2
-        val entity = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return 3
-        if (entity.frequencyId != freq) return 4
+        val range = broadcast.effectiveRange
+        if (dx * dx + dy * dy + dz * dz > range * range) return 2
         return 1
     }
 
-    /** Load the paired Broadcast Antenna if in range and valid. */
+    /** Load the paired Broadcast Antenna if in range, same/allowed dimension, matching frequency. */
     fun getBroadcastAntenna(level: ServerLevel): BroadcastAntennaBlockEntity? {
         val pos = pairedPos ?: return null
         val dim = pairedDimension ?: return null
@@ -75,14 +86,19 @@ class ReceiverAntennaBlockEntity(
         val targetLevel = level.server.getLevel(dim) ?: return null
         if (!targetLevel.isLoaded(pos)) return null
 
+        val broadcast = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return null
+        if (broadcast.frequencyId != freq) return null
+
+        val sameDimension = dim == level.dimension()
+        if (!sameDimension) {
+            return if (broadcast.allowsCrossDimension) broadcast else null
+        }
         val dx = pos.x - worldPosition.x.toDouble()
         val dy = pos.y - worldPosition.y.toDouble()
         val dz = pos.z - worldPosition.z.toDouble()
-        if (dx * dx + dy * dy + dz * dz > BASE_RANGE * BASE_RANGE) return null
-
-        val entity = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return null
-        if (entity.frequencyId != freq) return null
-        return entity
+        val range = broadcast.effectiveRange
+        if (dx * dx + dy * dy + dz * dz > range * range) return null
+        return broadcast
     }
 
     /** Read pairing data from the chip in the slot. */
