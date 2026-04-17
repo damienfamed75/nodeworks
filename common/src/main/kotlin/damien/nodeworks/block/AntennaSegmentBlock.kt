@@ -29,6 +29,10 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
     companion object {
         val PART: EnumProperty<Part> = EnumProperty.create("part", Part::class.java)
         val FACING = BlockStateProperties.HORIZONTAL_FACING
+        /** True when the stack's base is reachable from a Network Controller. Only meaningful for
+         *  [Part.RECEIVER]; broadcast parts ignore it. Drives the horn on/off multipart model. */
+        val CONNECTED: net.minecraft.world.level.block.state.properties.BooleanProperty =
+            net.minecraft.world.level.block.state.properties.BooleanProperty.create("connected")
 
         /** 7×16×7 footprint, centered. */
         private val SHAPE: VoxelShape = Shapes.box(4.5 / 16.0, 0.0, 4.5 / 16.0, 11.5 / 16.0, 1.0, 11.5 / 16.0)
@@ -54,11 +58,16 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
     }
 
     init {
-        registerDefaultState(stateDefinition.any().setValue(PART, Part.MIDDLE).setValue(FACING, Direction.NORTH))
+        registerDefaultState(
+            stateDefinition.any()
+                .setValue(PART, Part.MIDDLE)
+                .setValue(FACING, Direction.NORTH)
+                .setValue(CONNECTED, false)
+        )
     }
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
-        builder.add(PART, FACING)
+        builder.add(PART, FACING, CONNECTED)
     }
 
     override fun getShape(state: BlockState, level: BlockGetter, pos: BlockPos, context: CollisionContext): VoxelShape = SHAPE

@@ -53,6 +53,21 @@ class ReceiverAntennaBlock(properties: Properties) : BaseEntityBlock(properties)
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity =
         ReceiverAntennaBlockEntity(pos, state)
 
+    override fun <T : BlockEntity> getTicker(
+        level: Level,
+        state: BlockState,
+        blockEntityType: net.minecraft.world.level.block.entity.BlockEntityType<T>
+    ): net.minecraft.world.level.block.entity.BlockEntityTicker<T>? {
+        // Server-only — re-evaluates the "linked" status periodically so the horn flips
+        // off if the paired broadcast is destroyed / out of range / frequency mismatches.
+        if (level.isClientSide) return null
+        return net.minecraft.world.level.block.entity.BlockEntityTicker { lvl, _, _, be ->
+            if (be is ReceiverAntennaBlockEntity && lvl is net.minecraft.server.level.ServerLevel) {
+                be.serverTick(lvl)
+            }
+        }
+    }
+
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState? {
         val level = context.level
         val pos = context.clickedPos
