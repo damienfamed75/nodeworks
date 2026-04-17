@@ -13,5 +13,10 @@ pluginManagement {
     }
 }
 
+plugins {
+    // Auto-provisions JDK 25 (required by NeoForge 26.1) if not already installed.
+    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
+}
+
 rootProject.name = "nodeworks"
 include("common", "neoforge")
