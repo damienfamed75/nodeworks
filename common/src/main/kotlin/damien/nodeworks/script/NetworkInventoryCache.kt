@@ -130,6 +130,43 @@ class NetworkInventoryCache(
                 }
             }
         }
+
+        // Add phantom craftable entries for recipe outputs not already in storage
+        for (crafter in snapshot.crafters) {
+            for (iset in crafter.instructionSets) {
+                val outputId = iset.outputItemId
+                if (outputId.isEmpty()) continue
+                val key = cacheKey(outputId, false)
+                val existing = frontBuffer[key]
+                if (existing != null) {
+                    // Already in storage — mark as craftable
+                    frontBuffer[key] = existing.copy(isCraftable = true)
+                } else {
+                    // Not in storage — add phantom with count 0
+                    val id = net.minecraft.resources.ResourceLocation.tryParse(outputId) ?: continue
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+                    val name = item.description.string
+                    frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
+                }
+            }
+        }
+        for (api in snapshot.processingApis) {
+            for (procApi in api.apis) {
+                for (outputId in procApi.outputItemIds) {
+                    if (outputId.isEmpty()) continue
+                    val key = cacheKey(outputId, false)
+                    val existing = frontBuffer[key]
+                    if (existing != null) {
+                        frontBuffer[key] = existing.copy(isCraftable = true)
+                    } else {
+                        val id = net.minecraft.resources.ResourceLocation.tryParse(outputId) ?: continue
+                        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+                        val name = item.description.string
+                        frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
+                    }
+                }
+            }
+        }
     }
 
     /** Compare front buffer against back buffer, update entries and change tracking. */
@@ -222,14 +259,14 @@ class NetworkInventoryCache(
             entries[key] = existing.copy(info = existing.info.copy(count = existing.info.count + amount))
             changedSerials.add(existing.serial)
         } else {
-            val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+            val identifier = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: return
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
             val serial = nextSerial++
             entries[key] = SerialEntry(serial, ItemInfo(
                 itemId = itemId,
-                name = item.getName(net.minecraft.world.item.ItemStack(item)).string,
+                name = net.minecraft.world.item.ItemStack(item).hoverName.string,
                 count = amount,
-                maxStackSize = item.defaultMaxStackSize,
+                maxStackSize = item.getDefaultMaxStackSize(),
                 hasData = hasData
             ))
             changedSerials.add(serial)
@@ -242,9 +279,15 @@ class NetworkInventoryCache(
         val existing = entries[key] ?: return
         val newCount = existing.info.count - amount
         if (newCount <= 0) {
-            entries.remove(key)
-            removedSerials.add(existing.serial)
-            changedSerials.remove(existing.serial)
+            if (existing.info.isCraftable) {
+                // Keep as phantom craftable entry with 0 count
+                entries[key] = existing.copy(info = existing.info.copy(count = 0))
+                changedSerials.add(existing.serial)
+            } else {
+                entries.remove(key)
+                removedSerials.add(existing.serial)
+                changedSerials.remove(existing.serial)
+            }
         } else {
             entries[key] = existing.copy(info = existing.info.copy(count = newCount))
             changedSerials.add(existing.serial)

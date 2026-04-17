@@ -1,8 +1,38 @@
 {
-  "parent": "minecraft:block/cube_bottom_top",
+  "parent": "minecraft:block/block",
+  "render_type": "cutout",
   "textures": {
-    "top": "nodeworks:block/instruction_storage_top",
-    "bottom": "nodeworks:block/instruction_storage_bottom",
-    "side": "nodeworks:block/instruction_storage_side"
-  }
+    "up": "nodeworks:block/instruction_storage_top",
+    "down": "nodeworks:block/instruction_storage_bottom",
+    "north": "nodeworks:block/instruction_storage_front",
+    "south": "nodeworks:block/instruction_storage_side",
+    "east": "nodeworks:block/instruction_storage_side",
+    "west": "nodeworks:block/instruction_storage_side",
+    "emissive_front": "nodeworks:block/instruction_storage_front_emissive",
+    "particle": "nodeworks:block/instruction_storage_side"
+  },
+  "elements": [
+    {
+      "comment": "Base block",
+      "from": [0, 0, 0],
+      "to": [16, 16, 16],
+      "faces": {
+        "north": { "texture": "#north", "cullface": "north" },
+        "south": { "texture": "#south", "cullface": "south" },
+        "east":  { "texture": "#east", "cullface": "east" },
+        "west":  { "texture": "#west", "cullface": "west" },
+        "up":    { "texture": "#up", "cullface": "up" },
+        "down":  { "texture": "#down", "cullface": "down" }
+      }
+    },
+    {
+      "comment": "Emissive front overlay — fullbright, tinted with network color",
+      "from": [-0.01, -0.01, -0.01],
+      "to": [16.01, 16.01, 16.01],
+      "shade": false,
+      "faces": {
+        "north": { "texture": "#emissive_front", "cullface": "north", "tintindex": 0, "neoforge_data": {"block_light": 15, "sky_light": 15} }
+      }
+    }
+  ]
 }

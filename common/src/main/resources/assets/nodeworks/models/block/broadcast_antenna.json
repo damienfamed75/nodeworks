@@ -1,0 +1,84 @@
+{
+  "format_version": "1.9.0",
+  "credit": "Made with Blockbench",
+  "parent": "minecraft:block/block",
+  "render_type": "cutout",
+  "texture_size": [
+    64,
+    48
+  ],
+  "textures": {
+    "particle": "nodeworks:block/broadcast_antenna",
+    "all": "nodeworks:block/broadcast_antenna"
+  },
+  "elements": [
+    {
+      "from": [
+        2.5,
+        0,
+        2.5
+      ],
+      "to": [
+        13.5,
+        16,
+        13.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            2.75,
+            5.33333
+          ],
+          "texture": "#all"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            2.75,
+            5.33333
+          ],
+          "texture": "#all"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            2.75,
+            5.33333
+          ],
+          "texture": "#all"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            2.75,
+            5.33333
+          ],
+          "texture": "#all"
+        },
+        "up": {
+          "uv": [
+            0,
+            5.33333,
+            2.75,
+            9
+          ],
+          "texture": "#all"
+        },
+        "down": {
+          "uv": [
+            0,
+            9,
+            2.75,
+            12.66667
+          ],
+          "texture": "#all"
+        }
+      }
+    }
+  ]
+}

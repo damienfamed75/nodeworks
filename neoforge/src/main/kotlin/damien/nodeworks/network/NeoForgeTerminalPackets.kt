@@ -39,6 +39,27 @@ object NeoForgeTerminalPackets {
         activeEngines.remove(gp)?.stop()
     }
 
+    fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): ScriptEngine? {
+        val dimKey = level.dimension()
+        for (pos in terminalPositions) {
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            if (engine.isRunning()) return engine
+        }
+        return null
+    }
+
+    /** Find the first active engine on the given network that has a processing handler for the given card name. */
+    fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): ScriptEngine? {
+        val dimKey = level.dimension()
+        for (pos in terminalPositions) {
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) {
+                return engine
+            }
+        }
+        return null
+    }
+
     // --- Server handlers ---
 
     fun handleRunScript(payload: RunScriptPayload, context: IPayloadContext) {
@@ -54,17 +75,24 @@ object NeoForgeTerminalPackets {
 
             val terminalPos = payload.terminalPos
             val engine = ScriptEngine(level, nodePos) { message, isError ->
+                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(terminalPos, message, level.server.tickCount.toLong())
                 val logPayload = TerminalLogPayload(terminalPos, message, isError)
                 for (p in level.players()) {
                     if (p.distanceToSqr(terminalPos.x + 0.5, terminalPos.y + 0.5, terminalPos.z + 0.5) <= 64.0 * 64.0) {
                         PacketDistributor.sendToPlayer(p, logPayload)
+                    } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                        if (diagMenu.topology.terminalInfos.any { it.pos == terminalPos }) {
+                            PacketDistributor.sendToPlayer(p, logPayload)
+                        }
                     }
                 }
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(terminal.getScriptsCopy())) {
-                activeEngines[globalPos] = engine
+            activeEngines[globalPos] = engine
+            if (!engine.start(terminal.getScriptsCopy())) {
+                activeEngines.remove(globalPos)
             }
         }
     }
@@ -129,27 +157,18 @@ object NeoForgeTerminalPackets {
         }
     }
 
-    fun handleSetStoragePriority(payload: SetStoragePriorityPayload, context: IPayloadContext) {
-        context.enqueueWork {
-            val player = context.player()
-            val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@enqueueWork
-            val side = Direction.entries[payload.sideOrdinal]
-            val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
-            val stack = nodeEntity.getItem(globalSlot)
-            if (stack.item is StorageCard) {
-                StorageCard.setPriority(stack, payload.priority)
-                nodeEntity.setChanged()
-            }
-        }
-    }
-
     fun handleSetLayout(payload: SetLayoutPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-            terminal.setLayoutIndex(payload.layoutIndex)
+            val entity = level.getBlockEntity(payload.terminalPos)
+            when (entity) {
+                is TerminalBlockEntity -> entity.setLayoutIndex(payload.layoutIndex)
+                is damien.nodeworks.block.entity.InventoryTerminalBlockEntity -> {
+                    entity.layoutIndex = payload.layoutIndex
+                    entity.setChanged()
+                }
+            }
         }
     }
 
@@ -199,17 +218,25 @@ object NeoForgeTerminalPackets {
             if (activeEngines.containsKey(gp)) continue
 
             val engine = ScriptEngine(level, nodePos) { message, isError ->
+                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
                 val logPayload = TerminalLogPayload(pos, message, isError)
                 for (p in level.players()) {
                     if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
                         PacketDistributor.sendToPlayer(p, logPayload)
+                    } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                        if (diagMenu.topology.terminalInfos.any { it.pos == pos }) {
+                            PacketDistributor.sendToPlayer(p, logPayload)
+                        }
                     }
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
+            activeEngines[gp] = engine
             if (engine.start(terminal.getScriptsCopy())) {
-                activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
+            } else {
+                activeEngines.remove(gp)
             }
         }
     }
@@ -223,7 +250,7 @@ object NeoForgeTerminalPackets {
                 continue
             }
             engine.tick(tickCount)
-            if (!engine.scheduler.hasActiveTasks()) {
+            if (!engine.hasWork()) {
                 toRemove.add(gp)
             }
         }

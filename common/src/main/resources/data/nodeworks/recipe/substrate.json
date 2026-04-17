@@ -1,0 +1,18 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        "DGD",
+        "RCR",
+        "DGD"
+    ],
+    "key": {
+        "D": { "item": "minecraft:deepslate" },
+        "G": { "item": "minecraft:gravel" },
+        "R": { "item": "minecraft:redstone" },
+        "C": { "item": "minecraft:clay_ball" }
+    },
+    "result": {
+        "id": "nodeworks:substrate",
+        "count": 2
+    }
+}

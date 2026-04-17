@@ -1,42 +1,126 @@
 package damien.nodeworks.script
 
-import damien.nodeworks.block.entity.InstructionStorageBlockEntity
-import damien.nodeworks.network.InstructionSetMatch
+import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.network.NetworkSnapshot
-import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.script.cpu.CpuFeasibility
+import damien.nodeworks.script.cpu.CraftPlan
+import damien.nodeworks.script.cpu.CraftPlanner
+import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
-import net.minecraft.world.item.crafting.CraftingInput
-import net.minecraft.world.item.crafting.RecipeManager
-import net.minecraft.world.item.crafting.RecipeType
+import org.luaj.vm2.LuaFunction
 import org.slf4j.LoggerFactory
 
 /**
- * Handles crafting execution for `network:craft()`.
- * Resolves recipes from Instruction Sets, pulls ingredients from network storage,
- * crafts the result, and inserts it into network storage.
- * Supports recursive crafting (auto-crafts missing ingredients).
+ * Entry point for `network:craft()` and the Inventory Terminal's craft button.
+ *
+ * Post-Phase-2: this class now PLANS a craft and submits it to a CPU's [CraftScheduler].
+ * The scheduler drives the whole craft (pulling, processing, executing, delivering) via
+ * [damien.nodeworks.script.cpu.CpuOpExecutor]. There is no recursion — [CraftPlanner]
+ * walks the [CraftTreeBuilder] result iteratively.
+ *
+ * Callers still use the `CraftResult + currentPendingJob` protocol:
+ *   - Returns a [CraftResult] with a [PendingHandlerJob] on successful submission.
+ *     The caller registers `pending.onCompleteCallback` to react to completion.
+ *   - Returns null with [lastFailReason] set on failure (no feasible CPU, missing
+ *     ingredients, etc.). Callers check `result == null && currentPendingJob == null`.
  */
 object CraftingHelper {
 
     private val logger = LoggerFactory.getLogger("nodeworks-crafting")
 
+    /** Serial-handler coordination: some processing APIs forbid parallel invocations. */
+    private val activeSerialJobs = mutableSetOf<String>()
+    val activeSerialJobsView: Set<String> get() = activeSerialJobs
+    fun addActiveSerialJob(name: String) { activeSerialJobs.add(name) }
+    fun removeActiveSerialJob(name: String) { activeSerialJobs.remove(name) }
+
     data class CraftResult(
         val outputItemId: String,
         val outputName: String,
-        val count: Int
+        val count: Int,
+        val cpu: CraftingCoreBlockEntity? = null,
+        val level: ServerLevel? = null,
+        val snapshot: NetworkSnapshot? = null,
+        val cache: NetworkInventoryCache? = null,
+        val pendingJob: PendingHandlerJob? = null
     )
 
     /**
-     * Craft items matching the given identifier (alias or output item ID).
-     * @param identifier The Instruction Set alias or output item ID
-     * @param count Number of crafting operations to perform
-     * @param level The server level
-     * @param snapshot Network snapshot for finding crafters and storage
-     * @param depth Recursion depth guard
-     * @return CraftResult if successful, null if failed
+     * Kept for backward compatibility. Under the scheduler model the executor already
+     * flushes the buffer and releases the CPU on plan completion, so this is now
+     * typically a no-op for scheduler-submitted crafts.
+     */
+    fun releaseCraftResult(result: CraftResult) {
+        val cpu = result.cpu ?: return
+        val level = result.level ?: return
+        val snapshot = result.snapshot ?: return
+        // If something's still in the buffer (shouldn't be, but defensive), flush it.
+        if (cpu.bufferUsed > 0L) {
+            val leftovers = cpu.clearBuffer()
+            for ((itemId, count) in leftovers) {
+                val id = ResourceLocation.tryParse(itemId) ?: continue
+                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                var remaining = count
+                while (remaining > 0L) {
+                    val batchSize = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
+                    val stack = ItemStack(item, batchSize)
+                    val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, result.cache)
+                    remaining -= inserted.toLong()
+                    if (inserted == 0) {
+                        logger.warn("releaseCraftResult: storage refused {} x{} (dropped)", itemId, remaining)
+                        break
+                    }
+                }
+            }
+        }
+        if (cpu.isCrafting) {
+            cpu.clearAllCraftState()
+            cpu.setCrafting(false)
+        }
+    }
+
+    /** Last-craft error reason, player-facing. */
+    var lastFailReason: String? = null
+        private set
+
+    /** Set when [craft] submits an async craft to the scheduler. Callers await its completion. */
+    var currentPendingJob: PendingHandlerJob? = null
+
+    /** Source description for the last resolved processing handler. Retained for trace-log compat. */
+    var lastHandlerSource: String? = null
+
+    /** Bridges between the scheduler's completion listener and the caller's async-wait protocol. */
+    class PendingHandlerJob {
+        @Volatile var isComplete = false
+            private set
+        @Volatile var success = false
+            private set
+        var onCompleteCallback: ((Boolean) -> Unit)? = null
+
+        fun complete(succeeded: Boolean) {
+            success = succeeded
+            isComplete = true
+            onCompleteCallback?.invoke(succeeded)
+        }
+    }
+
+    // =====================================================================
+    // Craft entry point — plan + submit to a CPU's scheduler
+    // =====================================================================
+
+    /**
+     * Plan a craft and submit it to a feasible CPU's scheduler.
+     *
+     * Most parameters are retained for API compatibility but are no longer used by the
+     * scheduler-based path (handlers come from the network scan, no recursion means no
+     * depth tracking needed).
+     *
+     * Returns a [CraftResult] carrying a [PendingHandlerJob] on success. The caller
+     * should register `pending.onCompleteCallback` to react when the plan finishes.
+     * Returns null with [lastFailReason] set on failure.
      */
     fun craft(
         identifier: String,
@@ -44,152 +128,142 @@ object CraftingHelper {
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         depth: Int = 0,
-        cache: NetworkInventoryCache? = null
+        cache: NetworkInventoryCache? = null,
+        cpuPos: BlockPos? = null,
+        processingHandlers: Map<String, LuaFunction>? = null,
+        callerScheduler: SchedulerImpl? = null,
+        traceLog: ((String) -> Unit)? = null,
+        submitterUuid: java.util.UUID? = null
     ): CraftResult? {
-        if (depth > 20) {
-            logger.warn("Crafting recursion depth exceeded for '{}'", identifier)
+        lastFailReason = null
+        currentPendingJob = null
+
+        if (count <= 0) {
+            lastFailReason = "Craft count must be positive"
             return null
         }
 
-        val match = snapshot.findInstructionSet(identifier) ?: return null
-        val recipe = match.instructionSet.recipe
+        // 1. Build the craft tree (iterative via CraftTreeBuilder; not recursive here).
+        val tree = CraftTreeBuilder.buildCraftTree(identifier, count, level, snapshot)
 
-        var totalCrafted = 0
-        for (i in 0 until count) {
-            if (!craftOnce(recipe, match, level, snapshot, depth, cache)) break
-            totalCrafted++
+        // 2. Select a CPU — explicit [cpuPos] for legacy resume paths; otherwise find
+        //    any CPU on the network that can fit the craft (feasibility-aware).
+        val cpu: CraftingCoreBlockEntity = if (cpuPos != null) {
+            val entity = level.getBlockEntity(cpuPos) as? CraftingCoreBlockEntity
+            if (entity == null) {
+                lastFailReason = "No Crafting CPU at $cpuPos"
+                return null
+            }
+            if (!entity.isFormed) {
+                lastFailReason = "Crafting CPU at $cpuPos is not formed"
+                return null
+            }
+            // Feasibility still enforced on the explicit CPU
+            val feasibility = CpuFeasibility.check(tree, entity)
+            if (!feasibility.ok) {
+                lastFailReason = feasibility.reason
+                return null
+            }
+            entity
+        } else {
+            selectFeasibleCpu(level, snapshot, tree) ?: return null
         }
 
-        if (totalCrafted == 0) return null
+        // 3. Plan the craft against the selected CPU.
+        val planResult = CraftPlanner.plan(tree, snapshot)
+        val plan = planResult.plan ?: run {
+            lastFailReason = planResult.message ?: "Could not plan craft"
+            return null
+        }
 
-        val outputId = match.instructionSet.outputItemId
-        val outputIdentifier = Identifier.tryParse(outputId) ?: return null
-        val outputItem = BuiltInRegistries.ITEM.getValue(outputIdentifier) ?: return null
-        val outputName = outputItem.getName(ItemStack(outputItem)).string
+        traceLog?.invoke(
+            "[craft] Planned '$identifier' × $count: ${plan.ops.size} operations on CPU at ${cpu.blockPos}"
+        )
 
-        // Get the actual output count per craft from the recipe manager
-        val outputPerCraft = getRecipeOutputCount(recipe, level)
+        // 4. Save the tree snapshot for the diagnostic GUI, then submit to the scheduler.
+        cpu.craftTreeSnapshot = tree
+        val pending = PendingHandlerJob()
+        val planWithSubmitter = if (submitterUuid != null) plan.copy(submitterUuid = submitterUuid) else plan
+        cpu.submitCraft(planWithSubmitter, level.gameTime) { success ->
+            pending.complete(success)
+        }
+        currentPendingJob = pending
 
-        return CraftResult(outputId, outputName, totalCrafted * outputPerCraft)
+        val outputName = resolveItemName(identifier)
+        return CraftResult(
+            outputItemId = identifier,
+            outputName = outputName,
+            count = tree.count,
+            cpu = cpu,
+            level = level,
+            snapshot = snapshot,
+            cache = cache,
+            pendingJob = pending
+        )
     }
+
+    // =====================================================================
+    // CPU selection — feasibility-aware across the entire network
+    // =====================================================================
 
     /**
-     * Execute one crafting operation: check ingredients, pull from storage, craft, insert result.
+     * Iterate every CPU on the network, return the highest-capacity CPU that is:
+     *   - formed (has at least one Buffer block)
+     *   - has at least one idle scheduler thread (can accept a new craft *right now* —
+     *     checked against live state, not the snapshot's stale `isBusy` flag)
+     *   - feasible for the given craft tree (passes [CpuFeasibility.check])
+     *
+     * If no CPU satisfies all three, sets [lastFailReason] with the best available
+     * diagnostic and returns null.
      */
-    private fun craftOnce(
-        recipe: List<String>,
-        match: InstructionSetMatch,
+    private fun selectFeasibleCpu(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
-        depth: Int,
-        cache: NetworkInventoryCache? = null
-    ): Boolean {
-        // Check each ingredient and ensure it's available (or can be crafted)
-        val ingredientCounts = mutableMapOf<String, Int>()
-        for (itemId in recipe) {
-            if (itemId.isEmpty()) continue
-            ingredientCounts[itemId] = (ingredientCounts[itemId] ?: 0) + 1
+        tree: CraftTreeBuilder.CraftTreeNode
+    ): CraftingCoreBlockEntity? {
+        val cpuSnaps = snapshot.cpus
+        if (cpuSnaps.isEmpty()) {
+            lastFailReason = "No Crafting CPU on the network."
+            return null
         }
 
-        // For each ingredient, check availability and recursively craft if needed
-        for ((itemId, needed) in ingredientCounts) {
-            val available = NetworkStorageHelper.countItems(level, snapshot, itemId)
-            if (available < needed) {
-                val missing = needed - available.toInt()
-                // Try to recursively craft the missing ingredients
-                val subResult = craft(itemId, missing, level, snapshot, depth + 1, cache)
-                if (subResult == null || subResult.count < missing) {
-                    logger.debug("Cannot craft '{}': missing {} of '{}'", match.instructionSet.outputItemId, missing, itemId)
-                    return false
-                }
+        // Highest-capacity first so the first rejection we record is the most informative.
+        val ordered = cpuSnaps.sortedByDescending { it.bufferCapacity }
+
+        var bestInfeasibleReason: String? = null
+        var feasibleButBusy = false
+
+        for (cpuSnap in ordered) {
+            val cpu = level.getBlockEntity(cpuSnap.pos) as? CraftingCoreBlockEntity ?: continue
+            if (!cpu.isFormed) continue
+
+            val feasibility = CpuFeasibility.check(tree, cpu)
+            if (!feasibility.ok) {
+                if (bestInfeasibleReason == null) bestInfeasibleReason = feasibility.reason
+                continue
             }
+
+            // Live check against the scheduler — snapshot's isBusy may be stale for
+            // crafts submitted between snapshot build and this check.
+            if (cpu.scheduler.isIdle) return cpu
+            feasibleButBusy = true
         }
 
-        // Pull ingredients from network storage into a temporary holding
-        // We verify they exist, then extract and craft
-        val extractedItems = mutableListOf<Pair<String, Int>>()
-        for ((itemId, needed) in ingredientCounts) {
-            val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
-            var remaining = needed
-            for (card in storageCards) {
-                if (remaining <= 0) break
-                val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                val extracted = PlatformServices.storage.moveItems(
-                    storage, storage, // "extract" by counting — we'll actually remove below
-                    { false }, // don't actually move anything here
-                    0
-                )
-                // Actually extract by moving to nowhere — we need a different approach
-                // Since we can't extract to a void, we verify count and trust the operation
-                remaining = 0 // trust that ingredients exist (we checked above)
-            }
-            extractedItems.add(itemId to needed)
+        lastFailReason = when {
+            feasibleButBusy -> "All Crafting CPUs that can fit this craft are busy. Wait for one to finish or add more CPUs."
+            bestInfeasibleReason != null -> bestInfeasibleReason
+            else -> "No Crafting CPU on the network has enough buffer capacity."
         }
-
-        // Build the crafting input and get the result
-        val items = recipe.map { itemId ->
-            if (itemId.isEmpty()) ItemStack.EMPTY
-            else {
-                val id = Identifier.tryParse(itemId) ?: return false
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: return false
-                ItemStack(item, 1)
-            }
-        }
-        val craftingInput = CraftingInput.of(3, 3, items)
-
-        val recipeManager = level.recipeAccess() as? RecipeManager ?: return false
-        val result = recipeManager
-            .getRecipeFor(RecipeType.CRAFTING, craftingInput, level)
-            .map { it.value().assemble(craftingInput, level.registryAccess()) }
-            .orElse(ItemStack.EMPTY)
-
-        if (result.isEmpty) {
-            logger.debug("No valid crafting recipe for instruction set")
-            return false
-        }
-
-        // Remove ingredients from network storage
-        for ((itemId, needed) in ingredientCounts) {
-            var remaining = needed.toLong()
-            for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-                if (remaining <= 0) break
-                val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                // Create a temporary destination that discards items (extract from source)
-                val removed = PlatformServices.storage.extractItems(storage, { CardHandle.matchesFilter(it, itemId) }, remaining)
-                if (removed > 0) cache?.onExtracted(itemId, false, removed)
-                remaining -= removed
-            }
-            if (remaining > 0) {
-                logger.warn("Failed to extract all ingredients for crafting")
-                return false
-            }
-        }
-
-        // Insert crafted result into network storage
-        val resultItemId = BuiltInRegistries.ITEM.getKey(result.item)?.toString() ?: return false
-        val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, result, cache)
-        if (inserted == 0) {
-            logger.debug("Network storage full, cannot insert crafted item")
-            return false
-        }
-
-        return true
+        return null
     }
 
-    private fun getRecipeOutputCount(recipe: List<String>, level: ServerLevel): Int {
-        val items = recipe.map { itemId ->
-            if (itemId.isEmpty()) ItemStack.EMPTY
-            else {
-                val id = Identifier.tryParse(itemId) ?: return 1
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: return 1
-                ItemStack(item, 1)
-            }
-        }
-        val input = CraftingInput.of(3, 3, items)
-        val recipeManager = level.recipeAccess() as? RecipeManager ?: return 1
-        return recipeManager
-            .getRecipeFor(RecipeType.CRAFTING, input, level)
-            .map { it.value().assemble(input, level.registryAccess()).count }
-            .orElse(1)
+    // =====================================================================
+    // Helpers
+    // =====================================================================
+
+    private fun resolveItemName(itemId: String): String {
+        val id = ResourceLocation.tryParse(itemId) ?: return itemId
+        val item = BuiltInRegistries.ITEM.get(id) ?: return itemId
+        return ItemStack(item).hoverName.string
     }
 }

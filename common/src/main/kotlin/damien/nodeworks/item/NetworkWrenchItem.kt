@@ -1,9 +1,9 @@
 package damien.nodeworks.item
 
-import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
+import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.VariableBlock
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.network.NetworkDiscovery
@@ -42,11 +42,13 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
 
         // Must click a connectable block (node, instruction crafter, or network controller)
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock) return InteractionResult.PASS
+        if (block !is NodeBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ProcessingStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock && block !is damien.nodeworks.block.InventoryTerminalBlock) return InteractionResult.PASS
 
-        // Client side: track selection for highlight rendering
+        val isNode = block is NodeBlock
+
+        // Client side: track selection for highlight rendering (nodes only)
         if (level.isClientSide) {
-            if (player.isShiftKeyDown) {
+            if (player.isShiftKeyDown && isNode) {
                 clientSelectedNode = pos
             }
             return InteractionResult.SUCCESS
@@ -56,7 +58,8 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         val serverLevel = level as ServerLevel
 
         if (player.isShiftKeyDown) {
-            // Shift + right-click: select node
+            // Shift + right-click: select (only Nodes can be selected as connection endpoints)
+            if (!isNode) return InteractionResult.PASS
             selectedNodes[player.uuid] = Selection(pos, level.dimension())
             player.displayClientMessage(
                 Component.translatable("message.nodeworks.node_selected", pos.x, pos.y, pos.z), false
@@ -120,7 +123,8 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
             // About to connect — check if both networks already have controllers
             val snapshotA = NetworkDiscovery.discoverNetwork(serverLevel, selectedPos)
             val snapshotB = NetworkDiscovery.discoverNetwork(serverLevel, pos)
-            if (snapshotA.controller != null && snapshotB.controller != null) {
+            if (snapshotA.controller != null && snapshotB.controller != null
+                && snapshotA.controller.pos != snapshotB.controller.pos) {
                 player.displayClientMessage(
                     Component.translatable("message.nodeworks.duplicate_controller"), false
                 )

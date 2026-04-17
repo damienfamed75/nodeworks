@@ -35,6 +35,28 @@ object TerminalPackets {
     fun getEngine(dimKey: ResourceKey<Level>, pos: BlockPos): ScriptEngine? =
         activeEngines[GlobalPos.of(dimKey, pos)]
 
+    /** Find any active engine at the given positions. */
+    fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): ScriptEngine? {
+        val dimKey = level.dimension()
+        for (pos in terminalPositions) {
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            if (engine.isRunning()) return engine
+        }
+        return null
+    }
+
+    /** Find the first active engine on the given network that has a processing handler for the given card name. */
+    fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): ScriptEngine? {
+        val dimKey = level.dimension()
+        for (pos in terminalPositions) {
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) {
+                return engine
+            }
+        }
+        return null
+    }
+
     /** Stop and remove the engine for a terminal. Called when the block entity is removed. */
     fun stopEngine(level: ServerLevel, pos: BlockPos) {
         val gp = GlobalPos.of(level.dimension(), pos)
@@ -51,14 +73,36 @@ object TerminalPackets {
         PayloadTypeRegistry.playC2S().register(DeleteScriptTabPayload.TYPE, DeleteScriptTabPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC)
-        PayloadTypeRegistry.playC2S().register(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC)
+        // SetStoragePriorityPayload removed — priority is now per-card via StorageCard GUI
         PayloadTypeRegistry.playC2S().register(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalSlotClickPayload.TYPE, InvTerminalSlotClickPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalCraftGridPayload.TYPE, InvTerminalCraftGridPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalDistributePayload.TYPE, InvTerminalDistributePayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalCollectPayload.TYPE, InvTerminalCollectPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalCraftPayload.TYPE, InvTerminalCraftPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(ControllerSettingsPayload.TYPE, ControllerSettingsPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(VariableSettingsPayload.TYPE, VariableSettingsPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetProcessingApiNamePayload.TYPE, SetProcessingApiNamePayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(InvTerminalCraftGridActionPayload.TYPE, InvTerminalCraftGridActionPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(DismissCpuFailurePayload.TYPE, DismissCpuFailurePayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(CraftPreviewRequestPayload.TYPE, CraftPreviewRequestPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(BufferSyncPayload.TYPE, BufferSyncPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(CpuFailurePayload.TYPE, CpuFailurePayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(CraftPreviewResponsePayload.TYPE, CraftPreviewResponsePayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(CraftQueueSyncPayload.TYPE, CraftQueueSyncPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(DebugCraftingCorePayload.TYPE, DebugCraftingCorePayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(DebugInventoryTerminalPayload.TYPE, DebugInventoryTerminalPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(CraftRequestErrorPayload.TYPE, CraftRequestErrorPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SwitchNodeSidePayload.TYPE, SwitchNodeSidePayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(CraftQueueExtractPayload.TYPE, CraftQueueExtractPayload.CODEC)
     }
 
     fun registerServerHandlers() {
@@ -74,17 +118,30 @@ object TerminalPackets {
 
             val terminalPos = payload.terminalPos
             val engine = ScriptEngine(level, nodePos) { message, isError ->
+                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(terminalPos, message, level.server.tickCount.toLong())
                 val logPayload = TerminalLogPayload(terminalPos, message, isError)
                 for (p in level.players()) {
+                    // Send to nearby players (existing behavior)
                     if (p.distanceToSqr(terminalPos.x + 0.5, terminalPos.y + 0.5, terminalPos.z + 0.5) <= 64.0 * 64.0) {
                         ServerPlayNetworking.send(p, logPayload)
+                    }
+                    // Fan out to players with open diagnostic tool on this network
+                    else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                        if (diagMenu.topology.terminalInfos.any { it.pos == terminalPos }) {
+                            ServerPlayNetworking.send(p, logPayload)
+                        }
                     }
                 }
                 if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
             }
 
-            if (engine.start(terminal.getScriptsCopy())) {
-                activeEngines[globalPos] = engine
+            // Register BEFORE start() so network:craft/network:handle calls in the script's
+            // top-level (or require'd modules) can look the engine up during execution.
+            // Remove on failure so we don't leave a dead engine registered.
+            activeEngines[globalPos] = engine
+            if (!engine.start(terminal.getScriptsCopy())) {
+                activeEngines.remove(globalPos)
             }
         }
 
@@ -137,24 +194,26 @@ object TerminalPackets {
             }
         }
 
-        ServerPlayNetworking.registerGlobalReceiver(SetStoragePriorityPayload.TYPE) { payload, context ->
+        ServerPlayNetworking.registerGlobalReceiver(SwitchNodeSidePayload.TYPE) { payload, context ->
             val player = context.player()
-            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
-            val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@registerGlobalReceiver
-            val side = Direction.entries[payload.sideOrdinal]
-            val globalSlot = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE + payload.slotIndex
-            val stack = nodeEntity.getItem(globalSlot)
-            if (stack.item is StorageCard) {
-                StorageCard.setPriority(stack, payload.priority)
-                nodeEntity.setChanged()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.NodeSideScreenHandler) {
+                val side = Direction.entries.getOrNull(payload.sideOrdinal) ?: return@registerGlobalReceiver
+                menu.switchSide(side)
             }
         }
 
         ServerPlayNetworking.registerGlobalReceiver(SetLayoutPayload.TYPE) { payload, context ->
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@registerGlobalReceiver
-            terminal.setLayoutIndex(payload.layoutIndex)
+            val entity = level.getBlockEntity(payload.terminalPos)
+            when (entity) {
+                is TerminalBlockEntity -> entity.setLayoutIndex(payload.layoutIndex)
+                is damien.nodeworks.block.entity.InventoryTerminalBlockEntity -> {
+                    entity.layoutIndex = payload.layoutIndex
+                    entity.setChanged()
+                }
+            }
         }
 
         ServerPlayNetworking.registerGlobalReceiver(ToggleAutoRunPayload.TYPE) { payload, context ->
@@ -181,6 +240,62 @@ object TerminalPackets {
             }
         }
 
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalSlotClickPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handlePlayerSlotClick(player, payload.slotIndex, payload.action)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalCraftPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleCraftRequest(player, payload.itemId, payload.count)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalCollectPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleCollect(player, payload.itemId)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(CraftQueueExtractPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleQueueExtract(player, payload.entryId, payload.action)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalCraftGridActionPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleCraftGridAction(player, payload.action)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalDistributePayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleDistribute(player, payload.slotType, payload.slotIndices)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(InvTerminalCraftGridPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                menu.handleCraftGridFill(player, payload.grid)
+            }
+        }
+
         ServerPlayNetworking.registerGlobalReceiver(ControllerSettingsPayload.TYPE) { payload, context ->
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
@@ -191,6 +306,7 @@ object TerminalPackets {
                 "redstone" -> entity.redstoneMode = payload.intValue
                 "glow" -> entity.nodeGlowStyle = payload.intValue
                 "name" -> entity.networkName = payload.strValue
+                "retry" -> entity.handlerRetryLimit = payload.intValue
             }
         }
 
@@ -205,6 +321,59 @@ object TerminalPackets {
                 "value" -> entity.setValue(payload.strValue)
                 "toggle" -> entity.toggleValue()
             }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetProcessingApiDataPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                when (payload.key) {
+                    "input" -> menu.setInputCount(payload.slotIndex, payload.value)
+                    "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
+                    "timeout" -> menu.setTimeout(payload.value)
+                }
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetProcessingApiNamePayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                menu.cardName = payload.name.take(32)
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetProcessingApiSlotPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                menu.setSlotFromId(payload.slotIndex, payload.itemId)
+            }
+        }
+
+
+        ServerPlayNetworking.registerGlobalReceiver(CancelCraftPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
+            val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@registerGlobalReceiver
+            entity.cancelJob()
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(DismissCpuFailurePayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@registerGlobalReceiver
+            val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@registerGlobalReceiver
+            entity.lastFailureReason = ""
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(CraftPreviewRequestPayload.TYPE) { payload, context ->
+            val player = context.player()
+            val level = player.level() as? ServerLevel ?: return@registerGlobalReceiver
+            val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, payload.networkPos)
+            val tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(payload.itemId, 1, level, snapshot)
+            ServerPlayNetworking.send(player, CraftPreviewResponsePayload(payload.containerId, tree))
         }
     }
 
@@ -234,17 +403,25 @@ object TerminalPackets {
             if (activeEngines.containsKey(gp)) continue
 
             val engine = ScriptEngine(level, nodePos) { message, isError ->
+                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
                 val logPayload = TerminalLogPayload(pos, message, isError)
                 for (p in level.players()) {
                     if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
                         ServerPlayNetworking.send(p, logPayload)
+                    } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                        if (diagMenu.topology.terminalInfos.any { it.pos == pos }) {
+                            ServerPlayNetworking.send(p, logPayload)
+                        }
                     }
                 }
                 if (isError) logger.warn("[Terminal {}] {}", pos, message)
             }
+            activeEngines[gp] = engine
             if (engine.start(terminal.getScriptsCopy())) {
-                activeEngines[gp] = engine
                 logger.info("[Terminal {}] Auto-run started", pos)
+            } else {
+                activeEngines.remove(gp)
             }
         }
     }
@@ -259,7 +436,7 @@ object TerminalPackets {
                 continue
             }
             engine.tick(tickCount)
-            if (!engine.scheduler.hasActiveTasks()) {
+            if (!engine.hasWork()) {
                 toRemove.add(gp)
             }
         }

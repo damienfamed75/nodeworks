@@ -12,9 +12,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
-import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
-import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.level.Level
 import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.block.BaseEntityBlock
@@ -72,7 +70,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem) return InteractionResult.PASS
+        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem || player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return InteractionResult.PASS
@@ -85,24 +83,14 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
         val serverPlayer = player as ServerPlayer
         val serverLevel = level as ServerLevel
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, startPos)
 
-        if (!snapshot.isOnline) {
-            player.displayClientMessage(Component.translatable("message.nodeworks.no_controller"), false)
-            return InteractionResult.SUCCESS
-        }
-
-        val allCards = snapshot.allCards()
-
-        // Collect all item tags from the registry
-        val itemTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.tags
-            .map { it.key().location().toString() }
-            .sorted()
-            .toList()
-
-        val isRunning = PlatformServices.modState.isScriptRunning(serverLevel, terminal.blockPos)
-        val varNames = snapshot.variables.map { it.name to it.type.ordinal }
-        val openData = TerminalOpenData(terminal.blockPos, terminal.getScriptsCopy(), isRunning, terminal.autoRun, terminal.layoutIndex, allCards, itemTags, varNames)
+        val openData = TerminalOpenData(
+            terminal.blockPos,
+            terminal.getScriptsCopy(),
+            PlatformServices.modState.isScriptRunning(serverLevel, terminal.blockPos),
+            terminal.autoRun,
+            terminal.layoutIndex
+        )
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
@@ -119,5 +107,13 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
         entity?.blockDestroyed = true
         return super.playerWillDestroy(level, pos, state, player)
+    }
+
+    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
+        if (!state.`is`(newState.block)) {
+            val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
+            if (entity != null) entity.blockDestroyed = true
+        }
+        super.onRemove(state, level, pos, newState, movedByPiston)
     }
 }

@@ -2,14 +2,19 @@ package damien.nodeworks.registry
 
 import damien.nodeworks.card.IOCard
 import damien.nodeworks.card.InstructionSet
+import damien.nodeworks.card.ProcessingSet
+import damien.nodeworks.card.RedstoneCard
 import damien.nodeworks.card.StorageCard
+import damien.nodeworks.item.DiagnosticToolItem
+import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MemoryUpgradeItem
+import damien.nodeworks.item.MilkySoulBallItem
 import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.item.Item
 
@@ -33,10 +38,22 @@ object ModItems {
         Item.Properties().stacksTo(1)
     )
 
+    val REDSTONE_CARD: Item = register(
+        "redstone_card",
+        ::RedstoneCard,
+        Item.Properties().stacksTo(1)
+    )
+
     val INSTRUCTION_SET: Item = register(
         "instruction_set",
         ::InstructionSet,
-        Item.Properties().stacksTo(1)
+        Item.Properties().stacksTo(64)
+    )
+
+    val PROCESSING_SET: Item = register(
+        "processing_set",
+        ::ProcessingSet,
+        Item.Properties().stacksTo(64)
     )
 
     val MEMORY_UPGRADE: Item = register(
@@ -45,10 +62,80 @@ object ModItems {
         Item.Properties().stacksTo(4)
     )
 
+    val LINK_CRYSTAL: Item = register(
+        "link_crystal",
+        ::LinkCrystalItem,
+        Item.Properties().stacksTo(1)
+    )
+
+    val MILKY_SOUL_BALL: Item = register(
+        "milky_soul_ball",
+        ::MilkySoulBallItem,
+        Item.Properties().stacksTo(16)
+    )
+
+    val CELESTINE_SHARD: Item = register(
+        "celestine_shard",
+        ::Item,
+        Item.Properties()
+    )
+
+    val DIAGNOSTIC_TOOL: Item = register(
+        "diagnostic_tool",
+        ::DiagnosticToolItem,
+        Item.Properties().stacksTo(1)
+    )
+
     val MONITOR: Item = register(
         "monitor",
         ::MonitorItem,
         Item.Properties().stacksTo(16)
+    )
+
+    val CARD_PROGRAMMER: Item = register(
+        "card_programmer",
+        { props -> damien.nodeworks.item.CardProgrammerItem(props) },
+        Item.Properties().stacksTo(1)
+    )
+
+    val BLANK_CARD: Item = register(
+        "blank_card",
+        ::Item,
+        Item.Properties().stacksTo(16)
+    )
+
+    val ANTENNA_COIL_ASSEMBLY: Item = register(
+        "antenna_coil_assembly",
+        ::Item,
+        Item.Properties().stacksTo(64)
+    )
+
+    val CELESTINE_ANTENNA_ARRAY: Item = register(
+        "celestine_antenna_array",
+        ::Item,
+        Item.Properties().stacksTo(1)
+    )
+
+    val CELESTINE_RECEIVER_DISH: Item = register(
+        "celestine_receiver_dish",
+        ::Item,
+        Item.Properties().stacksTo(1)
+    )
+
+    val DIMENSION_RANGE_UPGRADE: Item = register(
+        "dimension_range_upgrade",
+        ::Item,
+        Item.Properties()
+            .stacksTo(1)
+            .component(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
+    )
+
+    val MULTI_DIMENSION_RANGE_UPGRADE: Item = register(
+        "multi_dimension_range_upgrade",
+        ::Item,
+        Item.Properties()
+            .stacksTo(1)
+            .component(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
     )
 
     private fun register(
@@ -56,10 +143,9 @@ object ModItems {
         factory: (Item.Properties) -> Item,
         properties: Item.Properties
     ): Item {
-        val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        val itemKey = ResourceKey.create(Registries.ITEM, identifier)
-        val item = factory(properties.setId(itemKey))
-        return Registry.register(BuiltInRegistries.ITEM, itemKey, item)
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val item = factory(properties)
+        return Registry.register(BuiltInRegistries.ITEM, identifier, item)
     }
 
     fun initialize() {

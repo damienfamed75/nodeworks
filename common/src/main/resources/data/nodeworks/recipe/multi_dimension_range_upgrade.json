@@ -1,0 +1,19 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        " NC",
+        "DEN",
+        "SD "
+    ],
+    "key": {
+        "N": { "item": "minecraft:netherite_ingot" },
+        "C": { "item": "minecraft:end_crystal" },
+        "D": { "item": "minecraft:deepslate" },
+        "E": { "item": "minecraft:ender_eye" },
+        "S": { "item": "minecraft:echo_shard" }
+    },
+    "result": {
+        "id": "nodeworks:multi_dimension_range_upgrade",
+        "count": 1
+    }
+}

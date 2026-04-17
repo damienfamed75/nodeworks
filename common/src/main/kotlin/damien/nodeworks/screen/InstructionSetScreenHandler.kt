@@ -5,7 +5,7 @@ import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.Container
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.SimpleContainer
@@ -41,8 +41,8 @@ class InstructionSetScreenHandler(
             val grid = SimpleContainer(9)
             for (i in 0 until 9) {
                 if (recipe[i].isNotEmpty()) {
-                    val id = Identifier.tryParse(recipe[i]) ?: continue
-                    val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
+                    val id = ResourceLocation.tryParse(recipe[i]) ?: continue
+                    val item = BuiltInRegistries.ITEM.get(id) ?: continue
                     grid.setItem(i, ItemStack(item, 1))
                 }
             }
@@ -65,20 +65,27 @@ class InstructionSetScreenHandler(
     }
 
     init {
-        // 3x3 recipe grid — ghost slots (slots 0-8)
+        // 3x3 recipe grid — ghost slots (slots 0-8). Positions match InstructionSetScreen.
         for (row in 0..2) {
             for (col in 0..2) {
-                addSlot(GhostSlot(recipeGrid, row * 3 + col, 30 + col * 18, 17 + row * 18))
+                addSlot(GhostSlot(recipeGrid, row * 3 + col, 36 + col * 18, 13 + row * 18))
             }
         }
 
-        // Result slot (slot 9) — display only
-        addSlot(ResultSlot(resultContainer, 0, 118, 35))
+        // Result slot (slot 9) — display only, vertically centered on the middle row.
+        addSlot(ResultSlot(resultContainer, 0, 128, 31))
 
-        // Player inventory
-        addStandardInventorySlots(playerInventory, 8, 84)
+        // Player inventory — matches ProcessingSetScreen layout (9 cols at x=9, inv y=95, hotbar y=153).
+        // INV_GRID_Y = 80+14 = 94, so slot y = 95. Hotbar y = 95 + 54 + 4 = 153.
+        for (row in 0 until 3) {
+            for (col in 0 until 9) {
+                addSlot(net.minecraft.world.inventory.Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 95 + row * 18))
+            }
+        }
+        for (col in 0 until 9) {
+            addSlot(net.minecraft.world.inventory.Slot(playerInventory, col, 9 + col * 18, 153))
+        }
 
-        // Initial recipe lookup
         updateResult()
     }
 
@@ -99,7 +106,7 @@ class InstructionSetScreenHandler(
         if (level.isClientSide) return // Recipe lookup is server-side only
 
         val serverLevel = level as? net.minecraft.server.level.ServerLevel ?: return
-        val recipeManager = serverLevel.recipeAccess() as? net.minecraft.world.item.crafting.RecipeManager ?: return
+        val recipeManager = serverLevel.getRecipeManager() ?: return
 
         val items = (0 until 9).map { recipeGrid.getItem(it) }
         val input = CraftingInput.of(3, 3, items)
@@ -110,6 +117,18 @@ class InstructionSetScreenHandler(
             .orElse(ItemStack.EMPTY)
 
         resultContainer.setItem(0, result)
+    }
+
+    override fun clickMenuButton(player: Player, id: Int): Boolean {
+        // ID 0 — triggered by the clear-all button in InstructionSetScreen. Wipes every
+        // ghost slot in the 3×3 recipe grid and recomputes the result.
+        if (id == 0) {
+            for (i in 0..8) recipeGrid.setItem(i, ItemStack.EMPTY)
+            updateResult()
+            broadcastChanges()
+            return true
+        }
+        return false
     }
 
     override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
@@ -191,8 +210,8 @@ class InstructionSetScreenHandler(
             if (items[i].isEmpty()) {
                 recipeGrid.setItem(i, ItemStack.EMPTY)
             } else {
-                val id = Identifier.tryParse(items[i]) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
+                val id = ResourceLocation.tryParse(items[i]) ?: continue
+                val item = BuiltInRegistries.ITEM.get(id) ?: continue
                 recipeGrid.setItem(i, ItemStack(item, 1))
             }
         }

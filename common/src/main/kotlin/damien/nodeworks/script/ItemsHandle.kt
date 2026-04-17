@@ -4,7 +4,7 @@ import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.tags.TagKey
 import org.luaj.vm2.*
@@ -13,8 +13,35 @@ import org.luaj.vm2.lib.*
 /**
  * Lua-side handle representing a reference to a single item type in a specific storage.
  * Created by CardHandle:find(), network:find(), network:craft(), network:shapeless().
- * Always represents one item type — use findAll() for multiple.
+ * Always represents one item type — use findEach() for multiple.
  */
+/**
+ * Opaque source for items held in a CPU buffer rather than real block storage.
+ * Used by processing handlers — items are extracted from here and inserted into destination.
+ */
+class BufferSource(
+    private val cpu: damien.nodeworks.block.entity.CraftingCoreBlockEntity,
+    val itemId: String,
+    private var remaining: Long
+) {
+    /** Extract up to [maxCount] items from the buffer. Returns actual count extracted. */
+    fun extract(maxCount: Long): Long {
+        val toExtract = minOf(maxCount, remaining)
+        val removed = cpu.removeFromBuffer(itemId, toExtract)
+        remaining -= removed
+        return removed
+    }
+
+    /** Put previously-extracted items back into the buffer. Used by `card:insert`'s
+     *  atomic rollback when the destination refused a partial amount. */
+    fun returnUnused(count: Long) {
+        if (count <= 0L) return
+        if (cpu.addToBuffer(itemId, count)) {
+            remaining += count
+        }
+    }
+}
+
 class ItemsHandle(
     val itemId: String,
     val itemName: String,
@@ -23,7 +50,8 @@ class ItemsHandle(
     val hasData: Boolean,
     val filter: String,
     val sourceStorage: () -> ItemStorageHandle?,
-    val level: ServerLevel
+    val level: ServerLevel,
+    val bufferSource: BufferSource? = null
 ) {
     val stackable: Boolean get() = maxStackSize > 1
 
@@ -44,13 +72,13 @@ class ItemsHandle(
 
         /** Create an ItemsHandle for crafting results (no stack in storage yet). */
         fun forCraftResult(itemId: String, itemName: String, count: Int, sourceStorage: () -> ItemStorageHandle?, level: ServerLevel): ItemsHandle {
-            val identifier = Identifier.tryParse(itemId)
-            val item = if (identifier != null) BuiltInRegistries.ITEM.getValue(identifier) else null
+            val identifier = ResourceLocation.tryParse(itemId)
+            val item = if (identifier != null) BuiltInRegistries.ITEM.get(identifier) else null
             return ItemsHandle(
                 itemId = itemId,
                 itemName = itemName,
                 count = count,
-                maxStackSize = item?.defaultMaxStackSize ?: 64,
+                maxStackSize = item?.getDefaultMaxStackSize() ?: 64,
                 hasData = false,
                 filter = itemId,
                 sourceStorage = sourceStorage,
@@ -73,10 +101,10 @@ class ItemsHandle(
                 override fun call(selfArg: LuaValue, tagArg: LuaValue): LuaValue {
                     val tag = tagArg.checkjstring()
                     val tagId = if (tag.startsWith("#")) tag.substring(1) else tag
-                    val identifier = Identifier.tryParse(tagId) ?: return LuaValue.FALSE
+                    val identifier = ResourceLocation.tryParse(tagId) ?: return LuaValue.FALSE
                     val tagKey = TagKey.create(Registries.ITEM, identifier)
-                    val itemIdentifier = Identifier.tryParse(handle.itemId) ?: return LuaValue.FALSE
-                    val item = BuiltInRegistries.ITEM.getValue(itemIdentifier) ?: return LuaValue.FALSE
+                    val itemIdentifier = ResourceLocation.tryParse(handle.itemId) ?: return LuaValue.FALSE
+                    val item = BuiltInRegistries.ITEM.get(itemIdentifier) ?: return LuaValue.FALSE
                     return LuaValue.valueOf(item.builtInRegistryHolder().`is`(tagKey))
                 }
             })

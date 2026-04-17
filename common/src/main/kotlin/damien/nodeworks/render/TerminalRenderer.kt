@@ -2,87 +2,39 @@ package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.TerminalBlockEntity
-import net.minecraft.client.renderer.SubmitNodeCollector
+import net.minecraft.client.Minecraft
+import net.minecraft.client.renderer.MultiBufferSource
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
-import net.minecraft.client.renderer.feature.ModelFeatureRenderer
-import net.minecraft.client.renderer.rendertype.RenderTypes
-import net.minecraft.client.renderer.state.CameraRenderState
-import net.minecraft.client.renderer.texture.OverlayTexture
-import net.minecraft.core.Direction
-import net.minecraft.resources.Identifier
-import net.minecraft.world.level.block.state.properties.BlockStateProperties
-import net.minecraft.world.phys.Vec3
-import org.joml.Quaternionf
+import net.minecraft.core.BlockPos
+import net.minecraft.core.SectionPos
 
 /**
- * Renders an emissive overlay on the front face of the Terminal block.
+ * Renderer for Terminal blocks.
+ * Detects connection changes and triggers chunk section rebuild for tint color updates.
  */
 class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<TerminalBlockEntity, TerminalRenderer.TerminalRenderState> {
+    BlockEntityRenderer<TerminalBlockEntity> {
 
-    companion object {
-        private val EMISSIVE_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/terminal_front_emissive.png")
-    }
+    private val lastState = HashMap<BlockPos, Int>()
 
-    class TerminalRenderState : BlockEntityRenderState() {
-        var facing: Direction = Direction.NORTH
-        var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-    }
-
-    override fun createRenderState(): TerminalRenderState = TerminalRenderState()
-
-    override fun extractRenderState(
+    override fun render(
         entity: TerminalBlockEntity,
-        state: TerminalRenderState,
         partialTick: Float,
-        cameraPos: Vec3,
-        crumbling: ModelFeatureRenderer.CrumblingOverlay?
-    ) {
-        super.extractRenderState(entity, state, partialTick, cameraPos, crumbling)
-        state.facing = entity.blockState.getValue(BlockStateProperties.HORIZONTAL_FACING)
-        state.networkColor = NodeConnectionRenderer.findNetworkColor(entity.level, entity.blockPos)
-    }
-
-    override fun submit(
-        state: TerminalRenderState,
         poseStack: PoseStack,
-        collector: SubmitNodeCollector,
-        camera: CameraRenderState
+        bufferSource: MultiBufferSource,
+        packedLight: Int,
+        packedOverlay: Int
     ) {
-        val color = state.networkColor
-        val r = (color shr 16) and 0xFF
-        val g = (color shr 8) and 0xFF
-        val b = color and 0xFF
-
-        val light = 15728880
-        val overlay = OverlayTexture.NO_OVERLAY
-        val eyesType = RenderTypes.eyes(EMISSIVE_TEXTURE)
-
-        poseStack.pushPose()
-
-        // Move to block center, rotate to face direction, then push to front face
-        poseStack.translate(0.5, 0.5, 0.5)
-        when (state.facing) {
-            Direction.NORTH -> {} // blockstate y=0
-            Direction.SOUTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat())) // y=180
-            Direction.EAST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI * 1.5).toFloat())) // y=270
-            Direction.WEST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI / 2).toFloat())) // y=90
-            else -> {}
+        // Hash connection count + reachability to detect any change
+        val reachable = NodeConnectionRenderer.isReachable(entity.blockPos)
+        val state = entity.getConnections().size or (if (reachable) 0x10000 else 0)
+        val last = lastState.put(entity.blockPos, state)
+        if (last != null && last != state) {
+            val sx = SectionPos.blockToSectionCoord(entity.blockPos.x)
+            val sy = SectionPos.blockToSectionCoord(entity.blockPos.y)
+            val sz = SectionPos.blockToSectionCoord(entity.blockPos.z)
+            Minecraft.getInstance().levelRenderer.setSectionDirtyWithNeighbors(sx, sy, sz)
         }
-
-        // Front face quad at z = -0.501 (slightly outside block surface)
-        val o = 0.501f
-        val h = 0.5f // half-size
-
-        collector.submitCustomGeometry(poseStack, eyesType) { pose, vc ->
-            vc.addVertex(pose, -h, -h, -o).setUv(1f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-            vc.addVertex(pose, -h, h, -o).setUv(1f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-            vc.addVertex(pose, h, h, -o).setUv(0f, 0f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-            vc.addVertex(pose, h, -h, -o).setUv(0f, 1f).setColor(r, g, b, 255).setLight(light).setOverlay(overlay).setNormal(pose, 0f, 0f, -1f)
-        }
-
-        poseStack.popPose()
     }
 }

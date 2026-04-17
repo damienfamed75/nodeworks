@@ -2,12 +2,13 @@ package damien.nodeworks.block
 
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
-import damien.nodeworks.network.NodeConnectionHelper
+import damien.nodeworks.item.DiagnosticToolItem
+import damien.nodeworks.item.NetworkWrenchItem
+import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.InventoryTerminalOpenData
 import damien.nodeworks.screen.InventoryTerminalMenu
 import net.minecraft.core.BlockPos
-import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
@@ -24,17 +25,6 @@ class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(propertie
 
     companion object {
         val CODEC: MapCodec<InventoryTerminalBlock> = simpleCodec(::InventoryTerminalBlock)
-
-        /** Find an adjacent node block. */
-        fun findAdjacentNode(level: Level, pos: BlockPos): BlockPos? {
-            for (dir in Direction.entries) {
-                val adjacentPos = pos.relative(dir)
-                if (NodeConnectionHelper.getNodeEntity(level, adjacentPos) != null) {
-                    return adjacentPos
-                }
-            }
-            return null
-        }
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
@@ -51,19 +41,17 @@ class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(propertie
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        if (level.isClientSide) return InteractionResult.SUCCESS
+        // Skip if player is holding a wrench or diagnostic tool
+        val held = player.mainHandItem.item
+        if (held is NetworkWrenchItem || held is DiagnosticToolItem) return InteractionResult.PASS
 
-        val nodePos = findAdjacentNode(level, pos)
-        if (nodePos == null) {
-            player.displayClientMessage(Component.translatable("message.nodeworks.terminal_no_network"), false)
-            return InteractionResult.SUCCESS
-        }
+        if (level.isClientSide) return InteractionResult.SUCCESS
 
         val serverPlayer = player as ServerPlayer
         val serverLevel = level as ServerLevel
 
-        // Check for controller
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, nodePos)
+        // Check for controller via network connections
+        val snapshot = NetworkDiscovery.discoverNetwork(serverLevel, pos)
         if (!snapshot.isOnline) {
             player.displayClientMessage(Component.translatable("message.nodeworks.no_controller"), false)
             return InteractionResult.SUCCESS
@@ -72,11 +60,19 @@ class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(propertie
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.inventory_terminal"),
-            InventoryTerminalOpenData(pos, nodePos),
+            InventoryTerminalOpenData(pos),
             InventoryTerminalOpenData.STREAM_CODEC,
-            { syncId, inv, p -> InventoryTerminalMenu.createServer(syncId, inv, serverLevel, nodePos) }
+            { syncId, inv, _ -> InventoryTerminalMenu.createServer(syncId, inv, serverLevel, pos) }
         )
 
         return InteractionResult.SUCCESS
+    }
+
+    override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
+        val entity = level.getBlockEntity(pos)
+        if (entity is InventoryTerminalBlockEntity) {
+            entity.blockDestroyed = true
+        }
+        return super.playerWillDestroy(level, pos, state, player)
     }
 }

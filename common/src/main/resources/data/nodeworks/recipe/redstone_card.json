@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "nodeworks:blank_card" },
+    { "item": "minecraft:red_dye" },
+    { "item": "minecraft:observer" }
+  ],
+  "result": {
+    "id": "nodeworks:redstone_card",
+    "count": 1
+  }
+}

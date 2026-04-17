@@ -1,0 +1,23 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        "CCC",
+        "DTD",
+        "CCC"
+    ],
+    "key": {
+        "C": {
+            "item": "minecraft:copper_ingot"
+        },
+        "D": {
+            "item": "minecraft:deepslate"
+        },
+        "T": {
+            "item": "minecraft:crafting_table"
+        }
+    },
+    "result": {
+        "id": "nodeworks:instruction_set",
+        "count": 1
+    }
+}

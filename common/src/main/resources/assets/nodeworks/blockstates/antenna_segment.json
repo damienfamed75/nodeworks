@@ -1,0 +1,21 @@
+{
+  "multipart": [
+    { "when": { "part": "middle" }, "apply": { "model": "nodeworks:block/antenna_segment_middle" } },
+    { "when": { "part": "top"    }, "apply": { "model": "nodeworks:block/antenna_segment_top" } },
+
+    { "when": { "part": "receiver", "facing": "east"  }, "apply": { "model": "nodeworks:block/receiver_antenna_top" } },
+    { "when": { "part": "receiver", "facing": "north" }, "apply": { "model": "nodeworks:block/receiver_antenna_top", "y": 270 } },
+    { "when": { "part": "receiver", "facing": "south" }, "apply": { "model": "nodeworks:block/receiver_antenna_top", "y": 90  } },
+    { "when": { "part": "receiver", "facing": "west"  }, "apply": { "model": "nodeworks:block/receiver_antenna_top", "y": 180 } },
+
+    { "when": { "part": "receiver", "facing": "east",  "connected": "false" }, "apply": { "model": "nodeworks:block/receiver_antenna_horn_off" } },
+    { "when": { "part": "receiver", "facing": "north", "connected": "false" }, "apply": { "model": "nodeworks:block/receiver_antenna_horn_off", "y": 270 } },
+    { "when": { "part": "receiver", "facing": "south", "connected": "false" }, "apply": { "model": "nodeworks:block/receiver_antenna_horn_off", "y": 90  } },
+    { "when": { "part": "receiver", "facing": "west",  "connected": "false" }, "apply": { "model": "nodeworks:block/receiver_antenna_horn_off", "y": 180 } },
+
+    { "when": { "part": "receiver", "facing": "east",  "connected": "true" }, "apply": { "model": "nodeworks:block/receiver_antenna_horn_on" } },
+    { "when": { "part": "receiver", "facing": "north", "connected": "true" }, "apply": { "model": "nodeworks:block/receiver_antenna_horn_on", "y": 270 } },
+    { "when": { "part": "receiver", "facing": "south", "connected": "true" }, "apply": { "model": "nodeworks:block/receiver_antenna_horn_on", "y": 90  } },
+    { "when": { "part": "receiver", "facing": "west",  "connected": "true" }, "apply": { "model": "nodeworks:block/receiver_antenna_horn_on", "y": 180 } }
+  ]
+}

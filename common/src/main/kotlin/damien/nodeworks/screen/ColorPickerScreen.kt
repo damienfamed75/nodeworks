@@ -3,11 +3,10 @@ package damien.nodeworks.screen
 import com.mojang.blaze3d.platform.NativeImage
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
-import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.sounds.SoundEvents
 import java.awt.Color
 
@@ -35,10 +34,11 @@ class ColorPickerScreen(
 
     private var selectedColor: Int = initialColor
     private lateinit var hexField: EditBox
-    private var pickerTextureId: Identifier? = null
+    private var pickerTextureId: ResourceLocation? = null
     private var panelX = 0
     private var panelY = 0
     private var updatingField = false
+    private var ignoreFirstClick = true
 
     override fun init() {
         super.init()
@@ -64,7 +64,7 @@ class ColorPickerScreen(
         addRenderableWidget(hexField)
     }
 
-    private fun createPickerTexture(): Identifier {
+    private fun createPickerTexture(): ResourceLocation {
         val image = NativeImage(PICKER_W, PICKER_H, false)
         for (x in 0 until PICKER_W) {
             val hue = x.toFloat() / PICKER_W
@@ -75,11 +75,11 @@ class ColorPickerScreen(
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                image.setPixel(x, y, (0xFF shl 24) or (b shl 16) or (g shl 8) or r)
+                image.setPixelRGBA(x, y, (0xFF shl 24) or (b shl 16) or (g shl 8) or r)
             }
         }
-        val texture = DynamicTexture({ "nodeworks_color_picker" }, image)
-        val id = Identifier.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")
+        val texture = DynamicTexture(image)
+        val id = ResourceLocation.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")
         minecraft?.textureManager?.register(id, texture)
         return id
     }
@@ -90,41 +90,37 @@ class ColorPickerScreen(
         pickerTextureId = null
     }
 
+    override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        // Override to prevent MC's default blur/darken background
+        // We draw our own dim overlay in render() instead
+    }
+
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        // Dim background
+        // Dim background (no blur)
         graphics.fill(0, 0, width, height, 0x88000000.toInt())
 
-        // Dark panel background
-        graphics.fill(panelX, panelY, panelX + PANEL_W, panelY + PANEL_H, 0xFF2B2B2B.toInt())
+        // Panel frame
+        NineSlice.WINDOW_FRAME.draw(graphics, panelX, panelY, PANEL_W, PANEL_H)
 
         // Top bar
-        graphics.fill(panelX, panelY, panelX + PANEL_W, panelY + TOP_BAR_H, 0xFF3C3C3C.toInt())
-        graphics.fill(panelX, panelY + TOP_BAR_H - 1, panelX + PANEL_W, panelY + TOP_BAR_H, 0xFF555555.toInt())
-        graphics.drawString(font, title, panelX + 6, panelY + 6, 0xFFFFFFFF.toInt())
+        NineSlice.drawTitleBar(graphics, font, title, panelX, panelY, PANEL_W, TOP_BAR_H, selectedColor)
 
-        // Color palette
+        // Color palette with border frame
         val px = panelX + PICKER_X
         val py = panelY + PICKER_Y
         pickerTextureId?.let { texId ->
-            graphics.blit(RenderPipelines.GUI_TEXTURED, texId, px, py, 0f, 0f, PICKER_W, PICKER_H, PICKER_W, PICKER_H)
+            graphics.blit(texId, px, py, 0f, 0f, PICKER_W, PICKER_H, PICKER_W, PICKER_H)
         }
-        // Inset border
-        graphics.fill(px - 1, py - 1, px + PICKER_W + 1, py, 0xFF555555.toInt())
-        graphics.fill(px - 1, py - 1, px, py + PICKER_H + 1, 0xFF555555.toInt())
-        graphics.fill(px + PICKER_W, py - 1, px + PICKER_W + 1, py + PICKER_H + 1, 0xFF3C3C3C.toInt())
-        graphics.fill(px - 1, py + PICKER_H, px + PICKER_W + 1, py + PICKER_H + 1, 0xFF3C3C3C.toInt())
+        NineSlice.CONTENT_BORDER.draw(graphics, px - 2, py - 2, PICKER_W + 4, PICKER_H + 4)
 
         // Hex label
         graphics.drawString(font, "#", panelX + PICKER_X + 10, panelY + PICKER_Y + PICKER_H + 9, 0xFFAAAAAA.toInt(), false)
 
-        // Preview swatch
+        // Preview swatch with slot border
         val swatchX = panelX + PICKER_X + 72
         val swatchY = panelY + PICKER_Y + PICKER_H + 6
+        NineSlice.SLOT.draw(graphics, swatchX - 1, swatchY - 1, 16, 16)
         graphics.fill(swatchX, swatchY, swatchX + 14, swatchY + 14, selectedColor or 0xFF000000.toInt())
-        graphics.fill(swatchX - 1, swatchY - 1, swatchX + 15, swatchY, 0xFF555555.toInt())
-        graphics.fill(swatchX - 1, swatchY - 1, swatchX, swatchY + 15, 0xFF555555.toInt())
-        graphics.fill(swatchX + 14, swatchY - 1, swatchX + 15, swatchY + 15, 0xFF3C3C3C.toInt())
-        graphics.fill(swatchX - 1, swatchY + 14, swatchX + 15, swatchY + 15, 0xFF3C3C3C.toInt())
 
         // Buttons
         val btnY = panelY + PANEL_H - BTN_H - 8
@@ -135,34 +131,30 @@ class ColorPickerScreen(
 
         // Confirm button
         val confX = panelX + PANEL_W - BTN_W - 10
-        renderConfirmButton(graphics, confX, btnY, BTN_W, BTN_H, "Confirm", mouseX, mouseY)
+        renderButton(graphics, confX, btnY, BTN_W, BTN_H, "Confirm", mouseX, mouseY, green = true)
 
         super.render(graphics, mouseX, mouseY, partialTick)
     }
 
-    private fun renderButton(graphics: GuiGraphics, bx: Int, by: Int, bw: Int, bh: Int, label: String, mouseX: Int, mouseY: Int) {
+    private fun renderButton(graphics: GuiGraphics, bx: Int, by: Int, bw: Int, bh: Int, label: String, mouseX: Int, mouseY: Int, green: Boolean = false) {
         val hovered = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + bh
-        val bg = if (hovered) 0xFF444444.toInt() else 0xFF333333.toInt()
-        graphics.fill(bx, by, bx + bw, by + bh, bg)
-        graphics.fill(bx, by, bx + bw, by + 1, 0xFF4A4A4A.toInt())
-        graphics.fill(bx, by + bh - 1, bx + bw, by + bh, 0xFF1E1E1E.toInt())
-        val textColor = if (hovered) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
+        val slice = if (hovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
+        slice.draw(graphics, bx, by, bw, bh)
+        val textColor = if (green) {
+            if (hovered) 0xFF88FF88.toInt() else 0xFF55CC55.toInt()
+        } else {
+            if (hovered) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
+        }
         graphics.drawString(font, label, bx + (bw - font.width(label)) / 2, by + (bh - 8) / 2, textColor)
     }
 
-    private fun renderConfirmButton(graphics: GuiGraphics, bx: Int, by: Int, bw: Int, bh: Int, label: String, mouseX: Int, mouseY: Int) {
-        val hovered = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + bh
-        val bg = if (hovered) 0xFF3A5A3A.toInt() else 0xFF2A4A2A.toInt()
-        graphics.fill(bx, by, bx + bw, by + bh, bg)
-        graphics.fill(bx, by, bx + bw, by + 1, 0xFF4A6A4A.toInt())
-        graphics.fill(bx, by + bh - 1, bx + bw, by + bh, 0xFF1A3A1A.toInt())
-        val textColor = if (hovered) 0xFF88FF88.toInt() else 0xFF55CC55.toInt()
-        graphics.drawString(font, label, bx + (bw - font.width(label)) / 2, by + (bh - 8) / 2, textColor)
-    }
-
-    override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, flag: Boolean): Boolean {
-        val mx = event.x()
-        val my = event.y()
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ignoreFirstClick) {
+            ignoreFirstClick = false
+            return true
+        }
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
 
         // Color picker click
         val px = panelX + PICKER_X
@@ -193,19 +185,19 @@ class ColorPickerScreen(
             return true
         }
 
-        return super.mouseClicked(event, flag)
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(event: net.minecraft.client.input.MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
-        val mx = event.x()
-        val my = event.y()
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
         val px = panelX + PICKER_X
         val py = panelY + PICKER_Y
-        if (event.button() == 0 && mx >= px && mx < px + PICKER_W && my >= py && my < py + PICKER_H) {
+        if (button == 0 && mx >= px && mx < px + PICKER_W && my >= py && my < py + PICKER_H) {
             pickColorAt((mx - px).toDouble(), (my - py).toDouble())
             return true
         }
-        return super.mouseDragged(event, dragX, dragY)
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
     }
 
     private fun pickColorAt(relX: Double, relY: Double) {

@@ -1,0 +1,291 @@
+package damien.nodeworks.card
+
+import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.screen.ProcessingSetOpenData
+import damien.nodeworks.screen.ProcessingSetScreenHandler
+import net.minecraft.ChatFormatting
+import net.minecraft.core.component.DataComponents
+import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.nbt.ListTag
+import net.minecraft.nbt.StringTag
+import net.minecraft.network.chat.Component
+import net.minecraft.resources.ResourceLocation
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.InteractionResultHolder
+import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.Item
+import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.TooltipFlag
+import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.level.Level
+
+/**
+ * Processing Set — stores a processing recipe contract:
+ * input items + counts, up to 3 output items + counts, and optional timeout in ticks.
+ * Goes in Processing Storage blocks. Right-click while holding to open the recipe editor.
+ */
+class ProcessingSet(properties: Properties) : Item(properties) {
+
+    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResultHolder<ItemStack> {
+        val stack = player.getItemInHand(hand)
+        if (level.isClientSide) return InteractionResultHolder.success(stack)
+
+        val serverPlayer = player as ServerPlayer
+
+        PlatformServices.menu.openExtendedMenu(
+            serverPlayer,
+            Component.translatable("container.nodeworks.processing_set"),
+            ProcessingSetOpenData(
+                getCardName(stack), getInputs(stack), getInputPositions(stack),
+                getOutputs(stack), getOutputPositions(stack),
+                getTimeout(stack), isSerial(stack)
+            ),
+            ProcessingSetOpenData.STREAM_CODEC,
+            { syncId, inv, p -> ProcessingSetScreenHandler.createHandheld(syncId, inv, hand, stack) }
+        )
+
+        return InteractionResultHolder.consume(stack)
+    }
+
+    override fun appendHoverText(stack: ItemStack, context: TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {
+        super.appendHoverText(stack, context, tooltip, flag)
+        val inputs = getInputs(stack)
+        val outputs = getOutputs(stack)
+
+        if (inputs.isNotEmpty()) {
+            tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.input")
+                .withStyle(ChatFormatting.GRAY))
+            for ((itemId, count) in inputs) {
+                val identifier = ResourceLocation.tryParse(itemId) ?: continue
+                val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
+                val countStr = if (count > 1) " x$count" else ""
+                tooltip.add(Component.literal("  ").append(item.description).append(countStr)
+                    .withStyle(ChatFormatting.DARK_GRAY))
+            }
+        }
+
+        if (outputs.isNotEmpty()) {
+            tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.output")
+                .withStyle(ChatFormatting.GRAY))
+            for ((itemId, count) in outputs) {
+                val identifier = ResourceLocation.tryParse(itemId) ?: continue
+                val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
+                val countStr = if (count > 1) " x$count" else ""
+                tooltip.add(Component.literal("  ").append(item.description).append(countStr)
+                    .withStyle(ChatFormatting.DARK_GRAY))
+            }
+        }
+
+        val timeout = getTimeout(stack)
+        if (timeout > 0) {
+            tooltip.add(Component.literal("  Timeout: ${timeout}t (${timeout / 20.0}s)")
+                .withStyle(ChatFormatting.DARK_GRAY))
+        }
+    }
+
+    companion object {
+        private const val INPUTS_KEY = "inputs"
+        private const val INPUT_COUNTS_KEY = "input_counts"
+        private const val INPUT_SLOTS_KEY = "input_slots"
+        private const val OUTPUTS_KEY = "outputs"
+        private const val OUTPUT_COUNTS_KEY = "output_counts"
+        private const val OUTPUT_SLOTS_KEY = "output_slots"
+        private const val NAME_KEY = "name"
+        private const val TIMEOUT_KEY = "timeout"
+        private const val SERIAL_KEY = "serial"
+        const val MAX_OUTPUTS = 3
+        const val INPUT_GRID_SIZE = 9
+
+        /** Get the card's registered name (used as the handler key). */
+        fun getCardName(stack: ItemStack): String {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
+            return customData.copyTag().getString(NAME_KEY)
+        }
+
+        /** Get the list of (itemId, count) input pairs. Empty-ID entries are filtered. */
+        fun getInputs(stack: ItemStack): List<Pair<String, Int>> {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
+            val tag = customData.copyTag()
+            if (!tag.contains(INPUTS_KEY)) return emptyList()
+            val ids = tag.getList(INPUTS_KEY, 8) // 8 = StringTag
+            val counts = if (tag.contains(INPUT_COUNTS_KEY)) tag.getIntArray(INPUT_COUNTS_KEY) else IntArray(0)
+            return (0 until ids.size).mapNotNull { i ->
+                val id = ids.getString(i)
+                if (id.isEmpty()) return@mapNotNull null
+                val count = counts.getOrElse(i) { 1 }
+                id to count
+            }
+        }
+
+        /**
+         * Grid positions (0..8) for each entry returned by [getInputs], parallel to
+         * that list. Returns sequential positions for legacy cards saved before slot
+         * tracking existed.
+         */
+        fun getInputPositions(stack: ItemStack): IntArray {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
+            val tag = customData.copyTag()
+            if (!tag.contains(INPUTS_KEY)) return IntArray(0)
+            val ids = tag.getList(INPUTS_KEY, 8)
+            val slots = if (tag.contains(INPUT_SLOTS_KEY)) tag.getIntArray(INPUT_SLOTS_KEY) else IntArray(0)
+            val result = ArrayList<Int>(ids.size)
+            for (i in 0 until ids.size) {
+                val id = ids.getString(i)
+                if (id.isEmpty()) continue
+                result.add(slots.getOrElse(i) { i })
+            }
+            return result.toIntArray()
+        }
+
+        /** Get the list of (itemId, count) output pairs (up to 3). */
+        fun getOutputs(stack: ItemStack): List<Pair<String, Int>> {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
+            val tag = customData.copyTag()
+            if (!tag.contains(OUTPUTS_KEY)) {
+                // Legacy: single output field
+                val output = tag.getString("output")
+                val outputCount = if (tag.contains("output_count")) tag.getInt("output_count") else 1
+                return if (output.isNotEmpty()) listOf(output to outputCount) else emptyList()
+            }
+            val ids = tag.getList(OUTPUTS_KEY, 8)
+            val counts = if (tag.contains(OUTPUT_COUNTS_KEY)) tag.getIntArray(OUTPUT_COUNTS_KEY) else IntArray(0)
+            return (0 until ids.size).mapNotNull { i ->
+                val id = ids.getString(i)
+                if (id.isEmpty()) return@mapNotNull null
+                val count = counts.getOrElse(i) { 1 }
+                id to count
+            }
+        }
+
+        /** Output-column positions (0..2) parallel to [getOutputs]. Sequential fallback
+         *  for legacy cards. */
+        fun getOutputPositions(stack: ItemStack): IntArray {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
+            val tag = customData.copyTag()
+            if (!tag.contains(OUTPUTS_KEY)) {
+                val output = tag.getString("output")
+                return if (output.isNotEmpty()) intArrayOf(0) else IntArray(0)
+            }
+            val ids = tag.getList(OUTPUTS_KEY, 8)
+            val slots = if (tag.contains(OUTPUT_SLOTS_KEY)) tag.getIntArray(OUTPUT_SLOTS_KEY) else IntArray(0)
+            val result = ArrayList<Int>(ids.size)
+            for (i in 0 until ids.size) {
+                val id = ids.getString(i)
+                if (id.isEmpty()) continue
+                result.add(slots.getOrElse(i) { i })
+            }
+            return result.toIntArray()
+        }
+
+        /** Get the timeout in ticks (0 = no timeout). */
+        fun getTimeout(stack: ItemStack): Int {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
+            val tag = customData.copyTag()
+            return if (tag.contains(TIMEOUT_KEY)) tag.getInt(TIMEOUT_KEY) else 0
+        }
+
+        /** Whether this card enforces serial (one-at-a-time) handler execution. */
+        fun isSerial(stack: ItemStack): Boolean {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
+            return customData.copyTag().getBoolean(SERIAL_KEY)
+        }
+
+        /**
+         * Build the canonical handler ID for a Processing Set from its input and output
+         * layout. Inputs must already be in row-major grid order (slot 0 → 8, empty
+         * slots skipped); outputs top-to-bottom. Duplicate items in different slots are
+         * preserved — they produce distinct entries.
+         *
+         * Format: `itemId@count|itemId@count|...>>itemId@count|...`
+         *
+         * The format deliberately uses `@` and `|` — characters that never appear in
+         * vanilla or modded item IDs — so parsing is unambiguous.
+         */
+        fun canonicalId(inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>): String {
+            val inputPart = inputs.joinToString("|") { (id, c) -> "$id@$c" }
+            val outputPart = outputs.joinToString("|") { (id, c) -> "$id@$c" }
+            return "$inputPart>>$outputPart"
+        }
+
+        /**
+         * Convert an item id into a camelCase Lua identifier:
+         * `minecraft:copper_ingot` → `copperIngot`. Used for handler parameter names.
+         */
+        fun itemIdToParamName(itemId: String): String {
+            val shortId = itemId.substringAfter(':')
+            val parts = shortId.split('_')
+            return parts.mapIndexed { i, part ->
+                if (i == 0) part else part.replaceFirstChar { it.uppercase() }
+            }.joinToString("")
+        }
+
+        /**
+         * Build per-slot handler parameter names in grid order. Duplicate entries get a
+         * numeric suffix on 2nd+ occurrence so the field list in the handler's `items`
+         * table is a stable, lossless mapping from slot index to identifier.
+         *
+         * Example: `[copper, gold, copper]` → `[copperIngot, goldIngot, copperIngot2]`.
+         *
+         * Used by both the CPU runtime (to key the `items` LuaTable passed to handlers)
+         * and the script editor autocomplete (to suggest valid `items.` field names).
+         * Keeping the rule in one place guarantees they stay in sync.
+         */
+        fun buildHandlerParamNames(inputs: List<Pair<String, Int>>): List<String> {
+            val result = mutableListOf<String>()
+            val occurrence = mutableMapOf<String, Int>()
+            for ((itemId, _) in inputs) {
+                val base = itemIdToParamName(itemId)
+                val n = (occurrence[base] ?: 0) + 1
+                occurrence[base] = n
+                result.add(if (n == 1) base else "$base$n")
+            }
+            return result
+        }
+
+        /**
+         * Save the processing recipe to the card stack. [inputPositions] maps each
+         * entry in [inputs] to its grid slot (0..8). [outputPositions] does the same
+         * for outputs (0..2). Pass `null` to default to sequential positions; this is
+         * only appropriate for legacy callers that don't care about layout.
+         */
+        fun setRecipe(
+            stack: ItemStack,
+            name: String,
+            inputs: List<Pair<String, Int>>,
+            outputs: List<Pair<String, Int>>,
+            timeout: Int,
+            serial: Boolean = false,
+            inputPositions: IntArray? = null,
+            outputPositions: IntArray? = null
+        ) {
+            val tag = CompoundTag()
+            tag.putString(NAME_KEY, name)
+
+            val inputIds = ListTag()
+            val inputCounts = IntArray(inputs.size)
+            for ((i, pair) in inputs.withIndex()) {
+                inputIds.add(StringTag.valueOf(pair.first))
+                inputCounts[i] = pair.second
+            }
+            tag.put(INPUTS_KEY, inputIds)
+            tag.putIntArray(INPUT_COUNTS_KEY, inputCounts)
+            tag.putIntArray(INPUT_SLOTS_KEY, inputPositions ?: IntArray(inputs.size) { it })
+
+            val outputIds = ListTag()
+            val outputCounts = IntArray(outputs.size)
+            for ((i, pair) in outputs.withIndex()) {
+                outputIds.add(StringTag.valueOf(pair.first))
+                outputCounts[i] = pair.second
+            }
+            tag.put(OUTPUTS_KEY, outputIds)
+            tag.putIntArray(OUTPUT_COUNTS_KEY, outputCounts)
+            tag.putIntArray(OUTPUT_SLOTS_KEY, outputPositions ?: IntArray(outputs.size) { it })
+
+            tag.putInt(TIMEOUT_KEY, timeout)
+            tag.putBoolean(SERIAL_KEY, serial)
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+        }
+    }
+}
