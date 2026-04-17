@@ -13,7 +13,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
-import net.minecraft.world.InteractionResultHolder
+import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
@@ -28,10 +28,10 @@ import net.minecraft.world.level.Level
  */
 class ProcessingSet(properties: Properties) : Item(properties) {
 
-    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResultHolder<ItemStack> {
-        val stack = player.getItemInHand(hand)
-        if (level.isClientSide) return InteractionResultHolder.success(stack)
+    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
+        if (level.isClientSide) return InteractionResult.SUCCESS
 
+        val stack = player.getItemInHand(hand)
         val serverPlayer = player as ServerPlayer
 
         PlatformServices.menu.openExtendedMenu(
@@ -46,7 +46,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             { syncId, inv, p -> ProcessingSetScreenHandler.createHandheld(syncId, inv, hand, stack) }
         )
 
-        return InteractionResultHolder.consume(stack)
+        return InteractionResult.CONSUME
     }
 
     override fun appendHoverText(stack: ItemStack, context: TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {

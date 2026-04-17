@@ -5,7 +5,7 @@ import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.stats.Stats
 import net.minecraft.world.InteractionHand
-import net.minecraft.world.InteractionResultHolder
+import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
@@ -16,7 +16,7 @@ import net.minecraft.world.level.Level
  */
 class MilkySoulBallItem(properties: Properties) : Item(properties) {
 
-    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResultHolder<ItemStack> {
+    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
         val stack = player.getItemInHand(hand)
 
         level.playSound(null, player.x, player.y, player.z,
@@ -36,6 +36,6 @@ class MilkySoulBallItem(properties: Properties) : Item(properties) {
         }
 
         player.cooldowns.addCooldown(this, 4)
-        return InteractionResultHolder.sidedSuccess(stack, level.isClientSide)
+        return InteractionResult.SUCCESS
     }
 }
