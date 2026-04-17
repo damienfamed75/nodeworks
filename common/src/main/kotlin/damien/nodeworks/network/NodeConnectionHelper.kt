@@ -1,6 +1,5 @@
 package damien.nodeworks.network
 
-import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
@@ -67,15 +66,17 @@ object NodeConnectionHelper {
         return result.type == HitResult.Type.MISS
     }
 
-    /** Get a Connectable block entity at the given position. */
+    /** Get a Connectable block entity at the given position. Returns null if chunk is not loaded. */
     fun getConnectable(level: Level, pos: BlockPos): Connectable? {
+        if (!level.isLoaded(pos)) return null
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is InstructionCrafterBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock) return null
+        if (block !is NodeBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is damien.nodeworks.block.CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ProcessingStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock && block !is damien.nodeworks.block.InventoryTerminalBlock) return null
         return level.getBlockEntity(pos) as? Connectable
     }
 
     /** Get a NodeBlockEntity specifically (for legacy code that needs node-specific access). */
     fun getNodeEntity(level: Level, pos: BlockPos): NodeBlockEntity? {
+        if (!level.isLoaded(pos)) return null
         if (level.getBlockState(pos).block !is NodeBlock) return null
         return level.getBlockEntity(pos) as? NodeBlockEntity
     }
@@ -98,7 +99,49 @@ object NodeConnectionHelper {
         val entityB = getConnectable(level, posB) ?: return false
         entityA.addConnection(posB)
         entityB.addConnection(posA)
+        // Propagate network UUID across the newly connected network
+        propagateNetworkId(level, posA)
         return true
+    }
+
+    /** BFS from a position to find a controller and propagate its networkId to all reachable connectables. */
+    fun propagateNetworkId(level: ServerLevel, startPos: BlockPos) {
+        // Full BFS to discover all reachable nodes
+        val visited = LinkedHashSet<BlockPos>()
+        val queue = ArrayDeque<BlockPos>()
+        visited.add(startPos)
+        queue.add(startPos)
+
+        while (queue.isNotEmpty()) {
+            val pos = queue.removeFirst()
+            val entity = getConnectable(level, pos) ?: continue
+            for (conn in entity.getConnections()) {
+                if (visited.add(conn) && level.isLoaded(conn)) queue.add(conn)
+            }
+        }
+
+        // Find controller in the visited set
+        var foundId: java.util.UUID? = null
+        for (pos in visited) {
+            val entity = getConnectable(level, pos)
+            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
+                foundId = entity.networkId
+                break
+            }
+        }
+
+        // Update all visited nodes and sync to client
+        for (pos in visited) {
+            val entity = getConnectable(level, pos) ?: continue
+            if (entity.networkId != foundId) {
+                entity.networkId = foundId
+                val be = entity as? net.minecraft.world.level.block.entity.BlockEntity
+                if (be != null) {
+                    be.setChanged()
+                    level.sendBlockUpdated(pos, be.blockState, be.blockState, net.minecraft.world.level.block.Block.UPDATE_CLIENTS)
+                }
+            }
+        }
     }
 
     fun disconnect(level: ServerLevel, posA: BlockPos, posB: BlockPos): Boolean {
@@ -106,6 +149,9 @@ object NodeConnectionHelper {
         val entityB = getConnectable(level, posB)
         entityA?.removeConnection(posB)
         entityB?.removeConnection(posA)
+        // Re-propagate networkId for both sides (one side may have lost its controller)
+        if (entityA != null) propagateNetworkId(level, posA)
+        if (entityB != null) propagateNetworkId(level, posB)
         return entityA != null || entityB != null
     }
 

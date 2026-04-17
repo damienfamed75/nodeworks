@@ -1,0 +1,13 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "nodeworks:milky_soul_ball" },
+    { "item": "nodeworks:milky_soul_ball" },
+    { "item": "minecraft:diamond" },
+    { "item": "nodeworks:celestine_shard" }
+  ],
+  "result": {
+    "id": "nodeworks:link_crystal",
+    "count": 1
+  }
+}

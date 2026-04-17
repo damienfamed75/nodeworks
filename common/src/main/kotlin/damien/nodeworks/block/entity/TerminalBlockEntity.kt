@@ -15,8 +15,7 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
+import java.util.UUID
 
 /**
  * Block entity for the Script Terminal. Stores multiple named scripts and settings.
@@ -33,6 +32,7 @@ class TerminalBlockEntity(
 
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
+    override var networkId: UUID? = null
 
     // Script storage
     val scripts: MutableMap<String, String> = linkedMapOf("main" to "")
@@ -125,43 +125,62 @@ class TerminalBlockEntity(
         }
     }
 
+
     override fun setRemoved() {
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val currentLevel = level
         if (currentLevel is ServerLevel) {
             PlatformServices.modState.stopScript(currentLevel, worldPosition)
+            NodeConnectionHelper.removeAllConnections(currentLevel, this)
+            NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
             if (blockDestroyed) {
-                NodeConnectionHelper.removeAllConnections(currentLevel, this)
-                NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
+                dropAsItem(currentLevel)
             }
         }
         super.setRemoved()
     }
 
+    private fun dropAsItem(level: ServerLevel) {
+        val stack = net.minecraft.world.item.ItemStack(damien.nodeworks.registry.ModBlocks.TERMINAL)
+        val hasContent = scripts.any { it.value.isNotEmpty() } || autoRun
+        if (hasContent) {
+            val tag = saveWithoutMetadata(level.registryAccess())
+            tag.remove("connections")
+            // NeoForge requires "id" in BLOCK_ENTITY_DATA for serialization
+            val typeKey = net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type)
+            if (typeKey != null) tag.putString("id", typeKey.toString())
+            stack.set(net.minecraft.core.component.DataComponents.BLOCK_ENTITY_DATA,
+                net.minecraft.world.item.component.CustomData.of(tag))
+        }
+        net.minecraft.world.Containers.dropItemStack(level,
+            worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5, stack)
+    }
+
     // --- Serialization ---
 
-    override fun saveAdditional(output: ValueOutput) {
-        super.saveAdditional(output)
+    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.saveAdditional(tag, registries)
         val names = scripts.keys.toList()
-        output.putInt("scriptCount", names.size)
+        tag.putInt("scriptCount", names.size)
         for ((i, name) in names.withIndex()) {
-            output.putString("scriptName_$i", name)
-            output.putString("scriptText_$i", scripts[name] ?: "")
+            tag.putString("scriptName_$i", name)
+            tag.putString("scriptText_$i", scripts[name] ?: "")
         }
-        output.putBoolean("autoRun", autoRun)
-        output.putInt("layoutIndex", layoutIndex)
+        tag.putBoolean("autoRun", autoRun)
+        tag.putInt("layoutIndex", layoutIndex)
+        networkId?.let { tag.putString("networkId", it.toString()) }
         if (connections.isNotEmpty()) {
-            output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
     }
 
-    override fun loadAdditional(input: ValueInput) {
-        super.loadAdditional(input)
+    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.loadAdditional(tag, registries)
         scripts.clear()
-        val count = input.getIntOr("scriptCount", 0)
+        val count = if (tag.contains("scriptCount")) tag.getInt("scriptCount") else 0
         for (i in 0 until count) {
-            val name = input.getString("scriptName_$i").orElse("")
-            val text = input.getString("scriptText_$i").orElse("")
+            val name = tag.getString("scriptName_$i")
+            val text = tag.getString("scriptText_$i")
             if (name.isNotEmpty()) {
                 scripts[name] = text
             }
@@ -169,10 +188,15 @@ class TerminalBlockEntity(
         if ("main" !in scripts) {
             scripts["main"] = ""
         }
-        autoRun = input.getBooleanOr("autoRun", false)
-        layoutIndex = input.getIntOr("layoutIndex", 0)
+        autoRun = tag.getBoolean("autoRun")
+        layoutIndex = if (tag.contains("layoutIndex")) tag.getInt("layoutIndex") else 0
+        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
         connections.clear()
-        input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        if (tag.contains("connections")) {
+            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
+        }
     }
 
     // --- Client sync ---

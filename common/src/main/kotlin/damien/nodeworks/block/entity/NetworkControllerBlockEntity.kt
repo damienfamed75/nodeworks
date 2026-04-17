@@ -13,8 +13,6 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
 import java.util.UUID
 
 /**
@@ -31,8 +29,7 @@ class NetworkControllerBlockEntity(
     override var blockDestroyed: Boolean = false
 
     /** The network's unique identity. Generated on first placement. */
-    var networkId: UUID = UUID.randomUUID()
-        private set
+    override var networkId: UUID? = UUID.randomUUID()
 
     // --- Network Settings ---
 
@@ -64,6 +61,15 @@ class NetworkControllerBlockEntity(
     var nodeGlowStyle: Int = GLOW_SQUARE
         set(value) {
             field = value.coerceIn(0, 5)
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
+    /** How many times the Crafting CPU retries a Processing Set handler whose inputs
+     *  went unmoved before giving up. 0 = never retry (fail fast). Default 50. */
+    var handlerRetryLimit: Int = 50
+        set(value) {
+            field = value.coerceIn(0, 500)
             setChanged()
             level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
@@ -114,31 +120,35 @@ class NetworkControllerBlockEntity(
     override fun setRemoved() {
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val lvl = level
-        if (blockDestroyed && lvl is ServerLevel) {
+        if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
-            damien.nodeworks.script.NetworkInventoryCache.removeByUUID(networkId)
+            networkId?.let {
+                damien.nodeworks.script.NetworkInventoryCache.removeByUUID(it)
+                damien.nodeworks.network.NetworkSettingsRegistry.remove(it)
+            }
         }
         super.setRemoved()
     }
 
     // --- Serialization ---
 
-    override fun saveAdditional(output: ValueOutput) {
-        super.saveAdditional(output)
-        output.putString("networkId", networkId.toString())
-        output.putInt("networkColor", networkColor)
-        output.putString("networkName", networkName)
-        output.putInt("redstoneMode", redstoneMode)
-        output.putInt("nodeGlowStyle", nodeGlowStyle)
+    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.saveAdditional(tag, registries)
+        networkId?.let { tag.putString("networkId", it.toString()) }
+        tag.putInt("networkColor", networkColor)
+        tag.putString("networkName", networkName)
+        tag.putInt("redstoneMode", redstoneMode)
+        tag.putInt("nodeGlowStyle", nodeGlowStyle)
+        tag.putInt("handlerRetryLimit", handlerRetryLimit)
         if (connections.isNotEmpty()) {
-            output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
     }
 
-    override fun loadAdditional(input: ValueInput) {
-        super.loadAdditional(input)
-        val idStr = input.getString("networkId").orElse("")
+    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.loadAdditional(tag, registries)
+        val idStr = tag.getString("networkId")
         if (idStr.isNotEmpty()) {
             try {
                 networkId = UUID.fromString(idStr)
@@ -146,12 +156,22 @@ class NetworkControllerBlockEntity(
                 networkId = UUID.randomUUID()
             }
         }
-        networkColor = input.getInt("networkColor").orElse(0x83E086)
-        networkName = input.getString("networkName").orElse("")
-        redstoneMode = input.getInt("redstoneMode").orElse(0)
-        nodeGlowStyle = input.getInt("nodeGlowStyle").orElse(GLOW_SQUARE)
+        networkColor = if (tag.contains("networkColor")) tag.getInt("networkColor") else 0x83E086
+        networkName = tag.getString("networkName")
+        redstoneMode = if (tag.contains("redstoneMode")) tag.getInt("redstoneMode") else 0
+        nodeGlowStyle = if (tag.contains("nodeGlowStyle")) tag.getInt("nodeGlowStyle") else GLOW_SQUARE
+        handlerRetryLimit = if (tag.contains("handlerRetryLimit")) tag.getInt("handlerRetryLimit") else 50
         connections.clear()
-        input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        if (tag.contains("connections")) {
+            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
+        }
+        // Update client-side settings registry
+        networkId?.let {
+            damien.nodeworks.network.NetworkSettingsRegistry.update(
+                it,
+                damien.nodeworks.network.NetworkSettingsRegistry.NetworkSettings(networkColor, nodeGlowStyle)
+            )
+        }
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

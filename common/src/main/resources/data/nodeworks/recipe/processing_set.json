@@ -1,0 +1,26 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " S ",
+    "DBD",
+    "III"
+  ],
+  "key": {
+    "S": {
+      "item": "nodeworks:instruction_set"
+    },
+    "D": {
+      "item": "minecraft:deepslate"
+    },
+    "B": {
+      "item": "minecraft:stone_button"
+    },
+    "I": {
+      "item": "minecraft:iron_ingot"
+    }
+  },
+  "result": {
+    "id": "nodeworks:processing_set",
+    "count": 1
+  }
+}

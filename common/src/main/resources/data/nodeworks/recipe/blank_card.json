@@ -1,0 +1,26 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        "ICI",
+        "CDC",
+        "GGG"
+    ],
+    "key": {
+        "I": {
+            "item": "minecraft:iron_ingot"
+        },
+        "C": {
+            "item": "minecraft:copper_ingot"
+        },
+        "D": {
+            "item": "minecraft:deepslate"
+        },
+        "G": {
+            "item": "minecraft:gold_nugget"
+        }
+    },
+    "result": {
+        "id": "nodeworks:blank_card",
+        "count": 1
+    }
+}

@@ -26,11 +26,7 @@ class ScriptEngine(
 
     private var globals: Globals? = null
     private var networkSnapshot: NetworkSnapshot? = null
-    val scheduler = SchedulerImpl()
-
-    /** Routing callback set by network:onInsert(). Called when items enter network storage. */
-    var onInsertCallback: LuaFunction? = null
-        private set
+    val scheduler = SchedulerImpl { errorMsg -> logCallback(errorMsg, true) }
 
     /** Precomputed route table set by network:route(). */
     var routeTable: RouteTable? = null
@@ -39,6 +35,18 @@ class ScriptEngine(
     /** Cached inventory index across all network storage. */
     var inventoryCache: NetworkInventoryCache? = null
         private set
+
+    /** Processing handlers registered by network:handle(). Keyed by card name. */
+    val processingHandlers = mutableMapOf<String, LuaFunction>()
+
+    /** Redstone onChange callbacks. Keyed by card alias → (capability, lastStrength, callback). */
+    private data class RedstoneCallback(
+        val capability: damien.nodeworks.card.RedstoneSideCapability,
+        var lastStrength: Int,
+        val callback: LuaFunction
+    )
+    private val redstoneCallbacks = mutableMapOf<String, RedstoneCallback>()
+
 
     fun start(scripts: Map<String, String>): Boolean {
         stop()
@@ -109,8 +117,8 @@ class ScriptEngine(
         // Compile and run the main script (top-level code: variable setup, scheduler registrations)
         return try {
             val chunk = g.load(stripTypeAnnotations(mainScript), "main")
-            chunk.call()
             logCallback("Script started.", false)
+            chunk.call()
             true
         } catch (e: LuaError) {
             logCallback("Error: ${e.message}", true)
@@ -121,15 +129,22 @@ class ScriptEngine(
     }
 
     fun stop() {
-        onInsertCallback = null
         routeTable = null
         inventoryCache = null // clear local reference, cache lives in global registry
+        processingHandlers.clear()
+        redstoneCallbacks.clear()
         scheduler.clear()
         globals = null
         networkSnapshot = null
     }
 
     fun isRunning(): Boolean = globals != null
+
+    /** Whether this engine should stay alive — has scheduler tasks, handlers, or routing. */
+    fun hasWork(): Boolean = scheduler.hasActiveTasks()
+        || processingHandlers.isNotEmpty()
+        || redstoneCallbacks.isNotEmpty()
+        || routeTable?.hasRoutes() == true
 
 
     /** Called each server tick. Runs scheduler callbacks within the instruction budget. */
@@ -138,6 +153,7 @@ class ScriptEngine(
 
         try {
             scheduler.tick(tickCount)
+            pollRedstoneCallbacks()
         } catch (e: LuaError) {
             logCallback("Runtime error: ${e.message}", true)
             logger.warn("Script runtime error: {}", e.message)
@@ -149,41 +165,13 @@ class ScriptEngine(
         }
     }
 
-    /**
-     * Creates a routing callback for NetworkStorageHelper.insertItems().
-     * Invokes the Lua onInsert callback and extracts the target storage from the returned CardHandle.
-     */
-    private fun createRoutingCallback(snapshot: NetworkSnapshot): ((String, Long) -> damien.nodeworks.platform.ItemStorageHandle?)? {
-        val callback = onInsertCallback ?: return null
-        return { itemId, count ->
-            try {
-                val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
-                val itemName = if (identifier != null) {
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier)
-                    item?.getName(net.minecraft.world.item.ItemStack(item))?.string ?: itemId
-                } else itemId
-
-                // Create an ItemsHandle for the callback
-                val itemsTable = ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
-                    itemId = itemId,
-                    itemName = itemName,
-                    count = count.toInt(),
-                    sourceStorage = { null }, // source doesn't matter for routing decision
-                    level = level
-                ))
-
-                val result = callback.call(itemsTable)
-
-                // If callback returned a CardHandle table, extract its storage
-                if (!result.isnil() && result.istable()) {
-                    val storageGetter = result.get("_getStorage")
-                    if (storageGetter is CardHandle.StorageGetter) {
-                        storageGetter.getStorage()
-                    } else null
-                } else null
-            } catch (e: LuaError) {
-                logCallback("onInsert error: ${e.message}", true)
-                null
+    private fun pollRedstoneCallbacks() {
+        if (redstoneCallbacks.isEmpty()) return
+        for ((_, cb) in redstoneCallbacks) {
+            val currentStrength = level.getSignal(cb.capability.adjacentPos, cb.capability.nodeSide)
+            if (currentStrength != cb.lastStrength) {
+                cb.lastStrength = currentStrength
+                cb.callback.call(LuaValue.valueOf(currentStrength))
             }
         }
     }
@@ -193,22 +181,79 @@ class ScriptEngine(
          * Strips Luau-style type annotations from script text before Lua compilation.
          * Handles: function params `(x: Type)`, return types `): Type`, local vars `local x: Type =`
          */
+        private val typePattern = """(?:[A-Z]\w*|string|number|boolean|any)\??"""
+
         fun stripTypeAnnotations(source: String): String {
             var result = source
 
             // Function parameter types: (param:Type) or (param: Type) or (param :Type)
-            // Also handles optional: (param: Type?)
-            // Match `: TypeName?` after a word inside parentheses context
-            result = result.replace(Regex("""\b(\w+)\s*:\s*([A-Z]\w*\??)""")) { match ->
-                // Only strip if it looks like a type annotation (type starts with uppercase)
+            // Matches uppercase types (CardHandle, ItemsHandle) and builtin types (string, number, boolean, any)
+            result = result.replace(Regex("""\b(\w+)\s*:\s*($typePattern)""")) { match ->
                 match.groupValues[1]
             }
 
             // Return type annotations: ): TypeName or ): TypeName?
-            result = result.replace(Regex("""\)\s*:\s*([A-Z]\w*\??)""")) { ")" }
+            result = result.replace(Regex("""\)\s*:\s*($typePattern)""")) { ")" }
 
             return result
         }
+    }
+
+    private fun createCardTable(card: damien.nodeworks.network.CardSnapshot, alias: String): LuaTable {
+        val table = CardHandle.create(card, level)
+        val cap = card.capability
+
+        if (cap is damien.nodeworks.card.RedstoneSideCapability) {
+            // Remove inventory methods that don't apply to redstone
+            table.set("find", LuaValue.NIL)
+            table.set("findEach", LuaValue.NIL)
+            table.set("insert", LuaValue.NIL)
+            table.set("count", LuaValue.NIL)
+            table.set("slots", LuaValue.NIL)
+
+            // powered() → boolean
+            table.set("powered", object : OneArgFunction() {
+                override fun call(selfArg: LuaValue): LuaValue {
+                    val strength = level.getSignal(cap.adjacentPos, cap.nodeSide)
+                    return LuaValue.valueOf(strength > 0)
+                }
+            })
+
+            // strength() → number 0-15
+            table.set("strength", object : OneArgFunction() {
+                override fun call(selfArg: LuaValue): LuaValue {
+                    val strength = level.getSignal(cap.adjacentPos, cap.nodeSide)
+                    return LuaValue.valueOf(strength)
+                }
+            })
+
+            // set(boolean | number) — emit redstone signal
+            table.set("set", object : TwoArgFunction() {
+                override fun call(selfArg: LuaValue, valueArg: LuaValue): LuaValue {
+                    val strength = when {
+                        valueArg.isboolean() -> if (valueArg.toboolean()) 15 else 0
+                        valueArg.isnumber() -> valueArg.checkint().coerceIn(0, 15)
+                        else -> throw LuaError("set() expects boolean or number (0-15)")
+                    }
+                    val entity = level.getBlockEntity(cap.nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity
+                        ?: throw LuaError("Node block entity not found")
+                    entity.setRedstoneOutput(cap.nodeSide, strength)
+                    return LuaValue.NIL
+                }
+            })
+
+            // onChange(function(strength: number)) — register callback for signal changes
+            table.set("onChange", object : TwoArgFunction() {
+                override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
+                    val fn = fnArg.checkfunction()
+                    val currentStrength = level.getSignal(cap.adjacentPos, cap.nodeSide)
+                    redstoneCallbacks[alias] = RedstoneCallback(cap, currentStrength, fn)
+                    return LuaValue.NIL
+                }
+            })
+        }
+
+        return table
     }
 
     private fun injectApi(g: Globals) {
@@ -226,7 +271,7 @@ class ScriptEngine(
                 val alias = aliasArg.checkjstring()
                 val card = snapshot.findByAlias(alias)
                     ?: throw LuaError("Not found on network: '$alias'")
-                return CardHandle.create(card, level)
+                return createCardTable(card, alias)
             }
         })
 
@@ -237,7 +282,7 @@ class ScriptEngine(
                 val cards = snapshot.allCards().filter { it.capability.type == type }
                 val result = LuaTable()
                 for ((i, card) in cards.withIndex()) {
-                    result.set(i + 1, CardHandle.create(card, level))
+                    result.set(i + 1, createCardTable(card, card.effectiveAlias))
                 }
                 return result
             }
@@ -270,31 +315,8 @@ class ScriptEngine(
             }
         })
 
-        // network:findStack(filter) → ItemsHandle or nil (single stack from first storage card)
-        networkTable.set("findStack", object : TwoArgFunction() {
-            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
-                val filter = filterArg.checkjstring()
-                val (info, _) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
-                    ?: return LuaValue.NIL
-
-                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
-                    NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
-                        val storage = NetworkStorageHelper.getStorage(level, card)
-                        if (storage != null) {
-                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
-                                CardHandle.matchesFilter(it, filter)
-                            }
-                            if (has > 0) storage else null
-                        } else null
-                    }
-                }
-
-                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(info, filter, sourceStorage, level))
-            }
-        })
-
-        // network:findAll(filter) → table of ItemsHandles (scans real storage)
-        networkTable.set("findAll", object : TwoArgFunction() {
+        // network:findEach(filter) → table of ItemsHandles (scans real storage)
+        networkTable.set("findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot, filter)
@@ -350,43 +372,112 @@ class ScriptEngine(
                     level, snapshot, sourceStorage, itemsHandle.filter,
                     minOf(maxCount, itemsHandle.count.toLong()),
                     routeTable,
-                    createRoutingCallback(snapshot),
+                    null,
                     inventoryCache
                 )
                 return LuaValue.valueOf(moved.toInt())
             }
         })
 
-        // network:craft(identifier, count?) → ItemsHandle or nil
+        // network:craft(identifier, count?) → CraftBuilder with :connect(fn) and :store()
         networkTable.set("craft", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val identifier = args.checkjstring(2)
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
 
-                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache)
-                    ?: return LuaValue.NIL
+                CraftingHelper.currentPendingJob = null
+                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache, processingHandlers = processingHandlers.takeIf { it.isNotEmpty() }, callerScheduler = scheduler, traceLog = { msg -> logCallback(msg, false) })
 
-                // Return an ItemsHandle pointing to the crafted items in network storage
-                val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
-                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
-                    storageCards.firstNotNullOfOrNull { card ->
-                        val storage = NetworkStorageHelper.getStorage(level, card)
-                        if (storage != null) {
-                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
-                                CardHandle.matchesFilter(it, result.outputItemId)
-                            }
-                            if (has > 0) storage else null
-                        } else null
-                    }
+                // Check for async pending job (processing handler or async assembly)
+                val pending = CraftingHelper.currentPendingJob
+                CraftingHelper.currentPendingJob = null
+
+                if (result == null && pending == null) {
+                    CraftingHelper.lastFailReason?.let { logCallback(it, true) }
+                    return LuaValue.NIL
                 }
 
-                return ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
-                    itemId = result.outputItemId,
-                    itemName = result.outputName,
-                    count = result.count,
-                    sourceStorage = sourceStorage,
-                    level = level
-                ))
+                // For async: result is null but pending is set. Build a CraftResult placeholder.
+                val craftResult = result ?: run {
+                    // Async — we don't know the exact output yet. Use the identifier.
+                    val id = net.minecraft.resources.ResourceLocation.tryParse(identifier)
+                    val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) else null
+                    val name = if (item != null) net.minecraft.world.item.ItemStack(item).hoverName.string else identifier
+                    CraftingHelper.CraftResult(identifier, name, count,
+                        cpu = snapshot.cpus.firstOrNull()?.let { level.getBlockEntity(it.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity },
+                        level = level, snapshot = snapshot, cache = inventoryCache)
+                }
+
+                // Helper: release CPU buffer → storage and create ItemsHandle
+                fun releaseAndCreateHandle(): LuaTable {
+                    CraftingHelper.releaseCraftResult(craftResult)
+                    val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
+                    val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                        storageCards.firstNotNullOfOrNull { card ->
+                            val storage = NetworkStorageHelper.getStorage(level, card)
+                            if (storage != null) {
+                                val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                    CardHandle.matchesFilter(it, craftResult.outputItemId)
+                                }
+                                if (has > 0) storage else null
+                            } else null
+                        }
+                    }
+                    return ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
+                        itemId = craftResult.outputItemId,
+                        itemName = craftResult.outputName,
+                        count = craftResult.count,
+                        sourceStorage = sourceStorage,
+                        level = level
+                    ))
+                }
+
+                // Build the CraftBuilder table
+                val builder = LuaTable()
+
+                // :connect(fn) — release to storage, call fn with ItemsHandle
+                builder.set("connect", object : TwoArgFunction() {
+                    override fun call(selfArg: LuaValue, callbackArg: LuaValue): LuaValue {
+                        val callback = callbackArg.checkfunction()
+
+                        if (pending == null || pending.isComplete) {
+                            // Instant — release and call now
+                            val handle = releaseAndCreateHandle()
+                            try { callback.call(handle) }
+                            catch (e: LuaError) { logCallback("craft callback error: ${e.message}", true) }
+                        } else {
+                            // Async — wait for pending job, then release and call
+                            pending.onCompleteCallback = { success ->
+                                if (success) {
+                                    val handle = releaseAndCreateHandle()
+                                    try { callback.call(handle) }
+                                    catch (e: LuaError) { logCallback("craft callback error: ${e.message}", true) }
+                                } else {
+                                    logCallback("Craft timed out for '$identifier'", true)
+                                    // Clean up CPU buffer
+                                    CraftingHelper.releaseCraftResult(craftResult)
+                                }
+                            }
+                        }
+                        return LuaValue.NIL
+                    }
+                })
+
+                // :store() — release to storage, no callback
+                builder.set("store", object : OneArgFunction() {
+                    override fun call(selfArg: LuaValue): LuaValue {
+                        if (pending == null || pending.isComplete) {
+                            CraftingHelper.releaseCraftResult(craftResult)
+                        } else {
+                            pending.onCompleteCallback = { _ ->
+                                CraftingHelper.releaseCraftResult(craftResult)
+                            }
+                        }
+                        return LuaValue.NIL
+                    }
+                })
+
+                return builder
             }
         })
 
@@ -402,14 +493,6 @@ class ScriptEngine(
             }
         })
 
-        // network:onInsert(fn) — register a routing callback for items entering network storage
-        networkTable.set("onInsert", object : TwoArgFunction() {
-            override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
-                if (!fnArg.isfunction()) throw LuaError("onInsert expects a function")
-                onInsertCallback = fnArg.checkfunction()
-                return LuaValue.NIL
-            }
-        })
 
         // network:shapeless(item1, count1, item2?, count2?, ...) → ItemsHandle or nil
         // Crafts using vanilla shapeless recipes. Inputs are item/count pairs.
@@ -458,12 +541,67 @@ class ScriptEngine(
             }
         })
 
+        // network:handle(cardName, handlerFn) — register a processing handler
+        // cardName matches the name set on a Processing Set in Processing Storage.
+        // The handler function receives input items as arguments and should return
+        // the result ItemsHandle from the processing machine's output.
+        networkTable.set("handle", object : ThreeArgFunction() {
+            override fun call(selfArg: LuaValue, nameArg: LuaValue, handlerArg: LuaValue): LuaValue {
+                val name = nameArg.checkjstring()
+                val handler = handlerArg.checkfunction()
+                processingHandlers[name] = handler
+                return LuaValue.NIL
+            }
+        })
+
         networkTable.set("var", object : TwoArgFunction() {
             override fun call(self: LuaValue, nameArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
                 val varSnapshot = snapshot.findVariable(name)
                     ?: throw LuaError("Variable not found on network: '$name'")
                 return VariableHandle.create(varSnapshot, level)
+            }
+        })
+
+        // network:debug() — print full network summary
+        networkTable.set("debug", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue {
+                val sb = StringBuilder()
+                sb.appendLine("=== Network Debug ===")
+                sb.appendLine("Controller: ${snapshot.controller?.pos ?: "none"}")
+                sb.appendLine("Nodes: ${snapshot.nodes.size}")
+                for (node in snapshot.nodes) {
+                    val cardCount = node.sides.values.sumOf { it.size }
+                    sb.appendLine("  Node ${node.pos}: $cardCount cards")
+                    for ((dir, cards) in node.sides) {
+                        for (card in cards) {
+                            sb.appendLine("    ${dir.name}: ${card.effectiveAlias} (${card.capability.type})")
+                        }
+                    }
+                }
+                sb.appendLine("Terminals: ${snapshot.terminalPositions.size}")
+                for (pos in snapshot.terminalPositions) sb.appendLine("  $pos")
+                sb.appendLine("CPUs: ${snapshot.cpus.size}")
+                for (cpu in snapshot.cpus) sb.appendLine("  ${cpu.pos}: ${cpu.bufferUsed}/${cpu.bufferCapacity} ${if (cpu.isBusy) "BUSY" else "idle"}")
+                sb.appendLine("Crafters (Instruction Sets): ${snapshot.crafters.size}")
+                for (crafter in snapshot.crafters) {
+                    sb.appendLine("  ${crafter.pos}: ${crafter.instructionSets.size} recipes")
+                    for (recipe in crafter.instructionSets) sb.appendLine("    ${recipe.alias ?: recipe.outputItemId}")
+                }
+                sb.appendLine("Processing APIs: ${snapshot.processingApis.size}")
+                for (api in snapshot.processingApis) {
+                    val remote = if (api.remoteTerminalPositions != null) " (remote)" else ""
+                    sb.appendLine("  ${api.pos}$remote: ${api.apis.size} cards")
+                    for (card in api.apis) {
+                        val inputs = card.inputs.joinToString(", ") { "${it.first} x${it.second}" }
+                        val outputs = card.outputs.joinToString(", ") { "${it.first} x${it.second}" }
+                        sb.appendLine("    [${card.name}] $inputs -> $outputs")
+                    }
+                }
+                sb.appendLine("Variables: ${snapshot.variables.size}")
+                for (v in snapshot.variables) sb.appendLine("  ${v.name} (${v.type})")
+                logCallback(sb.toString().trimEnd(), false)
+                return LuaValue.NIL
             }
         })
 
@@ -479,11 +617,60 @@ class ScriptEngine(
         })
 
         // print(message)
-        g.set("print", object : OneArgFunction() {
-            override fun call(arg: LuaValue): LuaValue {
-                logCallback(arg.tojstring(), false)
-                return LuaValue.NIL
+        g.set("print", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val parts = mutableListOf<String>()
+                for (i in 1..args.narg()) {
+                    parts.add(formatValue(args.arg(i)))
+                }
+                logCallback(parts.joinToString("  "), false)
+                return LuaValue.NONE
             }
         })
+    }
+
+    private fun formatValue(value: LuaValue, depth: Int = 0): String {
+        if (depth > 3) return "{...}"
+        return when {
+            value.istable() -> {
+                val table = value.checktable()
+                val entries = mutableListOf<String>()
+                var isArray = true
+                var arrayIdx = 1
+
+                // First pass: check if it's a pure array
+                var key = LuaValue.NIL
+                while (true) {
+                    val n = table.next(key)
+                    if (n.arg1().isnil()) break
+                    key = n.arg1()
+                    if (!key.isint() || key.toint() != arrayIdx) {
+                        isArray = false
+                        break
+                    }
+                    arrayIdx++
+                }
+
+                // Second pass: format entries
+                key = LuaValue.NIL
+                while (true) {
+                    val n = table.next(key)
+                    if (n.arg1().isnil()) break
+                    key = n.arg1()
+                    val v = n.arg(2)
+                    if (entries.size >= 20) { entries.add("..."); break }
+                    if (isArray) {
+                        entries.add(formatValue(v, depth + 1))
+                    } else {
+                        val keyStr = if (key.isstring()) key.tojstring() else formatValue(key, depth + 1)
+                        entries.add("$keyStr = ${formatValue(v, depth + 1)}")
+                    }
+                }
+
+                if (entries.isEmpty()) "{}" else "{ ${entries.joinToString(", ")} }"
+            }
+            value.isstring() -> "\"${value.tojstring()}\""
+            else -> value.tojstring()
+        }
     }
 }

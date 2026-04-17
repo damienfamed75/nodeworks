@@ -46,6 +46,7 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
         return NetworkControllerBlockEntity(pos, state)
     }
 
+
     override fun useWithoutItem(
         state: BlockState,
         level: Level,
@@ -53,7 +54,7 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        if (player.mainHandItem.item is NetworkWrenchItem) return InteractionResult.PASS
+        if (player.mainHandItem.item is NetworkWrenchItem || player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val entity = level.getBlockEntity(pos) as? NetworkControllerBlockEntity ?: return InteractionResult.PASS
@@ -62,7 +63,7 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.network_controller"),
-            NetworkControllerOpenData(pos, entity.networkColor, entity.networkName, entity.redstoneMode, entity.nodeGlowStyle),
+            NetworkControllerOpenData(pos, entity.networkColor, entity.networkName, entity.redstoneMode, entity.nodeGlowStyle, entity.handlerRetryLimit),
             NetworkControllerOpenData.STREAM_CODEC,
             { syncId, inv, _ -> NetworkControllerMenu.createServer(syncId, inv, entity) }
         )

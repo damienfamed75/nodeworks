@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "nodeworks:block/receiver_antenna" },
+    "facing=south": { "model": "nodeworks:block/receiver_antenna", "y": 180 },
+    "facing=east":  { "model": "nodeworks:block/receiver_antenna", "y": 90 },
+    "facing=west":  { "model": "nodeworks:block/receiver_antenna", "y": 270 }
+  }
+}

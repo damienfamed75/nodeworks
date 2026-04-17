@@ -1,0 +1,32 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        "GCG",
+        "IBI",
+        "PDP"
+    ],
+    "key": {
+        "G": {
+            "item": "minecraft:gold_ingot"
+        },
+        "C": {
+            "item": "nodeworks:celestine_shard"
+        },
+        "I": {
+            "item": "minecraft:iron_ingot"
+        },
+        "B": {
+            "item": "minecraft:stone_button"
+        },
+        "P": {
+            "item": "minecraft:copper_ingot"
+        },
+        "D": {
+            "item": "minecraft:deepslate"
+        }
+    },
+    "result": {
+        "id": "nodeworks:card_programmer",
+        "count": 1
+    }
+}

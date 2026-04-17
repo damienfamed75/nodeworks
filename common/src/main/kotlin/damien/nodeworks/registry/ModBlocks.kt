@@ -1,16 +1,23 @@
 package damien.nodeworks.registry
 
-import damien.nodeworks.block.InstructionCrafterBlock
 import damien.nodeworks.block.InstructionStorageBlock
 import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
+import damien.nodeworks.block.ProcessingStorageBlock
+import damien.nodeworks.block.AntennaSegmentBlock
+import damien.nodeworks.block.BroadcastAntennaBlock
+import damien.nodeworks.block.CraftingCoreBlock
+import damien.nodeworks.block.CoProcessorBlock
+import damien.nodeworks.block.CraftingStorageBlock
+import damien.nodeworks.block.StabilizerBlock
+import damien.nodeworks.block.SubstrateBlock
 import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.item.BlockItem
 import net.minecraft.world.item.Item
@@ -25,6 +32,7 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .strength(2.0f, 6.0f)
             .noOcclusion()
+            .requiresCorrectToolForDrops()
     )
 
     val TERMINAL: Block = register(
@@ -32,15 +40,7 @@ object ModBlocks {
         ::TerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
-    )
-
-    val INSTRUCTION_CRAFTER: Block = register(
-        "instruction_crafter",
-        ::InstructionCrafterBlock,
-        BlockBehaviour.Properties.of()
-            .strength(3.0f, 6.0f)
-            .noOcclusion()
-            .lightLevel { 15 }
+            .requiresCorrectToolForDrops()
     )
 
     val INSTRUCTION_STORAGE: Block = register(
@@ -48,6 +48,7 @@ object ModBlocks {
         ::InstructionStorageBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
 
     val NETWORK_CONTROLLER: Block = register(
@@ -57,6 +58,7 @@ object ModBlocks {
             .strength(4.0f, 8.0f)
             .noOcclusion()
             .lightLevel { 10 }
+            .requiresCorrectToolForDrops()
     )
 
     val VARIABLE: Block = register(
@@ -64,28 +66,168 @@ object ModBlocks {
         ::VariableBlock,
         BlockBehaviour.Properties.of()
             .strength(2.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
+
+    val CRAFTING_CORE: Block = register(
+        "crafting_core",
+        ::CraftingCoreBlock,
+        BlockBehaviour.Properties.of()
+            .strength(4.0f, 8.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val CRAFTING_STORAGE: Block = register(
+        "crafting_storage",
+        ::CraftingStorageBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val CO_PROCESSOR: Block = register(
+        "co_processor",
+        ::CoProcessorBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val STABILIZER: Block = register(
+        "stabilizer",
+        ::StabilizerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val SUBSTRATE: Block = register(
+        "substrate",
+        ::SubstrateBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val PROCESSING_STORAGE: Block = register(
+        "processing_storage",
+        ::ProcessingStorageBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val BROADCAST_ANTENNA: Block = register(
+        "broadcast_antenna",
+        ::BroadcastAntennaBlock,
+        BlockBehaviour.Properties.of().strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+            // noOcclusion = chest-style: non-full shape, doesn't shadow neighbors, light bleeds through.
+            .noOcclusion()
+    )
+
+    val RECEIVER_ANTENNA: Block = register(
+        "receiver_antenna",
+        { damien.nodeworks.block.ReceiverAntennaBlock(it) },
+        BlockBehaviour.Properties.of().strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    // --- Celestine Geode blocks ---
+
+    val CELESTINE_BLOCK: Block = registerDirect("celestine_block",
+        net.minecraft.world.level.block.AmethystBlock(BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+            .strength(1.5f).sound(net.minecraft.world.level.block.SoundType.AMETHYST)
+            .requiresCorrectToolForDrops()))
+
+    val BUDDING_CELESTINE: Block = registerDirect("budding_celestine",
+        damien.nodeworks.block.BuddingCelestineBlock(BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+            .randomTicks().strength(1.5f).sound(net.minecraft.world.level.block.SoundType.AMETHYST)
+            .requiresCorrectToolForDrops().pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
+    val CELESTINE_CLUSTER: Block = registerDirect("celestine_cluster",
+        net.minecraft.world.level.block.AmethystClusterBlock(7.0f, 3.0f,
+            BlockBehaviour.Properties.of()
+                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.AMETHYST_CLUSTER)
+                .strength(1.5f).lightLevel { 5 }
+                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
+    val LARGE_CELESTINE_BUD: Block = registerDirect("large_celestine_bud",
+        net.minecraft.world.level.block.AmethystClusterBlock(5.0f, 3.0f,
+            BlockBehaviour.Properties.of()
+                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.LARGE_AMETHYST_BUD)
+                .strength(1.5f).lightLevel { 4 }
+                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
+    val MEDIUM_CELESTINE_BUD: Block = registerDirect("medium_celestine_bud",
+        net.minecraft.world.level.block.AmethystClusterBlock(4.0f, 3.0f,
+            BlockBehaviour.Properties.of()
+                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.MEDIUM_AMETHYST_BUD)
+                .strength(1.5f).lightLevel { 2 }
+                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+
+    val SMALL_CELESTINE_BUD: Block = registerDirect("small_celestine_bud",
+        net.minecraft.world.level.block.AmethystClusterBlock(3.0f, 4.0f,
+            BlockBehaviour.Properties.of()
+                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.SMALL_AMETHYST_BUD)
+                .strength(1.5f).lightLevel { 1 }
+                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
 
     val INVENTORY_TERMINAL: Block = register(
         "inventory_terminal",
         ::InventoryTerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
     )
+
+    /** Register a block only — no BlockItem. Used for internal multiblock parts that the
+     *  player should never hold (e.g. AntennaSegmentBlock). */
+    private fun registerBlockOnly(
+        id: String,
+        factory: (BlockBehaviour.Properties) -> Block,
+        properties: BlockBehaviour.Properties
+    ): Block {
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val block = factory(properties)
+        Registry.register(BuiltInRegistries.BLOCK, identifier, block)
+        return block
+    }
+
+    val ANTENNA_SEGMENT: Block = registerBlockOnly(
+        "antenna_segment",
+        ::AntennaSegmentBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+            .noOcclusion()
+    )
+
+    private fun registerDirect(id: String, block: Block): Block {
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        Registry.register(BuiltInRegistries.BLOCK, identifier, block)
+        val item = BlockItem(block, Item.Properties())
+        Registry.register(BuiltInRegistries.ITEM, identifier, item)
+        return block
+    }
 
     private fun register(
         id: String,
         factory: (BlockBehaviour.Properties) -> Block,
         properties: BlockBehaviour.Properties
     ): Block {
-        val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        val blockKey = ResourceKey.create(Registries.BLOCK, identifier)
-        val block = factory(properties.setId(blockKey))
-        Registry.register(BuiltInRegistries.BLOCK, blockKey, block)
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val block = factory(properties)
+        Registry.register(BuiltInRegistries.BLOCK, identifier, block)
 
-        val itemKey = ResourceKey.create(Registries.ITEM, identifier)
-        val item = BlockItem(block, Item.Properties().setId(itemKey).useBlockDescriptionPrefix())
-        Registry.register(BuiltInRegistries.ITEM, itemKey, item)
+        val item = BlockItem(block, Item.Properties())
+        Registry.register(BuiltInRegistries.ITEM, identifier, item)
 
         return block
     }

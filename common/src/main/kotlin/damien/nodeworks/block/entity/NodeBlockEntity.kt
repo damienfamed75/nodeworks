@@ -1,6 +1,7 @@
 package damien.nodeworks.block.entity
 
 import damien.nodeworks.card.IOSideCapability
+import damien.nodeworks.card.RedstoneSideCapability
 import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.card.NodeCard
 import damien.nodeworks.card.SideCapability
@@ -23,8 +24,7 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
+import java.util.UUID
 
 /**
  * Block entity for the Node block. Stores a separate inventory for each of the 6 faces.
@@ -61,6 +61,22 @@ class NodeBlockEntity(
 
     private val items: NonNullList<ItemStack> = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
     private val connections: LinkedHashSet<BlockPos> = linkedSetOf()
+
+    // --- Redstone output per side (0-15) ---
+    private val redstoneOutputs = IntArray(6) // indexed by Direction.ordinal
+
+    fun getRedstoneOutput(side: Direction): Int = redstoneOutputs[side.ordinal]
+
+    fun setRedstoneOutput(side: Direction, strength: Int) {
+        val clamped = strength.coerceIn(0, 15)
+        if (redstoneOutputs[side.ordinal] != clamped) {
+            redstoneOutputs[side.ordinal] = clamped
+            markDirtyAndSync()
+            level?.updateNeighborsAt(worldPosition, blockState.block)
+        }
+    }
+
+    fun hasAnyRedstoneOutput(): Boolean = redstoneOutputs.any { it > 0 }
 
     // --- Monitors ---
 
@@ -157,6 +173,7 @@ class NodeBlockEntity(
                     val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
                     StorageSideCapability(adjacentPos, accessFace, priority)
                 }
+                is damien.nodeworks.card.RedstoneCard -> RedstoneSideCapability(adjacentPos, worldPosition, side, accessFace)
                 else -> null
             }
             SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex)
@@ -178,7 +195,7 @@ class NodeBlockEntity(
     fun setStack(side: Direction, slot: Int, stack: ItemStack) {
         require(slot in 0 until SLOTS_PER_SIDE) { "Slot $slot out of range for side" }
         items[sideOffset(side) + slot] = stack
-        setChanged()
+        markDirtyAndSync()
     }
 
     // --- Container implementation ---
@@ -191,7 +208,7 @@ class NodeBlockEntity(
 
     override fun removeItem(slot: Int, amount: Int): ItemStack {
         val result = ContainerHelper.removeItem(items, slot, amount)
-        if (!result.isEmpty) setChanged()
+        if (!result.isEmpty) markDirtyAndSync()
         return result
     }
 
@@ -201,7 +218,7 @@ class NodeBlockEntity(
 
     override fun setItem(slot: Int, stack: ItemStack) {
         items[slot] = stack
-        setChanged()
+        markDirtyAndSync()
     }
 
     override fun stillValid(player: Player): Boolean {
@@ -210,7 +227,7 @@ class NodeBlockEntity(
 
     override fun clearContent() {
         items.clear()
-        setChanged()
+        markDirtyAndSync()
     }
 
     // --- WorldlyContainer: controls which slots are accessible from each direction ---
@@ -237,39 +254,56 @@ class NodeBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(output: ValueOutput) {
-        super.saveAdditional(output)
-        ContainerHelper.saveAllItems(output, items)
+    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.saveAdditional(tag, registries)
+        ContainerHelper.saveAllItems(tag, items, registries)
         if (connections.isNotEmpty()) {
-            output.store("connections", BlockPos.CODEC.listOf(), connections.toList())
+            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
+        // Save redstone outputs (only if any non-zero)
+        if (hasAnyRedstoneOutput()) {
+            tag.putIntArray("redstoneOutputs", redstoneOutputs.toList())
+        }
+        networkId?.let { tag.putString("networkId", it.toString()) }
         // Save monitors
-        val monitorCount = monitors.size
-        output.putInt("monitorCount", monitorCount)
+        tag.putInt("monitorCount", monitors.size)
         var idx = 0
         for ((face, data) in monitors) {
-            output.putInt("monitorFace_$idx", face.ordinal)
-            output.putString("monitorItem_$idx", data.trackedItemId ?: "")
-            output.putLong("monitorCount_$idx", data.displayCount)
+            tag.putInt("monitorFace_$idx", face.ordinal)
+            tag.putString("monitorItem_$idx", data.trackedItemId ?: "")
+            tag.putLong("monitorCount_$idx", data.displayCount)
             idx++
         }
     }
 
-    override fun loadAdditional(input: ValueInput) {
-        super.loadAdditional(input)
+    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
+        super.loadAdditional(tag, registries)
         items.clear()
-        ContainerHelper.loadAllItems(input, items)
+        ContainerHelper.loadAllItems(tag, items, registries)
         connections.clear()
-        input.read("connections", BlockPos.CODEC.listOf()).ifPresent { connections.addAll(it) }
+        if (tag.contains("connections")) {
+            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
+        }
+        // Load redstone outputs
+        redstoneOutputs.fill(0)
+        if (tag.contains("redstoneOutputs")) {
+            val saved = tag.getIntArray("redstoneOutputs")
+            for (i in 0 until minOf(saved.size, 6)) {
+                redstoneOutputs[i] = saved[i].coerceIn(0, 15)
+            }
+        }
+        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
         // Load monitors
         monitors.clear()
-        val monitorCount = input.getIntOr("monitorCount", 0)
+        val monitorCount = if (tag.contains("monitorCount")) tag.getInt("monitorCount") else 0
         for (i in 0 until monitorCount) {
-            val faceOrdinal = input.getIntOr("monitorFace_$i", -1)
+            val faceOrdinal = if (tag.contains("monitorFace_$i")) tag.getInt("monitorFace_$i") else -1
             if (faceOrdinal < 0 || faceOrdinal >= Direction.entries.size) continue
             val face = Direction.entries[faceOrdinal]
-            val itemId = input.getString("monitorItem_$i").orElse("").ifEmpty { null }
-            val displayCount = input.getLongOr("monitorCount_$i", 0L)
+            val itemId = tag.getString("monitorItem_$i").ifEmpty { null }
+            val displayCount = if (tag.contains("monitorCount_$i")) tag.getLong("monitorCount_$i") else 0L
             monitors[face] = MonitorData(itemId, displayCount)
         }
         nodeTracker?.onNodeChanged(worldPosition, true)
@@ -287,14 +321,13 @@ class NodeBlockEntity(
 
     /** Set to true by NodeBlock when the block is actually being destroyed. */
     override var blockDestroyed: Boolean = false
+    override var networkId: UUID? = null
 
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level
         if (currentLevel is net.minecraft.server.level.ServerLevel) {
-            if (blockDestroyed) {
-                NodeConnectionHelper.removeAllConnections(currentLevel, this)
-            }
+            NodeConnectionHelper.removeAllConnections(currentLevel, this)
             NodeConnectionHelper.untrackNode(currentLevel, worldPosition)
         }
         super.setRemoved()

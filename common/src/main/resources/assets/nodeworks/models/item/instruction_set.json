@@ -1,6 +1,1 @@
-{
-  "parent": "minecraft:item/generated",
-  "textures": {
-    "layer0": "nodeworks:item/instruction_set"
-  }
-}
+{"parent": "minecraft:item/generated", "textures": {"layer0": "nodeworks:item/instruction_set"}}

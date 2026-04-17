@@ -9,11 +9,15 @@ import damien.nodeworks.registry.ModBlocks
 import damien.nodeworks.registry.ModItems
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.*
+import damien.nodeworks.screen.ProcessingSetOpenData
+import damien.nodeworks.screen.ProcessingSetScreenHandler
+import damien.nodeworks.screen.ProcessingStorageOpenData
+import damien.nodeworks.screen.ProcessingStorageScreenHandler
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
 import net.neoforged.bus.api.IEventBus
@@ -51,7 +55,13 @@ class Nodeworks(modBus: IEventBus) {
 
         // Register game events on the NeoForge event bus
         NeoForge.EVENT_BUS.addListener(::onServerTick)
+        NeoForge.EVENT_BUS.addListener(::onServerStopping)
         NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
+        NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
+        NeoForge.EVENT_BUS.addListener(::onRegisterCommands)
+
+        // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber)
+        damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
 
         logger.info("Nodeworks initialized")
     }
@@ -67,13 +77,15 @@ class Nodeworks(modBus: IEventBus) {
             ModBlocks.initialize()
             ModItems.initialize()
             ModBlockEntities.initialize()
+            damien.nodeworks.registry.ModEntityTypes.initialize()
+            damien.nodeworks.registry.ModCreativeTab.initialize()
         }
 
         // Register menu types
         event.register(Registries.MENU) {
             ModScreenHandlers.TERMINAL = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "terminal")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "terminal")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = TerminalOpenData.STREAM_CODEC.decode(buf)
                     TerminalScreenHandler.clientFactory(syncId, inv, data)
@@ -81,7 +93,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INSTRUCTION_SET = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "instruction_set")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InstructionSetOpenData.STREAM_CODEC.decode(buf)
                     InstructionSetScreenHandler.clientFactory(syncId, inv, data)
@@ -89,7 +101,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INSTRUCTION_STORAGE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_storage")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "instruction_storage")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InstructionStorageOpenData.STREAM_CODEC.decode(buf)
                     InstructionStorageScreenHandler.clientFactory(syncId, inv, data)
@@ -97,7 +109,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.NODE_SIDE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "node_side")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "node_side")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = NodeSideOpenData.STREAM_CODEC.decode(buf)
                     NodeSideScreenHandler.clientFactory(syncId, inv, data)
@@ -105,7 +117,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INVENTORY_TERMINAL = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InventoryTerminalOpenData.STREAM_CODEC.decode(buf)
                     InventoryTerminalMenu.clientFactory(syncId, inv, data)
@@ -113,7 +125,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.NETWORK_CONTROLLER = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "network_controller")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "network_controller")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = NetworkControllerOpenData.STREAM_CODEC.decode(buf)
                     NetworkControllerMenu.clientFactory(syncId, inv, data)
@@ -121,10 +133,74 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.VARIABLE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "variable")),
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "variable")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = VariableOpenData.STREAM_CODEC.decode(buf)
                     VariableMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.CRAFTING_CORE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "crafting_core")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = CraftingCoreOpenData.STREAM_CODEC.decode(buf)
+                    CraftingCoreMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.PROCESSING_SET = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_set")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = ProcessingSetOpenData.STREAM_CODEC.decode(buf)
+                    ProcessingSetScreenHandler.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.PROCESSING_STORAGE = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_storage")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = ProcessingStorageOpenData.STREAM_CODEC.decode(buf)
+                    ProcessingStorageScreenHandler.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.BROADCAST_ANTENNA = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "broadcast_antenna")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.BroadcastAntennaOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.BroadcastAntennaMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.RECEIVER_ANTENNA = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "receiver_antenna")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.ReceiverAntennaOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.ReceiverAntennaMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.DIAGNOSTIC = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "diagnostic")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.DiagnosticOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.DiagnosticMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.CARD_PROGRAMMER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "card_programmer")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.CardProgrammerOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.CardProgrammerMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.STORAGE_CARD = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "storage_card")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.StorageCardOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data)
                 }
             )
             ModScreenHandlers.initialize()
@@ -142,7 +218,17 @@ class Nodeworks(modBus: IEventBus) {
         registrar.playToServer(DeleteScriptTabPayload.TYPE, DeleteScriptTabPayload.CODEC, NeoForgeTerminalPackets::handleDeleteScriptTab)
         registrar.playToServer(ToggleAutoRunPayload.TYPE, ToggleAutoRunPayload.CODEC, NeoForgeTerminalPackets::handleToggleAutoRun)
         registrar.playToServer(SetLayoutPayload.TYPE, SetLayoutPayload.CODEC, NeoForgeTerminalPackets::handleSetLayout)
-        registrar.playToServer(SetStoragePriorityPayload.TYPE, SetStoragePriorityPayload.CODEC, NeoForgeTerminalPackets::handleSetStoragePriority)
+        registrar.playToServer(SwitchNodeSidePayload.TYPE, SwitchNodeSidePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is NodeSideScreenHandler) {
+                    val side = net.minecraft.core.Direction.entries.getOrNull(payload.sideOrdinal) ?: return@enqueueWork
+                    menu.switchSide(side)
+                }
+            }
+        }
+        // SetStoragePriorityPayload removed — priority is now per-card via StorageCard GUI
         registrar.playToServer(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC, NeoForgeTerminalPackets::handleOpenInstructionSet)
         registrar.playToServer(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC, NeoForgeTerminalPackets::handleSetInstructionGrid)
         registrar.playToServer(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC) { payload, context ->
@@ -151,6 +237,69 @@ class Nodeworks(modBus: IEventBus) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
                     menu.handleGridClick(player, payload.itemId, payload.action)
+                }
+            }
+        }
+        registrar.playToServer(InvTerminalSlotClickPayload.TYPE, InvTerminalSlotClickPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handlePlayerSlotClick(player, payload.slotIndex, payload.action)
+                }
+            }
+        }
+        registrar.playToServer(InvTerminalCraftPayload.TYPE, InvTerminalCraftPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleCraftRequest(player, payload.itemId, payload.count)
+                }
+            }
+        }
+        registrar.playToServer(CraftQueueExtractPayload.TYPE, CraftQueueExtractPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleQueueExtract(player, payload.entryId, payload.action)
+                }
+            }
+        }
+        registrar.playToServer(InvTerminalCraftGridActionPayload.TYPE, InvTerminalCraftGridActionPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleCraftGridAction(player, payload.action)
+                }
+            }
+        }
+        registrar.playToServer(InvTerminalCollectPayload.TYPE, InvTerminalCollectPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleCollect(player, payload.itemId)
+                }
+            }
+        }
+        registrar.playToServer(InvTerminalDistributePayload.TYPE, InvTerminalDistributePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleDistribute(player, payload.slotType, payload.slotIndices)
+                }
+            }
+        }
+        registrar.playToServer(InvTerminalCraftGridPayload.TYPE, InvTerminalCraftGridPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.handleCraftGridFill(player, payload.grid)
                 }
             }
         }
@@ -166,6 +315,7 @@ class Nodeworks(modBus: IEventBus) {
                     "redstone" -> entity.redstoneMode = payload.intValue
                     "glow" -> entity.nodeGlowStyle = payload.intValue
                     "name" -> entity.networkName = payload.strValue
+                    "retry" -> entity.handlerRetryLimit = payload.intValue
                 }
             }
         }
@@ -185,10 +335,84 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToServer(SetProcessingApiDataPayload.TYPE, SetProcessingApiDataPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                    when (payload.key) {
+                        "input" -> menu.setInputCount(payload.slotIndex, payload.value)
+                        "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
+                        "timeout" -> menu.setTimeout(payload.value)
+                    }
+                }
+            }
+        }
+
+        registrar.playToServer(SetProcessingApiNamePayload.TYPE, SetProcessingApiNamePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                    menu.cardName = payload.name.take(32)
+                }
+            }
+        }
+
+
+        registrar.playToServer(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@enqueueWork
+                entity.cancelJob()
+            }
+        }
+
+        registrar.playToServer(DismissCpuFailurePayload.TYPE, DismissCpuFailurePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity ?: return@enqueueWork
+                entity.lastFailureReason = ""
+            }
+        }
+
+        registrar.playToServer(CraftPreviewRequestPayload.TYPE, CraftPreviewRequestPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, payload.networkPos)
+                val tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(payload.itemId, 1, level, snapshot)
+                val serverPlayer = player as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
+                val packet = net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(CraftPreviewResponsePayload(payload.containerId, tree))
+                serverPlayer.connection.send(packet)
+            }
+        }
+
+        registrar.playToServer(SetProcessingApiSlotPayload.TYPE, SetProcessingApiSlotPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                    menu.setSlotFromId(payload.slotIndex, payload.itemId)
+                }
+            }
+        }
+
         // S2C payloads
         registrar.playToClient(TerminalLogPayload.TYPE, TerminalLogPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 TerminalLogBuffer.addLog(payload.terminalPos, payload.message, payload.isError)
+                if (payload.isError) {
+                    val player = net.minecraft.client.Minecraft.getInstance().player
+                    val menu = player?.containerMenu
+                    if (menu is damien.nodeworks.screen.DiagnosticMenu) {
+                        menu.addError(payload.terminalPos, payload.message)
+                    }
+                }
             }
         }
         registrar.playToClient(InventorySyncPayload.TYPE, InventorySyncPayload.CODEC) { payload, context ->
@@ -199,11 +423,83 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
+        registrar.playToClient(BufferSyncPayload.TYPE, BufferSyncPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                    menu.clientBufferContents = payload.entries
+                }
+            }
+        }
+
+        registrar.playToClient(CpuFailurePayload.TYPE, CpuFailurePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                    menu.lastFailureReason = payload.reason
+                }
+            }
+        }
+
+        registrar.playToClient(CraftRequestErrorPayload.TYPE, CraftRequestErrorPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val screen = net.minecraft.client.Minecraft.getInstance().screen
+                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
+                    screen.setCraftError(payload.message)
+                }
+            }
+        }
+
+        registrar.playToClient(DebugCraftingCorePayload.TYPE, DebugCraftingCorePayload.CODEC) { _, context ->
+            context.enqueueWork {
+                damien.nodeworks.command.DebugScreens.openCraftingCore()
+            }
+        }
+
+        registrar.playToClient(DebugInventoryTerminalPayload.TYPE, DebugInventoryTerminalPayload.CODEC) { _, context ->
+            context.enqueueWork {
+                damien.nodeworks.command.DebugScreens.openInventoryTerminal()
+            }
+        }
+
+        registrar.playToClient(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
+                    menu.craftTree = payload.tree
+                    menu.activeNodeIds = payload.activeNodeIds.toSet()
+                    menu.completedNodeIds = payload.completedNodeIds.toSet()
+                }
+            }
+        }
+
+        registrar.playToClient(CraftPreviewResponsePayload.TYPE, CraftPreviewResponsePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.DiagnosticMenu && menu.containerId == payload.containerId) {
+                    menu.craftTree = payload.tree
+                }
+            }
+        }
+
+        registrar.playToClient(CraftQueueSyncPayload.TYPE, CraftQueueSyncPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val screen = net.minecraft.client.Minecraft.getInstance().screen
+                if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
+                    screen.handleQueueSync(payload)
+                }
+            }
+        }
     }
 
     private fun onServerTick(event: ServerTickEvent.Post) {
         tickCount++
         NeoForgeTerminalPackets.tickAll(event.server, tickCount)
+        damien.nodeworks.script.ResumeScheduler.tick(tickCount)
         for (cache in damien.nodeworks.script.NetworkInventoryCache.getAll()) {
             cache.tick()
         }
@@ -212,8 +508,26 @@ class Nodeworks(modBus: IEventBus) {
         }
     }
 
+    private fun onRegisterCommands(event: net.neoforged.neoforge.event.RegisterCommandsEvent) {
+        damien.nodeworks.command.NwDebugCommand.register(event.dispatcher)
+    }
+
+    private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
+        damien.nodeworks.script.ResumeScheduler.onServerStop()
+    }
+
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {
         NetworkWrenchItem.clearSelection(event.entity.uuid)
+    }
+
+    private fun onRightClickBlock(event: net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock) {
+        val result = damien.nodeworks.item.SoulSandInteraction.onUseItemOnBlock(
+            event.entity, event.level, event.pos, event.itemStack
+        )
+        if (result != net.minecraft.world.InteractionResult.PASS) {
+            event.cancellationResult = result
+            event.isCanceled = true
+        }
     }
 }
 
@@ -230,5 +544,17 @@ class NeoForgeModStateService : ModStateService {
 
     override fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos) {
         NeoForgeTerminalPackets.registerPendingAutoRun(level, pos)
+    }
+
+    override fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): Any? {
+        return NeoForgeTerminalPackets.findAnyEngine(level, terminalPositions)
+    }
+
+    override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? {
+        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName)
+    }
+
+    override fun getScriptEngine(level: ServerLevel, pos: BlockPos): Any? {
+        return NeoForgeTerminalPackets.getEngine(level, pos)
     }
 }

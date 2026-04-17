@@ -11,18 +11,16 @@ import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
 import net.minecraft.nbt.StringTag
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
-import net.minecraft.world.InteractionResult
+import net.minecraft.world.InteractionResultHolder
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.TooltipFlag
 import net.minecraft.world.item.component.CustomData
-import net.minecraft.world.item.component.TooltipDisplay
 import net.minecraft.world.level.Level
-import java.util.function.Consumer
 
 /**
  * Instruction Set — stores a 3x3 crafting grid template.
@@ -31,10 +29,10 @@ import java.util.function.Consumer
  */
 class InstructionSet(properties: Properties) : Item(properties) {
 
-    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
-        if (level.isClientSide) return InteractionResult.SUCCESS
-
+    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResultHolder<ItemStack> {
         val stack = player.getItemInHand(hand)
+        if (level.isClientSide) return InteractionResultHolder.success(stack)
+
         val recipe = getRecipe(stack)
         val serverPlayer = player as ServerPlayer
 
@@ -46,33 +44,33 @@ class InstructionSet(properties: Properties) : Item(properties) {
             { syncId, inv, p -> InstructionSetScreenHandler.createHandheld(syncId, inv, hand, stack) }
         )
 
-        return InteractionResult.SUCCESS
+        return InteractionResultHolder.consume(stack)
     }
 
-    override fun appendHoverText(stack: ItemStack, context: Item.TooltipContext, display: TooltipDisplay, adder: Consumer<Component>, flag: TooltipFlag) {
-        super.appendHoverText(stack, context, display, adder, flag)
+    override fun appendHoverText(stack: ItemStack, context: Item.TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {
+        super.appendHoverText(stack, context, tooltip, flag)
         val recipe = getRecipe(stack)
         val ingredients = recipe.filter { it.isNotEmpty() }.mapNotNull { id ->
-            val identifier = Identifier.tryParse(id) ?: return@mapNotNull null
-            BuiltInRegistries.ITEM.getValue(identifier)
+            val identifier = ResourceLocation.tryParse(id) ?: return@mapNotNull null
+            BuiltInRegistries.ITEM.get(identifier)
         }.distinct()
 
         if (ingredients.isNotEmpty()) {
-            adder.accept(Component.translatable("tooltip.nodeworks.instruction_set.input")
+            tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.input")
                 .withStyle(ChatFormatting.GRAY))
             for (item in ingredients) {
-                adder.accept(Component.literal("  ").append(item.getName(ItemStack(item))).withStyle(ChatFormatting.DARK_GRAY))
+                tooltip.add(Component.literal("  ").append(item.description).withStyle(ChatFormatting.DARK_GRAY))
             }
 
             val outputId = getOutput(stack)
             if (outputId.isNotEmpty()) {
-                val outputIdentifier = Identifier.tryParse(outputId)
+                val outputIdentifier = ResourceLocation.tryParse(outputId)
                 if (outputIdentifier != null) {
-                    val outputItem = BuiltInRegistries.ITEM.getValue(outputIdentifier)
+                    val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier)
                     if (outputItem != null) {
-                        adder.accept(Component.translatable("tooltip.nodeworks.instruction_set.output")
+                        tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.output")
                             .withStyle(ChatFormatting.GRAY))
-                        adder.accept(Component.literal("  ").append(outputItem.getName(ItemStack(outputItem))).withStyle(ChatFormatting.DARK_GRAY))
+                        tooltip.add(Component.literal("  ").append(outputItem.description).withStyle(ChatFormatting.DARK_GRAY))
                     }
                 }
             }
@@ -86,17 +84,16 @@ class InstructionSet(properties: Properties) : Item(properties) {
         fun getRecipe(stack: ItemStack): List<String> {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return List(9) { "" }
             val tag = customData.copyTag()
-            val listOpt = tag.getList(RECIPE_KEY)
-            if (listOpt.isEmpty) return List(9) { "" }
-            val list = listOpt.get()
+            if (!tag.contains(RECIPE_KEY)) return List(9) { "" }
+            val list = tag.getList(RECIPE_KEY, 8) // 8 = StringTag type
             if (list.size != 9) return List(9) { "" }
-            return (0 until 9).map { list.get(it).asString().orElse("") }
+            return (0 until 9).map { list.getString(it) }
         }
 
         fun getOutput(stack: ItemStack): String {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
             val tag = customData.copyTag()
-            return tag.getString(OUTPUT_KEY).orElse("")
+            return if (tag.contains(OUTPUT_KEY)) tag.getString(OUTPUT_KEY) else ""
         }
 
         fun setRecipe(stack: ItemStack, recipe: List<String>, output: String = "") {

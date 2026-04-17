@@ -1,17 +1,24 @@
 package damien.nodeworks.registry
 
-import damien.nodeworks.block.entity.InstructionCrafterBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
+import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
+import damien.nodeworks.block.entity.BroadcastAntennaBlockEntity
+import damien.nodeworks.block.entity.CraftingCoreBlockEntity
+import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
+import damien.nodeworks.block.entity.CoProcessorBlockEntity
+import damien.nodeworks.block.entity.CraftingStorageBlockEntity
+import damien.nodeworks.block.entity.StabilizerBlockEntity
+import damien.nodeworks.block.entity.SubstrateBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.entity.BlockEntityType
@@ -26,11 +33,6 @@ object ModBlockEntities {
     val TERMINAL: BlockEntityType<TerminalBlockEntity> = register(
         "terminal",
         PlatformServices.blockEntity.createBlockEntityType(::TerminalBlockEntity, ModBlocks.TERMINAL)
-    )
-
-    val INSTRUCTION_CRAFTER: BlockEntityType<InstructionCrafterBlockEntity> = register(
-        "instruction_crafter",
-        PlatformServices.blockEntity.createBlockEntityType(::InstructionCrafterBlockEntity, ModBlocks.INSTRUCTION_CRAFTER)
     )
 
     val INSTRUCTION_STORAGE: BlockEntityType<InstructionStorageBlockEntity> = register(
@@ -48,6 +50,46 @@ object ModBlockEntities {
         PlatformServices.blockEntity.createBlockEntityType(::VariableBlockEntity, ModBlocks.VARIABLE)
     )
 
+    val CRAFTING_CORE: BlockEntityType<CraftingCoreBlockEntity> = register(
+        "crafting_core",
+        PlatformServices.blockEntity.createBlockEntityType(::CraftingCoreBlockEntity, ModBlocks.CRAFTING_CORE)
+    )
+
+    val CRAFTING_STORAGE: BlockEntityType<CraftingStorageBlockEntity> = register(
+        "crafting_storage",
+        PlatformServices.blockEntity.createBlockEntityType(::CraftingStorageBlockEntity, ModBlocks.CRAFTING_STORAGE)
+    )
+
+    val CO_PROCESSOR: BlockEntityType<CoProcessorBlockEntity> = register(
+        "co_processor",
+        PlatformServices.blockEntity.createBlockEntityType(::CoProcessorBlockEntity, ModBlocks.CO_PROCESSOR)
+    )
+
+    val STABILIZER: BlockEntityType<StabilizerBlockEntity> = register(
+        "stabilizer",
+        PlatformServices.blockEntity.createBlockEntityType(::StabilizerBlockEntity, ModBlocks.STABILIZER)
+    )
+
+    val SUBSTRATE: BlockEntityType<SubstrateBlockEntity> = register(
+        "substrate",
+        PlatformServices.blockEntity.createBlockEntityType(::SubstrateBlockEntity, ModBlocks.SUBSTRATE)
+    )
+
+    val PROCESSING_STORAGE: BlockEntityType<ProcessingStorageBlockEntity> = register(
+        "processing_storage",
+        PlatformServices.blockEntity.createBlockEntityType(::ProcessingStorageBlockEntity, ModBlocks.PROCESSING_STORAGE)
+    )
+
+    val BROADCAST_ANTENNA: BlockEntityType<BroadcastAntennaBlockEntity> = register(
+        "broadcast_antenna",
+        PlatformServices.blockEntity.createBlockEntityType(::BroadcastAntennaBlockEntity, ModBlocks.BROADCAST_ANTENNA)
+    )
+
+    val RECEIVER_ANTENNA: BlockEntityType<ReceiverAntennaBlockEntity> = register(
+        "receiver_antenna",
+        PlatformServices.blockEntity.createBlockEntityType(::ReceiverAntennaBlockEntity, ModBlocks.RECEIVER_ANTENNA)
+    )
+
     val INVENTORY_TERMINAL: BlockEntityType<InventoryTerminalBlockEntity> = register(
         "inventory_terminal",
         PlatformServices.blockEntity.createBlockEntityType(::InventoryTerminalBlockEntity, ModBlocks.INVENTORY_TERMINAL)
@@ -57,11 +99,8 @@ object ModBlockEntities {
         id: String,
         type: BlockEntityType<T>
     ): BlockEntityType<T> {
-        val key = ResourceKey.create(
-            Registries.BLOCK_ENTITY_TYPE,
-            Identifier.fromNamespaceAndPath("nodeworks", id)
-        )
-        return Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, key, type)
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        return Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, identifier, type)
     }
 
     fun initialize() {
