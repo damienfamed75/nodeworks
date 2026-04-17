@@ -20,7 +20,9 @@ import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.TooltipFlag
 import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.item.component.TooltipDisplay
 import net.minecraft.world.level.Level
+import java.util.function.Consumer
 
 /**
  * Instruction Set — stores a 3x3 crafting grid template.
@@ -47,8 +49,8 @@ class InstructionSet(properties: Properties) : Item(properties) {
         return InteractionResult.CONSUME
     }
 
-    override fun appendHoverText(stack: ItemStack, context: Item.TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {
-        super.appendHoverText(stack, context, tooltip, flag)
+    override fun appendHoverText(stack: ItemStack, context: Item.TooltipContext, display: TooltipDisplay, tooltip: Consumer<Component>, flag: TooltipFlag) {
+        super.appendHoverText(stack, context, display, tooltip, flag)
         val recipe = getRecipe(stack)
         val ingredients = recipe.filter { it.isNotEmpty() }.mapNotNull { id ->
             val identifier = Identifier.tryParse(id) ?: return@mapNotNull null
@@ -56,10 +58,10 @@ class InstructionSet(properties: Properties) : Item(properties) {
         }.distinct()
 
         if (ingredients.isNotEmpty()) {
-            tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.input")
+            tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.input")
                 .withStyle(ChatFormatting.GRAY))
             for (item in ingredients) {
-                tooltip.add(Component.literal("  ").append(item.description).withStyle(ChatFormatting.DARK_GRAY))
+                tooltip.accept(Component.literal("  ").append(item.description).withStyle(ChatFormatting.DARK_GRAY))
             }
 
             val outputId = getOutput(stack)
@@ -68,9 +70,9 @@ class InstructionSet(properties: Properties) : Item(properties) {
                 if (outputIdentifier != null) {
                     val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier)
                     if (outputItem != null) {
-                        tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.output")
+                        tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.output")
                             .withStyle(ChatFormatting.GRAY))
-                        tooltip.add(Component.literal("  ").append(outputItem.description).withStyle(ChatFormatting.DARK_GRAY))
+                        tooltip.accept(Component.literal("  ").append(outputItem.description).withStyle(ChatFormatting.DARK_GRAY))
                     }
                 }
             }

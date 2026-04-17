@@ -19,7 +19,9 @@ import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.TooltipFlag
 import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.item.component.TooltipDisplay
 import net.minecraft.world.level.Level
+import java.util.function.Consumer
 
 /**
  * Processing Set — stores a processing recipe contract:
@@ -49,38 +51,38 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         return InteractionResult.CONSUME
     }
 
-    override fun appendHoverText(stack: ItemStack, context: TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {
-        super.appendHoverText(stack, context, tooltip, flag)
+    override fun appendHoverText(stack: ItemStack, context: TooltipContext, display: TooltipDisplay, tooltip: Consumer<Component>, flag: TooltipFlag) {
+        super.appendHoverText(stack, context, display, tooltip, flag)
         val inputs = getInputs(stack)
         val outputs = getOutputs(stack)
 
         if (inputs.isNotEmpty()) {
-            tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.input")
+            tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.input")
                 .withStyle(ChatFormatting.GRAY))
             for ((itemId, count) in inputs) {
                 val identifier = Identifier.tryParse(itemId) ?: continue
                 val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
                 val countStr = if (count > 1) " x$count" else ""
-                tooltip.add(Component.literal("  ").append(item.description).append(countStr)
+                tooltip.accept(Component.literal("  ").append(item.description).append(countStr)
                     .withStyle(ChatFormatting.DARK_GRAY))
             }
         }
 
         if (outputs.isNotEmpty()) {
-            tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.output")
+            tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.output")
                 .withStyle(ChatFormatting.GRAY))
             for ((itemId, count) in outputs) {
                 val identifier = Identifier.tryParse(itemId) ?: continue
                 val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
                 val countStr = if (count > 1) " x$count" else ""
-                tooltip.add(Component.literal("  ").append(item.description).append(countStr)
+                tooltip.accept(Component.literal("  ").append(item.description).append(countStr)
                     .withStyle(ChatFormatting.DARK_GRAY))
             }
         }
 
         val timeout = getTimeout(stack)
         if (timeout > 0) {
-            tooltip.add(Component.literal("  Timeout: ${timeout}t (${timeout / 20.0}s)")
+            tooltip.accept(Component.literal("  Timeout: ${timeout}t (${timeout / 20.0}s)")
                 .withStyle(ChatFormatting.DARK_GRAY))
         }
     }

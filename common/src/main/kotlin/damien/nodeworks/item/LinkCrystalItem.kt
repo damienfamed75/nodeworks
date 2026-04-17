@@ -11,8 +11,10 @@ import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.TooltipFlag
 import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.item.component.TooltipDisplay
 import net.minecraft.world.level.Level
 import java.util.UUID
+import java.util.function.Consumer
 
 /**
  * Link Crystal — used to pair Receiver Antennas to Broadcast Antennas.
@@ -21,16 +23,16 @@ import java.util.UUID
  */
 class LinkCrystalItem(properties: Properties) : Item(properties) {
 
-    override fun appendHoverText(stack: ItemStack, context: TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {
+    override fun appendHoverText(stack: ItemStack, context: TooltipContext, display: TooltipDisplay, tooltip: Consumer<Component>, flag: TooltipFlag) {
         val data = getPairingData(stack)
         if (data != null) {
-            tooltip.add(Component.literal("Linked to (${data.pos.x}, ${data.pos.y}, ${data.pos.z})")
+            tooltip.accept(Component.literal("Linked to (${data.pos.x}, ${data.pos.y}, ${data.pos.z})")
                 .withStyle(ChatFormatting.GRAY))
             val dimId = data.dimension.location().path
-            tooltip.add(Component.literal("Dimension: $dimId")
+            tooltip.accept(Component.literal("Dimension: $dimId")
                 .withStyle(ChatFormatting.DARK_GRAY))
         } else {
-            tooltip.add(Component.literal("Blank — place in Broadcast Antenna")
+            tooltip.accept(Component.literal("Blank — place in Broadcast Antenna")
                 .withStyle(ChatFormatting.DARK_GRAY))
         }
     }

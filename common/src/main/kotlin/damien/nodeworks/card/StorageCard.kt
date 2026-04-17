@@ -14,7 +14,9 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.TooltipFlag
 import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.item.component.TooltipDisplay
 import net.minecraft.world.level.Level
+import java.util.function.Consumer
 
 /**
  * Storage Card — registers an adjacent container as passive network storage.
@@ -40,10 +42,10 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         return InteractionResult.CONSUME
     }
 
-    override fun appendHoverText(stack: ItemStack, context: TooltipContext, tooltip: MutableList<Component>, flag: TooltipFlag) {
-        super.appendHoverText(stack, context, tooltip, flag)
+    override fun appendHoverText(stack: ItemStack, context: TooltipContext, display: TooltipDisplay, tooltip: Consumer<Component>, flag: TooltipFlag) {
+        super.appendHoverText(stack, context, display, tooltip, flag)
         val priority = getPriority(stack)
-        tooltip.add(Component.literal("Priority: $priority").withStyle(ChatFormatting.GRAY))
+        tooltip.accept(Component.literal("Priority: $priority").withStyle(ChatFormatting.GRAY))
     }
 
     companion object {
