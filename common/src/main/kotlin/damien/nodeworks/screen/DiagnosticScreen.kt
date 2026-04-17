@@ -1503,6 +1503,10 @@ class DiagnosticScreen(
                     activeTab = i
                     craftItemField?.visible = i == 2
                     selectedBlock = null
+                    // Clear hover state so a stale topology-tab tooltip doesn't bleed
+                    // into the newly-opened tab.
+                    hoveredBlock = null
+                    hoveredGroupIdx = -1
                     return true
                 }
             }
@@ -1579,15 +1583,22 @@ class DiagnosticScreen(
             return true
         }
 
-        // Craft graph drag
-        val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
-        if (activeTab == 2 && mx >= splitX && mx < contentLeft + contentW &&
-            my >= contentTop + 22 && my < contentTop + contentH
-        ) {
-            craftGraphDragging = true
-            craftGraphLastDragX = mouseX
-            craftGraphLastDragY = mouseY
-            return true
+        // Craft graph drag — bounds must mirror the render's actual tree area:
+        //   treeAreaLeft  = detailX + detailW = (contentLeft + 6) + 180
+        //   treeAreaRight = graphRight        = contentLeft + contentW - 4
+        //   treeAreaTop   = graphTop          = contentTop + 22
+        //   treeAreaBottom= graphBottom       = contentTop + contentH - 4
+        if (activeTab == 2) {
+            val treeAreaLeft = contentLeft + 6 + 180
+            val treeAreaRight = contentLeft + contentW - 4
+            val treeAreaTop = contentTop + 22
+            val treeAreaBottom = contentTop + contentH - 4
+            if (mx >= treeAreaLeft && mx < treeAreaRight && my >= treeAreaTop && my < treeAreaBottom) {
+                craftGraphDragging = true
+                craftGraphLastDragX = mouseX
+                craftGraphLastDragY = mouseY
+                return true
+            }
         }
 
         return super.mouseClicked(mouseX, mouseY, button)
@@ -1669,20 +1680,32 @@ class DiagnosticScreen(
 
             return true
         }
-        // Craft tab: scroll text tree on left, zoom graph on right
+        // Craft tab: scroll text tree on left detail panel, zoom graph on the right.
         if (activeTab == 2 && mouseY >= contentTop && mouseY < contentTop + contentH) {
-            val splitX = contentLeft + (contentW * craftSplitRatio).toInt()
-            if (mouseX >= splitX) {
-                // Zoom the graph panel
+            val treeAreaLeft = contentLeft + 6 + 180
+            val treeAreaRight = contentLeft + contentW - 4
+            val treeAreaTop = contentTop + 22
+            val treeAreaBottom = contentTop + contentH - 4
+            if (mouseX >= treeAreaLeft && mouseX < treeAreaRight &&
+                mouseY >= treeAreaTop && mouseY < treeAreaBottom
+            ) {
                 val oldZoom = craftGraphZoom
                 craftGraphZoom = (craftGraphZoom * (1f + scrollY.toFloat() * 0.15f)).coerceIn(0.3f, 4f)
-                // Zoom toward mouse
-                val mx = (mouseX - (splitX + 2 + (contentLeft + contentW - splitX - 2) / 2f) - craftGraphPanX).toFloat()
-                val my = (mouseY - (contentTop + 20f) - craftGraphPanY).toFloat()
+                // Zoom toward mouse — center must match graphCenterX/Y in the render path.
+                val centerX = treeAreaLeft + (treeAreaRight - treeAreaLeft) / 2f
+                val centerY = treeAreaTop + (treeAreaBottom - treeAreaTop) / 2f
+                val mx = (mouseX - centerX - craftGraphPanX).toFloat()
+                val my = (mouseY - centerY - craftGraphPanY).toFloat()
                 craftGraphPanX -= mx * (craftGraphZoom / oldZoom - 1f)
                 craftGraphPanY -= my * (craftGraphZoom / oldZoom - 1f)
                 return true
-            } else if (mouseX >= contentLeft) {
+            }
+            // Detail panel (left of the graph) — scroll the text tree.
+            val detailLeft = contentLeft + 6
+            val detailRight = detailLeft + 180
+            if (mouseX >= detailLeft && mouseX < detailRight &&
+                mouseY >= treeAreaTop && mouseY < treeAreaBottom
+            ) {
                 craftTreeScrollY = (craftTreeScrollY - scrollY.toInt() * 10).coerceAtLeast(0)
                 return true
             }
