@@ -13,55 +13,57 @@ A Minecraft mod inspired by Integrated Dynamics, Applied Energistics, and LaserI
 ## Tech Stack
 
 - **Language:** Kotlin
-- **Mod Loaders:** Fabric + NeoForge (multi-loader)
-- **Minecraft Version:** 1.21.11
+- **Mod Loader:** NeoForge (Fabric support was removed on the `downgrade` branch — do not re-introduce)
+- **Minecraft Version:** 26.1.2
+- **NeoForge Version:** 26.1.2.12-beta
+- **KotlinForForge:** 6.2.0
 - **Mappings:** Official Mojang Mappings
 - **Java Target:** 21
-- **Build System:** Gradle (Kotlin DSL) — Fabric Loom for `fabric/`, NeoForge ModDev for `common/` and `neoforge/`
+- **Build System:** Gradle (Kotlin DSL) — NeoForge ModDev plugin for `common/` and `neoforge/`
 - **Package:** `damien.nodeworks`
 
-## Multi-Loader Architecture
+## CRITICAL: Reference Sources for MC 26.1.2 / NeoForge 26.1
 
-This project supports both Fabric and NeoForge from a single codebase. **Every code change must work on both loaders.**
+**The assistant's training data predates MC 26.1.2 and NeoForge 26.1.x.** Do **not** guess API shapes, class locations, event signatures, or annotation behavior from prior versions. Before writing or changing any code that touches a NeoForge API, a vanilla MC class, or a mod-loader metadata file, **verify the current API against one of these pinned references**:
 
-### Project Structure
+| Purpose | Source | URL / branch |
+|---------|--------|--------------|
+| NeoForge API itself (events, registries, networking, capabilities, datagen) | NeoForge upstream | https://github.com/neoforged/NeoForge/tree/26.1.x |
+| Real-world NeoForge 26.1 mod patterns (GUIs, block entities, capabilities, tool API) | EnderIO | https://github.com/Team-EnderIO/EnderIO/tree/26.1 |
+| Block model / blockstate / render extensions patterns for 26.1 | FramedBlocks | https://github.com/XFactHD/FramedBlocks (latest 26.1 branch) |
+| Network storage / terminal UI / crafting patterns | Refined Storage v3.0.0 | https://github.com/refinedmods/refinedstorage2/tree/v3.0.0-beta.4 |
+
+**Rules:**
+1. If you are about to write a call to a NeoForge-only or MC-internal API and you are not certain the signature is current, **fetch the relevant file from one of the references above first**.
+2. Prefer NeoForge upstream for API definitions; prefer the mod repos for usage patterns.
+3. If a reference shows a pattern that conflicts with what you recall from older versions, trust the reference.
+4. When a reference is fetched, briefly note in the commit / response which file was consulted so a reviewer can audit the choice.
+
+## Project Structure
 
 ```
 common/   — Shared game logic, blocks, items, screens, scripts (NeoForm for vanilla MC)
-fabric/   — Fabric-specific entry point, platform services, networking
-neoforge/ — NeoForge-specific entry point, platform services, networking
+neoforge/ — NeoForge entry point, platform services, networking
 ```
 
-### Rules for All Changes
+## Rules for All Changes
 
-1. **All game logic, blocks, items, screens, and scripts go in `common/`**. Loader modules should only contain platform-specific glue code.
-2. **Never import Fabric or NeoForge APIs in `common/`**. Use `PlatformServices` interfaces instead.
-3. **When adding a new feature**, implement it in `common/` and only touch `fabric/`/`neoforge/` if the feature needs new platform service methods.
-4. **When adding a new platform service method**, implement it in both `fabric/` AND `neoforge/`.
-5. **When adding new packets/payloads**, define the payload data class in `common/.../network/Payloads.kt`, then register and handle in both loader modules.
-6. **When adding new registry entries** (blocks, items, block entities), add them in `common/` using `Registry.register(BuiltInRegistries.*)`. No changes needed in loader modules — Fabric calls `initialize()` directly, NeoForge calls it from `RegisterEvent`.
-7. **When adding new menu types**, register them in both `fabric/Nodeworks.kt` and `neoforge/Nodeworks.kt` (they use different factory patterns).
-8. **Minimize duplication** between `fabric/` and `neoforge/`. If logic is identical except for one API call, extract the logic to `common/` and pass the platform-specific part as a lambda or interface method.
+1. **All game logic, blocks, items, screens, and scripts go in `common/`**. The `neoforge/` module should only contain platform-specific glue code (event bus wiring, registration hooks, capability adapters, packet plumbing).
+2. **Never import NeoForge-specific APIs in `common/`**. Use `PlatformServices` interfaces instead. Even with Fabric gone the abstraction remains valuable: it keeps `common/` testable in isolation and makes a future re-addition of another loader straightforward.
+3. **When adding a new feature**, implement it in `common/` and only touch `neoforge/` if the feature needs new platform service methods or new packet registrations.
+4. **When adding new packets/payloads**, define the payload data class in `common/.../network/Payloads.kt`, then register and handle in `neoforge/`.
+5. **When adding new registry entries** (blocks, items, block entities), add them in `common/` and register from `neoforge/` via `RegisterEvent`.
 
-### Platform Services (`common/.../platform/PlatformServices.kt`)
+## Platform Services (`common/.../platform/PlatformServices.kt`)
 
-The service locator pattern bridges common code to platform APIs:
+Service locator pattern bridging common code to NeoForge APIs:
 
-- `StorageService` — Item storage access (Fabric Transfer API vs NeoForge ResourceHandler)
+- `StorageService` — Item storage access via NeoForge `Capabilities.ItemHandler.BLOCK`
 - `MenuService` — Opening extended menus with extra data
 - `BlockEntityService` — Creating BlockEntityType instances
 - `ModStateService` — Tick count, script engine lifecycle
 - `ClientNetworkingService` — Sending packets to server
 - `ClientEventService` — World render event registration
-
-### NeoForge-Specific Gotchas
-
-- **Registry freezing**: Cannot use `Registry.register()` in the mod constructor. Must use `RegisterEvent`.
-- **KotlinForForge**: Use 6.x for NeoForge 21.11. Do NOT use `@JvmStatic` on `@SubscribeEvent` methods in Kotlin `object` classes.
-- **Transfer API**: NeoForge 21.11 uses `ResourceHandler<ItemResource>` with `Transaction`, NOT old `IItemHandler`.
-- **`RenderLevelStageEvent`**: Uses subclasses (`AfterTranslucentBlocks`), not a `Stage` enum.
-- **`ClientPacketDistributor.sendToServer()`** for client-to-server packets.
-- **`RegisterMenuScreensEvent`** for screen registration (`MenuScreens.register` is private).
 
 ## Multiplayer Compatibility
 
@@ -69,15 +71,23 @@ This mod must be fully multiplayer compatible. Always respect the client/server 
 
 - **Server side:** Game logic, world state, block entity data, inventory management, crafting, network storage. The server is authoritative.
 - **Client side:** Rendering, UI/screens, particle effects, animations, input handling. The client is a view layer.
-- **Never** access client-only classes (e.g. `MinecraftClient`, renderers) from server code.
+- **Never** access client-only classes (e.g. `Minecraft`, renderers) from server code.
 - **Never** trust the client. Validate all actions server-side.
 - **Block entities** should sync relevant display data to clients via `getUpdateTag` / `getUpdatePacket` (`ClientboundBlockEntityDataPacket`), and only process logic server-side.
-- **Screens/GUIs:** Use `ScreenHandler` (server) + `HandledScreen` (client) pattern. The `ScreenHandler` runs on both sides but the server copy is authoritative.
+- **Screens/GUIs:** Use `AbstractContainerMenu` (server-authoritative) + `AbstractContainerScreen` (client) pattern.
 
-## MC 1.21.11 API Notes (Mojang Mappings)
+## MC 26.1.2 / NeoForge 26.1 API Notes
 
-- Block entity serialization uses `ValueInput`/`ValueOutput`, NOT `CompoundTag`. Override `saveAdditional(ValueOutput)` and `loadAdditional(ValueInput)`.
-- Client sync still uses `CompoundTag`: override `getUpdateTag(HolderLookup.Provider)` and `getUpdatePacket()`.
-- `onRemove` does NOT exist. Use `affectNeighborsAfterRemoval(BlockState, ServerLevel, BlockPos, boolean)` for block removal cleanup (same as vanilla ChestBlock/BarrelBlock).
+**These notes describe what was true when the upgrade was performed. If any of them conflict with the reference sources above at the time you read them, the reference sources win — update this section.**
+
+- Block entity serialization: verify current signatures against a NeoForge 26.1.x `BlockEntity` subclass in the NeoForge repo before editing any `saveAdditional` / `loadAdditional` override.
+- Client sync: `getUpdateTag` / `getUpdatePacket` for `ClientboundBlockEntityDataPacket`.
+- Block removal: use `affectNeighborsAfterRemoval` (not `onRemove`) — confirm the current signature against vanilla `ChestBlock` / `BarrelBlock`.
 - Item interaction: override `useOn(UseOnContext): InteractionResult`.
-- Registration: `Identifier.fromNamespaceAndPath(ns, path)`, `ResourceKey.create(Registries.X, id)`, `Registry.register(BuiltInRegistries.X, key, obj)`.
+- Registration: `ResourceLocation.fromNamespaceAndPath(ns, path)`, `ResourceKey.create(Registries.X, id)`, `Registry.register(BuiltInRegistries.X, key, obj)` inside `RegisterEvent`.
+- **Registry freezing**: Cannot use `Registry.register()` in the mod constructor. Must use `RegisterEvent`.
+- **KotlinForForge 6.2.0**: Do NOT use `@JvmStatic` on `@SubscribeEvent` methods in Kotlin `object` classes.
+- **Capabilities / Transfer**: `Capabilities.ItemHandler.BLOCK` returning `IItemHandler`. If 26.1 has migrated to the `ResourceHandler<ItemResource>` + `Transaction` model seen in some NeoForge branches, re-check against NeoForge upstream before editing `NeoForgeStorageService`.
+- **Networking**: `RegisterPayloadHandlersEvent` with `registrar.playToServer` / `playToClient`; `PacketDistributor.sendToServer` / `sendToPlayer`.
+- **Screens**: `RegisterMenuScreensEvent` for binding `MenuType` → `Screen` factory.
+- **Client render events**: `RenderLevelStageEvent`.

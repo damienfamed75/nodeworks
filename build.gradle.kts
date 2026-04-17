@@ -1,6 +1,5 @@
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.0.21" apply false
-    id("fabric-loom") apply false
     id("net.neoforged.moddev") apply false
 }
 
