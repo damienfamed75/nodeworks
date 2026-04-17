@@ -92,20 +92,14 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
         return InteractionResult.SUCCESS
     }
 
-    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
-        if (!state.`is`(newState.block)) {
-            // Drop inventory contents (if BE is still alive).
-            val entity = level.getBlockEntity(pos) as? BroadcastAntennaBlockEntity
-            if (entity != null) Containers.dropContents(level, pos, entity)
-            // Always cascade-remove segments above, even if BE was already gone.
-            if (!level.isClientSide) {
-                var cursor = pos.above()
-                while (level.getBlockState(cursor).block is AntennaSegmentBlock) {
-                    level.setBlock(cursor, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
-                    cursor = cursor.above()
-                }
-            }
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: net.minecraft.server.level.ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        val entity = level.getBlockEntity(pos) as? BroadcastAntennaBlockEntity
+        if (entity != null) Containers.dropContents(level, pos, entity)
+        var cursor = pos.above()
+        while (level.getBlockState(cursor).block is AntennaSegmentBlock) {
+            level.setBlock(cursor, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
+            cursor = cursor.above()
         }
-        super.onRemove(state, level, pos, newState, movedByPiston)
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 }

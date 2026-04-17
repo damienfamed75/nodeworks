@@ -61,58 +61,44 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
             // Shift + right-click: select (only Nodes can be selected as connection endpoints)
             if (!isNode) return InteractionResult.PASS
             selectedNodes[player.uuid] = Selection(pos, level.dimension())
-            player.displayClientMessage(
-                Component.translatable("message.nodeworks.node_selected", pos.x, pos.y, pos.z), false
-            )
+            player.sendSystemMessage(Component.translatable("message.nodeworks.node_selected", pos.x, pos.y, pos.z))
             return InteractionResult.SUCCESS
         }
 
         // Right-click: connect/disconnect
         val selection = selectedNodes[player.uuid]
         if (selection == null) {
-            player.displayClientMessage(
-                Component.translatable("message.nodeworks.no_selection"), false
-            )
+            player.sendSystemMessage(Component.translatable("message.nodeworks.no_selection"))
             return InteractionResult.SUCCESS
         }
 
         // Selection from a different dimension is invalid
         if (selection.dimension != level.dimension()) {
             selectedNodes.remove(player.uuid)
-            player.displayClientMessage(
-                Component.translatable("message.nodeworks.selection_invalid"), false
-            )
+            player.sendSystemMessage(Component.translatable("message.nodeworks.selection_invalid"))
             return InteractionResult.SUCCESS
         }
 
         val selectedPos = selection.pos
 
         if (selectedPos == pos) {
-            player.displayClientMessage(
-                Component.translatable("message.nodeworks.same_node"), false
-            )
+            player.sendSystemMessage(Component.translatable("message.nodeworks.same_node"))
             return InteractionResult.SUCCESS
         }
 
         if (NodeConnectionHelper.getConnectable(level, selectedPos) == null) {
             selectedNodes.remove(player.uuid)
-            player.displayClientMessage(
-                Component.translatable("message.nodeworks.selection_invalid"), false
-            )
+            player.sendSystemMessage(Component.translatable("message.nodeworks.selection_invalid"))
             return InteractionResult.SUCCESS
         }
 
         if (!NodeConnectionHelper.isWithinRange(selectedPos, pos)) {
-            player.displayClientMessage(
-                Component.translatable("message.nodeworks.too_far"), false
-            )
+            player.sendSystemMessage(Component.translatable("message.nodeworks.too_far"))
             return InteractionResult.SUCCESS
         }
 
         if (!NodeConnectionHelper.checkLineOfSight(level, selectedPos, pos)) {
-            player.displayClientMessage(
-                Component.translatable("message.nodeworks.no_line_of_sight"), false
-            )
+            player.sendSystemMessage(Component.translatable("message.nodeworks.no_line_of_sight"))
             return InteractionResult.SUCCESS
         }
 
@@ -125,9 +111,7 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
             val snapshotB = NetworkDiscovery.discoverNetwork(serverLevel, pos)
             if (snapshotA.controller != null && snapshotB.controller != null
                 && snapshotA.controller.pos != snapshotB.controller.pos) {
-                player.displayClientMessage(
-                    Component.translatable("message.nodeworks.duplicate_controller"), false
-                )
+                player.sendSystemMessage(Component.translatable("message.nodeworks.duplicate_controller"))
                 return InteractionResult.SUCCESS
             }
         }
@@ -135,7 +119,7 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         val connected = NodeConnectionHelper.toggleConnection(serverLevel, selectedPos, pos)
 
         val msgKey = if (connected) "message.nodeworks.connected" else "message.nodeworks.disconnected"
-        player.displayClientMessage(Component.translatable(msgKey), false)
+        player.sendSystemMessage(Component.translatable(msgKey))
 
         return InteractionResult.SUCCESS
     }

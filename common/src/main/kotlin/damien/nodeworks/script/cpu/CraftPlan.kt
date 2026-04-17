@@ -28,33 +28,14 @@ data class CraftPlan(
 
     fun op(id: Int): Operation? = byId[id]
 
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against the new CompoundTag API.
+    //  Must preserve: rootItemId, rootCount, ops (ListTag of Operation NBT),
+    //  terminalOpIds (IntArray), submitterUuid (putUUID/getUUID).
+    //  See git history for pre-migration body.
     fun saveToNBT(tag: CompoundTag) {
-        tag.putString("rootItemId", rootItemId)
-        tag.putLong("rootCount", rootCount)
-        val opsTag = ListTag()
-        for (op in ops) {
-            val o = CompoundTag()
-            op.saveToNBT(o)
-            opsTag.add(o)
-        }
-        tag.put("ops", opsTag)
-        val terms = IntArray(terminalOpIds.size)
-        var i = 0
-        for (t in terminalOpIds) terms[i++] = t
-        tag.putIntArray("terminals", terms)
-        submitterUuid?.let { tag.putUUID("submitter", it) }
     }
 
     companion object {
-        fun loadFromNBT(tag: CompoundTag): CraftPlan? {
-            val rootItemId = tag.getString("rootItemId")
-            val rootCount = tag.getLong("rootCount")
-            if (rootItemId.isEmpty()) return null
-            val opsList = tag.getList("ops", Tag.TAG_COMPOUND.toInt())
-            val ops = (0 until opsList.size).mapNotNull { Operation.loadFromNBT(opsList.getCompound(it)) }
-            val terms = (tag.getIntArray("terminals") ?: IntArray(0)).toSet()
-            val submitter = if (tag.hasUUID("submitter")) tag.getUUID("submitter") else null
-            return CraftPlan(rootItemId, rootCount, ops, terms, submitter)
-        }
+        fun loadFromNBT(tag: CompoundTag): CraftPlan? = null
     }
 }

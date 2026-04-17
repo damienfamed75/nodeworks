@@ -19,6 +19,8 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
 import java.util.UUID
 
 /**
@@ -126,20 +128,14 @@ class BroadcastAntennaBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        tag.putString("frequency", frequencyId.toString())
-        ContainerHelper.saveAllItems(tag, items, registries)
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
-        if (tag.contains("frequency")) {
-            try { frequencyId = UUID.fromString(tag.getString("frequency")) }
-            catch (_: Exception) { frequencyId = UUID.randomUUID() }
-        }
-        items.clear()
-        ContainerHelper.loadAllItems(tag, items, registries)
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag =

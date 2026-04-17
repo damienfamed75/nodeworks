@@ -401,7 +401,7 @@ class ScriptEngine(
                 val craftResult = result ?: run {
                     // Async — we don't know the exact output yet. Use the identifier.
                     val id = net.minecraft.resources.Identifier.tryParse(identifier)
-                    val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) else null
+                    val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
                     val name = if (item != null) net.minecraft.world.item.ItemStack(item).hoverName.string else identifier
                     CraftingHelper.CraftResult(identifier, name, count,
                         cpu = snapshot.cpus.firstOrNull()?.let { level.getBlockEntity(it.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity },

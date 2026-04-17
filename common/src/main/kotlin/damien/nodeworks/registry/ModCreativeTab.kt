@@ -1,3 +1,8 @@
+// MC 26.1.2 marks CreativeModeTab.Output as `protected`. Java sees it fine via the
+// DisplayItemsGenerator SAM contract but Kotlin's stricter access check rejects
+// resolving .accept on it. This blanket suppression lets us keep the idiomatic
+// Kotlin lambda form that EnderIO uses in Java.
+@file:Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
 package damien.nodeworks.registry
 
 import net.minecraft.core.Registry

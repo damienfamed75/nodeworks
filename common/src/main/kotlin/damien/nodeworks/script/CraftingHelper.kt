@@ -62,7 +62,7 @@ object CraftingHelper {
             val leftovers = cpu.clearBuffer()
             for ((itemId, count) in leftovers) {
                 val id = Identifier.tryParse(itemId) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 var remaining = count
                 while (remaining > 0L) {
                     val batchSize = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
@@ -263,7 +263,7 @@ object CraftingHelper {
 
     private fun resolveItemName(itemId: String): String {
         val id = Identifier.tryParse(itemId) ?: return itemId
-        val item = BuiltInRegistries.ITEM.get(id) ?: return itemId
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return itemId
         return ItemStack(item).hoverName.string
     }
 }

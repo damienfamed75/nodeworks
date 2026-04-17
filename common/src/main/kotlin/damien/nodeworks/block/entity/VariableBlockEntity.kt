@@ -13,6 +13,8 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
 import java.util.UUID
 
 class VariableBlockEntity(
@@ -175,29 +177,14 @@ class VariableBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        tag.putString("variableName", variableName)
-        tag.putInt("variableType", variableType.ordinal)
-        tag.putString("variableValue", variableValue)
-        networkId?.let { tag.putString("networkId", it.toString()) }
-        if (connections.isNotEmpty()) {
-            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        }
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
-        variableName = tag.getString("variableName")
-        variableType = VariableType.fromOrdinal(if (tag.contains("variableType")) tag.getInt("variableType") else 0)
-        variableValue = tag.getString("variableValue").ifEmpty { variableType.defaultValue }
-        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
-            try { UUID.fromString(it) } catch (_: Exception) { null }
-        }
-        connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

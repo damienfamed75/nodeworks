@@ -98,6 +98,19 @@ This mod must be fully multiplayer compatible. Always respect the client/server 
 
 **These notes describe what was true when the upgrade was performed. If any of them conflict with the reference sources above at the time you read them, the reference sources win — update this section.**
 
+### In-progress 26.1.2 migration
+
+Phase 1–3 partial are landed; several large chunks are still deliberately stubbed with `TODO MC 26.1.2` markers so the tree compiles without hiding the fragile work under a rug. **Do not delete these stubs casually** — they mark real migration points that need careful, correct rewrites:
+
+1. **BlockEntity save/load** — every `saveAdditional` / `loadAdditional` in `common/.../block/entity/*BlockEntity.kt` is stubbed. The new signatures take `ValueOutput` / `ValueInput` (streaming API). Pre-migration bodies live in git history. Rewriting must preserve save/load compatibility with existing worlds for any BE that has shipped (connections, network IDs, buffer state, scheduler state for CraftingCore, etc.).
+2. **Scripting CPU NBT persistence** — `BufferState.saveToNBT/loadFromNBT`, `CraftScheduler.saveToNBT/loadFromNBT`, `Operation.saveToNBT/loadFromNBT`, `CraftPlan.saveToNBT/loadFromNBT` are stubbed. These drive in-flight craft recovery across world reloads; the rewrite must keep the legacy-format migration paths (pre-Phase-1 Int counts, pre-Phase-2 missing scheduler key, pre-MultiThread "threads" ListTag format).
+3. **GUI layer — NOT YET STARTED.** `Screen.render(GuiGraphics, …)` is gone; replaced by `Screen.extractRenderState(GuiGraphicsExtractor, …)`. Every screen, widget, BER, and the `NineSlice` helper needs to be ported to the new extract-render-state pipeline (see `net.minecraft.client.gui.GuiGraphicsExtractor` — `text` instead of `drawString`, `item` instead of `renderItem`, `blit(RenderPipelines.GUI_TEXTURED, …)` signature, `pose().pushMatrix()`/`popMatrix()` instead of `pushPose()`/`popPose()`, `setTooltipForNextFrame` instead of `renderTooltip`). `renderBg` is now `extractBackground`; `renderLabels` is now `extractLabels`. Reference: `AbstractContainerScreen.java` in the vanilla sources jar + `ConduitScreen.java` in references/enderio-26.1.
+4. **JEI integration** — `NodeworksJeiPlugin` and `MilkySoulBallRecipeCategory` are stubbed to minimal shells. Full transfer handlers (Instruction Set `[+]`, Processing Set universal `[+]`, Inventory Terminal `[+]`), ghost-ingredient handler, and Milky Soul Ball recipe category all need porting to JEI 29.5's reshuffled API (`IRecipeHolderType` replacing `RecipeType<RecipeHolder<T>>`; `getTargetsTyped` replacing old ghost-handler method; stricter generic bounds).
+5. **neoforge/ module** — not yet re-audited for 26.1 breaking changes. `RegisterEvent`, `RegisterPayloadHandlersEvent`, `RegisterMenuScreensEvent`, Capabilities API, `PacketDistributor`, and the `@Mod` constructor shape are all expected to have shifted. Next session.
+6. **Access transformer** (`neoforge/.../META-INF/accesstransformer.cfg`) — still targets 1.21.1 `RenderType.create` / `RenderStateShard` internals. Will need review when the GUI renderer is rewritten; the shader-creation path may not even use RenderType directly anymore on 26.1.
+
+The `compat/NbtCompat.kt` helpers are small, intentional. They only fill the "nullable read" gap vanilla left open (`getStringOrNull` and friends); delete them if Mojang ever ships equivalents.
+
 - Block entity serialization: verify current signatures against a NeoForge 26.1.x `BlockEntity` subclass in the NeoForge repo before editing any `saveAdditional` / `loadAdditional` override.
 - Client sync: `getUpdateTag` / `getUpdatePacket` for `ClientboundBlockEntityDataPacket`.
 - Block removal: use `affectNeighborsAfterRemoval` (not `onRemove`) — confirm the current signature against vanilla `ChestBlock` / `BarrelBlock`.

@@ -125,62 +125,21 @@ class BufferState {
      * as Longs. Capacities are saved so they can be displayed on clients that
      * deserialize the tag before recalculateCapacity() has had a chance to run.
      */
+    // TODO MC 26.1.2 NBT MIGRATION: the old body called tag.put/putLong/putInt and
+    //  iterated itemsTag.allKeys. Port to the new CompoundTag API (getLong/getInt
+    //  now return Optional<T>; use CompoundTag.getLongOr / getIntOr / getCompoundOrEmpty
+    //  for default reads). See git history for the full pre-migration body, including
+    //  the legacy "Int counts stored as putInt" fallback for pre-Phase-1 worlds.
     fun saveToNBT(tag: CompoundTag) {
-        val itemsTag = CompoundTag()
-        for ((id, count) in items) {
-            if (count > 0) itemsTag.putLong(id, count)
-        }
-        tag.put("items", itemsTag)
-        tag.putLong("countCap", countCapacity)
-        tag.putInt("typesCap", typesCapacity)
     }
 
-    /**
-     * Restores buffer contents and capacity from [tag]. Handles old NBT format
-     * (Int counts saved as `putInt`) for backward compatibility with existing worlds.
-     * Uses a best-effort approach: keys with unexpected types are skipped, not errored.
-     */
     fun loadFromNBT(tag: CompoundTag) {
         items.clear()
-
-        // New format: "items" compound containing Longs
-        if (tag.contains("items", Tag.TAG_COMPOUND.toInt())) {
-            val itemsTag = tag.getCompound("items")
-            for (key in itemsTag.allKeys) {
-                val v = readLongOrInt(itemsTag, key)
-                if (v > 0) items[key] = v
-            }
-        } else {
-            // Legacy format: top-level keys stored as putInt directly (pre-Phase-1 worlds).
-            // The old code used a `bufferTag` sub-compound — check both just in case.
-            for (key in tag.allKeys) {
-                // Skip known non-item keys (capacity scalars, other state)
-                if (key in RESERVED_KEYS) continue
-                val v = readLongOrInt(tag, key)
-                if (v > 0) items[key] = v
-            }
-        }
-
-        countCapacity = if (tag.contains("countCap", Tag.TAG_LONG.toInt())) {
-            tag.getLong("countCap").coerceAtLeast(0L)
-        } else {
-            CpuRules.CORE_BASE_COUNT
-        }
-        typesCapacity = if (tag.contains("typesCap", Tag.TAG_INT.toInt())) {
-            tag.getInt("typesCap").coerceAtLeast(0)
-        } else {
-            CpuRules.CORE_BASE_TYPES
-        }
+        countCapacity = CpuRules.CORE_BASE_COUNT
+        typesCapacity = CpuRules.CORE_BASE_TYPES
     }
 
-    private fun readLongOrInt(t: CompoundTag, key: String): Long = when {
-        t.contains(key, Tag.TAG_LONG.toInt()) -> t.getLong(key)
-        t.contains(key, Tag.TAG_INT.toInt()) -> t.getInt(key).toLong()
-        else -> 0L
-    }
-
-    companion object {
-        /** NBT keys that aren't item IDs, used by the legacy-format loader. */
-        private val RESERVED_KEYS = setOf("items", "countCap", "typesCap")
-    }
+    // TODO MC 26.1.2 NBT MIGRATION: restore `readLongOrInt` helper + `RESERVED_KEYS`
+    //  companion set when saveToNBT / loadFromNBT get rewritten. See git history for
+    //  the pre-migration body.
 }

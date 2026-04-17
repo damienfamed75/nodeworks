@@ -26,7 +26,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
 
         val connectable = NodeConnectionHelper.getConnectable(level, pos)
         if (connectable == null) {
-            player.displayClientMessage(Component.translatable("message.nodeworks.diagnostic_no_network"), true)
+            player.sendOverlayMessage(Component.translatable("message.nodeworks.diagnostic_no_network"))
             return InteractionResult.FAIL
         }
 

@@ -170,7 +170,7 @@ class InventoryTerminalMenu(
         when (action) {
             0, 2, 3 -> {
                 val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
 
                 val available = if (c != null) c.count(itemId) else {
                     NetworkStorageHelper.countItems(lvl, snap, itemId)
@@ -338,7 +338,7 @@ class InventoryTerminalMenu(
         for ((i, itemId) in grid.withIndex()) {
             if (i >= 9 || itemId.isEmpty()) continue
             val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
 
             // Try player inventory first, then pull from network
             val invSlot = playerInventory.findSlotMatchingItem(ItemStack(item))
@@ -461,7 +461,7 @@ class InventoryTerminalMenu(
                 }
                 if (extracted > 0) {
                     val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
                     craftingContainer.setItem(i, ItemStack(item, 1))
                 }
             }
@@ -538,7 +538,7 @@ class InventoryTerminalMenu(
     fun handleCollect(player: Player, itemId: String) {
         val carried = carried
         val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return
         val maxStack = item.getDefaultMaxStackSize()
 
         // Start with what's on cursor (may already have items from first click)
@@ -634,7 +634,7 @@ class InventoryTerminalMenu(
             // Build a CraftResult for the release — same as the scripting terminal
             val craftResult = result ?: run {
                 val id = net.minecraft.resources.Identifier.tryParse(itemId)
-                val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) else null
+                val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
                 val name = if (item != null) ItemStack(item).hoverName.string else itemId
                 damien.nodeworks.script.CraftingHelper.CraftResult(
                     itemId, name, count,
@@ -709,7 +709,7 @@ class InventoryTerminalMenu(
         if (entry.availableCount <= 0) return
 
         val identifier = net.minecraft.resources.Identifier.tryParse(entry.itemId) ?: return
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
         val maxStack = item.getDefaultMaxStackSize().toLong()
 
         val toExtract = when (action) {

@@ -77,7 +77,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
         val startPos = terminal.getNetworkStartPos()
         if (startPos == null) {
-            player.displayClientMessage(Component.translatable("message.nodeworks.terminal_no_network"), false)
+            player.sendSystemMessage(Component.translatable("message.nodeworks.terminal_no_network"))
             return InteractionResult.SUCCESS
         }
 
@@ -109,11 +109,9 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         return super.playerWillDestroy(level, pos, state, player)
     }
 
-    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
-        if (!state.`is`(newState.block)) {
-            val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
-            if (entity != null) entity.blockDestroyed = true
-        }
-        super.onRemove(state, level, pos, newState, movedByPiston)
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
+        if (entity != null) entity.blockDestroyed = true
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 }

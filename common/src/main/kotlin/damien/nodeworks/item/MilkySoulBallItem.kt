@@ -35,7 +35,7 @@ class MilkySoulBallItem(properties: Properties) : Item(properties) {
             stack.shrink(1)
         }
 
-        player.cooldowns.addCooldown(this, 4)
+        player.cooldowns.addCooldown(stack, 4)
         return InteractionResult.SUCCESS
     }
 }

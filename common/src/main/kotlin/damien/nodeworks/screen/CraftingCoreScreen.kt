@@ -312,7 +312,7 @@ class CraftingCoreScreen(
             val ix = startX + col * slotSize
             val iy = startY + row * slotSize
             val id = Identifier.tryParse(entry.first) ?: continue
-            val item = BuiltInRegistries.ITEM.get(id) ?: continue
+            val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
             val stack = ItemStack(item, 1)
             NineSlice.SLOT.draw(graphics, ix - 1, iy - 1, 18, 18)
             graphics.renderItem(stack, ix, iy)
@@ -380,7 +380,7 @@ class CraftingCoreScreen(
                 val iy = bufferGridY + row * slotSize
                 if (mouseX >= ix && mouseX < ix + 16 && mouseY >= iy && mouseY < iy + 16) {
                     val id = Identifier.tryParse(entry.first) ?: continue
-                    val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                    val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                     val stack = ItemStack(item, entry.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                     graphics.renderTooltip(font, stack, mouseX, mouseY)
                     break

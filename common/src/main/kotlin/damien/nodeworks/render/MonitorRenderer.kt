@@ -149,7 +149,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
             // Render item icon if set — push in front of the panel to avoid z-fighting
             if (face.itemId != null) {
                 val identifier = Identifier.tryParse(face.itemId)
-                val item = if (identifier != null) BuiltInRegistries.ITEM.get(identifier) else null
+                val item = if (identifier != null) BuiltInRegistries.ITEM.getValue(identifier) else null
                 if (item != null) {
                     val itemStack = ItemStack(item, 1)
                     poseStack.pushPose()

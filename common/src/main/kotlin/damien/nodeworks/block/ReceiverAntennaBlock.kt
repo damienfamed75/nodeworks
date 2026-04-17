@@ -107,18 +107,14 @@ class ReceiverAntennaBlock(properties: Properties) : BaseEntityBlock(properties)
         return InteractionResult.SUCCESS
     }
 
-    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
-        if (!state.`is`(newState.block)) {
-            val entity = level.getBlockEntity(pos) as? ReceiverAntennaBlockEntity
-            if (entity != null) Containers.dropContents(level, pos, entity)
-            if (!level.isClientSide) {
-                val above = pos.above()
-                if (level.getBlockState(above).block is AntennaSegmentBlock) {
-                    level.setBlock(above, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
-                }
-            }
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: net.minecraft.server.level.ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        val entity = level.getBlockEntity(pos) as? ReceiverAntennaBlockEntity
+        if (entity != null) Containers.dropContents(level, pos, entity)
+        val above = pos.above()
+        if (level.getBlockState(above).block is AntennaSegmentBlock) {
+            level.setBlock(above, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
         }
-        super.onRemove(state, level, pos, newState, movedByPiston)
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {

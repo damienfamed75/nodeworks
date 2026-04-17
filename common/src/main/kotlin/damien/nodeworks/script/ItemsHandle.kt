@@ -73,7 +73,7 @@ class ItemsHandle(
         /** Create an ItemsHandle for crafting results (no stack in storage yet). */
         fun forCraftResult(itemId: String, itemName: String, count: Int, sourceStorage: () -> ItemStorageHandle?, level: ServerLevel): ItemsHandle {
             val identifier = Identifier.tryParse(itemId)
-            val item = if (identifier != null) BuiltInRegistries.ITEM.get(identifier) else null
+            val item = if (identifier != null) BuiltInRegistries.ITEM.getValue(identifier) else null
             return ItemsHandle(
                 itemId = itemId,
                 itemName = itemName,
@@ -104,7 +104,7 @@ class ItemsHandle(
                     val identifier = Identifier.tryParse(tagId) ?: return LuaValue.FALSE
                     val tagKey = TagKey.create(Registries.ITEM, identifier)
                     val itemIdentifier = Identifier.tryParse(handle.itemId) ?: return LuaValue.FALSE
-                    val item = BuiltInRegistries.ITEM.get(itemIdentifier) ?: return LuaValue.FALSE
+                    val item = BuiltInRegistries.ITEM.getValue(itemIdentifier) ?: return LuaValue.FALSE
                     return LuaValue.valueOf(item.builtInRegistryHolder().`is`(tagKey))
                 }
             })

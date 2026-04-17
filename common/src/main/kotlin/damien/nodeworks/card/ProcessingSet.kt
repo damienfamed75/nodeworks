@@ -61,9 +61,9 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 .withStyle(ChatFormatting.GRAY))
             for ((itemId, count) in inputs) {
                 val identifier = Identifier.tryParse(itemId) ?: continue
-                val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(identifier) ?: continue
                 val countStr = if (count > 1) " x$count" else ""
-                tooltip.accept(Component.literal("  ").append(item.description).append(countStr)
+                tooltip.accept(Component.literal("  ").append(Component.translatable(item.descriptionId)).append(countStr)
                     .withStyle(ChatFormatting.DARK_GRAY))
             }
         }
@@ -73,9 +73,9 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 .withStyle(ChatFormatting.GRAY))
             for ((itemId, count) in outputs) {
                 val identifier = Identifier.tryParse(itemId) ?: continue
-                val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(identifier) ?: continue
                 val countStr = if (count > 1) " x$count" else ""
-                tooltip.accept(Component.literal("  ").append(item.description).append(countStr)
+                tooltip.accept(Component.literal("  ").append(Component.translatable(item.descriptionId)).append(countStr)
                     .withStyle(ChatFormatting.DARK_GRAY))
             }
         }
@@ -103,18 +103,17 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         /** Get the card's registered name (used as the handler key). */
         fun getCardName(stack: ItemStack): String {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
-            return customData.copyTag().getString(NAME_KEY)
+            return customData.copyTag().getStringOr(NAME_KEY, "")
         }
 
         /** Get the list of (itemId, count) input pairs. Empty-ID entries are filtered. */
         fun getInputs(stack: ItemStack): List<Pair<String, Int>> {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
             val tag = customData.copyTag()
-            if (!tag.contains(INPUTS_KEY)) return emptyList()
-            val ids = tag.getList(INPUTS_KEY, 8) // 8 = StringTag
-            val counts = if (tag.contains(INPUT_COUNTS_KEY)) tag.getIntArray(INPUT_COUNTS_KEY) else IntArray(0)
+            val ids = tag.getList(INPUTS_KEY).orElse(null) ?: return emptyList()
+            val counts = tag.getIntArray(INPUT_COUNTS_KEY).orElse(IntArray(0))
             return (0 until ids.size).mapNotNull { i ->
-                val id = ids.getString(i)
+                val id = ids.getStringOr(i, "")
                 if (id.isEmpty()) return@mapNotNull null
                 val count = counts.getOrElse(i) { 1 }
                 id to count
@@ -129,12 +128,11 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         fun getInputPositions(stack: ItemStack): IntArray {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
             val tag = customData.copyTag()
-            if (!tag.contains(INPUTS_KEY)) return IntArray(0)
-            val ids = tag.getList(INPUTS_KEY, 8)
-            val slots = if (tag.contains(INPUT_SLOTS_KEY)) tag.getIntArray(INPUT_SLOTS_KEY) else IntArray(0)
+            val ids = tag.getList(INPUTS_KEY).orElse(null) ?: return IntArray(0)
+            val slots = tag.getIntArray(INPUT_SLOTS_KEY).orElse(IntArray(0))
             val result = ArrayList<Int>(ids.size)
             for (i in 0 until ids.size) {
-                val id = ids.getString(i)
+                val id = ids.getStringOr(i, "")
                 if (id.isEmpty()) continue
                 result.add(slots.getOrElse(i) { i })
             }
@@ -145,16 +143,16 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         fun getOutputs(stack: ItemStack): List<Pair<String, Int>> {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
             val tag = customData.copyTag()
-            if (!tag.contains(OUTPUTS_KEY)) {
+            val idsOpt = tag.getList(OUTPUTS_KEY).orElse(null)
+            if (idsOpt == null) {
                 // Legacy: single output field
-                val output = tag.getString("output")
-                val outputCount = if (tag.contains("output_count")) tag.getInt("output_count") else 1
+                val output = tag.getStringOr("output", "")
+                val outputCount = tag.getIntOr("output_count", 1)
                 return if (output.isNotEmpty()) listOf(output to outputCount) else emptyList()
             }
-            val ids = tag.getList(OUTPUTS_KEY, 8)
-            val counts = if (tag.contains(OUTPUT_COUNTS_KEY)) tag.getIntArray(OUTPUT_COUNTS_KEY) else IntArray(0)
-            return (0 until ids.size).mapNotNull { i ->
-                val id = ids.getString(i)
+            val counts = tag.getIntArray(OUTPUT_COUNTS_KEY).orElse(IntArray(0))
+            return (0 until idsOpt.size).mapNotNull { i ->
+                val id = idsOpt.getStringOr(i, "")
                 if (id.isEmpty()) return@mapNotNull null
                 val count = counts.getOrElse(i) { 1 }
                 id to count
@@ -166,15 +164,15 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         fun getOutputPositions(stack: ItemStack): IntArray {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
             val tag = customData.copyTag()
-            if (!tag.contains(OUTPUTS_KEY)) {
-                val output = tag.getString("output")
+            val ids = tag.getList(OUTPUTS_KEY).orElse(null)
+            if (ids == null) {
+                val output = tag.getStringOr("output", "")
                 return if (output.isNotEmpty()) intArrayOf(0) else IntArray(0)
             }
-            val ids = tag.getList(OUTPUTS_KEY, 8)
-            val slots = if (tag.contains(OUTPUT_SLOTS_KEY)) tag.getIntArray(OUTPUT_SLOTS_KEY) else IntArray(0)
+            val slots = tag.getIntArray(OUTPUT_SLOTS_KEY).orElse(IntArray(0))
             val result = ArrayList<Int>(ids.size)
             for (i in 0 until ids.size) {
-                val id = ids.getString(i)
+                val id = ids.getStringOr(i, "")
                 if (id.isEmpty()) continue
                 result.add(slots.getOrElse(i) { i })
             }
@@ -184,14 +182,13 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         /** Get the timeout in ticks (0 = no timeout). */
         fun getTimeout(stack: ItemStack): Int {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
-            val tag = customData.copyTag()
-            return if (tag.contains(TIMEOUT_KEY)) tag.getInt(TIMEOUT_KEY) else 0
+            return customData.copyTag().getIntOr(TIMEOUT_KEY, 0)
         }
 
         /** Whether this card enforces serial (one-at-a-time) handler execution. */
         fun isSerial(stack: ItemStack): Boolean {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
-            return customData.copyTag().getBoolean(SERIAL_KEY)
+            return customData.copyTag().getBooleanOr(SERIAL_KEY, false)
         }
 
         /**

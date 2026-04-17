@@ -19,6 +19,8 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
 import java.util.UUID
 
 /**
@@ -725,7 +727,7 @@ class CraftingCoreBlockEntity(
         val leftovers = clearBuffer()
         for ((itemId, count) in leftovers) {
             val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
             var remaining = count
             while (remaining > 0L) {
                 val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
@@ -758,190 +760,37 @@ class CraftingCoreBlockEntity(
     // Serialization
     // =====================================================================
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        tag.putBoolean("isFormed", isFormed)
-        tag.putBoolean("isCrafting", isCrafting)
-        tag.putString("currentCraftItem", currentCraftItem)
-        if (lastFailureReason.isNotEmpty()) tag.putString("lastFailureReason", lastFailureReason)
-        networkId?.let { tag.putString("networkId", it.toString()) }
-
-        // Buffer state (items + capacities, Long-safe, handles legacy format on load)
-        val bufferTag = CompoundTag()
-        bufferState.saveToNBT(bufferTag)
-        tag.put("bufferState", bufferTag)
-
-        // Scheduler state (active threads + backlog) — survives mid-craft world reload
-        val schedulerTag = CompoundTag()
-        scheduler.saveToNBT(schedulerTag)
-        tag.put("scheduler", schedulerTag)
-
-        // Save original craft request + pending job metadata (server-only)
-        if (originalCraftId.isNotEmpty()) {
-            tag.putString("originalCraftId", originalCraftId)
-            tag.putLong("originalCraftCount", originalCraftCount)
-        }
-        if (pendingCount > 0) {
-            tag.putInt("pendingCount", pendingCount)
-            val outputsTag = CompoundTag()
-            outputsTag.putInt("size", pendingOutputs.size)
-            for ((i, pair) in pendingOutputs.withIndex()) {
-                outputsTag.putString("id$i", pair.first)
-                outputsTag.putLong("ct$i", pair.second)
-            }
-            tag.put("pendingOutputs", outputsTag)
-
-            val targetsTag = CompoundTag()
-            targetsTag.putInt("size", pendingPullTargets.size)
-            for ((i, pair) in pendingPullTargets.withIndex()) {
-                targetsTag.putLong("p$i", pair.first.asLong())
-                targetsTag.putInt("f$i", pair.second.ordinal)
-            }
-            tag.put("pendingPullTargets", targetsTag)
-        }
-
-        // Per-op resume info — survives save/load so an in-progress smelt can pick up where
-        // it left off without re-invoking the handler (which would try to insert items
-        // again that are already in the machine).
-        if (opResumeInfo.isNotEmpty()) {
-            val list = net.minecraft.nbt.ListTag()
-            for ((opId, info) in opResumeInfo) {
-                val c = CompoundTag()
-                c.putInt("op", opId)
-                c.putString("api", info.processingApiName)
-                val outs = CompoundTag()
-                outs.putInt("size", info.outputs.size)
-                for ((i, pair) in info.outputs.withIndex()) {
-                    outs.putString("id$i", pair.first)
-                    outs.putLong("ct$i", pair.second)
-                }
-                c.put("outputs", outs)
-                val tgts = CompoundTag()
-                tgts.putInt("size", info.pullTargets.size)
-                for ((i, pair) in info.pullTargets.withIndex()) {
-                    tgts.putLong("p$i", pair.first.asLong())
-                    tgts.putInt("f$i", pair.second.ordinal)
-                }
-                c.put("targets", tgts)
-                list.add(c)
-            }
-            tag.put("opResumeInfo", list)
-        }
+    // TODO MC 26.1.2 NBT MIGRATION — CRITICAL, CAREFUL REWRITE NEEDED.
+    //  This BE's save/load is the most complex in the mod. See git history for the
+    //  pre-migration implementation. The rewrite must preserve:
+    //    - connections (LongArray of BlockPos.asLong())
+    //    - isFormed, isCrafting, currentCraftItem, lastFailureReason, networkId
+    //    - Long-safe buffer state via bufferState.saveToNBT / loadFromNBT
+    //      (with legacy "buffer" compound + "bufferCapacity" Int fallback for migration
+    //      from pre-Phase-1 worlds)
+    //    - Scheduler state via scheduler.saveToNBT / loadFromNBT (pre-Phase-2 worlds
+    //      may not have this key — absence must not be an error)
+    //    - originalCraftId / originalCraftCount (Long-safe with Int fallback for migration)
+    //    - pendingCount / pendingOutputs / pendingPullTargets (server-only)
+    //    - opResumeInfo list (per-op resume data, keyed by op ID from scheduler plan)
+    //    - Post-load: resumeScheduled = false, drop opResumeInfo entries whose op IDs
+    //      don't match the loaded scheduler plan.
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
-        connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
-        isFormed = tag.getBoolean("isFormed")
-        isCrafting = tag.getBoolean("isCrafting")
-        currentCraftItem = if (tag.contains("currentCraftItem")) tag.getString("currentCraftItem") else ""
-        lastFailureReason = if (tag.contains("lastFailureReason")) tag.getString("lastFailureReason") else ""
-        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
-            try { UUID.fromString(it) } catch (_: Exception) { null }
-        }
-
-        // Load buffer — new format first, legacy format as fallback
-        when {
-            tag.contains("bufferState", Tag.TAG_COMPOUND.toInt()) -> {
-                bufferState.loadFromNBT(tag.getCompound("bufferState"))
-            }
-            tag.contains("buffer", Tag.TAG_COMPOUND.toInt()) -> {
-                // Legacy pre-Phase-1 format: top-level "buffer" compound with Int counts
-                bufferState.loadFromNBT(tag.getCompound("buffer"))
-                // Legacy capacity (Int) — migrate if present
-                if (tag.contains("bufferCapacity", Tag.TAG_INT.toInt())) {
-                    val legacyCap = tag.getInt("bufferCapacity").toLong()
-                    bufferState.setCapacities(legacyCap, CpuRules.CORE_BASE_TYPES)
-                }
-            }
-        }
-
-        // Scheduler state — loaded if present (may not exist for pre-Phase-2 saves)
-        if (tag.contains("scheduler", Tag.TAG_COMPOUND.toInt())) {
-            scheduler.loadFromNBT(tag.getCompound("scheduler"))
-        }
-
-        // Load original craft request + pending job metadata
-        originalCraftId = if (tag.contains("originalCraftId")) tag.getString("originalCraftId") else ""
-        originalCraftCount = when {
-            tag.contains("originalCraftCount", Tag.TAG_LONG.toInt()) -> tag.getLong("originalCraftCount")
-            tag.contains("originalCraftCount", Tag.TAG_INT.toInt()) -> tag.getInt("originalCraftCount").toLong()
-            else -> 0L
-        }
-        pendingCount = if (tag.contains("pendingCount")) tag.getInt("pendingCount") else 0
-        if (pendingCount > 0 && tag.contains("pendingOutputs")) {
-            val outputsTag = tag.getCompound("pendingOutputs")
-            val size = outputsTag.getInt("size")
-            pendingOutputs = (0 until size).mapNotNull { i ->
-                val id = outputsTag.getString("id$i")
-                val ct = when {
-                    outputsTag.contains("ct$i", Tag.TAG_LONG.toInt()) -> outputsTag.getLong("ct$i")
-                    outputsTag.contains("ct$i", Tag.TAG_INT.toInt()) -> outputsTag.getInt("ct$i").toLong()
-                    else -> 0L
-                }
-                if (id.isNotEmpty()) id to ct else null
-            }
-        } else {
-            pendingOutputs = emptyList()
-        }
-        if (pendingCount > 0 && tag.contains("pendingPullTargets")) {
-            val targetsTag = tag.getCompound("pendingPullTargets")
-            val size = targetsTag.getInt("size")
-            pendingPullTargets = (0 until size).map { i ->
-                BlockPos.of(targetsTag.getLong("p$i")) to
-                        net.minecraft.core.Direction.values()[targetsTag.getInt("f$i")]
-            }
-        } else {
-            pendingPullTargets = emptyList()
-        }
+    // TODO MC 26.1.2 NBT MIGRATION — see saveAdditional above.
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
         resumeScheduled = false
-
-        // Per-op resume info — restore so executeProcess can poll without re-invoking handlers.
-        opResumeInfo.clear()
-        if (tag.contains("opResumeInfo", Tag.TAG_LIST.toInt())) {
-            val list = tag.getList("opResumeInfo", Tag.TAG_COMPOUND.toInt())
-            for (i in 0 until list.size) {
-                val c = list.getCompound(i)
-                val opId = c.getInt("op")
-                val api = c.getString("api")
-                val outs = c.getCompound("outputs")
-                val outSize = outs.getInt("size")
-                val outputs = (0 until outSize).mapNotNull { j ->
-                    val id = outs.getString("id$j")
-                    if (id.isEmpty()) null else id to outs.getLong("ct$j")
-                }
-                val tgts = c.getCompound("targets")
-                val tgtSize = tgts.getInt("size")
-                val targets = (0 until tgtSize).map { j ->
-                    BlockPos.of(tgts.getLong("p$j")) to
-                            net.minecraft.core.Direction.values()[tgts.getInt("f$j")]
-                }
-                opResumeInfo[opId] = OpResumeInfo(api, outputs, targets)
-            }
-        }
-        // Defensive cleanup: opResumeInfo entries reference op IDs that only mean anything
-        // within the loaded scheduler plan. If no plan loaded (or different ops), drop them
-        // — otherwise they'd dangle forever and could collide with the next plan's IDs.
-        val planOpIds = scheduler.currentPlan?.ops?.map { it.id }?.toSet().orEmpty()
-        if (opResumeInfo.keys.any { it !in planOpIds }) {
-            opResumeInfo.keys.retainAll(planOpIds)
-        }
     }
 
+    // TODO MC 26.1.2 NBT MIGRATION: once saveAdditional is rewritten, strip the
+    //  server-only keys below before sending to the client.
+    //  Keys to strip: originalCraftId, originalCraftCount, pendingCount,
+    //  pendingOutputs, pendingPullTargets, scheduler.
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {
-        val tag = saveWithoutMetadata(registries)
-        // Strip server-only pending job metadata from client sync
-        tag.remove("originalCraftId")
-        tag.remove("originalCraftCount")
-        tag.remove("pendingCount")
-        tag.remove("pendingOutputs")
-        tag.remove("pendingPullTargets")
-        tag.remove("scheduler")
-        return tag
+        return saveWithoutMetadata(registries)
     }
 
     override fun getUpdatePacket(): Packet<ClientGamePacketListener> {

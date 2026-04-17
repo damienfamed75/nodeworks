@@ -73,11 +73,9 @@ class ProcessingStorageBlock(properties: Properties) : BaseEntityBlock(propertie
         return InteractionResult.SUCCESS
     }
 
-    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
-        if (!state.`is`(newState.block)) {
-            Containers.dropContents(level, pos, level.getBlockEntity(pos) as? ProcessingStorageBlockEntity ?: return)
-        }
-        super.onRemove(state, level, pos, newState, movedByPiston)
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: net.minecraft.server.level.ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        Containers.dropContents(level, pos, level.getBlockEntity(pos) as? ProcessingStorageBlockEntity ?: return)
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {

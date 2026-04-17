@@ -13,6 +13,8 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
 import java.util.UUID
 
 /**
@@ -133,39 +135,18 @@ class NetworkControllerBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        networkId?.let { tag.putString("networkId", it.toString()) }
-        tag.putInt("networkColor", networkColor)
-        tag.putString("networkName", networkName)
-        tag.putInt("redstoneMode", redstoneMode)
-        tag.putInt("nodeGlowStyle", nodeGlowStyle)
-        tag.putInt("handlerRetryLimit", handlerRetryLimit)
-        if (connections.isNotEmpty()) {
-            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        }
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
+    //  Persists: networkId, networkColor, networkName, redstoneMode, nodeGlowStyle,
+    //  handlerRetryLimit, connections.
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
-        val idStr = tag.getString("networkId")
-        if (idStr.isNotEmpty()) {
-            try {
-                networkId = UUID.fromString(idStr)
-            } catch (_: IllegalArgumentException) {
-                networkId = UUID.randomUUID()
-            }
-        }
-        networkColor = if (tag.contains("networkColor")) tag.getInt("networkColor") else 0x83E086
-        networkName = tag.getString("networkName")
-        redstoneMode = if (tag.contains("redstoneMode")) tag.getInt("redstoneMode") else 0
-        nodeGlowStyle = if (tag.contains("nodeGlowStyle")) tag.getInt("nodeGlowStyle") else GLOW_SQUARE
-        handlerRetryLimit = if (tag.contains("handlerRetryLimit")) tag.getInt("handlerRetryLimit") else 50
-        connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
-        // Update client-side settings registry
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
+    //  After loading networkId + networkColor + nodeGlowStyle, push them into
+    //  NetworkSettingsRegistry so clients see the right color immediately.
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
         networkId?.let {
             damien.nodeworks.network.NetworkSettingsRegistry.update(
                 it,

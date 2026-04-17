@@ -58,7 +58,8 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
         // Pulse-like emission: density modulated by sine wave (sparse → dense → sparse).
         val phase = kotlin.math.sin((level.gameTime % 1000L).toFloat() * 0.15f)
         val density = 1 + ((phase * 0.5f + 0.5f) * 3f).toInt()  // 1..4 spawns per animateTick
-        val opts = DustParticleOptions(Vector3f(1.0f, 0.15f, 0.15f), 1.0f)
+        // RGB packed: 0xFF2626 approximates the old Vector3f(1.0, 0.15, 0.15)
+        val opts = DustParticleOptions(0xFF2626, 1.0f)
         for (i in 0 until density) {
             val dx = (random.nextDouble() - 0.5) * 1.2
             val dy = (random.nextDouble() - 0.5) * 1.2
@@ -118,8 +119,8 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
         return InteractionResult.SUCCESS
     }
 
-    override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, neighborPos: BlockPos, movedByPiston: Boolean) {
-        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston)
+    override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, orientation: net.minecraft.world.level.redstone.Orientation?, movedByPiston: Boolean) {
+        super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
         val entity = level.getBlockEntity(pos) as? CraftingCoreBlockEntity ?: return
         entity.recalculateCapacity()
         // Update block state to reflect formed status (drives emissive model variant)
@@ -137,7 +138,7 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
             if (!level.isClientSide) {
                 for ((itemId, count) in entity.clearBuffer()) {
                     val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
                     var remaining = count
                     while (remaining > 0L) {
                         val dropCount = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()

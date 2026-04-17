@@ -257,7 +257,7 @@ class CraftTreeGraph {
             // Item icon with per-pixel glow highlight
             val itemResId = Identifier.tryParse(node.itemId)
             if (itemResId != null) {
-                val item = BuiltInRegistries.ITEM.get(itemResId)
+                val item = BuiltInRegistries.ITEM.getValue(itemResId)
                 if (item != null) {
                     val stack = ItemStack(item)
                     val iconX = sx - 8

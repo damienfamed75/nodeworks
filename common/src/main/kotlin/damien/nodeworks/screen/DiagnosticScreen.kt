@@ -614,7 +614,7 @@ class DiagnosticScreen(
             // Item icon
             val id = net.minecraft.resources.Identifier.tryParse(suggestion)
             if (id != null) {
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
                 if (item != null) {
                     graphics.pose().pushPose()
                     graphics.pose().translate((dropX + 2).toFloat(), (sy + 1).toFloat(), 0f)
@@ -682,7 +682,7 @@ class DiagnosticScreen(
         // Item icon (small)
         val itemId = net.minecraft.resources.Identifier.tryParse(node.itemId)
         if (itemId != null) {
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId)
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
             if (item != null) {
                 graphics.pose().pushPose()
                 graphics.pose().translate((x + indent).toFloat(), (y - 1).toFloat(), 0f)
@@ -805,7 +805,7 @@ class DiagnosticScreen(
             // Render item icon
             val itemId = net.minecraft.resources.Identifier.tryParse(n.itemId)
             if (itemId != null) {
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId)
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
                 if (item != null) {
                     graphics.renderItem(ItemStack(item), sx - 8, sy)
                     if (n.count > 1) {
@@ -1178,7 +1178,7 @@ class DiagnosticScreen(
                     if (row.blockItemId.isNotEmpty()) {
                         val adjId = net.minecraft.resources.Identifier.tryParse(row.blockItemId)
                         if (adjId != null) {
-                            val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(adjId)
+                            val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(adjId)
                             if (adjItem != null) {
                                 graphics.pose().pushPose()
                                 graphics.pose().translate((h2TextX).toFloat(), (h2TextY - 1).toFloat(), 0f)

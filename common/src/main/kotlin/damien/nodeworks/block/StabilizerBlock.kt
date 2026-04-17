@@ -30,8 +30,8 @@ class StabilizerBlock(properties: Properties) : BaseEntityBlock(properties) {
         return StabilizerBlockEntity(pos, state)
     }
 
-    override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, neighborPos: BlockPos, movedByPiston: Boolean) {
-        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston)
+    override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, orientation: net.minecraft.world.level.redstone.Orientation?, movedByPiston: Boolean) {
+        super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
         level.getBlockEntity(pos) as? StabilizerBlockEntity ?: return
         CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.recalculateCapacity() }
     }

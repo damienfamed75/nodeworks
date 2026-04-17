@@ -563,7 +563,7 @@ class InventoryTerminalScreen(
             if (entry != null) {
                 val id = net.minecraft.resources.Identifier.tryParse(entry.info.itemId)
                 if (id != null) {
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
                     if (item != null) {
                         hoverContainer.setItem(0, ItemStack(item))
                         hoveredSlot = net.minecraft.world.inventory.Slot(hoverContainer, 0, networkHover.x - leftPos, networkHover.y - topPos)
@@ -1305,7 +1305,7 @@ class InventoryTerminalScreen(
     private fun getItemStack(itemId: String): ItemStack {
         return itemStackCache.getOrPut(itemId) {
             val id = Identifier.tryParse(itemId) ?: return@getOrPut ItemStack.EMPTY
-            val item = BuiltInRegistries.ITEM.get(id) ?: return@getOrPut ItemStack.EMPTY
+            val item = BuiltInRegistries.ITEM.getValue(id) ?: return@getOrPut ItemStack.EMPTY
             ItemStack(item)
         }
     }

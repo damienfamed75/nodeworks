@@ -64,7 +64,7 @@ class ProcessingSetScreenHandler(
                 val slot = inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
                 val id = Identifier.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 inputGrid.setItem(slot, ItemStack(item, 1))
             }
 
@@ -73,7 +73,7 @@ class ProcessingSetScreenHandler(
                 val slot = outputSlots.getOrElse(i) { i }
                 if (slot !in 0 until OUTPUT_SLOTS) continue
                 val id = Identifier.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 outputGrid.setItem(slot, ItemStack(item, 1))
             }
 
@@ -111,7 +111,7 @@ class ProcessingSetScreenHandler(
                 val slot = openData.inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
                 val id = Identifier.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 inputGrid.setItem(slot, ItemStack(item, 1))
             }
 
@@ -120,7 +120,7 @@ class ProcessingSetScreenHandler(
                 val slot = openData.outputSlots.getOrElse(i) { i }
                 if (slot !in 0 until OUTPUT_SLOTS) continue
                 val id = Identifier.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 outputGrid.setItem(slot, ItemStack(item, 1))
             }
 
@@ -255,7 +255,7 @@ class ProcessingSetScreenHandler(
             return
         }
         val id = Identifier.tryParse(itemId) ?: return
-        val item = BuiltInRegistries.ITEM.get(id) ?: return
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return
         when {
             slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, ItemStack(item, 1))
             slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, ItemStack(item, 1))

@@ -82,11 +82,9 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
         return baseState.useWithoutItem(level, player, hitResult)
     }
 
-    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
-        if (!state.`is`(newState.block) && !level.isClientSide) {
-            cascadeRemove(level, pos)
-        }
-        super.onRemove(state, level, pos, newState, movedByPiston)
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: net.minecraft.server.level.ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        cascadeRemove(level, pos)
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 
     private fun cascadeRemove(level: Level, pos: BlockPos) {
@@ -112,7 +110,8 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
     override fun getCloneItemStack(
         level: net.minecraft.world.level.LevelReader,
         pos: BlockPos,
-        state: BlockState
+        state: BlockState,
+        includeData: Boolean
     ): net.minecraft.world.item.ItemStack {
         val part = state.getValue(PART)
         val block = if (part == Part.RECEIVER) ModBlocks.RECEIVER_ANTENNA else ModBlocks.BROADCAST_ANTENNA

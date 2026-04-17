@@ -46,7 +46,7 @@ class CardHandle private constructor(
                 val identifier = Identifier.tryParse(tagId) ?: return false
                 val tagKey = TagKey.create(Registries.ITEM, identifier)
                 val itemIdentifier = Identifier.tryParse(itemId) ?: return false
-                val item = BuiltInRegistries.ITEM.get(itemIdentifier) ?: return false
+                val item = BuiltInRegistries.ITEM.getValue(itemIdentifier) ?: return false
                 return item.builtInRegistryHolder().`is`(tagKey)
             }
 
@@ -151,7 +151,7 @@ class CardHandle private constructor(
         atomic: Boolean
     ): Long {
         val id = Identifier.tryParse(bufSrc.itemId) ?: return 0L
-        val item = BuiltInRegistries.ITEM.get(id) ?: return 0L
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return 0L
 
         if (atomic) {
             // Pre-check atomically whether destination can accept everything. If so,

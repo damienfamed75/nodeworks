@@ -54,25 +54,25 @@ class InstructionSet(properties: Properties) : Item(properties) {
         val recipe = getRecipe(stack)
         val ingredients = recipe.filter { it.isNotEmpty() }.mapNotNull { id ->
             val identifier = Identifier.tryParse(id) ?: return@mapNotNull null
-            BuiltInRegistries.ITEM.get(identifier)
+            BuiltInRegistries.ITEM.getValue(identifier)
         }.distinct()
 
         if (ingredients.isNotEmpty()) {
             tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.input")
                 .withStyle(ChatFormatting.GRAY))
             for (item in ingredients) {
-                tooltip.accept(Component.literal("  ").append(item.description).withStyle(ChatFormatting.DARK_GRAY))
+                tooltip.accept(Component.literal("  ").append(Component.translatable(item.descriptionId)).withStyle(ChatFormatting.DARK_GRAY))
             }
 
             val outputId = getOutput(stack)
             if (outputId.isNotEmpty()) {
                 val outputIdentifier = Identifier.tryParse(outputId)
                 if (outputIdentifier != null) {
-                    val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier)
+                    val outputItem = BuiltInRegistries.ITEM.getValue(outputIdentifier)
                     if (outputItem != null) {
                         tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.output")
                             .withStyle(ChatFormatting.GRAY))
-                        tooltip.accept(Component.literal("  ").append(outputItem.description).withStyle(ChatFormatting.DARK_GRAY))
+                        tooltip.accept(Component.literal("  ").append(Component.translatable(outputItem.descriptionId)).withStyle(ChatFormatting.DARK_GRAY))
                     }
                 }
             }
@@ -86,16 +86,14 @@ class InstructionSet(properties: Properties) : Item(properties) {
         fun getRecipe(stack: ItemStack): List<String> {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return List(9) { "" }
             val tag = customData.copyTag()
-            if (!tag.contains(RECIPE_KEY)) return List(9) { "" }
-            val list = tag.getList(RECIPE_KEY, 8) // 8 = StringTag type
+            val list = tag.getList(RECIPE_KEY).orElse(null) ?: return List(9) { "" }
             if (list.size != 9) return List(9) { "" }
-            return (0 until 9).map { list.getString(it) }
+            return (0 until 9).map { list.getStringOr(it, "") }
         }
 
         fun getOutput(stack: ItemStack): String {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
-            val tag = customData.copyTag()
-            return if (tag.contains(OUTPUT_KEY)) tag.getString(OUTPUT_KEY) else ""
+            return customData.copyTag().getStringOr(OUTPUT_KEY, "")
         }
 
         fun setRecipe(stack: ItemStack, recipe: List<String>, output: String = "") {

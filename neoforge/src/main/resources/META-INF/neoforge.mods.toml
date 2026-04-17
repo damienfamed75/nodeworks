@@ -1,5 +1,5 @@
 modLoader = "kotlinforforge"
-loaderVersion = "[5,)"
+loaderVersion = "[6,)"
 
 license = "CC0-1.0"
 
@@ -14,13 +14,11 @@ Scripting-driven automation mod with node networks and Lua terminals.
 [[dependencies.nodeworks]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.1,)"
-ordering = "NONE"
+versionRange = "[26.1,)"
 side = "BOTH"
 
 [[dependencies.nodeworks]]
 modId = "minecraft"
 type = "required"
-versionRange = "[1.21.1,)"
-ordering = "NONE"
+versionRange = "[26.1.2,)"
 side = "BOTH"

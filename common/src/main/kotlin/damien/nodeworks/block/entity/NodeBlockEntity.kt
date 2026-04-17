@@ -24,6 +24,8 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
 import java.util.UUID
 
 /**
@@ -254,18 +256,23 @@ class NodeBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput API.
+    //  Old body used CompoundTag.putLongArray / putIntArray / putString / putInt / putLong
+    //  and ContainerHelper.saveAllItems(CompoundTag,...). Port to:
+    //   - output.putLongArray / putIntArray / putString / putInt / putLong (new sig)
+    //   - ContainerHelper.saveAllItems(ValueOutput, items) (check new sig)
+    //  See /tmp/mc261/BlockEntity.java for reference.
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
+        /*
         ContainerHelper.saveAllItems(tag, items, registries)
         if (connections.isNotEmpty()) {
             tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
         }
-        // Save redstone outputs (only if any non-zero)
         if (hasAnyRedstoneOutput()) {
             tag.putIntArray("redstoneOutputs", redstoneOutputs.toList())
         }
         networkId?.let { tag.putString("networkId", it.toString()) }
-        // Save monitors
         tag.putInt("monitorCount", monitors.size)
         var idx = 0
         for ((face, data) in monitors) {
@@ -274,17 +281,24 @@ class NodeBlockEntity(
             tag.putLong("monitorCount_$idx", data.displayCount)
             idx++
         }
+        */
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput API.
+    //  Old body used tag.getString/getInt/getLong/getLongArray/getIntArray/contains
+    //  and ContainerHelper.loadAllItems(CompoundTag,...). Port to:
+    //   - input.getString/getInt/getLong/getLongArray/getIntArray (now return Optional<T>)
+    //   - ContainerHelper.loadAllItems(ValueInput, items) (check new sig)
+    //  nodeTracker?.onNodeChanged side-effect must still fire after load.
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
+        /*
         items.clear()
         ContainerHelper.loadAllItems(tag, items, registries)
         connections.clear()
         if (tag.contains("connections")) {
             tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
         }
-        // Load redstone outputs
         redstoneOutputs.fill(0)
         if (tag.contains("redstoneOutputs")) {
             val saved = tag.getIntArray("redstoneOutputs")
@@ -295,7 +309,6 @@ class NodeBlockEntity(
         networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
-        // Load monitors
         monitors.clear()
         val monitorCount = if (tag.contains("monitorCount")) tag.getInt("monitorCount") else 0
         for (i in 0 until monitorCount) {
@@ -306,6 +319,7 @@ class NodeBlockEntity(
             val displayCount = if (tag.contains("monitorCount_$i")) tag.getLong("monitorCount_$i") else 0L
             monitors[face] = MonitorData(itemId, displayCount)
         }
+        */
         nodeTracker?.onNodeChanged(worldPosition, true)
     }
 

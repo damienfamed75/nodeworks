@@ -23,6 +23,8 @@ import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
 import java.util.UUID
 
 /** Fallback radius used only if the paired broadcast's own effective range can't be read.
@@ -238,25 +240,16 @@ class ReceiverAntennaBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        ContainerHelper.saveAllItems(tag, items, registries)
-        tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        networkId?.let { tag.putString("networkId", it.toString()) }
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
-        items.clear()
-        ContainerHelper.loadAllItems(tag, items, registries)
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
+    //  Keep the updatePairingFromChip() call post-load so the receiver re-syncs to its chip.
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
         updatePairingFromChip()
-        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
-            try { UUID.fromString(it) } catch (_: Exception) { null }
-        }
-        connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag =

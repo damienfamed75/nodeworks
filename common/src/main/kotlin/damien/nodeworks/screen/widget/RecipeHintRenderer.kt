@@ -174,7 +174,7 @@ object RecipeHintRenderer {
     ): Int? {
         val (itemId, count) = entry
         val id = Identifier.tryParse(itemId) ?: return 0
-        val item = BuiltInRegistries.ITEM.get(id) ?: return 0
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return 0
         // Advance is ALWAYS ICON_SIZE — counts overlay the icon vanilla-style and never
         // extend the entry's footprint. Ingredient spacing is therefore consistent
         // regardless of whether a given slot shows a count.

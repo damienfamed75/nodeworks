@@ -42,7 +42,7 @@ class InstructionSetScreenHandler(
             for (i in 0 until 9) {
                 if (recipe[i].isNotEmpty()) {
                     val id = Identifier.tryParse(recipe[i]) ?: continue
-                    val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                    val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                     grid.setItem(i, ItemStack(item, 1))
                 }
             }
@@ -211,7 +211,7 @@ class InstructionSetScreenHandler(
                 recipeGrid.setItem(i, ItemStack.EMPTY)
             } else {
                 val id = Identifier.tryParse(items[i]) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 recipeGrid.setItem(i, ItemStack(item, 1))
             }
         }

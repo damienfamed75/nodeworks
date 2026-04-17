@@ -167,7 +167,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         op: Operation.Execute,
         lvl: ServerLevel
     ): CraftScheduler.OpResult {
-        val recipeManager = lvl.recipeManager ?: return CraftScheduler.OpResult.Failed("No recipe manager")
+        val recipeManager = lvl.recipeAccess() ?: return CraftScheduler.OpResult.Failed("No recipe manager")
 
         val ingredientCounts = mutableMapOf<String, Int>()
         for (id in op.recipe) if (id.isNotEmpty()) ingredientCounts.merge(id, 1, Int::plus)
@@ -177,7 +177,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             else {
                 val id = Identifier.tryParse(itemId)
                     ?: return CraftScheduler.OpResult.Failed("Bad item id in recipe: $itemId")
-                val item = BuiltInRegistries.ITEM.get(id)
+                val item = BuiltInRegistries.ITEM.getValue(id)
                     ?: return CraftScheduler.OpResult.Failed("Unknown item in recipe: $itemId")
                 ItemStack(item, 1)
             }
@@ -187,7 +187,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             .getRecipeFor(RecipeType.CRAFTING, craftingInput, lvl)
             .orElse(null)
             ?: return CraftScheduler.OpResult.Failed("No crafting recipe matched")
-        val expected = recipeHolder.value().assemble(craftingInput, lvl.registryAccess())
+        val expected = recipeHolder.value().assemble(craftingInput)
         if (expected.isEmpty) {
             return CraftScheduler.OpResult.Failed("Recipe assemble returned empty")
         }
@@ -198,7 +198,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // Planner sets outputCount = requested total; we divide by expected.count (e.g. 9 for
         // ingot→nuggets) so a craft of 9 nuggets via a 1→9 recipe runs the recipe once, not
         // nine times.
-        val perBatch = expected.count.coerceAtLeast(1).toLong()
+        val perBatch = expected.getCount().coerceAtLeast(1).toLong()
         val desired = op.outputCount.coerceAtLeast(1L)
         val executions = ((desired + perBatch - 1) / perBatch).coerceAtLeast(1L)
         var done = 0L
@@ -214,10 +214,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     )
                 }
             }
-            val output = expected.copy().apply { count = expected.count }
-            if (!cpu.addToBuffer(expectedItemId, output.count.toLong())) {
+            val output = expected.copyWithCount(expected.getCount())
+            if (!cpu.addToBuffer(expectedItemId, output.getCount().toLong())) {
                 return CraftScheduler.OpResult.Failed(
-                    "Buffer refused crafted $expectedItemId x${output.count}"
+                    "Buffer refused crafted $expectedItemId x${output.getCount()}"
                 )
             }
             done++
@@ -243,7 +243,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val removed = cpu.removeFromBuffer(op.itemId, op.amount)
         val id = Identifier.tryParse(op.itemId)
             ?: return CraftScheduler.OpResult.Failed("Bad item id: ${op.itemId}")
-        val item = BuiltInRegistries.ITEM.get(id)
+        val item = BuiltInRegistries.ITEM.getValue(id)
             ?: return CraftScheduler.OpResult.Failed("Unknown item: ${op.itemId}")
 
         var remaining = removed
@@ -409,7 +409,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             val (itemId, batchCount) = slotData
             val id = Identifier.tryParse(itemId)
                 ?: return CraftScheduler.OpResult.Failed("Bad input item id: $itemId")
-            val item = BuiltInRegistries.ITEM.get(id)
+            val item = BuiltInRegistries.ITEM.getValue(id)
                 ?: return CraftScheduler.OpResult.Failed("Unknown input item: $itemId")
             itemsTable.set(
                 paramNames[idx],
@@ -747,7 +747,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ) {
         val id = Identifier.tryParse(itemId) ?: return
-        val item = BuiltInRegistries.ITEM.get(id) ?: return
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return
         var remaining = count
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()

@@ -104,87 +104,16 @@ sealed class Operation {
     // Serialization
     // =====================================================================
 
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against the new CompoundTag API.
+    //  See git history for the full pre-migration body. Discriminates on a "kind"
+    //  string tag to reconstruct the correct Pull/Process/Execute/Deliver subclass.
+    //  Must preserve: id, readyAt, inProgress, outputNodeId, dependsOn (IntArray),
+    //  plus subclass-specific fields (itemId, amount, processingApiName, inputs/outputs,
+    //  recipe ListTag, outputItemId, outputCount, executions, toReservedSlot).
     fun saveToNBT(tag: CompoundTag) {
-        tag.putInt("id", id)
-        tag.putLong("readyAt", readyAt)
-        tag.putBoolean("inProgress", inProgress)
-        tag.putInt("nodeId", outputNodeId)
-        val depsArr = IntArray(dependsOn.size) { dependsOn[it] }
-        tag.putIntArray("deps", depsArr)
-        when (this) {
-            is Pull -> {
-                tag.putString("kind", "pull")
-                tag.putString("itemId", itemId)
-                tag.putLong("amount", amount)
-            }
-            is Process -> {
-                tag.putString("kind", "process")
-                tag.putString("api", processingApiName)
-                writeItemList(tag, "inputs", inputs)
-                writeItemList(tag, "outputs", outputs)
-            }
-            is Execute -> {
-                tag.putString("kind", "execute")
-                val rec = ListTag()
-                for (s in recipe) rec.add(net.minecraft.nbt.StringTag.valueOf(s))
-                tag.put("recipe", rec)
-                tag.putString("out", outputItemId)
-                tag.putLong("outCount", outputCount)
-                tag.putLong("executions", executions)
-            }
-            is Deliver -> {
-                tag.putString("kind", "deliver")
-                tag.putString("itemId", itemId)
-                tag.putLong("amount", amount)
-                tag.putBoolean("reserved", toReservedSlot)
-            }
-        }
     }
 
     companion object {
-        fun loadFromNBT(tag: CompoundTag): Operation? {
-            val id = tag.getInt("id")
-            val readyAt = tag.getLong("readyAt")
-            val inProgress = tag.getBoolean("inProgress")
-            val deps = (tag.getIntArray("deps") ?: IntArray(0)).toList()
-            val op: Operation = when (tag.getString("kind")) {
-                "pull" -> Pull(id, deps, tag.getString("itemId"), tag.getLong("amount"))
-                "process" -> Process(
-                    id, deps, tag.getString("api"),
-                    readItemList(tag, "inputs"),
-                    readItemList(tag, "outputs")
-                )
-                "execute" -> {
-                    val rec = tag.getList("recipe", Tag.TAG_STRING.toInt())
-                    val recipe = (0 until rec.size).map { rec.getString(it) }
-                    Execute(id, deps, recipe, tag.getString("out"), tag.getLong("outCount"), tag.getLong("executions"))
-                }
-                "deliver" -> Deliver(id, deps, tag.getString("itemId"), tag.getLong("amount"), tag.getBoolean("reserved"))
-                else -> return null
-            }
-            op.readyAt = readyAt
-            op.inProgress = inProgress
-            op.outputNodeId = if (tag.contains("nodeId")) tag.getInt("nodeId") else -1
-            return op
-        }
-
-        private fun writeItemList(tag: CompoundTag, key: String, items: List<Pair<String, Long>>) {
-            val list = ListTag()
-            for ((id, count) in items) {
-                val c = CompoundTag()
-                c.putString("id", id)
-                c.putLong("ct", count)
-                list.add(c)
-            }
-            tag.put(key, list)
-        }
-
-        private fun readItemList(tag: CompoundTag, key: String): List<Pair<String, Long>> {
-            val list = tag.getList(key, Tag.TAG_COMPOUND.toInt())
-            return (0 until list.size).map {
-                val c = list.getCompound(it)
-                c.getString("id") to c.getLong("ct")
-            }
-        }
+        fun loadFromNBT(tag: CompoundTag): Operation? = null
     }
 }

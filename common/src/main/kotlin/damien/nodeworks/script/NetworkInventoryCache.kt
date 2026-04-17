@@ -5,6 +5,7 @@ import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
+import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import java.util.concurrent.ConcurrentHashMap
 
@@ -144,8 +145,8 @@ class NetworkInventoryCache(
                 } else {
                     // Not in storage — add phantom with count 0
                     val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
-                    val name = item.description.string
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
+                    val name = Component.translatable(item.descriptionId).string
                     frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
                 }
             }
@@ -160,8 +161,8 @@ class NetworkInventoryCache(
                         frontBuffer[key] = existing.copy(isCraftable = true)
                     } else {
                         val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
-                        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
-                        val name = item.description.string
+                        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
+                        val name = Component.translatable(item.descriptionId).string
                         frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
                     }
                 }
@@ -260,7 +261,7 @@ class NetworkInventoryCache(
             changedSerials.add(existing.serial)
         } else {
             val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
             val serial = nextSerial++
             entries[key] = SerialEntry(serial, ItemInfo(
                 itemId = itemId,

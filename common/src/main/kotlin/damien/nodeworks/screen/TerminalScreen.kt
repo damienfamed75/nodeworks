@@ -336,7 +336,7 @@ class TerminalScreen(
 
         // Item tags from the client registry
         val scannedTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTagNames()
-            .map { it.location().toString() }
+            .map { it.identifier().toString() }
             .sorted()
             .toList()
 

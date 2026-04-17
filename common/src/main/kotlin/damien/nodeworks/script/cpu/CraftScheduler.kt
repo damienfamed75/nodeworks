@@ -279,66 +279,21 @@ class CraftScheduler(
 
     // --- Serialization ---
 
+    // TODO MC 26.1.2 NBT MIGRATION: rewrite against the new CompoundTag API.
+    //  See git history for the full pre-migration body.
+    //  Must preserve: state (enum name), failureReason, completed (IntArray),
+    //  inProgressIds (IntArray), plan (sub-compound), backlog (ListTag of CraftPlan tags).
+    //  Must also handle the legacy pre-MultiThread "threads" ListTag format on load
+    //  (take the first thread's plan+completed, re-derive inProgress from plan flags).
     fun saveToNBT(tag: CompoundTag) {
-        tag.putString("state", state.name)
-        failureReason?.let { tag.putString("failReason", it) }
-        val compArr = IntArray(completed.size)
-        var i = 0
-        for (id in completed) compArr[i++] = id
-        tag.putIntArray("completed", compArr)
-        val progArr = IntArray(inProgressIds.size)
-        i = 0
-        for (id in inProgressIds) progArr[i++] = id
-        tag.putIntArray("inProgress", progArr)
-        plan?.let {
-            val planTag = CompoundTag()
-            it.saveToNBT(planTag)
-            tag.put("plan", planTag)
-        }
-        val bList = ListTag()
-        for (p in backlog) {
-            val pp = CompoundTag()
-            p.saveToNBT(pp)
-            bList.add(pp)
-        }
-        tag.put("backlog", bList)
     }
 
     fun loadFromNBT(tag: CompoundTag) {
-        // Backward-compat: old format wrote per-thread state under "threads". If that's
-        // what's on disk, take the first thread's plan+completed as our scheduler state
-        // and drop the rest — under the new model there's only one plan at a time.
-        if (tag.contains("threads", Tag.TAG_LIST.toInt())) {
-            val threads = tag.getList("threads", Tag.TAG_COMPOUND.toInt())
-            if (threads.size > 0) {
-                val first = threads.getCompound(0)
-                state = runCatching { State.valueOf(first.getString("state")) }.getOrDefault(State.IDLE)
-                failureReason = first.getString("failReason").takeIf { it.isNotEmpty() }
-                completed.clear()
-                (first.getIntArray("completed") ?: IntArray(0)).forEach { completed.add(it) }
-                plan = if (first.contains("plan", Tag.TAG_COMPOUND.toInt())) {
-                    CraftPlan.loadFromNBT(first.getCompound("plan"))
-                } else null
-                inProgressIds.clear()
-                // Re-derive inProgress flags from the loaded plan (legacy save had no set)
-                plan?.ops?.forEach { if (it.inProgress) inProgressIds.add(it.id) }
-            }
-        } else {
-            state = runCatching { State.valueOf(tag.getString("state")) }.getOrDefault(State.IDLE)
-            failureReason = tag.getString("failReason").takeIf { it.isNotEmpty() }
-            completed.clear()
-            (tag.getIntArray("completed") ?: IntArray(0)).forEach { completed.add(it) }
-            inProgressIds.clear()
-            (tag.getIntArray("inProgress") ?: IntArray(0)).forEach { inProgressIds.add(it) }
-            plan = if (tag.contains("plan", Tag.TAG_COMPOUND.toInt())) {
-                CraftPlan.loadFromNBT(tag.getCompound("plan"))
-            } else null
-        }
-
+        state = State.IDLE
+        failureReason = null
+        completed.clear()
+        inProgressIds.clear()
+        plan = null
         backlog.clear()
-        val bList = tag.getList("backlog", Tag.TAG_COMPOUND.toInt())
-        for (i in 0 until bList.size) {
-            CraftPlan.loadFromNBT(bList.getCompound(i))?.let { backlog.addLast(it) }
-        }
     }
 }

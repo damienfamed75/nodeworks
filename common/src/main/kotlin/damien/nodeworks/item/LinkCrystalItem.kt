@@ -28,7 +28,7 @@ class LinkCrystalItem(properties: Properties) : Item(properties) {
         if (data != null) {
             tooltip.accept(Component.literal("Linked to (${data.pos.x}, ${data.pos.y}, ${data.pos.z})")
                 .withStyle(ChatFormatting.GRAY))
-            val dimId = data.dimension.location().path
+            val dimId = data.dimension.identifier().path
             tooltip.accept(Component.literal("Dimension: $dimId")
                 .withStyle(ChatFormatting.DARK_GRAY))
         } else {
@@ -51,18 +51,19 @@ class LinkCrystalItem(properties: Properties) : Item(properties) {
         fun getPairingData(stack: ItemStack): PairingData? {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return null
             val tag = customData.copyTag()
-            if (!tag.contains(FREQ_KEY)) return null
-            val pos = BlockPos.of(tag.getLong(POS_KEY))
-            val dimId = Identifier.tryParse(tag.getString(DIM_KEY)) ?: return null
+            val freqStr = tag.getStringOr(FREQ_KEY, "")
+            if (freqStr.isEmpty()) return null
+            val pos = BlockPos.of(tag.getLongOr(POS_KEY, 0L))
+            val dimId = Identifier.tryParse(tag.getStringOr(DIM_KEY, "")) ?: return null
             val dimension = ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, dimId)
-            val freq = try { UUID.fromString(tag.getString(FREQ_KEY)) } catch (_: Exception) { return null }
+            val freq = try { UUID.fromString(freqStr) } catch (_: Exception) { return null }
             return PairingData(pos, dimension, freq)
         }
 
         fun encode(stack: ItemStack, pos: BlockPos, dimension: ResourceKey<Level>, frequencyId: UUID) {
             val tag = CompoundTag()
             tag.putLong(POS_KEY, pos.asLong())
-            tag.putString(DIM_KEY, dimension.location().toString())
+            tag.putString(DIM_KEY, dimension.identifier().toString())
             tag.putString(FREQ_KEY, frequencyId.toString())
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
