@@ -6,6 +6,7 @@ import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.ProcessingStorageBlock
+import damien.nodeworks.block.AntennaSegmentBlock
 import damien.nodeworks.block.BroadcastAntennaBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CoProcessorBlock
@@ -121,6 +122,8 @@ object ModBlocks {
         ::BroadcastAntennaBlock,
         BlockBehaviour.Properties.of().strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()
+            // noOcclusion = chest-style: non-full shape, doesn't shadow neighbors, light bleeds through.
+            .noOcclusion()
     )
 
     val RECEIVER_ANTENNA: Block = register(
@@ -182,6 +185,28 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()
+    )
+
+    /** Register a block only — no BlockItem. Used for internal multiblock parts that the
+     *  player should never hold (e.g. AntennaSegmentBlock). */
+    private fun registerBlockOnly(
+        id: String,
+        factory: (BlockBehaviour.Properties) -> Block,
+        properties: BlockBehaviour.Properties
+    ): Block {
+        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val block = factory(properties)
+        Registry.register(BuiltInRegistries.BLOCK, identifier, block)
+        return block
+    }
+
+    val ANTENNA_SEGMENT: Block = registerBlockOnly(
+        "antenna_segment",
+        ::AntennaSegmentBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+            .noOcclusion()
     )
 
     private fun registerDirect(id: String, block: Block): Block {

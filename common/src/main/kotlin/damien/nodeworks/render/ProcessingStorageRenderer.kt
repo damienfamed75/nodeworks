@@ -3,12 +3,15 @@ package damien.nodeworks.render
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
+import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.MultiBufferSource
 import net.minecraft.client.renderer.RenderType
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.texture.OverlayTexture
+import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.SectionPos
 import net.minecraft.resources.ResourceLocation
 import org.joml.Quaternionf
 
@@ -19,6 +22,10 @@ import org.joml.Quaternionf
  */
 class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
     BlockEntityRenderer<ProcessingStorageBlockEntity> {
+
+    /** Tracks connection state per block position so we can trigger a chunk rebuild
+     *  when the block connects/disconnects — same pattern as TerminalRenderer. */
+    private val lastState = HashMap<BlockPos, Int>()
 
     companion object {
         private val CARD_TEXTURE = ResourceLocation.fromNamespaceAndPath(
@@ -47,6 +54,18 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
         packedLight: Int,
         packedOverlay: Int
     ) {
+        // Detect connection state changes → trigger chunk rebuild so the block color
+        // provider re-evaluates the emissive tint (same pattern as TerminalRenderer).
+        val reachable = NodeConnectionRenderer.isReachable(entity.blockPos)
+        val connState = entity.getContainerSize() or (if (reachable) 0x10000 else 0)
+        val prev = lastState.put(entity.blockPos, connState)
+        if (prev != null && prev != connState) {
+            val sx = SectionPos.blockToSectionCoord(entity.blockPos.x)
+            val sy = SectionPos.blockToSectionCoord(entity.blockPos.y)
+            val sz = SectionPos.blockToSectionCoord(entity.blockPos.z)
+            Minecraft.getInstance().levelRenderer.setSectionDirtyWithNeighbors(sx, sy, sz)
+        }
+
         val state = entity.blockState
         if (!state.hasProperty(ProcessingStorageBlock.FACING)) return
         val facing = state.getValue(ProcessingStorageBlock.FACING)
