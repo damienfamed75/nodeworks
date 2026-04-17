@@ -14,7 +14,7 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.ItemStack
 
@@ -561,7 +561,7 @@ class InventoryTerminalScreen(
             val viewIndex = scrollOffset * layout.cols + (networkHover.index - layout.cols)
             val entry = repo.getViewEntry(viewIndex)
             if (entry != null) {
-                val id = net.minecraft.resources.ResourceLocation.tryParse(entry.info.itemId)
+                val id = net.minecraft.resources.Identifier.tryParse(entry.info.itemId)
                 if (id != null) {
                     val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
                     if (item != null) {
@@ -1304,7 +1304,7 @@ class InventoryTerminalScreen(
 
     private fun getItemStack(itemId: String): ItemStack {
         return itemStackCache.getOrPut(itemId) {
-            val id = ResourceLocation.tryParse(itemId) ?: return@getOrPut ItemStack.EMPTY
+            val id = Identifier.tryParse(itemId) ?: return@getOrPut ItemStack.EMPTY
             val item = BuiltInRegistries.ITEM.get(id) ?: return@getOrPut ItemStack.EMPTY
             ItemStack(item)
         }

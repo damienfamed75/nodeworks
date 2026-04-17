@@ -73,7 +73,7 @@ object NeoForgeClientSetup {
             // Register Link Crystal model predicate
             net.minecraft.client.renderer.item.ItemProperties.register(
                 damien.nodeworks.registry.ModItems.LINK_CRYSTAL,
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "linked")
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "linked")
             ) { stack, _, _, _ ->
                 if (damien.nodeworks.item.LinkCrystalItem.isEncoded(stack)) 1.0f else 0.0f
             }
@@ -81,7 +81,7 @@ object NeoForgeClientSetup {
             // Register Card Programmer model predicate — changes texture based on template card type
             net.minecraft.client.renderer.item.ItemProperties.register(
                 damien.nodeworks.registry.ModItems.CARD_PROGRAMMER,
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "card_type")
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "card_type")
             ) { stack, _, _, _ ->
                 val template = damien.nodeworks.item.CardProgrammerItem.getTemplate(stack)
                 if (template.isEmpty) 0.0f
@@ -159,7 +159,7 @@ object NeoForgeClientSetup {
     }
 
     private fun onRegisterShaders(event: net.neoforged.neoforge.client.event.RegisterShadersEvent) {
-        val location = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "flat_color_item")
+        val location = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "flat_color_item")
         event.registerShader(
             net.minecraft.client.renderer.ShaderInstance(event.resourceProvider, location, com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY)
         ) { shader ->

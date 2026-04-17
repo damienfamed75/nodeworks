@@ -32,12 +32,30 @@ A Minecraft mod inspired by Integrated Dynamics, Applied Energistics, and LaserI
 | Real-world NeoForge 26.1 mod patterns (GUIs, block entities, capabilities, tool API) | EnderIO | https://github.com/Team-EnderIO/EnderIO/tree/26.1 |
 | Block model / blockstate / render extensions patterns for 26.1 | FramedBlocks | https://github.com/XFactHD/FramedBlocks (latest 26.1 branch) |
 | Network storage / terminal UI / crafting patterns | Refined Storage v3.0.0 | https://github.com/refinedmods/refinedstorage2/tree/v3.0.0-beta.4 |
+| Kotlin/Gradle/KFF + NeoForge integration (toolchain, foojay, Kotlin stdlib, KFF wiring) | KotlinForForge | https://github.com/thedarkcolour/KotlinForForge |
+
+**Local clones are available** (fast offline lookup — prefer these over WebFetch):
+
+```
+C:\Users\thedo\.claude\projects\c--Users-thedo-projects-java-nodeworks\references\
+├── neoforge-26.1/       (branch: 26.1.x)
+├── enderio-26.1/        (branch: 26.1)
+├── framedblocks-26.1/   (branch: 26.1)
+├── refinedstorage-v3/   (tag: v3.0.0-beta.4)
+└── kotlinforforge/      (default branch)
+```
+
+**The decompiled vanilla MC 26.1.2 sources are available at:**
+```
+common/build/moddev/artifacts/vanilla-26.1.2-1-sources.jar
+```
+Prefer grepping this jar (via `unzip -p … | grep` or extracting specific files) over guessing vanilla signatures.
 
 **Rules:**
-1. If you are about to write a call to a NeoForge-only or MC-internal API and you are not certain the signature is current, **fetch the relevant file from one of the references above first**.
-2. Prefer NeoForge upstream for API definitions; prefer the mod repos for usage patterns.
+1. If you are about to write a call to a NeoForge-only or MC-internal API and you are not certain the signature is current, **inspect the relevant file in the local clones or the vanilla sources jar first**.
+2. Prefer NeoForge upstream for API definitions; prefer the mod repos for usage patterns; use vanilla sources jar for `net.minecraft.*` signatures.
 3. If a reference shows a pattern that conflicts with what you recall from older versions, trust the reference.
-4. When a reference is fetched, briefly note in the commit / response which file was consulted so a reviewer can audit the choice.
+4. When a reference is consulted, briefly note in the commit / response which file was looked at so a reviewer can audit the choice.
 
 ## Project Structure
 

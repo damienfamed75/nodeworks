@@ -5,7 +5,7 @@ import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.Container
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.SimpleContainer
@@ -41,7 +41,7 @@ class InstructionSetScreenHandler(
             val grid = SimpleContainer(9)
             for (i in 0 until 9) {
                 if (recipe[i].isNotEmpty()) {
-                    val id = ResourceLocation.tryParse(recipe[i]) ?: continue
+                    val id = Identifier.tryParse(recipe[i]) ?: continue
                     val item = BuiltInRegistries.ITEM.get(id) ?: continue
                     grid.setItem(i, ItemStack(item, 1))
                 }
@@ -210,7 +210,7 @@ class InstructionSetScreenHandler(
             if (items[i].isEmpty()) {
                 recipeGrid.setItem(i, ItemStack.EMPTY)
             } else {
-                val id = ResourceLocation.tryParse(items[i]) ?: continue
+                val id = Identifier.tryParse(items[i]) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
                 recipeGrid.setItem(i, ItemStack(item, 1))
             }

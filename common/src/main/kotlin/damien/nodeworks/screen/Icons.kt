@@ -1,7 +1,7 @@
 package damien.nodeworks.screen
 
 import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 
 /**
  * Helper for drawing 16x16 icons from the shared icons atlas.
@@ -115,7 +115,7 @@ class Icons private constructor(val col: Int, val row: Int) {
     }
 
     companion object {
-        val ATLAS: ResourceLocation = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+        val ATLAS: Identifier = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
 
         /** Whether we're in a batch — skips per-call enableBlend/disableBlend. */
         private var batching = false

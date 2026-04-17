@@ -27,7 +27,7 @@ import mezz.jei.api.registration.IRecipeRegistration
 import mezz.jei.api.registration.IRecipeTransferRegistration
 import net.minecraft.client.renderer.Rect2i
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.MenuType
 import net.minecraft.world.item.ItemStack
@@ -39,8 +39,8 @@ import java.util.Optional
 @JeiPlugin
 class NodeworksJeiPlugin : IModPlugin {
 
-    override fun getPluginUid(): ResourceLocation =
-        ResourceLocation.fromNamespaceAndPath("nodeworks", "jei_plugin")
+    override fun getPluginUid(): Identifier =
+        Identifier.fromNamespaceAndPath("nodeworks", "jei_plugin")
 
     override fun registerRecipeTransferHandlers(registration: IRecipeTransferRegistration) {
         registration.addRecipeTransferHandler(

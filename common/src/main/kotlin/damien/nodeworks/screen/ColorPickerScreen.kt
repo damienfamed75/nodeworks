@@ -6,7 +6,7 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.renderer.texture.DynamicTexture
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.sounds.SoundEvents
 import java.awt.Color
 
@@ -34,7 +34,7 @@ class ColorPickerScreen(
 
     private var selectedColor: Int = initialColor
     private lateinit var hexField: EditBox
-    private var pickerTextureId: ResourceLocation? = null
+    private var pickerTextureId: Identifier? = null
     private var panelX = 0
     private var panelY = 0
     private var updatingField = false
@@ -64,7 +64,7 @@ class ColorPickerScreen(
         addRenderableWidget(hexField)
     }
 
-    private fun createPickerTexture(): ResourceLocation {
+    private fun createPickerTexture(): Identifier {
         val image = NativeImage(PICKER_W, PICKER_H, false)
         for (x in 0 until PICKER_W) {
             val hue = x.toFloat() / PICKER_W
@@ -79,7 +79,7 @@ class ColorPickerScreen(
             }
         }
         val texture = DynamicTexture(image)
-        val id = ResourceLocation.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")
+        val id = Identifier.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")
         minecraft?.textureManager?.register(id, texture)
         return id
     }

@@ -10,7 +10,7 @@ import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
 import net.minecraft.nbt.StringTag
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResultHolder
@@ -58,7 +58,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.input")
                 .withStyle(ChatFormatting.GRAY))
             for ((itemId, count) in inputs) {
-                val identifier = ResourceLocation.tryParse(itemId) ?: continue
+                val identifier = Identifier.tryParse(itemId) ?: continue
                 val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
                 val countStr = if (count > 1) " x$count" else ""
                 tooltip.add(Component.literal("  ").append(item.description).append(countStr)
@@ -70,7 +70,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             tooltip.add(Component.translatable("tooltip.nodeworks.instruction_set.output")
                 .withStyle(ChatFormatting.GRAY))
             for ((itemId, count) in outputs) {
-                val identifier = ResourceLocation.tryParse(itemId) ?: continue
+                val identifier = Identifier.tryParse(itemId) ?: continue
                 val item = BuiltInRegistries.ITEM.get(identifier) ?: continue
                 val countStr = if (count > 1) " x$count" else ""
                 tooltip.add(Component.literal("  ").append(item.description).append(countStr)

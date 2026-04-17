@@ -11,7 +11,7 @@ import net.minecraft.client.renderer.RenderType
 import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.item.ItemDisplayContext
 import net.minecraft.world.item.ItemStack
 import org.joml.Quaternionf
@@ -27,7 +27,7 @@ import kotlin.math.sqrt
 class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntityRenderer<NodeBlockEntity> {
 
     companion object {
-        private val LASER_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+        private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
     }
 
     data class MonitorFace(
@@ -92,13 +92,13 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
                 val light = 15728880
 
                 val faceTex = RenderType.entityCutoutNoCull(
-                    ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/monitor_face.png")
+                    Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_face.png")
                 )
                 val sideTex = RenderType.entityCutoutNoCull(
-                    ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/monitor_side.png")
+                    Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_side.png")
                 )
                 val backTex = RenderType.entityCutoutNoCull(
-                    ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/monitor_back.png")
+                    Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_back.png")
                 )
 
                 // Front face (screen)
@@ -148,7 +148,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
 
             // Render item icon if set — push in front of the panel to avoid z-fighting
             if (face.itemId != null) {
-                val identifier = ResourceLocation.tryParse(face.itemId)
+                val identifier = Identifier.tryParse(face.itemId)
                 val item = if (identifier != null) BuiltInRegistries.ITEM.get(identifier) else null
                 if (item != null) {
                     val itemStack = ItemStack(item, 1)
@@ -176,11 +176,11 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) : BlockEntit
     // --- Glowing overlay ---
 
     private val GLOW_TEXTURES = arrayOf(
-        ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_square.png"),
-        ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_circle.png"),
-        ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_dot.png"),
-        ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_creeper.png"),
-        ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_spiral.png")
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_square.png"),
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_circle.png"),
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_dot.png"),
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_creeper.png"),
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_spiral.png")
     )
 
     private fun renderGlowingOverlay(poseStack: PoseStack, bufferSource: MultiBufferSource, networkColor: Int, glowStyle: Int = 0) {

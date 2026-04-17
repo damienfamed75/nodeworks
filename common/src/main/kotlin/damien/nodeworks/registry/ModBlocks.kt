@@ -17,7 +17,7 @@ import damien.nodeworks.block.VariableBlock
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.item.BlockItem
 import net.minecraft.world.item.Item
@@ -194,7 +194,7 @@ object ModBlocks {
         factory: (BlockBehaviour.Properties) -> Block,
         properties: BlockBehaviour.Properties
     ): Block {
-        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
         val block = factory(properties)
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)
         return block
@@ -210,7 +210,7 @@ object ModBlocks {
     )
 
     private fun registerDirect(id: String, block: Block): Block {
-        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)
         val item = BlockItem(block, Item.Properties())
         Registry.register(BuiltInRegistries.ITEM, identifier, item)
@@ -222,7 +222,7 @@ object ModBlocks {
         factory: (BlockBehaviour.Properties) -> Block,
         properties: BlockBehaviour.Properties
     ): Block {
-        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
+        val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
         val block = factory(properties)
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)
 

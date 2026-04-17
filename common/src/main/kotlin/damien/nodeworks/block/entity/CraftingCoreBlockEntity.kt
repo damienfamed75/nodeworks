@@ -724,7 +724,7 @@ class CraftingCoreBlockEntity(
         val snap = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
         val leftovers = clearBuffer()
         for ((itemId, count) in leftovers) {
-            val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
+            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
             var remaining = count
             while (remaining > 0L) {

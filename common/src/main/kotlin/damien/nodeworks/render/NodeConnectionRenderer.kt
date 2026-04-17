@@ -15,7 +15,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import org.joml.Quaternionf
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -308,7 +308,7 @@ object NodeConnectionRenderer {
 
     // ========== Billboard Beam Rendering ==========
 
-    private val LASER_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+    private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
     private const val BEAM_WIDTH = 1.0f / 16f
     private const val BEAM_SCROLL_SPEED = 0.8f
 

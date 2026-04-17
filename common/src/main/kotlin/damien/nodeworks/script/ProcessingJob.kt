@@ -142,7 +142,7 @@ class ProcessingJob(
                 val extracted = PlatformServices.storage.extractItems(storage, filter, stillNeeded)
                 if (extracted > 0L) {
                     if (stale) {
-                        val rl = net.minecraft.resources.ResourceLocation.tryParse(outputId)
+                        val rl = net.minecraft.resources.Identifier.tryParse(outputId)
                         val item = rl?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.get(it) }
                         if (item != null) {
                             NetworkStorageHelper.insertItemStack(

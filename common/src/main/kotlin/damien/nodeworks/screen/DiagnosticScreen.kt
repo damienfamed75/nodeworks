@@ -612,7 +612,7 @@ class DiagnosticScreen(
             if (rowBg != 0) graphics.fill(dropX + 1, sy, dropX + dropW - 1, sy + itemH, rowBg)
 
             // Item icon
-            val id = net.minecraft.resources.ResourceLocation.tryParse(suggestion)
+            val id = net.minecraft.resources.Identifier.tryParse(suggestion)
             if (id != null) {
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
                 if (item != null) {
@@ -680,7 +680,7 @@ class DiagnosticScreen(
         if (rowBg != 0) graphics.fill(x, y - 2, x + 300, y + lineH - 2, rowBg)
 
         // Item icon (small)
-        val itemId = net.minecraft.resources.ResourceLocation.tryParse(node.itemId)
+        val itemId = net.minecraft.resources.Identifier.tryParse(node.itemId)
         if (itemId != null) {
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId)
             if (item != null) {
@@ -803,7 +803,7 @@ class DiagnosticScreen(
             }
 
             // Render item icon
-            val itemId = net.minecraft.resources.ResourceLocation.tryParse(n.itemId)
+            val itemId = net.minecraft.resources.Identifier.tryParse(n.itemId)
             if (itemId != null) {
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId)
                 if (item != null) {
@@ -1176,7 +1176,7 @@ class DiagnosticScreen(
                     var h2TextX = px + 6
                     val h2TextY = curY + 2
                     if (row.blockItemId.isNotEmpty()) {
-                        val adjId = net.minecraft.resources.ResourceLocation.tryParse(row.blockItemId)
+                        val adjId = net.minecraft.resources.Identifier.tryParse(row.blockItemId)
                         if (adjId != null) {
                             val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(adjId)
                             if (adjItem != null) {
@@ -1306,7 +1306,7 @@ class DiagnosticScreen(
         // Card icons in a visible pill below the block
         if (block.cards.isNotEmpty()) {
             val iconsTexture =
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
             val uniqueTypes = block.cards.map { it.cardType }.distinct()
             val iconSize = 12
             val iconSpacing = 0
@@ -1346,7 +1346,7 @@ class DiagnosticScreen(
         // Pinned indicator icon (top-left corner of block)
         if (damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == block.pos) {
             val pinIconTex =
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.33f, 0.8f, 1f, 1f) // cyan tint
             graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256)
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)

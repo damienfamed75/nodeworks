@@ -11,7 +11,7 @@ import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
 import net.minecraft.nbt.StringTag
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResultHolder
@@ -51,7 +51,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
         super.appendHoverText(stack, context, tooltip, flag)
         val recipe = getRecipe(stack)
         val ingredients = recipe.filter { it.isNotEmpty() }.mapNotNull { id ->
-            val identifier = ResourceLocation.tryParse(id) ?: return@mapNotNull null
+            val identifier = Identifier.tryParse(id) ?: return@mapNotNull null
             BuiltInRegistries.ITEM.get(identifier)
         }.distinct()
 
@@ -64,7 +64,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
 
             val outputId = getOutput(stack)
             if (outputId.isNotEmpty()) {
-                val outputIdentifier = ResourceLocation.tryParse(outputId)
+                val outputIdentifier = Identifier.tryParse(outputId)
                 if (outputIdentifier != null) {
                     val outputItem = BuiltInRegistries.ITEM.get(outputIdentifier)
                     if (outputItem != null) {

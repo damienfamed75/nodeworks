@@ -12,7 +12,7 @@ import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.SectionPos
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import org.joml.Quaternionf
 
 /**
@@ -28,7 +28,7 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
     private val lastState = HashMap<BlockPos, Int>()
 
     companion object {
-        private val CARD_TEXTURE = ResourceLocation.fromNamespaceAndPath(
+        private val CARD_TEXTURE = Identifier.fromNamespaceAndPath(
             "nodeworks", "textures/block/processing_storage_card.png"
         )
 

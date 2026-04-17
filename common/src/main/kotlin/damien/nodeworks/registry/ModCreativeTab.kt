@@ -3,7 +3,7 @@ package damien.nodeworks.registry
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.ItemStack
 
@@ -11,7 +11,7 @@ object ModCreativeTab {
 
     val TAB: CreativeModeTab = Registry.register(
         BuiltInRegistries.CREATIVE_MODE_TAB,
-        ResourceLocation.fromNamespaceAndPath("nodeworks", "nodeworks"),
+        Identifier.fromNamespaceAndPath("nodeworks", "nodeworks"),
         CreativeModeTab.builder(CreativeModeTab.Row.TOP, 0)
             .title(Component.literal("Nodeworks"))
             .icon { ItemStack(ModBlocks.NODE.asItem()) }

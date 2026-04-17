@@ -6,7 +6,7 @@ import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 
 class NetworkControllerScreen(
@@ -152,7 +152,7 @@ class NetworkControllerScreen(
                             val mc = net.minecraft.client.Minecraft.getInstance()
                             val elapsed = mc.level?.gameTime?.minus(nameCheckmarkTime) ?: checkmarkDuration
                             if (elapsed < checkmarkDuration) {
-                                val iconsTexture = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+                                val iconsTexture = net.minecraft.resources.Identifier.fromNamespaceAndPath(
                                     "nodeworks",
                                     "textures/gui/icons.png"
                                 )

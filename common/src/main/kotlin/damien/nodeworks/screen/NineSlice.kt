@@ -1,7 +1,7 @@
 package damien.nodeworks.screen
 
 import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 
 /**
  * 9-slice texture renderer for scalable GUI elements.
@@ -18,7 +18,7 @@ import net.minecraft.resources.ResourceLocation
  *  BL | Bot  | BR
  * ```
  *
- * @param texture   ResourceLocation of the texture file (typically 256x256)
+ * @param texture   Identifier of the texture file (typically 256x256)
  * @param u         X offset of the slice region in the atlas (pixels)
  * @param v         Y offset of the slice region in the atlas (pixels)
  * @param srcWidth  Width of the full source region in the atlas
@@ -31,7 +31,7 @@ import net.minecraft.resources.ResourceLocation
  * @param texH      Full texture atlas height (default 256)
  */
 class NineSlice(
-    val texture: ResourceLocation,
+    val texture: Identifier,
     val u: Int,
     val v: Int,
     val srcWidth: Int,
@@ -215,7 +215,7 @@ class NineSlice(
 
     companion object {
         /** The shared GUI atlas containing all 9-slice regions. */
-        val GUI_ATLAS = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/gui_atlas.png")
+        val GUI_ATLAS = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/gui_atlas.png")
 
         /**
          * Draw a grid of slots with a CONTENT_BORDER overlay.

@@ -10,7 +10,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.tags.TagKey
 import net.minecraft.server.level.ServerLevel
 import org.luaj.vm2.*
@@ -43,9 +43,9 @@ class CardHandle private constructor(
 
             if (filter.startsWith("#")) {
                 val tagId = filter.substring(1)
-                val identifier = ResourceLocation.tryParse(tagId) ?: return false
+                val identifier = Identifier.tryParse(tagId) ?: return false
                 val tagKey = TagKey.create(Registries.ITEM, identifier)
-                val itemIdentifier = ResourceLocation.tryParse(itemId) ?: return false
+                val itemIdentifier = Identifier.tryParse(itemId) ?: return false
                 val item = BuiltInRegistries.ITEM.get(itemIdentifier) ?: return false
                 return item.builtInRegistryHolder().`is`(tagKey)
             }
@@ -150,7 +150,7 @@ class CardHandle private constructor(
         requested: Long,
         atomic: Boolean
     ): Long {
-        val id = ResourceLocation.tryParse(bufSrc.itemId) ?: return 0L
+        val id = Identifier.tryParse(bufSrc.itemId) ?: return 0L
         val item = BuiltInRegistries.ITEM.get(id) ?: return 0L
 
         if (atomic) {

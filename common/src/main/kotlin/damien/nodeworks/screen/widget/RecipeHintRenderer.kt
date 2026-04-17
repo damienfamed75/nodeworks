@@ -5,7 +5,7 @@ import damien.nodeworks.screen.Icons
 import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.item.ItemStack
 
 /**
@@ -173,7 +173,7 @@ object RecipeHintRenderer {
         right: Int
     ): Int? {
         val (itemId, count) = entry
-        val id = ResourceLocation.tryParse(itemId) ?: return 0
+        val id = Identifier.tryParse(itemId) ?: return 0
         val item = BuiltInRegistries.ITEM.get(id) ?: return 0
         // Advance is ALWAYS ICON_SIZE — counts overlay the icon vanilla-style and never
         // extend the entry's footprint. Ingredient spacing is therefore consistent

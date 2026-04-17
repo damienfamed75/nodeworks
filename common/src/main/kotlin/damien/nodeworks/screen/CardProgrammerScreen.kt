@@ -5,7 +5,7 @@ import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 
 class CardProgrammerScreen(
@@ -66,7 +66,7 @@ class CardProgrammerScreen(
         private const val INV_X = 8
         private const val HOTBAR_GAP = 4
 
-        private val BG_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/card_programmer_bg.png")
+        private val BG_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/card_programmer_bg.png")
     }
 
     private var counterField: EditBox? = null

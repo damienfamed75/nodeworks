@@ -143,7 +143,7 @@ class NetworkInventoryCache(
                     frontBuffer[key] = existing.copy(isCraftable = true)
                 } else {
                     // Not in storage — add phantom with count 0
-                    val id = net.minecraft.resources.ResourceLocation.tryParse(outputId) ?: continue
+                    val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
                     val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
                     val name = item.description.string
                     frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
@@ -159,7 +159,7 @@ class NetworkInventoryCache(
                     if (existing != null) {
                         frontBuffer[key] = existing.copy(isCraftable = true)
                     } else {
-                        val id = net.minecraft.resources.ResourceLocation.tryParse(outputId) ?: continue
+                        val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
                         val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
                         val name = item.description.string
                         frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
@@ -259,7 +259,7 @@ class NetworkInventoryCache(
             entries[key] = existing.copy(info = existing.info.copy(count = existing.info.count + amount))
             changedSerials.add(existing.serial)
         } else {
-            val identifier = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: return
+            val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
             val serial = nextSerial++
             entries[key] = SerialEntry(serial, ItemInfo(

@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 
 class InstructionSetScreen(
@@ -47,7 +47,7 @@ class InstructionSetScreen(
         /** Menu-button ID sent to the server to clear the 3x3 recipe grid. */
         const val BTN_ID_CLEAR_GRID = 0
 
-        private val BG_TEXTURE = ResourceLocation.fromNamespaceAndPath(
+        private val BG_TEXTURE = Identifier.fromNamespaceAndPath(
             "nodeworks", "textures/gui/instruction_set_bg.png"
         )
     }

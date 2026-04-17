@@ -6,7 +6,7 @@ import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 
 class VariableScreen(
@@ -26,7 +26,7 @@ class VariableScreen(
         private const val SET_BTN_H = 16
 
         // Icon atlas (256x256, 16x16 icons)
-        private val ICONS = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+        private val ICONS = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
         // Icon positions in atlas (column, row)
         const val ICON_CHECKMARK = 0
         const val ICON_CROSS = 1

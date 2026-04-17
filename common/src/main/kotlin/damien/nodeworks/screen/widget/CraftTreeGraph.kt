@@ -5,7 +5,7 @@ import damien.nodeworks.script.CraftTreeBuilder
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.item.ItemStack
 import kotlin.math.roundToInt
 
@@ -255,7 +255,7 @@ class CraftTreeGraph {
             }
 
             // Item icon with per-pixel glow highlight
-            val itemResId = ResourceLocation.tryParse(node.itemId)
+            val itemResId = Identifier.tryParse(node.itemId)
             if (itemResId != null) {
                 val item = BuiltInRegistries.ITEM.get(itemResId)
                 if (item != null) {

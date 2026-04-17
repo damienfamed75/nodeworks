@@ -71,7 +71,7 @@ class ProcessingSetScreen(
         private const val CLEAR_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - CLEAR_BTN_SIZE) / 2
 
 
-        private val BG_TEXTURE = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+        private val BG_TEXTURE = net.minecraft.resources.Identifier.fromNamespaceAndPath(
             "nodeworks", "textures/gui/processing_set_bg.png"
         )
     }

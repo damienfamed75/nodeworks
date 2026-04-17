@@ -3,7 +3,7 @@ package damien.nodeworks.script
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.crafting.CraftingInput
@@ -41,7 +41,7 @@ object ShapelessCraftHelper {
         // Build the 3x3 crafting grid from the ingredients
         val gridItems = mutableListOf<ItemStack>()
         for ((itemId, count) in ingredients) {
-            val identifier = ResourceLocation.tryParse(itemId) ?: return null
+            val identifier = Identifier.tryParse(itemId) ?: return null
             val item = BuiltInRegistries.ITEM.get(identifier) ?: return null
             repeat(count) { gridItems.add(ItemStack(item, 1)) }
         }

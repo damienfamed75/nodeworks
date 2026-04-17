@@ -11,7 +11,7 @@ import damien.nodeworks.script.NetworkStorageHelper
 import damien.nodeworks.script.ProcessingJob
 import damien.nodeworks.script.ScriptEngine
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.crafting.CraftingInput
@@ -175,7 +175,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val items = op.recipe.map { itemId ->
             if (itemId.isEmpty()) ItemStack.EMPTY
             else {
-                val id = ResourceLocation.tryParse(itemId)
+                val id = Identifier.tryParse(itemId)
                     ?: return CraftScheduler.OpResult.Failed("Bad item id in recipe: $itemId")
                 val item = BuiltInRegistries.ITEM.get(id)
                     ?: return CraftScheduler.OpResult.Failed("Unknown item in recipe: $itemId")
@@ -241,7 +241,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             )
         }
         val removed = cpu.removeFromBuffer(op.itemId, op.amount)
-        val id = ResourceLocation.tryParse(op.itemId)
+        val id = Identifier.tryParse(op.itemId)
             ?: return CraftScheduler.OpResult.Failed("Bad item id: ${op.itemId}")
         val item = BuiltInRegistries.ITEM.get(id)
             ?: return CraftScheduler.OpResult.Failed("Unknown item: ${op.itemId}")
@@ -407,7 +407,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val itemsTable = LuaTable()
         for ((idx, slotData) in progress.perBatchInputs.withIndex()) {
             val (itemId, batchCount) = slotData
-            val id = ResourceLocation.tryParse(itemId)
+            val id = Identifier.tryParse(itemId)
                 ?: return CraftScheduler.OpResult.Failed("Bad input item id: $itemId")
             val item = BuiltInRegistries.ITEM.get(id)
                 ?: return CraftScheduler.OpResult.Failed("Unknown input item: $itemId")
@@ -746,7 +746,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         lvl: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ) {
-        val id = ResourceLocation.tryParse(itemId) ?: return
+        val id = Identifier.tryParse(itemId) ?: return
         val item = BuiltInRegistries.ITEM.get(id) ?: return
         var remaining = count
         while (remaining > 0L) {

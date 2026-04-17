@@ -4,7 +4,7 @@ import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 
@@ -216,7 +216,7 @@ object CraftTreeBuilder {
         val items = recipe.map { itemId ->
             if (itemId.isEmpty()) ItemStack.EMPTY
             else {
-                val id = ResourceLocation.tryParse(itemId) ?: return 1
+                val id = Identifier.tryParse(itemId) ?: return 1
                 val item = BuiltInRegistries.ITEM.get(id) ?: return 1
                 ItemStack(item, 1)
             }
@@ -229,7 +229,7 @@ object CraftTreeBuilder {
     }
 
     private fun getItemName(itemId: String): String {
-        val id = ResourceLocation.tryParse(itemId) ?: return itemId.substringAfter(':')
+        val id = Identifier.tryParse(itemId) ?: return itemId.substringAfter(':')
         val item = BuiltInRegistries.ITEM.get(id) ?: return itemId.substringAfter(':')
         return ItemStack(item).hoverName.string
     }

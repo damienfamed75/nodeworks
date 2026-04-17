@@ -7,7 +7,7 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.RenderType
 import net.minecraft.client.renderer.texture.OverlayTexture
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 
 /**
  * Renders an emissive overlay on the Network Controller (AE2-style glowing lines).
@@ -16,8 +16,8 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
     BlockEntityRenderer<NetworkControllerBlockEntity> {
 
     companion object {
-        private val EMISSIVE_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/network_controller_emissive.png")
-        private val EMISSIVE_TOP_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/network_controller_top_emissive.png")
+        private val EMISSIVE_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/network_controller_emissive.png")
+        private val EMISSIVE_TOP_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/network_controller_top_emissive.png")
     }
 
     override fun render(

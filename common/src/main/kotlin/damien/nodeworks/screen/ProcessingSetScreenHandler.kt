@@ -3,7 +3,7 @@ package damien.nodeworks.screen
 import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.Container
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.SimpleContainer
@@ -63,7 +63,7 @@ class ProcessingSetScreenHandler(
             for ((i, pair) in inputs.withIndex()) {
                 val slot = inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
-                val id = ResourceLocation.tryParse(pair.first) ?: continue
+                val id = Identifier.tryParse(pair.first) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
                 inputGrid.setItem(slot, ItemStack(item, 1))
             }
@@ -72,7 +72,7 @@ class ProcessingSetScreenHandler(
             for ((i, pair) in outputs.withIndex()) {
                 val slot = outputSlots.getOrElse(i) { i }
                 if (slot !in 0 until OUTPUT_SLOTS) continue
-                val id = ResourceLocation.tryParse(pair.first) ?: continue
+                val id = Identifier.tryParse(pair.first) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
                 outputGrid.setItem(slot, ItemStack(item, 1))
             }
@@ -110,7 +110,7 @@ class ProcessingSetScreenHandler(
             for ((i, pair) in openData.inputs.withIndex()) {
                 val slot = openData.inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
-                val id = ResourceLocation.tryParse(pair.first) ?: continue
+                val id = Identifier.tryParse(pair.first) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
                 inputGrid.setItem(slot, ItemStack(item, 1))
             }
@@ -119,7 +119,7 @@ class ProcessingSetScreenHandler(
             for ((i, pair) in openData.outputs.withIndex()) {
                 val slot = openData.outputSlots.getOrElse(i) { i }
                 if (slot !in 0 until OUTPUT_SLOTS) continue
-                val id = ResourceLocation.tryParse(pair.first) ?: continue
+                val id = Identifier.tryParse(pair.first) ?: continue
                 val item = BuiltInRegistries.ITEM.get(id) ?: continue
                 outputGrid.setItem(slot, ItemStack(item, 1))
             }
@@ -254,7 +254,7 @@ class ProcessingSetScreenHandler(
             }
             return
         }
-        val id = ResourceLocation.tryParse(itemId) ?: return
+        val id = Identifier.tryParse(itemId) ?: return
         val item = BuiltInRegistries.ITEM.get(id) ?: return
         when {
             slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, ItemStack(item, 1))

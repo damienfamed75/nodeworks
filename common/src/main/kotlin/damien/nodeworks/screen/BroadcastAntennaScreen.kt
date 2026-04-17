@@ -3,7 +3,7 @@ package damien.nodeworks.screen
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 
 class BroadcastAntennaScreen(
@@ -30,7 +30,7 @@ class BroadcastAntennaScreen(
         private const val FRAME_H = INV_PANEL_Y + INV_PANEL_H
         private const val LABEL_COLOR = 0xFFAAAAAA.toInt()
 
-        private val BG_TEXTURE = ResourceLocation.fromNamespaceAndPath(
+        private val BG_TEXTURE = Identifier.fromNamespaceAndPath(
             "nodeworks", "textures/gui/broadcast_antenna_bg.png"
         )
     }

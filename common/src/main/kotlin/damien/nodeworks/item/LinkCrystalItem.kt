@@ -6,7 +6,7 @@ import net.minecraft.core.component.DataComponents
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceKey
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.TooltipFlag
@@ -51,7 +51,7 @@ class LinkCrystalItem(properties: Properties) : Item(properties) {
             val tag = customData.copyTag()
             if (!tag.contains(FREQ_KEY)) return null
             val pos = BlockPos.of(tag.getLong(POS_KEY))
-            val dimId = ResourceLocation.tryParse(tag.getString(DIM_KEY)) ?: return null
+            val dimId = Identifier.tryParse(tag.getString(DIM_KEY)) ?: return null
             val dimension = ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, dimId)
             val freq = try { UUID.fromString(tag.getString(FREQ_KEY)) } catch (_: Exception) { return null }
             return PairingData(pos, dimension, freq)

@@ -9,7 +9,7 @@ import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.ItemStack
 
@@ -311,7 +311,7 @@ class CraftingCoreScreen(
             if (row < 0 || row >= rows) continue
             val ix = startX + col * slotSize
             val iy = startY + row * slotSize
-            val id = ResourceLocation.tryParse(entry.first) ?: continue
+            val id = Identifier.tryParse(entry.first) ?: continue
             val item = BuiltInRegistries.ITEM.get(id) ?: continue
             val stack = ItemStack(item, 1)
             NineSlice.SLOT.draw(graphics, ix - 1, iy - 1, 18, 18)
@@ -379,7 +379,7 @@ class CraftingCoreScreen(
                 val ix = bufferGridX + col * slotSize
                 val iy = bufferGridY + row * slotSize
                 if (mouseX >= ix && mouseX < ix + 16 && mouseY >= iy && mouseY < iy + 16) {
-                    val id = ResourceLocation.tryParse(entry.first) ?: continue
+                    val id = Identifier.tryParse(entry.first) ?: continue
                     val item = BuiltInRegistries.ITEM.get(id) ?: continue
                     val stack = ItemStack(item, entry.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                     graphics.renderTooltip(font, stack, mouseX, mouseY)
