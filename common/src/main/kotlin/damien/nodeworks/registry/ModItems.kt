@@ -104,6 +104,24 @@ object ModItems {
         Item.Properties().stacksTo(16)
     )
 
+    val ANTENNA_COIL_ASSEMBLY: Item = register(
+        "antenna_coil_assembly",
+        ::Item,
+        Item.Properties().stacksTo(64)
+    )
+
+    val CELESTINE_ANTENNA_ARRAY: Item = register(
+        "celestine_antenna_array",
+        ::Item,
+        Item.Properties().stacksTo(1)
+    )
+
+    val CELESTINE_RECEIVER_DISH: Item = register(
+        "celestine_receiver_dish",
+        ::Item,
+        Item.Properties().stacksTo(1)
+    )
+
     private fun register(
         id: String,
         factory: (Item.Properties) -> Item,
