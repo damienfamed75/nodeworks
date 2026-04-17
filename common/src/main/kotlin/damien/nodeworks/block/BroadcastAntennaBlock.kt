@@ -94,12 +94,14 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
 
     override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
         if (!state.`is`(newState.block)) {
-            Containers.dropContents(level, pos, level.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return)
+            // Drop inventory contents (if BE is still alive).
+            val entity = level.getBlockEntity(pos) as? BroadcastAntennaBlockEntity
+            if (entity != null) Containers.dropContents(level, pos, entity)
+            // Always cascade-remove segments above, even if BE was already gone.
             if (!level.isClientSide) {
-                // Cascade-remove the segment stack above.
                 var cursor = pos.above()
                 while (level.getBlockState(cursor).block is AntennaSegmentBlock) {
-                    level.setBlock(cursor, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL or Block.UPDATE_SUPPRESS_DROPS)
+                    level.setBlock(cursor, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
                     cursor = cursor.above()
                 }
             }
