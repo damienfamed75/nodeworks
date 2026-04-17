@@ -10,6 +10,7 @@ import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
+import damien.nodeworks.render.ReceiverAntennaRenderer
 import damien.nodeworks.render.TerminalRenderer
 import damien.nodeworks.render.VariableRenderer
 import net.neoforged.neoforge.client.event.EntityRenderersEvent
@@ -103,6 +104,7 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.RECEIVER_ANTENNA, ::ReceiverAntennaRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
@@ -203,7 +205,8 @@ object NeoForgeClientSetup {
             damien.nodeworks.registry.ModBlocks.VARIABLE,
             damien.nodeworks.registry.ModBlocks.TERMINAL,
             damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE,
-            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE
+            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE,
+            damien.nodeworks.registry.ModBlocks.RECEIVER_ANTENNA
         )
     }
 }

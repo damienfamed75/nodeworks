@@ -12,6 +12,7 @@ import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.level.block.state.properties.EnumProperty
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
@@ -27,6 +28,7 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
 
     companion object {
         val PART: EnumProperty<Part> = EnumProperty.create("part", Part::class.java)
+        val FACING = BlockStateProperties.HORIZONTAL_FACING
 
         /** 7×16×7 footprint, centered. */
         private val SHAPE: VoxelShape = Shapes.box(4.5 / 16.0, 0.0, 4.5 / 16.0, 11.5 / 16.0, 1.0, 11.5 / 16.0)
@@ -34,12 +36,16 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
         /** How far up to scan when looking for the stack's base (broadcast antenna block). */
         private const val MAX_STACK_HEIGHT = 5
 
-        /** Find the [BroadcastAntennaBlock] at or below [pos], or null if not part of a stack. */
+        /** Check if a block is any antenna base type (broadcast or receiver). */
+        fun isAntennaBase(block: net.minecraft.world.level.block.Block): Boolean =
+            block is BroadcastAntennaBlock || block is ReceiverAntennaBlock
+
+        /** Find a broadcast or receiver antenna base at or below [pos], or null. */
         fun findBase(level: BlockGetter, pos: BlockPos): BlockPos? {
             var cursor = pos
             for (i in 0 until MAX_STACK_HEIGHT) {
                 val state = level.getBlockState(cursor)
-                if (state.block is BroadcastAntennaBlock) return cursor
+                if (isAntennaBase(state.block)) return cursor
                 if (state.block !is AntennaSegmentBlock) return null
                 cursor = cursor.below()
             }
@@ -48,11 +54,11 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
     }
 
     init {
-        registerDefaultState(stateDefinition.any().setValue(PART, Part.MIDDLE))
+        registerDefaultState(stateDefinition.any().setValue(PART, Part.MIDDLE).setValue(FACING, Direction.NORTH))
     }
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
-        builder.add(PART)
+        builder.add(PART, FACING)
     }
 
     override fun getShape(state: BlockState, level: BlockGetter, pos: BlockPos, context: CollisionContext): VoxelShape = SHAPE
@@ -89,7 +95,7 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
             below = below.below()
         }
         // Destroy the base — drops antenna item + inventory via the base's onRemove.
-        if (level.getBlockState(below).block is BroadcastAntennaBlock) {
+        if (isAntennaBase(level.getBlockState(below).block)) {
             level.destroyBlock(below, true)
         }
     }
@@ -99,12 +105,13 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
         pos: BlockPos,
         state: BlockState
     ): net.minecraft.world.item.ItemStack {
-        // Picking the block gives the antenna item, not the segment (which has no obtainable item form).
-        return net.minecraft.world.item.ItemStack(ModBlocks.BROADCAST_ANTENNA)
+        val part = state.getValue(PART)
+        val block = if (part == Part.RECEIVER) ModBlocks.RECEIVER_ANTENNA else ModBlocks.BROADCAST_ANTENNA
+        return net.minecraft.world.item.ItemStack(block)
     }
 
     enum class Part : StringRepresentable {
-        MIDDLE, TOP;
+        MIDDLE, TOP, RECEIVER;
         override fun getSerializedName(): String = name.lowercase()
     }
 }
