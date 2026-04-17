@@ -3,6 +3,7 @@ package damien.nodeworks.block.entity
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.registry.ModBlockEntities
+import damien.nodeworks.registry.ModItems
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.HolderLookup
@@ -33,7 +34,28 @@ class BroadcastAntennaBlockEntity(
     var frequencyId: UUID = UUID.randomUUID()
         private set
 
-    private val items = NonNullList.withSize(1, ItemStack.EMPTY)
+    /** Slot 0 = Link Crystal (frequency chip). Slot 1 = optional range upgrade. */
+    private val items = NonNullList.withSize(2, ItemStack.EMPTY)
+
+    companion object {
+        const val SLOT_CHIP = 0
+        const val SLOT_UPGRADE = 1
+        /** Default range in blocks when no upgrade is installed. 8-chunk radius. */
+        const val BASE_RANGE_BLOCKS = 128.0
+    }
+
+    /** Effective broadcast radius in blocks. Infinite (Double.MAX_VALUE) with either upgrade. */
+    val effectiveRange: Double get() {
+        val upgrade = items[SLOT_UPGRADE].item
+        return if (upgrade == ModItems.DIMENSION_RANGE_UPGRADE || upgrade == ModItems.MULTI_DIMENSION_RANGE_UPGRADE)
+            Double.MAX_VALUE
+        else
+            BASE_RANGE_BLOCKS
+    }
+
+    /** Whether receivers in different dimensions can pair with this antenna. */
+    val allowsCrossDimension: Boolean get() =
+        items[SLOT_UPGRADE].item == ModItems.MULTI_DIMENSION_RANGE_UPGRADE
 
     /** Scan adjacent Processing Storage clusters for all Processing Sets. */
     fun getAvailableApis(): List<ProcessingStorageBlockEntity.ProcessingApiInfo> {
@@ -70,13 +92,13 @@ class BroadcastAntennaBlockEntity(
         return emptyList()
     }
 
-    // --- Container (1 chip slot) ---
+    // --- Container (slot 0 = chip, slot 1 = upgrade) ---
 
-    override fun getContainerSize(): Int = 1
-    override fun isEmpty(): Boolean = items[0].isEmpty
+    override fun getContainerSize(): Int = items.size
+    override fun isEmpty(): Boolean = items.all { it.isEmpty }
 
     override fun getItem(slot: Int): ItemStack =
-        if (slot == 0) items[0] else ItemStack.EMPTY
+        if (slot in items.indices) items[slot] else ItemStack.EMPTY
 
     override fun removeItem(slot: Int, amount: Int): ItemStack {
         val result = ContainerHelper.removeItem(items, slot, amount)
@@ -88,10 +110,9 @@ class BroadcastAntennaBlockEntity(
         ContainerHelper.takeItem(items, slot)
 
     override fun setItem(slot: Int, stack: ItemStack) {
-        if (slot != 0) return
-        items[0] = stack
-        // Encode (or re-encode) the chip when a Link Crystal is inserted
-        if (stack.item is LinkCrystalItem) {
+        if (slot !in items.indices) return
+        items[slot] = stack
+        if (slot == SLOT_CHIP && stack.item is LinkCrystalItem) {
             val lvl = level ?: return
             LinkCrystalItem.encode(stack, worldPosition, lvl.dimension(), frequencyId)
         }

@@ -14,8 +14,6 @@ class BroadcastAntennaScreen(
     companion object {
         private const val W = 176
         private const val TOP_BAR_H = 20
-        private const val CHIP_X = 80
-        private const val CHIP_Y = 36
         private const val INV_X = 8
         private const val INV_Y = 82
         private const val HOTBAR_GAP = 4
@@ -37,9 +35,11 @@ class BroadcastAntennaScreen(
         val trimColor = if (reachable) damien.nodeworks.network.NetworkSettingsRegistry.getColor(entity?.networkId) else -1
         NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, trimColor)
 
-        graphics.drawString(font, "Insert blank Link Crystal", leftPos + 8, topPos + 23, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, "Link Crystal",  leftPos + BroadcastAntennaMenu.CHIP_SLOT_X - 1,    topPos + BroadcastAntennaMenu.SLOT_Y - 11, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, "Upgrade",       leftPos + BroadcastAntennaMenu.UPGRADE_SLOT_X - 1, topPos + BroadcastAntennaMenu.SLOT_Y - 11, 0xFFAAAAAA.toInt())
 
-        NineSlice.drawSlotGrid(graphics, leftPos + CHIP_X, topPos + CHIP_Y, 1, 1)
+        NineSlice.drawSlotGrid(graphics, leftPos + BroadcastAntennaMenu.CHIP_SLOT_X - 1,    topPos + BroadcastAntennaMenu.SLOT_Y - 1, 1, 1)
+        NineSlice.drawSlotGrid(graphics, leftPos + BroadcastAntennaMenu.UPGRADE_SLOT_X - 1, topPos + BroadcastAntennaMenu.SLOT_Y - 1, 1, 1)
 
         graphics.drawString(font, "Inventory", leftPos + INV_X, topPos + INV_Y - 10, 0xFFAAAAAA.toInt())
         NineSlice.drawPlayerInventory(graphics, leftPos + INV_X, topPos + INV_Y, HOTBAR_GAP)

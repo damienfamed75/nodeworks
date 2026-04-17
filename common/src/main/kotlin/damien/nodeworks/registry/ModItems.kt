@@ -122,6 +122,22 @@ object ModItems {
         Item.Properties().stacksTo(1)
     )
 
+    val DIMENSION_RANGE_UPGRADE: Item = register(
+        "dimension_range_upgrade",
+        ::Item,
+        Item.Properties()
+            .stacksTo(1)
+            .component(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
+    )
+
+    val MULTI_DIMENSION_RANGE_UPGRADE: Item = register(
+        "multi_dimension_range_upgrade",
+        ::Item,
+        Item.Properties()
+            .stacksTo(1)
+            .component(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
+    )
+
     private fun register(
         id: String,
         factory: (Item.Properties) -> Item,

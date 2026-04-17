@@ -55,6 +55,8 @@ object ModCreativeTab {
                 output.accept(ModItems.ANTENNA_COIL_ASSEMBLY)
                 output.accept(ModItems.CELESTINE_ANTENNA_ARRAY)
                 output.accept(ModItems.CELESTINE_RECEIVER_DISH)
+                output.accept(ModItems.DIMENSION_RANGE_UPGRADE)
+                output.accept(ModItems.MULTI_DIMENSION_RANGE_UPGRADE)
                 output.accept(ModItems.MONITOR)
                 output.accept(ModItems.CELESTINE_SHARD)
                 output.accept(ModItems.MILKY_SOUL_BALL)

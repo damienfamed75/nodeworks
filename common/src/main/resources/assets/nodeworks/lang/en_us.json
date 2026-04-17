@@ -54,6 +54,8 @@
   "item.nodeworks.antenna_coil_assembly": "Antenna Coil Assembly",
   "item.nodeworks.celestine_antenna_array": "Celestine Antenna Array",
   "item.nodeworks.celestine_receiver_dish": "Celestine Receiver Dish",
+  "item.nodeworks.dimension_range_upgrade": "Dimension Range Upgrade",
+  "item.nodeworks.multi_dimension_range_upgrade": "Multi-Dimension Range Upgrade",
   "block.nodeworks.antenna_segment": "Antenna Segment",
   "block.nodeworks.broadcast_antenna": "Broadcast Antenna",
   "block.nodeworks.receiver_antenna": "Receiver Antenna",
