@@ -1,0 +1,19 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+        " A ",
+        "DCD",
+        "BIB"
+    ],
+    "key": {
+        "A": { "item": "nodeworks:celestine_antenna_array" },
+        "D": { "item": "minecraft:deepslate" },
+        "C": { "item": "nodeworks:antenna_coil_assembly" },
+        "B": { "item": "minecraft:iron_block" },
+        "I": { "item": "minecraft:iron_ingot" }
+    },
+    "result": {
+        "id": "nodeworks:broadcast_antenna",
+        "count": 1
+    }
+}
