@@ -87,11 +87,13 @@ class ReceiverAntennaBlockEntity(
 
     /** Read pairing data from the chip in the slot. */
     private fun updatePairingFromChip() {
+        val wasPaired = isPaired
         val stack = items[0]
         if (stack.isEmpty || stack.item !is LinkCrystalItem) {
             pairedPos = null
             pairedDimension = null
             pairedFrequencyId = null
+            if (wasPaired != isPaired) updateSegmentConnectedState()
             return
         }
         val data = LinkCrystalItem.getPairingData(stack)
@@ -104,6 +106,7 @@ class ReceiverAntennaBlockEntity(
             pairedDimension = null
             pairedFrequencyId = null
         }
+        if (wasPaired != isPaired) updateSegmentConnectedState()
     }
 
     // --- Connectable ---
@@ -124,6 +127,36 @@ class ReceiverAntennaBlockEntity(
         return true
     }
 
+    /** Flip the segment above's CONNECTED blockstate to match whether this receiver is
+     *  currently fully linked to a Broadcast Antenna. Only status code 1 ("linked")
+     *  counts — out-of-range / not-loaded / frequency-mismatch / broadcast-not-found
+     *  all leave the horn dark. Drives the horn on/off multipart model. */
+    fun updateSegmentConnectedState() {
+        if (isRemoved) return
+        val lvl = level as? ServerLevel ?: return
+        val segmentPos = worldPosition.above()
+        val segState = lvl.getBlockState(segmentPos)
+        if (segState.block !is damien.nodeworks.block.AntennaSegmentBlock) return
+        val desired = getConnectionStatus(lvl) == 1
+        if (segState.getValue(damien.nodeworks.block.AntennaSegmentBlock.CONNECTED) == desired) return
+        lvl.setBlock(
+            segmentPos,
+            segState.setValue(damien.nodeworks.block.AntennaSegmentBlock.CONNECTED, desired),
+            Block.UPDATE_ALL
+        )
+    }
+
+    /** Called every tick by [damien.nodeworks.block.ReceiverAntennaBlock.getTicker]. We
+     *  only re-check every 20 ticks (1s) — the check walks to the paired broadcast and
+     *  compares UUIDs, which is cheap but not free. setBlock only fires when the desired
+     *  state actually changes, so the work per tick is minimal. */
+    fun serverTick(lvl: ServerLevel) {
+        tickCounter = (tickCounter + 1) % 20
+        if (tickCounter == 0) updateSegmentConnectedState()
+    }
+
+    private var tickCounter: Int = 0
+
     override fun hasConnection(pos: BlockPos): Boolean = connections.contains(pos)
 
     // --- Lifecycle ---
@@ -137,13 +170,16 @@ class ReceiverAntennaBlockEntity(
     }
 
     override fun setRemoved() {
+        // Flip the BE's removed flag FIRST so updateSegmentConnectedState bails out.
+        // Otherwise the chain removeAllConnections → removeConnection → setBlock
+        // mutates blocks mid-chunk-unload and hangs world save.
+        super.setRemoved()
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val lvl = level
         if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
         }
-        super.setRemoved()
     }
 
     // --- Container (1 chip slot) ---
