@@ -488,8 +488,10 @@ class DiagnosticScreen(
             return
         }
 
-        // Visual item graph with zoom/pan (full content area)
-        graphics.enableScissor(graphLeft, graphTop, graphRight, graphBottom)
+        // Visual item graph with zoom/pan. Scissor starts at the RIGHT edge of the
+        // detail panel so tree items/icons can't render on top of it — item rendering
+        // uses its own Z stack that the panel's Z=100 re-draw doesn't outrank.
+        graphics.enableScissor(detailX + detailW, graphTop, graphRight, graphBottom)
         graphics.pose().pushPose()
         val layout = layoutCraftTree(tree)
 
