@@ -1,6 +1,18 @@
 {
   "variants": {
-    "part=middle": { "model": "nodeworks:block/antenna_segment_middle" },
-    "part=top":    { "model": "nodeworks:block/antenna_segment_top" }
+    "part=middle,facing=north": { "model": "nodeworks:block/antenna_segment_middle" },
+    "part=middle,facing=south": { "model": "nodeworks:block/antenna_segment_middle" },
+    "part=middle,facing=east":  { "model": "nodeworks:block/antenna_segment_middle" },
+    "part=middle,facing=west":  { "model": "nodeworks:block/antenna_segment_middle" },
+
+    "part=top,facing=north": { "model": "nodeworks:block/antenna_segment_top" },
+    "part=top,facing=south": { "model": "nodeworks:block/antenna_segment_top" },
+    "part=top,facing=east":  { "model": "nodeworks:block/antenna_segment_top" },
+    "part=top,facing=west":  { "model": "nodeworks:block/antenna_segment_top" },
+
+    "part=receiver,facing=north": { "model": "nodeworks:block/receiver_antenna_top", "y": 270 },
+    "part=receiver,facing=south": { "model": "nodeworks:block/receiver_antenna_top", "y": 90 },
+    "part=receiver,facing=east":  { "model": "nodeworks:block/receiver_antenna_top" },
+    "part=receiver,facing=west":  { "model": "nodeworks:block/receiver_antenna_top", "y": 180 }
   }
 }

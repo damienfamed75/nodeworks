@@ -11,6 +11,7 @@ import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
+import damien.nodeworks.render.ReceiverAntennaRenderer
 import damien.nodeworks.render.TerminalRenderer
 import damien.nodeworks.render.VariableRenderer
 import damien.nodeworks.screen.NodeSideScreen
@@ -103,7 +104,8 @@ object NodeworksClient : ClientModInitializer {
             damien.nodeworks.registry.ModBlocks.VARIABLE,
             damien.nodeworks.registry.ModBlocks.TERMINAL,
             damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE,
-            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE
+            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE,
+            damien.nodeworks.registry.ModBlocks.RECEIVER_ANTENNA
         )
 
         NodeConnectionRenderer.register()
@@ -116,6 +118,7 @@ object NodeworksClient : ClientModInitializer {
         BlockEntityRendererRegistry.register(ModBlockEntities.TERMINAL, ::TerminalRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
         BlockEntityRendererRegistry.register(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
+        BlockEntityRendererRegistry.register(ModBlockEntities.RECEIVER_ANTENNA, ::ReceiverAntennaRenderer)
 
         MenuScreens.register(ModScreenHandlers.NODE_SIDE) { menu, inventory, title ->
             NodeSideScreen(menu, inventory, title)
