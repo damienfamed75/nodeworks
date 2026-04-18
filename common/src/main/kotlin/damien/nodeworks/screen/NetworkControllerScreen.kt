@@ -48,6 +48,13 @@ class NetworkControllerScreen(
         private const val ROW_H = 24
         private const val SCROLL_BAR_W = 6
         private const val LABEL_W = 60
+
+        // Chunk-loading toggle geometry. Shifted 32px right of the standard controlX so
+        // the switch visually aligns with the values column below other rows (name field,
+        // color swatch, etc. all sit further right than LABEL_W alone accounts for).
+        private const val CHUNK_LOADING_OFFSET_X = 32
+        private const val CHUNK_LOADING_BTN_W = 48
+        private const val CHUNK_LOADING_BTN_H = 16
     }
 
     // Property definitions
@@ -327,19 +334,8 @@ class NetworkControllerScreen(
     }
 
     private fun renderChunkLoadingControl(graphics: GuiGraphicsExtractor, bx: Int, by: Int) {
-        val enabled = menu.chunkLoading
-        val slice = if (enabled) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
-        val bw = 48
-        val bh = 16
-        slice.draw(graphics, bx, by, bw, bh)
-        val label = if (enabled) "On" else "Off"
-        val labelColor = if (enabled) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
-        graphics.drawString(
-            font, label,
-            bx + (bw - font.width(label)) / 2,
-            by + 4,
-            labelColor
-        )
+        val slice = if (menu.chunkLoading) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
+        slice.draw(graphics, bx + CHUNK_LOADING_OFFSET_X, by, CHUNK_LOADING_BTN_W, CHUNK_LOADING_BTN_H)
     }
 
     private fun commitRetryField() {
@@ -520,9 +516,9 @@ class NetworkControllerScreen(
                 }
 
                 PropertyType.CHUNK_LOADING -> {
-                    val bw = 48
-                    val bh = 16
-                    if (mx >= controlX && mx < controlX + bw && my >= controlY && my < controlY + bh) {
+                    val btnX = controlX + CHUNK_LOADING_OFFSET_X
+                    if (mx >= btnX && mx < btnX + CHUNK_LOADING_BTN_W
+                        && my >= controlY && my < controlY + CHUNK_LOADING_BTN_H) {
                         sendChunkLoadingUpdate(!menu.chunkLoading)
                         return true
                     }
