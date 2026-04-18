@@ -15,6 +15,9 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getStringOrNull
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 class VariableBlockEntity(
@@ -177,14 +180,25 @@ class VariableBlockEntity(
 
     // --- Serialization ---
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
+        output.putString("variableName", variableName)
+        output.putInt("variableType", variableType.ordinal)
+        output.putString("variableValue", variableValue)
+        networkId?.let { output.putString("networkId", it.toString()) }
+        output.putBlockPosList("connections", connections)
     }
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
+        variableName = input.getStringOr("variableName", "")
+        variableType = VariableType.fromOrdinal(input.getIntOr("variableType", 0))
+        variableValue = input.getStringOr("variableValue", "").ifEmpty { variableType.defaultValue }
+        networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
+        connections.clear()
+        connections.addAll(input.getBlockPosList("connections"))
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

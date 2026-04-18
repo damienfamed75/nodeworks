@@ -21,6 +21,7 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getStringOrNull
 import java.util.UUID
 
 /**
@@ -128,14 +129,20 @@ class BroadcastAntennaBlockEntity(
 
     // --- Serialization ---
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
+        output.putString("frequency", frequencyId.toString())
+        ContainerHelper.saveAllItems(output, items)
     }
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
+        input.getStringOrNull("frequency")?.let { freqStr ->
+            try { frequencyId = UUID.fromString(freqStr) }
+            catch (_: Exception) { frequencyId = UUID.randomUUID() }
+        }
+        items.clear()
+        ContainerHelper.loadAllItems(input, items)
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag =

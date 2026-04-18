@@ -1,8 +1,11 @@
 package damien.nodeworks.compat
 
+import com.mojang.serialization.Codec
+import net.minecraft.core.BlockPos
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
 import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
 
 /**
  * NBT compatibility helpers.
@@ -62,3 +65,42 @@ fun ValueInput.getIntOrNull(key: String): Int? =
 
 fun ValueInput.getLongOrNull(key: String): Long? =
     getLong(key).orElse(null)
+
+// ---------- BlockPos collections ----------
+//
+// ValueOutput has `putIntArray` but no `putLongArray`, so the old
+// `tag.putLongArray("connections", positions.map { it.asLong() })` pattern doesn't
+// translate. The codec-based list form is the clearest replacement: each element
+// becomes a child with the [x, y, z] int-stream encoding BlockPos.CODEC defines.
+
+fun ValueOutput.putBlockPosList(name: String, positions: Collection<BlockPos>) {
+    if (positions.isEmpty()) return
+    val list = list(name, BlockPos.CODEC)
+    for (pos in positions) list.add(pos)
+}
+
+fun ValueInput.getBlockPosList(name: String): List<BlockPos> {
+    val list = listOrEmpty(name, BlockPos.CODEC)
+    val out = ArrayList<BlockPos>()
+    for (pos in list) out.add(pos)
+    return out
+}
+
+// ---------- Long lists ----------
+//
+// For cases that used `putLongArray` with semantics other than "list of BlockPos"
+// (e.g. encoded flag bitfields, frequency IDs split into high/low, etc.). Uses
+// Codec.LONG under the hood — one child per long, tagged.
+
+fun ValueOutput.putLongList(name: String, longs: LongArray) {
+    if (longs.isEmpty()) return
+    val list = list(name, Codec.LONG)
+    for (l in longs) list.add(l)
+}
+
+fun ValueInput.getLongList(name: String): LongArray {
+    val list = listOrEmpty(name, Codec.LONG)
+    val result = ArrayList<Long>()
+    for (l in list) result.add(l)
+    return result.toLongArray()
+}

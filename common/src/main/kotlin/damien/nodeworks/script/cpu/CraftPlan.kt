@@ -2,7 +2,6 @@ package damien.nodeworks.script.cpu
 
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
-import net.minecraft.nbt.Tag
 
 /**
  * A fully-planned craft: the static dependency DAG of [Operation]s that the scheduler
@@ -28,14 +27,40 @@ data class CraftPlan(
 
     fun op(id: Int): Operation? = byId[id]
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against the new CompoundTag API.
-    //  Must preserve: rootItemId, rootCount, ops (ListTag of Operation NBT),
-    //  terminalOpIds (IntArray), submitterUuid (putUUID/getUUID).
-    //  See git history for pre-migration body.
     fun saveToNBT(tag: CompoundTag) {
+        tag.putString("rootItemId", rootItemId)
+        tag.putLong("rootCount", rootCount)
+        val opsTag = ListTag()
+        for (op in ops) {
+            val o = CompoundTag()
+            op.saveToNBT(o)
+            opsTag.add(o)
+        }
+        tag.put("ops", opsTag)
+        val terms = IntArray(terminalOpIds.size)
+        var i = 0
+        for (t in terminalOpIds) terms[i++] = t
+        tag.putIntArray("terminals", terms)
+        // 26.1: CompoundTag.putUUID / getUUID / hasUUID are gone — use string form for
+        //  consistency with networkId across the codebase; simpler than pulling
+        //  UUIDUtil.CODEC for one field.
+        submitterUuid?.let { tag.putString("submitter", it.toString()) }
     }
 
     companion object {
-        fun loadFromNBT(tag: CompoundTag): CraftPlan? = null
+        fun loadFromNBT(tag: CompoundTag): CraftPlan? {
+            val rootItemId = tag.getStringOr("rootItemId", "")
+            if (rootItemId.isEmpty()) return null
+            val rootCount = tag.getLongOr("rootCount", 0L)
+            val opsList = tag.getListOrEmpty("ops")
+            val ops = (0 until opsList.size).mapNotNull { i ->
+                opsList.getCompound(i).orElse(null)?.let { Operation.loadFromNBT(it) }
+            }
+            val terms = tag.getIntArray("terminals").orElse(IntArray(0)).toSet()
+            val submitter = tag.getStringOr("submitter", "").takeIf { it.isNotEmpty() }?.let {
+                try { java.util.UUID.fromString(it) } catch (_: Exception) { null }
+            }
+            return CraftPlan(rootItemId, rootCount, ops, terms, submitter)
+        }
     }
 }

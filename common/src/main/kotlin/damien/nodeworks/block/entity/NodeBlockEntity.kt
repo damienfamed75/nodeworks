@@ -26,6 +26,9 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getStringOrNull
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /**
@@ -256,70 +259,47 @@ class NodeBlockEntity(
 
     // --- Serialization ---
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput API.
-    //  Old body used CompoundTag.putLongArray / putIntArray / putString / putInt / putLong
-    //  and ContainerHelper.saveAllItems(CompoundTag,...). Port to:
-    //   - output.putLongArray / putIntArray / putString / putInt / putLong (new sig)
-    //   - ContainerHelper.saveAllItems(ValueOutput, items) (check new sig)
-    //  See /tmp/mc261/BlockEntity.java for reference.
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
-        /*
-        ContainerHelper.saveAllItems(tag, items, registries)
-        if (connections.isNotEmpty()) {
-            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        }
+        ContainerHelper.saveAllItems(output, items)
+        output.putBlockPosList("connections", connections)
         if (hasAnyRedstoneOutput()) {
-            tag.putIntArray("redstoneOutputs", redstoneOutputs.toList())
+            output.putIntArray("redstoneOutputs", redstoneOutputs.copyOf())
         }
-        networkId?.let { tag.putString("networkId", it.toString()) }
-        tag.putInt("monitorCount", monitors.size)
-        var idx = 0
+        networkId?.let { output.putString("networkId", it.toString()) }
+        val monitorList = output.childrenList("monitors")
         for ((face, data) in monitors) {
-            tag.putInt("monitorFace_$idx", face.ordinal)
-            tag.putString("monitorItem_$idx", data.trackedItemId ?: "")
-            tag.putLong("monitorCount_$idx", data.displayCount)
-            idx++
+            val child = monitorList.addChild()
+            child.putInt("face", face.ordinal)
+            child.putString("item", data.trackedItemId ?: "")
+            child.putLong("count", data.displayCount)
         }
-        */
     }
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput API.
-    //  Old body used tag.getString/getInt/getLong/getLongArray/getIntArray/contains
-    //  and ContainerHelper.loadAllItems(CompoundTag,...). Port to:
-    //   - input.getString/getInt/getLong/getLongArray/getIntArray (now return Optional<T>)
-    //   - ContainerHelper.loadAllItems(ValueInput, items) (check new sig)
-    //  nodeTracker?.onNodeChanged side-effect must still fire after load.
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
-        /*
         items.clear()
-        ContainerHelper.loadAllItems(tag, items, registries)
+        ContainerHelper.loadAllItems(input, items)
         connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
+        connections.addAll(input.getBlockPosList("connections"))
         redstoneOutputs.fill(0)
-        if (tag.contains("redstoneOutputs")) {
-            val saved = tag.getIntArray("redstoneOutputs")
+        input.getIntArray("redstoneOutputs").ifPresent { saved ->
             for (i in 0 until minOf(saved.size, 6)) {
                 redstoneOutputs[i] = saved[i].coerceIn(0, 15)
             }
         }
-        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+        networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
         monitors.clear()
-        val monitorCount = if (tag.contains("monitorCount")) tag.getInt("monitorCount") else 0
-        for (i in 0 until monitorCount) {
-            val faceOrdinal = if (tag.contains("monitorFace_$i")) tag.getInt("monitorFace_$i") else -1
+        for (child in input.childrenListOrEmpty("monitors")) {
+            val faceOrdinal = child.getIntOr("face", -1)
             if (faceOrdinal < 0 || faceOrdinal >= Direction.entries.size) continue
             val face = Direction.entries[faceOrdinal]
-            val itemId = tag.getString("monitorItem_$i").ifEmpty { null }
-            val displayCount = if (tag.contains("monitorCount_$i")) tag.getLong("monitorCount_$i") else 0L
+            val itemId = child.getStringOr("item", "").ifEmpty { null }
+            val displayCount = child.getLongOr("count", 0L)
             monitors[face] = MonitorData(itemId, displayCount)
         }
-        */
         nodeTracker?.onNodeChanged(worldPosition, true)
     }
 

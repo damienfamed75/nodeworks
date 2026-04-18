@@ -25,6 +25,9 @@ import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getStringOrNull
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /** Fallback radius used only if the paired broadcast's own effective range can't be read.
@@ -240,16 +243,24 @@ class ReceiverAntennaBlockEntity(
 
     // --- Serialization ---
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
+        ContainerHelper.saveAllItems(output, items)
+        output.putBlockPosList("connections", connections)
+        networkId?.let { output.putString("networkId", it.toString()) }
     }
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
-    //  Keep the updatePairingFromChip() call post-load so the receiver re-syncs to its chip.
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
+        items.clear()
+        ContainerHelper.loadAllItems(input, items)
+        // Keep updatePairingFromChip() post-load so the receiver re-syncs to its chip.
         updatePairingFromChip()
+        networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
+        connections.clear()
+        connections.addAll(input.getBlockPosList("connections"))
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag =

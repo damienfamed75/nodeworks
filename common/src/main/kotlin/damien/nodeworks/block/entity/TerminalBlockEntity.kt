@@ -17,6 +17,9 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getStringOrNull
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /**
@@ -160,19 +163,38 @@ class TerminalBlockEntity(
 
     // --- Serialization ---
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
-    //  Persists scripts map + autoRun + layoutIndex + networkId + connections.
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
+        val scriptList = output.childrenList("scripts")
+        for ((name, text) in scripts) {
+            val child = scriptList.addChild()
+            child.putString("name", name)
+            child.putString("text", text)
+        }
+        output.putBoolean("autoRun", autoRun)
+        output.putInt("layoutIndex", layoutIndex)
+        networkId?.let { output.putString("networkId", it.toString()) }
+        output.putBlockPosList("connections", connections)
     }
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
-    //  Post-load: ensure "main" script exists; restore networkId + connections.
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
+        scripts.clear()
+        for (child in input.childrenListOrEmpty("scripts")) {
+            val name = child.getStringOr("name", "")
+            val text = child.getStringOr("text", "")
+            if (name.isNotEmpty()) scripts[name] = text
+        }
         if ("main" !in scripts) {
             scripts["main"] = ""
         }
+        autoRun = input.getBooleanOr("autoRun", false)
+        layoutIndex = input.getIntOr("layoutIndex", 0)
+        networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
+        connections.clear()
+        connections.addAll(input.getBlockPosList("connections"))
     }
 
     // --- Client sync ---

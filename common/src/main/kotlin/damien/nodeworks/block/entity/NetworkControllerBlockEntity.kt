@@ -15,6 +15,8 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /**
@@ -135,18 +137,35 @@ class NetworkControllerBlockEntity(
 
     // --- Serialization ---
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueOutput. See git history for pre-migration body.
-    //  Persists: networkId, networkColor, networkName, redstoneMode, nodeGlowStyle,
-    //  handlerRetryLimit, connections.
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
+        networkId?.let { output.putString("networkId", it.toString()) }
+        output.putInt("networkColor", networkColor)
+        output.putString("networkName", networkName)
+        output.putInt("redstoneMode", redstoneMode)
+        output.putInt("nodeGlowStyle", nodeGlowStyle)
+        output.putInt("handlerRetryLimit", handlerRetryLimit)
+        output.putBlockPosList("connections", connections)
     }
 
-    // TODO MC 26.1.2 NBT MIGRATION: rewrite against ValueInput. See git history for pre-migration body.
-    //  After loading networkId + networkColor + nodeGlowStyle, push them into
-    //  NetworkSettingsRegistry so clients see the right color immediately.
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
+        val idStr = input.getStringOr("networkId", "")
+        if (idStr.isNotEmpty()) {
+            try {
+                networkId = UUID.fromString(idStr)
+            } catch (_: IllegalArgumentException) {
+                networkId = UUID.randomUUID()
+            }
+        }
+        networkColor = input.getIntOr("networkColor", 0x83E086)
+        networkName = input.getStringOr("networkName", "")
+        redstoneMode = input.getIntOr("redstoneMode", 0)
+        nodeGlowStyle = input.getIntOr("nodeGlowStyle", GLOW_SQUARE)
+        handlerRetryLimit = input.getIntOr("handlerRetryLimit", 50)
+        connections.clear()
+        connections.addAll(input.getBlockPosList("connections"))
+        // Push loaded settings into client-visible registry so color/glow survive reloads.
         networkId?.let {
             damien.nodeworks.network.NetworkSettingsRegistry.update(
                 it,
