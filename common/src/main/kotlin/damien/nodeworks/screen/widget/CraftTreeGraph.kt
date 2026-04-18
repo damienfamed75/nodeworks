@@ -268,11 +268,19 @@ class CraftTreeGraph {
                     val iconX = sx - 8
                     val iconY = sy
 
-                    // 26.1: the pre-migration silhouette glow ran the item through
-                    //  FlatColorItemRenderer, which needs a custom RenderPipeline that
-                    //  hasn't been ported yet (see FlatColorItemRenderer for details).
-                    //  As a stand-in, paint an amber backdrop behind active nodes so
-                    //  the highlight still reads clearly without the shader.
+                    // TODO pixel-perfect highlights: replace the square backdrop with a
+                    //  silhouette that traces the item's actual alpha channel (so the
+                    //  glow follows the item's shape instead of a flat square). Options:
+                    //    1. Rebuild FlatColorItemRenderer against the 26.1 RenderPipeline
+                    //       + custom fragment-shader path (see FlatColorItemRenderer
+                    //       stub). Highest fidelity, matches the pre-migration look.
+                    //    2. Pre-render the item once to an offscreen framebuffer, threshold
+                    //       the alpha, and blit the silhouette tinted with the highlight
+                    //       color. No custom shader needed but more bookkeeping.
+                    //    3. Expand the backdrop-square approach into an 8-way dilated rect
+                    //       that approximates the silhouette from the item's BakedQuad
+                    //       bounding box. Cheapest, fuzzier result.
+                    //  Current stand-in: flat amber square behind the icon.
                     if (highlightColor != null) {
                         graphics.fill(
                             iconX - 1, iconY - 1, iconX + 17, iconY + 17,
