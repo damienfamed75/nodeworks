@@ -103,6 +103,37 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         return InteractionResult.SUCCESS
     }
 
+    /**
+     * Rising-edge redstone pulse toggles the terminal's script: start it if stopped,
+     * stop it if running. Button taps / pressure plate steps / fresh torches all count
+     * as a rising edge from 0 to >0. `lastRedstoneSignal = -1` on a freshly-loaded BE
+     * means the first neighborChanged call just initializes the tracker, so a
+     * permanently-powered terminal doesn't auto-start every time the chunk reloads.
+     */
+    override fun neighborChanged(
+        state: BlockState,
+        level: Level,
+        pos: BlockPos,
+        neighborBlock: Block,
+        orientation: net.minecraft.world.level.redstone.Orientation?,
+        movedByPiston: Boolean
+    ) {
+        super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
+        if (level !is ServerLevel) return
+        val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return
+        val signal = level.getBestNeighborSignal(pos)
+        val prev = terminal.lastRedstoneSignal
+        terminal.lastRedstoneSignal = signal
+        if (prev < 0) return  // first call since BE load — just capture the baseline
+        if (prev == 0 && signal > 0) {
+            if (PlatformServices.modState.isScriptRunning(level, pos)) {
+                PlatformServices.modState.stopScript(level, pos)
+            } else if (terminal.scriptText.isNotBlank()) {
+                PlatformServices.modState.startScript(level, pos)
+            }
+        }
+    }
+
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
         val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
         entity?.blockDestroyed = true

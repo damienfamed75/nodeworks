@@ -163,6 +163,10 @@ interface ModStateService {
     /** Stop the script engine at the given terminal position. */
     fun stopScript(level: ServerLevel, pos: BlockPos)
 
+    /** Start the terminal's script immediately on the server tick. Used by the redstone-
+     *  pulse toggle on the Terminal block — no network round-trip, no open GUI required. */
+    fun startScript(level: ServerLevel, pos: BlockPos)
+
     /** Register a terminal for auto-run on world startup. */
     fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos)
 

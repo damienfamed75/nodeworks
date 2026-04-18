@@ -553,6 +553,10 @@ class NeoForgeModStateService : ModStateService {
         NeoForgeTerminalPackets.stopEngine(level, pos)
     }
 
+    override fun startScript(level: ServerLevel, pos: BlockPos) {
+        NeoForgeTerminalPackets.startEngine(level, pos)
+    }
+
     override fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos) {
         NeoForgeTerminalPackets.registerPendingAutoRun(level, pos)
     }

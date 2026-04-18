@@ -49,6 +49,16 @@ class TerminalBlockEntity(
     /** The current script text (active tab = "main"). */
     val scriptText: String get() = scripts["main"] ?: ""
 
+    /**
+     * Previous best-neighbor redstone signal seen by the Terminal block's neighborChanged
+     * hook. Used for rising-edge detection so a redstone pulse (button, pressure plate,
+     * fresh torch) toggles the script. -1 is a sentinel meaning "uninitialized" — on the
+     * first neighborChanged after a BE load the current signal is captured without
+     * triggering a toggle, so a permanently-powered terminal doesn't auto-start on
+     * chunk-load.
+     */
+    var lastRedstoneSignal: Int = -1
+
     fun getScriptsCopy(): Map<String, String> = scripts.toMap()
 
     fun setScript(name: String, text: String) {
