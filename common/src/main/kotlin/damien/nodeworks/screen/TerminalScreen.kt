@@ -263,11 +263,7 @@ class TerminalScreen(
     private var currentLayout = TerminalLayout.entries.getOrElse(menu.getLayoutIndex()) { TerminalLayout.SMALL }
 
     init {
-        // TODO MC 26.1.2: currentLayout-driven size is baked into the ACS
-        //  ctor default (500x280) for now. Restore once imageWidth/imageHeight
-        //  become mutable again.
-        // imageWidth = currentLayout.w
-        // imageHeight = currentLayout.h
+        damien.nodeworks.compat.AcsCompat.setImageSize(this, currentLayout.w, currentLayout.h)
 
 
         // Scan client-side block entities for all autocomplete data
@@ -382,12 +378,9 @@ class TerminalScreen(
     override fun init() {
         super.init()
 
-        // TODO MC 26.1.2: restore currentLayout-driven resize once
-        //  imageWidth/imageHeight are writable again.
-        // imageWidth = currentLayout.w
-        // imageHeight = currentLayout.h
-        // if (imageWidth > width - 10) imageWidth = width - 10
-        // if (imageHeight > height - 10) imageHeight = height - 10
+        val w = currentLayout.w.coerceAtMost(width - 10)
+        val h = currentLayout.h.coerceAtMost(height - 10)
+        damien.nodeworks.compat.AcsCompat.setImageSize(this, w, h)
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 

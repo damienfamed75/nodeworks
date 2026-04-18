@@ -36,12 +36,11 @@ class DiagnosticScreen(
     menu: DiagnosticMenu,
     playerInventory: Inventory,
     title: Component
-// TODO MC 26.1.2: MC made imageWidth/imageHeight final in ACS, so the dynamic
-// "fill 75% of window" sizing from pre-migration is gone. Using a fixed 720×540
-// default that fits most windows. To restore dynamic behavior we'd need an AT
-// at the common-compile level (not currently supported by NeoForm) or a full
-// refactor to custom size fields that our rendering reads instead of
-// imageWidth/imageHeight.
+// 26.1: imageWidth/imageHeight are `protected final` at the common/ compile-time
+//  view of ACS (the NeoForge AT only strips `final` at runtime). `AcsCompat` writes
+//  through to the runtime-mutable fields via reflection in init() below so the
+//  pre-migration "75%/85% of window" dynamic sizing still works. The 720×540 in
+//  the ctor is just a pre-resize placeholder.
 ) : AbstractContainerScreen<DiagnosticMenu>(menu, playerInventory, title, 720, 540) {
 
     companion object {
@@ -199,10 +198,11 @@ class DiagnosticScreen(
 
     override fun init() {
         super.init()
-        // TODO MC 26.1.2: restore dynamic sizing when imageWidth/imageHeight
-        //  become writable again. For now, fixed 720×540 from ACS ctor.
-        // imageWidth = (width * 0.75f).toInt().coerceIn(320, width - 20)
-        // imageHeight = (height * 0.85f).toInt().coerceIn(200, height - 20)
+        damien.nodeworks.compat.AcsCompat.setImageSize(
+            this,
+            (width * 0.75f).toInt().coerceIn(320, width - 20),
+            (height * 0.85f).toInt().coerceIn(200, height - 20)
+        )
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 

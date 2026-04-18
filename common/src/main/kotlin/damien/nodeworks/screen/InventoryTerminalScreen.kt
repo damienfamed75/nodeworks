@@ -185,14 +185,15 @@ class InventoryTerminalScreen(
     private var syncedAutoPull = false
 
     private fun computeLayout() {
-        // TODO MC 26.1.2: imageWidth/imageHeight are final in ACS. The layout switch
-        //  used to resize the whole GUI; for now the size stays at the ctor default
-        //  and only the grid area adapts. Restore once mutability is available.
-        // val gridW = layout.cols * SLOT_SIZE
-        // val gridH = layout.rows * SLOT_SIZE
-        // val craftAreaH = if (craftingCollapsed) CRAFT_COLLAPSED_H else CRAFT_H
-        // imageWidth = GRID_PAD + 4 + gridW + 2 + SCROLLBAR_W + GRID_PAD + 4
-        // imageHeight = TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD + gridH + GRID_PAD + craftAreaH + GRID_PAD + 76 + INV_BOTTOM_PAD
+        // 26.1: imageWidth/imageHeight are `protected final` at compile time in common/
+        //  (the AT that drops `final` applies at runtime only). AcsCompat writes through
+        //  to the runtime-mutable fields via reflection.
+        val gridW = layout.cols * SLOT_SIZE
+        val gridH = layout.rows * SLOT_SIZE
+        val craftAreaH = if (craftingCollapsed) CRAFT_COLLAPSED_H else CRAFT_H
+        val w = GRID_PAD + 4 + gridW + 2 + SCROLLBAR_W + GRID_PAD + 4
+        val h = TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD + gridH + GRID_PAD + craftAreaH + GRID_PAD + 76 + INV_BOTTOM_PAD
+        damien.nodeworks.compat.AcsCompat.setImageSize(this, w, h)
     }
 
     override fun init() {

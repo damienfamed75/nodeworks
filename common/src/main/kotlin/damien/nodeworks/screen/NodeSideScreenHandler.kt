@@ -74,26 +74,22 @@ class NodeSideScreenHandler(
     /** Switch the active side — repositions slots so only the new side is visible. */
     fun switchSide(newSide: Direction) {
         activeSide = newSide
-        // TODO MC 26.1.2: Slot.x / Slot.y are now `public final int` at compile
-        //  time. The access transformer strips `final` at runtime, so writing
-        //  to these fields via reflection (or via the AT-remapped bytecode at
-        //  runtime) still works — but the direct Kotlin assignment below no
-        //  longer compiles. Either use reflection here or subclass Slot with a
-        //  custom reposition-able slot. Tab-switching slot visibility is
-        //  temporarily broken; the slots still exist and work, they're just
-        //  always visible at their original position.
-        /*
+        // 26.1: the vanilla jar common/ compiles against has Slot.x / Slot.y as
+        //  `public final int` even though the NeoForge patch makes them mutable at
+        //  runtime. AcsCompat.setSlotPos writes through via reflection.
         for (sideOrd in 0..5) {
             val visible = sideOrd == newSide.ordinal
             for (row in 0..2) {
                 for (col in 0..2) {
                     val slot = slots[sideOrd * 9 + row * 3 + col]
-                    slot.x = if (visible) cardSlotX(col) else -9999
-                    slot.y = if (visible) cardSlotY(row) else -9999
+                    damien.nodeworks.compat.AcsCompat.setSlotPos(
+                        slot,
+                        if (visible) cardSlotX(col) else -9999,
+                        if (visible) cardSlotY(row) else -9999
+                    )
                 }
             }
         }
-        */
     }
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
