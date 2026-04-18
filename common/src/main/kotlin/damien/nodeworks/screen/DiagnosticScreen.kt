@@ -512,6 +512,11 @@ class DiagnosticScreen(
                 DIM
             )
             graphics.pose().popMatrix()
+            // The autocomplete dropdown needs to render even when no tree has been
+            //  picked yet — that's the normal state when the user first focuses the
+            //  search bar. Previously we fell through to the early return below and
+            //  the dropdown never drew despite click handlers working.
+            renderCraftAutocomplete(graphics, mouseX, mouseY)
             return
         }
 

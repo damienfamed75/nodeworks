@@ -45,6 +45,19 @@ class CraftingCoreBlockEntity(
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
+        set(value) {
+            val changed = field != value
+            field = value
+            // The CPU's emissive "active" block models are gated on the formed
+            //  blockstate, and formed now requires a network membership — so when
+            //  the network connection is wired/unwired, every cluster component
+            //  needs its blockstate re-pushed. recalculateCapacity() walks the
+            //  cluster and calls setBlock only where the desired state differs,
+            //  so this is cheap when nothing changed.
+            if (changed && level != null && !level!!.isClientSide) {
+                recalculateCapacity()
+            }
+        }
 
     // =====================================================================
     // Buffer (dual-axis: count + unique types, Long-safe item counts)
@@ -499,7 +512,10 @@ class CraftingCoreBlockEntity(
         }
         val totalCooled = totalCooledFloat.toInt()
 
-        isFormed = bufferCount > 0
+        // "Formed" now also requires an active network membership — disconnecting the
+        //  Core from the laser network flips this false, which drives every cluster
+        //  block to swap its emissive-on model for the plain one.
+        isFormed = bufferCount > 0 && networkId != null
         coProcessorCount = coProcessors
         heatGenerated = totalHeat
         heatCooled = totalCooled

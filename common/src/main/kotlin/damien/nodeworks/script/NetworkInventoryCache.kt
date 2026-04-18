@@ -187,7 +187,11 @@ class NetworkInventoryCache(
             }
         }
 
-        // Detect new and changed items
+        // Detect new and changed items. We compare count AND isCraftable: adding or
+        //  removing a Processing Set / Instruction Set for an item that was already
+        //  present in storage only flips the craftable flag, leaving count untouched
+        //  — the old count-only check missed that case, so adds/removes of recipes
+        //  for in-stock items never reached the client.
         for ((key, info) in frontBuffer) {
             val existing = entries[key]
             if (existing == null) {
@@ -196,9 +200,10 @@ class NetworkInventoryCache(
                 entries[key] = SerialEntry(serial, info)
                 changedSerials.add(serial)
                 changed = true
-            } else if (existing.info.count != info.count) {
-                // Count changed
-                entries[key] = existing.copy(info = existing.info.copy(count = info.count))
+            } else if (existing.info.count != info.count || existing.info.isCraftable != info.isCraftable) {
+                entries[key] = existing.copy(
+                    info = existing.info.copy(count = info.count, isCraftable = info.isCraftable)
+                )
                 changedSerials.add(existing.serial)
                 changed = true
             }
