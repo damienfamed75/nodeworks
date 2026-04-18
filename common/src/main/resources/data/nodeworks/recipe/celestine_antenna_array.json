@@ -9,7 +9,16 @@
     "D": "minecraft:deepslate",
     "C": "nodeworks:celestine_shard",
     "R": "#minecraft:lightning_rods",
-    "B": "#nodeworks:copper_bars",
+    "B": [
+      "minecraft:copper_bars",
+      "minecraft:exposed_copper_bars",
+      "minecraft:weathered_copper_bars",
+      "minecraft:oxidized_copper_bars",
+      "minecraft:waxed_copper_bars",
+      "minecraft:waxed_exposed_copper_bars",
+      "minecraft:waxed_weathered_copper_bars",
+      "minecraft:waxed_oxidized_copper_bars"
+    ],
     "I": "minecraft:copper_ingot"
   },
   "result": {
