@@ -18,7 +18,11 @@ class TerminalScreenHandler(
     private val scripts: Map<String, String>,
     private val data: ContainerData,
     private val autoRun: Boolean,
-    private val layoutIndex: Int
+    private val layoutIndex: Int,
+    /** Cross-dim / remote Processing APIs the server pre-resolved at open-time. Client-
+     *  side autocomplete folds these into its scanned list so `network:craft("...")`
+     *  can suggest remote recipes the client otherwise couldn't see. */
+    private val remoteApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
 ) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
 
     companion object {
@@ -40,7 +44,10 @@ class TerminalScreenHandler(
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: TerminalOpenData): TerminalScreenHandler {
             val data = SimpleContainerData(DATA_SLOTS)
             data.set(0, if (openData.running) 1 else 0)
-            return TerminalScreenHandler(syncId, openData.terminalPos, openData.scripts, data, openData.autoRun, openData.layoutIndex)
+            return TerminalScreenHandler(
+                syncId, openData.terminalPos, openData.scripts, data,
+                openData.autoRun, openData.layoutIndex, openData.remoteApis,
+            )
         }
     }
 
@@ -54,6 +61,7 @@ class TerminalScreenHandler(
     fun isRunning(): Boolean = data.get(0) != 0
     fun isAutoRun(): Boolean = autoRun
     fun getLayoutIndex(): Int = layoutIndex
+    fun getRemoteApis(): List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = remoteApis
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack = ItemStack.EMPTY
 

@@ -84,12 +84,25 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val serverPlayer = player as ServerPlayer
         val serverLevel = level as ServerLevel
 
+        // Walk the server-side network and pull any cross-dim remote Processing APIs
+        // (reached via Receiver Antennas paired to a remote Broadcast Antenna). The
+        // client can't read these itself because the broadcast BE lives in another
+        // dimension; surface them in openData so the script editor's autocomplete
+        // can suggest remote recipe names in network:craft("..."). Local APIs are
+        // still scanned client-side in TerminalScreen — we only ship what the client
+        // genuinely can't reach.
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, startPos)
+        val remoteApis = snapshot.processingApis
+            .filter { it.remoteDimension != null }
+            .flatMap { it.apis }
+
         val openData = TerminalOpenData(
             terminal.blockPos,
             terminal.getScriptsCopy(),
             PlatformServices.modState.isScriptRunning(serverLevel, terminal.blockPos),
             terminal.autoRun,
-            terminal.layoutIndex
+            terminal.layoutIndex,
+            remoteApis,
         )
 
         PlatformServices.menu.openExtendedMenu(

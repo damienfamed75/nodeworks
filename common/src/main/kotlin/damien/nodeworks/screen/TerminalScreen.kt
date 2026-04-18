@@ -356,6 +356,17 @@ class TerminalScreen(
             }
         }
 
+        // Remote cross-dim APIs pre-resolved by the server (via the Receiver Antenna's
+        // paired Broadcast Antenna in another dimension). We can't read those BEs
+        // client-side, so the server shipped the API list in openData; fold it into
+        // the same lists a local ProcessingStorage would fill so autocomplete treats
+        // them uniformly.
+        for (api in menu.getRemoteApis()) {
+            scannedLocal.add(api.name)
+            scannedLocalApis.add(api)
+            scannedProcessable.addAll(api.outputItemIds)
+        }
+
         // Assign auto-aliases to unnamed cards (same logic as NetworkDiscovery)
         val counters = mutableMapOf<String, Int>()
         for (card in scannedCards) {
