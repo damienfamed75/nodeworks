@@ -56,11 +56,13 @@ class CardProgrammerScreen(
         private const val TOGGLE_H = 16
         private const val TOGGLE_LABEL_Y = TOGGLE_Y - 10     // 66
 
-        // Increment row — counter 2 digits (max 99), shifted right 3px with the toggle
-        private const val INC_MINUS_X = 95
-        private const val INC_FIELD_X = 111
-        private const val INC_FIELD_W = 14
-        private const val INC_PLUS_X = 127
+        // Increment row — counter 2 digits (max 99), shifted right 3px with the toggle.
+        // Field must be wide enough that EditBox's inner width (width - 8 for bordered)
+        // fits "99" in the default font (~11px). INC_FIELD_W=20 → 12px inner, comfortable.
+        private const val INC_MINUS_X = 93
+        private const val INC_FIELD_X = 109
+        private const val INC_FIELD_W = 20
+        private const val INC_PLUS_X = 131
         private const val INC_BTN_Y = 76
         private const val INC_BTN_W = 14
         private const val INC_BTN_H = 14
