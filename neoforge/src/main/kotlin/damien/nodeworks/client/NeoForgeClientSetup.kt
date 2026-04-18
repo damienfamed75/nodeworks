@@ -42,6 +42,7 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterConditionalItemModelProperties)
         modBus.addListener(::onRegisterSelectItemModelProperties)
         modBus.addListener(::onRegisterBlockTintSources)
+        modBus.addListener(::onRegisterRenderPipelines)
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
@@ -163,14 +164,21 @@ object NeoForgeClientSetup {
         }
     }
 
-    // TODO MC 26.1.2 SHADER-PIPELINE MIGRATION:
-    //  RegisterShadersEvent + ShaderInstance + RenderType.CompositeState.builder() are
-    //  removed. The new rendering stack is RenderPipeline + RegisterRenderPipelinesEvent
-    //  (see net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent, which wires
-    //  into the GPU-centric pipeline system). Our custom nodeworks_flat_color_item RenderType
-    //  must be reimplemented as a RenderPipeline + RenderType.create(...) using the new
-    //  pipeline-based overload. For now, FlatColorItemRenderer falls through to the default
-    //  item rendering path without tinting (see FlatColorItemRenderer fallback).
+    // TODO MC 26.1.2 SHADER-PIPELINE MIGRATION (FlatColorItemRenderer only):
+    //  The FlatColorItemRenderer silhouette-glow shader still needs a RenderPipeline
+    //  port — see FlatColorItemRenderer for details. The pin-highlight path was
+    //  ported in Phase 17 (PinHighlightRenderType).
+
+    private fun onRegisterRenderPipelines(
+        event: net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent
+    ) {
+        // 26.1 registers pipelines via this event so the shader program is compiled
+        //  and the pipeline state locked in before any RenderType referencing it is
+        //  used. Register our through-walls block-atlas pipeline here — the
+        //  PinHighlightRenderType.THROUGH_WALLS RenderType holds the matching
+        //  RenderSetup built around it.
+        event.registerPipeline(damien.nodeworks.render.PinHighlightRenderType.THROUGH_WALLS_PIPELINE)
+    }
 
     private fun onRegisterBlockTintSources(
         event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.BlockTintSources

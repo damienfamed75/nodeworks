@@ -666,19 +666,22 @@ object NodeConnectionRenderer {
     // ========== Diagnostic Pin Highlight ==========
 
     /**
-     * Draws a pulsing cyan outline around the pinned block whenever the Diagnostic
-     * Tool is held.
+     * Draws a pulsing cyan full-block overlay around the pinned block whenever the
+     * Diagnostic Tool is held. Drawn through walls (ALWAYS_PASS depth) so the
+     * player can locate the block from anywhere.
      *
-     * 26.1 rewrite: the pre-migration version rendered a pulsing filled overlay by
-     * walking the block's BakedQuads and drawing them through an immediate-mode
-     * `RenderSystem.setShader` + `BufferUploader.drawWithShader` path. Both of
-     * those APIs are gone in MC 26.1 (replaced by RegisterRenderPipelinesEvent +
-     * RenderType dispatch), and BakedQuad switched from `quad.vertices: int[]`
-     * to `position(i)/packedUV(i)` getters. Rather than register a custom
-     * RenderPipeline just for this effect, we express the "look at this block"
-     * hint with a pulsing multi-line cube outline — same visual language as the
-     * Network Wrench selection highlight, scaled to the block's exact AABB, and
-     * tinted cyan so it reads as distinct from a wrench selection.
+     * 26.1 rewrite: the pre-migration version stamped the block's quads through
+     * an immediate-mode `RenderSystem.setShader` + `BufferUploader.drawWithShader`
+     * path. Both of those APIs are gone in 26.1 (replaced by
+     * `RegisterRenderPipelinesEvent` + `RenderType` dispatch), and `BakedQuad`
+     * switched from `quad.vertices: int[]` to `position(i)` / `packedUV(i)`
+     * accessors. The new flow: look up the block's `BlockStateModel`, collect
+     * its `BlockStateModelPart`s, walk every `BakedQuad`, and emit each vertex
+     * to our registered [PinHighlightRenderType.THROUGH_WALLS] — which uses the
+     * block atlas with translucent blending and depth-test disabled.
+     *
+     * Vertex format is `DefaultVertexFormat.BLOCK` (Position + Color + UV0 + UV2) —
+     * no normal, no overlay.
      */
     fun renderPinHighlight(
         poseStack: PoseStack,
@@ -698,10 +701,18 @@ object NodeConnectionRenderer {
         val blockState = level.getBlockState(pos)
         if (blockState.isAir) return
 
-        // Pulse: 0.6 → 1.0 at ~0.5 Hz. Drives both brightness and outline thickness
-        // so the highlight feels "alive" without a shader.
+        val modelSet = mc.modelManager.blockStateModelSet ?: return
+        val model = modelSet.get(blockState) ?: return
+
+        // Pulse 0.6 → 1.0 at ~0.5 Hz modulates alpha so the highlight "breathes".
         val time = (System.currentTimeMillis() % 2000) / 2000f
         val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.2f + 0.8f)
+
+        // Collect model parts with a deterministic seed so quad order is stable.
+        val random = net.minecraft.util.RandomSource.create(blockState.getSeed(pos))
+        val parts = ArrayList<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart>()
+        model.collectParts(random, parts)
+        if (parts.isEmpty()) return
 
         poseStack.pushPose()
         poseStack.translate(
@@ -709,61 +720,55 @@ object NodeConnectionRenderer {
             (pos.y - cameraPos.y).toFloat(),
             (pos.z - cameraPos.z).toFloat()
         )
-
+        // Slight outward breathe around block center so the overlay visibly
+        // pulses without z-fighting the block below it.
+        val scale = 1.0f + pulse * 0.04f
+        poseStack.translate(0.5f, 0.5f, 0.5f)
+        poseStack.scale(scale, scale, scale)
+        poseStack.translate(-0.5f, -0.5f, -0.5f)
         val pose = poseStack.last()
-        val buffer = consumers.getBuffer(RenderTypes.LINES)
 
-        // Cyan (0.6, 0.9, 1.0) modulated by pulse.
-        val r = (0.6f * pulse * 255).toInt().coerceIn(0, 255)
-        val g = (0.9f * pulse * 255).toInt().coerceIn(0, 255)
-        val b = (255 * pulse).toInt().coerceIn(0, 255)
+        // Cyan tint (0.6, 0.9, 1.0) with pulse-driven alpha.
+        val r = (0.6f * 255).toInt().coerceIn(0, 255)
+        val g = (0.9f * 255).toInt().coerceIn(0, 255)
+        val b = 255
+        val a = (pulse * 200).toInt().coerceIn(0, 255)
 
-        // Slight inset so the outline sits on the block surface rather than z-fighting
-        // with adjacent blocks, plus a fractional outward breathe from the pulse.
-        val inset = 0.002f
-        val breathe = pulse * 0.015f
-        val x0 = -breathe + inset
-        val y0 = -breathe + inset
-        val z0 = -breathe + inset
-        val x1 = 1f + breathe - inset
-        val y1 = 1f + breathe - inset
-        val z1 = 1f + breathe - inset
+        val buffer = consumers.getBuffer(PinHighlightRenderType.THROUGH_WALLS)
 
-        drawPinEdge(buffer, pose, x0, y0, z0, x1, y0, z0, r, g, b)
-        drawPinEdge(buffer, pose, x1, y0, z0, x1, y0, z1, r, g, b)
-        drawPinEdge(buffer, pose, x1, y0, z1, x0, y0, z1, r, g, b)
-        drawPinEdge(buffer, pose, x0, y0, z1, x0, y0, z0, r, g, b)
-        drawPinEdge(buffer, pose, x0, y1, z0, x1, y1, z0, r, g, b)
-        drawPinEdge(buffer, pose, x1, y1, z0, x1, y1, z1, r, g, b)
-        drawPinEdge(buffer, pose, x1, y1, z1, x0, y1, z1, r, g, b)
-        drawPinEdge(buffer, pose, x0, y1, z1, x0, y1, z0, r, g, b)
-        drawPinEdge(buffer, pose, x0, y0, z0, x0, y1, z0, r, g, b)
-        drawPinEdge(buffer, pose, x1, y0, z0, x1, y1, z0, r, g, b)
-        drawPinEdge(buffer, pose, x1, y0, z1, x1, y1, z1, r, g, b)
-        drawPinEdge(buffer, pose, x0, y0, z1, x0, y1, z1, r, g, b)
+        // Fullbright lightmap so the overlay ignores block/sky light.
+        val lightU = 240
+        val lightV = 240
+
+        for (part in parts) {
+            // `null` direction collects quads without a culling face (interior geometry).
+            emitQuads(buffer, pose, part.getQuads(null), r, g, b, a, lightU, lightV)
+            for (dir in Direction.entries) {
+                emitQuads(buffer, pose, part.getQuads(dir), r, g, b, a, lightU, lightV)
+            }
+        }
 
         poseStack.popPose()
     }
 
-    private fun drawPinEdge(
-        buffer: VertexConsumer, pose: PoseStack.Pose,
-        x0: Float, y0: Float, z0: Float,
-        x1: Float, y1: Float, z1: Float,
-        r: Int, g: Int, b: Int
+    private fun emitQuads(
+        buffer: VertexConsumer,
+        pose: PoseStack.Pose,
+        quads: List<net.minecraft.client.resources.model.geometry.BakedQuad>,
+        r: Int, g: Int, b: Int, a: Int,
+        lightU: Int, lightV: Int
     ) {
-        val dx = x1 - x0; val dy = y1 - y0; val dz = z1 - z0
-        val len = sqrt(dx * dx + dy * dy + dz * dz)
-        val nx = if (len > 0) dx / len else 0f
-        val ny = if (len > 0) dy / len else 0f
-        val nz = if (len > 0) dz / len else 1f
-
-        buffer.addVertex(pose, x0, y0, z0)
-            .setColor(r, g, b, 255)
-            .setNormal(pose, nx, ny, nz)
-            .setLineWidth(2.5f)
-        buffer.addVertex(pose, x1, y1, z1)
-            .setColor(r, g, b, 255)
-            .setNormal(pose, nx, ny, nz)
-            .setLineWidth(2.5f)
+        for (quad in quads) {
+            for (i in 0 until 4) {
+                val p = quad.position(i)
+                val packedUv = quad.packedUV(i)
+                val u = net.minecraft.client.model.geom.builders.UVPair.unpackU(packedUv)
+                val v = net.minecraft.client.model.geom.builders.UVPair.unpackV(packedUv)
+                buffer.addVertex(pose, p.x(), p.y(), p.z())
+                    .setColor(r, g, b, a)
+                    .setUv(u, v)
+                    .setUv2(lightU, lightV)
+            }
+        }
     }
 }
