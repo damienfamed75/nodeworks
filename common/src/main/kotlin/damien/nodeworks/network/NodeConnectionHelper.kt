@@ -21,6 +21,39 @@ object NodeConnectionHelper {
 
     private val nodesByDimension = ConcurrentHashMap<ResourceKey<Level>, ConcurrentHashMap<Long, MutableSet<BlockPos>>>()
 
+    /**
+     * Set of connection pairs whose LOS is currently blocked by a block placed between
+     * the two endpoints. Keyed by a canonical [pairKey]. Server-only state — the
+     * client tracks its own LOS cache inside [damien.nodeworks.render.NodeConnectionRenderer].
+     *
+     * The connection itself is NOT removed from either endpoint when LOS breaks; this set is
+     * consulted by [propagateNetworkId] (to stop the network-id BFS at blocked hops) and by
+     * [checkNodeConnections] (to detect LOS-clear transitions on neighbour-block updates).
+     * Soft-disconnect semantics — once the obstruction is removed the pair resumes
+     * carrying the network. Not persisted; see rebuild note in [onServerLevelLoaded].
+     */
+    private val blockedPairsByDimension = ConcurrentHashMap<ResourceKey<Level>, MutableSet<Long>>()
+
+    private fun blockedPairs(level: ServerLevel): MutableSet<Long> =
+        blockedPairsByDimension.computeIfAbsent(level.dimension()) {
+            java.util.Collections.newSetFromMap(ConcurrentHashMap())
+        }
+
+    private fun pairKey(a: BlockPos, b: BlockPos): Long {
+        val (lo, hi) = if (isLessThan(a, b)) a to b else b to a
+        return lo.asLong() xor (hi.asLong() * 31L)
+    }
+
+    /** Whether a connection pair is currently LOS-blocked. Server-side authoritative state. */
+    fun isPairBlocked(level: ServerLevel, a: BlockPos, b: BlockPos): Boolean =
+        blockedPairs(level).contains(pairKey(a, b))
+
+    private fun setPairBlocked(level: ServerLevel, a: BlockPos, b: BlockPos, blocked: Boolean) {
+        val set = blockedPairs(level)
+        val key = pairKey(a, b)
+        if (blocked) set.add(key) else set.remove(key)
+    }
+
     private fun chunkKey(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
     private fun chunkKeyOf(pos: BlockPos): Long = chunkKey(pos.x shr 4, pos.z shr 4)
 
@@ -104,9 +137,12 @@ object NodeConnectionHelper {
         return true
     }
 
-    /** BFS from a position to find a controller and propagate its networkId to all reachable connectables. */
+    /** BFS from a position to find a controller and propagate its networkId to all reachable connectables.
+     *  Each edge is re-raycast and its entry in [blockedPairs] refreshed as we visit it — so propagate is
+     *  self-healing: whatever the cached blocked state was before this call, it is correct after. That
+     *  lets us avoid persisting the set across saves (it rebuilds on the first propagate after load). */
     fun propagateNetworkId(level: ServerLevel, startPos: BlockPos) {
-        // Full BFS to discover all reachable nodes
+        // Full BFS through unblocked pairs. LOS is re-verified live per edge.
         val visited = LinkedHashSet<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         visited.add(startPos)
@@ -116,7 +152,11 @@ object NodeConnectionHelper {
             val pos = queue.removeFirst()
             val entity = getConnectable(level, pos) ?: continue
             for (conn in entity.getConnections()) {
-                if (visited.add(conn) && level.isLoaded(conn)) queue.add(conn)
+                if (!level.isLoaded(conn)) continue
+                val blocked = !checkLineOfSight(level, pos, conn)
+                setPairBlocked(level, pos, conn, blocked)
+                if (blocked) continue
+                if (visited.add(conn)) queue.add(conn)
             }
         }
 
@@ -149,6 +189,9 @@ object NodeConnectionHelper {
         val entityB = getConnectable(level, posB)
         entityA?.removeConnection(posB)
         entityB?.removeConnection(posA)
+        // A hard disconnect severs the pair for good — purge any stale blocked-state entry so
+        // a later `connect` on the same endpoints starts fresh (live LOS check will re-populate it).
+        blockedPairs(level).remove(pairKey(posA, posB))
         // Re-propagate networkId for both sides (one side may have lost its controller)
         if (entityA != null) propagateNetworkId(level, posA)
         if (entityB != null) propagateNetworkId(level, posB)
@@ -158,8 +201,10 @@ object NodeConnectionHelper {
     fun removeAllConnections(level: ServerLevel, entity: Connectable) {
         val pos = entity.getBlockPos()
         val neighbors = entity.getConnections().toList()
+        val blocked = blockedPairs(level)
         for (neighborPos in neighbors) {
             getConnectable(level, neighborPos)?.removeConnection(pos)
+            blocked.remove(pairKey(pos, neighborPos))
         }
         for (neighborPos in neighbors) {
             entity.removeConnection(neighborPos)
@@ -192,9 +237,21 @@ object NodeConnectionHelper {
         for (targetPos in connections) {
             if (!isLessThan(nodePos, targetPos)) continue
             if (!isInsideConnectionBounds(nodePos, targetPos, changedPos)) continue
-            if (!checkLineOfSight(level, nodePos, targetPos)) {
-                disconnect(level, nodePos, targetPos)
-            }
+
+            // Soft-transition: compare live LOS against the tracked blocked state. If the state
+            // actually flipped — either direction — update it and re-propagate. Placement that
+            // breaks LOS orphans the downstream subgraph; removal that restores LOS rejoins it,
+            // without ever mutating the connection list itself.
+            val wasBlocked = isPairBlocked(level, nodePos, targetPos)
+            val hasLos = checkLineOfSight(level, nodePos, targetPos)
+            val flipped = hasLos == wasBlocked
+            if (!flipped) continue
+
+            setPairBlocked(level, nodePos, targetPos, !hasLos)
+            propagateNetworkId(level, nodePos)
+            // If LOS just broke, the opposite endpoint may have just lost its controller; run
+            // a second propagate from that side since the BFS from `nodePos` won't reach it.
+            if (!hasLos) propagateNetworkId(level, targetPos)
         }
     }
 
