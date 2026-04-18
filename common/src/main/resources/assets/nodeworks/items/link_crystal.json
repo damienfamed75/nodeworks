@@ -1,0 +1,14 @@
+{
+  "model": {
+    "type": "minecraft:condition",
+    "property": "nodeworks:link_crystal_linked",
+    "on_true": {
+      "type": "minecraft:model",
+      "model": "nodeworks:item/link_crystal_linked"
+    },
+    "on_false": {
+      "type": "minecraft:model",
+      "model": "nodeworks:item/link_crystal"
+    }
+  }
+}

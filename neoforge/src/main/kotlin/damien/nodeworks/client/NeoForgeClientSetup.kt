@@ -39,6 +39,8 @@ object NeoForgeClientSetup {
         modBus.addListener(::onClientSetup)
         modBus.addListener(::onRegisterRenderers)
         modBus.addListener(::onRegisterMenuScreens)
+        modBus.addListener(::onRegisterConditionalItemModelProperties)
+        modBus.addListener(::onRegisterSelectItemModelProperties)
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
@@ -70,16 +72,12 @@ object NeoForgeClientSetup {
             PlatformServices.clientNetworking = NeoForgeClientNetworkingService()
             PlatformServices.clientEvents = NeoForgeClientEventService()
 
-            // TODO MC 26.1.2 ITEM-MODEL MIGRATION:
-            //  ItemProperties.register() was removed — item model predicates are now
-            //  data-driven via JSON in the `conditional`/`numeric`/`select` item-model
-            //  property system (net.minecraft.client.renderer.item.properties.*).
-            //  Previous predicates:
-            //    - LINK_CRYSTAL "linked" (0/1 based on LinkCrystalItem.isEncoded)
-            //    - CARD_PROGRAMMER "card_type" (0..3 based on template card sub-type)
-            //  Port these to custom `ConditionalItemModelProperty` / `SelectItemModelProperty`
-            //  implementations + register via `ConditionalItemModelProperties.ID_MAPPER` /
-            //  `SelectItemModelProperties.ID_MAPPER`, and update the asset JSONs.
+            // 26.1: ItemProperties.register() is gone. Custom property codecs are
+            //  registered on the mod event bus via
+            //  RegisterConditionalItemModelPropertyEvent /
+            //  RegisterSelectItemModelPropertyEvent (see the onRegister* methods
+            //  below), and the item model JSON moved to assets/<ns>/items/<id>.json
+            //  using `minecraft:condition` / `minecraft:select` dispatch types.
 
             NodeConnectionRenderer.register()
         }
@@ -96,6 +94,24 @@ object NeoForgeClientSetup {
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
+    }
+
+    private fun onRegisterConditionalItemModelProperties(
+        event: net.neoforged.neoforge.client.event.RegisterConditionalItemModelPropertyEvent
+    ) {
+        event.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "link_crystal_linked"),
+            damien.nodeworks.client.item.LinkCrystalLinkedProperty.MAP_CODEC
+        )
+    }
+
+    private fun onRegisterSelectItemModelProperties(
+        event: net.neoforged.neoforge.client.event.RegisterSelectItemModelPropertyEvent
+    ) {
+        event.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "card_programmer_card_type"),
+            damien.nodeworks.client.item.CardProgrammerTypeProperty.TYPE
+        )
     }
 
     private fun onRegisterMenuScreens(event: RegisterMenuScreensEvent) {
