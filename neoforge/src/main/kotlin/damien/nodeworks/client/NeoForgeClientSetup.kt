@@ -30,7 +30,7 @@ import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent
-import net.neoforged.neoforge.network.PacketDistributor
+import net.neoforged.neoforge.client.network.ClientPacketDistributor
 import net.neoforged.neoforge.common.NeoForge
 
 object NeoForgeClientSetup {
@@ -39,8 +39,6 @@ object NeoForgeClientSetup {
         modBus.addListener(::onClientSetup)
         modBus.addListener(::onRegisterRenderers)
         modBus.addListener(::onRegisterMenuScreens)
-        modBus.addListener(::onRegisterBlockColors)
-        modBus.addListener(::onRegisterShaders)
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
@@ -48,14 +46,16 @@ object NeoForgeClientSetup {
         NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST) { event: net.neoforged.neoforge.client.event.ScreenEvent.KeyPressed.Pre ->
             val screen = event.screen
             if (screen is damien.nodeworks.screen.TerminalScreen && screen.isEditorFocused()) {
-                screen.keyPressed(event.keyCode, event.scanCode, event.modifiers)
+                // 26.1: Screen#keyPressed(KeyEvent) — no longer the (keyCode, scanCode, modifiers) triple.
+                //  The ScreenEvent still exposes getKeyEvent() for forwarding.
+                screen.keyPressed(event.keyEvent)
                 event.isCanceled = true
             }
         }
         NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST) { event: net.neoforged.neoforge.client.event.ScreenEvent.CharacterTyped.Pre ->
             val screen = event.screen
             if (screen is damien.nodeworks.screen.TerminalScreen && screen.isEditorFocused()) {
-                screen.charTyped(event.codePoint, event.modifiers)
+                screen.charTyped(event.characterEvent)
                 event.isCanceled = true
             }
         }
@@ -70,28 +70,16 @@ object NeoForgeClientSetup {
             PlatformServices.clientNetworking = NeoForgeClientNetworkingService()
             PlatformServices.clientEvents = NeoForgeClientEventService()
 
-            // Register Link Crystal model predicate
-            net.minecraft.client.renderer.item.ItemProperties.register(
-                damien.nodeworks.registry.ModItems.LINK_CRYSTAL,
-                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "linked")
-            ) { stack, _, _, _ ->
-                if (damien.nodeworks.item.LinkCrystalItem.isEncoded(stack)) 1.0f else 0.0f
-            }
-
-            // Register Card Programmer model predicate — changes texture based on template card type
-            net.minecraft.client.renderer.item.ItemProperties.register(
-                damien.nodeworks.registry.ModItems.CARD_PROGRAMMER,
-                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "card_type")
-            ) { stack, _, _, _ ->
-                val template = damien.nodeworks.item.CardProgrammerItem.getTemplate(stack)
-                if (template.isEmpty) 0.0f
-                else when ((template.item as? damien.nodeworks.card.NodeCard)?.cardType) {
-                    "storage" -> 1.0f
-                    "io" -> 2.0f
-                    "redstone" -> 3.0f
-                    else -> 0.0f
-                }
-            }
+            // TODO MC 26.1.2 ITEM-MODEL MIGRATION:
+            //  ItemProperties.register() was removed — item model predicates are now
+            //  data-driven via JSON in the `conditional`/`numeric`/`select` item-model
+            //  property system (net.minecraft.client.renderer.item.properties.*).
+            //  Previous predicates:
+            //    - LINK_CRYSTAL "linked" (0/1 based on LinkCrystalItem.isEncoded)
+            //    - CARD_PROGRAMMER "card_type" (0..3 based on template card sub-type)
+            //  Port these to custom `ConditionalItemModelProperty` / `SelectItemModelProperty`
+            //  implementations + register via `ConditionalItemModelProperties.ID_MAPPER` /
+            //  `SelectItemModelProperties.ID_MAPPER`, and update the asset JSONs.
 
             NodeConnectionRenderer.register()
         }
@@ -158,62 +146,34 @@ object NeoForgeClientSetup {
         }
     }
 
-    private fun onRegisterShaders(event: net.neoforged.neoforge.client.event.RegisterShadersEvent) {
-        val location = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "flat_color_item")
-        event.registerShader(
-            net.minecraft.client.renderer.ShaderInstance(event.resourceProvider, location, com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY)
-        ) { shader ->
-            damien.nodeworks.render.FlatColorItemRenderer.shaderInstance = shader
-            // Create the custom RenderType using the loaded shader
-            damien.nodeworks.render.FlatColorItemRenderer.renderType = net.minecraft.client.renderer.RenderType.create(
-                "nodeworks_flat_color_item",
-                com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY,
-                com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS,
-                1536, false, true,
-                net.minecraft.client.renderer.RenderType.CompositeState.builder()
-                    .setShaderState(net.minecraft.client.renderer.RenderStateShard.ShaderStateShard { shader })
-                    .setTextureState(net.minecraft.client.renderer.RenderStateShard.TextureStateShard(
-                        net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS, false, false))
-                    .setTransparencyState(net.minecraft.client.renderer.RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                    .setCullState(net.minecraft.client.renderer.RenderStateShard.NO_CULL)
-                    .setLightmapState(net.minecraft.client.renderer.RenderStateShard.LIGHTMAP)
-                    .setOverlayState(net.minecraft.client.renderer.RenderStateShard.OVERLAY)
-                    .createCompositeState(true)
-            )
-        }
-    }
+    // TODO MC 26.1.2 SHADER-PIPELINE MIGRATION:
+    //  RegisterShadersEvent + ShaderInstance + RenderType.CompositeState.builder() are
+    //  removed. The new rendering stack is RenderPipeline + RegisterRenderPipelinesEvent
+    //  (see net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent, which wires
+    //  into the GPU-centric pipeline system). Our custom nodeworks_flat_color_item RenderType
+    //  must be reimplemented as a RenderPipeline + RenderType.create(...) using the new
+    //  pipeline-based overload. For now, FlatColorItemRenderer falls through to the default
+    //  item rendering path without tinting (see FlatColorItemRenderer fallback).
 
-    private fun onRegisterBlockColors(event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.Block) {
-        // Tint emissive overlays (tintindex 0) with network color
-        val colorProvider = net.minecraft.client.color.block.BlockColor { _, blockGetter, pos, tintIndex ->
-            if (tintIndex == 0 && pos != null) {
-                // BlockAndTintGetter might be a Level — try to get the block entity
-                val entity = blockGetter?.getBlockEntity(pos)
-                when (entity) {
-                    is damien.nodeworks.block.entity.NetworkControllerBlockEntity -> entity.networkColor
-                    is damien.nodeworks.network.Connectable -> {
-                        // For other connectable blocks, find the controller via BFS
-                        val level = net.minecraft.client.Minecraft.getInstance().level
-                        if (level != null) NodeConnectionRenderer.findNetworkColor(level, pos) else -1
-                    }
-                    else -> -1
-                }
-            } else -1
-        }
-        event.register(colorProvider,
-            damien.nodeworks.registry.ModBlocks.NETWORK_CONTROLLER,
-            damien.nodeworks.registry.ModBlocks.VARIABLE,
-            damien.nodeworks.registry.ModBlocks.TERMINAL,
-            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE,
-            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE,
-            damien.nodeworks.registry.ModBlocks.RECEIVER_ANTENNA
-        )
-    }
+    // TODO MC 26.1.2 BLOCK-COLOR MIGRATION:
+    //  RegisterColorHandlersEvent.Block was removed. The replacement is
+    //  RegisterColorHandlersEvent.BlockTintSources + data-driven BlockTintSource
+    //  implementations (via MapCodec + ID registration on the BlockColors registry).
+    //  The previous callback-based `BlockColor { state, getter, pos, tintIndex -> ... }`
+    //  flow is gone because tint is now resolved per-block via codec'd BlockTintSource
+    //  entries declared in the block model JSON. Our existing tint logic (reading the
+    //  block entity's networkColor) needs to be expressed as a custom BlockTintSource
+    //  that inspects the block entity — likely via a neoforge-side class-based source
+    //  declared in the block's model JSON. Emissive overlays will render uncolored
+    //  (grey/white) until this is ported.
 }
 
 class NeoForgeClientNetworkingService : ClientNetworkingService {
     override fun sendToServer(payload: CustomPacketPayload) {
-        PacketDistributor.sendToServer(payload)
+        // 26.1: PacketDistributor.sendToServer was split out into ClientPacketDistributor
+        //  (client-only class) to prevent server-side code from accidentally referencing
+        //  a client-only flow at compile time.
+        ClientPacketDistributor.sendToServer(payload)
     }
 }
 
@@ -223,14 +183,18 @@ class NeoForgeClientEventService : ClientEventService {
     override fun onWorldRender(handler: (PoseStack?, MultiBufferSource?, Vec3) -> Unit) {
         handlers.add(handler)
         if (handlers.size == 1) {
+            // 26.1: RenderLevelStageEvent gained subclasses (AfterSky, AfterOpaqueBlocks,
+            //  AfterTranslucentBlocks, …) instead of a Stage enum. Listening on a subclass
+            //  directly subscribes to that stage, no more `if (event.stage != ...) return`.
             NeoForge.EVENT_BUS.addListener(::onRenderAfterTranslucent)
         }
     }
 
-    private fun onRenderAfterTranslucent(event: RenderLevelStageEvent) {
-        if (event.stage != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return
+    private fun onRenderAfterTranslucent(event: RenderLevelStageEvent.AfterTranslucentBlocks) {
         val mc = Minecraft.getInstance()
-        val cameraPos = mc.gameRenderer.mainCamera.getPosition()
+        // 26.1: Camera.position field is private; public `position()` method is now the accessor.
+        //  Kotlin can't auto-synthesise the property because the backing field is inaccessible.
+        val cameraPos = mc.gameRenderer.mainCamera.position()
         val bufferSource = mc.renderBuffers().bufferSource()
         for (handler in handlers) {
             handler(event.poseStack, bufferSource, cameraPos)
