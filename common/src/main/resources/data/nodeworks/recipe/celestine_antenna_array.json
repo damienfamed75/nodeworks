@@ -3,12 +3,13 @@
   "pattern": [
     "DCD",
     "RCR",
-    "III"
+    "BIB"
   ],
   "key": {
     "D": "minecraft:deepslate",
     "C": "nodeworks:celestine_shard",
-    "R": "minecraft:lightning_rod",
+    "R": "#minecraft:lightning_rods",
+    "B": "#nodeworks:copper_bars",
     "I": "minecraft:copper_ingot"
   },
   "result": {
