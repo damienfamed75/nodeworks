@@ -232,8 +232,16 @@ object NeoForgeTerminalPackets {
 
     fun tickAll(server: MinecraftServer, tickCount: Long) {
         processPendingAutoRun(server, tickCount)
+        // Snapshot before iterating: `engine.tick` may run Lua that reenters this class
+        // (e.g. a RedstoneCard write triggers a neighbour-block update → Terminal's
+        // neighborChanged → startEngine, which mutates activeEngines), and that would
+        // ConcurrentModifyException the live iteration. Also re-resolve the engine from
+        // the map each iteration so a snapshot'd entry that was replaced mid-tick isn't
+        // double-ticked.
         val toRemove = mutableListOf<GlobalPos>()
-        for ((gp, engine) in activeEngines) {
+        val snapshot = activeEngines.keys.toList()
+        for (gp in snapshot) {
+            val engine = activeEngines[gp] ?: continue
             if (!engine.isRunning()) {
                 toRemove.add(gp)
                 continue
@@ -243,6 +251,13 @@ object NeoForgeTerminalPackets {
                 toRemove.add(gp)
             }
         }
-        toRemove.forEach { activeEngines.remove(it)?.stop() }
+        // Only remove if the entry is still the same engine we were about to retire —
+        // a reentrant startEngine may have installed a fresh one at this key.
+        for (gp in toRemove) {
+            val engine = activeEngines[gp] ?: continue
+            if (!engine.isRunning() || !engine.hasWork()) {
+                activeEngines.remove(gp)?.stop()
+            }
+        }
     }
 }
