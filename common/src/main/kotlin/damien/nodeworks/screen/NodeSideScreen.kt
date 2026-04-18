@@ -102,6 +102,7 @@ class NodeSideScreen(
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getNodePos())

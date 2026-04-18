@@ -121,11 +121,11 @@ object RecipeHintRenderer {
         // This avoids the Z-frustum clipping trap: translating the pose far enough back
         // to hide items (roughly -200 to -300) also pushes flat geometry past MC's GUI
         // near clip plane and makes it disappear entirely.
-        // TODO MC 26.1.2: RenderSystem.depthMask() is gone. The old code masked
-        //  depth writes so item-icon draws wouldn't occlude later quads. In the
-        //  new RenderPipeline system, each draw's pipeline declares its own
-        //  depth state — the default GUI pipelines don't write depth, so this
-        //  mask is largely a no-op now.
+        // 26.1: `RenderSystem.depthMask(false)` is gone. The old code masked depth
+        //  writes so item-icon quads wouldn't occlude subsequent draws. In the new
+        //  RenderPipeline system each draw's pipeline declares its own depth state,
+        //  and the default GUI pipelines don't write depth — so skipping the mask
+        //  is correct, not a stub.
         try {
             // Background — neutral grey when valid, dark red when the handler doesn't
             // match any known recipe so the row visually flags the problem.

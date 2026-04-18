@@ -38,6 +38,7 @@ class InstructionStorageScreen(
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Resolve network color the same way TerminalScreen / ProcessingStorageScreen do.
         val mc = net.minecraft.client.Minecraft.getInstance()
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.storagePos)

@@ -146,6 +146,7 @@ class CardProgrammerScreen(
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Programmer image
         graphics.blit(BG_TEXTURE, leftPos, topPos + PROG_Y, 0f, 0f, W, PROG_H, W, PROG_H)
 

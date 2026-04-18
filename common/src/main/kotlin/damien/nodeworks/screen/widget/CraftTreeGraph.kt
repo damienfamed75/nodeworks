@@ -235,12 +235,8 @@ class CraftTreeGraph {
                         }
                         graphics.pose().pushMatrix()
                         graphics.pose().translate((-7.5f).toFloat(), (-7.5f).toFloat())
-                        // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-                        // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-                        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 0.8f, 0.27f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
-                        graphics.blit(Icons.ATLAS, dotX, dotY, Icons.GLOW_CIRCLE.u.toFloat(), Icons.GLOW_CIRCLE.v.toFloat(), 16, 16, 256, 256)
-                        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
-                        // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+                        // 26.1: tint via ARGB on the blit call. 0xFFFFCC44 = rgb(1, 0.8, 0.27).
+                        graphics.blit(Icons.ATLAS, dotX, dotY, Icons.GLOW_CIRCLE.u.toFloat(), Icons.GLOW_CIRCLE.v.toFloat(), 16, 16, 256, 256, 0xFFFFCC44.toInt())
                         graphics.pose().popMatrix()
                     }
                 }
@@ -272,21 +268,19 @@ class CraftTreeGraph {
                     val iconX = sx - 8
                     val iconY = sy
 
-                    // TODO MC 26.1.2: the pre-migration silhouette glow needed
-                    //  Minecraft.itemRenderer.getModel(stack, level, entity, seed) to
-                    //  distinguish between 3D block models and flat 2D items (for
-                    //  different glow styles). `itemRenderer` is replaced with
-                    //  `itemModelResolver`, which exposes items differently and
-                    //  doesn't expose `.isGui3d` directly. For now we just skip
-                    //  the glow pass; the item still renders correctly via the
-                    //  next call. Restore once the resolver API is mapped.
+                    // 26.1: the pre-migration silhouette glow ran the item through
+                    //  FlatColorItemRenderer, which needs a custom RenderPipeline that
+                    //  hasn't been ported yet (see FlatColorItemRenderer for details).
+                    //  As a stand-in, paint an amber backdrop behind active nodes so
+                    //  the highlight still reads clearly without the shader.
                     if (highlightColor != null) {
-                        damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
-                            graphics, stack, iconX, iconY, highlightColor, 200
+                        graphics.fill(
+                            iconX - 1, iconY - 1, iconX + 17, iconY + 17,
+                            0x80000000.toInt() or (highlightColor and 0xFFFFFF)
                         )
                     }
 
-                    // Render actual item icon (on top of the glow — covers the flat color center)
+                    // Render actual item icon on top of the highlight backdrop.
                     graphics.renderItem(stack, iconX, iconY)
                     if (node.count > 1) {
                         graphics.drawString(font, "x${node.count}", sx + 9, sy + 9, WHITE, true)

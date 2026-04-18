@@ -263,6 +263,7 @@ class DiagnosticScreen(
     // ========== Rendering ==========
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Main background
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
@@ -1376,9 +1377,9 @@ class DiagnosticScreen(
         if (damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == block.pos) {
             val pinIconTex =
                 net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
-            // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.33f, 0.8f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE // cyan tint
-            graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256)
-            // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE
+            // 26.1: `RenderSystem.setShaderColor` is gone; tint goes via the per-call
+            //  ARGB arg on the stretched-blit overload. 0xFF54CCFF = rgb(0.33, 0.8, 1.0).
+            graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256, 0xFF54CCFF.toInt())
         }
 
         // Warning indicator (top-right corner of block) when the block has an

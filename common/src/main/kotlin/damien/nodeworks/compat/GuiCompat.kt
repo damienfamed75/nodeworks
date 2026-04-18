@@ -147,6 +147,39 @@ fun GuiGraphicsExtractor.blit(texture: Identifier, x: Int, y: Int, u: Int, v: In
 }
 
 /**
+ * Tinted blit. Replaces the old `RenderSystem.setShaderColor(r, g, b, a)` +
+ * `graphics.blit(...)` + `setShaderColor(1,1,1,1)` sandwich. In 26.1 the tint is
+ * a per-draw ARGB argument, so every monochrome icon that wants a colour overlay
+ * passes its color here instead of wrapping the draw call in shader-color state.
+ *
+ * [argb] is packed 0xAARRGGBB — pass `0xFFFFFFFF.toInt()` for "no tint" (default).
+ */
+fun GuiGraphicsExtractor.blit(
+    texture: Identifier,
+    x: Int, y: Int,
+    u: Float, v: Float,
+    width: Int, height: Int,
+    textureWidth: Int, textureHeight: Int,
+    argb: Int
+) {
+    this.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, u, v, width, height, textureWidth, textureHeight, argb)
+}
+
+/** Stretched + tinted variant. Source region (u, v)→(u+srcW, v+srcH) drawn at (x, y)
+ *  scaled to [drawWidth]×[drawHeight]. [argb] is 0xAARRGGBB. */
+fun GuiGraphicsExtractor.blit(
+    texture: Identifier,
+    x: Int, y: Int,
+    drawWidth: Int, drawHeight: Int,
+    u: Float, v: Float,
+    srcWidth: Int, srcHeight: Int,
+    textureWidth: Int, textureHeight: Int,
+    argb: Int
+) {
+    this.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, u, v, drawWidth, drawHeight, srcWidth, srcHeight, textureWidth, textureHeight, argb)
+}
+
+/**
  * The old "stretched blit" form — destination size and source size specified
  * independently so a source region can be rescaled. 1.21.1 arg order was
  * `(texture, x, y, drawW, drawH, u, v, srcW, srcH, texW, texH)`; 26.1 reshuffles

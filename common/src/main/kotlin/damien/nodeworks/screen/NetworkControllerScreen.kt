@@ -104,13 +104,19 @@ class NetworkControllerScreen(
         retryField.setMaxLength(3)
         retryField.value = menu.handlerRetryLimit.toString()
         retryField.setBordered(true)
-        // TODO MC 26.1.2: EditBox.setFilter is gone. The digits-only guard is
-        //  enforced server-side on commit instead. Minor regression: user can
-        //  temporarily type non-digits into the field, they just won't stick.
+        // 26.1: EditBox.setFilter was removed. Enforce digits-only via the post-change
+        //  responder instead — if the user types a non-digit it'll flash on screen for a
+        //  frame before snapping back. Server-side commit also rejects non-digits as a
+        //  belt-and-braces guard.
+        retryField.setResponder { text ->
+            val filtered = text.filter { it.isDigit() }
+            if (filtered != text) retryField.value = filtered
+        }
         addRenderableWidget(retryField)
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Main window frame
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 

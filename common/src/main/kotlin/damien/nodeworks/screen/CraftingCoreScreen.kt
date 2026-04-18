@@ -107,6 +107,7 @@ class CraftingCoreScreen(
     // ========== Background Rendering ==========
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         // Title bar with network color
@@ -373,14 +374,13 @@ class CraftingCoreScreen(
             val thumbY = startY + (gridH - thumbH) * bufferScrollOffset / maxScroll
             NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, thumbY, scrollbarW, thumbH)
         } else {
-            // Grayed thumb sized as if there's one extra row to scroll
+            // Grayed thumb sized as if there's one extra row to scroll. Pre-migration
+            //  tinted the whole NineSlice via RenderSystem.setShaderColor(0.6,0.6,0.6,0.5);
+            //  NineSlice.draw doesn't accept a tint, so we overlay a semi-transparent
+            //  dark rect to produce the same "grayed" feel.
             val fakeThumbH = maxOf(8, gridH * rows / (rows + 1))
-            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE
-            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE
-            // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.6f, 0.6f, 0.6f, 0.5f)  // TODO MC 26.1.2 GUI PIPELINE
             NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, startY, scrollbarW, fakeThumbH)
-            // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE
-            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE
+            graphics.fill(sbX, startY, sbX + scrollbarW, startY + fakeThumbH, 0x80202020.toInt())
         }
 
         // Empty state

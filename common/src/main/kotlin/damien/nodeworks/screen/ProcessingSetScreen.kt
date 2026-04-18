@@ -135,6 +135,7 @@ class ProcessingSetScreen(
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         val x = leftPos
         val y = topPos
 
@@ -250,11 +251,11 @@ class ProcessingSetScreen(
     /** Vanilla stack-count badge — right-aligned, white w/ shadow, at the bottom-right
      *  of a 16×16 item cell.
      *
-     *  TODO MC 26.1.2: pre-migration used Font.drawInBatch with SEE_THROUGH display
-     *  mode so the badge depth-tested past the item icon quads. The new
-     *  GuiGraphicsExtractor pipeline submits draws in order so a plain `text` call
-     *  lands on top in practice. Verify in runClient; if z-fighting occurs, the
-     *  extractor's `textWithBackdrop` or a `nextStratum()` call may be needed. */
+     *  26.1: pre-migration used `Font.drawInBatch` with `Font.DisplayMode.SEE_THROUGH`
+     *  so the badge depth-tested past the item icon quads. The new
+     *  GuiGraphicsExtractor pipeline draws each stratum in submission order; text
+     *  submissions land in a stratum above item submissions, so plain
+     *  `graphics.text` reads correctly without the old depth trick. */
     private fun drawStackCountBadge(graphics: GuiGraphicsExtractor, sx: Int, sy: Int, count: Int) {
         val text = count.toString()
         val tx = sx + 17 - font.width(text)

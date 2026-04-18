@@ -9,8 +9,13 @@ import net.minecraft.resources.Identifier
  *
  * Each icon occupies a 16x16 cell on a 256x256 texture, addressed by column and row.
  *
- * For batch rendering (multiple icons per frame), wrap calls in beginBatch/endBatch
- * to avoid redundant RenderSystem state changes.
+ * 26.1: all the per-draw `RenderSystem.enableBlend / defaultBlendFunc / disableBlend`
+ * sandwiches from pre-migration are gone — the GUI pipeline that `graphics.blit`
+ * routes through sets those states internally. Same story for
+ * `RenderSystem.setShaderColor`: tints are now per-draw ARGB arguments via the
+ * tinted blit overload in compat/GuiCompat.kt. [beginBatch]/[endBatch] stay as a
+ * public contract in case future rendering batches need explicit start/end hooks,
+ * but in 26.1 they're currently no-ops.
  */
 class Icons private constructor(val col: Int, val row: Int) {
 
@@ -19,26 +24,12 @@ class Icons private constructor(val col: Int, val row: Int) {
 
     /** Draw this icon at full 16x16 size. */
     fun draw(graphics: GuiGraphicsExtractor, x: Int, y: Int) {
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
     }
 
     /** Draw this icon scaled to a custom size. */
     fun draw(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int) {
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
         graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
     }
 
     /** Draw the center 8x8 of this icon (cropped 4px inset). */
@@ -49,31 +40,12 @@ class Icons private constructor(val col: Int, val row: Int) {
     /** Draw only the top-left [w] × [h] region of this cell, at its native size. Useful for
      *  icons smaller than 16×16 (e.g. a 5×5 X) authored in the top-left corner of a cell. */
     fun drawTopLeft(graphics: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int) {
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256)
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
     }
 
     /** Draw only the top-left [w] × [h] region tinted with an RGB color. */
     fun drawTopLeftTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int, color: Int, alpha: Float = 1f) {
-        val r = ((color shr 16) and 0xFF) / 255f
-        val g = ((color shr 8) and 0xFF) / 255f
-        val b = (color and 0xFF) / 255f
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
-        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
-        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256)
-        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
+        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256, packArgb(color, alpha))
     }
 
     /** Draw the center portion of this icon scaled to a custom size. */
@@ -83,56 +55,40 @@ class Icons private constructor(val col: Int, val row: Int) {
 
     /** Draw this icon tinted with an RGB color. Respects the icon's alpha channel. */
     fun drawTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, color: Int, alpha: Float = 1f) {
-        val r = ((color shr 16) and 0xFF) / 255f
-        val g = ((color shr 8) and 0xFF) / 255f
-        val b = (color and 0xFF) / 255f
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
-        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
-        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
+        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256, packArgb(color, alpha))
     }
 
     /** Draw this icon tinted and scaled to a custom size. */
     fun drawTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int, alpha: Float = 1f) {
-        val r = ((color shr 16) and 0xFF) / 255f
-        val g = ((color shr 8) and 0xFF) / 255f
-        val b = (color and 0xFF) / 255f
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
-        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
-        graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
-        if (!batching) {
-            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
+        // No stretched-tinted overload in compat yet — use the non-stretched form with matching size.
+        // 26.1 GuiGraphicsExtractor.blit with tint requires the full `(pipeline, tex, x, y, u, v,
+        //  drawW, drawH, srcW, srcH, texW, texH, argb)` form; the stretched + tinted path isn't
+        //  needed yet so we render at native 16x16 into a size×size box by passing width=size,
+        //  height=size and letting the shader stretch.
+        graphics.blit(
+            net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
+            ATLAS, x, y, u.toFloat(), v.toFloat(),
+            size, size, 16, 16, 256, 256,
+            packArgb(color, alpha)
+        )
     }
 
     companion object {
         val ATLAS: Identifier = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
 
-        /** Whether we're in a batch — skips per-call enableBlend/disableBlend. */
-        private var batching = false
-
-        /** Call before rendering multiple icons to avoid redundant RenderSystem state changes. */
-        fun beginBatch() {
-            batching = true
-            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+        /** Pack an RGB [color] + [alpha]∈[0..1] into 0xAARRGGBB for the GUI blit overload. */
+        private fun packArgb(color: Int, alpha: Float): Int {
+            val a = (alpha.coerceIn(0f, 1f) * 255f).toInt() and 0xFF
+            return (a shl 24) or (color and 0xFFFFFF)
         }
 
-        /** Call after rendering multiple icons to restore state. */
-        fun endBatch() {
-            batching = false
-            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
-        }
+        /** Kept as public API — pre-migration callers wrapped multi-icon draws in
+         *  begin/end to batch the old `enableBlend`/`disableBlend` state changes. The
+         *  26.1 GUI pipeline handles blend state per-draw internally, so these are
+         *  now no-ops; leaving them in keeps call-site code forward-compatible with
+         *  future explicit batching. */
+        fun beginBatch() {}
+        fun endBatch() {}
 
         // =====================================================================
         // Atlas Layout Reference (icons.png, 256x256, 16x16 per cell)

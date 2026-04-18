@@ -80,6 +80,7 @@ class InstructionSetScreen(
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         val x = leftPos
         val y = topPos
 
