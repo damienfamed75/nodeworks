@@ -11,6 +11,13 @@ description = '''
 Scripting-driven automation mod with node networks and Lua terminals.
 '''
 
+# Mixin config — required by NeoForge 26.1 to actually apply the mixins.
+# Without this block the JSON is never scanned; the ServerLevelSetBlockMixin
+# (which drives LOS-break disconnect on the server) silently no-ops, and
+# connectable blocks keep their cached networkId forever after an obstruction.
+[[mixins]]
+config = "nodeworks.mixins.json"
+
 [[dependencies.nodeworks]]
 modId = "neoforge"
 type = "required"

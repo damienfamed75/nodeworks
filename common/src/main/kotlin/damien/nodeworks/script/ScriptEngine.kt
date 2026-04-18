@@ -151,6 +151,18 @@ class ScriptEngine(
     fun tick(tickCount: Long) {
         if (globals == null) return
 
+        // The server keeps every Connectable's `networkId` current — when an LOS break or
+        // removed node severs the path, `propagateNetworkId` clears it on the orphaned
+        // side. If our entry node no longer claims a network the terminal is effectively
+        // disconnected; running further would silently operate against a stale snapshot
+        // so stop with a clear error and let auto-run restart us once reconnected.
+        val entry = level.getBlockEntity(networkEntryNode) as? damien.nodeworks.network.Connectable
+        if (entry?.networkId == null) {
+            logCallback("Network disconnected — no controller reachable.", true)
+            stop()
+            return
+        }
+
         try {
             scheduler.tick(tickCount)
             pollRedstoneCallbacks()

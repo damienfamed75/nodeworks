@@ -37,11 +37,20 @@ class NetworkColorTintSource : BlockTintSource {
         val rgb = when (entity) {
             is NetworkControllerBlockEntity -> entity.networkColor
             is Connectable -> {
-                // Fall back to the client world for BFS since BlockAndTintGetter doesn't
-                // expose the connection graph; the client-cached level is fine here because
-                // tint-source lookups always happen on the render thread.
-                val clientLevel = Minecraft.getInstance().level ?: return -1
-                NodeConnectionRenderer.findNetworkColor(clientLevel, pos)
+                // Controllers always tint to their own colour. Every other Connectable must
+                // actually be reachable from a controller through clear LOS — the stored
+                // networkId alone is stale as soon as a wall goes up between two nodes,
+                // and the registry fast-path inside findNetworkColor would keep returning
+                // the cached colour forever without this gate.
+                if (!NodeConnectionRenderer.isReachable(pos)) {
+                    NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+                } else {
+                    // Fall back to the client world for BFS since BlockAndTintGetter doesn't
+                    // expose the connection graph; the client-cached level is fine here
+                    // because tint-source lookups always happen on the render thread.
+                    val clientLevel = Minecraft.getInstance().level ?: return -1
+                    NodeConnectionRenderer.findNetworkColor(clientLevel, pos)
+                }
             }
             else -> return -1
         }
