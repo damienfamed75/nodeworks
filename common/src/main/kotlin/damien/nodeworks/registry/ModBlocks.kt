@@ -230,7 +230,7 @@ object ModBlocks {
         val itemKey = ResourceKey.create(Registries.ITEM, identifier)
         val block = factory(properties.setId(blockKey))
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)
-        val item = BlockItem(block, Item.Properties().setId(itemKey))
+        val item = BlockItem(block, Item.Properties().setId(itemKey).useBlockDescriptionPrefix())
         Registry.register(BuiltInRegistries.ITEM, identifier, item)
         return block
     }
@@ -246,7 +246,11 @@ object ModBlocks {
         val block = factory(properties.setId(blockKey))
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)
 
-        val item = BlockItem(block, Item.Properties().setId(itemKey))
+        // MC 26.1: Item.Properties.descriptionId defaults to ITEM_DESCRIPTION_ID which produces
+        // `item.<ns>.<path>`. Vanilla BlockItem no longer overrides getDescriptionId (it did in
+        // 1.21), so without useBlockDescriptionPrefix() our block items would look up
+        // `item.nodeworks.<path>` instead of `block.nodeworks.<path>` and fail to resolve.
+        val item = BlockItem(block, Item.Properties().setId(itemKey).useBlockDescriptionPrefix())
         Registry.register(BuiltInRegistries.ITEM, identifier, item)
 
         return block
