@@ -506,6 +506,10 @@ class Nodeworks(modBus: IEventBus) {
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }
+        // Drain any connectables whose setLevel queued a LOS revalidation this past tick.
+        // Deferred because in-line revalidation from setLevel would recurse into
+        // level.getBlockEntity for the still-being-registered BE → StackOverflow.
+        damien.nodeworks.network.NodeConnectionHelper.drainPendingRevalidations(event.server)
         // Reset NodeConnectionHelper's per-tick propagate-dedup set so the next tick's
         // propagate calls can traverse fresh. Kept here rather than per-level because
         // the dedup is indexed by dimension and clearing once covers all levels.

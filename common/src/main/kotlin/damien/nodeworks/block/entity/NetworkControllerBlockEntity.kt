@@ -117,6 +117,7 @@ class NetworkControllerBlockEntity(
         super.setLevel(level)
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
+            NodeConnectionHelper.queueRevalidation(level, worldPosition)
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
     }

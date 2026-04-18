@@ -51,6 +51,7 @@ object NodeConnectionHelper {
     fun clearServerCaches() {
         blockedDataCache.clear()
         propagatedThisTickByDim.clear()
+        pendingRevalidateByDim.clear()
     }
 
     fun pairKey(a: BlockPos, b: BlockPos): Long {
@@ -87,6 +88,41 @@ object NodeConnectionHelper {
         propagatedThisTickByDim.clear()
     }
 
+    /**
+     * Queue of connectable positions waiting to be revalidated on the next server tick.
+     * Populated from each Connectable's `setLevel` (chunk load). Deferred by one tick so the
+     * chunk has finished registering the BE before we try to walk its connection graph — doing
+     * it in-line from setLevel recurses back into `level.getBlockEntity` for the still-being-
+     * -wired BE and blows the stack.
+     *
+     * Drained by [drainPendingRevalidations], called once per server tick. One-shot cost per
+     * chunk load, zero cost on idle ticks.
+     */
+    private val pendingRevalidateByDim = ConcurrentHashMap<ResourceKey<Level>, MutableSet<Long>>()
+
+    fun queueRevalidation(level: ServerLevel, pos: BlockPos) {
+        pendingRevalidateByDim
+            .computeIfAbsent(level.dimension()) { java.util.Collections.newSetFromMap(ConcurrentHashMap()) }
+            .add(pos.asLong())
+    }
+
+    fun drainPendingRevalidations(server: net.minecraft.server.MinecraftServer) {
+        for (level in server.allLevels) {
+            val pending = pendingRevalidateByDim[level.dimension()] ?: continue
+            if (pending.isEmpty()) continue
+            // Snapshot so we can clear and let setLevel calls that happen DURING processing
+            // accumulate into the next-tick batch rather than mutate the set we're iterating.
+            val snapshot = pending.toLongArray()
+            pending.clear()
+            for (packed in snapshot) {
+                val pos = BlockPos.of(packed)
+                if (!level.isLoaded(pos)) continue
+                val entity = getConnectable(level, pos) ?: continue
+                revalidateOnLoad(level, entity)
+            }
+        }
+    }
+
     private fun chunkKey(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
     private fun chunkKeyOf(pos: BlockPos): Long = chunkKey(pos.x shr 4, pos.z shr 4)
 
@@ -96,11 +132,6 @@ object NodeConnectionHelper {
 
     fun trackNode(level: ServerLevel, pos: BlockPos) {
         chunkIndex(level).computeIfAbsent(chunkKeyOf(pos)) { ConcurrentHashMap.newKeySet() }.add(pos)
-        // Every Connectable calls trackNode from its setLevel, which fires once per chunk load.
-        // Piggy-back a LOS cache revalidation here so any pair whose state changed while this
-        // block was in an unloaded chunk self-heals as soon as it comes back online. Newly
-        // placed blocks have no connections yet so this is a no-op in that path.
-        revalidateOnLoad(level, pos)
     }
 
     fun untrackNode(level: ServerLevel, pos: BlockPos) {
@@ -245,17 +276,22 @@ object NodeConnectionHelper {
         return entityA != null || entityB != null
     }
 
-    /** Re-raycast every connection of the given position whose opposite endpoint is already loaded, and
-     *  reconcile the [blockedPairs] cache with live LOS. Used to catch the edge case where a block was
-     *  placed between two endpoints while one of them was in an unloaded chunk — in that window the
-     *  mixin's onBlockChanged couldn't reach the orphaned node, so the cache entry was never written.
+    /** Re-raycast every connection of the given connectable whose opposite endpoint is already loaded,
+     *  and reconcile the [blockedPairs] cache with live LOS. Used to catch the edge case where a block
+     *  was placed between two endpoints while one of them was in an unloaded chunk — in that window
+     *  the mixin's onBlockChanged couldn't reach the orphaned node, so the cache entry was never
+     *  written.
      *
-     *  Designed to run from each [Connectable]'s `setLevel` (i.e. once per chunk load). If any cache
-     *  entry changed, a propagate is queued; the per-tick dedup means N connectables in one subgraph
-     *  loading in the same tick only BFS that subgraph once. */
-    fun revalidateOnLoad(level: ServerLevel, pos: BlockPos) {
-        val entity = getConnectable(level, pos) ?: return
-        val connections = entity.getConnections()
+     *  Designed to run from each [Connectable]'s `setLevel`, *after* the chunk has registered the BE.
+     *  We accept the entity directly (rather than resolving it via level.getBlockEntity) because
+     *  setLevel runs while the BE is being wired into the chunk — a lookup at this point would try
+     *  to construct a fresh instance and recurse into setLevel → StackOverflow.
+     *
+     *  If any cache entry changed, a propagate is queued; per-tick dedup means N connectables in one
+     *  subgraph loading in the same tick only BFS that subgraph once. */
+    fun revalidateOnLoad(level: ServerLevel, self: Connectable) {
+        val pos = self.getBlockPos()
+        val connections = self.getConnections()
         if (connections.isEmpty()) return
 
         var anyChanged = false

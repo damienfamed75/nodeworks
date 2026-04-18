@@ -308,6 +308,7 @@ class NodeBlockEntity(
         super.setLevel(newLevel)
         if (newLevel is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
+            NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
             if (monitors.isNotEmpty()) {
                 damien.nodeworks.script.MonitorUpdateHelper.trackNode(worldPosition)
             }

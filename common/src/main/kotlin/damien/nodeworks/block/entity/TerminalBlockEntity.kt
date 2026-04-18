@@ -123,6 +123,7 @@ class TerminalBlockEntity(
         super.setLevel(newLevel)
         if (newLevel is ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
+            NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
         if (!newLevel.isClientSide && autoRun && scriptText.isNotBlank()) {

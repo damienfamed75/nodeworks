@@ -618,6 +618,7 @@ class CraftingCoreBlockEntity(
         super.setLevel(level)
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
+            NodeConnectionHelper.queueRevalidation(level, worldPosition)
             // Defer recalc — neighbors may not be loaded yet.
             // Schedule resume of pending jobs
             // Legacy resume path — only fires when there's no per-op resume info AND no
