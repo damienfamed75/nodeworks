@@ -488,9 +488,6 @@ class DiagnosticScreen(
         NineSlice.PANEL_INSET.draw(graphics, graphLeft - 3, graphTop - 3, graphW + 6, graphBottom - graphTop + 6)
         NineSlice.CONTENT_BORDER.draw(graphics, graphLeft - 3, graphTop - 3, graphW + 6, graphBottom - graphTop + 6)
 
-        // Autocomplete dropdown for item field
-        renderCraftAutocomplete(graphics, mouseX, mouseY)
-
         // Floating detail panel frame (always visible)
         val detailW = 180
         val detailX = contentLeft + 6
@@ -590,6 +587,11 @@ class DiagnosticScreen(
         }
 
         graphics.pose().popMatrix()
+
+        // Autocomplete dropdown last so it overlays both the detail panel and the
+        //  tree view — pre-migration the detail panel was drawn above it in the
+        //  submission order, which hid the dropdown on click.
+        renderCraftAutocomplete(graphics, mouseX, mouseY)
     }
 
     // ========== Craft Item Autocomplete ==========
@@ -1476,7 +1478,8 @@ class DiagnosticScreen(
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
-        // Double-click on craft field → select all
+        // Double-click on craft field → select all; single-click → populate dropdown
+        // with the current query (empty query shows every craftable item).
         val field = craftItemField
         if (field != null && field.visible && mx >= field.x && mx < field.x + field.width && my >= field.y && my < field.y + field.height) {
             val now = net.minecraft.util.Util.getMillis()
@@ -1487,6 +1490,9 @@ class DiagnosticScreen(
                 return true
             }
             craftFieldLastClickTime = now
+            // Seed the dropdown on click so the full list appears immediately
+            //  without the user needing to type anything first.
+            updateCraftAutocomplete(field.value)
         }
 
         // Craft dropdown click

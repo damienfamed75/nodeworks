@@ -194,7 +194,9 @@ class StorageCardScreen(
                 }
                 return true
             }
-            if (mx >= plusX && mx < plusX + btnW && my >= stepY && my < stepY + btnH) {
+            // Bug fix: `plusX` is the local x relative to leftPos — must add leftPos
+            //  to match the actual button draw position (cf. `pX` above).
+            if (mx >= pX && mx < pX + btnW && my >= stepY && my < stepY + btnH) {
                 val step = if (hasShiftDownCompat()) 10 else 1
                 Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 1)
                 if (step > 1) {

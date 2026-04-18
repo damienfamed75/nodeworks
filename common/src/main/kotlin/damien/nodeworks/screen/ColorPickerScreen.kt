@@ -102,12 +102,12 @@ class ColorPickerScreen(
             }
         }
         // 26.1: DynamicTexture requires a label arg (Supplier<String> or String)
-        //  before the NativeImage/dims — there's no single-arg NativeImage ctor
-        //  anymore. We use the (label, width, height, zero) form + setPixels so
-        //  profilers / crash reports can attribute the texture.
+        //  before the NativeImage/dims. The (label, width, height, zero) + setPixels
+        //  path only swaps the CPU-side NativeImage — it doesn't re-upload to the GPU
+        //  texture, leaving the picker rendering as solid black. Use the
+        //  (label, NativeImage) ctor instead, which uploads immediately.
         val id = Identifier.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")
-        val texture = DynamicTexture(id.toString(), image.width, image.height, false)
-        texture.setPixels(image)
+        val texture = DynamicTexture({ id.toString() }, image)
         minecraft?.textureManager?.register(id, texture)
         return id
     }
