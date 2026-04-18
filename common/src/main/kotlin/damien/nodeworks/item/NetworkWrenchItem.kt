@@ -102,15 +102,17 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
             return InteractionResult.SUCCESS
         }
 
-        // Check for duplicate controllers before connecting
+        // Check for duplicate controllers before connecting. Walk the structural topology
+        // (ignoring LOS) rather than NetworkDiscovery so an LOS-blocked orphan — which still
+        // holds its connection to the old controller on-the-books — is correctly treated as
+        // belonging to that controller's network. Otherwise a player could wrench-bridge
+        // two networks through a blocked orphan and see both light up once LOS is restored.
         val entityA = NodeConnectionHelper.getConnectable(level, selectedPos)
         val entityB = NodeConnectionHelper.getConnectable(level, pos)
         if (entityA != null && entityB != null && !entityA.hasConnection(pos)) {
-            // About to connect — check if both networks already have controllers
-            val snapshotA = NetworkDiscovery.discoverNetwork(serverLevel, selectedPos)
-            val snapshotB = NetworkDiscovery.discoverNetwork(serverLevel, pos)
-            if (snapshotA.controller != null && snapshotB.controller != null
-                && snapshotA.controller.pos != snapshotB.controller.pos) {
+            val ctlA = NodeConnectionHelper.findTopologyController(serverLevel, selectedPos)
+            val ctlB = NodeConnectionHelper.findTopologyController(serverLevel, pos)
+            if (ctlA != null && ctlB != null && ctlA != ctlB) {
                 player.sendSystemMessage(Component.translatable("message.nodeworks.duplicate_controller"))
                 return InteractionResult.SUCCESS
             }

@@ -192,18 +192,52 @@ object NodeConnectionHelper {
             false
         } else {
             connect(level, posA, posB)
-            true
         }
     }
 
     fun connect(level: ServerLevel, posA: BlockPos, posB: BlockPos): Boolean {
         val entityA = getConnectable(level, posA) ?: return false
         val entityB = getConnectable(level, posB) ?: return false
+
+        // Refuse the connect if both sides' structural topology (ignoring LOS) already
+        // reaches different controllers. Without this, a wrench can bridge two networks
+        // through an LOS-blocked orphan: the orphan appears disconnected (networkId=null,
+        // NetworkDiscovery's live LOS walk doesn't find its old controller), but its
+        // connection to the old subgraph is still on the books, so restoring LOS later
+        // would merge two controllers onto a single connectable.
+        val topoA = findTopologyController(level, posA)
+        val topoB = findTopologyController(level, posB)
+        if (topoA != null && topoB != null && topoA != topoB) return false
+
         entityA.addConnection(posB)
         entityB.addConnection(posA)
-        // Propagate network UUID across the newly connected network
         propagateNetworkId(level, posA)
         return true
+    }
+
+    /**
+     * Walk the full connection graph from [startPos] ignoring [blockedPairs] and return the first
+     * controller's networkId found, or null. Used to enforce "one network per connectable" across
+     * soft-disconnected (LOS-blocked) subgraphs — the connection data is what we care about here,
+     * not current reachability.
+     */
+    fun findTopologyController(level: ServerLevel, startPos: BlockPos): java.util.UUID? {
+        val visited = HashSet<BlockPos>()
+        val queue = ArrayDeque<BlockPos>()
+        visited.add(startPos)
+        queue.add(startPos)
+        while (queue.isNotEmpty()) {
+            val pos = queue.removeFirst()
+            val entity = getConnectable(level, pos) ?: continue
+            if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
+                return entity.networkId
+            }
+            for (conn in entity.getConnections()) {
+                if (!level.isLoaded(conn)) continue
+                if (visited.add(conn)) queue.add(conn)
+            }
+        }
+        return null
     }
 
     /** BFS from a position to find a controller and propagate its networkId to all reachable connectables.
