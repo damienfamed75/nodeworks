@@ -33,34 +33,46 @@ class CraftTreeGraph {
         private const val WHITE = 0xFFFFFFFF.toInt()
 
         /**
-         * Draw an XP-orb-style status halo behind a GUI item icon.
+         * Draw an XP-orb-style circular status halo behind a GUI item icon.
          *
-         * Five concentric translucent rects from a 5px outer ring (faintest) inward to a
-         * centre fill (brightest). Because MC's default GUI blend is alpha-over, the
-         * stacked rects accumulate alpha toward the middle — what the player reads as a
-         * soft radial fall-off rather than a hard square edge. No shader, no sprite, no
-         * per-item pre-render. The item itself is drawn on top, so the glow shows through
-         * the item's transparent pixels exactly the way the pre-migration silhouette did.
+         * Stacks four concentric filled discs from a wide faint outer disc inward to a
+         * tight bright inner disc. Each disc is rendered row-by-row — for each y offset
+         * inside the disc we compute the half-width `dx = √(r² - dy²)` and emit a single
+         * 1px-tall [graphics.fill] rect spanning the chord. Alpha-over blending
+         * accumulates toward the centre, giving a smooth radial fall-off with genuinely
+         * circular shape (unlike concentric rects which always read as square).
+         *
+         * The item is drawn on top of the halo, so glow bleeds through the icon's
+         * transparent pixels — the same readability as the pre-migration silhouette
+         * effect without needing a custom shader.
          *
          * [color] is expected as 0xAARRGGBB; only the RGB channels are used — alpha is
          * driven by the ring table below.
          */
         fun drawItemHalo(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int) {
             val rgb = color and 0xFFFFFF
-            // Outer → inner. Each pair is (outward-px offset, alpha byte). Alphas are
-            // tuned so the overlap at the centre feels bright without washing out the item.
+            val cx = x + size / 2
+            val cy = y + size / 2
+            // Radii extend ~4px beyond the item's inscribed radius (size/2 ≈ 8) so the
+            // glow reads as an aura rather than just an edge treatment. Outer → inner:
+            // alpha ramps up so overlap at the centre feels bright without washing out.
             val rings = arrayOf(
-                5 to 0x12,
-                4 to 0x1E,
-                3 to 0x2C,
-                2 to 0x42,
-                1 to 0x60,
+                13 to 0x10,
+                11 to 0x1C,
+                9 to 0x30,
+                7 to 0x48,
             )
-            for ((r, alpha) in rings) {
-                graphics.fill(
-                    x - r, y - r, x + size + r, y + size + r,
-                    (alpha shl 24) or rgb
-                )
+            for ((radius, alpha) in rings) {
+                fillDisc(graphics, cx, cy, radius, (alpha shl 24) or rgb)
+            }
+        }
+
+        /** Filled-circle helper. Emits one 1px-tall rect per scanline of the disc. */
+        private fun fillDisc(graphics: GuiGraphicsExtractor, cx: Int, cy: Int, radius: Int, argb: Int) {
+            val r2 = radius * radius
+            for (dy in -radius..radius) {
+                val dx = kotlin.math.sqrt((r2 - dy * dy).toDouble()).toInt()
+                graphics.fill(cx - dx, cy + dy, cx + dx + 1, cy + dy + 1, argb)
             }
         }
     }
