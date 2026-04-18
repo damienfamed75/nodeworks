@@ -247,27 +247,37 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             ?: return CraftScheduler.OpResult.Failed("Unknown item: ${op.itemId}")
 
         var remaining = removed
+        var droppedCount = 0L
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
             val stack = ItemStack(item, batch)
             val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, null)
             if (inserted == 0) {
-                // Storage refused — drop the rest in-world rather than failing the op.
-                // Failing here would leave the thread FAILED and the CPU unable to accept
-                // new crafts; dropping is consistent with how cancelJob / onPlanFailed handle
-                // overflow, and keeps the craft technically successful.
+                // Network storage refused — drop the batch on the ground so the finished
+                // items aren't destroyed, and track how many we had to drop. We still fail
+                // the op after the loop so the player gets a visible error (same flow as
+                // any other craft failure: onPlanFailed → cpu.lastFailureReason + chat).
+                // The CPU goes back to IDLE and can accept new crafts, so the failure is
+                // surfacing only — not locking the CPU.
                 logger.warn(
                     "Deliver: network storage refused {}, dropping {} in-world at {}",
-                    op.itemId, remaining, cpu.blockPos
+                    op.itemId, batch, cpu.blockPos
                 )
                 val dropStack = ItemStack(item, batch)
                 net.minecraft.world.Containers.dropItemStack(
                     lvl, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, dropStack
                 )
+                droppedCount += batch.toLong()
                 remaining -= batch.toLong()
             } else {
                 remaining -= inserted.toLong()
             }
+        }
+        if (droppedCount > 0L) {
+            val itemName = op.itemId.substringAfter(':').replace('_', ' ')
+            return CraftScheduler.OpResult.Failed(
+                "Network storage full — dropped $droppedCount × $itemName on ground"
+            )
         }
         return CraftScheduler.OpResult.Completed
     }

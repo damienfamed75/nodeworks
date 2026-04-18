@@ -329,7 +329,16 @@ class TerminalScreen(
                                     if (chipData != null && clientLevel.isLoaded(chipData.pos)) {
                                         val broadcast = clientLevel.getBlockEntity(chipData.pos)
                                         if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {
+                                            // Mirror the local ProcessingStorage case: in addition to the
+                                            // output-item autocomplete list, feed the API name + info into
+                                            // the same lists a local processing storage would fill. Without
+                                            // this, `network:craft("...")` wouldn't suggest remote recipes
+                                            // even though the Diagnostic Tool and Inventory Terminal both
+                                            // see them (they use the server-side NetworkDiscovery path,
+                                            // which already walks the antenna).
                                             for (api in broadcast.getAvailableApis()) {
+                                                scannedLocal.add(api.name)
+                                                scannedLocalApis.add(api)
                                                 scannedProcessable.addAll(api.outputItemIds)
                                             }
                                         }
