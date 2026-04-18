@@ -28,18 +28,32 @@ object NodeConnectionHelper {
      *
      * The connection itself is NOT removed from either endpoint when LOS breaks; this set is
      * consulted by [propagateNetworkId] (to stop the network-id BFS at blocked hops) and by
-     * [checkNodeConnections] (to detect LOS-clear transitions on neighbour-block updates).
-     * Soft-disconnect semantics — once the obstruction is removed the pair resumes
-     * carrying the network. Not persisted; see rebuild note in [onServerLevelLoaded].
+     * [checkNodeConnections] (to detect LOS transitions on neighbour-block updates).
+     *
+     * Persisted per dimension via [BlockedPairsData] SavedData so the cache survives reloads
+     * — this is what lets propagate trust the cache instead of live-raycasting every edge,
+     * keeping BFS cost linear in network size even for thousand-node networks.
+     *
+     * Cache structure is a two-layer lookup: the SavedData reference for each dimension is
+     * kept in [blockedDataCache] to avoid the per-call map lookup inside level.dataStorage.
      */
-    private val blockedPairsByDimension = ConcurrentHashMap<ResourceKey<Level>, MutableSet<Long>>()
+    private val blockedDataCache = ConcurrentHashMap<ResourceKey<Level>, BlockedPairsData>()
 
-    private fun blockedPairs(level: ServerLevel): MutableSet<Long> =
-        blockedPairsByDimension.computeIfAbsent(level.dimension()) {
-            java.util.Collections.newSetFromMap(ConcurrentHashMap())
+    private fun blockedData(level: ServerLevel): BlockedPairsData =
+        blockedDataCache.computeIfAbsent(level.dimension()) {
+            level.dataStorage.computeIfAbsent(BlockedPairsData.TYPE)
         }
 
-    private fun pairKey(a: BlockPos, b: BlockPos): Long {
+    private fun blockedPairs(level: ServerLevel): MutableSet<Long> = blockedData(level).pairs
+
+    /** Drop cached SavedData references. Call on server shutdown so a subsequent restart
+     *  doesn't keep a handle to the previous run's loaded data. */
+    fun clearServerCaches() {
+        blockedDataCache.clear()
+        propagatedThisTickByDim.clear()
+    }
+
+    fun pairKey(a: BlockPos, b: BlockPos): Long {
         val (lo, hi) = if (isLessThan(a, b)) a to b else b to a
         return lo.asLong() xor (hi.asLong() * 31L)
     }
@@ -49,9 +63,28 @@ object NodeConnectionHelper {
         blockedPairs(level).contains(pairKey(a, b))
 
     private fun setPairBlocked(level: ServerLevel, a: BlockPos, b: BlockPos, blocked: Boolean) {
-        val set = blockedPairs(level)
+        val data = blockedData(level)
         val key = pairKey(a, b)
-        if (blocked) set.add(key) else set.remove(key)
+        val changed = if (blocked) data.pairs.add(key) else data.pairs.remove(key)
+        if (changed) data.setDirty()
+    }
+
+    /**
+     * Per-tick set of positions already covered by a [propagateNetworkId] BFS. Propagate
+     * visits everyone reachable through clear LOS; if ten blocks change inside the same
+     * subgraph in one tick, we only need to BFS that subgraph once. Cleared by
+     * [clearTickDedup] at the end of every server tick.
+     */
+    private val propagatedThisTickByDim = ConcurrentHashMap<ResourceKey<Level>, MutableSet<Long>>()
+
+    private fun propagatedThisTick(level: ServerLevel): MutableSet<Long> =
+        propagatedThisTickByDim.computeIfAbsent(level.dimension()) {
+            java.util.Collections.newSetFromMap(ConcurrentHashMap())
+        }
+
+    /** Reset per-tick propagate dedup. Call once per server tick (Post). */
+    fun clearTickDedup() {
+        propagatedThisTickByDim.clear()
     }
 
     private fun chunkKey(x: Int, z: Int): Long = (x.toLong() shl 32) or (z.toLong() and 0xFFFFFFFFL)
@@ -63,6 +96,11 @@ object NodeConnectionHelper {
 
     fun trackNode(level: ServerLevel, pos: BlockPos) {
         chunkIndex(level).computeIfAbsent(chunkKeyOf(pos)) { ConcurrentHashMap.newKeySet() }.add(pos)
+        // Every Connectable calls trackNode from its setLevel, which fires once per chunk load.
+        // Piggy-back a LOS cache revalidation here so any pair whose state changed while this
+        // block was in an unloaded chunk self-heals as soon as it comes back online. Newly
+        // placed blocks have no connections yet so this is a no-op in that path.
+        revalidateOnLoad(level, pos)
     }
 
     fun untrackNode(level: ServerLevel, pos: BlockPos) {
@@ -138,11 +176,18 @@ object NodeConnectionHelper {
     }
 
     /** BFS from a position to find a controller and propagate its networkId to all reachable connectables.
-     *  Each edge is re-raycast and its entry in [blockedPairs] refreshed as we visit it — so propagate is
-     *  self-healing: whatever the cached blocked state was before this call, it is correct after. That
-     *  lets us avoid persisting the set across saves (it rebuilds on the first propagate after load). */
+     *  Trusts the persisted [blockedPairs] cache — no per-edge raycast during the BFS. Cache freshness
+     *  is maintained elsewhere: [checkNodeConnections] writes on live block-change transitions and
+     *  [revalidateOnLoad] writes when a connectable's chunk loads. Net effect is an O(V+E) traversal
+     *  with no raycasts, so propagating across a thousand-node network on a wrench click is cheap.
+     *
+     *  Per-tick dedup via [propagatedThisTickByDim]: a second call in the same tick whose startPos was
+     *  already covered by a prior propagate's BFS is a no-op — the network was walked already. This
+     *  keeps cost bounded when many blocks change near a large network in a single tick. */
     fun propagateNetworkId(level: ServerLevel, startPos: BlockPos) {
-        // Full BFS through unblocked pairs. LOS is re-verified live per edge.
+        val coveredThisTick = propagatedThisTick(level)
+        if (!coveredThisTick.add(startPos.asLong())) return
+
         val visited = LinkedHashSet<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         visited.add(startPos)
@@ -153,12 +198,14 @@ object NodeConnectionHelper {
             val entity = getConnectable(level, pos) ?: continue
             for (conn in entity.getConnections()) {
                 if (!level.isLoaded(conn)) continue
-                val blocked = !checkLineOfSight(level, pos, conn)
-                setPairBlocked(level, pos, conn, blocked)
-                if (blocked) continue
+                if (isPairBlocked(level, pos, conn)) continue
                 if (visited.add(conn)) queue.add(conn)
             }
         }
+
+        // Record everything we reached so subsequent calls in this tick from inside this
+        // subgraph can skip cheaply.
+        for (p in visited) coveredThisTick.add(p.asLong())
 
         // Find controller in the visited set
         var foundId: java.util.UUID? = null
@@ -196,6 +243,36 @@ object NodeConnectionHelper {
         if (entityA != null) propagateNetworkId(level, posA)
         if (entityB != null) propagateNetworkId(level, posB)
         return entityA != null || entityB != null
+    }
+
+    /** Re-raycast every connection of the given position whose opposite endpoint is already loaded, and
+     *  reconcile the [blockedPairs] cache with live LOS. Used to catch the edge case where a block was
+     *  placed between two endpoints while one of them was in an unloaded chunk — in that window the
+     *  mixin's onBlockChanged couldn't reach the orphaned node, so the cache entry was never written.
+     *
+     *  Designed to run from each [Connectable]'s `setLevel` (i.e. once per chunk load). If any cache
+     *  entry changed, a propagate is queued; the per-tick dedup means N connectables in one subgraph
+     *  loading in the same tick only BFS that subgraph once. */
+    fun revalidateOnLoad(level: ServerLevel, pos: BlockPos) {
+        val entity = getConnectable(level, pos) ?: return
+        val connections = entity.getConnections()
+        if (connections.isEmpty()) return
+
+        var anyChanged = false
+        for (targetPos in connections) {
+            // Only compare to a loaded endpoint. If the far side isn't loaded yet, its own
+            // revalidateOnLoad call will cover this pair later.
+            if (!level.isLoaded(targetPos)) continue
+            if (!isLessThan(pos, targetPos)) continue  // handle each pair from the canonical side
+
+            val wasBlocked = isPairBlocked(level, pos, targetPos)
+            val hasLos = checkLineOfSight(level, pos, targetPos)
+            if (hasLos == wasBlocked) {
+                setPairBlocked(level, pos, targetPos, !hasLos)
+                anyChanged = true
+            }
+        }
+        if (anyChanged) propagateNetworkId(level, pos)
     }
 
     fun removeAllConnections(level: ServerLevel, entity: Connectable) {
@@ -238,19 +315,27 @@ object NodeConnectionHelper {
             if (!isLessThan(nodePos, targetPos)) continue
             if (!isInsideConnectionBounds(nodePos, targetPos, changedPos)) continue
 
-            // Soft-transition: compare live LOS against the tracked blocked state. If the state
-            // actually flipped — either direction — update it and re-propagate. Placement that
-            // breaks LOS orphans the downstream subgraph; removal that restores LOS rejoins it,
-            // without ever mutating the connection list itself.
+            // Primary transition: cached blocked flag disagrees with live LOS — either a new
+            // obstruction was placed or an existing one was removed.
             val wasBlocked = isPairBlocked(level, nodePos, targetPos)
             val hasLos = checkLineOfSight(level, nodePos, targetPos)
             val flipped = hasLos == wasBlocked
-            if (!flipped) continue
+
+            // Stale-cache heal: on server load the blocked-set starts empty, so a restored-LOS
+            // event can look like "no change" (wasBlocked=false, hasLos=true). Detect that case
+            // by cross-checking the endpoints' networkIds: if they can see each other with clear
+            // LOS but don't agree on which network they're in, the cache is lying and a propagate
+            // is needed to reconcile them. Cheap — one field read per endpoint, no raycast.
+            val targetEntity = getConnectable(level, targetPos)
+            val inconsistent = hasLos && targetEntity != null && entity.networkId != targetEntity.networkId
+
+            if (!flipped && !inconsistent) continue
 
             setPairBlocked(level, nodePos, targetPos, !hasLos)
             propagateNetworkId(level, nodePos)
             // If LOS just broke, the opposite endpoint may have just lost its controller; run
             // a second propagate from that side since the BFS from `nodePos` won't reach it.
+            // (If `inconsistent` drove us here with clear LOS, one propagate already covered both.)
             if (!hasLos) propagateNetworkId(level, targetPos)
         }
     }

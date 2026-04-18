@@ -506,6 +506,10 @@ class Nodeworks(modBus: IEventBus) {
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }
+        // Reset NodeConnectionHelper's per-tick propagate-dedup set so the next tick's
+        // propagate calls can traverse fresh. Kept here rather than per-level because
+        // the dedup is indexed by dimension and clearing once covers all levels.
+        damien.nodeworks.network.NodeConnectionHelper.clearTickDedup()
     }
 
     private fun onRegisterCommands(event: net.neoforged.neoforge.event.RegisterCommandsEvent) {
@@ -514,6 +518,9 @@ class Nodeworks(modBus: IEventBus) {
 
     private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
         damien.nodeworks.script.ResumeScheduler.onServerStop()
+        // Drop cached SavedData handles — a restart in the same JVM (integrated server quit+rejoin)
+        // must re-resolve them against the freshly loaded level.dataStorage.
+        damien.nodeworks.network.NodeConnectionHelper.clearServerCaches()
     }
 
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {
