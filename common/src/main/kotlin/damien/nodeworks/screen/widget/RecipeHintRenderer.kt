@@ -2,10 +2,55 @@ package damien.nodeworks.screen.widget
 
 import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.screen.Icons
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.Font
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.core.registries.BuiltInRegistries
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.resources.Identifier
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.world.item.ItemStack
 
 /**
@@ -90,7 +135,7 @@ object RecipeHintRenderer {
      * on any reachable Processing Storage block.
      */
     fun render(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         font: Font,
         canonicalId: String,
         x: Int,
@@ -164,7 +209,7 @@ object RecipeHintRenderer {
     /** Draw one (icon + ×count) pair. Returns the horizontal advance, or null if the
      *  pair would overflow `right` — caller should finish with ellipsis. */
     private fun drawEntry(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         font: Font,
         entry: Pair<String, Int>,
         cx: Int,
@@ -183,11 +228,11 @@ object RecipeHintRenderer {
         val stack = ItemStack(item, count.coerceAtMost(64).coerceAtLeast(1))
         // Scale the 16×16 native item render down to ICON_SIZE via pose.scale. Translate
         // first so the scale's origin is at the icon's top-left.
-        graphics.pose().pushPose()
+        graphics.pose().pushMatrix()
         graphics.pose().translate(cx.toFloat(), iconY.toFloat(), 0f)
-        graphics.pose().scale(ITEM_SCALE, ITEM_SCALE, 1f)
+        graphics.pose().scale((ITEM_SCALE).toFloat(), (ITEM_SCALE).toFloat())
         graphics.renderItem(stack, 0, 0)
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
 
         // Count badge — vanilla-style positioning, scaled for the smaller icon. Vanilla
         // uses (cx + 17 - W, cy + 9) for a 16-wide cell; for our 14-wide cell that's
@@ -206,7 +251,7 @@ object RecipeHintRenderer {
         return ICON_SIZE
     }
 
-    private fun finishWithEllipsis(graphics: GuiGraphics, font: Font, cx: Int, textY: Int) {
+    private fun finishWithEllipsis(graphics: GuiGraphicsExtractor, font: Font, cx: Int, textY: Int) {
         graphics.drawString(font, "\u2026", cx, textY, 0xFF888888.toInt(), false)
     }
 }

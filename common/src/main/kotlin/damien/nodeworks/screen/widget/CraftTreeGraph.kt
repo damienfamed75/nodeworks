@@ -2,10 +2,55 @@ package damien.nodeworks.screen.widget
 
 import damien.nodeworks.screen.Icons
 import damien.nodeworks.script.CraftTreeBuilder
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.core.registries.BuiltInRegistries
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.resources.Identifier
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.world.item.ItemStack
 import kotlin.math.roundToInt
 
@@ -109,7 +154,7 @@ class CraftTreeGraph {
      * Handles layout caching, auto-fit, scissoring, and all node rendering.
      */
     fun render(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         tree: CraftTreeBuilder.CraftTreeNode?,
         x: Int, y: Int, w: Int, h: Int
     ) {
@@ -147,7 +192,7 @@ class CraftTreeGraph {
     }
 
     private fun renderGraph(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         root: CraftTreeBuilder.CraftTreeNode,
         layout: TreeLayout,
         originX: Float, originY: Float,
@@ -224,15 +269,15 @@ class CraftTreeGraph {
                             val vPos = pos2 - seg1 - seg2
                             dotX = sx; dotY = midY - vPos
                         }
-                        graphics.pose().pushPose()
-                        graphics.pose().translate(-7.5f, -7.5f, 0f)
-                        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-                        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-                        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 0.8f, 0.27f, 1f)
+                        graphics.pose().pushMatrix()
+                        graphics.pose().translate((-7.5f).toFloat(), (-7.5f).toFloat())
+                        // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+                        // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+                        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 0.8f, 0.27f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
                         graphics.blit(Icons.ATLAS, dotX, dotY, Icons.GLOW_CIRCLE.u.toFloat(), Icons.GLOW_CIRCLE.v.toFloat(), 16, 16, 256, 256)
-                        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-                        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-                        graphics.pose().popPose()
+                        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
+                        // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+                        graphics.pose().popMatrix()
                     }
                 }
             }
@@ -295,15 +340,15 @@ class CraftTreeGraph {
 
             // Status icon overlay
             if (isStorage) {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.CHECKMARK.draw(graphics, sx + 6, sy - 4, 10)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             } else if (isActive) {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 6, sy - 4, 10)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
 
             // Source icon below item (half-scale)
@@ -315,28 +360,28 @@ class CraftTreeGraph {
                 else -> null
             }
             if (srcItem != null) {
-                graphics.pose().pushPose()
+                graphics.pose().pushMatrix()
                 graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat(), 0f)
-                graphics.pose().scale(0.5f, 0.5f, 1f)
+                graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                 graphics.renderItem(ItemStack(srcItem), 0, 0)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
 
             // X overlay for missing/no-handler
             if (node.source == "missing" || node.source == "process_no_handler") {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.X.draw(graphics, sx - 4, sy + 16, 8)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
 
             // Checkmark for completed (skip root node — it's the final output)
             val isComplete = node.inStorage >= node.count && node.source != "storage"
             if (isComplete && node !== root) {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.CHECKMARK.draw(graphics, sx + 6, sy - 2, 8)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
         }
     }

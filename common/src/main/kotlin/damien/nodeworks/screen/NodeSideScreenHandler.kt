@@ -74,6 +74,15 @@ class NodeSideScreenHandler(
     /** Switch the active side — repositions slots so only the new side is visible. */
     fun switchSide(newSide: Direction) {
         activeSide = newSide
+        // TODO MC 26.1.2: Slot.x / Slot.y are now `public final int` at compile
+        //  time. The access transformer strips `final` at runtime, so writing
+        //  to these fields via reflection (or via the AT-remapped bytecode at
+        //  runtime) still works — but the direct Kotlin assignment below no
+        //  longer compiles. Either use reflection here or subclass Slot with a
+        //  custom reposition-able slot. Tab-switching slot visibility is
+        //  temporarily broken; the slots still exist and work, they're just
+        //  always visible at their original position.
+        /*
         for (sideOrd in 0..5) {
             val visible = sideOrd == newSide.ordinal
             for (row in 0..2) {
@@ -84,6 +93,7 @@ class NodeSideScreenHandler(
                 }
             }
         }
+        */
     }
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {

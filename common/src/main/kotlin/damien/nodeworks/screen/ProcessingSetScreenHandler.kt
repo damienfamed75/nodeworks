@@ -177,7 +177,7 @@ class ProcessingSetScreenHandler(
         override fun getMaxStackSize(): Int = 1
     }
 
-    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
+    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
         if (slotId in 0 until TOTAL_GHOST_SLOTS) {
             val carried = carried
             if (carried.isEmpty) {

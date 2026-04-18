@@ -1,8 +1,35 @@
 package damien.nodeworks.screen.widget
 
 import damien.nodeworks.screen.NineSlice
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.world.item.ItemStack
 
 /**
@@ -56,7 +83,7 @@ class VirtualSlotGrid(
     }
 
     /** Render slot backgrounds. Uses direct blit for performance (1 blit per slot instead of 9). */
-    fun renderBackground(graphics: GuiGraphics) {
+    fun renderBackground(graphics: GuiGraphicsExtractor) {
         // Direct blit of SLOT texture region — same visual as 9-slice at native 18x18 but much faster
         val slot = NineSlice.SLOT
         for (r in 0 until rows) {
@@ -80,7 +107,7 @@ class VirtualSlotGrid(
     // Reusable slot for provider callbacks — avoids per-frame allocations
     private val tempSlot = VirtualSlot(0, slotType)
 
-    fun renderItems(graphics: GuiGraphics, scrollOffset: Int = 0, totalItems: Int = slots.size, skipRows: Int = 0) {
+    fun renderItems(graphics: GuiGraphicsExtractor, scrollOffset: Int = 0, totalItems: Int = slots.size, skipRows: Int = 0) {
         val font = Minecraft.getInstance().font
         val provider = stackProvider ?: return
         val formatter = countFormatter
@@ -116,7 +143,7 @@ class VirtualSlotGrid(
             if (customCount != null) {
                 // Render scaled count text (0.5x) anchored to bottom-right of slot
                 val pose = graphics.pose()
-                pose.pushPose()
+                pose.pushMatrix()
                 pose.translate(0f, 0f, 200f)
                 val scale = 0.5f
                 pose.scale(scale, scale, 1f)
@@ -124,7 +151,7 @@ class VirtualSlotGrid(
                 val sx = ((ix + 16).toFloat() / scale - textWidth).toInt()
                 val sy = ((iy + 16).toFloat() / scale - font.lineHeight).toInt()
                 graphics.drawString(font, customCount, sx, sy, 0xFFFFFFFF.toInt(), true)
-                pose.popPose()
+                pose.popMatrix()
             } else if (stack.count > 1) {
                 graphics.renderItemDecorations(font, stack, ix, iy)
             }
@@ -156,7 +183,7 @@ class VirtualSlotGrid(
     }
 
     /** Render a highlight on the hovered slot. */
-    fun renderHoverHighlight(graphics: GuiGraphics, mouseX: Int, mouseY: Int, scrollOffset: Int = 0) {
+    fun renderHoverHighlight(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, scrollOffset: Int = 0) {
         val slot = getSlotAt(mouseX, mouseY, scrollOffset) ?: return
         val ix = slot.x + 1
         val iy = slot.y + 1

@@ -1,6 +1,7 @@
 package damien.nodeworks.screen
 
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.resources.Identifier
 
 /**
@@ -17,100 +18,100 @@ class Icons private constructor(val col: Int, val row: Int) {
     val v: Int get() = row * 16
 
     /** Draw this icon at full 16x16 size. */
-    fun draw(graphics: GuiGraphics, x: Int, y: Int) {
+    fun draw(graphics: GuiGraphicsExtractor, x: Int, y: Int) {
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
     }
 
     /** Draw this icon scaled to a custom size. */
-    fun draw(graphics: GuiGraphics, x: Int, y: Int, size: Int) {
+    fun draw(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int) {
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
         graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
     }
 
     /** Draw the center 8x8 of this icon (cropped 4px inset). */
-    fun drawSmall(graphics: GuiGraphics, x: Int, y: Int) {
+    fun drawSmall(graphics: GuiGraphicsExtractor, x: Int, y: Int) {
         graphics.blit(ATLAS, x, y, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
     }
 
     /** Draw only the top-left [w] × [h] region of this cell, at its native size. Useful for
      *  icons smaller than 16×16 (e.g. a 5×5 X) authored in the top-left corner of a cell. */
-    fun drawTopLeft(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int) {
+    fun drawTopLeft(graphics: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int) {
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256)
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
     }
 
     /** Draw only the top-left [w] × [h] region tinted with an RGB color. */
-    fun drawTopLeftTinted(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int, color: Int, alpha: Float = 1f) {
+    fun drawTopLeftTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int, color: Int, alpha: Float = 1f) {
         val r = ((color shr 16) and 0xFF) / 255f
         val g = ((color shr 8) and 0xFF) / 255f
         val b = (color and 0xFF) / 255f
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
+        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
     }
 
     /** Draw the center portion of this icon scaled to a custom size. */
-    fun drawSmall(graphics: GuiGraphics, x: Int, y: Int, size: Int) {
+    fun drawSmall(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int) {
         graphics.blit(ATLAS, x, y, size, size, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
     }
 
     /** Draw this icon tinted with an RGB color. Respects the icon's alpha channel. */
-    fun drawTinted(graphics: GuiGraphics, x: Int, y: Int, color: Int, alpha: Float = 1f) {
+    fun drawTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, color: Int, alpha: Float = 1f) {
         val r = ((color shr 16) and 0xFF) / 255f
         val g = ((color shr 8) and 0xFF) / 255f
         val b = (color and 0xFF) / 255f
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
+        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
     }
 
     /** Draw this icon tinted and scaled to a custom size. */
-    fun drawTinted(graphics: GuiGraphics, x: Int, y: Int, size: Int, color: Int, alpha: Float = 1f) {
+    fun drawTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int, alpha: Float = 1f) {
         val r = ((color shr 16) and 0xFF) / 255f
         val g = ((color shr 8) and 0xFF) / 255f
         val b = (color and 0xFF) / 255f
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
+        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
         graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        // com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)  // TODO MC 26.1.2 GUI PIPELINE: pass color via blit(..., argb) instead
         if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
     }
 
@@ -123,14 +124,14 @@ class Icons private constructor(val col: Int, val row: Int) {
         /** Call before rendering multiple icons to avoid redundant RenderSystem state changes. */
         fun beginBatch() {
             batching = true
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+            // com.mojang.blaze3d.systems.RenderSystem.enableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
+            // com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
 
         /** Call after rendering multiple icons to restore state. */
         fun endBatch() {
             batching = false
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+            // com.mojang.blaze3d.systems.RenderSystem.disableBlend()  // TODO MC 26.1.2 GUI PIPELINE: pipeline handles blend
         }
 
         // =====================================================================

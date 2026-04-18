@@ -83,7 +83,7 @@ class InventoryTerminalMenu(
         if (suppressSlotsChanged) return
         if (container === craftingContainer) {
             val level = serverLevel ?: playerInventory.player.level()
-            val recipe = level.recipeManager
+            val recipe = level.recipeAccess()
                 .getRecipeFor(RecipeType.CRAFTING, craftingContainer.asCraftInput(), level)
             if (recipe.isPresent) {
                 resultContainer.setItem(0, recipe.get().value().assemble(craftingContainer.asCraftInput(), level.registryAccess()))
@@ -140,7 +140,7 @@ class InventoryTerminalMenu(
         return ItemStack.EMPTY
     }
 
-    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
+    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
         // Capture the grid pattern BEFORE super.clicked() consumes ingredients
         if (slotId == CRAFT_OUTPUT_SLOT && !resultContainer.getItem(0).isEmpty && autoPull) {
             autoPullPattern = snapshotCraftPattern()

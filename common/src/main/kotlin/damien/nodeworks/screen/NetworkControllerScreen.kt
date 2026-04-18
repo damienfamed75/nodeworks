@@ -2,7 +2,29 @@ package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.platform.PlatformServices
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
@@ -13,7 +35,7 @@ class NetworkControllerScreen(
     menu: NetworkControllerMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<NetworkControllerMenu>(menu, playerInventory, title) {
+) : AbstractContainerScreen<NetworkControllerMenu>(menu, playerInventory, title, 260, 180) {
 
     companion object {
         private const val DEFAULT_COLOR = 0x83E086
@@ -53,8 +75,6 @@ class NetworkControllerScreen(
     private var draggingScrollbar = false
 
     init {
-        imageWidth = 260
-        imageHeight = 180
         // Hide default labels — we draw our own title in the top bar
         inventoryLabelY = -9999
         titleLabelY = -9999
@@ -88,7 +108,7 @@ class NetworkControllerScreen(
         addRenderableWidget(retryField)
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Main window frame
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
@@ -202,7 +222,7 @@ class NetworkControllerScreen(
         renderScrollbar(graphics, mouseX, mouseY)
     }
 
-    private fun renderRedstoneControl(graphics: GuiGraphics, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
+    private fun renderRedstoneControl(graphics: GuiGraphicsExtractor, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
         val mode = menu.redstoneMode
         val bw = 16
         val bh = 16
@@ -223,7 +243,7 @@ class NetworkControllerScreen(
         graphics.drawString(font, REDSTONE_LABELS[mode], bx + bw + 4, by + 4, 0xFF888888.toInt())
     }
 
-    private fun renderGlowStyleControl(graphics: GuiGraphics, startX: Int, by: Int, mouseX: Int, mouseY: Int) {
+    private fun renderGlowStyleControl(graphics: GuiGraphicsExtractor, startX: Int, by: Int, mouseX: Int, mouseY: Int) {
         val style = menu.nodeGlowStyle
         val btnW = 16
         val btnH = 16
@@ -262,7 +282,7 @@ class NetworkControllerScreen(
         }
     }
 
-    private fun renderHandlerRetryControl(graphics: GuiGraphics, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
+    private fun renderHandlerRetryControl(graphics: GuiGraphicsExtractor, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
         val btnW = 16
         val btnH = 16
         val fieldW = 36
@@ -304,7 +324,7 @@ class NetworkControllerScreen(
     private var glowTooltipX = 0
     private var glowTooltipY = 0
 
-    private fun renderScrollbar(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    private fun renderScrollbar(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         val sbX = listRight
         val sbW = SCROLL_BAR_W
         val trackH = listBottom - listTop
@@ -323,40 +343,46 @@ class NetworkControllerScreen(
         }
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         glowTooltip = null
-        super.render(graphics, mouseX, mouseY, partialTick)
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         glowTooltip?.let { tip ->
             graphics.drawString(font, tip, glowTooltipX + 8, glowTooltipY - 12, 0xFFFFFFFF.toInt())
         }
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         if (this.nameField.isFocused) {
-            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers) // ESC
+            if (keyCode == 256) return super.keyPressed(event) // ESC
             if (keyCode == 257) { // ENTER — apply name
                 sendNameUpdate(this.nameField.value)
                 this.nameField.isFocused = false
                 nameCheckmarkTime = net.minecraft.client.Minecraft.getInstance().level?.gameTime ?: 0
                 return true
             }
-            this.nameField.keyPressed(keyCode, scanCode, modifiers)
+            this.nameField.keyPressed(event)
             return true
         }
         if (this.retryField.isFocused) {
-            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers) // ESC
+            if (keyCode == 256) return super.keyPressed(event) // ESC
             if (keyCode == 257) { // ENTER — commit retries
                 commitRetryField()
                 this.retryField.isFocused = false
                 return true
             }
-            this.retryField.keyPressed(keyCode, scanCode, modifiers)
+            this.retryField.keyPressed(event)
             return true
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
@@ -424,7 +450,7 @@ class NetworkControllerScreen(
                     val btnW = 16
                     val btnH = 16
                     val fieldW = 36
-                    val step = if (hasShiftDown()) 50 else 10
+                    val step = if (hasShiftDownCompat()) 50 else 10
                     val current = menu.handlerRetryLimit
                     val fieldX = controlX + btnW + 4
                     val plusX = fieldX + fieldW + 4
@@ -468,10 +494,13 @@ class NetworkControllerScreen(
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         if (draggingScrollbar && maxScroll > 0) {
             val trackH = listBottom - listTop
             val totalH = properties.size * ROW_H
@@ -483,12 +512,15 @@ class NetworkControllerScreen(
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+        return super.mouseDragged(event, dragX, dragY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         draggingScrollbar = false
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleased(event)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {

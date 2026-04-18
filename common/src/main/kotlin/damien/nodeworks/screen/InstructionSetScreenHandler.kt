@@ -106,7 +106,7 @@ class InstructionSetScreenHandler(
         if (level.isClientSide) return // Recipe lookup is server-side only
 
         val serverLevel = level as? net.minecraft.server.level.ServerLevel ?: return
-        val recipeManager = serverLevel.getRecipeManager() ?: return
+        val recipeManager = serverLevel.recipeAccess() ?: return
 
         val items = (0 until 9).map { recipeGrid.getItem(it) }
         val input = CraftingInput.of(3, 3, items)
@@ -131,7 +131,7 @@ class InstructionSetScreenHandler(
         return false
     }
 
-    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
+    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
         if (slotId in 0..8) {
             val carried = carried
             if (carried.isEmpty) {

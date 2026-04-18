@@ -1,8 +1,26 @@
 package damien.nodeworks.screen.widget
 
 import damien.nodeworks.network.CardSnapshot
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.Font
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import net.minecraft.client.gui.GuiGraphicsExtractor
 
 /**
  * Context-aware autocompletion popup for the Lua script editor.
@@ -155,7 +173,7 @@ class AutocompletePopup(
         return n.coerceAtMost(4)
     }
 
-    fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    fun render(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (!visible || suggestions.isEmpty()) return
 
         val itemHeight = font.lineHeight + 2

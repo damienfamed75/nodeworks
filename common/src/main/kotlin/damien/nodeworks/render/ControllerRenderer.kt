@@ -2,91 +2,44 @@ package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
-import net.minecraft.client.renderer.MultiBufferSource
+import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.RenderType
-import net.minecraft.client.renderer.texture.OverlayTexture
-import net.minecraft.resources.Identifier
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
+import net.minecraft.client.renderer.state.level.CameraRenderState
 
 /**
  * Renders an emissive overlay on the Network Controller (AE2-style glowing lines).
+ *
+ * TODO MC 26.1.2 BER REWRITE — stubbed.
+ *
+ * MC 26.1 replaces the old
+ *     render(T blockEntity, float partialTick, PoseStack pose,
+ *            MultiBufferSource buffer, int light, int overlay)
+ * with a two-phase extract/submit pipeline:
+ *     createRenderState(): S
+ *     extractRenderState(blockEntity, state, partialTick, camera, breakProgress)
+ *     submit(state, poseStack, submitNodeCollector, camera)
+ * driven by `BlockEntityRenderer<T, S extends BlockEntityRenderState>`.
+ *
+ * The pre-migration body (a manual quad-mesh for an emissive cube overlay using
+ * `RenderType.eyes(tex)` + `bufferSource.getBuffer(...)`) lives in git history as
+ * `renderLegacy(...)`. It's also *currently dead* — a comment notes the emissive
+ * overlay was moved to the block model's `neoforge_data` fullbright faces — so
+ * keeping the BER as a compile-clean shell that does nothing is acceptable
+ * until/unless dynamic per-entity rendering is reintroduced.
  */
 class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<NetworkControllerBlockEntity> {
+    BlockEntityRenderer<NetworkControllerBlockEntity, BlockEntityRenderState> {
 
-    companion object {
-        private val EMISSIVE_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/network_controller_emissive.png")
-        private val EMISSIVE_TOP_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/network_controller_top_emissive.png")
-    }
+    override fun createRenderState(): BlockEntityRenderState = BlockEntityRenderState()
 
-    override fun render(
-        entity: NetworkControllerBlockEntity,
-        partialTick: Float,
+    override fun submit(
+        state: BlockEntityRenderState,
         poseStack: PoseStack,
-        bufferSource: MultiBufferSource,
-        packedLight: Int,
-        packedOverlay: Int
+        submitNodeCollector: SubmitNodeCollector,
+        camera: CameraRenderState
     ) {
-        // Emissive overlay is now handled by the block model via neoforge_data
-        // BER kept for future dynamic rendering if needed
-    }
-
-    @Suppress("unused")
-    private fun renderLegacy(entity: NetworkControllerBlockEntity, poseStack: PoseStack, bufferSource: MultiBufferSource, packedLight: Int, packedOverlay: Int) {
-        val color = entity.networkColor
-        val r = (color shr 16) and 0xFF
-        val g = (color shr 8) and 0xFF
-        val b = color and 0xFF
-
-        val light = 15728880
-        val overlay = OverlayTexture.NO_OVERLAY
-        val eyesType = RenderType.eyes(EMISSIVE_TEXTURE)
-
-        // Slight offset to prevent Z-fighting with the block model
-        val o = -0.001f
-        val s = 1.0f + 0.002f
-
-        run {
-            val vc = bufferSource.getBuffer(eyesType)
-            val pose = poseStack.last()
-
-            // South face (+Z) — reversed winding to face outward
-            vc.addVertex(pose, s, o, s).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, s, s, s).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, o, s, s).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, o, o, s).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-
-            // North face (-Z)
-            vc.addVertex(pose, o, o, o).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, o, s, o).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, s, s, o).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, s, o, o).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-
-            // East face (+X)
-            vc.addVertex(pose, s, o, o).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, s, s, o).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, s, s, s).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, s, o, s).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-
-            // West face (-X)
-            vc.addVertex(pose, o, o, s).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, o, s, s).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, o, s, o).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, o, o, o).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-
-            // No emissive on bottom face
-        }
-
-        // Top face uses separate emissive texture
-        val eyesTopType = RenderType.eyes(EMISSIVE_TOP_TEXTURE)
-        run {
-            val vc = bufferSource.getBuffer(eyesTopType)
-            val pose = poseStack.last()
-            vc.addVertex(pose, o, s, s).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, s, s, s).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, s, s, o).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, o, s, o).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 0f, 1f)
-        }
+        // Intentionally empty — emissive overlay rendered via block model fullbright faces.
     }
 }

@@ -2,7 +2,29 @@ package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.VariableType
 import damien.nodeworks.platform.PlatformServices
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
@@ -13,7 +35,7 @@ class VariableScreen(
     menu: VariableMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<VariableMenu>(menu, playerInventory, title) {
+) : AbstractContainerScreen<VariableMenu>(menu, playerInventory, title, 200, 110) {
 
     companion object {
         private const val TOP_BAR_H = 20
@@ -43,8 +65,6 @@ class VariableScreen(
     private val CHECKMARK_DURATION = 30L // ticks (~1.5 seconds)
 
     init {
-        imageWidth = 200
-        imageHeight = 110
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -70,7 +90,7 @@ class VariableScreen(
         addRenderableWidget(valueField)
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Main background
         graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFF2B2B2B.toInt())
 
@@ -112,7 +132,7 @@ class VariableScreen(
         }
     }
 
-    private fun renderSetButton(graphics: GuiGraphics, bx: Int, by: Int, mouseX: Int, mouseY: Int, id: String) {
+    private fun renderSetButton(graphics: GuiGraphicsExtractor, bx: Int, by: Int, mouseX: Int, mouseY: Int, id: String) {
         val hovered = mouseX >= bx && mouseX < bx + SET_BTN_W && mouseY >= by && mouseY < by + SET_BTN_H
         val bg = if (hovered) 0xFF3A5A3A.toInt() else 0xFF2A4A2A.toInt()
         graphics.fill(bx, by, bx + SET_BTN_W, by + SET_BTN_H, bg)
@@ -138,7 +158,7 @@ class VariableScreen(
         }
     }
 
-    private fun renderTypeButtons(graphics: GuiGraphics, startX: Int, by: Int, mouseX: Int, mouseY: Int) {
+    private fun renderTypeButtons(graphics: GuiGraphicsExtractor, startX: Int, by: Int, mouseX: Int, mouseY: Int) {
         val currentType = menu.variableType
         for (i in 0 until 3) {
             val bx = startX + i * 42
@@ -169,7 +189,7 @@ class VariableScreen(
         }
     }
 
-    private fun renderBoolToggle(graphics: GuiGraphics, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
+    private fun renderBoolToggle(graphics: GuiGraphicsExtractor, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
         val currentValue = menu.boolValue
         val bw = 40
         val bh = 16
@@ -189,21 +209,27 @@ class VariableScreen(
         graphics.drawString(font, label, bx + (bw - font.width(label)) / 2, by + 4, textColor)
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         if (nameField.isFocused || valueField.isFocused) {
-            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers) // ESC
-            nameField.keyPressed(keyCode, scanCode, modifiers)
-            valueField.keyPressed(keyCode, scanCode, modifiers)
+            if (keyCode == 256) return super.keyPressed(event) // ESC
+            nameField.keyPressed(event)
+            valueField.keyPressed(event)
             return true
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
         val listLeft = leftPos + 4
@@ -252,7 +278,7 @@ class VariableScreen(
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
     override fun removed() {

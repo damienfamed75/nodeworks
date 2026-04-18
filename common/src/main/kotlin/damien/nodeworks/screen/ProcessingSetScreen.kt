@@ -3,7 +3,29 @@ package damien.nodeworks.screen
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.network.SetProcessingApiDataPayload
 import damien.nodeworks.network.SetProcessingApiSlotPayload
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
@@ -23,7 +45,7 @@ class ProcessingSetScreen(
     menu: ProcessingSetScreenHandler,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<ProcessingSetScreenHandler>(menu, playerInventory, title) {
+) : AbstractContainerScreen<ProcessingSetScreenHandler>(menu, playerInventory, title, FRAME_W, FRAME_H) {
 
     companion object {
         private const val LABEL_COLOR = 0xFFAAAAAA.toInt()
@@ -83,8 +105,6 @@ class ProcessingSetScreen(
     private var timeoutBox: EditBox? = null
 
     init {
-        imageWidth = FRAME_W
-        imageHeight = FRAME_H
         // Hide vanilla title / inventory labels; we draw our own.
         inventoryLabelY = -9999
         titleLabelY = -9999
@@ -114,7 +134,7 @@ class ProcessingSetScreen(
         }
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         val x = leftPos
         val y = topPos
 
@@ -188,8 +208,8 @@ class ProcessingSetScreen(
         NineSlice.drawPlayerInventory(graphics, x + INV_X, y + INV_GRID_Y, HOTBAR_GAP)
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
 
         // Ghost overlay dim on occupied ghost slots — placed before the count badges so
         // the badges overlay the dim too.
@@ -233,7 +253,7 @@ class ProcessingSetScreen(
     /** Vanilla stack-count badge — right-aligned, white w/ shadow, at the bottom-right
      *  of a 16×16 item cell. Drawn via Font.SEE_THROUGH so depth test is bypassed and
      *  the label reliably layers in front of the item icon underneath. */
-    private fun drawStackCountBadge(graphics: GuiGraphics, sx: Int, sy: Int, count: Int) {
+    private fun drawStackCountBadge(graphics: GuiGraphicsExtractor, sx: Int, sy: Int, count: Int) {
         val text = count.toString()
         val tx = (sx + 17 - font.width(text)).toFloat()
         val ty = (sy + 9).toFloat()
@@ -250,7 +270,10 @@ class ProcessingSetScreen(
         )
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
@@ -276,7 +299,7 @@ class ProcessingSetScreen(
         val minusX = leftPos + TIMEOUT_MINUS_X
         val minusY = topPos + PANEL_CONTROL_Y
         if (mx in minusX until minusX + STEPPER_BTN_SIZE && my in minusY until minusY + STEPPER_BTN_SIZE) {
-            val step = if (hasShiftDown()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
+            val step = if (hasShiftDownCompat()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
             val next = ((timeoutBox?.value?.toIntOrNull() ?: menu.timeout) - step).coerceAtLeast(0)
             timeoutBox?.value = next.toString()
             return true
@@ -286,7 +309,7 @@ class ProcessingSetScreen(
         val plusX = leftPos + TIMEOUT_PLUS_X
         val plusY = topPos + PANEL_CONTROL_Y
         if (mx in plusX until plusX + STEPPER_BTN_SIZE && my in plusY until plusY + STEPPER_BTN_SIZE) {
-            val step = if (hasShiftDown()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
+            val step = if (hasShiftDownCompat()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
             val next = ((timeoutBox?.value?.toIntOrNull() ?: menu.timeout) + step)
             timeoutBox?.value = next.toString()
             return true
@@ -300,7 +323,7 @@ class ProcessingSetScreen(
             return true
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
     /**
@@ -339,13 +362,16 @@ class ProcessingSetScreen(
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         val tBox = timeoutBox
         if (tBox != null && tBox.isFocused) {
-            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers)  // ESC
-            tBox.keyPressed(keyCode, scanCode, modifiers)
+            if (keyCode == 256) return super.keyPressed(event)  // ESC
+            tBox.keyPressed(event)
             return true
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 }

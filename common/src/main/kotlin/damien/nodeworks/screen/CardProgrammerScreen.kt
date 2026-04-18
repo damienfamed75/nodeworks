@@ -1,7 +1,29 @@
 package damien.nodeworks.screen
 
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
@@ -12,7 +34,7 @@ class CardProgrammerScreen(
     menu: CardProgrammerMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<CardProgrammerMenu>(menu, playerInventory, title) {
+) : AbstractContainerScreen<CardProgrammerMenu>(menu, playerInventory, title, W, H) {
 
     companion object {
         private const val W = 176
@@ -73,8 +95,6 @@ class CardProgrammerScreen(
     private var lastSyncedCounter = -1
 
     init {
-        imageWidth = W
-        imageHeight = H
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -96,15 +116,20 @@ class CardProgrammerScreen(
         Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 100 + v)
     }
 
-    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+    override fun charTyped(event: CharacterEvent): Boolean {
+        val codePoint = event.character
+        val modifiers = 0
         if (menu.getCopyName() && counterField?.isFocused == true) {
-            if (codePoint.isDigit()) return counterField?.charTyped(codePoint, modifiers) ?: false
+            if (codePoint.isDigit()) return counterField?.charTyped(event) ?: false
             return true // swallow non-digits
         }
-        return super.charTyped(codePoint, modifiers)
+        return super.charTyped(event)
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         if (counterField?.isFocused == true) {
             if (keyCode == 256) { // Escape — unfocus, don't close screen
                 counterField!!.isFocused = false
@@ -115,12 +140,12 @@ class CardProgrammerScreen(
                 counterField!!.isFocused = false
                 return true
             }
-            return counterField!!.keyPressed(keyCode, scanCode, modifiers)
+            return counterField!!.keyPressed(event)
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Programmer image
         graphics.blit(BG_TEXTURE, leftPos, topPos + PROG_Y, 0f, 0f, W, PROG_H, W, PROG_H)
 
@@ -187,18 +212,21 @@ class CardProgrammerScreen(
     private fun hovers(mouseX: Int, mouseY: Int, x: Int, y: Int, w: Int, h: Int): Boolean =
         mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Sync field if server counter changed and field is not focused
         val sv = menu.getCounter()
         if (sv != lastSyncedCounter && counterField?.isFocused != true) {
             counterField?.value = "$sv"
             lastSyncedCounter = sv
         }
-        super.render(graphics, mouseX, mouseY, partialTick)
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         renderTooltip(graphics, mouseX, mouseY)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         if (button == 0) {
             val mx = mouseX.toInt()
             val my = mouseY.toInt()
@@ -226,7 +254,7 @@ class CardProgrammerScreen(
                 counterField?.isFocused = false
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
     override fun removed() {

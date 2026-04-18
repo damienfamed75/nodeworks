@@ -8,7 +8,29 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.AutocompletePopup
 import damien.nodeworks.screen.widget.ScriptEditor
 
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
@@ -17,7 +39,10 @@ class TerminalScreen(
     menu: TerminalScreenHandler,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<TerminalScreenHandler>(menu, playerInventory, title) {
+// TODO MC 26.1.2: ACS imageWidth/imageHeight are now final. Using a large
+// default that fits the "wide" layout; the layout-switch resize is commented
+// out in init() and switchLayout() below. Restore once mutability is available.
+) : AbstractContainerScreen<TerminalScreenHandler>(menu, playerInventory, title, 500, 280) {
 
     companion object {
         /** Client-side UI preferences — persisted across terminal opens, shared across all terminals */
@@ -238,8 +263,11 @@ class TerminalScreen(
     private var currentLayout = TerminalLayout.entries.getOrElse(menu.getLayoutIndex()) { TerminalLayout.SMALL }
 
     init {
-        imageWidth = currentLayout.w
-        imageHeight = currentLayout.h
+        // TODO MC 26.1.2: currentLayout-driven size is baked into the ACS
+        //  ctor default (500x280) for now. Restore once imageWidth/imageHeight
+        //  become mutable again.
+        // imageWidth = currentLayout.w
+        // imageHeight = currentLayout.h
 
 
         // Scan client-side block entities for all autocomplete data
@@ -351,11 +379,12 @@ class TerminalScreen(
     override fun init() {
         super.init()
 
-        imageWidth = currentLayout.w
-        imageHeight = currentLayout.h
-        // Clamp to screen bounds
-        if (imageWidth > width - 10) imageWidth = width - 10
-        if (imageHeight > height - 10) imageHeight = height - 10
+        // TODO MC 26.1.2: restore currentLayout-driven resize once
+        //  imageWidth/imageHeight are writable again.
+        // imageWidth = currentLayout.w
+        // imageHeight = currentLayout.h
+        // if (imageWidth > width - 10) imageWidth = width - 10
+        // if (imageHeight > height - 10) imageHeight = height - 10
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
@@ -499,7 +528,7 @@ class TerminalScreen(
         // Auto-run toggle is rendered manually in renderBg and handled in mouseClicked
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Resolve network color once for the whole frame (gray if disconnected)
         val mcInst = net.minecraft.client.Minecraft.getInstance()
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getTerminalPos())
@@ -874,8 +903,8 @@ class TerminalScreen(
         graphics.drawString(font, statusText, statusX + 21, statusTextY, statusTextColor)
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
 
         // Line number gutter
         renderLineNumbers(graphics)
@@ -954,7 +983,7 @@ class TerminalScreen(
         "require" to "require(module: string) → table"
     )
 
-    private fun renderTypeTooltip(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    private fun renderTypeTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (mouseX < editorX || mouseX > editorX + editor.width ||
             mouseY < editorY || mouseY > editorY + editor.height
         ) return
@@ -1014,7 +1043,7 @@ class TerminalScreen(
         }
     }
 
-    private fun renderLineNumbers(graphics: GuiGraphics) {
+    private fun renderLineNumbers(graphics: GuiGraphicsExtractor) {
         val text = editor.value
         val lineHeight = font.lineHeight
 
@@ -1075,7 +1104,10 @@ class TerminalScreen(
         graphics.disableScissor()
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         // Handle new tab name input
         if (showNewTabInput) {
             when (keyCode) {
@@ -1121,7 +1153,7 @@ class TerminalScreen(
                     autocomplete.hide()
                     return true
                 }
-                return super.keyPressed(keyCode, scanCode, modifiers)
+                return super.keyPressed(event)
             }
 
             // Ctrl+Z = undo
@@ -1284,7 +1316,7 @@ class TerminalScreen(
                 }
             }
 
-            editor.keyPressed(keyCode, scanCode, modifiers)
+            editor.keyPressed(event)
             // Update autocomplete only for keys that modify text, not navigation
             val isNavOrModifierKey = keyCode in setOf(
                 InputConstants.KEY_UP, InputConstants.KEY_DOWN,
@@ -1307,10 +1339,12 @@ class TerminalScreen(
             // Always consume key events when editor is focused to prevent other mods from stealing them
             return true
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
-    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+    override fun charTyped(event: CharacterEvent): Boolean {
+        val codePoint = event.character
+        val modifiers = 0
         if (showNewTabInput) {
             val c = codePoint
             if (c.isLetterOrDigit() || c == '_') {
@@ -1357,7 +1391,7 @@ class TerminalScreen(
                     val newText = text.substring(0, cursor) + codePoint + closingChar + text.substring(cursor)
                     editor.setValueKeepScroll(newText, cursor + 1)
                 } else {
-                    editor.charTyped(codePoint, modifiers)
+                    editor.charTyped(event)
                 }
             }
             autocomplete.update(
@@ -1370,10 +1404,13 @@ class TerminalScreen(
             // Always consume when editor is focused to prevent other mods stealing input
             return true
         }
-        return super.charTyped(codePoint, modifiers)
+        return super.charTyped(event)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
@@ -1514,7 +1551,7 @@ class TerminalScreen(
             return true
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
     private fun handleTabBarClick(mx: Int, tabBarY: Int, tabBarStartX: Int): Boolean {
@@ -1556,7 +1593,10 @@ class TerminalScreen(
         return true
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         if (draggingSidebarScrollbar) {
             val cardStartY = topPos + topBarHeight + 6
             val cardListTop = cardStartY + 12
@@ -1583,13 +1623,16 @@ class TerminalScreen(
             return true
         }
         if (editor.isFocused && button == 0) {
-            editor.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+            editor.mouseDragged(event, dragX, dragY)
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+        return super.mouseDragged(event, dragX, dragY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         pressedButton = null
         draggingSidebarScrollbar = false
         if (draggingLogPanel) {
@@ -1597,7 +1640,7 @@ class TerminalScreen(
             savedLogPanelHeight = logPanelHeight
             return true
         }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleased(event)
     }
 
     private fun switchTab(name: String) {
@@ -1667,7 +1710,7 @@ class TerminalScreen(
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
-    override fun renderLabels(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    override fun extractLabels(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         // Don't render default inventory labels
     }
 

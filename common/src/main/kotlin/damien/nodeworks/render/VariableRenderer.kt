@@ -2,38 +2,29 @@ package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.VariableBlockEntity
-import net.minecraft.client.Minecraft
-import net.minecraft.client.renderer.MultiBufferSource
+import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.core.BlockPos
-import net.minecraft.core.SectionPos
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
+import net.minecraft.client.renderer.state.level.CameraRenderState
 
 /**
- * Renderer for Variable blocks.
- * Detects connection changes and triggers chunk section rebuild for tint color updates.
+ * TODO MC 26.1.2 BER REWRITE — stubbed.
+ *
+ * Pre-migration: renders the current variable name + value as a floating
+ * label above the Variable block. See git history for body.
  */
 class VariableRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<VariableBlockEntity> {
+    BlockEntityRenderer<VariableBlockEntity, BlockEntityRenderState> {
 
-    private val lastState = HashMap<BlockPos, Int>()
+    override fun createRenderState(): BlockEntityRenderState = BlockEntityRenderState()
 
-    override fun render(
-        entity: VariableBlockEntity,
-        partialTick: Float,
+    override fun submit(
+        state: BlockEntityRenderState,
         poseStack: PoseStack,
-        bufferSource: MultiBufferSource,
-        packedLight: Int,
-        packedOverlay: Int
+        submitNodeCollector: SubmitNodeCollector,
+        camera: CameraRenderState
     ) {
-        val reachable = NodeConnectionRenderer.isReachable(entity.blockPos)
-        val state = entity.getConnections().size or (if (reachable) 0x10000 else 0)
-        val last = lastState.put(entity.blockPos, state)
-        if (last != null && last != state) {
-            val sx = SectionPos.blockToSectionCoord(entity.blockPos.x)
-            val sy = SectionPos.blockToSectionCoord(entity.blockPos.y)
-            val sz = SectionPos.blockToSectionCoord(entity.blockPos.z)
-            Minecraft.getInstance().levelRenderer.setSectionDirtyWithNeighbors(sx, sy, sz)
-        }
+        // Intentionally empty — see TODO above.
     }
 }
