@@ -157,6 +157,15 @@ object NodeConnectionRenderer {
             val validKeys = pairs.map { connectionKey(it.first, it.second) }.toHashSet()
             losCache.keys.retainAll(validKeys)
 
+            // Snapshot the previous reachable set before rebuilding so we can diff
+            // and invalidate chunk sections for any block whose reachability flipped.
+            // Every network-tint-driven emissive texture (controller / terminal /
+            // variable / receiver antenna / processing & instruction storage, plus
+            // any future block in the BlockTintSources list) goes through a
+            // NetworkColorTintSource that only re-evaluates on section rebuild,
+            // so LOS changes that don't move a block between chunks otherwise go
+            // visually unnoticed until an unrelated chunk reload.
+            val previousReachable = reachableSnapshot
             reachablePositions.clear()
             for (nodePos in knownNodes) {
                 if (!level.isLoaded(nodePos)) continue
@@ -165,6 +174,29 @@ object NodeConnectionRenderer {
                     bfsReachable(level, nodePos)
                 }
             }
+            invalidateChangedSections(previousReachable, reachablePositions)
+            reachableSnapshot = HashSet(reachablePositions)
+        }
+    }
+
+    /** Snapshot of [reachablePositions] taken after each LOS-refresh cycle so the next
+     *  cycle can diff against it and issue chunk rebuilds only for blocks that flipped. */
+    private var reachableSnapshot: HashSet<BlockPos> = HashSet()
+
+    private fun invalidateChangedSections(before: Set<BlockPos>, after: Set<BlockPos>) {
+        val mc = net.minecraft.client.Minecraft.getInstance()
+        val changed = HashSet<BlockPos>()
+        for (pos in before) if (pos !in after) changed.add(pos)
+        for (pos in after) if (pos !in before) changed.add(pos)
+        if (changed.isEmpty()) return
+        val dirtiedSections = HashSet<Long>()
+        for (pos in changed) {
+            val sx = net.minecraft.core.SectionPos.blockToSectionCoord(pos.x)
+            val sy = net.minecraft.core.SectionPos.blockToSectionCoord(pos.y)
+            val sz = net.minecraft.core.SectionPos.blockToSectionCoord(pos.z)
+            val key = net.minecraft.core.SectionPos.asLong(sx, sy, sz)
+            if (!dirtiedSections.add(key)) continue
+            mc.levelRenderer.setSectionDirtyWithNeighbors(sx, sy, sz)
         }
     }
 

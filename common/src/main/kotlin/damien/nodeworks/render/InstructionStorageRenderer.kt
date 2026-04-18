@@ -3,7 +3,6 @@ package damien.nodeworks.render
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.InstructionStorageBlock
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
-import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
@@ -12,9 +11,7 @@ import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.client.renderer.texture.OverlayTexture
-import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
-import net.minecraft.core.SectionPos
 import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
@@ -32,9 +29,6 @@ class InstructionStorageRenderer(context: BlockEntityRendererProvider.Context) :
         var facing: Direction? = null
         var anyFilled: Boolean = false
     }
-
-    /** See ProcessingStorageRenderer.lastReachable for rationale. */
-    private val lastReachable = HashMap<BlockPos, Boolean>()
 
     companion object {
         private val CARD_TEXTURE = Identifier.fromNamespaceAndPath(
@@ -79,18 +73,6 @@ class InstructionStorageRenderer(context: BlockEntityRendererProvider.Context) :
             if (filled) any = true
         }
         state.anyFilled = any
-
-        val pos = blockEntity.blockPos
-        val reachable = NodeConnectionRenderer.isReachable(pos)
-        val prev = lastReachable.put(pos, reachable)
-        if (prev != null && prev != reachable) {
-            val mc = Minecraft.getInstance()
-            mc.levelRenderer.setSectionDirtyWithNeighbors(
-                SectionPos.blockToSectionCoord(pos.x),
-                SectionPos.blockToSectionCoord(pos.y),
-                SectionPos.blockToSectionCoord(pos.z)
-            )
-        }
     }
 
     override fun submit(

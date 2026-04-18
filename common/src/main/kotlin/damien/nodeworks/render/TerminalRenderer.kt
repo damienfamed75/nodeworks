@@ -9,10 +9,12 @@ import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.state.level.CameraRenderState
 
 /**
- * TODO MC 26.1.2 BER REWRITE — stubbed.
- *
- * Pre-migration: renders script-name labels and an autoRun indicator above
- * terminals in world. See git history for body.
+ * No-op BER. Pre-migration this renderer diffed connection count / reachability
+ * per frame and forced chunk rebuilds on flip so the emissive network-color
+ * tint stayed current. That work is now centralized in
+ * [NodeConnectionRenderer.refreshLosCache] (diffing the reachable set and
+ * invalidating only the affected sections), so every network-tinted block —
+ * Terminal included — gets correct behavior without any BER involvement.
  */
 class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
     BlockEntityRenderer<TerminalBlockEntity, BlockEntityRenderState> {

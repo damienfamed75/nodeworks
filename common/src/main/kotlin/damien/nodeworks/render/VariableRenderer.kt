@@ -8,12 +8,7 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.state.level.CameraRenderState
 
-/**
- * TODO MC 26.1.2 BER REWRITE — stubbed.
- *
- * Pre-migration: renders the current variable name + value as a floating
- * label above the Variable block. See git history for body.
- */
+/** No-op BER. See [ControllerRenderer] for rationale. */
 class VariableRenderer(context: BlockEntityRendererProvider.Context) :
     BlockEntityRenderer<VariableBlockEntity, BlockEntityRenderState> {
 

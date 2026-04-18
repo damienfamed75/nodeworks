@@ -3,7 +3,6 @@ package damien.nodeworks.render
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
-import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
@@ -12,9 +11,7 @@ import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.client.renderer.texture.OverlayTexture
-import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
-import net.minecraft.core.SectionPos
 import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 import org.joml.Quaternionf
@@ -32,13 +29,6 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
         var facing: Direction? = null
         var anyFilled: Boolean = false
     }
-
-    /** Tracks connection state per block position so we can trigger a chunk rebuild
-     *  when the block's reachability flips — the BlockTintSource needs a section
-     *  invalidation for the color provider to re-evaluate the emissive tint.
-     *  NetworkSettingsRegistry.onChanged covers color/glow changes, but LOS-based
-     *  reachability flips don't go through the registry so we still track it here. */
-    private val lastReachable = HashMap<BlockPos, Boolean>()
 
     companion object {
         private val CARD_TEXTURE = Identifier.fromNamespaceAndPath(
@@ -81,21 +71,6 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
             if (filled) any = true
         }
         state.anyFilled = any
-
-        // Section-dirty trigger on reachability flip — keeps the network-color emissive
-        // tint in sync with LOS changes that don't themselves go through
-        // NetworkSettingsRegistry.
-        val pos = blockEntity.blockPos
-        val reachable = NodeConnectionRenderer.isReachable(pos)
-        val prev = lastReachable.put(pos, reachable)
-        if (prev != null && prev != reachable) {
-            val mc = Minecraft.getInstance()
-            mc.levelRenderer.setSectionDirtyWithNeighbors(
-                SectionPos.blockToSectionCoord(pos.x),
-                SectionPos.blockToSectionCoord(pos.y),
-                SectionPos.blockToSectionCoord(pos.z)
-            )
-        }
     }
 
     override fun submit(

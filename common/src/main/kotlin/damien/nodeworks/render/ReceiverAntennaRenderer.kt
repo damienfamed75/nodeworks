@@ -9,12 +9,9 @@ import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.state.level.CameraRenderState
 
 /**
- * TODO MC 26.1.2 BER REWRITE — stubbed.
- *
- * Pre-migration: renders the paired-status glow on the receiver antenna's
- * horn segment when a valid broadcast link is active. Much of that visual
- * moved into the multipart blockstate (`horn_on` vs `horn_off` models), so
- * this BER may end up near-empty when fully restored.
+ * No-op BER. Paired-status visual is handled by the multipart blockstate
+ * (`horn_on` vs `horn_off`). See [ControllerRenderer] for the broader
+ * rationale on why these BERs remain as empty hooks.
  */
 class ReceiverAntennaRenderer(context: BlockEntityRendererProvider.Context) :
     BlockEntityRenderer<ReceiverAntennaBlockEntity, BlockEntityRenderState> {
