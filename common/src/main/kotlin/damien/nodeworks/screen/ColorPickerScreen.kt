@@ -93,15 +93,21 @@ class ColorPickerScreen(
             for (y in 0 until PICKER_H) {
                 val brightness = 1.0f - (y.toFloat() / PICKER_H) * 0.8f
                 val rgb = Color.HSBtoRGB(hue, 0.85f, brightness)
-                // Color.HSBtoRGB returns 0xAARRGGBB, NativeImage expects ABGR
+                // 26.1 renamed setPixelRGBA to setPixelABGR. Color.HSBtoRGB returns
+                // 0xAARRGGBB, so we still swap R and B for the BGR byte order.
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                image.setPixelRGBA(x, y, (0xFF shl 24) or (b shl 16) or (g shl 8) or r)
+                image.setPixelABGR(x, y, (0xFF shl 24) or (b shl 16) or (g shl 8) or r)
             }
         }
-        val texture = DynamicTexture(image)
+        // 26.1: DynamicTexture requires a label arg (Supplier<String> or String)
+        //  before the NativeImage/dims — there's no single-arg NativeImage ctor
+        //  anymore. We use the (label, width, height, zero) form + setPixels so
+        //  profilers / crash reports can attribute the texture.
         val id = Identifier.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")
+        val texture = DynamicTexture(id.toString(), image.width, image.height, false)
+        texture.setPixels(image)
         minecraft?.textureManager?.register(id, texture)
         return id
     }
@@ -112,9 +118,9 @@ class ColorPickerScreen(
         pickerTextureId = null
     }
 
-    override fun renderBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        // Override to prevent MC's default blur/darken background
-        // We draw our own dim overlay in render() instead
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        // Override to prevent MC's default blur/darken background.
+        // We draw our own dim overlay in extractRenderState() instead.
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {

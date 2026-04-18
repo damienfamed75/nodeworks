@@ -12,45 +12,10 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.Minecraft
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.GuiGraphicsExtractor
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.components.AbstractWidget
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.narration.NarrationElementOutput
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
+import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
 
 /**
@@ -68,7 +33,7 @@ class SlicedButton(
 
     private var pressed = false
 
-    override fun renderWidget(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractWidgetRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         val slice = when {
             !active -> NineSlice.BUTTON
             pressed -> NineSlice.BUTTON_ACTIVE
@@ -99,11 +64,11 @@ class SlicedButton(
         }
     }
 
-    override fun onClick(mouseX: Double, mouseY: Double) {
+    override fun onClick(event: MouseButtonEvent, doubleClick: Boolean) {
         pressed = true
     }
 
-    override fun onRelease(mouseX: Double, mouseY: Double) {
+    override fun onRelease(event: MouseButtonEvent) {
         if (pressed) {
             pressed = false
             onPress(this)

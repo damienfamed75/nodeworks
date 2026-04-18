@@ -696,7 +696,7 @@ class InventoryTerminalScreen(
                     if (slot.availableCount > 0) {
                         lines.add(Component.literal("Click to extract ${slot.availableCount}").withStyle { it.withColor(0xAAAAAA) })
                     }
-                    graphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY)
+                    graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 }
             }
         } else if (hoveredIsNetworkItem) {
@@ -710,7 +710,7 @@ class InventoryTerminalScreen(
                     if (entry.info.isCraftable) {
                         lines.add(Component.literal("Craftable").withStyle { it.withColor(0x55FF55) })
                     }
-                    graphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY)
+                    graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 }
             }
         } else if (!hoveredIsNetworkItem) {
@@ -721,13 +721,13 @@ class InventoryTerminalScreen(
                 if (hoveredCraft >= 0) {
                     val stack = menu.craftingContainer.getItem(hoveredCraft)
                     if (!stack.isEmpty) {
-                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                        graphics.setTooltipForNextFrame(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
                         craftTooltipShown = true
                     }
                 } else if (isCraftOutputAt(mouseX, mouseY)) {
                     val stack = menu.resultContainer.getItem(0)
                     if (!stack.isEmpty) {
-                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                        graphics.setTooltipForNextFrame(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
                         craftTooltipShown = true
                     }
                 }
@@ -764,7 +764,7 @@ class InventoryTerminalScreen(
                     val invIndex = if (hoveredPlayer.gridType == VirtualSlot.GridType.PLAYER_MAIN) hoveredPlayer.index + 9 else hoveredPlayer.index
                     val stack = Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY
                     if (!stack.isEmpty) {
-                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                        graphics.setTooltipForNextFrame(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
                     }
                 }
             }
@@ -799,7 +799,7 @@ class InventoryTerminalScreen(
             craftDialogueField?.let { field ->
                 field.x = dx + 24
                 field.y = dy + 28
-                if (field.visible) field.renderWidget(graphics, mouseX, mouseY, 0f)
+                if (field.visible) field.extractRenderState(graphics, mouseX, mouseY, 0f)
             }
 
             // Count stepper: [-] [field] [+]
@@ -943,7 +943,7 @@ class InventoryTerminalScreen(
         // Crafting utility buttons are SlicedButton widgets — click handled automatically
 
         // Double-click collect check
-        val now = net.minecraft.Util.getMillis()
+        val now = net.minecraft.util.Util.getMillis()
         fun checkDoubleClick(slotType: Int, slotIndex: Int, itemId: String): Boolean {
             val isDoubleClick = button == 0
                 && now - lastClickTime < 400

@@ -315,12 +315,12 @@ class DiagnosticScreen(
             }
         }
 
-        // Inspector panel — rendered last with higher Z to draw over topology blocks
+        // Inspector panel — rendered last with higher Z to draw over topology blocks.
+        // 26.1: `flush()` is gone; `nextStratum()` is the replacement — it advances
+        // the Z stratum so later draws layer above what came before in this extract.
         if (activeTab == 0) {
-            // Flush all batched topology renders (items, text) so inspector draws on top
-            graphics.flush()
+            graphics.nextStratum()
             graphics.pose().pushMatrix()
-            graphics.pose().translate((0f).toFloat(), (0f).toFloat())
             renderInspector(graphics, mouseX, mouseY)
             graphics.pose().popMatrix()
         }
@@ -646,7 +646,7 @@ class DiagnosticScreen(
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
                 if (item != null) {
                     graphics.pose().pushMatrix()
-                    graphics.pose().translate((dropX + 2).toFloat(), (sy + 1).toFloat(), 0f)
+                    graphics.pose().translate((dropX + 2).toFloat(), (sy + 1).toFloat())
                     graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                     graphics.renderItem(ItemStack(item), 0, 0)
                     graphics.pose().popMatrix()
@@ -714,7 +714,7 @@ class DiagnosticScreen(
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
             if (item != null) {
                 graphics.pose().pushMatrix()
-                graphics.pose().translate((x + indent).toFloat(), (y - 1).toFloat(), 0f)
+                graphics.pose().translate((x + indent).toFloat(), (y - 1).toFloat())
                 graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                 graphics.renderItem(ItemStack(item), 0, 0)
                 graphics.pose().popMatrix()
@@ -730,7 +730,7 @@ class DiagnosticScreen(
         val iconX = dashX + font.width(" — ")
         if (sourceItem != null) {
             graphics.pose().pushMatrix()
-            graphics.pose().translate(iconX.toFloat(), (y - 1).toFloat(), 0f)
+            graphics.pose().translate(iconX.toFloat(), (y - 1).toFloat())
             graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
             graphics.renderItem(ItemStack(sourceItem), 0, 0)
             graphics.pose().popMatrix()
@@ -853,7 +853,7 @@ class DiagnosticScreen(
             }
             if (srcItem != null) {
                 graphics.pose().pushMatrix()
-                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat(), 0f)
+                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat())
                 graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                 graphics.renderItem(ItemStack(srcItem), 0, 0)
                 graphics.pose().popMatrix()
@@ -1210,7 +1210,7 @@ class DiagnosticScreen(
                             val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(adjId)
                             if (adjItem != null) {
                                 graphics.pose().pushMatrix()
-                                graphics.pose().translate((h2TextX).toFloat(), (h2TextY - 1).toFloat(), 0f)
+                                graphics.pose().translate((h2TextX).toFloat(), (h2TextY - 1).toFloat())
                                 graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                                 graphics.renderItem(ItemStack(adjItem), 0, 0)
                                 graphics.pose().popMatrix()
@@ -1478,7 +1478,7 @@ class DiagnosticScreen(
         // Double-click on craft field → select all
         val field = craftItemField
         if (field != null && field.visible && mx >= field.x && mx < field.x + field.width && my >= field.y && my < field.y + field.height) {
-            val now = net.minecraft.Util.getMillis()
+            val now = net.minecraft.util.Util.getMillis()
             if (now - craftFieldLastClickTime < 400) {
                 field.moveCursorToStart(false)
                 field.moveCursorToEnd(true)

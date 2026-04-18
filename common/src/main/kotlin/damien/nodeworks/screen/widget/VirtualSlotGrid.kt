@@ -11,25 +11,7 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.Minecraft
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.GuiGraphicsExtractor
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.world.item.ItemStack
 
 /**
@@ -144,9 +126,11 @@ class VirtualSlotGrid(
                 // Render scaled count text (0.5x) anchored to bottom-right of slot
                 val pose = graphics.pose()
                 pose.pushMatrix()
-                pose.translate(0f, 0f, 200f)
+                // 26.1: Matrix3x2fStack is 2D; dropped Z translation. The 200f Z lift
+                //  used to stack the count text above item icon geometry — in the new
+                //  pipeline, submission order already handles that.
                 val scale = 0.5f
-                pose.scale(scale, scale, 1f)
+                pose.scale(scale, scale)
                 val textWidth = font.width(customCount)
                 val sx = ((ix + 16).toFloat() / scale - textWidth).toInt()
                 val sy = ((iy + 16).toFloat() / scale - font.lineHeight).toInt()

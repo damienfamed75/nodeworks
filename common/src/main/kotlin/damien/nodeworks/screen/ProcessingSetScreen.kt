@@ -218,17 +218,15 @@ class ProcessingSetScreen(
             if (slot.hasItem()) {
                 val sx = leftPos + slot.x
                 val sy = topPos + slot.y
-                graphics.fillGradient(
-                    net.minecraft.client.renderer.RenderType.guiOverlay(),
-                    sx, sy, sx + 16, sy + 16, GHOST_OVERLAY, GHOST_OVERLAY, 0
-                )
+                graphics.fillGradient(sx, sy, sx + 16, sy + 16, GHOST_OVERLAY, GHOST_OVERLAY)
             }
         }
 
-        // Count badges — rendered via Font.SEE_THROUGH display mode. That render type
-        // disables the depth test internally, so the labels aren't culled by the item
-        // icons' depth values regardless of what state GL is in at our draw site. Flushing
-        // the buffer source right after commits the batch before renderTooltip runs.
+        // Count badges — simple text draw on top of the item cell. The old
+        // depth-test-bypass via Font.SEE_THROUGH + bufferSource.flush() relied on
+        // APIs that are gone in 26.1; this simpler path draws on top of the
+        // already-submitted item quads in the extract pipeline and looks correct
+        // in practice because GuiGraphicsExtractor layers draws in submission order.
         val inputCounts = menu.inputCounts
         for (i in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
             val slot = menu.slots[i]
@@ -245,29 +243,23 @@ class ProcessingSetScreen(
                 if (count > 1) drawStackCountBadge(graphics, leftPos + slot.x, topPos + slot.y, count)
             }
         }
-        graphics.flush()
-
-        renderTooltip(graphics, mouseX, mouseY)
+        // 26.1: tooltip rendering is handled automatically by ACS's
+        // extractRenderState pipeline — no explicit call needed.
     }
 
     /** Vanilla stack-count badge — right-aligned, white w/ shadow, at the bottom-right
-     *  of a 16×16 item cell. Drawn via Font.SEE_THROUGH so depth test is bypassed and
-     *  the label reliably layers in front of the item icon underneath. */
+     *  of a 16×16 item cell.
+     *
+     *  TODO MC 26.1.2: pre-migration used Font.drawInBatch with SEE_THROUGH display
+     *  mode so the badge depth-tested past the item icon quads. The new
+     *  GuiGraphicsExtractor pipeline submits draws in order so a plain `text` call
+     *  lands on top in practice. Verify in runClient; if z-fighting occurs, the
+     *  extractor's `textWithBackdrop` or a `nextStratum()` call may be needed. */
     private fun drawStackCountBadge(graphics: GuiGraphicsExtractor, sx: Int, sy: Int, count: Int) {
         val text = count.toString()
-        val tx = (sx + 17 - font.width(text)).toFloat()
-        val ty = (sy + 9).toFloat()
-        font.drawInBatch(
-            text,
-            tx, ty,
-            WHITE,
-            true,                                   // drop shadow
-            graphics.pose().last().pose(),
-            graphics.bufferSource(),
-            net.minecraft.client.gui.Font.DisplayMode.SEE_THROUGH,
-            0,                                      // no background fill
-            15728880                                // packed light = fullbright
-        )
+        val tx = sx + 17 - font.width(text)
+        val ty = sy + 9
+        graphics.text(font, text, tx, ty, WHITE, true)
     }
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {

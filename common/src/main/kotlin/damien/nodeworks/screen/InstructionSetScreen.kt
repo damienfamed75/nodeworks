@@ -141,13 +141,10 @@ class InstructionSetScreen(
             if (slot.index in 0..9 && slot.hasItem()) {
                 val sx = leftPos + slot.x
                 val sy = topPos + slot.y
-                graphics.fillGradient(
-                    net.minecraft.client.renderer.RenderType.guiOverlay(),
-                    sx, sy, sx + 16, sy + 16, GHOST_OVERLAY, GHOST_OVERLAY, 0
-                )
+                graphics.fillGradient(sx, sy, sx + 16, sy + 16, GHOST_OVERLAY, GHOST_OVERLAY)
             }
         }
-
-        renderTooltip(graphics, mouseX, mouseY)
+        // 26.1: tooltip rendering is handled automatically by ACS's extractRenderState
+        // pipeline (extractTooltip → setTooltipForNextFrame). No explicit call needed.
     }
 }

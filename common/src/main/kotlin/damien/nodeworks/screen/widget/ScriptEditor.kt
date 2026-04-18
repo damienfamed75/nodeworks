@@ -422,7 +422,7 @@ class ScriptEditor(
 
     // --- Rendering ---
 
-    override fun renderWidget(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractWidgetRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Background
         graphics.fill(x, y, x + width, y + height, BG_COLOR)
 
@@ -660,16 +660,16 @@ class ScriptEditor(
         return true
     }
 
-    override fun onClick(mouseX: Double, mouseY: Double) {
-        val clickPos = screenToCursor(mouseX, mouseY)
+    override fun onClick(event: MouseButtonEvent, doubleClick: Boolean) {
+        val clickPos = screenToCursor(event.mouseX, event.mouseY)
         cursor = clickPos
         selectStart = -1  // clear selection on click
         cursorBlinkTime = System.currentTimeMillis()
         ensureCursorVisible()
     }
 
-    override fun onDrag(mouseX: Double, mouseY: Double, dragX: Double, dragY: Double) {
-        val newPos = screenToCursor(mouseX, mouseY)
+    override fun onDrag(event: MouseButtonEvent, dragX: Double, dragY: Double) {
+        val newPos = screenToCursor(event.mouseX, event.mouseY)
         if (newPos != cursor) {
             if (selectStart < 0) selectStart = cursor
             cursor = newPos

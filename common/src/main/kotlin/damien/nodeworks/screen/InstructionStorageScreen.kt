@@ -10,35 +10,8 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.GuiGraphicsExtractor
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.network.chat.Component
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.world.entity.player.Inventory
 
 class InstructionStorageScreen(
@@ -106,6 +79,6 @@ class InstructionStorageScreen(
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
-        renderTooltip(graphics, mouseX, mouseY)
+        // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 }

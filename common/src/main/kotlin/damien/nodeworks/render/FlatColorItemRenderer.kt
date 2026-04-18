@@ -2,8 +2,6 @@ package damien.nodeworks.render
 
 import damien.nodeworks.compat.renderItem
 import net.minecraft.client.gui.GuiGraphicsExtractor
-import net.minecraft.client.renderer.RenderType
-import net.minecraft.client.renderer.ShaderInstance
 import net.minecraft.world.item.ItemStack
 
 /**
@@ -25,14 +23,13 @@ import net.minecraft.world.item.ItemStack
  * Until that's done we fall back to just drawing the item un-tinted. This
  * is a visual regression (tinted card icons on Processing / Instruction
  * Storage block faces appear in their normal colors), not a functional one.
+ *
+ * The old `shaderInstance` / `renderType` fields used to be written from
+ * `NeoForgeClientSetup.onRegisterShaders` — those wiring points need to be
+ * rebuilt against the new RenderPipeline registration flow when this path
+ * is restored.
  */
 object FlatColorItemRenderer {
-
-    /** Custom shader instance — set during platform shader registration. Not used by the fallback. */
-    var shaderInstance: ShaderInstance? = null
-
-    /** Custom RenderType using the flat color shader — set by platform client setup. Not used by the fallback. */
-    var renderType: RenderType? = null
 
     /**
      * Render an item at GUI position with every visible pixel as a flat solid color.

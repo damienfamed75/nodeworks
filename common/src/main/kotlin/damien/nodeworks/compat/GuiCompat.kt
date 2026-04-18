@@ -191,21 +191,21 @@ val CharacterEvent.character: Char get() = this.codepoint.toChar()
 
 fun hasShiftDownCompat(): Boolean {
     val mc = net.minecraft.client.Minecraft.getInstance() ?: return false
-    val handle = mc.getWindow().handle()
+    val handle = mc.getWindow()
     return com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, com.mojang.blaze3d.platform.InputConstants.KEY_LSHIFT) ||
            com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, 344) // GLFW_KEY_RIGHT_SHIFT
 }
 
 fun hasAltDownCompat(): Boolean {
     val mc = net.minecraft.client.Minecraft.getInstance() ?: return false
-    val handle = mc.getWindow().handle()
+    val handle = mc.getWindow()
     return com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, 342) || // GLFW_KEY_LEFT_ALT
            com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, 346)    // GLFW_KEY_RIGHT_ALT
 }
 
 fun hasControlDownCompat(): Boolean {
     val mc = net.minecraft.client.Minecraft.getInstance() ?: return false
-    val handle = mc.getWindow().handle()
+    val handle = mc.getWindow()
     return com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, com.mojang.blaze3d.platform.InputConstants.KEY_LCONTROL) ||
            com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, 345) // GLFW_KEY_RIGHT_CONTROL
 }

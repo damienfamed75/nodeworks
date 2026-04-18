@@ -113,7 +113,7 @@ class InstructionSetScreenHandler(
 
         val result = recipeManager
             .getRecipeFor(RecipeType.CRAFTING, input, level)
-            .map { it.value().assemble(input, level.registryAccess()) }
+            .map { it.value().assemble(input) }
             .orElse(ItemStack.EMPTY)
 
         resultContainer.setItem(0, result)

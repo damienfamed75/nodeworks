@@ -242,7 +242,7 @@ class TerminalScreen(
         editor.isFocused = true
         // Highlight the line temporarily
         errorHighlightLine = lineIdx
-        errorHighlightTime = net.minecraft.Util.getMillis()
+        errorHighlightTime = net.minecraft.util.Util.getMillis()
     }
 
     private fun rebind() {
@@ -362,9 +362,12 @@ class TerminalScreen(
             }
         }
 
-        // Item tags from the client registry
-        val scannedTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTagNames()
-            .map { it.identifier().toString() }
+        // Item tags from the client registry — 26.1 replaces `getTagNames()`
+        // (Stream<TagKey>) with `getTags()` (Stream<HolderSet.Named<T>>); the
+        // tag key is exposed via key(), and its Identifier via the record
+        // component `location`.
+        val scannedTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTags()
+            .map { it.key().location.toString() }
             .sorted()
             .toList()
 
@@ -926,13 +929,13 @@ class TerminalScreen(
             val displayText = if (newTabName.isEmpty()) "enter name..." else newTabName
             val displayColor = if (newTabName.isEmpty()) 0xFF666666.toInt() else 0xFFFFFFFF.toInt()
             graphics.drawString(font, displayText, inputX + 4, inputY + 6, displayColor, false)
-            if (newTabName.isNotEmpty() || (net.minecraft.Util.getMillis() / 500) % 2 == 0L) {
+            if (newTabName.isNotEmpty() || (net.minecraft.util.Util.getMillis() / 500) % 2 == 0L) {
                 val cursorX = inputX + 4 + font.width(newTabName)
                 graphics.fill(cursorX, inputY + 4, cursorX + 1, inputY + inputH - 4, 0xFFFFFFFF.toInt())
             }
         }
 
-        renderTooltip(graphics, mouseX, mouseY)
+        // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 
     /** Known method signatures for tooltip display. */
@@ -1068,7 +1071,7 @@ class TerminalScreen(
 
         // Error highlight fades out over 2 seconds
         val highlightElapsed =
-            if (errorHighlightLine >= 0) net.minecraft.Util.getMillis() - errorHighlightTime else Long.MAX_VALUE
+            if (errorHighlightLine >= 0) net.minecraft.util.Util.getMillis() - errorHighlightTime else Long.MAX_VALUE
         val highlightFadeDuration = 2000L
         val highlightAlpha = if (highlightElapsed < highlightFadeDuration) {
             ((1.0 - highlightElapsed.toDouble() / highlightFadeDuration) * 0x40).toInt().coerceIn(0, 0x40)
@@ -1249,8 +1252,9 @@ class TerminalScreen(
             // Tab inserts 2 spaces (when autocomplete not visible) — ScriptEditor handles Tab internally,
             // but we override here to keep consistent behavior with the old 4-space tab
             if (keyCode == InputConstants.KEY_TAB && !autocomplete.visible) {
+                val spaceEvent = CharacterEvent(' '.code)
                 for (i in 0..3) {
-                    editor.charTyped(' ', 0)
+                    editor.charTyped(spaceEvent)
                 }
                 return true
             }

@@ -12,45 +12,9 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.Minecraft
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.GuiGraphicsExtractor
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.core.registries.BuiltInRegistries
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.resources.Identifier
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.world.item.ItemStack
 import kotlin.math.roundToInt
 
@@ -308,26 +272,18 @@ class CraftTreeGraph {
                     val iconX = sx - 8
                     val iconY = sy
 
-                    // Render flat-color silhouette glow behind the item
+                    // TODO MC 26.1.2: the pre-migration silhouette glow needed
+                    //  Minecraft.itemRenderer.getModel(stack, level, entity, seed) to
+                    //  distinguish between 3D block models and flat 2D items (for
+                    //  different glow styles). `itemRenderer` is replaced with
+                    //  `itemModelResolver`, which exposes items differently and
+                    //  doesn't expose `.isGui3d` directly. For now we just skip
+                    //  the glow pass; the item still renders correctly via the
+                    //  next call. Restore once the resolver API is mapped.
                     if (highlightColor != null) {
-                        val model = Minecraft.getInstance().itemRenderer.getModel(stack, null, null, 0)
-                        if (model.isGui3d) {
-                            // 3D block: single scaled copy
-                            val glowScale = 1.12f
-                            val offset = (16 * (glowScale - 1f)) / 2f
-                            damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
-                                graphics, stack, (iconX - offset).toInt(), (iconY - offset).toInt(),
-                                highlightColor, 200, glowScale
-                            )
-                        } else {
-                            // 2D flat item: 4-offset outline
-                            val offsets = arrayOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
-                            for ((ox, oy) in offsets) {
-                                damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
-                                    graphics, stack, iconX + ox, iconY + oy, highlightColor, 200
-                                )
-                            }
-                        }
+                        damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
+                            graphics, stack, iconX, iconY, highlightColor, 200
+                        )
                     }
 
                     // Render actual item icon (on top of the glow — covers the flat color center)
@@ -361,7 +317,7 @@ class CraftTreeGraph {
             }
             if (srcItem != null) {
                 graphics.pose().pushMatrix()
-                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat(), 0f)
+                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat())
                 graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                 graphics.renderItem(ItemStack(srcItem), 0, 0)
                 graphics.pose().popMatrix()

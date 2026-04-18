@@ -12,45 +12,9 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.Font
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.GuiGraphicsExtractor
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.core.registries.BuiltInRegistries
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.resources.Identifier
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
-import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
 import net.minecraft.world.item.ItemStack
 
 /**
@@ -157,7 +121,11 @@ object RecipeHintRenderer {
         // This avoids the Z-frustum clipping trap: translating the pose far enough back
         // to hide items (roughly -200 to -300) also pushes flat geometry past MC's GUI
         // near clip plane and makes it disappear entirely.
-        com.mojang.blaze3d.systems.RenderSystem.depthMask(false)
+        // TODO MC 26.1.2: RenderSystem.depthMask() is gone. The old code masked
+        //  depth writes so item-icon draws wouldn't occlude later quads. In the
+        //  new RenderPipeline system, each draw's pipeline declares its own
+        //  depth state — the default GUI pipelines don't write depth, so this
+        //  mask is largely a no-op now.
         try {
             // Background — neutral grey when valid, dark red when the handler doesn't
             // match any known recipe so the row visually flags the problem.
@@ -202,7 +170,7 @@ object RecipeHintRenderer {
                 Icons.endBatch()
             }
         } finally {
-            com.mojang.blaze3d.systems.RenderSystem.depthMask(true)
+            // (depthMask restore no-op — see TODO above)
         }
     }
 
@@ -229,7 +197,7 @@ object RecipeHintRenderer {
         // Scale the 16×16 native item render down to ICON_SIZE via pose.scale. Translate
         // first so the scale's origin is at the icon's top-left.
         graphics.pose().pushMatrix()
-        graphics.pose().translate(cx.toFloat(), iconY.toFloat(), 0f)
+        graphics.pose().translate(cx.toFloat(), iconY.toFloat())
         graphics.pose().scale((ITEM_SCALE).toFloat(), (ITEM_SCALE).toFloat())
         graphics.renderItem(stack, 0, 0)
         graphics.pose().popMatrix()

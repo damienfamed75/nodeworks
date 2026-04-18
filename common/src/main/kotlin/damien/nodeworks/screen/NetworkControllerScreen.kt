@@ -104,7 +104,9 @@ class NetworkControllerScreen(
         retryField.setMaxLength(3)
         retryField.value = menu.handlerRetryLimit.toString()
         retryField.setBordered(true)
-        retryField.setFilter { s -> s.all { it.isDigit() } }
+        // TODO MC 26.1.2: EditBox.setFilter is gone. The digits-only guard is
+        //  enforced server-side on commit instead. Minor regression: user can
+        //  temporarily type non-digits into the field, they just won't stick.
         addRenderableWidget(retryField)
     }
 

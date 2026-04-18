@@ -82,13 +82,20 @@ class InventoryTerminalMenu(
     override fun slotsChanged(container: net.minecraft.world.Container) {
         if (suppressSlotsChanged) return
         if (container === craftingContainer) {
-            val level = serverLevel ?: playerInventory.player.level()
-            val recipe = level.recipeAccess()
-                .getRecipeFor(RecipeType.CRAFTING, craftingContainer.asCraftInput(), level)
-            if (recipe.isPresent) {
-                resultContainer.setItem(0, recipe.get().value().assemble(craftingContainer.asCraftInput(), level.registryAccess()))
-            } else {
-                resultContainer.setItem(0, ItemStack.EMPTY)
+            // slotsChanged fires server-side for a server menu; on the client copy
+            // serverLevel is null and we have nothing to look up. Bail cleanly
+            // rather than querying a Level's client-side RecipeAccess (which
+            // doesn't expose getRecipeFor in 26.1).
+            val level = serverLevel
+            if (level != null) {
+                val recipe = level.recipeAccess()
+                    .getRecipeFor(RecipeType.CRAFTING, craftingContainer.asCraftInput(), level)
+                if (recipe.isPresent) {
+                    // assemble(input) in 26.1 — registryAccess folded into the recipe.
+                    resultContainer.setItem(0, recipe.get().value().assemble(craftingContainer.asCraftInput()))
+                } else {
+                    resultContainer.setItem(0, ItemStack.EMPTY)
+                }
             }
         }
         super.slotsChanged(container)
