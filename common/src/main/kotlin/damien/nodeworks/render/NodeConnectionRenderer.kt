@@ -645,27 +645,105 @@ object NodeConnectionRenderer {
 
     // ========== Diagnostic Pin Highlight ==========
 
-    // TODO MC 26.1.2 PIN-HIGHLIGHT REWRITE — stubbed.
-    //
-    // Pre-migration: when the Diagnostic Tool was held, drew a pulsing blue overlay on
-    // the pinned block by walking its BlockModel quads and drawing them with a custom
-    // shader + blend state via RenderSystem.setShader/setShaderTexture/setShaderColor
-    // and BufferUploader.drawWithShader. That immediate-mode path is gone in 26.1 —
-    // the new rendering stack requires a registered RenderPipeline (via
-    // RegisterRenderPipelinesEvent) that declares the blend mode, depth test, and
-    // fragment shader up front, then a RenderType that references the pipeline.
-    //
-    // The BakedQuad API also shifted (quad.vertices → quad.position/packedUV + packed
-    // vertex data accessors), so the quad-walking loop needs a rewrite too.
-    //
-    // Deferred until the FlatColorItemRenderer custom pipeline is wired up; pin
-    // highlight can reuse that same pipeline with a different tint colour.
-    @Suppress("UNUSED_PARAMETER")
+    /**
+     * Draws a pulsing cyan outline around the pinned block whenever the Diagnostic
+     * Tool is held.
+     *
+     * 26.1 rewrite: the pre-migration version rendered a pulsing filled overlay by
+     * walking the block's BakedQuads and drawing them through an immediate-mode
+     * `RenderSystem.setShader` + `BufferUploader.drawWithShader` path. Both of
+     * those APIs are gone in MC 26.1 (replaced by RegisterRenderPipelinesEvent +
+     * RenderType dispatch), and BakedQuad switched from `quad.vertices: int[]`
+     * to `position(i)/packedUV(i)` getters. Rather than register a custom
+     * RenderPipeline just for this effect, we express the "look at this block"
+     * hint with a pulsing multi-line cube outline — same visual language as the
+     * Network Wrench selection highlight, scaled to the block's exact AABB, and
+     * tinted cyan so it reads as distinct from a wrench selection.
+     */
     fun renderPinHighlight(
         poseStack: PoseStack,
         consumers: MultiBufferSource,
         cameraPos: net.minecraft.world.phys.Vec3
     ) {
-        // Intentionally empty — see TODO above.
+        val pos = pinnedBlock ?: return
+        val mc = Minecraft.getInstance()
+        val player = mc.player ?: return
+        val level = mc.level ?: return
+
+        val mainItem = player.mainHandItem.item
+        val offItem = player.offhandItem.item
+        if (mainItem !is damien.nodeworks.item.DiagnosticToolItem &&
+            offItem !is damien.nodeworks.item.DiagnosticToolItem) return
+
+        val blockState = level.getBlockState(pos)
+        if (blockState.isAir) return
+
+        // Pulse: 0.6 → 1.0 at ~0.5 Hz. Drives both brightness and outline thickness
+        // so the highlight feels "alive" without a shader.
+        val time = (System.currentTimeMillis() % 2000) / 2000f
+        val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.2f + 0.8f)
+
+        poseStack.pushPose()
+        poseStack.translate(
+            (pos.x - cameraPos.x).toFloat(),
+            (pos.y - cameraPos.y).toFloat(),
+            (pos.z - cameraPos.z).toFloat()
+        )
+
+        val pose = poseStack.last()
+        val buffer = consumers.getBuffer(RenderTypes.LINES)
+
+        // Cyan (0.6, 0.9, 1.0) modulated by pulse.
+        val r = (0.6f * pulse * 255).toInt().coerceIn(0, 255)
+        val g = (0.9f * pulse * 255).toInt().coerceIn(0, 255)
+        val b = (255 * pulse).toInt().coerceIn(0, 255)
+
+        // Slight inset so the outline sits on the block surface rather than z-fighting
+        // with adjacent blocks, plus a fractional outward breathe from the pulse.
+        val inset = 0.002f
+        val breathe = pulse * 0.015f
+        val x0 = -breathe + inset
+        val y0 = -breathe + inset
+        val z0 = -breathe + inset
+        val x1 = 1f + breathe - inset
+        val y1 = 1f + breathe - inset
+        val z1 = 1f + breathe - inset
+
+        drawPinEdge(buffer, pose, x0, y0, z0, x1, y0, z0, r, g, b)
+        drawPinEdge(buffer, pose, x1, y0, z0, x1, y0, z1, r, g, b)
+        drawPinEdge(buffer, pose, x1, y0, z1, x0, y0, z1, r, g, b)
+        drawPinEdge(buffer, pose, x0, y0, z1, x0, y0, z0, r, g, b)
+        drawPinEdge(buffer, pose, x0, y1, z0, x1, y1, z0, r, g, b)
+        drawPinEdge(buffer, pose, x1, y1, z0, x1, y1, z1, r, g, b)
+        drawPinEdge(buffer, pose, x1, y1, z1, x0, y1, z1, r, g, b)
+        drawPinEdge(buffer, pose, x0, y1, z1, x0, y1, z0, r, g, b)
+        drawPinEdge(buffer, pose, x0, y0, z0, x0, y1, z0, r, g, b)
+        drawPinEdge(buffer, pose, x1, y0, z0, x1, y1, z0, r, g, b)
+        drawPinEdge(buffer, pose, x1, y0, z1, x1, y1, z1, r, g, b)
+        drawPinEdge(buffer, pose, x0, y0, z1, x0, y1, z1, r, g, b)
+
+        poseStack.popPose()
+    }
+
+    private fun drawPinEdge(
+        buffer: VertexConsumer, pose: PoseStack.Pose,
+        x0: Float, y0: Float, z0: Float,
+        x1: Float, y1: Float, z1: Float,
+        r: Int, g: Int, b: Int
+    ) {
+        val dx = x1 - x0; val dy = y1 - y0; val dz = z1 - z0
+        val len = sqrt(dx * dx + dy * dy + dz * dz)
+        val nx = if (len > 0) dx / len else 0f
+        val ny = if (len > 0) dy / len else 0f
+        val nz = if (len > 0) dz / len else 1f
+
+        buffer.addVertex(pose, x0, y0, z0)
+            .setColor(r, g, b, 255)
+            .setNormal(pose, nx, ny, nz)
+            .setLineWidth(2.5f)
+        buffer.addVertex(pose, x1, y1, z1)
+            .setColor(r, g, b, 255)
+            .setNormal(pose, nx, ny, nz)
+            .setLineWidth(2.5f)
     }
 }

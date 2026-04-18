@@ -41,6 +41,7 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterMenuScreens)
         modBus.addListener(::onRegisterConditionalItemModelProperties)
         modBus.addListener(::onRegisterSelectItemModelProperties)
+        modBus.addListener(::onRegisterBlockTintSources)
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
@@ -171,17 +172,25 @@ object NeoForgeClientSetup {
     //  pipeline-based overload. For now, FlatColorItemRenderer falls through to the default
     //  item rendering path without tinting (see FlatColorItemRenderer fallback).
 
-    // TODO MC 26.1.2 BLOCK-COLOR MIGRATION:
-    //  RegisterColorHandlersEvent.Block was removed. The replacement is
-    //  RegisterColorHandlersEvent.BlockTintSources + data-driven BlockTintSource
-    //  implementations (via MapCodec + ID registration on the BlockColors registry).
-    //  The previous callback-based `BlockColor { state, getter, pos, tintIndex -> ... }`
-    //  flow is gone because tint is now resolved per-block via codec'd BlockTintSource
-    //  entries declared in the block model JSON. Our existing tint logic (reading the
-    //  block entity's networkColor) needs to be expressed as a custom BlockTintSource
-    //  that inspects the block entity — likely via a neoforge-side class-based source
-    //  declared in the block's model JSON. Emissive overlays will render uncolored
-    //  (grey/white) until this is ported.
+    private fun onRegisterBlockTintSources(
+        event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.BlockTintSources
+    ) {
+        // 26.1: the old `BlockColor` callback + `event.register(provider, Block...)` form was
+        //  dropped. Tint is now resolved by a list of BlockTintSources per block, keyed by
+        //  the `tintindex` on the face. Our emissive overlays use tintindex:0 so we register
+        //  a single-source list with NetworkColorTintSource at index 0 for every block that
+        //  wants its emissive layer tinted by the network colour.
+        val source = listOf(damien.nodeworks.client.color.NetworkColorTintSource())
+        event.register(
+            source,
+            damien.nodeworks.registry.ModBlocks.NETWORK_CONTROLLER,
+            damien.nodeworks.registry.ModBlocks.VARIABLE,
+            damien.nodeworks.registry.ModBlocks.TERMINAL,
+            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE,
+            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE,
+            damien.nodeworks.registry.ModBlocks.RECEIVER_ANTENNA
+        )
+    }
 }
 
 class NeoForgeClientNetworkingService : ClientNetworkingService {
