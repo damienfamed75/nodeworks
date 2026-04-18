@@ -194,6 +194,26 @@ object NodeConnectionRenderer {
             trackConnectable(pos, loaded)
         }
 
+        // Invalidate the BlockTintCache for every Connectable block belonging to a
+        // network whose settings just changed. The cache is keyed on (section, pos,
+        // layer) and only refreshes when the section is marked dirty — setSectionDirty
+        // forces a re-query of NetworkColorTintSource.colorInWorld next frame.
+        damien.nodeworks.network.NetworkSettingsRegistry.onChanged = label@{ networkId ->
+            val mc = Minecraft.getInstance()
+            val level = mc.level ?: return@label
+            val renderer = mc.levelRenderer
+            for (pos in knownNodes) {
+                if (!level.isLoaded(pos)) continue
+                val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
+                if (be.networkId != networkId) continue
+                renderer.setSectionDirty(
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.x),
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.y),
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.z)
+                )
+            }
+        }
+
         PlatformServices.clientEvents.onWorldRender { poseStack, consumers, cameraPos ->
             if (poseStack != null && consumers != null) {
                 render(poseStack, consumers, cameraPos)

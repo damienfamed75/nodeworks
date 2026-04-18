@@ -54,8 +54,7 @@
           "cullface": "north",
           "tintindex": 0,
           "neoforge_data": {
-            "block_light": 15,
-            "sky_light": 15
+            "light_emission": 15
           },
           "uv": [0, 0, 16, 16]
         }

@@ -842,6 +842,7 @@ class CraftingCoreBlockEntity(
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
 
         // Load buffer — new format first, legacy "buffer" + "bufferCapacity" format as fallback
         // for pre-Phase-1 worlds. Both come through as CompoundTag sub-values via the codec.

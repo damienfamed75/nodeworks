@@ -291,6 +291,7 @@ class NodeBlockEntity(
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         monitors.clear()
         for (child in input.childrenListOrEmpty("monitors")) {
             val faceOrdinal = child.getIntOr("face", -1)
