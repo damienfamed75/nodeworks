@@ -173,11 +173,26 @@ interface ModStateService {
     /**
      * Find the ScriptEngine that has a processing handler for the given card name,
      * scoped to the given terminal positions (i.e., only terminals on the same network).
+     *
+     * [overrideDimension] is used when the terminal positions live in a different
+     * dimension than the calling [level] — e.g. a cross-dimensional Receiver Antenna
+     * where the provider network is in the Nether but the consumer terminal is in the
+     * Overworld. Pass null when the positions are in the caller's own dimension.
      */
-    fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? = null
+    fun findProcessingEngine(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        cardName: String,
+        overrideDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>? = null,
+    ): Any? = null
 
-    /** Find any active ScriptEngine at the given terminal positions. */
-    fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): Any? = null
+    /** Find any active ScriptEngine at the given terminal positions. Same dimension
+     *  override semantics as [findProcessingEngine]. */
+    fun findAnyEngine(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        overrideDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>? = null,
+    ): Any? = null
 
     /** Get the ScriptEngine at a specific terminal position, or null. */
     fun getScriptEngine(level: ServerLevel, pos: BlockPos): Any? = null

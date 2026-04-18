@@ -121,7 +121,9 @@ object CraftTreeBuilder {
             } else "local"
 
             val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
-            val handlerEngine = PlatformServices.modState.findProcessingEngine(level, searchPositions, api.name)
+            val handlerEngine = PlatformServices.modState.findProcessingEngine(
+                level, searchPositions, api.name, apiMatch.apiStorage.remoteDimension
+            )
             val hasHandler = handlerEngine != null
 
             // Processing APIs can yield >1 per batch (e.g. a smelting handler that produces

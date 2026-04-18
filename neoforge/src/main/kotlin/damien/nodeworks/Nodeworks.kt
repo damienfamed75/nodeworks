@@ -565,12 +565,21 @@ class NeoForgeModStateService : ModStateService {
         NeoForgeTerminalPackets.registerPendingAutoRun(level, pos)
     }
 
-    override fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): Any? {
-        return NeoForgeTerminalPackets.findAnyEngine(level, terminalPositions)
+    override fun findAnyEngine(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        overrideDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>?,
+    ): Any? {
+        return NeoForgeTerminalPackets.findAnyEngine(level, terminalPositions, overrideDimension)
     }
 
-    override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? {
-        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName)
+    override fun findProcessingEngine(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        cardName: String,
+        overrideDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>?,
+    ): Any? {
+        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName, overrideDimension)
     }
 
     override fun getScriptEngine(level: ServerLevel, pos: BlockPos): Any? {

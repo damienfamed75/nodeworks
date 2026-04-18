@@ -332,7 +332,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             ?: return CraftScheduler.OpResult.Failed("No processing API for $outputItemId")
         val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
         val handlerEngine = PlatformServices.modState
-            .findProcessingEngine(lvl, searchPositions, apiMatch.api.name) as? ScriptEngine
+            .findProcessingEngine(lvl, searchPositions, apiMatch.api.name, apiMatch.apiStorage.remoteDimension) as? ScriptEngine
         if (handlerEngine == null) {
             // Handler not loaded yet — common right after world load, before terminal auto-run.
             // Back off and retry; handler should appear once the terminal script is running.

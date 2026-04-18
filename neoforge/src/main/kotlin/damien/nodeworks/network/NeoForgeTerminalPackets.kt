@@ -78,8 +78,12 @@ object NeoForgeTerminalPackets {
         return true
     }
 
-    fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): ScriptEngine? {
-        val dimKey = level.dimension()
+    fun findAnyEngine(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        overrideDimension: ResourceKey<Level>? = null,
+    ): ScriptEngine? {
+        val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
             val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
             if (engine.isRunning()) return engine
@@ -87,9 +91,16 @@ object NeoForgeTerminalPackets {
         return null
     }
 
-    /** Find the first active engine on the given network that has a processing handler for the given card name. */
-    fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): ScriptEngine? {
-        val dimKey = level.dimension()
+    /** Find the first active engine on the given network that has a processing handler for the given card name.
+     *  [overrideDimension] lets callers search a different dimension than `level.dimension()` — required when
+     *  the terminal positions come from a cross-dimensional Receiver Antenna. */
+    fun findEngineWithHandler(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        cardName: String,
+        overrideDimension: ResourceKey<Level>? = null,
+    ): ScriptEngine? {
+        val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
             val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
             if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) {
