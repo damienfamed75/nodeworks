@@ -152,9 +152,8 @@ class CardProgrammerScreen(
         // Programmer image
         graphics.blit(BG_TEXTURE, leftPos, topPos + PROG_Y, 0f, 0f, W, PROG_H, W, PROG_H)
 
-        // Slots
-        NineSlice.drawSlotGrid(graphics, leftPos + TEMPLATE_SLOT_X, topPos + TEMPLATE_SLOT_Y, 1, 1)
-        NineSlice.drawSlotGrid(graphics, leftPos + INPUT_SLOT_X, topPos + INPUT_SLOT_Y, 1, 1)
+        // Card slots intentionally have no visible frame — they sit on top of the
+        // programmer background texture which already paints slot cutouts.
 
         if (!menu.hasTemplate()) {
             graphics.fill(
