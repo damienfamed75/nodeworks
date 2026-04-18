@@ -316,6 +316,7 @@ class Nodeworks(modBus: IEventBus) {
                     "glow" -> entity.nodeGlowStyle = payload.intValue
                     "name" -> entity.networkName = payload.strValue
                     "retry" -> entity.handlerRetryLimit = payload.intValue
+                    "chunkload" -> entity.setChunkLoadingEnabled(payload.intValue != 0)
                 }
             }
         }
@@ -525,6 +526,9 @@ class Nodeworks(modBus: IEventBus) {
         // Drop cached SavedData handles — a restart in the same JVM (integrated server quit+rejoin)
         // must re-resolve them against the freshly loaded level.dataStorage.
         damien.nodeworks.network.NodeConnectionHelper.clearServerCaches()
+        // Wipe chunk-load refcounts — each controller's setLevel on the next run will
+        // re-claim, rebuilding the map from scratch against a fresh level.
+        damien.nodeworks.network.ChunkForceLoadManager.clearAll()
     }
 
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {

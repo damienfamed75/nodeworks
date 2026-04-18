@@ -52,14 +52,15 @@ class NetworkControllerScreen(
 
     // Property definitions
     private data class Property(val label: String, val type: PropertyType)
-    private enum class PropertyType { NAME, COLOR, REDSTONE, GLOW_STYLE, HANDLER_RETRY }
+    private enum class PropertyType { NAME, COLOR, REDSTONE, GLOW_STYLE, HANDLER_RETRY, CHUNK_LOADING }
 
     private val properties = listOf(
         Property("Name", PropertyType.NAME),
         Property("Color", PropertyType.COLOR),
         Property("Redstone", PropertyType.REDSTONE),
         Property("Node Glow", PropertyType.GLOW_STYLE),
-        Property("Retries", PropertyType.HANDLER_RETRY)
+        Property("Retries", PropertyType.HANDLER_RETRY),
+        Property("Chunk Loading", PropertyType.CHUNK_LOADING),
     )
 
     private lateinit var nameField: EditBox
@@ -220,6 +221,10 @@ class NetworkControllerScreen(
                     renderHandlerRetryControl(graphics, controlX, controlY, mouseX, mouseY)
                 }
 
+                PropertyType.CHUNK_LOADING -> {
+                    renderChunkLoadingControl(graphics, controlX, controlY)
+                }
+
                 else -> {}
             }
         }
@@ -319,6 +324,22 @@ class NetworkControllerScreen(
         (if (plusHovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, plusX, by, btnW, btnH)
         val plusLabel = "+"
         graphics.drawString(font, plusLabel, plusX + (btnW - font.width(plusLabel)) / 2, by + 4, 0xFFDDDDDD.toInt())
+    }
+
+    private fun renderChunkLoadingControl(graphics: GuiGraphicsExtractor, bx: Int, by: Int) {
+        val enabled = menu.chunkLoading
+        val slice = if (enabled) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
+        val bw = 48
+        val bh = 16
+        slice.draw(graphics, bx, by, bw, bh)
+        val label = if (enabled) "On" else "Off"
+        val labelColor = if (enabled) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
+        graphics.drawString(
+            font, label,
+            bx + (bw - font.width(label)) / 2,
+            by + 4,
+            labelColor
+        )
     }
 
     private fun commitRetryField() {
@@ -498,6 +519,15 @@ class NetworkControllerScreen(
                     }
                 }
 
+                PropertyType.CHUNK_LOADING -> {
+                    val bw = 48
+                    val bh = 16
+                    if (mx >= controlX && mx < controlX + bw && my >= controlY && my < controlY + bh) {
+                        sendChunkLoadingUpdate(!menu.chunkLoading)
+                        return true
+                    }
+                }
+
                 else -> {}
             }
         }
@@ -572,6 +602,14 @@ class NetworkControllerScreen(
     private fun sendNameUpdate(name: String) {
         PlatformServices.clientNetworking.sendToServer(
             damien.nodeworks.network.ControllerSettingsPayload(menu.controllerPos, "name", 0, name)
+        )
+    }
+
+    private fun sendChunkLoadingUpdate(enabled: Boolean) {
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.ControllerSettingsPayload(
+                menu.controllerPos, "chunkload", if (enabled) 1 else 0, ""
+            )
         )
     }
 }
