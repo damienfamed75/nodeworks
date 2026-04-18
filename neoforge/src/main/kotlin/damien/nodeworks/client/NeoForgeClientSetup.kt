@@ -164,11 +164,6 @@ object NeoForgeClientSetup {
         }
     }
 
-    // TODO MC 26.1.2 SHADER-PIPELINE MIGRATION (FlatColorItemRenderer only):
-    //  The FlatColorItemRenderer silhouette-glow shader still needs a RenderPipeline
-    //  port — see FlatColorItemRenderer for details. The pin-highlight path was
-    //  ported in Phase 17 (PinHighlightRenderType).
-
     private fun onRegisterRenderPipelines(
         event: net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent
     ) {

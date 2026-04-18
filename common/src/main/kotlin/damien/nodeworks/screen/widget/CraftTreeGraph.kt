@@ -31,6 +31,38 @@ class CraftTreeGraph {
         private const val NODE_SPACING_X = 28f
         private const val NODE_SPACING_Y = 36f
         private const val WHITE = 0xFFFFFFFF.toInt()
+
+        /**
+         * Draw an XP-orb-style status halo behind a GUI item icon.
+         *
+         * Five concentric translucent rects from a 5px outer ring (faintest) inward to a
+         * centre fill (brightest). Because MC's default GUI blend is alpha-over, the
+         * stacked rects accumulate alpha toward the middle — what the player reads as a
+         * soft radial fall-off rather than a hard square edge. No shader, no sprite, no
+         * per-item pre-render. The item itself is drawn on top, so the glow shows through
+         * the item's transparent pixels exactly the way the pre-migration silhouette did.
+         *
+         * [color] is expected as 0xAARRGGBB; only the RGB channels are used — alpha is
+         * driven by the ring table below.
+         */
+        fun drawItemHalo(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int) {
+            val rgb = color and 0xFFFFFF
+            // Outer → inner. Each pair is (outward-px offset, alpha byte). Alphas are
+            // tuned so the overlap at the centre feels bright without washing out the item.
+            val rings = arrayOf(
+                5 to 0x12,
+                4 to 0x1E,
+                3 to 0x2C,
+                2 to 0x42,
+                1 to 0x60,
+            )
+            for ((r, alpha) in rings) {
+                graphics.fill(
+                    x - r, y - r, x + size + r, y + size + r,
+                    (alpha shl 24) or rgb
+                )
+            }
+        }
     }
 
     data class TreeLayout(
@@ -268,24 +300,14 @@ class CraftTreeGraph {
                     val iconX = sx - 8
                     val iconY = sy
 
-                    // TODO pixel-perfect highlights: replace the square backdrop with a
-                    //  silhouette that traces the item's actual alpha channel (so the
-                    //  glow follows the item's shape instead of a flat square). Options:
-                    //    1. Rebuild FlatColorItemRenderer against the 26.1 RenderPipeline
-                    //       + custom fragment-shader path (see FlatColorItemRenderer
-                    //       stub). Highest fidelity, matches the pre-migration look.
-                    //    2. Pre-render the item once to an offscreen framebuffer, threshold
-                    //       the alpha, and blit the silhouette tinted with the highlight
-                    //       color. No custom shader needed but more bookkeeping.
-                    //    3. Expand the backdrop-square approach into an 8-way dilated rect
-                    //       that approximates the silhouette from the item's BakedQuad
-                    //       bounding box. Cheapest, fuzzier result.
-                    //  Current stand-in: flat amber square behind the icon.
+                    // Status halo — XP-orb-style radial glow behind the item. Five concentric
+                    //  filled rects from a wide faint outer ring inward to a tighter bright
+                    //  inner ring. The overlap stacks alpha toward the centre so the fall-off
+                    //  reads as soft rather than a hard square. Cheap (5 fills), no shader,
+                    //  and glow bleeds through the item's transparent pixels since the item
+                    //  is drawn on top.
                     if (highlightColor != null) {
-                        graphics.fill(
-                            iconX - 1, iconY - 1, iconX + 17, iconY + 17,
-                            0x80000000.toInt() or (highlightColor and 0xFFFFFF)
-                        )
+                        drawItemHalo(graphics, iconX, iconY, 16, highlightColor)
                     }
 
                     // Render actual item icon on top of the highlight backdrop.
