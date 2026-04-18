@@ -7,7 +7,6 @@ import damien.nodeworks.card.RedstoneCard
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.DiagnosticToolItem
 import damien.nodeworks.item.LinkCrystalItem
-import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.item.MilkySoulBallItem
 import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
@@ -54,12 +53,6 @@ object ModItems {
         "processing_set",
         ::ProcessingSet,
         Item.Properties().stacksTo(64)
-    )
-
-    val MEMORY_UPGRADE: Item = register(
-        "memory_upgrade",
-        ::MemoryUpgradeItem,
-        Item.Properties().stacksTo(4)
     )
 
     val LINK_CRYSTAL: Item = register(

@@ -55,7 +55,6 @@ object ModCreativeTab {
                 output.accept(ModItems.REDSTONE_CARD)
                 output.accept(ModItems.INSTRUCTION_SET)
                 output.accept(ModItems.PROCESSING_SET)
-                output.accept(ModItems.MEMORY_UPGRADE)
                 output.accept(ModItems.LINK_CRYSTAL)
                 output.accept(ModItems.ANTENNA_COIL_ASSEMBLY)
                 output.accept(ModItems.CELESTINE_ANTENNA_ARRAY)
