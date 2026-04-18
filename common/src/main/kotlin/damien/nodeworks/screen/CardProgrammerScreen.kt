@@ -107,7 +107,9 @@ class CardProgrammerScreen(
         counterField!!.setMaxLength(2)
         counterField!!.value = "${menu.getCounter()}"
         counterField!!.setBordered(true)
-        counterField!!.setTextColor(0xFFFFFF)
+        // 26.1: GuiGraphicsExtractor.text skips rendering when ARGB.alpha(color)==0,
+        // so the top byte MUST be the alpha channel (0xFF), not left as 0.
+        counterField!!.setTextColor(0xFFFFFFFF.toInt())
         lastSyncedCounter = menu.getCounter()
         addRenderableWidget(counterField!!)
     }
@@ -202,7 +204,7 @@ class CardProgrammerScreen(
         graphics.drawString(font, ">", leftPos + INC_PLUS_X + (INC_BTN_W - font.width(">")) / 2, topPos + INC_BTN_Y + 3, incTextColor)
 
         // Counter field color — manual "gray out" when disabled
-        counterField?.setTextColor(if (incEnabled) 0xFFFFFF else 0x555555)
+        counterField?.setTextColor(if (incEnabled) 0xFFFFFFFF.toInt() else 0xFF555555.toInt())
         counterField?.setEditable(incEnabled)
 
         // Player inventory frame
