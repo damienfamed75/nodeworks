@@ -9,13 +9,19 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
+import net.minecraft.client.renderer.item.ItemModelResolver
+import net.minecraft.world.item.ItemDisplayContext
+import net.minecraft.client.renderer.item.ItemStackRenderState
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.phys.Vec3
+import org.joml.Quaternionf
 import kotlin.math.sqrt
 
 /**
@@ -35,6 +41,8 @@ import kotlin.math.sqrt
 class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
     BlockEntityRenderer<NodeBlockEntity, MonitorRenderer.NodeRenderState> {
 
+    private val itemModelResolver: ItemModelResolver = context.itemModelResolver()
+
     /** One laser beam from a card slot on a node face to the adjacent block. Extracted
      *  on the main thread so `submit` can emit the geometry without touching the BE. */
     data class CardLink(
@@ -43,11 +51,21 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
         val r: Int, val g: Int, val b: Int
     )
 
+    /** One monitor face — the 3D frame plus optional tracked item icon. ItemStackRenderState
+     *  is resolved during extract (main thread, needs level / item registry) and submitted
+     *  during render (render thread). */
+    class MonitorFaceState {
+        var side: Direction = Direction.NORTH
+        val item: ItemStackRenderState = ItemStackRenderState()
+        var hasItem: Boolean = false
+    }
+
     class NodeRenderState : BlockEntityRenderState() {
         var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         var glowStyle: Int = 0
         var hasGlow: Boolean = false
         var cardLinks: List<CardLink> = emptyList()
+        var monitorFaces: List<MonitorFaceState> = emptyList()
         var blockPos: BlockPos = BlockPos.ZERO
     }
 
@@ -63,6 +81,10 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
         private const val GLOW_STYLE_NONE = 5
 
         private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+
+        private val MONITOR_FACE_TEX = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_face.png")
+        private val MONITOR_BACK_TEX = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_back.png")
+        private val MONITOR_SIDE_TEX = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/monitor_side.png")
 
         /** Per-card-type beam colour (r, g, b 0–255). */
         private val CARD_COLORS = mapOf(
@@ -116,6 +138,34 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
         } else {
             state.cardLinks = emptyList()
         }
+
+        // Monitor faces: one MonitorFaceState per face that has a Monitor attached. The
+        // frame always draws; the item icon is layered on top when a tracked item is set.
+        // Item models are resolved here so `submit` doesn't need level / registry access.
+        val faces = mutableListOf<MonitorFaceState>()
+        for (face in blockEntity.getMonitorFaces()) {
+            val monitor = blockEntity.getMonitor(face) ?: continue
+            val faceState = MonitorFaceState()
+            faceState.side = face
+            val itemId = monitor.trackedItemId
+            if (itemId != null) {
+                val ident = Identifier.tryParse(itemId)
+                val item = if (ident != null) BuiltInRegistries.ITEM.getValue(ident) else null
+                if (item != null) {
+                    itemModelResolver.updateForTopItem(
+                        faceState.item,
+                        ItemStack(item, 1),
+                        ItemDisplayContext.GUI,
+                        level,
+                        null,
+                        0,
+                    )
+                    faceState.hasItem = true
+                }
+            }
+            faces.add(faceState)
+        }
+        state.monitorFaces = faces
     }
 
     override fun submit(
@@ -125,6 +175,7 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
         camera: CameraRenderState
     ) {
         submitCardLinks(state, poseStack, submitNodeCollector)
+        submitMonitorFaces(state, poseStack, submitNodeCollector)
 
         if (!state.hasGlow) return
 
@@ -175,6 +226,94 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
     }
 
     override fun shouldRenderOffScreen(): Boolean = true
+
+    /** Draw the 3D monitor frame (front panel + back + sides) on each attached face, and
+     *  the tracked-item icon centred on the panel when one is set. Geometry matches the
+     *  pre-migration layout so existing texture UVs still map correctly. */
+    private fun submitMonitorFaces(
+        state: NodeRenderState,
+        poseStack: PoseStack,
+        submitNodeCollector: SubmitNodeCollector,
+    ) {
+        if (state.monitorFaces.isEmpty()) return
+
+        val faceRt = RenderTypes.entityCutout(MONITOR_FACE_TEX)
+        val backRt = RenderTypes.entityCutout(MONITOR_BACK_TEX)
+        val sideRt = RenderTypes.entityCutout(MONITOR_SIDE_TEX)
+        val hw = 0.375f    // half-width  (12/16 / 2)
+        val hh = 0.375f    // half-height
+        val depth = 0.125f // 2/16
+        val overlay = OverlayTexture.NO_OVERLAY
+        val light = 15728880
+
+        for (faceState in state.monitorFaces) {
+            poseStack.pushPose()
+            poseStack.translate(0.5, 0.5, 0.5)
+            rotateToFace(poseStack, faceState.side)
+            poseStack.translate(0.0, 0.0, 0.5)
+            poseStack.scale(1f, 1f, -1f)
+
+            // Front panel
+            submitNodeCollector.submitCustomGeometry(poseStack, faceRt) { pose, vc ->
+                vc.addVertex(pose,  hw, -hh, 0f).setUv(1f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+                vc.addVertex(pose,  hw,  hh, 0f).setUv(1f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+                vc.addVertex(pose, -hw,  hh, 0f).setUv(0f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+                vc.addVertex(pose, -hw, -hh, 0f).setUv(0f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+            }
+            // Back panel
+            submitNodeCollector.submitCustomGeometry(poseStack, backRt) { pose, vc ->
+                vc.addVertex(pose, -hw, -hh, depth).setUv(0f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+                vc.addVertex(pose, -hw,  hh, depth).setUv(0f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+                vc.addVertex(pose,  hw,  hh, depth).setUv(1f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+                vc.addVertex(pose,  hw, -hh, depth).setUv(1f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+            }
+            // Four side strips
+            submitNodeCollector.submitCustomGeometry(poseStack, sideRt) { pose, vc ->
+                // Top
+                vc.addVertex(pose,  hw, hh, 0f    ).setUv(1f, 0f    ).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose,  hw, hh, depth).setUv(1f, 0.125f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, -hw, hh, depth).setUv(0f, 0.125f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, -hw, hh, 0f    ).setUv(0f, 0f    ).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+                // Bottom
+                vc.addVertex(pose, -hw, -hh, 0f    ).setUv(0f, 0f    ).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+                vc.addVertex(pose, -hw, -hh, depth).setUv(0f, 0.125f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+                vc.addVertex(pose,  hw, -hh, depth).setUv(1f, 0.125f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+                vc.addVertex(pose,  hw, -hh, 0f    ).setUv(1f, 0f    ).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+                // Right
+                vc.addVertex(pose, hw, -hh, 0f    ).setUv(0f,     0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+                vc.addVertex(pose, hw, -hh, depth).setUv(0.125f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+                vc.addVertex(pose, hw,  hh, depth).setUv(0.125f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+                vc.addVertex(pose, hw,  hh, 0f    ).setUv(0f,     1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+                // Left
+                vc.addVertex(pose, -hw,  hh, 0f    ).setUv(0f,     1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+                vc.addVertex(pose, -hw,  hh, depth).setUv(0.125f, 1f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+                vc.addVertex(pose, -hw, -hh, depth).setUv(0.125f, 0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+                vc.addVertex(pose, -hw, -hh, 0f    ).setUv(0f,     0f).setColor(255, 255, 255, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+            }
+
+            // Item icon — in front of the panel to avoid z-fighting, scaled down to fit.
+            if (faceState.hasItem) {
+                poseStack.pushPose()
+                poseStack.translate(0.0, 0.02, -0.02)
+                poseStack.scale(0.3f, 0.3f, 0.001f)
+                faceState.item.submit(poseStack, submitNodeCollector, 0xF000F0, OverlayTexture.NO_OVERLAY, 0)
+                poseStack.popPose()
+            }
+
+            poseStack.popPose()
+        }
+    }
+
+    private fun rotateToFace(poseStack: PoseStack, face: Direction) {
+        when (face) {
+            Direction.SOUTH -> Unit
+            Direction.NORTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat()))
+            Direction.EAST  -> poseStack.mulPose(Quaternionf().rotateY((Math.PI / 2).toFloat()))
+            Direction.WEST  -> poseStack.mulPose(Quaternionf().rotateY((-Math.PI / 2).toFloat()))
+            Direction.DOWN  -> poseStack.mulPose(Quaternionf().rotateX((-Math.PI / 2).toFloat()))
+            Direction.UP    -> poseStack.mulPose(Quaternionf().rotateX((Math.PI / 2).toFloat()))
+        }
+    }
 
     /** Emits one billboarded beam per [CardLink] from the card slot's exact position on
      *  the node face out to the adjacent block's near face. Billboarding uses the camera
