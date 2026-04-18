@@ -144,7 +144,11 @@ object ModItems {
         properties: Item.Properties
     ): Item {
         val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        val item = factory(properties)
+        // 26.1: Item.Properties must know its id before construction — Item's ctor
+        //  eventually derefs the id to compute defaults (e.g. description id, loot
+        //  table pointer). Same shift as Block.Properties.
+        val itemKey = ResourceKey.create(Registries.ITEM, identifier)
+        val item = factory(properties.setId(itemKey))
         return Registry.register(BuiltInRegistries.ITEM, identifier, item)
     }
 

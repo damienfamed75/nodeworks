@@ -136,48 +136,50 @@ object ModBlocks {
     // --- Celestine Geode blocks ---
 
     val CELESTINE_BLOCK: Block = registerDirect("celestine_block",
-        net.minecraft.world.level.block.AmethystBlock(BlockBehaviour.Properties.of()
+        BlockBehaviour.Properties.of()
             .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
             .strength(1.5f).sound(net.minecraft.world.level.block.SoundType.AMETHYST)
-            .requiresCorrectToolForDrops()))
+            .requiresCorrectToolForDrops()
+    ) { props -> net.minecraft.world.level.block.AmethystBlock(props) }
 
     val BUDDING_CELESTINE: Block = registerDirect("budding_celestine",
-        damien.nodeworks.block.BuddingCelestineBlock(BlockBehaviour.Properties.of()
+        BlockBehaviour.Properties.of()
             .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
             .randomTicks().strength(1.5f).sound(net.minecraft.world.level.block.SoundType.AMETHYST)
-            .requiresCorrectToolForDrops().pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+            .requiresCorrectToolForDrops().pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
+    ) { props -> damien.nodeworks.block.BuddingCelestineBlock(props) }
 
     val CELESTINE_CLUSTER: Block = registerDirect("celestine_cluster",
-        net.minecraft.world.level.block.AmethystClusterBlock(7.0f, 3.0f,
-            BlockBehaviour.Properties.of()
-                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
-                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.AMETHYST_CLUSTER)
-                .strength(1.5f).lightLevel { 5 }
-                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+        BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+            .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.AMETHYST_CLUSTER)
+            .strength(1.5f).lightLevel { 5 }
+            .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
+    ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(7.0f, 3.0f, props) }
 
     val LARGE_CELESTINE_BUD: Block = registerDirect("large_celestine_bud",
-        net.minecraft.world.level.block.AmethystClusterBlock(5.0f, 3.0f,
-            BlockBehaviour.Properties.of()
-                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
-                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.LARGE_AMETHYST_BUD)
-                .strength(1.5f).lightLevel { 4 }
-                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+        BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+            .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.LARGE_AMETHYST_BUD)
+            .strength(1.5f).lightLevel { 4 }
+            .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
+    ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(5.0f, 3.0f, props) }
 
     val MEDIUM_CELESTINE_BUD: Block = registerDirect("medium_celestine_bud",
-        net.minecraft.world.level.block.AmethystClusterBlock(4.0f, 3.0f,
-            BlockBehaviour.Properties.of()
-                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
-                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.MEDIUM_AMETHYST_BUD)
-                .strength(1.5f).lightLevel { 2 }
-                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+        BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+            .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.MEDIUM_AMETHYST_BUD)
+            .strength(1.5f).lightLevel { 2 }
+            .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
+    ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(4.0f, 3.0f, props) }
 
     val SMALL_CELESTINE_BUD: Block = registerDirect("small_celestine_bud",
-        net.minecraft.world.level.block.AmethystClusterBlock(3.0f, 4.0f,
-            BlockBehaviour.Properties.of()
-                .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
-                .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.SMALL_AMETHYST_BUD)
-                .strength(1.5f).lightLevel { 1 }
-                .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)))
+        BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
+            .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.SMALL_AMETHYST_BUD)
+            .strength(1.5f).lightLevel { 1 }
+            .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
+    ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(3.0f, 4.0f, props) }
 
     val INVENTORY_TERMINAL: Block = register(
         "inventory_terminal",
@@ -195,7 +197,12 @@ object ModBlocks {
         properties: BlockBehaviour.Properties
     ): Block {
         val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        val block = factory(properties)
+        // 26.1: Block.Properties must know its id before construction — the constructor
+        //  path walks Properties.effectiveDrops() which derefs the id to compute the
+        //  default loot table key. Prior to 26.1 the id was set after the fact by
+        //  Registry.register; now it must be supplied up front.
+        val blockKey = ResourceKey.create(Registries.BLOCK, identifier)
+        val block = factory(properties.setId(blockKey))
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)
         return block
     }
@@ -209,10 +216,21 @@ object ModBlocks {
             .noOcclusion()
     )
 
-    private fun registerDirect(id: String, block: Block): Block {
+    /** Variant used when the block is a non-NodeBlock (e.g. vanilla AmethystBlock
+     *  or AmethystClusterBlock) where the constructor takes extra args beyond
+     *  Properties. Caller supplies the already-customized Properties and a factory
+     *  that consumes them and produces the concrete Block. */
+    private fun registerDirect(
+        id: String,
+        properties: BlockBehaviour.Properties,
+        factory: (BlockBehaviour.Properties) -> Block
+    ): Block {
         val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
+        val blockKey = ResourceKey.create(Registries.BLOCK, identifier)
+        val itemKey = ResourceKey.create(Registries.ITEM, identifier)
+        val block = factory(properties.setId(blockKey))
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)
-        val item = BlockItem(block, Item.Properties())
+        val item = BlockItem(block, Item.Properties().setId(itemKey))
         Registry.register(BuiltInRegistries.ITEM, identifier, item)
         return block
     }
@@ -223,10 +241,12 @@ object ModBlocks {
         properties: BlockBehaviour.Properties
     ): Block {
         val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        val block = factory(properties)
+        val blockKey = ResourceKey.create(Registries.BLOCK, identifier)
+        val itemKey = ResourceKey.create(Registries.ITEM, identifier)
+        val block = factory(properties.setId(blockKey))
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)
 
-        val item = BlockItem(block, Item.Properties())
+        val item = BlockItem(block, Item.Properties().setId(itemKey))
         Registry.register(BuiltInRegistries.ITEM, identifier, item)
 
         return block
