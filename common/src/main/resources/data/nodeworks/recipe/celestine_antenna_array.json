@@ -1,18 +1,18 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DCD",
-        "RCR",
-        "III"
-    ],
-    "key": {
-        "D": { "item": "minecraft:deepslate" },
-        "C": { "item": "nodeworks:celestine_shard" },
-        "R": { "item": "minecraft:lightning_rod" },
-        "I": { "item": "minecraft:copper_ingot" }
-    },
-    "result": {
-        "id": "nodeworks:celestine_antenna_array",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DCD",
+    "RCR",
+    "III"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "C": "nodeworks:celestine_shard",
+    "R": "minecraft:lightning_rod",
+    "I": "minecraft:copper_ingot"
+  },
+  "result": {
+    "id": "nodeworks:celestine_antenna_array",
+    "count": 1
+  }
 }

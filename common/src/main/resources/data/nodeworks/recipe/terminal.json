@@ -1,29 +1,19 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DDD",
-        "NRG",
-        "DCD"
-    ],
-    "key": {
-        "D": {
-            "item": "minecraft:deepslate"
-        },
-        "N": {
-            "item": "nodeworks:node"
-        },
-        "R": {
-            "item": "minecraft:redstone"
-        },
-        "G": {
-            "tag": "c:glass_panes"
-        },
-        "C": {
-            "item": "minecraft:copper_ingot"
-        }
-    },
-    "result": {
-        "id": "nodeworks:terminal",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DDD",
+    "NRG",
+    "DCD"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "N": "nodeworks:node",
+    "R": "minecraft:redstone",
+    "G": "#c:glass_panes",
+    "C": "minecraft:copper_ingot"
+  },
+  "result": {
+    "id": "nodeworks:terminal",
+    "count": 1
+  }
 }

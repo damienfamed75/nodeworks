@@ -1,32 +1,20 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "ILC",
-        "BDL",
-        "MD "
-    ],
-    "key": {
-        "I": {
-            "item": "minecraft:iron_ingot"
-        },
-        "L": {
-            "item": "minecraft:lapis_lazuli"
-        },
-        "C": {
-            "item": "nodeworks:celestine_shard"
-        },
-        "B": {
-            "item": "minecraft:stone_button"
-        },
-        "D": {
-            "item": "minecraft:deepslate"
-        },
-        "M": {
-            "item": "minecraft:copper_ingot"
-        }
-    },
-    "result": {
-        "id": "nodeworks:network_wrench",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ILC",
+    "BDL",
+    "MD "
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "L": "minecraft:lapis_lazuli",
+    "C": "nodeworks:celestine_shard",
+    "B": "minecraft:stone_button",
+    "D": "minecraft:deepslate",
+    "M": "minecraft:copper_ingot"
+  },
+  "result": {
+    "id": "nodeworks:network_wrench",
+    "count": 1
+  }
 }
