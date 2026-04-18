@@ -427,7 +427,8 @@ class TerminalScreen(
                     editor.getCursorPosition(),
                     editorX,
                     editorY,
-                    editorScrollY = editor.scrollY
+                    editorScrollY = editor.scrollY,
+                    editorScrollX = editor.scrollX,
                 )
             }
         }
@@ -1204,7 +1205,8 @@ class TerminalScreen(
                     editorX,
                     editorY,
                     forced = true,
-                    editorScrollY = editor.scrollY
+                    editorScrollY = editor.scrollY,
+                    editorScrollX = editor.scrollX,
                 )
                 return true
             }
@@ -1340,7 +1342,8 @@ class TerminalScreen(
                     editor.getCursorPosition(),
                     editorX,
                     editorY,
-                    editorScrollY = editor.scrollY
+                    editorScrollY = editor.scrollY,
+                    editorScrollX = editor.scrollX,
                 )
             }
             // Always consume key events when editor is focused to prevent other mods from stealing them

@@ -60,7 +60,15 @@ class AutocompletePopup(
 
     // ========== Public API ==========
 
-    fun update(text: String, cursorPos: Int, editorX: Int, editorY: Int, forced: Boolean = false, editorScrollY: Int = 0) {
+    fun update(
+        text: String,
+        cursorPos: Int,
+        editorX: Int,
+        editorY: Int,
+        forced: Boolean = false,
+        editorScrollY: Int = 0,
+        editorScrollX: Int = 0,
+    ) {
         val cursor = minOf(cursorPos, text.length)
 
         if (cursor <= 0) { hide(); return }
@@ -86,7 +94,10 @@ class AutocompletePopup(
         val lineText = textBeforeCursor.substring(lastNewline + 1)
         val cursorXOffset = font.width(lineText)
 
-        popupX = editorX + 4 + cursorXOffset
+        // Subtract editorScrollX so the popup follows the cursor's on-screen X when the
+        // editor is scrolled horizontally. Without this the popup anchors to the
+        // cursor's *logical* column and appears to drift rightward as the user scrolls.
+        popupX = editorX + 4 + cursorXOffset - editorScrollX
         // Use the editor's variable-height line layout when available so the popup lands
         // just below the cursor's text row even when recipe-hint decorations push lines
         // down. Resolver path uses a 1-px gap (the resolver already returns content-Y
