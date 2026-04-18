@@ -273,10 +273,12 @@ object NodeConnectionRenderer {
                 lineBuffer.addVertex(pose, from.x.toFloat(), from.y.toFloat(), from.z.toFloat())
                     .setColor(lr, lg, lb, 200)
                     .setNormal(pose, nx, ny, nz)
+                    .setLineWidth(1.0f)
 
                 lineBuffer.addVertex(pose, to.x.toFloat(), to.y.toFloat(), to.z.toFloat())
                     .setColor(lr, lg, lb, 200)
                     .setNormal(pose, nx, ny, nz)
+                    .setLineWidth(1.0f)
             }
         }
 
@@ -559,13 +561,18 @@ object NodeConnectionRenderer {
         val ny = if (len > 0) dy / len else 0f
         val nz = if (len > 0) dz / len else 1f
 
+        // 26.1: RenderTypes.LINES vertex format includes a per-vertex LineWidth element.
+        //  Omitting setLineWidth() crashes BufferBuilder with "Missing elements in vertex:
+        //  LineWidth". Pattern copied from vanilla ShapeRenderer.renderLineBox.
         buffer.addVertex(pose, x0, y0, z0)
             .setColor(lr, lg, lb, 255)
             .setNormal(pose, nx, ny, nz)
+            .setLineWidth(1.0f)
 
         buffer.addVertex(pose, x1, y1, z1)
             .setColor(lr, lg, lb, 255)
             .setNormal(pose, nx, ny, nz)
+            .setLineWidth(1.0f)
     }
 
     private fun renderMonitorText(
