@@ -1350,7 +1350,7 @@ class DiagnosticScreen(
             val pillW = uniqueTypes.size * (iconSize + iconSpacing) - iconSpacing
             val pillH = iconSize
             val pillX = sx - pillW / 2
-            val pillY = sy + 7
+            val pillY = sy + 5
 
             // Pill background
             NineSlice.PILL.draw(graphics, pillX - 2, pillY, pillW + 4, pillH)
