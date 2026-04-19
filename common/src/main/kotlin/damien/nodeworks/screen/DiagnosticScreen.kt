@@ -1134,6 +1134,7 @@ class DiagnosticScreen(
             }
         }
 
+
         // Each face as its own section
         if (block.cards.isNotEmpty()) {
             val dirNames = arrayOf("Down", "Up", "North", "South", "East", "West")
@@ -1160,10 +1161,22 @@ class DiagnosticScreen(
             rows.add(InspectorRow(RowType.PROPERTY, errorDetail.removePrefix("__error:"), 0xFFFF8888.toInt()))
         }
         val visibleDetails = block.details.filter { !it.startsWith("__error:") }
-        if (visibleDetails.isNotEmpty()) {
+        // Variable live value — appended to Details (not a separate section) and read
+        // from the client-side BE every frame. buildInspectorRows runs per render tick
+        // and the client BE stays synced via standard chunk BE sync, so the value
+        // live-updates without any extra plumbing.
+        val liveVariableValue = if (block.type == "variable") {
+            val lvl = net.minecraft.client.Minecraft.getInstance().level
+            val be = lvl?.getBlockEntity(block.pos) as? damien.nodeworks.block.entity.VariableBlockEntity
+            be?.let { "Value: ${if (it.variableValue.isEmpty()) "(empty)" else it.variableValue}" }
+        } else null
+        if (visibleDetails.isNotEmpty() || liveVariableValue != null) {
             rows.add(InspectorRow(RowType.H2, "Details"))
             for (detail in visibleDetails) {
                 rows.add(InspectorRow(RowType.PROPERTY, detail, GRAY))
+            }
+            if (liveVariableValue != null) {
+                rows.add(InspectorRow(RowType.PROPERTY, liveVariableValue, GRAY))
             }
         }
 

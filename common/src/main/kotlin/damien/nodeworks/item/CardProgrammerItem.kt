@@ -19,6 +19,17 @@ import net.minecraft.world.level.Level
 
 class CardProgrammerItem(properties: Properties) : Item(properties) {
 
+    @Suppress("DEPRECATION")
+    override fun appendHoverText(
+        itemStack: ItemStack,
+        context: TooltipContext,
+        display: net.minecraft.world.item.component.TooltipDisplay,
+        builder: java.util.function.Consumer<Component>,
+        tooltipFlag: net.minecraft.world.item.TooltipFlag
+    ) {
+        builder.accept(Component.literal("Copies card settings").withStyle(net.minecraft.ChatFormatting.GRAY))
+    }
+
     override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
         if (level.isClientSide) return InteractionResult.SUCCESS
 

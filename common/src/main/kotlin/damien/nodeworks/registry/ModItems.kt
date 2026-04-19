@@ -8,7 +8,6 @@ import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.DiagnosticToolItem
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MilkySoulBallItem
-import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -77,12 +76,6 @@ object ModItems {
         "diagnostic_tool",
         ::DiagnosticToolItem,
         Item.Properties().stacksTo(1)
-    )
-
-    val MONITOR: Item = register(
-        "monitor",
-        ::MonitorItem,
-        Item.Properties().stacksTo(16)
     )
 
     val CARD_PROGRAMMER: Item = register(

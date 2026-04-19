@@ -1,5 +1,8 @@
 {
   "variants": {
-    "": { "model": "nodeworks:block/inventory_terminal" }
+    "facing=north": { "model": "nodeworks:block/inventory_terminal" },
+    "facing=south": { "model": "nodeworks:block/inventory_terminal", "y": 180 },
+    "facing=west":  { "model": "nodeworks:block/inventory_terminal", "y": 270 },
+    "facing=east":  { "model": "nodeworks:block/inventory_terminal", "y": 90 }
   }
 }

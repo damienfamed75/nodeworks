@@ -40,6 +40,15 @@ object ModBlocks {
         ::TerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops(),
+        itemFactory = { block, props -> damien.nodeworks.item.TerminalBlockItem(block, props) }
+    )
+
+    val MONITOR: Block = register(
+        "monitor",
+        { damien.nodeworks.block.MonitorBlock(it) },
+        BlockBehaviour.Properties.of()
+            .strength(2.0f, 4.0f)
             .requiresCorrectToolForDrops()
     )
 
@@ -241,7 +250,8 @@ object ModBlocks {
     private fun register(
         id: String,
         factory: (BlockBehaviour.Properties) -> Block,
-        properties: BlockBehaviour.Properties
+        properties: BlockBehaviour.Properties,
+        itemFactory: ((Block, Item.Properties) -> BlockItem)? = null
     ): Block {
         val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
         val blockKey = ResourceKey.create(Registries.BLOCK, identifier)
@@ -253,7 +263,8 @@ object ModBlocks {
         // `item.<ns>.<path>`. Vanilla BlockItem no longer overrides getDescriptionId (it did in
         // 1.21), so without useBlockDescriptionPrefix() our block items would look up
         // `item.nodeworks.<path>` instead of `block.nodeworks.<path>` and fail to resolve.
-        val item = BlockItem(block, Item.Properties().setId(itemKey).useBlockDescriptionPrefix())
+        val itemProps = Item.Properties().setId(itemKey).useBlockDescriptionPrefix()
+        val item = itemFactory?.invoke(block, itemProps) ?: BlockItem(block, itemProps)
         Registry.register(BuiltInRegistries.ITEM, identifier, item)
 
         return block

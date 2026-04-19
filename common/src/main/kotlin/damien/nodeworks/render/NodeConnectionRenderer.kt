@@ -354,7 +354,7 @@ object NodeConnectionRenderer {
         // Draw monitor count text (after all line drawing to avoid buffer conflicts)
         poseStack.pushPose()
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
-        renderMonitorText(poseStack, consumers, level)
+        renderMonitorText(poseStack, consumers, level, cameraPos)
         poseStack.popPose()
     }
 
@@ -630,58 +630,73 @@ object NodeConnectionRenderer {
     private fun renderMonitorText(
         poseStack: PoseStack,
         consumers: MultiBufferSource,
-        level: net.minecraft.world.level.Level
+        level: net.minecraft.world.level.Level,
+        cameraPos: net.minecraft.world.phys.Vec3
     ) {
         val mc = Minecraft.getInstance()
         val font = mc.font
         val bufferSource = mc.renderBuffers().bufferSource()
 
-        for (nodePos in knownNodes) {
-            if (!level.isLoaded(nodePos)) continue
-            val entity = level.getBlockEntity(nodePos) as? NodeBlockEntity ?: continue
+        // Same 64-block distance cull as the main connection-render loop so text
+        // work scales with nearby monitors, not total monitors on the network.
+        // Applied BEFORE getBlockEntity / font lookups — the squared-distance check
+        // is the cheapest possible gate.
+        val maxDistSq = 64.0 * 64.0
 
-            for (face in entity.getMonitorFaces()) {
-                val monitor = entity.getMonitor(face) ?: continue
-                val itemId = monitor.trackedItemId ?: continue
+        // Iterate every tracked Connectable (MonitorBlockEntity registers via
+        // trackConnectable in setLevel; `knownNodes` is the full live set despite the
+        // historical name). Non-monitor positions fall through the `as?` cast and
+        // are skipped cheaply.
+        for (pos in knownNodes) {
+            val dx = pos.x + 0.5 - cameraPos.x
+            val dy = pos.y + 0.5 - cameraPos.y
+            val dz = pos.z + 0.5 - cameraPos.z
+            if (dx * dx + dy * dy + dz * dz > maxDistSq) continue
 
-                val countText = formatMonitorCount(monitor.displayCount)
-                val textWidth = font.width(countText)
+            if (!level.isLoaded(pos)) continue
+            val be = level.getBlockEntity(pos) as? damien.nodeworks.block.entity.MonitorBlockEntity ?: continue
+            if (be.trackedItemId == null) continue
 
-                poseStack.pushPose()
+            val facing = be.blockState.getValue(damien.nodeworks.block.MonitorBlock.FACING)
+            val countText = formatMonitorCount(be.displayCount)
+            val textWidth = font.width(countText)
 
-                poseStack.translate(
-                    nodePos.x.toDouble() + 0.5,
-                    nodePos.y.toDouble() + 0.5,
-                    nodePos.z.toDouble() + 0.5
-                )
+            poseStack.pushPose()
+            poseStack.translate(
+                pos.x.toDouble() + 0.5,
+                pos.y.toDouble() + 0.5,
+                pos.z.toDouble() + 0.5
+            )
 
-                when (face) {
-                    Direction.SOUTH -> {}
-                    Direction.NORTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat()))
-                    Direction.EAST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI / 2).toFloat()))
-                    Direction.WEST -> poseStack.mulPose(Quaternionf().rotateY((-Math.PI / 2).toFloat()))
-                    Direction.DOWN -> poseStack.mulPose(Quaternionf().rotateX((-Math.PI / 2).toFloat()))
-                    Direction.UP -> poseStack.mulPose(Quaternionf().rotateX((Math.PI / 2).toFloat()))
-                }
-
-                poseStack.translate(0.0, -0.18, 0.502)
-                poseStack.scale(0.01f, -0.01f, 0.01f)
-
-                font.drawInBatch(
-                    countText,
-                    (-textWidth / 2).toFloat(),
-                    0f,
-                    0xFFFFFFFF.toInt(),
-                    true,
-                    poseStack.last().pose(),
-                    bufferSource,
-                    Font.DisplayMode.POLYGON_OFFSET,
-                    0,
-                    15728880
-                )
-
-                poseStack.popPose()
+            // Rotate so -Z points out the front face of the block (matches the
+            // MonitorRenderer's icon orientation).
+            when (facing) {
+                Direction.SOUTH -> {}
+                Direction.NORTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat()))
+                Direction.EAST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI / 2).toFloat()))
+                Direction.WEST -> poseStack.mulPose(Quaternionf().rotateY((-Math.PI / 2).toFloat()))
+                else -> {}
             }
+
+            // Anchor text just below the centered item icon, on the face of the block
+            // (Z = 0.5 + ~1/32 so it sits flush with the emissive layer).
+            poseStack.translate(0.0, -0.22, 0.502)
+            poseStack.scale(0.01f, -0.01f, 0.01f)
+
+            font.drawInBatch(
+                countText,
+                (-textWidth / 2).toFloat(),
+                0f,
+                0xFFFFFFFF.toInt(),
+                true,
+                poseStack.last().pose(),
+                bufferSource,
+                Font.DisplayMode.POLYGON_OFFSET,
+                0,
+                15728880
+            )
+
+            poseStack.popPose()
         }
 
         bufferSource.endBatch()

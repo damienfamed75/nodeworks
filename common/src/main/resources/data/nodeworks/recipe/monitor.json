@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DDD",
+    "NFG",
+    "DDD"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "N": "nodeworks:node",
+    "F": "minecraft:glow_item_frame",
+    "G": "#c:glass_panes"
+  },
+  "result": {
+    "id": "nodeworks:monitor",
+    "count": 1
+  }
+}
