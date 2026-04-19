@@ -1,106 +1,40 @@
 {
-  "parent": "minecraft:block/block",
-  "render_type": "cutout",
-  "textures": {
-    "side": "nodeworks:block/network_controller",
-    "top": "nodeworks:block/network_controller_top",
-    "bottom": "nodeworks:block/network_controller_bottom",
-    "emissive_side": "nodeworks:block/network_controller_emissive",
-    "emissive_top": "nodeworks:block/network_controller_top_emissive",
-    "particle": "nodeworks:block/network_controller"
-  },
-  "elements": [
-    {
-      "comment": "Base block",
-      "from": [0, 0, 0],
-      "to": [16, 16, 16],
-      "faces": {
-        "north": {
-          "texture": "#side",
-          "cullface": "north"
-        },
-        "south": {
-          "texture": "#side",
-          "cullface": "south"
-        },
-        "east": {
-          "texture": "#side",
-          "cullface": "east"
-        },
-        "west": {
-          "texture": "#side",
-          "cullface": "west"
-        },
-        "up": {
-          "texture": "#top",
-          "cullface": "up"
-        },
-        "down": {
-          "texture": "#bottom",
-          "cullface": "down"
-        }
-      }
-    },
-    {
-      "comment": "Emissive side overlay — fullbright",
-      "from": [-0.01, -0.01, -0.01],
-      "to": [16.01, 16.01, 16.01],
-      "shade": false,
-      "faces": {
-        "north": {
-          "texture": "#emissive_side",
-          "cullface": "north",
-          "tintindex": 0,
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        },
-        "south": {
-          "texture": "#emissive_side",
-          "cullface": "south",
-          "tintindex": 0,
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        },
-        "east": {
-          "texture": "#emissive_side",
-          "cullface": "east",
-          "tintindex": 0,
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        },
-        "west": {
-          "texture": "#emissive_side",
-          "cullface": "west",
-          "tintindex": 0,
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        }
-      }
-    },
-    {
-      "comment": "Emissive top overlay — fullbright",
-      "from": [-0.01, -0.01, -0.01],
-      "to": [16.01, 16.01, 16.01],
-      "shade": false,
-      "faces": {
-        "up": {
-          "texture": "#emissive_top",
-          "cullface": "up",
-          "tintindex": 0,
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        }
-      }
-    }
-  ]
+	"format_version": "1.21.11",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"texture_size": [64, 64],
+	"textures": {
+		"0": "nodeworks:block/network_controller_unwrapped",
+		"particle": "nodeworks:block/network_controller_unwrapped"
+	},
+	"elements": [
+		{
+			"name": "cage",
+			"from": [0, 0, 0],
+			"to": [16, 16, 16],
+			"faces": {
+				"north": {"uv": [0, 8, 4, 12], "texture": "#0"},
+				"east": {"uv": [0, 8, 4, 12], "texture": "#0"},
+				"south": {"uv": [0, 8, 4, 12], "texture": "#0"},
+				"west": {"uv": [0, 8, 4, 12], "texture": "#0"},
+				"up": {"uv": [0, 12, 4, 16], "texture": "#0"},
+				"down": {"uv": [0, 12, 4, 16], "texture": "#0"}
+			}
+		},
+		{
+			"name": "inner_cube",
+			"from": [4.5, 4.5, 4.5],
+			"to": [11.5, 11.5, 11.5],
+			"rotation": {"angle": 0, "axis": "y", "origin": [0, -1, -1]},
+			"shade": false,
+			"faces": {
+				"north": {"uv": [0, 6.25, 1.75, 8], "texture": "#0", "tintindex": 0, "neoforge_data": {"light_emission": 15}},
+				"east":  {"uv": [0, 6.25, 1.75, 8], "texture": "#0", "tintindex": 0, "neoforge_data": {"light_emission": 15}},
+				"south": {"uv": [0, 6.25, 1.75, 8], "texture": "#0", "tintindex": 0, "neoforge_data": {"light_emission": 15}},
+				"west":  {"uv": [0, 6.25, 1.75, 8], "texture": "#0", "tintindex": 0, "neoforge_data": {"light_emission": 15}},
+				"up":    {"uv": [0, 6.25, 1.75, 8], "texture": "#0", "tintindex": 0, "neoforge_data": {"light_emission": 15}},
+				"down":  {"uv": [0, 6.25, 1.75, 8], "texture": "#0", "tintindex": 0, "neoforge_data": {"light_emission": 15}}
+			}
+		}
+	]
 }
