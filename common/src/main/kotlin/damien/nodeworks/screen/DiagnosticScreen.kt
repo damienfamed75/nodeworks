@@ -1101,7 +1101,7 @@ class DiagnosticScreen(
     private val lineH get() = font.lineHeight + 1
 
     /** Inspector row types for the floating inspector panel. */
-    private enum class RowType { H2, PROPERTY }
+    private enum class RowType { H2, PROPERTY, HANDLER }
     private data class InspectorRow(
         val type: RowType,
         val text: String,
@@ -1119,6 +1119,20 @@ class DiagnosticScreen(
         rows.add(InspectorRow(RowType.H2, "Info"))
         rows.add(InspectorRow(RowType.PROPERTY, "Position: ${block.pos.x}, ${block.pos.y}, ${block.pos.z}", GRAY))
         rows.add(InspectorRow(RowType.PROPERTY, "Connections: ${block.connections.size}", GRAY))
+
+        // Handlers — Terminal only. Each handler gets its own HANDLER row that the
+        // render loop draws via RecipeHintRenderer (icon strip, same style as the
+        // Scripting Terminal's inline recipe hints and the Jobs tab).
+        if (block.type == "terminal") {
+            val term = menu.topology.terminalInfos.firstOrNull { it.pos == block.pos }
+            val handlers = term?.handlers.orEmpty()
+            if (handlers.isNotEmpty()) {
+                rows.add(InspectorRow(RowType.H2, "Handlers"))
+                for (id in handlers) {
+                    rows.add(InspectorRow(RowType.HANDLER, id))
+                }
+            }
+        }
 
         // Each face as its own section
         if (block.cards.isNotEmpty()) {
@@ -1164,6 +1178,7 @@ class DiagnosticScreen(
             bodyH += when (row.type) {
                 RowType.H2 -> lineH + 3
                 RowType.PROPERTY -> lineH
+                RowType.HANDLER -> damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT + 1
             }
         }
         bodyH += 4
@@ -1315,6 +1330,20 @@ class DiagnosticScreen(
                     }
 
                     curY += lineH
+                    rowIndex++
+                }
+
+                RowType.HANDLER -> {
+                    // Recipe icon strip for this Terminal handler. Inset matches PROPERTY
+                    // rows so the row aligns under the "Handlers" H2; width fills the body
+                    // minus the scrollbar gutter (6px track + 2px pad on each side).
+                    val stripX = px + 6
+                    val stripW = pw - 12
+                    damien.nodeworks.screen.widget.RecipeHintRenderer.render(
+                        graphics, font, row.text, stripX, curY,
+                        stripW, damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT
+                    )
+                    curY += damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT + 1
                     rowIndex++
                 }
             }
