@@ -205,6 +205,109 @@ class TerminalScreen(
         }
     }
 
+    /**
+     * VSCode-style block indent / unindent of the currently-selected lines.
+     *
+     * @param shift  true = unindent (Shift+Tab), false = indent (Tab).
+     * @param allLinesEvenIfNoMultiSel  when true, also operates on the cursor's line
+     *   even if there's no multi-line selection — used so Shift+Tab with no selection
+     *   still unindents the current line.
+     *
+     * Indent inserts 4 spaces at the start of every covered line; unindent strips up
+     * to 4 leading spaces (or one leading tab) from each. Selection is preserved to
+     * cover the same logical lines after the transformation.
+     */
+    private fun indentSelection(shift: Boolean, allLinesEvenIfNoMultiSel: Boolean) {
+        val text = editor.value
+        val hadSelection = editor.hasSelection
+        val origSelStart = editor.selectionStart
+        val origSelEnd = editor.selectionEnd
+        val cursor = editor.getCursorPosition()
+
+        val origLines = text.split('\n')
+        val lines = origLines.toMutableList()
+
+        val startLine: Int
+        val endLine: Int
+        if (hadSelection) {
+            startLine = text.substring(0, origSelStart).count { it == '\n' }
+            // A selection that ends exactly at a line start (just after '\n') doesn't
+            // actually cover that trailing line — pull the endLine back by one so we
+            // don't indent a line the user didn't select. Matches VSCode.
+            val endLineRaw = text.substring(0, origSelEnd).count { it == '\n' }
+            endLine = if (origSelEnd > origSelStart && origSelEnd > 0 && text[origSelEnd - 1] == '\n')
+                (endLineRaw - 1).coerceAtLeast(startLine) else endLineRaw
+        } else {
+            if (!allLinesEvenIfNoMultiSel) return
+            val line = text.substring(0, cursor).count { it == '\n' }
+            startLine = line
+            endLine = line
+        }
+
+        val indent = "    "
+        // Per-line delta tracked so remapPos() can translate each position with
+        // per-column precision instead of bulk-subtracting from absolute offsets.
+        val lineDelta = IntArray(lines.size)
+
+        for (i in startLine..minOf(endLine, lines.lastIndex)) {
+            val line = lines[i]
+            if (shift) {
+                // Strip up to 4 leading spaces; a leading tab also counts as one unindent.
+                val stripped = when {
+                    line.startsWith(indent) -> line.removePrefix(indent)
+                    line.startsWith("\t") -> line.removePrefix("\t")
+                    else -> {
+                        var n = 0
+                        while (n < line.length && n < 4 && line[n] == ' ') n++
+                        if (n == 0) line else line.substring(n)
+                    }
+                }
+                lineDelta[i] = -(line.length - stripped.length)
+                lines[i] = stripped
+            } else {
+                lineDelta[i] = indent.length
+                lines[i] = indent + line
+            }
+        }
+
+        val newText = lines.joinToString("\n")
+
+        fun origLineStart(idx: Int): Int {
+            var p = 0; for (i in 0 until idx) p += origLines[i].length + 1; return p
+        }
+        fun newLineStart(idx: Int): Int {
+            var p = 0; for (i in 0 until idx) p += lines[i].length + 1; return p
+        }
+        // Translate an original-text position to a new-text position with column
+        // awareness: on an unindented line, a cursor/sel-end inside the removed
+        // whitespace clamps to col 0 rather than rolling back into the previous line.
+        fun remapPos(pos: Int): Int {
+            val lineIdx = text.substring(0, pos).count { it == '\n' }
+            val origCol = pos - origLineStart(lineIdx)
+            val newCol = if (lineIdx in startLine..endLine) {
+                val d = lineDelta[lineIdx]
+                if (d >= 0) origCol + d
+                else {
+                    val removed = -d
+                    if (origCol <= removed) 0 else origCol - removed
+                }
+            } else origCol
+            return newLineStart(lineIdx) + newCol.coerceAtLeast(0)
+        }
+
+        if (hadSelection) {
+            val newSelStart = remapPos(origSelStart).coerceIn(0, newText.length)
+            val newSelEnd = remapPos(origSelEnd).coerceIn(0, newText.length)
+            val cursorAtStart = cursor == origSelStart
+            editor.setValueKeepScroll(newText, if (cursorAtStart) newSelStart else newSelEnd)
+            if (cursorAtStart) editor.setSelection(newSelEnd, newSelStart)
+            else editor.setSelection(newSelStart, newSelEnd)
+        } else {
+            val newCursor = remapPos(cursor).coerceIn(0, newText.length)
+            editor.setValueKeepScroll(newText, newCursor)
+        }
+    }
+
     data class ErrorLocation(val scriptName: String?, val line: Int)
 
     /** Find the error script name and line number from a click position in the log panel. */
@@ -1273,9 +1376,29 @@ class TerminalScreen(
                 }
             }
 
-            // Tab inserts 2 spaces (when autocomplete not visible) — ScriptEditor handles Tab internally,
-            // but we override here to keep consistent behavior with the old 4-space tab
+            // Tab / Shift+Tab — VSCode-style block indent when the selection spans
+            // multiple lines; otherwise fall back to inserting 4 spaces at the cursor.
             if (keyCode == InputConstants.KEY_TAB && !autocomplete.visible) {
+                val shift = (modifiers and 1) != 0
+                val text = editor.value
+                val selStart = editor.selectionStart
+                val selEnd = editor.selectionEnd
+                val multiLineSelection = editor.hasSelection &&
+                        text.substring(selStart, selEnd).contains('\n')
+
+                if (shift) {
+                    // Shift+Tab: always unindent. With no selection (or single-line sel),
+                    // unindent just the cursor's line; with multi-line selection, unindent
+                    // every covered line.
+                    indentSelection(shift = true, allLinesEvenIfNoMultiSel = true)
+                    return true
+                }
+                if (multiLineSelection) {
+                    indentSelection(shift = false, allLinesEvenIfNoMultiSel = true)
+                    return true
+                }
+                // Default: insert 4 spaces at cursor (replaces selection if any — same
+                // as VSCode on single-line selections).
                 val spaceEvent = CharacterEvent(' '.code)
                 for (i in 0..3) {
                     editor.charTyped(spaceEvent)
