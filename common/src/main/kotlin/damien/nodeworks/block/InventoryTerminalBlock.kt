@@ -9,22 +9,41 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.InventoryTerminalOpenData
 import damien.nodeworks.screen.InventoryTerminalMenu
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.BaseEntityBlock
+import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
 class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     companion object {
         val CODEC: MapCodec<InventoryTerminalBlock> = simpleCodec(::InventoryTerminalBlock)
+        val FACING = BlockStateProperties.HORIZONTAL_FACING
+    }
+
+    init {
+        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH))
+    }
+
+    override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
+        builder.add(FACING)
+    }
+
+    override fun getStateForPlacement(context: BlockPlaceContext): BlockState {
+        // Front face points at the player, matching Terminal / Monitor convention.
+        return defaultBlockState().setValue(FACING, context.horizontalDirection.opposite)
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC

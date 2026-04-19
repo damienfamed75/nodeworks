@@ -21,6 +21,19 @@ import java.util.concurrent.ConcurrentHashMap
 
 class NetworkWrenchItem(properties: Properties) : Item(properties) {
 
+    @Suppress("DEPRECATION") // Item.appendHoverText — the non-deprecated path is data components, overkill for a static line.
+    override fun appendHoverText(
+        itemStack: net.minecraft.world.item.ItemStack,
+        context: TooltipContext,
+        display: net.minecraft.world.item.component.TooltipDisplay,
+        builder: java.util.function.Consumer<Component>,
+        tooltipFlag: net.minecraft.world.item.TooltipFlag
+    ) {
+        builder.accept(Component.literal("Connects Nodes").withStyle(net.minecraft.ChatFormatting.GRAY))
+        builder.accept(Component.literal("Shift + right-click: select node").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
+        builder.accept(Component.literal("Right-click: connect to selected").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
+    }
+
     private data class Selection(val pos: BlockPos, val dimension: ResourceKey<Level>)
 
     companion object {
@@ -42,7 +55,7 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
 
         // Must click a connectable block (node, instruction crafter, or network controller)
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ProcessingStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock && block !is damien.nodeworks.block.InventoryTerminalBlock) return InteractionResult.PASS
+        if (block !is NodeBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ProcessingStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock && block !is damien.nodeworks.block.InventoryTerminalBlock && block !is damien.nodeworks.block.MonitorBlock) return InteractionResult.PASS
 
         val isNode = block is NodeBlock
 

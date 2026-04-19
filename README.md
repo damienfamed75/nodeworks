@@ -2,8 +2,6 @@
 
 A Minecraft mod inspired by Integrated Dynamics, Applied Energistics, and LaserIO. Players build networks of small connection-based nodes and program them from a central terminal using Lua scripts.
 
-See [CLAUDE.md](CLAUDE.md) for architecture and multi-loader contribution rules.
-
 ## Backlog
 
 Known limitations and deferred improvements, captured as TODOs so they don't get lost:

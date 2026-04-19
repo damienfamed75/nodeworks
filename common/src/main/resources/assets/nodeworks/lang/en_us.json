@@ -30,7 +30,7 @@
   "block.nodeworks.instruction_crafter": "Instruction Crafter",
   "block.nodeworks.instruction_storage": "Instruction Storage",
   "container.nodeworks.instruction_storage": "Instruction Storage",
-  "item.nodeworks.monitor": "Monitor",
+  "block.nodeworks.monitor": "Monitor",
   "block.nodeworks.inventory_terminal": "Inventory Terminal",
   "container.nodeworks.inventory_terminal": "Inventory Terminal",
   "block.nodeworks.network_controller": "Network Controller",

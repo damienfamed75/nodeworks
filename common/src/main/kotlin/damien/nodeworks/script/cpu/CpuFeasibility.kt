@@ -32,6 +32,7 @@ object CpuFeasibility {
         val uniqueTypes = mutableSetOf<String>()
         var peakSingleType = 0L
         val missing = mutableListOf<CraftTreeBuilder.CraftTreeNode>()
+        val noHandler = mutableListOf<CraftTreeBuilder.CraftTreeNode>()
 
         // Iterative BFS so deep trees don't blow the stack
         val stack = ArrayDeque<CraftTreeBuilder.CraftTreeNode>()
@@ -40,6 +41,7 @@ object CpuFeasibility {
             val node = stack.removeLast()
             when (node.source) {
                 "missing" -> missing.add(node)
+                "process_no_handler" -> noHandler.add(node)
                 else -> {
                     uniqueTypes.add(node.itemId)
                     val nodeCount = node.count.toLong()
@@ -57,6 +59,20 @@ object CpuFeasibility {
             return Result(
                 ok = false,
                 reason = "Missing ingredients: $summary$extra. No recipe available and not enough in storage.",
+                peakSingleTypeCount = peakSingleType,
+                uniqueTypes = uniqueTypes.size
+            )
+        }
+
+        // Processing recipes exist but no Terminal on the network has a
+        // `network:handle("recipe_id", ...)` registered for them. User-facing: tell them
+        // which recipe needs a handler and where to go to add one.
+        if (noHandler.isNotEmpty()) {
+            val summary = noHandler.take(3).joinToString(", ") { it.itemName }
+            val extra = if (noHandler.size > 3) " (+${noHandler.size - 3} more)" else ""
+            return Result(
+                ok = false,
+                reason = "No handler registered for: $summary$extra. Add a `network:handle(\"recipe\", ...)` call in a connected Terminal's script.",
                 peakSingleTypeCount = peakSingleType,
                 uniqueTypes = uniqueTypes.size
             )
