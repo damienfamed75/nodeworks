@@ -19,9 +19,11 @@ class MilkySoulBallItem(properties: Properties) : Item(properties) {
     override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
         val stack = player.getItemInHand(hand)
 
+        // Thematic ghast-hurt cry on throw. Pitch jitter keeps repeated throws from
+        // sounding mechanical.
         level.playSound(null, player.x, player.y, player.z,
-            SoundEvents.SNOWBALL_THROW, SoundSource.NEUTRAL, 0.5f,
-            0.4f / (level.getRandom().nextFloat() * 0.4f + 0.8f))
+            SoundEvents.GHAST_HURT, SoundSource.NEUTRAL, 0.6f,
+            0.9f + level.getRandom().nextFloat() * 0.2f)
 
         if (!level.isClientSide) {
             val projectile = MilkySoulBallEntity(level, player)
