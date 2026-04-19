@@ -3,6 +3,7 @@ package damien.nodeworks.render
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.network.NetworkSettingsRegistry
+import net.minecraft.client.renderer.OrderedSubmitNodeCollector
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
@@ -138,21 +139,15 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         val innerAlpha = (130 * alphaPulse).toInt().coerceIn(0, 255)
         submitCube(submitNodeCollector, poseStack, crystalType, 0.22f * 0.875f, r, g, b, innerAlpha)
 
-        // White inner halo — semi-transparent white shell sized where the old opaque
-        // core used to sit. Gives the crystal a visible "hot" white layer that peeks
-        // through the coloured shells before the final bright opaque core. Shares the
-        // rotation block so its diagonal corners stay inside the coloured inner shell
-        // at every rotation angle.
-        submitCube(submitNodeCollector, poseStack, crystalType, 0.22f * 0.5f, 255, 255, 255, 140)
-
-        // Pure-white core — alpha 255 + full-white vertex colour. Uses the dedicated
-        // CrystalCoreRenderType.CORE render type which is EYES-equivalent (same
-        // EMISSIVE, NO_CARDINAL_LIGHTING defines) but with depth write ENABLED so the
-        // core occupies the depth buffer. Without that, node-to-node laser beams would
-        // render through the core since both use depth-write-off pipelines. Scale 0.28
-        // (half-width ≈ 0.062) so the core fits comfortably inside the new white halo
-        // at every rotation angle — diagonal ≈ 0.107, well under the halo's 0.11 edge.
-        submitCube(submitNodeCollector, poseStack, CrystalCoreRenderType.CORE, 0.22f * 0.28f, 255, 255, 255, 255)
+        // White inner halo + opaque core — submitted at order(1), which the vanilla
+        // SubmitNodeStorage processes in numeric order (Int2ObjectAVLTreeMap). Every
+        // other BER in the game (shells above, emissive blocks on other CPUs, vanilla
+        // stuff) submits at order 0. Bucketing halo + core into 1 guarantees they render
+        // strictly after every order-0 batch, so the translucent coloured shells can
+        // never blend over them regardless of how RenderType batching chose to interleave.
+        val lateOrder = submitNodeCollector.order(1)
+        submitCube(lateOrder, poseStack, crystalType, 0.22f * 0.5f, 255, 255, 255, 140)
+        submitCube(lateOrder, poseStack, CrystalCoreRenderType.CORE, 0.22f * 0.28f, 255, 255, 255, 255)
 
         poseStack.popPose()
 
@@ -173,7 +168,7 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
     /** Emit a cube centred at origin, half-width [hw], with the given tint, emissive &
      *  no-overlay. Six faces, standard quad winding. */
     private fun submitCube(
-        submitNodeCollector: SubmitNodeCollector,
+        submitNodeCollector: OrderedSubmitNodeCollector,
         poseStack: PoseStack,
         renderType: RenderType,
         hw: Float,

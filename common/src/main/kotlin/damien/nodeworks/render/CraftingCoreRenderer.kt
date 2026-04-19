@@ -1,7 +1,8 @@
 package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
-import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
+import damien.nodeworks.block.CraftingCoreBlock
+import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
@@ -13,50 +14,44 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 
 /**
- * Emissive overlay for the Receiver Antenna — glowing side faces (N/S/E/W, top/bottom
- * unlit), tinted with the current network colour.
+ * Emissive overlay for the Crafting Core — all 6 faces, un-tinted white. Only renders
+ * when `FORMED=true`. See [EmissiveCubeRenderer] for the shared pipeline.
  */
-class ReceiverAntennaRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<ReceiverAntennaBlockEntity, ReceiverAntennaRenderer.AntennaState> {
+class CraftingCoreRenderer(context: BlockEntityRendererProvider.Context) :
+    BlockEntityRenderer<CraftingCoreBlockEntity, CraftingCoreRenderer.CoreState> {
 
-    class AntennaState : BlockEntityRenderState() {
-        var color: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+    class CoreState : BlockEntityRenderState() {
+        var formed: Boolean = false
     }
 
     companion object {
-        private val TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/receiver_antenna_side_emissive.png")
+        private val TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/crafting_core_emissive.png")
         private val RENDER_TYPE: RenderType = EmissiveCubeRenderer.renderType(TEXTURE)
     }
 
-    override fun createRenderState(): AntennaState = AntennaState()
+    override fun createRenderState(): CoreState = CoreState()
 
     override fun extractRenderState(
-        blockEntity: ReceiverAntennaBlockEntity,
-        state: AntennaState,
+        blockEntity: CraftingCoreBlockEntity,
+        state: CoreState,
         partialTicks: Float,
         cameraPosition: Vec3,
         breakProgress: ModelFeatureRenderer.CrumblingOverlay?
     ) {
         BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
-        state.color = if (!NodeConnectionRenderer.isReachable(blockEntity.blockPos)) {
-            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        } else {
-            NodeConnectionRenderer.findNetworkColor(blockEntity.level, blockEntity.blockPos)
-        }
+        state.formed = blockEntity.blockState.getValue(CraftingCoreBlock.FORMED)
     }
 
     override fun submit(
-        state: AntennaState,
+        state: CoreState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState
     ) {
-        val r = (state.color shr 16) and 0xFF
-        val g = (state.color shr 8) and 0xFF
-        val b = state.color and 0xFF
+        if (!state.formed) return
         EmissiveCubeRenderer.submit(
             submitNodeCollector, poseStack, RENDER_TYPE,
-            EmissiveCubeRenderer.HORIZONTAL_SIDES, r, g, b, 255
+            EmissiveCubeRenderer.ALL_FACES, 255, 255, 255, 255
         )
     }
 }

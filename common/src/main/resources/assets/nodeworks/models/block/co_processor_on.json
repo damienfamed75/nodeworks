@@ -1,97 +1,21 @@
 {
   "parent": "minecraft:block/block",
-  "render_type": "cutout",
   "textures": {
     "all": "nodeworks:block/co_processor",
-    "emissive": "nodeworks:block/co_processor_emissive",
     "particle": "nodeworks:block/co_processor"
   },
   "elements": [
     {
-      "comment": "Base block",
+      "comment": "Base block. Emissive glow layer is rendered by CoProcessorRenderer (BER) via the EYES pipeline.",
       "from": [0, 0, 0],
       "to": [16, 16, 16],
       "faces": {
-        "north": {
-          "texture": "#all",
-          "cullface": "north"
-        },
-        "south": {
-          "texture": "#all",
-          "cullface": "south"
-        },
-        "east": {
-          "texture": "#all",
-          "cullface": "east"
-        },
-        "west": {
-          "texture": "#all",
-          "cullface": "west"
-        },
-        "up": {
-          "texture": "#all",
-          "cullface": "up"
-        },
-        "down": {
-          "texture": "#all",
-          "cullface": "down"
-        }
-      }
-    },
-    {
-      "comment": "Emissive overlay — fullbright, all sides",
-      "from": [-0.01, -0.01, -0.01],
-      "to": [16.01, 16.01, 16.01],
-      "shade": false,
-      "faces": {
-        "north": {
-          "texture": "#emissive",
-          "cullface": "north",
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        },
-        "south": {
-          "texture": "#emissive",
-          "cullface": "south",
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        },
-        "east": {
-          "texture": "#emissive",
-          "cullface": "east",
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        },
-        "west": {
-          "texture": "#emissive",
-          "cullface": "west",
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        },
-        "up": {
-          "texture": "#emissive",
-          "cullface": "up",
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        },
-        "down": {
-          "texture": "#emissive",
-          "cullface": "down",
-          "neoforge_data": {
-            "light_emission": 15
-          },
-          "uv": [0, 0, 16, 16]
-        }
+        "north": { "texture": "#all", "cullface": "north" },
+        "south": { "texture": "#all", "cullface": "south" },
+        "east":  { "texture": "#all", "cullface": "east"  },
+        "west":  { "texture": "#all", "cullface": "west"  },
+        "up":    { "texture": "#all", "cullface": "up"    },
+        "down":  { "texture": "#all", "cullface": "down"  }
       }
     }
   ]

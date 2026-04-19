@@ -6,6 +6,9 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.registry.ModBlockEntities
 import damien.nodeworks.render.ControllerRenderer
+import damien.nodeworks.render.CoProcessorRenderer
+import damien.nodeworks.render.CraftingCoreRenderer
+import damien.nodeworks.render.CraftingStorageRenderer
 import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
@@ -41,7 +44,6 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterMenuScreens)
         modBus.addListener(::onRegisterConditionalItemModelProperties)
         modBus.addListener(::onRegisterSelectItemModelProperties)
-        modBus.addListener(::onRegisterBlockTintSources)
         modBus.addListener(::onRegisterRenderPipelines)
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
@@ -93,6 +95,9 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.RECEIVER_ANTENNA, ::ReceiverAntennaRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_CORE, ::CraftingCoreRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_STORAGE, ::CraftingStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.CO_PROCESSOR, ::CoProcessorRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
@@ -176,25 +181,6 @@ object NeoForgeClientSetup {
         event.registerPipeline(damien.nodeworks.render.CrystalCoreRenderType.CORE_PIPELINE)
     }
 
-    private fun onRegisterBlockTintSources(
-        event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.BlockTintSources
-    ) {
-        // 26.1: the old `BlockColor` callback + `event.register(provider, Block...)` form was
-        //  dropped. Tint is now resolved by a list of BlockTintSources per block, keyed by
-        //  the `tintindex` on the face. Our emissive overlays use tintindex:0 so we register
-        //  a single-source list with NetworkColorTintSource at index 0 for every block that
-        //  wants its emissive layer tinted by the network colour.
-        val source = listOf(damien.nodeworks.client.color.NetworkColorTintSource())
-        event.register(
-            source,
-            damien.nodeworks.registry.ModBlocks.NETWORK_CONTROLLER,
-            damien.nodeworks.registry.ModBlocks.VARIABLE,
-            damien.nodeworks.registry.ModBlocks.TERMINAL,
-            damien.nodeworks.registry.ModBlocks.PROCESSING_STORAGE,
-            damien.nodeworks.registry.ModBlocks.INSTRUCTION_STORAGE,
-            damien.nodeworks.registry.ModBlocks.RECEIVER_ANTENNA
-        )
-    }
 }
 
 class NeoForgeClientNetworkingService : ClientNetworkingService {

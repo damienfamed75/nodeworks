@@ -28,12 +28,19 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
         val filled: BooleanArray = BooleanArray(ProcessingStorageBlockEntity.TOTAL_SLOTS)
         var facing: Direction? = null
         var anyFilled: Boolean = false
+        var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
     }
 
     companion object {
         private val CARD_TEXTURE = Identifier.fromNamespaceAndPath(
             "nodeworks", "textures/block/processing_storage_card.png"
         )
+
+        private val EMISSIVE_TEXTURE = Identifier.fromNamespaceAndPath(
+            "nodeworks", "textures/block/processing_storage_front_emissive.png"
+        )
+
+        private val EMISSIVE_RENDER_TYPE = EmissiveCubeRenderer.renderType(EMISSIVE_TEXTURE)
 
         private const val CARD_W = 4
         private const val CARD_H = 2
@@ -71,6 +78,12 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
             if (filled) any = true
         }
         state.anyFilled = any
+
+        state.networkColor = if (!NodeConnectionRenderer.isReachable(blockEntity.blockPos)) {
+            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        } else {
+            NodeConnectionRenderer.findNetworkColor(blockEntity.level, blockEntity.blockPos)
+        }
     }
 
     override fun submit(
@@ -80,6 +93,18 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
         camera: CameraRenderState
     ) {
         val facing = state.facing ?: return
+
+        // Emissive front-face glow (network-tinted). Submitted in block-local space,
+        // no translate/rotate — [EmissiveCubeRenderer.faceOf] selects the correct
+        // face directly from the block's facing direction.
+        val r = (state.networkColor shr 16) and 0xFF
+        val g = (state.networkColor shr 8) and 0xFF
+        val b = state.networkColor and 0xFF
+        EmissiveCubeRenderer.submit(
+            submitNodeCollector, poseStack, EMISSIVE_RENDER_TYPE,
+            EmissiveCubeRenderer.faceOf(facing), r, g, b, 255
+        )
+
         if (!state.anyFilled) return
 
         poseStack.pushPose()
