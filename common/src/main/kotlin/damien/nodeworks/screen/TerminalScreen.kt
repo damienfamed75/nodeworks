@@ -58,6 +58,14 @@ class TerminalScreen(
 
     /** Exposed for platform-specific input suppression (e.g., blocking JEI keybinds). */
     fun isEditorFocused(): Boolean = ::editor.isInitialized && editor.isFocused
+
+    /** True if either Ctrl key is currently physically held. CharacterEvent doesn't
+     *  carry modifier bits in 26.1, so we consult [net.minecraft.client.Minecraft.hasControlDown]
+     *  (which queries GLFW for the L/R control key state) to suppress the space char
+     *  glfw still emits for Ctrl+Space. */
+    private fun isControlHeld(): Boolean =
+        net.minecraft.client.Minecraft.getInstance().hasControlDown()
+
     private lateinit var autocomplete: AutocompletePopup
 
     // All scanned client-side from block entities in the loaded world
@@ -1365,7 +1373,6 @@ class TerminalScreen(
 
     override fun charTyped(event: CharacterEvent): Boolean {
         val codePoint = event.character
-        val modifiers = 0
         if (showNewTabInput) {
             val c = codePoint
             if (c.isLetterOrDigit() || c == '_') {
@@ -1380,8 +1387,10 @@ class TerminalScreen(
             // Capture cursor before any edits for undo
             lastSavedCursor = editor.getCursorPosition()
 
-            // Block the space from Ctrl+Space — it was already handled in keyPressed
-            if (codePoint == ' ' && (modifiers and 2) != 0) {
+            // Block the space from Ctrl+Space — keyPressed already fired the autocomplete
+            // trigger. 26.1's CharacterEvent carries only the codepoint (no modifier bits),
+            // so query the keyboard directly via GLFW to detect Ctrl.
+            if (codePoint == ' ' && isControlHeld()) {
                 return true
             }
             val text = editor.value

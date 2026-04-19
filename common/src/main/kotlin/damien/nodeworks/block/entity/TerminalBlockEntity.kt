@@ -52,10 +52,14 @@ class TerminalBlockEntity(
     /**
      * Previous best-neighbor redstone signal seen by the Terminal block's neighborChanged
      * hook. Used for rising-edge detection so a redstone pulse (button, pressure plate,
-     * fresh torch) toggles the script. -1 is a sentinel meaning "uninitialized" — on the
-     * first neighborChanged after a BE load the current signal is captured without
-     * triggering a toggle, so a permanently-powered terminal doesn't auto-start on
-     * chunk-load.
+     * fresh torch) toggles the script. Seeded in [onLoad] with the block's current
+     * neighbor signal so:
+     *   - a permanently-powered terminal doesn't auto-start on chunk-load
+     *   - the FIRST button press after the player joins the world is detected as a
+     *     rising edge instead of being consumed as baseline capture
+     * -1 is a safety sentinel if [onLoad] somehow runs before the level is reachable;
+     * [TerminalBlock.neighborChanged] performs the same capture-without-trigger in
+     * that case.
      */
     var lastRedstoneSignal: Int = -1
 
@@ -134,6 +138,13 @@ class TerminalBlockEntity(
         if (newLevel is ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
             NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
+            // Seed the redstone baseline on BE load. Without this the first call to
+            // TerminalBlock.neighborChanged (which typically *is* the player's first
+            // button press after joining the world) would be consumed as baseline
+            // capture, taking two presses to actually run the script. setLevel runs
+            // when the chunk loads the BE and the chunk's blocks are already in place,
+            // so getBestNeighborSignal returns the correct current power level.
+            lastRedstoneSignal = newLevel.getBestNeighborSignal(worldPosition)
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
         if (!newLevel.isClientSide && autoRun && scriptText.isNotBlank()) {

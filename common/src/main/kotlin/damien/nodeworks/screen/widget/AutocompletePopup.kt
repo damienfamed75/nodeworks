@@ -716,7 +716,13 @@ class AutocompletePopup(
             is CursorContext.MethodCall -> suggestMethodCall(ctx, symbols, fullText)
             is CursorContext.PropertyAccess -> suggestPropertyAccess(ctx, symbols, fullText)
             is CursorContext.Word -> suggestWord(ctx.partial, fullText, beforeCursor, symbols, forced)
-            is CursorContext.None -> emptyList()
+            // Ctrl+Space with cursor at an empty position (start of line, after a space,
+            // after a punctuation char that doesn't trigger method/property/string context)
+            // falls through as None. When the user explicitly requested autocomplete
+            // (forced), treat it as an empty-prefix word completion so they see the full
+            // menu of available keywords, APIs, user vars, and user functions. Without
+            // this, Ctrl+Space on a blank line silently does nothing.
+            is CursorContext.None -> if (forced) suggestWord("", fullText, beforeCursor, symbols, forced = true) else emptyList()
         }
     }
 
