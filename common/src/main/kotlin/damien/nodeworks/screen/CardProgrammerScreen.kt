@@ -103,7 +103,8 @@ class CardProgrammerScreen(
 
     override fun init() {
         super.init()
-        counterField = EditBox(font, leftPos + INC_FIELD_X, topPos + INC_BTN_Y + 1, INC_FIELD_W, 12, Component.literal("Counter"))
+        counterField =
+            EditBox(font, leftPos + INC_FIELD_X, topPos + INC_BTN_Y + 1, INC_FIELD_W, 12, Component.literal("Counter"))
         counterField!!.setMaxLength(2)
         counterField!!.value = "${menu.getCounter()}"
         counterField!!.setBordered(true)
@@ -191,17 +192,31 @@ class CardProgrammerScreen(
         val incLabelX = incRowCenterX - font.width(incLabel) / 2
         graphics.drawString(font, incLabel, leftPos + incLabelX, topPos + INC_LABEL_Y, incLabelColor)
 
-        // [<] button
-        val minusHover = incEnabled && hovers(mouseX, mouseY, leftPos + INC_MINUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
+        // [-] button (decrement)
+        val minusHover =
+            incEnabled && hovers(mouseX, mouseY, leftPos + INC_MINUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
         val minusSlice = if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
         minusSlice.draw(graphics, leftPos + INC_MINUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
-        graphics.drawString(font, "<", leftPos + INC_MINUS_X + (INC_BTN_W - font.width("<")) / 2, topPos + INC_BTN_Y + 3, incTextColor)
+        graphics.drawString(
+            font,
+            "-",
+            leftPos + INC_MINUS_X + (INC_BTN_W - font.width("-")) / 2,
+            topPos + INC_BTN_Y + 3,
+            incTextColor
+        )
 
-        // [>] button
-        val plusHover = incEnabled && hovers(mouseX, mouseY, leftPos + INC_PLUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
+        // [+] button (increment)
+        val plusHover =
+            incEnabled && hovers(mouseX, mouseY, leftPos + INC_PLUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
         val plusSlice = if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
         plusSlice.draw(graphics, leftPos + INC_PLUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
-        graphics.drawString(font, ">", leftPos + INC_PLUS_X + (INC_BTN_W - font.width(">")) / 2, topPos + INC_BTN_Y + 3, incTextColor)
+        graphics.drawString(
+            font,
+            "+",
+            leftPos + INC_PLUS_X + (INC_BTN_W - font.width("+")) / 2,
+            topPos + INC_BTN_Y + 3,
+            incTextColor
+        )
 
         // Counter field color — manual "gray out" when disabled
         counterField?.setTextColor(if (incEnabled) 0xFFFFFFFF.toInt() else 0xFF555555.toInt())

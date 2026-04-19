@@ -44,7 +44,15 @@ class Icons private constructor(val col: Int, val row: Int) {
     }
 
     /** Draw only the top-left [w] × [h] region tinted with an RGB color. */
-    fun drawTopLeftTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int, color: Int, alpha: Float = 1f) {
+    fun drawTopLeftTinted(
+        graphics: GuiGraphicsExtractor,
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+        color: Int,
+        alpha: Float = 1f
+    ) {
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256, packArgb(color, alpha))
     }
 
@@ -128,7 +136,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         val FIRE = Icons(12, 1)
         val SNOWBALL = Icons(13, 1)
         val WARNING = Icons(14, 1)
-        val X_SMALL = Icons(15, 1)  // 5×5, authored in top-left corner of the cell
+        val X_SMALL = Icons(15, 1)  // 5×5 in top-left corner of the cell
 
         // Row 1 — Card type icons
         val IO_CARD = Icons(0, 1)
@@ -149,25 +157,22 @@ class Icons private constructor(val col: Int, val row: Int) {
         val EXPAND_IDLE = Icons(9, 2)
         val EXPAND_HOVER = Icons(10, 2)
         val EXPAND_PRESSED = Icons(11, 2)
-        /** 9×9 rounded badge background, authored in the top-left of its cell. White
-         *  pixels so callers can tint it to any kind color — used by the autocomplete
-         *  popup's Kind badges. */
-        val BADGE = Icons(12, 2)
+        val BADGE = Icons(12, 2) // 9x9 in top-left corner of the cell
 
         // Row 3 — Inventory Terminal icons
-        val SORT_ALPHA          = Icons(0, 3)
-        val SORT_COUNT_DESC     = Icons(1, 3)
-        val SORT_COUNT_ASC      = Icons(2, 3)
-        val FILTER_STORAGE      = Icons(3, 3)
-        val FILTER_RECIPES      = Icons(4, 3)
-        val FILTER_BOTH         = Icons(5, 3)
-        val AUTO_FOCUS_ON       = Icons(6, 3)
-        val AUTO_FOCUS_OFF      = Icons(7, 3)
+        val SORT_ALPHA = Icons(0, 3)
+        val SORT_COUNT_DESC = Icons(1, 3)
+        val SORT_COUNT_ASC = Icons(2, 3)
+        val FILTER_STORAGE = Icons(3, 3)
+        val FILTER_RECIPES = Icons(4, 3)
+        val FILTER_BOTH = Icons(5, 3)
+        val AUTO_FOCUS_ON = Icons(6, 3)
+        val AUTO_FOCUS_OFF = Icons(7, 3)
         val CRAFTING_IN_PROGRESS = Icons(8, 3)
-        val CRAFTING_COMPLETE   = Icons(9, 3)
-        val CRAFT_PLUS          = Icons(10, 3)
-        val AUTO_PULL_ON        = Icons(11, 3)
-        val AUTO_PULL_OFF       = Icons(12, 3)
+        val CRAFTING_COMPLETE = Icons(9, 3)
+        val CRAFT_PLUS = Icons(10, 3)
+        val AUTO_PULL_ON = Icons(11, 3)
+        val AUTO_PULL_OFF = Icons(12, 3)
         val CRAFTING_GRID_CLEAR = Icons(13, 3)
         val CRAFTING_GRID_DISTRIBUTE = Icons(14, 3)
         val RESERVED_SLOT = Icons(15, 3)

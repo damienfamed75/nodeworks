@@ -161,12 +161,6 @@ class ProcessingSetScreen(
         graphics.drawString(font, timeoutLabel,
             x + TIMEOUT_GROUP_CENTER_X - font.width(timeoutLabel) / 2,
             y + PANEL_LABEL_Y, LABEL_COLOR)
-        graphics.drawString(font, "-",
-            x + TIMEOUT_MINUS_X + (STEPPER_BTN_SIZE - font.width("-")) / 2,
-            y + PANEL_CONTROL_Y + 3, WHITE)
-        graphics.drawString(font, "+",
-            x + TIMEOUT_PLUS_X + (STEPPER_BTN_SIZE - font.width("+")) / 2,
-            y + PANEL_CONTROL_Y + 3, WHITE)
         val toggleLabel = "Parallel"
         graphics.drawString(font, toggleLabel,
             x + PARALLEL_GROUP_CENTER_X - font.width(toggleLabel) / 2,
@@ -187,16 +181,25 @@ class ProcessingSetScreen(
             clearY + (clearDrawH - 5) / 2,
             5, 5, WHITE)
 
+        // Stepper buttons — draw the 9-slice background first, then paint the +/- glyph
+        // on top. (Previously the text was drawn before the button and got painted over.)
         val minusHover = mouseX in (x + TIMEOUT_MINUS_X) until (x + TIMEOUT_MINUS_X + STEPPER_BTN_SIZE) &&
                          mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
         (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(
             graphics, x + TIMEOUT_MINUS_X, y + PANEL_CONTROL_Y, STEPPER_BTN_SIZE, STEPPER_BTN_SIZE
         )
+        graphics.drawString(font, "-",
+            x + TIMEOUT_MINUS_X + (STEPPER_BTN_SIZE - font.width("-")) / 2,
+            y + PANEL_CONTROL_Y + (STEPPER_BTN_SIZE - font.lineHeight) / 2 + 1, WHITE)
+
         val plusHover = mouseX in (x + TIMEOUT_PLUS_X) until (x + TIMEOUT_PLUS_X + STEPPER_BTN_SIZE) &&
                         mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
         (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(
             graphics, x + TIMEOUT_PLUS_X, y + PANEL_CONTROL_Y, STEPPER_BTN_SIZE, STEPPER_BTN_SIZE
         )
+        graphics.drawString(font, "+",
+            x + TIMEOUT_PLUS_X + (STEPPER_BTN_SIZE - font.width("+")) / 2,
+            y + PANEL_CONTROL_Y + (STEPPER_BTN_SIZE - font.lineHeight) / 2 + 1, WHITE)
 
         // Parallel toggle — dynamic state. Sits 1px above the stepper row so the
         // switch visually aligns with the entry field's text baseline.
