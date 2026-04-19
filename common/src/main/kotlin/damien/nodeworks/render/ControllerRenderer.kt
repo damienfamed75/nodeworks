@@ -138,10 +138,21 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         val innerAlpha = (130 * alphaPulse).toInt().coerceIn(0, 255)
         submitCube(submitNodeCollector, poseStack, crystalType, 0.22f * 0.875f, r, g, b, innerAlpha)
 
-        // Pure-white core — alpha 255 + full-white vertex colour + eyes pipeline = no
-        // face shading, fullbright. Scale 0.5 so its diagonal corners (radius ≈ 0.19)
-        // stay inside the inner shell's edge (0.1925) at every rotation angle.
-        submitCube(submitNodeCollector, poseStack, crystalType, 0.22f * 0.5f, 255, 255, 255, 255)
+        // White inner halo — semi-transparent white shell sized where the old opaque
+        // core used to sit. Gives the crystal a visible "hot" white layer that peeks
+        // through the coloured shells before the final bright opaque core. Shares the
+        // rotation block so its diagonal corners stay inside the coloured inner shell
+        // at every rotation angle.
+        submitCube(submitNodeCollector, poseStack, crystalType, 0.22f * 0.5f, 255, 255, 255, 140)
+
+        // Pure-white core — alpha 255 + full-white vertex colour. Uses the dedicated
+        // CrystalCoreRenderType.CORE render type which is EYES-equivalent (same
+        // EMISSIVE, NO_CARDINAL_LIGHTING defines) but with depth write ENABLED so the
+        // core occupies the depth buffer. Without that, node-to-node laser beams would
+        // render through the core since both use depth-write-off pipelines. Scale 0.28
+        // (half-width ≈ 0.062) so the core fits comfortably inside the new white halo
+        // at every rotation angle — diagonal ≈ 0.107, well under the halo's 0.11 edge.
+        submitCube(submitNodeCollector, poseStack, CrystalCoreRenderType.CORE, 0.22f * 0.28f, 255, 255, 255, 255)
 
         poseStack.popPose()
 

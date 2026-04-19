@@ -173,6 +173,7 @@ object NeoForgeClientSetup {
         //  PinHighlightRenderType.THROUGH_WALLS RenderType holds the matching
         //  RenderSetup built around it.
         event.registerPipeline(damien.nodeworks.render.PinHighlightRenderType.THROUGH_WALLS_PIPELINE)
+        event.registerPipeline(damien.nodeworks.render.CrystalCoreRenderType.CORE_PIPELINE)
     }
 
     private fun onRegisterBlockTintSources(
