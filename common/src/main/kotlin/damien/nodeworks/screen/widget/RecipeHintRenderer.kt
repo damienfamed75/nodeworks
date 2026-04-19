@@ -222,4 +222,33 @@ object RecipeHintRenderer {
     private fun finishWithEllipsis(graphics: GuiGraphicsExtractor, font: Font, cx: Int, textY: Int) {
         graphics.drawString(font, "\u2026", cx, textY, 0xFF888888.toInt(), false)
     }
+
+    /**
+     * Stack [handlers] as icon strips, one per row, starting at ([x], [y]) with width [w].
+     * Non-canonical ids (no `>>`) fall back to a plain gray text label — useful for
+     * legacy or user-chosen handler names. Returns the total vertical advance so the
+     * caller can continue laying out below. [rowGap] is the pixel gap between rows.
+     */
+    fun renderHandlers(
+        graphics: GuiGraphicsExtractor,
+        font: Font,
+        handlers: List<String>,
+        x: Int,
+        y: Int,
+        w: Int,
+        rowGap: Int = 1
+    ): Int {
+        if (handlers.isEmpty()) return 0
+        var cy = y
+        for (id in handlers) {
+            if (id.contains(">>")) {
+                render(graphics, font, id, x, cy, w, HINT_HEIGHT)
+                cy += HINT_HEIGHT + rowGap
+            } else {
+                graphics.drawString(font, id, x, cy + (HINT_HEIGHT - font.lineHeight) / 2 + 1, 0xFF888888.toInt(), false)
+                cy += HINT_HEIGHT + rowGap
+            }
+        }
+        return cy - y
+    }
 }

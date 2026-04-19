@@ -977,15 +977,17 @@ class DiagnosticScreen(
                 y += lineH
 
                 if (term.handlers.isNotEmpty()) {
-                    graphics.drawString(
-                        font,
-                        "Handlers: ${term.handlers.joinToString(", ")}",
-                        contentLeft + 12,
-                        y,
-                        0xFFAA83E0.toInt(),
-                        false
-                    )
+                    graphics.drawString(font, "Handlers:", contentLeft + 12, y, 0xFFAA83E0.toInt(), false)
                     y += lineH
+                    // Render each handler as a recipe icon strip, same visual language as
+                    // the Scripting Terminal's inline recipe hints. Legacy/plain names
+                    // fall back to gray text inside the helper.
+                    val hintX = contentLeft + 18
+                    val hintW = (splitX - 2) - hintX
+                    y += damien.nodeworks.screen.widget.RecipeHintRenderer.renderHandlers(
+                        graphics, font, term.handlers, hintX, y, hintW
+                    )
+                    y += 2
                 }
 
                 val scripts = term.scriptNames.joinToString(", ")

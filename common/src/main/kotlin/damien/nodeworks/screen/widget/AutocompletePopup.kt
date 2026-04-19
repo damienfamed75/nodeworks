@@ -35,16 +35,16 @@ class AutocompletePopup(
      * it inserts a plain identifier.
      */
     enum class Kind(val letter: String, val color: Int) {
-        MODULE(  "M", 0xFF8AB4F8.toInt()), // blue
+        MODULE("M", 0xFF8AB4F8.toInt()), // blue
         FUNCTION("F", 0xFFB389F9.toInt()), // purple
-        METHOD(  "M", 0xFFB389F9.toInt()), // purple (same family as function)
+        METHOD("M", 0xFFB389F9.toInt()), // purple (same family as function)
         VARIABLE("V", 0xFF9CCC65.toInt()), // green
         PROPERTY("P", 0xFFFFD54F.toInt()), // amber
-        KEYWORD( "K", 0xFFFF8A65.toInt()), // orange
-        SNIPPET( "S", 0xFFE57373.toInt()), // red
-        TYPE(    "T", 0xFF4DB6AC.toInt()), // teal
-        STRING(  "s", 0xFFBDBDBD.toInt()), // gray
-        TAG(     "#", 0xFFBDBDBD.toInt()); // gray
+        KEYWORD("K", 0xFFFF8A65.toInt()), // orange
+        SNIPPET("S", 0xFFE57373.toInt()), // red
+        TYPE("T", 0xFF4DB6AC.toInt()), // teal
+        STRING("s", 0xFFBDBDBD.toInt()), // gray
+        TAG("#", 0xFFBDBDBD.toInt()); // gray
     }
 
     data class Suggestion(
@@ -92,7 +92,9 @@ class AutocompletePopup(
     ) {
         val cursor = minOf(cursorPos, text.length)
 
-        if (cursor <= 0) { hide(); return }
+        if (cursor <= 0) {
+            hide(); return
+        }
 
         // VSCode parity: don't auto-trigger when the cursor is in the middle of a word
         // (char immediately after is a word char). Typing inside "conn|ection" shouldn't
@@ -100,7 +102,9 @@ class AutocompletePopup(
         // Explicit Ctrl+Space (forced=true) bypasses this so the user can still request it.
         if (!forced && cursor < text.length) {
             val nextCh = text[cursor]
-            if (nextCh.isLetterOrDigit() || nextCh == '_') { hide(); return }
+            if (nextCh.isLetterOrDigit() || nextCh == '_') {
+                hide(); return
+            }
         }
 
         val beforeCursor = text.substring(0, cursor)
@@ -184,7 +188,8 @@ class AutocompletePopup(
         val deleteCount = prefix.length
         hide()
         if (suggestion.snippetText != null) {
-            val cursorPos = if (suggestion.snippetCursor >= 0) suggestion.snippetCursor else suggestion.snippetText.length
+            val cursorPos =
+                if (suggestion.snippetCursor >= 0) suggestion.snippetCursor else suggestion.snippetText.length
             val consume = if (suggestion.consumesAutoclose) countAutocloseChars(textAfterCursor) else 0
             return AcceptResult(deleteCount, suggestion.snippetText, cursorPos, consume)
         }
@@ -225,7 +230,13 @@ class AutocompletePopup(
             graphics.drawString(font, "\u25B2", popupX + popupWidth - 10, popupY + 1, 0xFF888888.toInt())
         }
         if (scrollOffset + visibleCount < suggestions.size) {
-            graphics.drawString(font, "\u25BC", popupX + popupWidth - 10, popupY + actualHeight - font.lineHeight - 1, 0xFF888888.toInt())
+            graphics.drawString(
+                font,
+                "\u25BC",
+                popupX + popupWidth - 10,
+                popupY + actualHeight - font.lineHeight - 1,
+                0xFF888888.toInt()
+            )
         }
 
         val textX = popupX + 4 + BADGE_SIZE + BADGE_GAP
@@ -271,6 +282,7 @@ class AutocompletePopup(
         /** Size of the square Kind badge drawn in each row (px). Chosen so the single-letter
          *  glyph centers neatly with the default font. */
         private const val BADGE_SIZE = 9
+
         /** Gap between the badge and the suggestion text. */
         private const val BADGE_GAP = 4
     }
@@ -280,7 +292,13 @@ class AutocompletePopup(
     private fun suggest(insertText: String, displayText: String = insertText, kind: Kind = Kind.VARIABLE) =
         Suggestion(insertText, displayText, kind = kind)
 
-    private fun snippet(insertText: String, displayText: String, snippetText: String, cursorOffset: Int, kind: Kind = Kind.SNIPPET) =
+    private fun snippet(
+        insertText: String,
+        displayText: String,
+        snippetText: String,
+        cursorOffset: Int,
+        kind: Kind = Kind.SNIPPET
+    ) =
         Suggestion(insertText, displayText, snippetText, cursorOffset, kind = kind)
 
     private fun fuzzy(query: String, suggestions: List<Suggestion>): List<Suggestion> {
@@ -300,29 +318,40 @@ class AutocompletePopup(
     private sealed interface CursorContext {
         /** `var:partial` — method call on a variable */
         data class MethodCall(val receiver: String, val partial: String) : CursorContext
+
         /** `var.partial` — property access on a variable */
         data class PropertyAccess(val receiver: String, val partial: String) : CursorContext
+
         /** Inside a string argument: `func("partial` */
         data class StringArg(val funcExpr: String, val partial: String) : CursorContext
+
         /** Type annotation context: `local x: partial` or `function(a: partial` */
         data class TypeAnnotation(val partial: String) : CursorContext
+
         /** `#partial` — item tag filter */
         data class TagFilter(val partial: String) : CursorContext
+
         /** Method call where the receiver type has been resolved from a chain */
         data class ResolvedMethodCall(val resolvedType: String, val partial: String) : CursorContext
+
         /** Property access where the receiver type has been resolved from a chain */
         data class ResolvedPropertyAccess(val resolvedType: String, val partial: String) : CursorContext
+
         /** `<outerVar>.<field>.<partial>` — chain through a table-like typed variable.
          *  Symbols are resolved in [computeSuggestions]; for InputItems the field is
          *  an ItemsHandle, so the partial completes ItemsHandle properties. */
         data class ChainedPropertyAccess(val outerVar: String, val field: String, val partial: String) : CursorContext
+
         /** `<outerVar>.<field>:<partial>` — chained method call. Same resolution rule
          *  as [ChainedPropertyAccess] but produces method suggestions. */
         data class ChainedMethodCall(val outerVar: String, val field: String, val partial: String) : CursorContext
+
         /** Resolved exports from a module (require or local table) */
         data class ResolvedExports(val exports: List<Suggestion>, val partial: String) : CursorContext
+
         /** Plain word at cursor — global completions */
         data class Word(val partial: String) : CursorContext
+
         /** Nothing useful at cursor */
         data object None : CursorContext
     }
@@ -552,7 +581,7 @@ class AutocompletePopup(
      *  once per [computeSuggestions] call so field suggestions for `items.<tab>` can
      *  resolve the correct recipe's per-slot parameter names. */
     private var enclosingHandlerApi:
-        damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? = null
+            damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? = null
 
     /** Pull the set of API names already registered via `network:handle("X", ...)` in [text]. */
     private fun handledApiNames(text: String): Set<String> {
@@ -631,7 +660,8 @@ class AutocompletePopup(
     // ========== Symbol Table ==========
 
     /** Public access to the symbol table for hover tooltips. */
-    fun getSymbolTable(fullText: String, beforeCursor: String): Map<String, String> = buildSymbolTable(fullText, beforeCursor)
+    fun getSymbolTable(fullText: String, beforeCursor: String): Map<String, String> =
+        buildSymbolTable(fullText, beforeCursor)
 
     /** Get function signature for a given function name. Checks current script and all module scripts. */
     fun getFunctionSignature(funcName: String, fullText: String): String? {
@@ -784,7 +814,13 @@ class AutocompletePopup(
             // (forced), treat it as an empty-prefix word completion so they see the full
             // menu of available keywords, APIs, user vars, and user functions. Without
             // this, Ctrl+Space on a blank line silently does nothing.
-            is CursorContext.None -> if (forced) suggestWord("", fullText, beforeCursor, symbols, forced = true) else emptyList()
+            is CursorContext.None -> if (forced) suggestWord(
+                "",
+                fullText,
+                beforeCursor,
+                symbols,
+                forced = true
+            ) else emptyList()
         }
     }
 
@@ -798,6 +834,7 @@ class AutocompletePopup(
                     .map { suggest(it.first, "${it.first} (${it.second})", Kind.STRING) }
                 FuzzyMatch.filter(ctx.partial, cardSuggestions)
             }
+
             ctx.funcExpr.endsWith("network:route") -> {
                 val storageSuggestions = cards
                     .filter { it.capability.type == "storage" }
@@ -806,12 +843,15 @@ class AutocompletePopup(
                     .map { suggest(it.first, "${it.first} (storage)", Kind.STRING) }
                 FuzzyMatch.filter(ctx.partial, storageSuggestions)
             }
+
             ctx.funcExpr.endsWith("network:getAll") -> {
                 fuzzyStrings(ctx.partial, listOf("io", "storage"))
             }
+
             ctx.funcExpr.endsWith("network:craft") -> {
                 fuzzyStrings(ctx.partial, craftableOutputs)
             }
+
             ctx.funcExpr.endsWith("network:var") -> {
                 val typeLabels = arrayOf("number", "string", "bool")
                 val suggestions = variables.map { (name, typeOrd) ->
@@ -820,10 +860,12 @@ class AutocompletePopup(
                 }
                 FuzzyMatch.filter(ctx.partial, suggestions)
             }
+
             ctx.funcExpr.endsWith(":face") -> {
                 val faces = listOf("top", "bottom", "north", "south", "east", "west", "side")
                 fuzzyStrings(ctx.partial, faces)
             }
+
             ctx.funcExpr.endsWith("network:handle") -> {
                 // Full-block snippet: accepting a suggestion inserts the whole handle()
                 // call — closing quote, comma, function signature with typed per-slot
@@ -835,10 +877,12 @@ class AutocompletePopup(
                 }
                 FuzzyMatch.filter(ctx.partial, suggestions)
             }
+
             ctx.funcExpr.endsWith("require") -> {
                 val scriptNames = scripts().keys.filter { it != "main" }.toList()
                 fuzzyStrings(ctx.partial, scriptNames)
             }
+
             else -> emptyList()
         }
     }
@@ -871,7 +915,11 @@ class AutocompletePopup(
         return fuzzyStrings(partial, itemTags, Kind.TAG).take(20)
     }
 
-    private fun suggestMethodCall(ctx: CursorContext.MethodCall, symbols: Map<String, String>, fullText: String): List<Suggestion> {
+    private fun suggestMethodCall(
+        ctx: CursorContext.MethodCall,
+        symbols: Map<String, String>,
+        fullText: String
+    ): List<Suggestion> {
         val receiver = ctx.receiver
         val partial = ctx.partial
 
@@ -886,7 +934,11 @@ class AutocompletePopup(
         return emptyList()
     }
 
-    private fun suggestPropertyAccess(ctx: CursorContext.PropertyAccess, symbols: Map<String, String>, fullText: String): List<Suggestion> {
+    private fun suggestPropertyAccess(
+        ctx: CursorContext.PropertyAccess,
+        symbols: Map<String, String>,
+        fullText: String
+    ): List<Suggestion> {
         val receiver = ctx.receiver
         val partial = ctx.partial
 
@@ -906,7 +958,13 @@ class AutocompletePopup(
         return emptyList()
     }
 
-    private fun suggestWord(partial: String, fullText: String, beforeCursor: String, symbols: Map<String, String>, forced: Boolean): List<Suggestion> {
+    private fun suggestWord(
+        partial: String,
+        fullText: String,
+        beforeCursor: String,
+        symbols: Map<String, String>,
+        forced: Boolean
+    ): List<Suggestion> {
         // Require at least one typed character before auto-triggering, matching VSCode.
         // `forced` (Ctrl+Space) still allows empty-prefix completion.
         if (partial.isEmpty() && !forced) return emptyList()
@@ -928,9 +986,11 @@ class AutocompletePopup(
             suggest("select", "select(index: number, ...) → any", Kind.FUNCTION),
             suggest("unpack", "unpack(t: table) → ...", Kind.FUNCTION)
         )
-        val keywords = listOf("local", "function", "end",
+        val keywords = listOf(
+            "local", "function", "end",
             "if", "then", "else", "elseif", "for", "while", "do", "return",
-            "true", "false", "nil", "not", "and", "or").map { suggest(it, kind = Kind.KEYWORD) }
+            "true", "false", "nil", "not", "and", "or"
+        ).map { suggest(it, kind = Kind.KEYWORD) }
         val userVars = (extractVariableNames(fullText) + extractFunctionParams(beforeCursor)).distinct().map { name ->
             val type = symbols[name]
             if (type != null) suggest(name, "$name: $type", Kind.VARIABLE) else suggest(name, kind = Kind.VARIABLE)
@@ -939,7 +999,13 @@ class AutocompletePopup(
             val retStr = if (f.returnType != null) " → ${f.returnType}" else ""
             suggest("${f.name}(", "${f.name}(${f.params})$retStr", Kind.FUNCTION)
         }
-        val requireSuggest = if (scripts().size > 1) listOf(suggest("require(", "require(module: string) → table", Kind.FUNCTION)) else emptyList()
+        val requireSuggest = if (scripts().size > 1) listOf(
+            suggest(
+                "require(",
+                "require(module: string) → table",
+                Kind.FUNCTION
+            )
+        ) else emptyList()
         val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs).distinctBy { it.insertText }
         val matches = FuzzyMatch.filter(partial, all).filter { it.insertText != partial }
         return matches
@@ -984,7 +1050,12 @@ class AutocompletePopup(
         val methods = listOf(
             snippet("tick(", "tick(fn: function) → number", tickBody, tickBody.indexOf("\n    \n") + 5),
             snippet("second(", "second(fn: function) → number", secondBody, secondBody.indexOf("\n    \n") + 5),
-            snippet("delay(", "delay(ticks: number, fn: function) → number", delayBody, delayBody.indexOf("\n    \n") + 5),
+            snippet(
+                "delay(",
+                "delay(ticks: number, fn: function) → number",
+                delayBody,
+                delayBody.indexOf("\n    \n") + 5
+            ),
             suggest("cancel(", "cancel(id: number)", Kind.METHOD)
         )
         return fuzzy(partial, methods)
@@ -998,35 +1069,54 @@ class AutocompletePopup(
                 suggest("find(", "find(filter: string) → ItemsHandle?", Kind.METHOD),
                 suggest("findEach(", "findEach(filter: string) → ItemsHandle[]", Kind.METHOD),
                 suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)", Kind.METHOD),
-                suggest("tryInsert(", "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)", Kind.METHOD),
+                suggest(
+                    "tryInsert(",
+                    "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)",
+                    Kind.METHOD
+                ),
                 suggest("count(", "count(filter: string) → number", Kind.METHOD),
                 suggest("face(", "face(side: string) → CardHandle", Kind.METHOD),
                 suggest("slots(", "slots(...: number) → CardHandle", Kind.METHOD)
             )
+
             "RedstoneCard" -> {
                 val onChangeBody = "onChange(function(strength: number)\n    \nend)"
                 listOf(
                     suggest("powered(", "powered() → boolean", Kind.METHOD),
                     suggest("strength(", "strength() → number", Kind.METHOD),
                     suggest("set(", "set(boolean | number)", Kind.METHOD),
-                    snippet("onChange(", "onChange(fn(strength: number))", onChangeBody, onChangeBody.indexOf("\n    \n") + 5),
+                    snippet(
+                        "onChange(",
+                        "onChange(fn(strength: number))",
+                        onChangeBody,
+                        onChangeBody.indexOf("\n    \n") + 5
+                    ),
                     suggest("face(", "face(side: string) → RedstoneCard", Kind.METHOD)
                 )
             }
+
             "ItemsHandle" -> listOf(
                 suggest("hasTag(", "hasTag(tag: string) → boolean", Kind.METHOD),
                 suggest("matches(", "matches(filter: string) → boolean", Kind.METHOD)
             )
+
             "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...) — wait for outputs", Kind.METHOD))
             "CraftBuilder" -> {
                 val connectBody = "connect(function(item: ItemsHandle)\n    \nend)"
                 listOf(
-                    snippet("connect(", "connect(fn(item: ItemsHandle))", connectBody, connectBody.indexOf("\n    \n") + 5),
+                    snippet(
+                        "connect(",
+                        "connect(fn(item: ItemsHandle))",
+                        connectBody,
+                        connectBody.indexOf("\n    \n") + 5
+                    ),
                     suggest("store(", "store() — send result to network storage", Kind.METHOD)
                 )
             }
+
             "VariableHandle", "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle" ->
                 variableHandleMethods(type)
+
             else -> emptyList()
         }
         return fuzzy(partial, methods)
@@ -1042,6 +1132,7 @@ class AutocompletePopup(
                 suggest("maxStackSize", "maxStackSize: number", Kind.PROPERTY),
                 suggest("hasData", "hasData: boolean", Kind.PROPERTY)
             )
+
             "InputItems" -> {
                 // Fields are dynamic — derived from the enclosing `network:handle(...)`
                 // recipe. When the cursor is outside any handler body, offer no fields
@@ -1054,6 +1145,7 @@ class AutocompletePopup(
                     suggest(name, "$name: ItemsHandle ($shortId × $count)", Kind.PROPERTY)
                 }
             }
+
             else -> emptyList()
         }
         return fuzzy(partial, props)
@@ -1099,6 +1191,7 @@ class AutocompletePopup(
                 val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputs)
                 if (field !in paramNames) null else "ItemsHandle"
             }
+
             else -> null
         }
     }
@@ -1123,6 +1216,7 @@ class AutocompletePopup(
         beforeCursor: String
     ): damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? {
         data class Event(val pos: Int, val isFuncOpen: Boolean)
+
         val events = mutableListOf<Event>()
         val funcPattern = Regex("""\bfunction\s*\w*\s*\(""")
         val endPattern = Regex("""\bend\b""")
@@ -1314,7 +1408,8 @@ class AutocompletePopup(
     private fun extractTableMembers(text: String, tableVar: String): List<Suggestion> {
         val exports = mutableListOf<Suggestion>()
         // function tableVar.method(params): ReturnType
-        val funcPattern = Regex("""\bfunction\s+${Regex.escape(tableVar)}\.(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+)\??\s*)?""")
+        val funcPattern =
+            Regex("""\bfunction\s+${Regex.escape(tableVar)}\.(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+)\??\s*)?""")
         funcPattern.findAll(text).forEach { m ->
             val funcName = m.groupValues[1]
             val params = m.groupValues[2].trim().split(",").joinToString(", ") { it.trim() }
