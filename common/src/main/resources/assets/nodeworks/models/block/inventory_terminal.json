@@ -1,6 +1,27 @@
 {
-  "parent": "minecraft:block/cube_all",
+  "parent": "minecraft:block/block",
   "textures": {
-    "all": "nodeworks:block/inventory_terminal"
-  }
+    "up": "nodeworks:block/inventory_terminal_top",
+    "down": "nodeworks:block/inventory_terminal_bottom",
+    "north": "nodeworks:block/inventory_terminal_front",
+    "south": "nodeworks:block/inventory_terminal_back",
+    "east": "nodeworks:block/inventory_terminal_side",
+    "west": "nodeworks:block/inventory_terminal_side",
+    "particle": "nodeworks:block/inventory_terminal_side"
+  },
+  "elements": [
+    {
+      "comment": "Base block. Emissive front + back are rendered by InventoryTerminalRenderer (BER) via the EYES pipeline, tinted with the network color.",
+      "from": [0, 0, 0],
+      "to": [16, 16, 16],
+      "faces": {
+        "north": { "texture": "#north", "cullface": "north" },
+        "south": { "texture": "#south", "cullface": "south" },
+        "east":  { "texture": "#east",  "cullface": "east"  },
+        "west":  { "texture": "#west",  "cullface": "west"  },
+        "up":    { "texture": "#up",    "cullface": "up"    },
+        "down":  { "texture": "#down",  "cullface": "down"  }
+      }
+    }
+  ]
 }

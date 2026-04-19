@@ -10,6 +10,7 @@ import damien.nodeworks.render.CoProcessorRenderer
 import damien.nodeworks.render.CraftingCoreRenderer
 import damien.nodeworks.render.CraftingStorageRenderer
 import damien.nodeworks.render.InstructionStorageRenderer
+import damien.nodeworks.render.InventoryTerminalRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.NodeRenderer
@@ -100,6 +101,7 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_CORE, ::CraftingCoreRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_STORAGE, ::CraftingStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CO_PROCESSOR, ::CoProcessorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::InventoryTerminalRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
