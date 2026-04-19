@@ -73,6 +73,15 @@ class AutocompletePopup(
 
         if (cursor <= 0) { hide(); return }
 
+        // VSCode parity: don't auto-trigger when the cursor is in the middle of a word
+        // (char immediately after is a word char). Typing inside "conn|ection" shouldn't
+        // pop the menu — the user is editing an existing identifier, not completing one.
+        // Explicit Ctrl+Space (forced=true) bypasses this so the user can still request it.
+        if (!forced && cursor < text.length) {
+            val nextCh = text[cursor]
+            if (nextCh.isLetterOrDigit() || nextCh == '_') { hide(); return }
+        }
+
         val beforeCursor = text.substring(0, cursor)
         val newSuggestions = computeSuggestions(beforeCursor, text, forced)
 
