@@ -3,11 +3,13 @@ package damien.nodeworks.render
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.network.NetworkSettingsRegistry
+import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
+import net.minecraft.client.renderer.rendertype.RenderSetup
 import net.minecraft.client.renderer.rendertype.RenderType
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
@@ -48,6 +50,20 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         /** Vanilla EndCrystal's tilt axis — rotating around (sin45, 0, sin45) by PI/3
          *  gives the diamond its characteristic off-square orientation. */
         private val SIN_45 = sin(Math.PI / 4).toFloat()
+
+        /** Custom render type built off the vanilla EYES pipeline but WITHOUT
+         *  `sortOnUpload()`. The default `RenderTypes.eyes(...)` sorts its primitives
+         *  back-to-front every frame, which means the shell's near face is always drawn
+         *  last and obscures the core. Reusing the same pipeline (so NO_CARDINAL_LIGHTING,
+         *  EMISSIVE, TRANSLUCENT blend, depth-write=false all still apply) but skipping
+         *  the sort lets us control draw order by submit order instead — submitting the
+         *  core after the shells makes it visibly draw on top of them. */
+        private val CRYSTAL_RENDER_TYPE: RenderType = RenderType.create(
+            "nodeworks_crystal",
+            RenderSetup.builder(RenderPipelines.EYES)
+                .withTexture("Sampler0", CRYSTAL_TEXTURE)
+                .createRenderSetup()
+        )
     }
 
     override fun createRenderState(): ControllerState = ControllerState()
@@ -79,12 +95,20 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         val bobRaw = sin(ticks * 0.2f) * 0.5f + 0.5f
         val bobY = (bobRaw * bobRaw + bobRaw) * 0.4f * 0.1f
 
+        // Shell alpha pulse. sin over ticks/10 gives a ~6.3-second cycle; the multiplier
+        // maps the [-1..1] sine output into [0.6..1.0] so the shells always stay visible
+        // at minimum — they breathe in brightness rather than fading to nothing.
+        val alphaPulse = 0.8f + 0.2f * sin(ticks * 0.1f)
+
         val r = (state.networkColor shr 16) and 0xFF
         val g = (state.networkColor shr 8) and 0xFF
         val b = state.networkColor and 0xFF
 
-        val glowType = RenderTypes.entityTranslucentEmissive(CRYSTAL_TEXTURE)
-        val coreType = RenderTypes.entityCutout(CRYSTAL_TEXTURE)
+        // CRYSTAL_RENDER_TYPE is our custom EYES-pipeline render type without
+        // sortOnUpload — draw order follows submit order, so rendering the core last
+        // puts it on top of the shells instead of letting the shells' front faces
+        // occlude it.
+        val crystalType = CRYSTAL_RENDER_TYPE
 
         poseStack.pushPose()
         // Centre on the block, with the bob applied before rotation so the whole
@@ -92,26 +116,33 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         poseStack.translate(0.5, 0.5 + bobY, 0.5)
 
         // Outer shell — half-width 0.22 (covers roughly the old inner_cube footprint),
-        // rotating on its own axis with a slower bias so the layers visibly shift.
+        // rotating forward. Base alpha (70) scaled by [alphaPulse] so the network-colour
+        // aura breathes. This layer is free to rotate independently of the inner/core
+        // pair because the inner shell encloses the core geometrically.
         poseStack.pushPose()
         applyCrystalRotation(poseStack, rotRad)
-        submitCube(submitNodeCollector, poseStack, glowType, 0.22f, r, g, b, 90)
+        val outerAlpha = (70 * alphaPulse).toInt().coerceIn(0, 255)
+        submitCube(submitNodeCollector, poseStack, crystalType, 0.22f, r, g, b, outerAlpha)
         poseStack.popPose()
 
-        // Inner shell — slightly smaller, counter-rotated so the two shells pass
-        // through each other visibly (same trick EndCrystalModel uses to give the
-        // crystal its animated shimmer).
+        // Inner shell + core — locked to the same rotation (counter to the outer shell
+        // so the layers visibly shear past each other) so the core never rotates
+        // independently of the shell wrapping it. With different rotations the core's
+        // diagonal corners poke through the shell's faces; matching rotations keeps the
+        // core entirely contained. Pattern copied from vanilla EndCrystalModel where
+        // inner_glass and cube share a quaternion.
         poseStack.pushPose()
-        applyCrystalRotation(poseStack, -rotRad * 1.3f)
-        submitCube(submitNodeCollector, poseStack, glowType, 0.22f * 0.875f, r, g, b, 160)
-        poseStack.popPose()
+        applyCrystalRotation(poseStack, -rotRad)
 
-        // White-hot core — opaque emissive, smallest. The user sees this as the
-        // crystal's "brightest inside" centre regardless of how dark the network
-        // colour is.
-        poseStack.pushPose()
-        applyCrystalRotation(poseStack, rotRad * 0.8f)
-        submitCube(submitNodeCollector, poseStack, coreType, 0.22f * 0.56f, 255, 255, 255, 255)
+        // Inner shell — slightly smaller than outer, pulsing in sync.
+        val innerAlpha = (130 * alphaPulse).toInt().coerceIn(0, 255)
+        submitCube(submitNodeCollector, poseStack, crystalType, 0.22f * 0.875f, r, g, b, innerAlpha)
+
+        // Pure-white core — alpha 255 + full-white vertex colour + eyes pipeline = no
+        // face shading, fullbright. Scale 0.5 so its diagonal corners (radius ≈ 0.19)
+        // stay inside the inner shell's edge (0.1925) at every rotation angle.
+        submitCube(submitNodeCollector, poseStack, crystalType, 0.22f * 0.5f, 255, 255, 255, 255)
+
         poseStack.popPose()
 
         poseStack.popPose()
