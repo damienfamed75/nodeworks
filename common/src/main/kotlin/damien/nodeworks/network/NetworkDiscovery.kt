@@ -61,7 +61,15 @@ object NetworkDiscovery {
                         val remoteApis = broadcast.getAvailableApis()
                         if (remoteApis.isNotEmpty()) {
                             val remoteTerminals = broadcast.getProviderTerminalPositions()
-                            processingApis.add(ProcessingApiSnapshot(broadcast.blockPos, remoteApis, remoteTerminals))
+                            val broadcastLevel = broadcast.level as? ServerLevel
+                            processingApis.add(
+                                ProcessingApiSnapshot(
+                                    broadcast.blockPos,
+                                    remoteApis,
+                                    remoteTerminals,
+                                    broadcastLevel?.dimension()
+                                )
+                            )
                         }
                     }
                 }
@@ -143,7 +151,14 @@ data class VariableSnapshot(
 data class ProcessingApiSnapshot(
     val pos: BlockPos,
     val apis: List<ProcessingStorageBlockEntity.ProcessingApiInfo>,
-    val remoteTerminalPositions: List<BlockPos>? = null
+    val remoteTerminalPositions: List<BlockPos>? = null,
+    /** Dimension the remote provider network lives in — null for local APIs, non-null when
+     *  this snapshot was pulled via a Receiver Antenna paired to a remote (possibly cross-
+     *  dimensional) Broadcast Antenna. Consumers that need to resolve an active script
+     *  engine at a remoteTerminalPosition MUST pass this dimension to `findProcessingEngine`
+     *  — otherwise the engine lookup uses the caller's dimension and returns null, and the
+     *  craft tree marks the recipe as `process_no_handler`. */
+    val remoteDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>? = null
 )
 
 data class NetworkSnapshot(

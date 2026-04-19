@@ -82,13 +82,20 @@ class InventoryTerminalMenu(
     override fun slotsChanged(container: net.minecraft.world.Container) {
         if (suppressSlotsChanged) return
         if (container === craftingContainer) {
-            val level = serverLevel ?: playerInventory.player.level()
-            val recipe = level.recipeManager
-                .getRecipeFor(RecipeType.CRAFTING, craftingContainer.asCraftInput(), level)
-            if (recipe.isPresent) {
-                resultContainer.setItem(0, recipe.get().value().assemble(craftingContainer.asCraftInput(), level.registryAccess()))
-            } else {
-                resultContainer.setItem(0, ItemStack.EMPTY)
+            // slotsChanged fires server-side for a server menu; on the client copy
+            // serverLevel is null and we have nothing to look up. Bail cleanly
+            // rather than querying a Level's client-side RecipeAccess (which
+            // doesn't expose getRecipeFor in 26.1).
+            val level = serverLevel
+            if (level != null) {
+                val recipe = level.recipeAccess()
+                    .getRecipeFor(RecipeType.CRAFTING, craftingContainer.asCraftInput(), level)
+                if (recipe.isPresent) {
+                    // assemble(input) in 26.1 — registryAccess folded into the recipe.
+                    resultContainer.setItem(0, recipe.get().value().assemble(craftingContainer.asCraftInput()))
+                } else {
+                    resultContainer.setItem(0, ItemStack.EMPTY)
+                }
             }
         }
         super.slotsChanged(container)
@@ -140,7 +147,7 @@ class InventoryTerminalMenu(
         return ItemStack.EMPTY
     }
 
-    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
+    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
         // Capture the grid pattern BEFORE super.clicked() consumes ingredients
         if (slotId == CRAFT_OUTPUT_SLOT && !resultContainer.getItem(0).isEmpty && autoPull) {
             autoPullPattern = snapshotCraftPattern()
@@ -169,8 +176,8 @@ class InventoryTerminalMenu(
 
         when (action) {
             0, 2, 3 -> {
-                val identifier = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: return
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
+                val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
 
                 val available = if (c != null) c.count(itemId) else {
                     NetworkStorageHelper.countItems(lvl, snap, itemId)
@@ -337,8 +344,8 @@ class InventoryTerminalMenu(
         // Fill with new recipe
         for ((i, itemId) in grid.withIndex()) {
             if (i >= 9 || itemId.isEmpty()) continue
-            val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
 
             // Try player inventory first, then pull from network
             val invSlot = playerInventory.findSlotMatchingItem(ItemStack(item))
@@ -460,8 +467,8 @@ class InventoryTerminalMenu(
                     }
                 }
                 if (extracted > 0) {
-                    val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+                    val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
                     craftingContainer.setItem(i, ItemStack(item, 1))
                 }
             }
@@ -537,8 +544,8 @@ class InventoryTerminalMenu(
      */
     fun handleCollect(player: Player, itemId: String) {
         val carried = carried
-        val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: return
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: return
+        val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return
         val maxStack = item.getDefaultMaxStackSize()
 
         // Start with what's on cursor (may already have items from first click)
@@ -597,7 +604,7 @@ class InventoryTerminalMenu(
         val snap = snapshot ?: return
         if (count <= 0 || count > 999) return
 
-        val itemName = net.minecraft.resources.ResourceLocation.tryParse(itemId)?.path?.replace('_', ' ') ?: itemId
+        val itemName = net.minecraft.resources.Identifier.tryParse(itemId)?.path?.replace('_', ' ') ?: itemId
 
         // Create queue entry (pending until the whole job completes)
         val entry = CraftQueueManager.addEntry(player.uuid, itemId, itemName, count)
@@ -633,8 +640,8 @@ class InventoryTerminalMenu(
 
             // Build a CraftResult for the release — same as the scripting terminal
             val craftResult = result ?: run {
-                val id = net.minecraft.resources.ResourceLocation.tryParse(itemId)
-                val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) else null
+                val id = net.minecraft.resources.Identifier.tryParse(itemId)
+                val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
                 val name = if (item != null) ItemStack(item).hoverName.string else itemId
                 damien.nodeworks.script.CraftingHelper.CraftResult(
                     itemId, name, count,
@@ -708,8 +715,8 @@ class InventoryTerminalMenu(
         val entry = queue.firstOrNull { it.id == entryId } ?: return
         if (entry.availableCount <= 0) return
 
-        val identifier = net.minecraft.resources.ResourceLocation.tryParse(entry.itemId) ?: return
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
+        val identifier = net.minecraft.resources.Identifier.tryParse(entry.itemId) ?: return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
         val maxStack = item.getDefaultMaxStackSize().toLong()
 
         val toExtract = when (action) {

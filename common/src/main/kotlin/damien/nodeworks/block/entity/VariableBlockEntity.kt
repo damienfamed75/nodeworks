@@ -13,6 +13,11 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getStringOrNull
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 class VariableBlockEntity(
@@ -159,6 +164,7 @@ class VariableBlockEntity(
         super.setLevel(level)
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
+            NodeConnectionHelper.queueRevalidation(level, worldPosition)
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
     }
@@ -175,29 +181,26 @@ class VariableBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        tag.putString("variableName", variableName)
-        tag.putInt("variableType", variableType.ordinal)
-        tag.putString("variableValue", variableValue)
-        networkId?.let { tag.putString("networkId", it.toString()) }
-        if (connections.isNotEmpty()) {
-            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        }
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
+        output.putString("variableName", variableName)
+        output.putInt("variableType", variableType.ordinal)
+        output.putString("variableValue", variableValue)
+        networkId?.let { output.putString("networkId", it.toString()) }
+        output.putBlockPosList("connections", connections)
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
-        variableName = tag.getString("variableName")
-        variableType = VariableType.fromOrdinal(if (tag.contains("variableType")) tag.getInt("variableType") else 0)
-        variableValue = tag.getString("variableValue").ifEmpty { variableType.defaultValue }
-        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
+        variableName = input.getStringOr("variableName", "")
+        variableType = VariableType.fromOrdinal(input.getIntOr("variableType", 0))
+        variableValue = input.getStringOr("variableValue", "").ifEmpty { variableType.defaultValue }
+        networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
+        connections.addAll(input.getBlockPosList("connections"))
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

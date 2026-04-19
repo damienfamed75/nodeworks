@@ -11,7 +11,7 @@ import damien.nodeworks.script.NetworkStorageHelper
 import damien.nodeworks.script.ProcessingJob
 import damien.nodeworks.script.ScriptEngine
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.crafting.CraftingInput
@@ -167,7 +167,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         op: Operation.Execute,
         lvl: ServerLevel
     ): CraftScheduler.OpResult {
-        val recipeManager = lvl.recipeManager ?: return CraftScheduler.OpResult.Failed("No recipe manager")
+        val recipeManager = lvl.recipeAccess() ?: return CraftScheduler.OpResult.Failed("No recipe manager")
 
         val ingredientCounts = mutableMapOf<String, Int>()
         for (id in op.recipe) if (id.isNotEmpty()) ingredientCounts.merge(id, 1, Int::plus)
@@ -175,9 +175,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val items = op.recipe.map { itemId ->
             if (itemId.isEmpty()) ItemStack.EMPTY
             else {
-                val id = ResourceLocation.tryParse(itemId)
+                val id = Identifier.tryParse(itemId)
                     ?: return CraftScheduler.OpResult.Failed("Bad item id in recipe: $itemId")
-                val item = BuiltInRegistries.ITEM.get(id)
+                val item = BuiltInRegistries.ITEM.getValue(id)
                     ?: return CraftScheduler.OpResult.Failed("Unknown item in recipe: $itemId")
                 ItemStack(item, 1)
             }
@@ -187,7 +187,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             .getRecipeFor(RecipeType.CRAFTING, craftingInput, lvl)
             .orElse(null)
             ?: return CraftScheduler.OpResult.Failed("No crafting recipe matched")
-        val expected = recipeHolder.value().assemble(craftingInput, lvl.registryAccess())
+        val expected = recipeHolder.value().assemble(craftingInput)
         if (expected.isEmpty) {
             return CraftScheduler.OpResult.Failed("Recipe assemble returned empty")
         }
@@ -198,7 +198,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // Planner sets outputCount = requested total; we divide by expected.count (e.g. 9 for
         // ingot→nuggets) so a craft of 9 nuggets via a 1→9 recipe runs the recipe once, not
         // nine times.
-        val perBatch = expected.count.coerceAtLeast(1).toLong()
+        val perBatch = expected.getCount().coerceAtLeast(1).toLong()
         val desired = op.outputCount.coerceAtLeast(1L)
         val executions = ((desired + perBatch - 1) / perBatch).coerceAtLeast(1L)
         var done = 0L
@@ -214,10 +214,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     )
                 }
             }
-            val output = expected.copy().apply { count = expected.count }
-            if (!cpu.addToBuffer(expectedItemId, output.count.toLong())) {
+            val output = expected.copyWithCount(expected.getCount())
+            if (!cpu.addToBuffer(expectedItemId, output.getCount().toLong())) {
                 return CraftScheduler.OpResult.Failed(
-                    "Buffer refused crafted $expectedItemId x${output.count}"
+                    "Buffer refused crafted $expectedItemId x${output.getCount()}"
                 )
             }
             done++
@@ -241,33 +241,43 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             )
         }
         val removed = cpu.removeFromBuffer(op.itemId, op.amount)
-        val id = ResourceLocation.tryParse(op.itemId)
+        val id = Identifier.tryParse(op.itemId)
             ?: return CraftScheduler.OpResult.Failed("Bad item id: ${op.itemId}")
-        val item = BuiltInRegistries.ITEM.get(id)
+        val item = BuiltInRegistries.ITEM.getValue(id)
             ?: return CraftScheduler.OpResult.Failed("Unknown item: ${op.itemId}")
 
         var remaining = removed
+        var droppedCount = 0L
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
             val stack = ItemStack(item, batch)
             val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, null)
             if (inserted == 0) {
-                // Storage refused — drop the rest in-world rather than failing the op.
-                // Failing here would leave the thread FAILED and the CPU unable to accept
-                // new crafts; dropping is consistent with how cancelJob / onPlanFailed handle
-                // overflow, and keeps the craft technically successful.
+                // Network storage refused — drop the batch on the ground so the finished
+                // items aren't destroyed, and track how many we had to drop. We still fail
+                // the op after the loop so the player gets a visible error (same flow as
+                // any other craft failure: onPlanFailed → cpu.lastFailureReason + chat).
+                // The CPU goes back to IDLE and can accept new crafts, so the failure is
+                // surfacing only — not locking the CPU.
                 logger.warn(
                     "Deliver: network storage refused {}, dropping {} in-world at {}",
-                    op.itemId, remaining, cpu.blockPos
+                    op.itemId, batch, cpu.blockPos
                 )
                 val dropStack = ItemStack(item, batch)
                 net.minecraft.world.Containers.dropItemStack(
                     lvl, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, dropStack
                 )
+                droppedCount += batch.toLong()
                 remaining -= batch.toLong()
             } else {
                 remaining -= inserted.toLong()
             }
+        }
+        if (droppedCount > 0L) {
+            val itemName = op.itemId.substringAfter(':').replace('_', ' ')
+            return CraftScheduler.OpResult.Failed(
+                "Network storage full — dropped $droppedCount × $itemName on ground"
+            )
         }
         return CraftScheduler.OpResult.Completed
     }
@@ -322,7 +332,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             ?: return CraftScheduler.OpResult.Failed("No processing API for $outputItemId")
         val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
         val handlerEngine = PlatformServices.modState
-            .findProcessingEngine(lvl, searchPositions, apiMatch.api.name) as? ScriptEngine
+            .findProcessingEngine(lvl, searchPositions, apiMatch.api.name, apiMatch.apiStorage.remoteDimension) as? ScriptEngine
         if (handlerEngine == null) {
             // Handler not loaded yet — common right after world load, before terminal auto-run.
             // Back off and retry; handler should appear once the terminal script is running.
@@ -407,9 +417,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val itemsTable = LuaTable()
         for ((idx, slotData) in progress.perBatchInputs.withIndex()) {
             val (itemId, batchCount) = slotData
-            val id = ResourceLocation.tryParse(itemId)
+            val id = Identifier.tryParse(itemId)
                 ?: return CraftScheduler.OpResult.Failed("Bad input item id: $itemId")
-            val item = BuiltInRegistries.ITEM.get(id)
+            val item = BuiltInRegistries.ITEM.getValue(id)
                 ?: return CraftScheduler.OpResult.Failed("Unknown input item: $itemId")
             itemsTable.set(
                 paramNames[idx],
@@ -746,8 +756,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         lvl: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ) {
-        val id = ResourceLocation.tryParse(itemId) ?: return
-        val item = BuiltInRegistries.ITEM.get(id) ?: return
+        val id = Identifier.tryParse(itemId) ?: return
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return
         var remaining = count
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()

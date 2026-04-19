@@ -1,19 +1,19 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DGD",
-        "PCP",
-        "DND"
-    ],
-    "key": {
-        "D": { "item": "nodeworks:substrate" },
-        "G": { "item": "minecraft:lime_stained_glass_pane" },
-        "P": { "item": "minecraft:sticky_piston" },
-        "C": { "item": "minecraft:crafter" },
-        "N": { "item": "nodeworks:node" }
-    },
-    "result": {
-        "id": "nodeworks:crafting_core",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DGD",
+    "PCP",
+    "DND"
+  ],
+  "key": {
+    "D": "nodeworks:substrate",
+    "G": "minecraft:lime_stained_glass_pane",
+    "P": "minecraft:sticky_piston",
+    "C": "minecraft:crafter",
+    "N": "nodeworks:node"
+  },
+  "result": {
+    "id": "nodeworks:crafting_core",
+    "count": 1
+  }
 }

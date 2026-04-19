@@ -17,7 +17,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
 import net.neoforged.bus.api.IEventBus
@@ -85,7 +85,7 @@ class Nodeworks(modBus: IEventBus) {
         event.register(Registries.MENU) {
             ModScreenHandlers.TERMINAL = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "terminal")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "terminal")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = TerminalOpenData.STREAM_CODEC.decode(buf)
                     TerminalScreenHandler.clientFactory(syncId, inv, data)
@@ -93,7 +93,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INSTRUCTION_SET = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "instruction_set")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_set")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InstructionSetOpenData.STREAM_CODEC.decode(buf)
                     InstructionSetScreenHandler.clientFactory(syncId, inv, data)
@@ -101,7 +101,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INSTRUCTION_STORAGE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "instruction_storage")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "instruction_storage")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InstructionStorageOpenData.STREAM_CODEC.decode(buf)
                     InstructionStorageScreenHandler.clientFactory(syncId, inv, data)
@@ -109,7 +109,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.NODE_SIDE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "node_side")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "node_side")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = NodeSideOpenData.STREAM_CODEC.decode(buf)
                     NodeSideScreenHandler.clientFactory(syncId, inv, data)
@@ -117,7 +117,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.INVENTORY_TERMINAL = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "inventory_terminal")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = InventoryTerminalOpenData.STREAM_CODEC.decode(buf)
                     InventoryTerminalMenu.clientFactory(syncId, inv, data)
@@ -125,7 +125,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.NETWORK_CONTROLLER = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "network_controller")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "network_controller")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = NetworkControllerOpenData.STREAM_CODEC.decode(buf)
                     NetworkControllerMenu.clientFactory(syncId, inv, data)
@@ -133,7 +133,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.VARIABLE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "variable")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "variable")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = VariableOpenData.STREAM_CODEC.decode(buf)
                     VariableMenu.clientFactory(syncId, inv, data)
@@ -141,7 +141,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.CRAFTING_CORE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "crafting_core")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "crafting_core")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = CraftingCoreOpenData.STREAM_CODEC.decode(buf)
                     CraftingCoreMenu.clientFactory(syncId, inv, data)
@@ -149,7 +149,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.PROCESSING_SET = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_set")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "processing_set")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = ProcessingSetOpenData.STREAM_CODEC.decode(buf)
                     ProcessingSetScreenHandler.clientFactory(syncId, inv, data)
@@ -157,7 +157,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.PROCESSING_STORAGE = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "processing_storage")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "processing_storage")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = ProcessingStorageOpenData.STREAM_CODEC.decode(buf)
                     ProcessingStorageScreenHandler.clientFactory(syncId, inv, data)
@@ -165,7 +165,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.BROADCAST_ANTENNA = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "broadcast_antenna")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "broadcast_antenna")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = damien.nodeworks.screen.BroadcastAntennaOpenData.STREAM_CODEC.decode(buf)
                     damien.nodeworks.screen.BroadcastAntennaMenu.clientFactory(syncId, inv, data)
@@ -173,7 +173,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.RECEIVER_ANTENNA = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "receiver_antenna")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "receiver_antenna")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = damien.nodeworks.screen.ReceiverAntennaOpenData.STREAM_CODEC.decode(buf)
                     damien.nodeworks.screen.ReceiverAntennaMenu.clientFactory(syncId, inv, data)
@@ -181,7 +181,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.DIAGNOSTIC = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "diagnostic")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "diagnostic")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = damien.nodeworks.screen.DiagnosticOpenData.STREAM_CODEC.decode(buf)
                     damien.nodeworks.screen.DiagnosticMenu.clientFactory(syncId, inv, data)
@@ -189,7 +189,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.CARD_PROGRAMMER = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "card_programmer")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "card_programmer")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = damien.nodeworks.screen.CardProgrammerOpenData.STREAM_CODEC.decode(buf)
                     damien.nodeworks.screen.CardProgrammerMenu.clientFactory(syncId, inv, data)
@@ -197,7 +197,7 @@ class Nodeworks(modBus: IEventBus) {
             )
             ModScreenHandlers.STORAGE_CARD = Registry.register(
                 BuiltInRegistries.MENU,
-                ResourceKey.create(Registries.MENU, ResourceLocation.fromNamespaceAndPath("nodeworks", "storage_card")),
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "storage_card")),
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = damien.nodeworks.screen.StorageCardOpenData.STREAM_CODEC.decode(buf)
                     damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data)
@@ -316,6 +316,7 @@ class Nodeworks(modBus: IEventBus) {
                     "glow" -> entity.nodeGlowStyle = payload.intValue
                     "name" -> entity.networkName = payload.strValue
                     "retry" -> entity.handlerRetryLimit = payload.intValue
+                    "chunkload" -> entity.setChunkLoadingEnabled(payload.intValue != 0)
                 }
             }
         }
@@ -506,6 +507,14 @@ class Nodeworks(modBus: IEventBus) {
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }
+        // Drain any connectables whose setLevel queued a LOS revalidation this past tick.
+        // Deferred because in-line revalidation from setLevel would recurse into
+        // level.getBlockEntity for the still-being-registered BE → StackOverflow.
+        damien.nodeworks.network.NodeConnectionHelper.drainPendingRevalidations(event.server)
+        // Reset NodeConnectionHelper's per-tick propagate-dedup set so the next tick's
+        // propagate calls can traverse fresh. Kept here rather than per-level because
+        // the dedup is indexed by dimension and clearing once covers all levels.
+        damien.nodeworks.network.NodeConnectionHelper.clearTickDedup()
     }
 
     private fun onRegisterCommands(event: net.neoforged.neoforge.event.RegisterCommandsEvent) {
@@ -514,6 +523,12 @@ class Nodeworks(modBus: IEventBus) {
 
     private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
         damien.nodeworks.script.ResumeScheduler.onServerStop()
+        // Drop cached SavedData handles — a restart in the same JVM (integrated server quit+rejoin)
+        // must re-resolve them against the freshly loaded level.dataStorage.
+        damien.nodeworks.network.NodeConnectionHelper.clearServerCaches()
+        // Wipe chunk-load refcounts — each controller's setLevel on the next run will
+        // re-claim, rebuilding the map from scratch against a fresh level.
+        damien.nodeworks.network.ChunkForceLoadManager.clearAll()
     }
 
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {
@@ -542,16 +557,29 @@ class NeoForgeModStateService : ModStateService {
         NeoForgeTerminalPackets.stopEngine(level, pos)
     }
 
+    override fun startScript(level: ServerLevel, pos: BlockPos) {
+        NeoForgeTerminalPackets.startEngine(level, pos)
+    }
+
     override fun registerPendingAutoRun(level: ServerLevel, pos: BlockPos) {
         NeoForgeTerminalPackets.registerPendingAutoRun(level, pos)
     }
 
-    override fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): Any? {
-        return NeoForgeTerminalPackets.findAnyEngine(level, terminalPositions)
+    override fun findAnyEngine(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        overrideDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>?,
+    ): Any? {
+        return NeoForgeTerminalPackets.findAnyEngine(level, terminalPositions, overrideDimension)
     }
 
-    override fun findProcessingEngine(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): Any? {
-        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName)
+    override fun findProcessingEngine(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        cardName: String,
+        overrideDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>?,
+    ): Any? {
+        return NeoForgeTerminalPackets.findEngineWithHandler(level, terminalPositions, cardName, overrideDimension)
     }
 
     override fun getScriptEngine(level: ServerLevel, pos: BlockPos): Any? {

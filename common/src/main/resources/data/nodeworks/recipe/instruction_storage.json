@@ -1,23 +1,17 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DCD",
-        "D D",
-        "DND"
-    ],
-    "key": {
-        "D": {
-            "item": "minecraft:deepslate"
-        },
-        "C": {
-            "item": "minecraft:copper_block"
-        },
-        "N": {
-            "item": "nodeworks:node"
-        }
-    },
-    "result": {
-        "id": "nodeworks:instruction_storage",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DCD",
+    "D D",
+    "DND"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "C": "minecraft:copper_block",
+    "N": "nodeworks:node"
+  },
+  "result": {
+    "id": "nodeworks:instruction_storage",
+    "count": 1
+  }
 }

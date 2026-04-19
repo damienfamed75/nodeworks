@@ -7,7 +7,7 @@ import damien.nodeworks.script.cpu.CraftPlan
 import damien.nodeworks.script.cpu.CraftPlanner
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import org.luaj.vm2.LuaFunction
@@ -61,8 +61,8 @@ object CraftingHelper {
         if (cpu.bufferUsed > 0L) {
             val leftovers = cpu.clearBuffer()
             for ((itemId, count) in leftovers) {
-                val id = ResourceLocation.tryParse(itemId) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val id = Identifier.tryParse(itemId) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 var remaining = count
                 while (remaining > 0L) {
                     val batchSize = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
@@ -262,8 +262,8 @@ object CraftingHelper {
     // =====================================================================
 
     private fun resolveItemName(itemId: String): String {
-        val id = ResourceLocation.tryParse(itemId) ?: return itemId
-        val item = BuiltInRegistries.ITEM.get(id) ?: return itemId
+        val id = Identifier.tryParse(itemId) ?: return itemId
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return itemId
         return ItemStack(item).hoverName.string
     }
 }

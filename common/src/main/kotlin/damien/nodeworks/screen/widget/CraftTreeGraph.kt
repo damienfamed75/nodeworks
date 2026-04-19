@@ -2,10 +2,19 @@ package damien.nodeworks.screen.widget
 
 import damien.nodeworks.screen.Icons
 import damien.nodeworks.script.CraftTreeBuilder
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.item.ItemStack
 import kotlin.math.roundToInt
 
@@ -22,6 +31,12 @@ class CraftTreeGraph {
         private const val NODE_SPACING_X = 28f
         private const val NODE_SPACING_Y = 36f
         private const val WHITE = 0xFFFFFFFF.toInt()
+
+        /** Thin wrapper around [GlowHighlight.draw] so existing call sites keep their
+         *  familiar `drawItemHalo` name while the actual rendering lives in the shared
+         *  helper (also used by the Diagnostic topology view). */
+        fun drawItemHalo(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int) =
+            GlowHighlight.draw(graphics, x, y, size, color)
     }
 
     data class TreeLayout(
@@ -109,7 +124,7 @@ class CraftTreeGraph {
      * Handles layout caching, auto-fit, scissoring, and all node rendering.
      */
     fun render(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         tree: CraftTreeBuilder.CraftTreeNode?,
         x: Int, y: Int, w: Int, h: Int
     ) {
@@ -147,7 +162,7 @@ class CraftTreeGraph {
     }
 
     private fun renderGraph(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         root: CraftTreeBuilder.CraftTreeNode,
         layout: TreeLayout,
         originX: Float, originY: Float,
@@ -224,15 +239,11 @@ class CraftTreeGraph {
                             val vPos = pos2 - seg1 - seg2
                             dotX = sx; dotY = midY - vPos
                         }
-                        graphics.pose().pushPose()
-                        graphics.pose().translate(-7.5f, -7.5f, 0f)
-                        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-                        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-                        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 0.8f, 0.27f, 1f)
-                        graphics.blit(Icons.ATLAS, dotX, dotY, Icons.GLOW_CIRCLE.u.toFloat(), Icons.GLOW_CIRCLE.v.toFloat(), 16, 16, 256, 256)
-                        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-                        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-                        graphics.pose().popPose()
+                        graphics.pose().pushMatrix()
+                        graphics.pose().translate((-7.5f).toFloat(), (-7.5f).toFloat())
+                        // 26.1: tint via ARGB on the blit call. 0xFFFFCC44 = rgb(1, 0.8, 0.27).
+                        graphics.blit(Icons.ATLAS, dotX, dotY, Icons.GLOW_CIRCLE.u.toFloat(), Icons.GLOW_CIRCLE.v.toFloat(), 16, 16, 256, 256, 0xFFFFCC44.toInt())
+                        graphics.pose().popMatrix()
                     }
                 }
             }
@@ -255,37 +266,25 @@ class CraftTreeGraph {
             }
 
             // Item icon with per-pixel glow highlight
-            val itemResId = ResourceLocation.tryParse(node.itemId)
+            val itemResId = Identifier.tryParse(node.itemId)
             if (itemResId != null) {
-                val item = BuiltInRegistries.ITEM.get(itemResId)
+                val item = BuiltInRegistries.ITEM.getValue(itemResId)
                 if (item != null) {
                     val stack = ItemStack(item)
                     val iconX = sx - 8
                     val iconY = sy
 
-                    // Render flat-color silhouette glow behind the item
+                    // Status halo — XP-orb-style radial glow behind the item. Five concentric
+                    //  filled rects from a wide faint outer ring inward to a tighter bright
+                    //  inner ring. The overlap stacks alpha toward the centre so the fall-off
+                    //  reads as soft rather than a hard square. Cheap (5 fills), no shader,
+                    //  and glow bleeds through the item's transparent pixels since the item
+                    //  is drawn on top.
                     if (highlightColor != null) {
-                        val model = Minecraft.getInstance().itemRenderer.getModel(stack, null, null, 0)
-                        if (model.isGui3d) {
-                            // 3D block: single scaled copy
-                            val glowScale = 1.12f
-                            val offset = (16 * (glowScale - 1f)) / 2f
-                            damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
-                                graphics, stack, (iconX - offset).toInt(), (iconY - offset).toInt(),
-                                highlightColor, 200, glowScale
-                            )
-                        } else {
-                            // 2D flat item: 4-offset outline
-                            val offsets = arrayOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
-                            for ((ox, oy) in offsets) {
-                                damien.nodeworks.render.FlatColorItemRenderer.renderFlatColorItem(
-                                    graphics, stack, iconX + ox, iconY + oy, highlightColor, 200
-                                )
-                            }
-                        }
+                        drawItemHalo(graphics, iconX, iconY, 16, highlightColor)
                     }
 
-                    // Render actual item icon (on top of the glow — covers the flat color center)
+                    // Render actual item icon on top of the highlight backdrop.
                     graphics.renderItem(stack, iconX, iconY)
                     if (node.count > 1) {
                         graphics.drawString(font, "x${node.count}", sx + 9, sy + 9, WHITE, true)
@@ -295,15 +294,15 @@ class CraftTreeGraph {
 
             // Status icon overlay
             if (isStorage) {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.CHECKMARK.draw(graphics, sx + 6, sy - 4, 10)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             } else if (isActive) {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 6, sy - 4, 10)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
 
             // Source icon below item (half-scale)
@@ -315,28 +314,28 @@ class CraftTreeGraph {
                 else -> null
             }
             if (srcItem != null) {
-                graphics.pose().pushPose()
-                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat(), 0f)
-                graphics.pose().scale(0.5f, 0.5f, 1f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat())
+                graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                 graphics.renderItem(ItemStack(srcItem), 0, 0)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
 
             // X overlay for missing/no-handler
             if (node.source == "missing" || node.source == "process_no_handler") {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.X.draw(graphics, sx - 4, sy + 16, 8)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
 
             // Checkmark for completed (skip root node — it's the final output)
             val isComplete = node.inStorage >= node.count && node.source != "storage"
             if (isComplete && node !== root) {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.CHECKMARK.draw(graphics, sx + 6, sy - 2, 8)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
         }
     }

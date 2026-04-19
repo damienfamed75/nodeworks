@@ -2,39 +2,61 @@ package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
-import net.minecraft.client.Minecraft
-import net.minecraft.client.renderer.MultiBufferSource
+import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.core.BlockPos
-import net.minecraft.core.SectionPos
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer
+import net.minecraft.client.renderer.rendertype.RenderType
+import net.minecraft.client.renderer.state.level.CameraRenderState
+import net.minecraft.resources.Identifier
+import net.minecraft.world.phys.Vec3
 
 /**
- * Triggers chunk section rebuild when the Receiver Antenna's connection state changes,
- * so the block color provider re-evaluates the emissive tint. Same pattern as
- * [TerminalRenderer] / [VariableRenderer].
+ * Emissive overlay for the Receiver Antenna — glowing side faces (N/S/E/W, top/bottom
+ * unlit), tinted with the current network colour.
  */
 class ReceiverAntennaRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<ReceiverAntennaBlockEntity> {
+    BlockEntityRenderer<ReceiverAntennaBlockEntity, ReceiverAntennaRenderer.AntennaState> {
 
-    private val lastState = HashMap<BlockPos, Int>()
+    class AntennaState : BlockEntityRenderState() {
+        var color: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+    }
 
-    override fun render(
-        entity: ReceiverAntennaBlockEntity,
-        partialTick: Float,
-        poseStack: PoseStack,
-        bufferSource: MultiBufferSource,
-        packedLight: Int,
-        packedOverlay: Int
+    companion object {
+        private val TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/receiver_antenna_side_emissive.png")
+        private val RENDER_TYPE: RenderType = EmissiveCubeRenderer.renderType(TEXTURE)
+    }
+
+    override fun createRenderState(): AntennaState = AntennaState()
+
+    override fun extractRenderState(
+        blockEntity: ReceiverAntennaBlockEntity,
+        state: AntennaState,
+        partialTicks: Float,
+        cameraPosition: Vec3,
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
     ) {
-        val reachable = NodeConnectionRenderer.isReachable(entity.blockPos)
-        val state = entity.getConnections().size or (if (reachable) 0x10000 else 0)
-        val last = lastState.put(entity.blockPos, state)
-        if (last != null && last != state) {
-            val sx = SectionPos.blockToSectionCoord(entity.blockPos.x)
-            val sy = SectionPos.blockToSectionCoord(entity.blockPos.y)
-            val sz = SectionPos.blockToSectionCoord(entity.blockPos.z)
-            Minecraft.getInstance().levelRenderer.setSectionDirtyWithNeighbors(sx, sy, sz)
+        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
+        state.color = if (!NodeConnectionRenderer.isReachable(blockEntity.blockPos)) {
+            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        } else {
+            NodeConnectionRenderer.findNetworkColor(blockEntity.level, blockEntity.blockPos)
         }
+    }
+
+    override fun submit(
+        state: AntennaState,
+        poseStack: PoseStack,
+        submitNodeCollector: SubmitNodeCollector,
+        camera: CameraRenderState
+    ) {
+        val r = (state.color shr 16) and 0xFF
+        val g = (state.color shr 8) and 0xFF
+        val b = state.color and 0xFF
+        EmissiveCubeRenderer.submit(
+            submitNodeCollector, poseStack, RENDER_TYPE,
+            EmissiveCubeRenderer.HORIZONTAL_SIDES, r, g, b, 255
+        )
     }
 }

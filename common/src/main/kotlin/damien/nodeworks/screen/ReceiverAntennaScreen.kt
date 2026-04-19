@@ -1,6 +1,15 @@
 package damien.nodeworks.screen
 
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
@@ -9,7 +18,7 @@ class ReceiverAntennaScreen(
     menu: ReceiverAntennaMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<ReceiverAntennaMenu>(menu, playerInventory, title) {
+) : AbstractContainerScreen<ReceiverAntennaMenu>(menu, playerInventory, title, W, H) {
 
     companion object {
         private const val W = 176
@@ -23,13 +32,12 @@ class ReceiverAntennaScreen(
     }
 
     init {
-        imageWidth = W
-        imageHeight = H
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         val entity = net.minecraft.client.Minecraft.getInstance().level?.getBlockEntity(menu.antennaPos) as? damien.nodeworks.network.Connectable
@@ -64,8 +72,8 @@ class ReceiverAntennaScreen(
         NineSlice.drawPlayerInventory(graphics, leftPos + INV_X, topPos + INV_Y, HOTBAR_GAP)
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
-        renderTooltip(graphics, mouseX, mouseY)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
+        // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 }

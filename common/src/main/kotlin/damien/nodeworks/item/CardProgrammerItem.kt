@@ -9,7 +9,7 @@ import net.minecraft.nbt.CompoundTag
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
-import net.minecraft.world.InteractionResultHolder
+import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
@@ -19,9 +19,8 @@ import net.minecraft.world.level.Level
 
 class CardProgrammerItem(properties: Properties) : Item(properties) {
 
-    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResultHolder<ItemStack> {
-        val stack = player.getItemInHand(hand)
-        if (level.isClientSide) return InteractionResultHolder.success(stack)
+    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
+        if (level.isClientSide) return InteractionResult.SUCCESS
 
         val serverPlayer = player as ServerPlayer
         PlatformServices.menu.openExtendedMenu(
@@ -31,15 +30,13 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
             CardProgrammerOpenData.STREAM_CODEC,
             { syncId, inv, _ -> CardProgrammerMenu(syncId, inv, hand) }
         )
-        return InteractionResultHolder.consume(stack)
+        return InteractionResult.CONSUME
     }
 
     companion object {
         fun getTemplate(stack: ItemStack): ItemStack {
             val contents = stack.get(DataComponents.CONTAINER) ?: return ItemStack.EMPTY
-            val items = mutableListOf<ItemStack>()
-            contents.stream().forEach { items.add(it) }
-            return items.firstOrNull() ?: ItemStack.EMPTY
+            return contents.copyOne()
         }
 
         fun setTemplate(stack: ItemStack, template: ItemStack) {
@@ -52,7 +49,7 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
 
         fun getCounter(stack: ItemStack): Int {
             val data = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
-            return data.copyTag().getInt("counter")
+            return data.copyTag().getIntOr("counter", 0)
         }
 
         fun setCounter(stack: ItemStack, counter: Int) {
@@ -63,8 +60,7 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
 
         fun getCopyName(stack: ItemStack): Boolean {
             val data = stack.get(DataComponents.CUSTOM_DATA) ?: return true
-            val tag = data.copyTag()
-            return if (tag.contains("copy_name")) tag.getBoolean("copy_name") else true
+            return data.copyTag().getBooleanOr("copy_name", true)
         }
 
         fun setCopyName(stack: ItemStack, value: Boolean) {

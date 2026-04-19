@@ -8,7 +8,29 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.AutocompletePopup
 import damien.nodeworks.screen.widget.ScriptEditor
 
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
@@ -17,7 +39,10 @@ class TerminalScreen(
     menu: TerminalScreenHandler,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<TerminalScreenHandler>(menu, playerInventory, title) {
+// TODO MC 26.1.2: ACS imageWidth/imageHeight are now final. Using a large
+// default that fits the "wide" layout; the layout-switch resize is commented
+// out in init() and switchLayout() below. Restore once mutability is available.
+) : AbstractContainerScreen<TerminalScreenHandler>(menu, playerInventory, title, 500, 280) {
 
     companion object {
         /** Client-side UI preferences — persisted across terminal opens, shared across all terminals */
@@ -33,6 +58,14 @@ class TerminalScreen(
 
     /** Exposed for platform-specific input suppression (e.g., blocking JEI keybinds). */
     fun isEditorFocused(): Boolean = ::editor.isInitialized && editor.isFocused
+
+    /** True if either Ctrl key is currently physically held. CharacterEvent doesn't
+     *  carry modifier bits in 26.1, so we consult [net.minecraft.client.Minecraft.hasControlDown]
+     *  (which queries GLFW for the L/R control key state) to suppress the space char
+     *  glfw still emits for Ctrl+Space. */
+    private fun isControlHeld(): Boolean =
+        net.minecraft.client.Minecraft.getInstance().hasControlDown()
+
     private lateinit var autocomplete: AutocompletePopup
 
     // All scanned client-side from block entities in the loaded world
@@ -172,6 +205,109 @@ class TerminalScreen(
         }
     }
 
+    /**
+     * VSCode-style block indent / unindent of the currently-selected lines.
+     *
+     * @param shift  true = unindent (Shift+Tab), false = indent (Tab).
+     * @param allLinesEvenIfNoMultiSel  when true, also operates on the cursor's line
+     *   even if there's no multi-line selection — used so Shift+Tab with no selection
+     *   still unindents the current line.
+     *
+     * Indent inserts 4 spaces at the start of every covered line; unindent strips up
+     * to 4 leading spaces (or one leading tab) from each. Selection is preserved to
+     * cover the same logical lines after the transformation.
+     */
+    private fun indentSelection(shift: Boolean, allLinesEvenIfNoMultiSel: Boolean) {
+        val text = editor.value
+        val hadSelection = editor.hasSelection
+        val origSelStart = editor.selectionStart
+        val origSelEnd = editor.selectionEnd
+        val cursor = editor.getCursorPosition()
+
+        val origLines = text.split('\n')
+        val lines = origLines.toMutableList()
+
+        val startLine: Int
+        val endLine: Int
+        if (hadSelection) {
+            startLine = text.substring(0, origSelStart).count { it == '\n' }
+            // A selection that ends exactly at a line start (just after '\n') doesn't
+            // actually cover that trailing line — pull the endLine back by one so we
+            // don't indent a line the user didn't select. Matches VSCode.
+            val endLineRaw = text.substring(0, origSelEnd).count { it == '\n' }
+            endLine = if (origSelEnd > origSelStart && origSelEnd > 0 && text[origSelEnd - 1] == '\n')
+                (endLineRaw - 1).coerceAtLeast(startLine) else endLineRaw
+        } else {
+            if (!allLinesEvenIfNoMultiSel) return
+            val line = text.substring(0, cursor).count { it == '\n' }
+            startLine = line
+            endLine = line
+        }
+
+        val indent = "    "
+        // Per-line delta tracked so remapPos() can translate each position with
+        // per-column precision instead of bulk-subtracting from absolute offsets.
+        val lineDelta = IntArray(lines.size)
+
+        for (i in startLine..minOf(endLine, lines.lastIndex)) {
+            val line = lines[i]
+            if (shift) {
+                // Strip up to 4 leading spaces; a leading tab also counts as one unindent.
+                val stripped = when {
+                    line.startsWith(indent) -> line.removePrefix(indent)
+                    line.startsWith("\t") -> line.removePrefix("\t")
+                    else -> {
+                        var n = 0
+                        while (n < line.length && n < 4 && line[n] == ' ') n++
+                        if (n == 0) line else line.substring(n)
+                    }
+                }
+                lineDelta[i] = -(line.length - stripped.length)
+                lines[i] = stripped
+            } else {
+                lineDelta[i] = indent.length
+                lines[i] = indent + line
+            }
+        }
+
+        val newText = lines.joinToString("\n")
+
+        fun origLineStart(idx: Int): Int {
+            var p = 0; for (i in 0 until idx) p += origLines[i].length + 1; return p
+        }
+        fun newLineStart(idx: Int): Int {
+            var p = 0; for (i in 0 until idx) p += lines[i].length + 1; return p
+        }
+        // Translate an original-text position to a new-text position with column
+        // awareness: on an unindented line, a cursor/sel-end inside the removed
+        // whitespace clamps to col 0 rather than rolling back into the previous line.
+        fun remapPos(pos: Int): Int {
+            val lineIdx = text.substring(0, pos).count { it == '\n' }
+            val origCol = pos - origLineStart(lineIdx)
+            val newCol = if (lineIdx in startLine..endLine) {
+                val d = lineDelta[lineIdx]
+                if (d >= 0) origCol + d
+                else {
+                    val removed = -d
+                    if (origCol <= removed) 0 else origCol - removed
+                }
+            } else origCol
+            return newLineStart(lineIdx) + newCol.coerceAtLeast(0)
+        }
+
+        if (hadSelection) {
+            val newSelStart = remapPos(origSelStart).coerceIn(0, newText.length)
+            val newSelEnd = remapPos(origSelEnd).coerceIn(0, newText.length)
+            val cursorAtStart = cursor == origSelStart
+            editor.setValueKeepScroll(newText, if (cursorAtStart) newSelStart else newSelEnd)
+            if (cursorAtStart) editor.setSelection(newSelEnd, newSelStart)
+            else editor.setSelection(newSelStart, newSelEnd)
+        } else {
+            val newCursor = remapPos(cursor).coerceIn(0, newText.length)
+            editor.setValueKeepScroll(newText, newCursor)
+        }
+    }
+
     data class ErrorLocation(val scriptName: String?, val line: Int)
 
     /** Find the error script name and line number from a click position in the log panel. */
@@ -217,7 +353,7 @@ class TerminalScreen(
         editor.isFocused = true
         // Highlight the line temporarily
         errorHighlightLine = lineIdx
-        errorHighlightTime = net.minecraft.Util.getMillis()
+        errorHighlightTime = net.minecraft.util.Util.getMillis()
     }
 
     private fun rebind() {
@@ -238,8 +374,7 @@ class TerminalScreen(
     private var currentLayout = TerminalLayout.entries.getOrElse(menu.getLayoutIndex()) { TerminalLayout.SMALL }
 
     init {
-        imageWidth = currentLayout.w
-        imageHeight = currentLayout.h
+        damien.nodeworks.compat.AcsCompat.setImageSize(this, currentLayout.w, currentLayout.h)
 
 
         // Scan client-side block entities for all autocomplete data
@@ -305,7 +440,16 @@ class TerminalScreen(
                                     if (chipData != null && clientLevel.isLoaded(chipData.pos)) {
                                         val broadcast = clientLevel.getBlockEntity(chipData.pos)
                                         if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {
+                                            // Mirror the local ProcessingStorage case: in addition to the
+                                            // output-item autocomplete list, feed the API name + info into
+                                            // the same lists a local processing storage would fill. Without
+                                            // this, `network:craft("...")` wouldn't suggest remote recipes
+                                            // even though the Diagnostic Tool and Inventory Terminal both
+                                            // see them (they use the server-side NetworkDiscovery path,
+                                            // which already walks the antenna).
                                             for (api in broadcast.getAvailableApis()) {
+                                                scannedLocal.add(api.name)
+                                                scannedLocalApis.add(api)
                                                 scannedProcessable.addAll(api.outputItemIds)
                                             }
                                         }
@@ -323,6 +467,17 @@ class TerminalScreen(
             }
         }
 
+        // Remote cross-dim APIs pre-resolved by the server (via the Receiver Antenna's
+        // paired Broadcast Antenna in another dimension). We can't read those BEs
+        // client-side, so the server shipped the API list in openData; fold it into
+        // the same lists a local ProcessingStorage would fill so autocomplete treats
+        // them uniformly.
+        for (api in menu.getRemoteApis()) {
+            scannedLocal.add(api.name)
+            scannedLocalApis.add(api)
+            scannedProcessable.addAll(api.outputItemIds)
+        }
+
         // Assign auto-aliases to unnamed cards (same logic as NetworkDiscovery)
         val counters = mutableMapOf<String, Int>()
         for (card in scannedCards) {
@@ -334,9 +489,12 @@ class TerminalScreen(
             }
         }
 
-        // Item tags from the client registry
-        val scannedTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTagNames()
-            .map { it.location().toString() }
+        // Item tags from the client registry — 26.1 replaces `getTagNames()`
+        // (Stream<TagKey>) with `getTags()` (Stream<HolderSet.Named<T>>); the
+        // tag key is exposed via key(), and its Identifier via the record
+        // component `location`.
+        val scannedTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTags()
+            .map { it.key().location.toString() }
             .sorted()
             .toList()
 
@@ -351,11 +509,9 @@ class TerminalScreen(
     override fun init() {
         super.init()
 
-        imageWidth = currentLayout.w
-        imageHeight = currentLayout.h
-        // Clamp to screen bounds
-        if (imageWidth > width - 10) imageWidth = width - 10
-        if (imageHeight > height - 10) imageHeight = height - 10
+        val w = currentLayout.w.coerceAtMost(width - 10)
+        val h = currentLayout.h.coerceAtMost(height - 10)
+        damien.nodeworks.compat.AcsCompat.setImageSize(this, w, h)
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
@@ -393,7 +549,8 @@ class TerminalScreen(
                     editor.getCursorPosition(),
                     editorX,
                     editorY,
-                    editorScrollY = editor.scrollY
+                    editorScrollY = editor.scrollY,
+                    editorScrollX = editor.scrollX,
                 )
             }
         }
@@ -499,7 +656,8 @@ class TerminalScreen(
         // Auto-run toggle is rendered manually in renderBg and handled in mouseClicked
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Resolve network color once for the whole frame (gray if disconnected)
         val mcInst = net.minecraft.client.Minecraft.getInstance()
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getTerminalPos())
@@ -874,8 +1032,8 @@ class TerminalScreen(
         graphics.drawString(font, statusText, statusX + 21, statusTextY, statusTextColor)
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
 
         // Line number gutter
         renderLineNumbers(graphics)
@@ -897,13 +1055,13 @@ class TerminalScreen(
             val displayText = if (newTabName.isEmpty()) "enter name..." else newTabName
             val displayColor = if (newTabName.isEmpty()) 0xFF666666.toInt() else 0xFFFFFFFF.toInt()
             graphics.drawString(font, displayText, inputX + 4, inputY + 6, displayColor, false)
-            if (newTabName.isNotEmpty() || (net.minecraft.Util.getMillis() / 500) % 2 == 0L) {
+            if (newTabName.isNotEmpty() || (net.minecraft.util.Util.getMillis() / 500) % 2 == 0L) {
                 val cursorX = inputX + 4 + font.width(newTabName)
                 graphics.fill(cursorX, inputY + 4, cursorX + 1, inputY + inputH - 4, 0xFFFFFFFF.toInt())
             }
         }
 
-        renderTooltip(graphics, mouseX, mouseY)
+        // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 
     /** Known method signatures for tooltip display. */
@@ -954,7 +1112,7 @@ class TerminalScreen(
         "require" to "require(module: string) → table"
     )
 
-    private fun renderTypeTooltip(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    private fun renderTypeTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (mouseX < editorX || mouseX > editorX + editor.width ||
             mouseY < editorY || mouseY > editorY + editor.height
         ) return
@@ -1014,7 +1172,7 @@ class TerminalScreen(
         }
     }
 
-    private fun renderLineNumbers(graphics: GuiGraphics) {
+    private fun renderLineNumbers(graphics: GuiGraphicsExtractor) {
         val text = editor.value
         val lineHeight = font.lineHeight
 
@@ -1039,7 +1197,7 @@ class TerminalScreen(
 
         // Error highlight fades out over 2 seconds
         val highlightElapsed =
-            if (errorHighlightLine >= 0) net.minecraft.Util.getMillis() - errorHighlightTime else Long.MAX_VALUE
+            if (errorHighlightLine >= 0) net.minecraft.util.Util.getMillis() - errorHighlightTime else Long.MAX_VALUE
         val highlightFadeDuration = 2000L
         val highlightAlpha = if (highlightElapsed < highlightFadeDuration) {
             ((1.0 - highlightElapsed.toDouble() / highlightFadeDuration) * 0x40).toInt().coerceIn(0, 0x40)
@@ -1075,7 +1233,10 @@ class TerminalScreen(
         graphics.disableScissor()
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         // Handle new tab name input
         if (showNewTabInput) {
             when (keyCode) {
@@ -1121,7 +1282,7 @@ class TerminalScreen(
                     autocomplete.hide()
                     return true
                 }
-                return super.keyPressed(keyCode, scanCode, modifiers)
+                return super.keyPressed(event)
             }
 
             // Ctrl+Z = undo
@@ -1166,7 +1327,8 @@ class TerminalScreen(
                     editorX,
                     editorY,
                     forced = true,
-                    editorScrollY = editor.scrollY
+                    editorScrollY = editor.scrollY,
+                    editorScrollX = editor.scrollX,
                 )
                 return true
             }
@@ -1214,11 +1376,32 @@ class TerminalScreen(
                 }
             }
 
-            // Tab inserts 2 spaces (when autocomplete not visible) — ScriptEditor handles Tab internally,
-            // but we override here to keep consistent behavior with the old 4-space tab
+            // Tab / Shift+Tab — VSCode-style block indent when the selection spans
+            // multiple lines; otherwise fall back to inserting 4 spaces at the cursor.
             if (keyCode == InputConstants.KEY_TAB && !autocomplete.visible) {
+                val shift = (modifiers and 1) != 0
+                val text = editor.value
+                val selStart = editor.selectionStart
+                val selEnd = editor.selectionEnd
+                val multiLineSelection = editor.hasSelection &&
+                        text.substring(selStart, selEnd).contains('\n')
+
+                if (shift) {
+                    // Shift+Tab: always unindent. With no selection (or single-line sel),
+                    // unindent just the cursor's line; with multi-line selection, unindent
+                    // every covered line.
+                    indentSelection(shift = true, allLinesEvenIfNoMultiSel = true)
+                    return true
+                }
+                if (multiLineSelection) {
+                    indentSelection(shift = false, allLinesEvenIfNoMultiSel = true)
+                    return true
+                }
+                // Default: insert 4 spaces at cursor (replaces selection if any — same
+                // as VSCode on single-line selections).
+                val spaceEvent = CharacterEvent(' '.code)
                 for (i in 0..3) {
-                    editor.charTyped(' ', 0)
+                    editor.charTyped(spaceEvent)
                 }
                 return true
             }
@@ -1284,7 +1467,7 @@ class TerminalScreen(
                 }
             }
 
-            editor.keyPressed(keyCode, scanCode, modifiers)
+            editor.keyPressed(event)
             // Update autocomplete only for keys that modify text, not navigation
             val isNavOrModifierKey = keyCode in setOf(
                 InputConstants.KEY_UP, InputConstants.KEY_DOWN,
@@ -1301,16 +1484,18 @@ class TerminalScreen(
                     editor.getCursorPosition(),
                     editorX,
                     editorY,
-                    editorScrollY = editor.scrollY
+                    editorScrollY = editor.scrollY,
+                    editorScrollX = editor.scrollX,
                 )
             }
             // Always consume key events when editor is focused to prevent other mods from stealing them
             return true
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
-    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+    override fun charTyped(event: CharacterEvent): Boolean {
+        val codePoint = event.character
         if (showNewTabInput) {
             val c = codePoint
             if (c.isLetterOrDigit() || c == '_') {
@@ -1325,8 +1510,10 @@ class TerminalScreen(
             // Capture cursor before any edits for undo
             lastSavedCursor = editor.getCursorPosition()
 
-            // Block the space from Ctrl+Space — it was already handled in keyPressed
-            if (codePoint == ' ' && (modifiers and 2) != 0) {
+            // Block the space from Ctrl+Space — keyPressed already fired the autocomplete
+            // trigger. 26.1's CharacterEvent carries only the codepoint (no modifier bits),
+            // so query the keyboard directly via GLFW to detect Ctrl.
+            if (codePoint == ' ' && isControlHeld()) {
                 return true
             }
             val text = editor.value
@@ -1357,7 +1544,7 @@ class TerminalScreen(
                     val newText = text.substring(0, cursor) + codePoint + closingChar + text.substring(cursor)
                     editor.setValueKeepScroll(newText, cursor + 1)
                 } else {
-                    editor.charTyped(codePoint, modifiers)
+                    editor.charTyped(event)
                 }
             }
             autocomplete.update(
@@ -1370,10 +1557,13 @@ class TerminalScreen(
             // Always consume when editor is focused to prevent other mods stealing input
             return true
         }
-        return super.charTyped(codePoint, modifiers)
+        return super.charTyped(event)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
@@ -1514,7 +1704,7 @@ class TerminalScreen(
             return true
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
     private fun handleTabBarClick(mx: Int, tabBarY: Int, tabBarStartX: Int): Boolean {
@@ -1556,7 +1746,10 @@ class TerminalScreen(
         return true
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         if (draggingSidebarScrollbar) {
             val cardStartY = topPos + topBarHeight + 6
             val cardListTop = cardStartY + 12
@@ -1583,13 +1776,16 @@ class TerminalScreen(
             return true
         }
         if (editor.isFocused && button == 0) {
-            editor.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+            editor.mouseDragged(event, dragX, dragY)
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+        return super.mouseDragged(event, dragX, dragY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         pressedButton = null
         draggingSidebarScrollbar = false
         if (draggingLogPanel) {
@@ -1597,7 +1793,7 @@ class TerminalScreen(
             savedLogPanelHeight = logPanelHeight
             return true
         }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleased(event)
     }
 
     private fun switchTab(name: String) {
@@ -1667,7 +1863,7 @@ class TerminalScreen(
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
-    override fun renderLabels(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    override fun extractLabels(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         // Don't render default inventory labels
     }
 

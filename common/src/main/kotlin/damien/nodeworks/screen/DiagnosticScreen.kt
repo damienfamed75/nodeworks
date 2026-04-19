@@ -1,6 +1,28 @@
 package damien.nodeworks.screen
 
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
@@ -14,7 +36,12 @@ class DiagnosticScreen(
     menu: DiagnosticMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<DiagnosticMenu>(menu, playerInventory, title) {
+// 26.1: imageWidth/imageHeight are `protected final` at the common/ compile-time
+//  view of ACS (the NeoForge AT only strips `final` at runtime). `AcsCompat` writes
+//  through to the runtime-mutable fields via reflection in init() below so the
+//  pre-migration "75%/85% of window" dynamic sizing still works. The 720×540 in
+//  the ctor is just a pre-resize placeholder.
+) : AbstractContainerScreen<DiagnosticMenu>(menu, playerInventory, title, 720, 540) {
 
     companion object {
         private const val BG = 0xFF2B2B2B.toInt()
@@ -171,9 +198,11 @@ class DiagnosticScreen(
 
     override fun init() {
         super.init()
-        // Scale to fill most of the screen with some margin
-        imageWidth = (width * 0.75f).toInt().coerceIn(320, width - 20)
-        imageHeight = (height * 0.85f).toInt().coerceIn(200, height - 20)
+        damien.nodeworks.compat.AcsCompat.setImageSize(
+            this,
+            (width * 0.75f).toInt().coerceIn(320, width - 20),
+            (height * 0.85f).toInt().coerceIn(200, height - 20)
+        )
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
@@ -231,9 +260,19 @@ class DiagnosticScreen(
     private fun screenToWorldZ(sy: Float): Float =
         (sy - viewCenterY - panY) / (zoom * gridSize) + centerZ
 
+    /** Adjust pan so the given block ends up at the centre of the topology viewport.
+     *  Solves `worldToScreenX(rx) = viewCenterX` for panX (and analogous for panY),
+     *  using the rotated world coordinates cached in [rotatedPositions]. */
+    private fun centerViewOn(pos: BlockPos) {
+        val rp = rotatedPositions[pos] ?: return
+        panX = -(rp.first - centerX) * zoom * gridSize
+        panY = -(rp.second - centerZ) * zoom * gridSize
+    }
+
     // ========== Rendering ==========
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Main background
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
@@ -286,20 +325,20 @@ class DiagnosticScreen(
             }
         }
 
-        // Inspector panel — rendered last with higher Z to draw over topology blocks
+        // Inspector panel — rendered last with higher Z to draw over topology blocks.
+        // 26.1: `flush()` is gone; `nextStratum()` is the replacement — it advances
+        // the Z stratum so later draws layer above what came before in this extract.
         if (activeTab == 0) {
-            // Flush all batched topology renders (items, text) so inspector draws on top
-            graphics.flush()
-            graphics.pose().pushPose()
-            graphics.pose().translate(0f, 0f, 500f)
+            graphics.nextStratum()
+            graphics.pose().pushMatrix()
             renderInspector(graphics, mouseX, mouseY)
-            graphics.pose().popPose()
+            graphics.pose().popMatrix()
         }
     }
 
     private var hoveredGroupIdx = -1
 
-    private fun renderTopology(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    private fun renderTopology(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         val blocks = menu.topology.blocks
         if (blocks.isEmpty()) {
             graphics.drawString(font, "No blocks found", contentLeft + 8, contentTop + 8, DIM)
@@ -389,6 +428,22 @@ class DiagnosticScreen(
                 val sx = worldToScreenX(group.displayPos.first).roundToInt()
                 val sy = worldToScreenY(group.displayPos.second).roundToInt()
                 val stackOffset = 3 // pixel offset per stacked icon
+                val totalStackOffset = (group.blocks.size - 1) * stackOffset
+
+                // If the currently-selected block is inside this collapsed group, draw
+                // the same network-color glow halo we use for individual blocks — so the
+                // selection stays visible without needing to expand the group.
+                val groupContainsSelection = selectedBlock != null && selectedBlock in group.blocks
+                if (groupContainsSelection) {
+                    val nc = menu.topology.networkColor
+                    val selR = minOf(((nc shr 16) and 0xFF) * 3 / 2, 255)
+                    val selG = minOf(((nc shr 8) and 0xFF) * 3 / 2, 255)
+                    val selB = minOf((nc and 0xFF) * 3 / 2, 255)
+                    val selColor = (0xFF shl 24) or (selR shl 16) or (selG shl 8) or selB
+                    damien.nodeworks.screen.widget.GlowHighlight.draw(
+                        graphics, sx - 8, sy - 8, 16 + totalStackOffset, selColor
+                    )
+                }
 
                 // Draw bottom items first (lowest Y = last in list), top item last (highest Y = index 0)
                 // Each layer gets a higher z-level so it fully covers the one below
@@ -397,25 +452,25 @@ class DiagnosticScreen(
                     val itemStack = BLOCK_ITEMS[group.blocks[i].type]
                     if (itemStack != null) {
                         val zLayer = (group.blocks.lastIndex - i) * 50f
-                        graphics.pose().pushPose()
-                        graphics.pose().translate(0f, 0f, zLayer)
+                        graphics.pose().pushMatrix()
+                        graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                         graphics.renderItem(itemStack, sx - 8 + off, sy - 8 + off)
-                        graphics.pose().popPose()
+                        graphics.pose().popMatrix()
                     }
                 }
 
                 // Count badge on top of everything
                 val topZ = group.blocks.size * 50f + 100f
-                val totalOffset = (group.blocks.size - 1) * stackOffset
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, topZ)
+                val totalOffset = totalStackOffset
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
 
                 if (group.blocks.size > 1) {
                     val countStr = "+${group.blocks.size}"
                     graphics.drawString(font, countStr, sx + 2 + totalOffset, sy - 10, WHITE, true)
                 }
 
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
 
                 // Hover on stacked group — clicking expands
                 if (mouseX >= sx - 8 && mouseX < sx + 8 + totalOffset &&
@@ -443,7 +498,7 @@ class DiagnosticScreen(
 
     private val craftSplitRatio = 3f / 5f
 
-    private fun renderCraftPreview(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    private fun renderCraftPreview(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         val tree = menu.craftTree
         val treeAreaTop = contentTop + 22
 
@@ -458,25 +513,22 @@ class DiagnosticScreen(
         NineSlice.PANEL_INSET.draw(graphics, graphLeft - 3, graphTop - 3, graphW + 6, graphBottom - graphTop + 6)
         NineSlice.CONTENT_BORDER.draw(graphics, graphLeft - 3, graphTop - 3, graphW + 6, graphBottom - graphTop + 6)
 
-        // Autocomplete dropdown for item field
-        renderCraftAutocomplete(graphics, mouseX, mouseY)
-
         // Floating detail panel frame (always visible)
         val detailW = 180
         val detailX = contentLeft + 6
         val detailY = treeAreaTop + 2
         val detailH = graphBottom - detailY - 2
 
-        graphics.pose().pushPose()
-        graphics.pose().translate(0f, 0f, 100f)
+        graphics.pose().pushMatrix()
+        graphics.pose().translate((0f).toFloat(), (0f).toFloat())
         NineSlice.PANEL_INSET.draw(graphics, detailX, detailY, detailW, detailH)
         NineSlice.CONTENT_BORDER.draw(graphics, detailX, detailY, detailW, detailH)
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
 
         if (tree == null) {
             // Placeholder text inside the detail panel
-            graphics.pose().pushPose()
-            graphics.pose().translate(0f, 0f, 100f)
+            graphics.pose().pushMatrix()
+            graphics.pose().translate((0f).toFloat(), (0f).toFloat())
             graphics.drawString(
                 font,
                 "Search for a recipe",
@@ -484,7 +536,12 @@ class DiagnosticScreen(
                 detailY + 8,
                 DIM
             )
-            graphics.pose().popPose()
+            graphics.pose().popMatrix()
+            // The autocomplete dropdown needs to render even when no tree has been
+            //  picked yet — that's the normal state when the user first focuses the
+            //  search bar. Previously we fell through to the early return below and
+            //  the dropdown never drew despite click handlers working.
+            renderCraftAutocomplete(graphics, mouseX, mouseY)
             return
         }
 
@@ -492,7 +549,7 @@ class DiagnosticScreen(
         // detail panel so tree items/icons can't render on top of it — item rendering
         // uses its own Z stack that the panel's Z=100 re-draw doesn't outrank.
         graphics.enableScissor(detailX + detailW, graphTop, graphRight, graphBottom)
-        graphics.pose().pushPose()
+        graphics.pose().pushMatrix()
         val layout = layoutCraftTree(tree)
 
         // Reset auto-fit when tree changes
@@ -526,14 +583,14 @@ class DiagnosticScreen(
         val graphCenterX = treeAreaLeft + treeAreaW / 2f + craftGraphPanX
         val graphCenterY = graphTop + (graphBottom - graphTop) / 2f + craftGraphPanY
         renderCraftTreeVisual(graphics, tree, layout, graphCenterX, graphCenterY, craftGraphZoom)
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
         graphics.disableScissor()
 
         // Detail panel content (reuses frame drawn above)
         val scrollbarW = 6
 
-        graphics.pose().pushPose()
-        graphics.pose().translate(0f, 0f, 100f)
+        graphics.pose().pushMatrix()
+        graphics.pose().translate((0f).toFloat(), (0f).toFloat())
         // Redraw panel over the tree view content
         NineSlice.PANEL_INSET.draw(graphics, detailX, detailY, detailW, detailH)
         NineSlice.CONTENT_BORDER.draw(graphics, detailX, detailY, detailW, detailH)
@@ -559,7 +616,12 @@ class DiagnosticScreen(
             NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, thumbY, scrollbarW, thumbH)
         }
 
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
+
+        // Autocomplete dropdown last so it overlays both the detail panel and the
+        //  tree view — pre-migration the detail panel was drawn above it in the
+        //  submission order, which hid the dropdown on click.
+        renderCraftAutocomplete(graphics, mouseX, mouseY)
     }
 
     // ========== Craft Item Autocomplete ==========
@@ -580,7 +642,7 @@ class DiagnosticScreen(
         craftAutocompleteScroll = 0
     }
 
-    private fun renderCraftAutocomplete(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    private fun renderCraftAutocomplete(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (craftAutocompleteSuggestions.isEmpty()) return
         val field = craftItemField ?: return
         if (!field.isFocused) return
@@ -592,8 +654,8 @@ class DiagnosticScreen(
         val visibleCount = minOf(craftAutocompleteSuggestions.size, craftDropdownMaxVisible)
         val dropH = visibleCount * itemH + 2
 
-        graphics.pose().pushPose()
-        graphics.pose().translate(0f, 0f, 300f)
+        graphics.pose().pushMatrix()
+        graphics.pose().translate((0f).toFloat(), (0f).toFloat())
         graphics.fill(dropX, dropY, dropX + dropW, dropY + dropH, 0xFF111111.toInt())
         graphics.fill(dropX, dropY, dropX + dropW, dropY + 1, SEPARATOR)
         graphics.fill(dropX, dropY + dropH - 1, dropX + dropW, dropY + dropH, SEPARATOR)
@@ -612,15 +674,15 @@ class DiagnosticScreen(
             if (rowBg != 0) graphics.fill(dropX + 1, sy, dropX + dropW - 1, sy + itemH, rowBg)
 
             // Item icon
-            val id = net.minecraft.resources.ResourceLocation.tryParse(suggestion)
+            val id = net.minecraft.resources.Identifier.tryParse(suggestion)
             if (id != null) {
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
                 if (item != null) {
-                    graphics.pose().pushPose()
-                    graphics.pose().translate((dropX + 2).toFloat(), (sy + 1).toFloat(), 0f)
-                    graphics.pose().scale(0.5f, 0.5f, 1f)
+                    graphics.pose().pushMatrix()
+                    graphics.pose().translate((dropX + 2).toFloat(), (sy + 1).toFloat())
+                    graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                     graphics.renderItem(ItemStack(item), 0, 0)
-                    graphics.pose().popPose()
+                    graphics.pose().popMatrix()
                 }
             }
 
@@ -648,13 +710,13 @@ class DiagnosticScreen(
             )
         }
 
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
     }
 
     private var craftTreeTextY = 0 // tracks current Y for text rendering
 
     private fun renderCraftTreeText(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode,
         x: Int,
         startY: Int,
@@ -680,15 +742,15 @@ class DiagnosticScreen(
         if (rowBg != 0) graphics.fill(x, y - 2, x + 300, y + lineH - 2, rowBg)
 
         // Item icon (small)
-        val itemId = net.minecraft.resources.ResourceLocation.tryParse(node.itemId)
+        val itemId = net.minecraft.resources.Identifier.tryParse(node.itemId)
         if (itemId != null) {
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId)
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
             if (item != null) {
-                graphics.pose().pushPose()
-                graphics.pose().translate((x + indent).toFloat(), (y - 1).toFloat(), 0f)
-                graphics.pose().scale(0.5f, 0.5f, 1f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((x + indent).toFloat(), (y - 1).toFloat())
+                graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                 graphics.renderItem(ItemStack(item), 0, 0)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
         }
 
@@ -700,17 +762,17 @@ class DiagnosticScreen(
         graphics.drawString(font, " — ", dashX, y, DIM, false)
         val iconX = dashX + font.width(" — ")
         if (sourceItem != null) {
-            graphics.pose().pushPose()
-            graphics.pose().translate(iconX.toFloat(), (y - 1).toFloat(), 0f)
-            graphics.pose().scale(0.5f, 0.5f, 1f)
+            graphics.pose().pushMatrix()
+            graphics.pose().translate(iconX.toFloat(), (y - 1).toFloat())
+            graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
             graphics.renderItem(ItemStack(sourceItem), 0, 0)
-            graphics.pose().popPose()
+            graphics.pose().popMatrix()
         }
         if (showXOverlay) {
-            graphics.pose().pushPose()
-            graphics.pose().translate(0f, 0f, 300f)
+            graphics.pose().pushMatrix()
+            graphics.pose().translate((0f).toFloat(), (0f).toFloat())
             Icons.X.draw(graphics, if (sourceItem != null) iconX else iconX - 4, y - 1, 8)
-            graphics.pose().popPose()
+            graphics.pose().popMatrix()
         }
 
         // Sub-info
@@ -781,7 +843,7 @@ class DiagnosticScreen(
     }
 
     private fun renderCraftTreeVisual(
-        graphics: GuiGraphics, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode,
+        graphics: GuiGraphicsExtractor, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode,
         layout: TreeLayout, originX: Float, originY: Float, zoom: Float
     ) {
         val lineColor = 0xFF444444.toInt()
@@ -803,9 +865,9 @@ class DiagnosticScreen(
             }
 
             // Render item icon
-            val itemId = net.minecraft.resources.ResourceLocation.tryParse(n.itemId)
+            val itemId = net.minecraft.resources.Identifier.tryParse(n.itemId)
             if (itemId != null) {
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId)
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
                 if (item != null) {
                     graphics.renderItem(ItemStack(item), sx - 8, sy)
                     if (n.count > 1) {
@@ -823,17 +885,17 @@ class DiagnosticScreen(
                 else -> null
             }
             if (srcItem != null) {
-                graphics.pose().pushPose()
-                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat(), 0f)
-                graphics.pose().scale(0.5f, 0.5f, 1f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((sx - 4).toFloat(), (sy + 16).toFloat())
+                graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                 graphics.renderItem(ItemStack(srcItem), 0, 0)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
             if (n.source == "missing" || n.source == "process_no_handler") {
-                graphics.pose().pushPose()
-                graphics.pose().translate(0f, 0f, 300f)
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                 Icons.X.draw(graphics, sx - 4, sy + 16, 8)
-                graphics.pose().popPose()
+                graphics.pose().popMatrix()
             }
         }
     }
@@ -845,7 +907,7 @@ class DiagnosticScreen(
     /** Rendered error click regions: (y start, y end, terminal pos) */
     private val errorClickRegions = mutableListOf<Triple<Int, Int, BlockPos>>()
 
-    private fun renderJobsAndErrors(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    private fun renderJobsAndErrors(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         val lineH = font.lineHeight + 2
         val splitX = contentLeft + contentW / 2
         graphics.fill(splitX, contentTop, splitX + 1, contentTop + contentH, SEPARATOR)
@@ -915,15 +977,17 @@ class DiagnosticScreen(
                 y += lineH
 
                 if (term.handlers.isNotEmpty()) {
-                    graphics.drawString(
-                        font,
-                        "Handlers: ${term.handlers.joinToString(", ")}",
-                        contentLeft + 12,
-                        y,
-                        0xFFAA83E0.toInt(),
-                        false
-                    )
+                    graphics.drawString(font, "Handlers:", contentLeft + 12, y, 0xFFAA83E0.toInt(), false)
                     y += lineH
+                    // Render each handler as a recipe icon strip, same visual language as
+                    // the Scripting Terminal's inline recipe hints. Legacy/plain names
+                    // fall back to gray text inside the helper.
+                    val hintX = contentLeft + 18
+                    val hintW = (splitX - 2) - hintX
+                    y += damien.nodeworks.screen.widget.RecipeHintRenderer.renderHandlers(
+                        graphics, font, term.handlers, hintX, y, hintW
+                    )
+                    y += 2
                 }
 
                 val scripts = term.scriptNames.joinToString(", ")
@@ -998,8 +1062,8 @@ class DiagnosticScreen(
         graphics.disableScissor()
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
 
         // Hover tooltip for blocks
         val hovered = hoveredBlock
@@ -1037,7 +1101,7 @@ class DiagnosticScreen(
     private val lineH get() = font.lineHeight + 1
 
     /** Inspector row types for the floating inspector panel. */
-    private enum class RowType { H2, PROPERTY }
+    private enum class RowType { H2, PROPERTY, HANDLER }
     private data class InspectorRow(
         val type: RowType,
         val text: String,
@@ -1055,6 +1119,20 @@ class DiagnosticScreen(
         rows.add(InspectorRow(RowType.H2, "Info"))
         rows.add(InspectorRow(RowType.PROPERTY, "Position: ${block.pos.x}, ${block.pos.y}, ${block.pos.z}", GRAY))
         rows.add(InspectorRow(RowType.PROPERTY, "Connections: ${block.connections.size}", GRAY))
+
+        // Handlers — Terminal only. Each handler gets its own HANDLER row that the
+        // render loop draws via RecipeHintRenderer (icon strip, same style as the
+        // Scripting Terminal's inline recipe hints and the Jobs tab).
+        if (block.type == "terminal") {
+            val term = menu.topology.terminalInfos.firstOrNull { it.pos == block.pos }
+            val handlers = term?.handlers.orEmpty()
+            if (handlers.isNotEmpty()) {
+                rows.add(InspectorRow(RowType.H2, "Handlers"))
+                for (id in handlers) {
+                    rows.add(InspectorRow(RowType.HANDLER, id))
+                }
+            }
+        }
 
         // Each face as its own section
         if (block.cards.isNotEmpty()) {
@@ -1100,6 +1178,7 @@ class DiagnosticScreen(
             bodyH += when (row.type) {
                 RowType.H2 -> lineH + 3
                 RowType.PROPERTY -> lineH
+                RowType.HANDLER -> damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT + 1
             }
         }
         bodyH += 4
@@ -1117,7 +1196,7 @@ class DiagnosticScreen(
         return intArrayOf(px, py, inspectorWidth, panelH)
     }
 
-    private fun renderInspector(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    private fun renderInspector(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         val sel = selectedBlock ?: return
         val bounds = getInspectorBounds() ?: return
         val px = bounds[0];
@@ -1176,15 +1255,15 @@ class DiagnosticScreen(
                     var h2TextX = px + 6
                     val h2TextY = curY + 2
                     if (row.blockItemId.isNotEmpty()) {
-                        val adjId = net.minecraft.resources.ResourceLocation.tryParse(row.blockItemId)
+                        val adjId = net.minecraft.resources.Identifier.tryParse(row.blockItemId)
                         if (adjId != null) {
-                            val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(adjId)
+                            val adjItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(adjId)
                             if (adjItem != null) {
-                                graphics.pose().pushPose()
-                                graphics.pose().translate((h2TextX).toFloat(), (h2TextY - 1).toFloat(), 0f)
-                                graphics.pose().scale(0.5f, 0.5f, 1f)
+                                graphics.pose().pushMatrix()
+                                graphics.pose().translate((h2TextX).toFloat(), (h2TextY - 1).toFloat())
+                                graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
                                 graphics.renderItem(ItemStack(adjItem), 0, 0)
-                                graphics.pose().popPose()
+                                graphics.pose().popMatrix()
                                 h2TextX += 10
                             }
                         }
@@ -1253,6 +1332,20 @@ class DiagnosticScreen(
                     curY += lineH
                     rowIndex++
                 }
+
+                RowType.HANDLER -> {
+                    // Recipe icon strip for this Terminal handler. Inset matches PROPERTY
+                    // rows so the row aligns under the "Handlers" H2; width fills the body
+                    // minus the scrollbar gutter (6px track + 2px pad on each side).
+                    val stripX = px + 6
+                    val stripW = pw - 12
+                    damien.nodeworks.screen.widget.RecipeHintRenderer.render(
+                        graphics, font, row.text, stripX, curY,
+                        stripW, damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT
+                    )
+                    curY += damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT + 1
+                    rowIndex++
+                }
             }
             isFirstRow = false
         }
@@ -1268,32 +1361,44 @@ class DiagnosticScreen(
         }
     }
 
-    private fun renderTooltipLines(graphics: GuiGraphics, lines: List<String>, mouseX: Int, mouseY: Int) {
+    private fun renderTooltipLines(graphics: GuiGraphicsExtractor, lines: List<String>, mouseX: Int, mouseY: Int) {
         val tooltipW = lines.maxOf { font.width(it) } + 6
         val tooltipH = lines.size * (font.lineHeight + 1) + 4
         val tx = mouseX + 10
         val ty = mouseY - tooltipH - 2
 
-        graphics.pose().pushPose()
-        graphics.pose().translate(0f, 0f, 400f)
+        graphics.pose().pushMatrix()
+        graphics.pose().translate((0f).toFloat(), (0f).toFloat())
         NineSlice.TOOLTIP.draw(graphics, tx - 1, ty - 1, tooltipW + 2, tooltipH + 2)
         for ((i, line) in lines.withIndex()) {
             val c = if (i == 0) WHITE else GRAY
             graphics.drawString(font, line, tx + 3, ty + 2 + i * (font.lineHeight + 1), c)
         }
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
     }
 
-    override fun renderLabels(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    override fun extractLabels(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         // Don't render default labels
     }
 
     // ========== Line drawing ==========
 
     private fun renderBlockIcon(
-        graphics: GuiGraphics, block: DiagnosticOpenData.NetworkBlock,
+        graphics: GuiGraphicsExtractor, block: DiagnosticOpenData.NetworkBlock,
         sx: Int, sy: Int, halfBlock: Int, mouseX: Int, mouseY: Int
     ) {
+        // Selection glow — drawn BEFORE the block icon so the icon sits on top and
+        // the aura bleeds around its edges. Matches the Crafting Tree item halo via
+        // the shared [GlowHighlight] helper.
+        if (block == selectedBlock) {
+            val nc = menu.topology.networkColor
+            val selR = minOf(((nc shr 16) and 0xFF) * 3 / 2, 255)
+            val selG = minOf(((nc shr 8) and 0xFF) * 3 / 2, 255)
+            val selB = minOf((nc and 0xFF) * 3 / 2, 255)
+            val selColor = (0xFF shl 24) or (selR shl 16) or (selG shl 8) or selB
+            damien.nodeworks.screen.widget.GlowHighlight.draw(graphics, sx - 8, sy - 8, 16, selColor)
+        }
+
         // Render the block's item icon (16x16 centered on sx,sy)
         val itemStack = BLOCK_ITEMS[block.type]
         if (itemStack != null) {
@@ -1306,14 +1411,14 @@ class DiagnosticScreen(
         // Card icons in a visible pill below the block
         if (block.cards.isNotEmpty()) {
             val iconsTexture =
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
             val uniqueTypes = block.cards.map { it.cardType }.distinct()
             val iconSize = 12
             val iconSpacing = 0
             val pillW = uniqueTypes.size * (iconSize + iconSpacing) - iconSpacing
             val pillH = iconSize
             val pillX = sx - pillW / 2
-            val pillY = sy + 7
+            val pillY = sy + 5
 
             // Pill background
             NineSlice.PILL.draw(graphics, pillX - 2, pillY, pillW + 4, pillH)
@@ -1330,26 +1435,13 @@ class DiagnosticScreen(
             }
         }
 
-        // Selection highlight — tight around the 16x16 icon, uses network color
-        if (block == selectedBlock) {
-            val nc = menu.topology.networkColor
-            val selR = minOf(((nc shr 16) and 0xFF) * 3 / 2, 255)
-            val selG = minOf(((nc shr 8) and 0xFF) * 3 / 2, 255)
-            val selB = minOf((nc and 0xFF) * 3 / 2, 255)
-            val selColor = (0xFF shl 24) or (selR shl 16) or (selG shl 8) or selB
-            graphics.fill(sx - 9, sy - 9, sx + 9, sy - 8, selColor)
-            graphics.fill(sx - 9, sy + 8, sx + 9, sy + 9, selColor)
-            graphics.fill(sx - 9, sy - 9, sx - 8, sy + 9, selColor)
-            graphics.fill(sx + 8, sy - 9, sx + 9, sy + 9, selColor)
-        }
-
         // Pinned indicator icon (top-left corner of block)
         if (damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == block.pos) {
             val pinIconTex =
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
-            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.33f, 0.8f, 1f, 1f) // cyan tint
-            graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256)
-            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+            // 26.1: `RenderSystem.setShaderColor` is gone; tint goes via the per-call
+            //  ARGB arg on the stretched-blit overload. 0xFF54CCFF = rgb(0.33, 0.8, 1.0).
+            graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256, 0xFF54CCFF.toInt())
         }
 
         // Warning indicator (top-right corner of block) when the block has an
@@ -1357,10 +1449,10 @@ class DiagnosticScreen(
         // "__error:" detail prefix. renderItem draws at a higher Z than normal
         // blits, so we translate the pose up to sit on top of the block icon.
         if (block.details.any { it.startsWith("__error:") }) {
-            graphics.pose().pushPose()
-            graphics.pose().translate(0f, 0f, 200f)
+            graphics.pose().pushMatrix()
+            graphics.pose().translate((0f).toFloat(), (0f).toFloat())
             Icons.WARNING.draw(graphics, sx + 3, sy - 11, 10)
-            graphics.pose().popPose()
+            graphics.pose().popMatrix()
         }
 
         // Hover detection (16x16 area)
@@ -1371,7 +1463,7 @@ class DiagnosticScreen(
         }
     }
 
-    private fun drawLine(graphics: GuiGraphics, x1: Int, y1: Int, x2: Int, y2: Int, color: Int) {
+    private fun drawLine(graphics: GuiGraphicsExtractor, x1: Int, y1: Int, x2: Int, y2: Int, color: Int) {
         val dx = x2 - x1
         val dy = y2 - y1
         val steps = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
@@ -1389,12 +1481,15 @@ class DiagnosticScreen(
 
     // ========== Input ==========
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         val field = craftItemField
         if (field != null && field.isFocused) {
             if (keyCode == 256) { // ESC
                 craftAutocompleteSuggestions = emptyList()
-                return super.keyPressed(keyCode, scanCode, modifiers)
+                return super.keyPressed(event)
             }
             // Dropdown navigation
             if (craftAutocompleteSuggestions.isNotEmpty()) {
@@ -1430,20 +1525,24 @@ class DiagnosticScreen(
                     }
                 }
             }
-            field.keyPressed(keyCode, scanCode, modifiers)
+            field.keyPressed(event)
             return true
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
-        // Double-click on craft field → select all
+        // Double-click on craft field → select all; single-click → populate dropdown
+        // with the current query (empty query shows every craftable item).
         val field = craftItemField
         if (field != null && field.visible && mx >= field.x && mx < field.x + field.width && my >= field.y && my < field.y + field.height) {
-            val now = net.minecraft.Util.getMillis()
+            val now = net.minecraft.util.Util.getMillis()
             if (now - craftFieldLastClickTime < 400) {
                 field.moveCursorToStart(false)
                 field.moveCursorToEnd(true)
@@ -1451,6 +1550,9 @@ class DiagnosticScreen(
                 return true
             }
             craftFieldLastClickTime = now
+            // Seed the dropdown on click so the full list appears immediately
+            //  without the user needing to type anything first.
+            updateCraftAutocomplete(field.value)
         }
 
         // Craft dropdown click
@@ -1475,11 +1577,11 @@ class DiagnosticScreen(
             }
         }
 
-        // Error click → switch to topology, select + pin the terminal
+        // Error click → switch to topology, select + pin the terminal, expand the
+        // group if the terminal sits in one, and pan to center the view on it.
         if (activeTab == 3 && errorClickRegions.isNotEmpty()) {
             for ((yStart, yEnd, termPos) in errorClickRegions) {
                 if (my >= yStart && my < yEnd && mx >= contentLeft + contentW / 2 && mx < contentLeft + contentW) {
-                    // Find the block in topology that matches this terminal pos
                     val block = menu.topology.blocks.firstOrNull { it.pos == termPos }
                     if (block != null) {
                         selectedBlock = block
@@ -1487,6 +1589,8 @@ class DiagnosticScreen(
                         damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock = termPos
                         activeTab = 0
                         craftItemField?.visible = false
+                        blockToGroup[termPos]?.let { expandedGroups.add(it) }
+                        centerViewOn(termPos)
                     }
                     return true
                 }
@@ -1603,17 +1707,23 @@ class DiagnosticScreen(
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         dragging = false
         craftGraphDragging = false
         draggingInspectorScrollbar = false
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleased(event)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         if (draggingInspectorScrollbar) {
             val bounds = getInspectorBounds()
             if (bounds != null) {
@@ -1645,7 +1755,7 @@ class DiagnosticScreen(
             craftGraphLastDragY = mouseY
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+        return super.mouseDragged(event, dragX, dragY)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {

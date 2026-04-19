@@ -2,7 +2,6 @@ package damien.nodeworks.script.cpu
 
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
-import net.minecraft.nbt.Tag
 
 /**
  * A single discrete unit of CPU work. Crafts decompose into a DAG of operations that
@@ -142,29 +141,43 @@ sealed class Operation {
     }
 
     companion object {
+        // 26.1: CompoundTag.getInt/getLong/getString/getBoolean/getIntArray/getList now
+        //  return Optional<T>; *Or(name, default) accessors cover the "read with default"
+        //  case. Reads still rely on the prior keys, so pre-migration NBT loads cleanly.
         fun loadFromNBT(tag: CompoundTag): Operation? {
-            val id = tag.getInt("id")
-            val readyAt = tag.getLong("readyAt")
-            val inProgress = tag.getBoolean("inProgress")
-            val deps = (tag.getIntArray("deps") ?: IntArray(0)).toList()
-            val op: Operation = when (tag.getString("kind")) {
-                "pull" -> Pull(id, deps, tag.getString("itemId"), tag.getLong("amount"))
+            val id = tag.getIntOr("id", -1)
+            if (id < 0) return null
+            val readyAt = tag.getLongOr("readyAt", -1L)
+            val inProgress = tag.getBooleanOr("inProgress", false)
+            val deps = tag.getIntArray("deps").orElse(IntArray(0)).toList()
+            val op: Operation = when (tag.getStringOr("kind", "")) {
+                "pull" -> Pull(id, deps, tag.getStringOr("itemId", ""), tag.getLongOr("amount", 0L))
                 "process" -> Process(
-                    id, deps, tag.getString("api"),
+                    id, deps, tag.getStringOr("api", ""),
                     readItemList(tag, "inputs"),
                     readItemList(tag, "outputs")
                 )
                 "execute" -> {
-                    val rec = tag.getList("recipe", Tag.TAG_STRING.toInt())
-                    val recipe = (0 until rec.size).map { rec.getString(it) }
-                    Execute(id, deps, recipe, tag.getString("out"), tag.getLong("outCount"), tag.getLong("executions"))
+                    val rec = tag.getListOrEmpty("recipe")
+                    val recipe = (0 until rec.size).map { rec.getStringOr(it, "") }
+                    Execute(
+                        id, deps, recipe,
+                        tag.getStringOr("out", ""),
+                        tag.getLongOr("outCount", 0L),
+                        tag.getLongOr("executions", 0L)
+                    )
                 }
-                "deliver" -> Deliver(id, deps, tag.getString("itemId"), tag.getLong("amount"), tag.getBoolean("reserved"))
+                "deliver" -> Deliver(
+                    id, deps,
+                    tag.getStringOr("itemId", ""),
+                    tag.getLongOr("amount", 0L),
+                    tag.getBooleanOr("reserved", false)
+                )
                 else -> return null
             }
             op.readyAt = readyAt
             op.inProgress = inProgress
-            op.outputNodeId = if (tag.contains("nodeId")) tag.getInt("nodeId") else -1
+            op.outputNodeId = tag.getIntOr("nodeId", -1)
             return op
         }
 
@@ -180,10 +193,10 @@ sealed class Operation {
         }
 
         private fun readItemList(tag: CompoundTag, key: String): List<Pair<String, Long>> {
-            val list = tag.getList(key, Tag.TAG_COMPOUND.toInt())
-            return (0 until list.size).map {
-                val c = list.getCompound(it)
-                c.getString("id") to c.getLong("ct")
+            val list = tag.getListOrEmpty(key)
+            return (0 until list.size).mapNotNull { i ->
+                val c = list.getCompound(i).orElse(null) ?: return@mapNotNull null
+                c.getStringOr("id", "") to c.getLongOr("ct", 0L)
             }
         }
     }

@@ -3,7 +3,7 @@ package damien.nodeworks.screen
 import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.Container
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.SimpleContainer
@@ -63,8 +63,8 @@ class ProcessingSetScreenHandler(
             for ((i, pair) in inputs.withIndex()) {
                 val slot = inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
-                val id = ResourceLocation.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val id = Identifier.tryParse(pair.first) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 inputGrid.setItem(slot, ItemStack(item, 1))
             }
 
@@ -72,8 +72,8 @@ class ProcessingSetScreenHandler(
             for ((i, pair) in outputs.withIndex()) {
                 val slot = outputSlots.getOrElse(i) { i }
                 if (slot !in 0 until OUTPUT_SLOTS) continue
-                val id = ResourceLocation.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val id = Identifier.tryParse(pair.first) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 outputGrid.setItem(slot, ItemStack(item, 1))
             }
 
@@ -110,8 +110,8 @@ class ProcessingSetScreenHandler(
             for ((i, pair) in openData.inputs.withIndex()) {
                 val slot = openData.inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
-                val id = ResourceLocation.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val id = Identifier.tryParse(pair.first) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 inputGrid.setItem(slot, ItemStack(item, 1))
             }
 
@@ -119,8 +119,8 @@ class ProcessingSetScreenHandler(
             for ((i, pair) in openData.outputs.withIndex()) {
                 val slot = openData.outputSlots.getOrElse(i) { i }
                 if (slot !in 0 until OUTPUT_SLOTS) continue
-                val id = ResourceLocation.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val id = Identifier.tryParse(pair.first) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 outputGrid.setItem(slot, ItemStack(item, 1))
             }
 
@@ -177,7 +177,7 @@ class ProcessingSetScreenHandler(
         override fun getMaxStackSize(): Int = 1
     }
 
-    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
+    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
         if (slotId in 0 until TOTAL_GHOST_SLOTS) {
             val carried = carried
             if (carried.isEmpty) {
@@ -254,8 +254,8 @@ class ProcessingSetScreenHandler(
             }
             return
         }
-        val id = ResourceLocation.tryParse(itemId) ?: return
-        val item = BuiltInRegistries.ITEM.get(id) ?: return
+        val id = Identifier.tryParse(itemId) ?: return
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return
         when {
             slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, ItemStack(item, 1))
             slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, ItemStack(item, 1))

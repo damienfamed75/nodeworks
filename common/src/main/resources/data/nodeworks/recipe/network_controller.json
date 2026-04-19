@@ -1,26 +1,18 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DDD",
-        "CGC",
-        "DQD"
-    ],
-    "key": {
-        "D": {
-            "item": "minecraft:deepslate"
-        },
-        "C": {
-            "item": "nodeworks:celestine_shard"
-        },
-        "G": {
-            "item": "minecraft:diamond"
-        },
-        "Q": {
-            "item": "minecraft:quartz"
-        }
-    },
-    "result": {
-        "id": "nodeworks:network_controller",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DDD",
+    "CGC",
+    "DQD"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "C": "nodeworks:celestine_shard",
+    "G": "minecraft:diamond",
+    "Q": "minecraft:quartz"
+  },
+  "result": {
+    "id": "nodeworks:network_controller",
+    "count": 1
+  }
 }

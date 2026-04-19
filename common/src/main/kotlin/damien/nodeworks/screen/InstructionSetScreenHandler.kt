@@ -5,7 +5,7 @@ import damien.nodeworks.registry.ModScreenHandlers
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.Container
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.SimpleContainer
@@ -41,8 +41,8 @@ class InstructionSetScreenHandler(
             val grid = SimpleContainer(9)
             for (i in 0 until 9) {
                 if (recipe[i].isNotEmpty()) {
-                    val id = ResourceLocation.tryParse(recipe[i]) ?: continue
-                    val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                    val id = Identifier.tryParse(recipe[i]) ?: continue
+                    val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                     grid.setItem(i, ItemStack(item, 1))
                 }
             }
@@ -106,14 +106,14 @@ class InstructionSetScreenHandler(
         if (level.isClientSide) return // Recipe lookup is server-side only
 
         val serverLevel = level as? net.minecraft.server.level.ServerLevel ?: return
-        val recipeManager = serverLevel.getRecipeManager() ?: return
+        val recipeManager = serverLevel.recipeAccess() ?: return
 
         val items = (0 until 9).map { recipeGrid.getItem(it) }
         val input = CraftingInput.of(3, 3, items)
 
         val result = recipeManager
             .getRecipeFor(RecipeType.CRAFTING, input, level)
-            .map { it.value().assemble(input, level.registryAccess()) }
+            .map { it.value().assemble(input) }
             .orElse(ItemStack.EMPTY)
 
         resultContainer.setItem(0, result)
@@ -131,7 +131,7 @@ class InstructionSetScreenHandler(
         return false
     }
 
-    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ClickType, player: Player) {
+    override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
         if (slotId in 0..8) {
             val carried = carried
             if (carried.isEmpty) {
@@ -210,8 +210,8 @@ class InstructionSetScreenHandler(
             if (items[i].isEmpty()) {
                 recipeGrid.setItem(i, ItemStack.EMPTY)
             } else {
-                val id = ResourceLocation.tryParse(items[i]) ?: continue
-                val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                val id = Identifier.tryParse(items[i]) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                 recipeGrid.setItem(i, ItemStack(item, 1))
             }
         }

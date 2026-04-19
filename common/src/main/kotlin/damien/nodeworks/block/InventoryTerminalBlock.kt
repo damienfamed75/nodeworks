@@ -53,7 +53,7 @@ class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(propertie
         // Check for controller via network connections
         val snapshot = NetworkDiscovery.discoverNetwork(serverLevel, pos)
         if (!snapshot.isOnline) {
-            player.displayClientMessage(Component.translatable("message.nodeworks.no_controller"), false)
+            player.sendSystemMessage(Component.translatable("message.nodeworks.no_controller"))
             return InteractionResult.SUCCESS
         }
 

@@ -1,16 +1,18 @@
 package damien.nodeworks.screen
 
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawString
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 
 class BroadcastAntennaScreen(
     menu: BroadcastAntennaMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<BroadcastAntennaMenu>(menu, playerInventory, title) {
+) : AbstractContainerScreen<BroadcastAntennaMenu>(menu, playerInventory, title, FRAME_W, FRAME_H) {
 
     companion object {
         private const val FRAME_W = 176
@@ -30,19 +32,18 @@ class BroadcastAntennaScreen(
         private const val FRAME_H = INV_PANEL_Y + INV_PANEL_H
         private const val LABEL_COLOR = 0xFFAAAAAA.toInt()
 
-        private val BG_TEXTURE = ResourceLocation.fromNamespaceAndPath(
+        private val BG_TEXTURE = Identifier.fromNamespaceAndPath(
             "nodeworks", "textures/gui/broadcast_antenna_bg.png"
         )
     }
 
     init {
-        imageWidth = FRAME_W
-        imageHeight = FRAME_H
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         val x = leftPos
         val y = topPos
 
@@ -53,10 +54,5 @@ class BroadcastAntennaScreen(
         NineSlice.WINDOW_FRAME.draw(graphics, x, y + INV_PANEL_Y, FRAME_W, INV_PANEL_H)
         graphics.drawString(font, "Inventory", x + INV_X, y + INV_LABEL_Y, LABEL_COLOR)
         NineSlice.drawPlayerInventory(graphics, x + INV_X, y + INV_GRID_Y, HOTBAR_GAP)
-    }
-
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
-        renderTooltip(graphics, mouseX, mouseY)
     }
 }

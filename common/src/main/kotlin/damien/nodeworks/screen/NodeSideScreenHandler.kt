@@ -74,13 +74,19 @@ class NodeSideScreenHandler(
     /** Switch the active side — repositions slots so only the new side is visible. */
     fun switchSide(newSide: Direction) {
         activeSide = newSide
+        // 26.1: the vanilla jar common/ compiles against has Slot.x / Slot.y as
+        //  `public final int` even though the NeoForge patch makes them mutable at
+        //  runtime. AcsCompat.setSlotPos writes through via reflection.
         for (sideOrd in 0..5) {
             val visible = sideOrd == newSide.ordinal
             for (row in 0..2) {
                 for (col in 0..2) {
                     val slot = slots[sideOrd * 9 + row * 3 + col]
-                    slot.x = if (visible) cardSlotX(col) else -9999
-                    slot.y = if (visible) cardSlotY(row) else -9999
+                    damien.nodeworks.compat.AcsCompat.setSlotPos(
+                        slot,
+                        if (visible) cardSlotX(col) else -9999,
+                        if (visible) cardSlotY(row) else -9999
+                    )
                 }
             }
         }

@@ -11,7 +11,7 @@ import net.minecraft.world.SimpleContainer
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.AbstractContainerMenu
-import net.minecraft.world.inventory.ClickType
+import net.minecraft.world.inventory.ContainerInput
 import net.minecraft.world.inventory.ContainerData
 import net.minecraft.world.inventory.SimpleContainerData
 import net.minecraft.world.inventory.Slot
@@ -108,9 +108,9 @@ class CardProgrammerMenu(
         return true
     }
 
-    override fun clicked(slotIndex: Int, button: Int, clickType: ClickType, player: Player) {
+    override fun clicked(slotIndex: Int, button: Int, clickType: ContainerInput, player: Player) {
         // Intercept regular clicks on the input slot (slot 1)
-        if (slotIndex == 1 && clickType == ClickType.PICKUP) {
+        if (slotIndex == 1 && clickType == ContainerInput.PICKUP) {
             val carried = carried
             if (!carried.isEmpty && isValidInput(carried)) {
                 val modified = carried.copyWithCount(1)

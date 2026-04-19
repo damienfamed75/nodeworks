@@ -1,18 +1,18 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DSD",
-        "BGB",
-        "DSD"
-    ],
-    "key": {
-        "D": { "item": "nodeworks:substrate" },
-        "S": { "item": "minecraft:snow_block" },
-        "B": { "item": "minecraft:blue_ice" },
-        "G": { "item": "minecraft:ghast_tear" }
-    },
-    "result": {
-        "id": "nodeworks:stabilizer",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DSD",
+    "BGB",
+    "DSD"
+  ],
+  "key": {
+    "D": "nodeworks:substrate",
+    "S": "minecraft:snow_block",
+    "B": "minecraft:blue_ice",
+    "G": "minecraft:ghast_tear"
+  },
+  "result": {
+    "id": "nodeworks:stabilizer",
+    "count": 1
+  }
 }

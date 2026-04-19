@@ -1,9 +1,9 @@
 {
   "type": "minecraft:crafting_shapeless",
   "ingredients": [
-    { "item": "nodeworks:blank_card" },
-    { "item": "minecraft:lime_dye" },
-    { "item": "minecraft:hopper" }
+    "nodeworks:blank_card",
+    "minecraft:lime_dye",
+    "minecraft:hopper"
   ],
   "result": {
     "id": "nodeworks:io_card",

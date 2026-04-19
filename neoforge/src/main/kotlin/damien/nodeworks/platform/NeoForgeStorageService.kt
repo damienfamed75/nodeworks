@@ -12,8 +12,12 @@ import net.neoforged.neoforge.items.ItemHandlerHelper
 class NeoForgeStorageService : StorageService {
 
     override fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle? {
-        val handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, face) ?: return null
-        return NeoForgeItemStorageHandle(handler)
+        // 26.1: Capabilities.ItemHandler.BLOCK (IItemHandler) was replaced by
+        //  Capabilities.Item.BLOCK (ResourceHandler<ItemResource>). The IItemHandler.of(...)
+        //  adapter is NeoForge's official migration ease path — keeps existing slot-based
+        //  logic intact while consuming the new resource-handler capability.
+        val resourceHandler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
+        return NeoForgeItemStorageHandle(IItemHandler.of(resourceHandler))
     }
 
     override fun moveItems(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
@@ -283,8 +287,8 @@ class NeoForgeStorageService : StorageService {
     }
 
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {
-        val handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, face) ?: return null
-        return NeoForgeSlottedStorageHandle(handler)
+        val resourceHandler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
+        return NeoForgeSlottedStorageHandle(IItemHandler.of(resourceHandler))
     }
 }
 

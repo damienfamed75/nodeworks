@@ -14,7 +14,7 @@ object NwDebugCommand {
     fun register(dispatcher: CommandDispatcher<CommandSourceStack>) {
         dispatcher.register(
             Commands.literal("nwdebug")
-                .requires { it.hasPermission(2) }
+                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .then(Commands.literal("craftingcore").executes(::openDebugCraftingCore))
                 .then(Commands.literal("inventoryterminal").executes(::openDebugInventoryTerminal))
         )

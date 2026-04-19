@@ -1,15 +1,21 @@
 package damien.nodeworks.screen
 
-import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.resources.ResourceLocation
+import damien.nodeworks.compat.blit
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.resources.Identifier
 
 /**
  * Helper for drawing 16x16 icons from the shared icons atlas.
  *
  * Each icon occupies a 16x16 cell on a 256x256 texture, addressed by column and row.
  *
- * For batch rendering (multiple icons per frame), wrap calls in beginBatch/endBatch
- * to avoid redundant RenderSystem state changes.
+ * 26.1: all the per-draw `RenderSystem.enableBlend / defaultBlendFunc / disableBlend`
+ * sandwiches from pre-migration are gone — the GUI pipeline that `graphics.blit`
+ * routes through sets those states internally. Same story for
+ * `RenderSystem.setShaderColor`: tints are now per-draw ARGB arguments via the
+ * tinted blit overload in compat/GuiCompat.kt. [beginBatch]/[endBatch] stay as a
+ * public contract in case future rendering batches need explicit start/end hooks,
+ * but in 26.1 they're currently no-ops.
  */
 class Icons private constructor(val col: Int, val row: Int) {
 
@@ -17,121 +23,80 @@ class Icons private constructor(val col: Int, val row: Int) {
     val v: Int get() = row * 16
 
     /** Draw this icon at full 16x16 size. */
-    fun draw(graphics: GuiGraphics, x: Int, y: Int) {
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-        }
+    fun draw(graphics: GuiGraphicsExtractor, x: Int, y: Int) {
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-        }
     }
 
     /** Draw this icon scaled to a custom size. */
-    fun draw(graphics: GuiGraphics, x: Int, y: Int, size: Int) {
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-        }
+    fun draw(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int) {
         graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-        }
     }
 
     /** Draw the center 8x8 of this icon (cropped 4px inset). */
-    fun drawSmall(graphics: GuiGraphics, x: Int, y: Int) {
+    fun drawSmall(graphics: GuiGraphicsExtractor, x: Int, y: Int) {
         graphics.blit(ATLAS, x, y, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
     }
 
     /** Draw only the top-left [w] × [h] region of this cell, at its native size. Useful for
      *  icons smaller than 16×16 (e.g. a 5×5 X) authored in the top-left corner of a cell. */
-    fun drawTopLeft(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int) {
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-        }
+    fun drawTopLeft(graphics: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int) {
         graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256)
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-        }
     }
 
     /** Draw only the top-left [w] × [h] region tinted with an RGB color. */
-    fun drawTopLeftTinted(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int, color: Int, alpha: Float = 1f) {
-        val r = ((color shr 16) and 0xFF) / 255f
-        val g = ((color shr 8) and 0xFF) / 255f
-        val b = (color and 0xFF) / 255f
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-        }
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
-        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-        }
+    fun drawTopLeftTinted(
+        graphics: GuiGraphicsExtractor,
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+        color: Int,
+        alpha: Float = 1f
+    ) {
+        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), w, h, 256, 256, packArgb(color, alpha))
     }
 
     /** Draw the center portion of this icon scaled to a custom size. */
-    fun drawSmall(graphics: GuiGraphics, x: Int, y: Int, size: Int) {
+    fun drawSmall(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int) {
         graphics.blit(ATLAS, x, y, size, size, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
     }
 
     /** Draw this icon tinted with an RGB color. Respects the icon's alpha channel. */
-    fun drawTinted(graphics: GuiGraphics, x: Int, y: Int, color: Int, alpha: Float = 1f) {
-        val r = ((color shr 16) and 0xFF) / 255f
-        val g = ((color shr 8) and 0xFF) / 255f
-        val b = (color and 0xFF) / 255f
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-        }
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
-        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-        }
+    fun drawTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, color: Int, alpha: Float = 1f) {
+        graphics.blit(ATLAS, x, y, u.toFloat(), v.toFloat(), 16, 16, 256, 256, packArgb(color, alpha))
     }
 
     /** Draw this icon tinted and scaled to a custom size. */
-    fun drawTinted(graphics: GuiGraphics, x: Int, y: Int, size: Int, color: Int, alpha: Float = 1f) {
-        val r = ((color shr 16) and 0xFF) / 255f
-        val g = ((color shr 8) and 0xFF) / 255f
-        val b = (color and 0xFF) / 255f
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-        }
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(r, g, b, alpha)
-        graphics.blit(ATLAS, x, y, size, size, u.toFloat(), v.toFloat(), 16, 16, 256, 256)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-        if (!batching) {
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-        }
+    fun drawTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int, alpha: Float = 1f) {
+        // No stretched-tinted overload in compat yet — use the non-stretched form with matching size.
+        // 26.1 GuiGraphicsExtractor.blit with tint requires the full `(pipeline, tex, x, y, u, v,
+        //  drawW, drawH, srcW, srcH, texW, texH, argb)` form; the stretched + tinted path isn't
+        //  needed yet so we render at native 16x16 into a size×size box by passing width=size,
+        //  height=size and letting the shader stretch.
+        graphics.blit(
+            net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
+            ATLAS, x, y, u.toFloat(), v.toFloat(),
+            size, size, 16, 16, 256, 256,
+            packArgb(color, alpha)
+        )
     }
 
     companion object {
-        val ATLAS: ResourceLocation = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
+        val ATLAS: Identifier = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
 
-        /** Whether we're in a batch — skips per-call enableBlend/disableBlend. */
-        private var batching = false
-
-        /** Call before rendering multiple icons to avoid redundant RenderSystem state changes. */
-        fun beginBatch() {
-            batching = true
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
+        /** Pack an RGB [color] + [alpha]∈[0..1] into 0xAARRGGBB for the GUI blit overload. */
+        private fun packArgb(color: Int, alpha: Float): Int {
+            val a = (alpha.coerceIn(0f, 1f) * 255f).toInt() and 0xFF
+            return (a shl 24) or (color and 0xFFFFFF)
         }
 
-        /** Call after rendering multiple icons to restore state. */
-        fun endBatch() {
-            batching = false
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-        }
+        /** Kept as public API — pre-migration callers wrapped multi-icon draws in
+         *  begin/end to batch the old `enableBlend`/`disableBlend` state changes. The
+         *  26.1 GUI pipeline handles blend state per-draw internally, so these are
+         *  now no-ops; leaving them in keeps call-site code forward-compatible with
+         *  future explicit batching. */
+        fun beginBatch() {}
+        fun endBatch() {}
 
         // =====================================================================
         // Atlas Layout Reference (icons.png, 256x256, 16x16 per cell)
@@ -171,7 +136,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         val FIRE = Icons(12, 1)
         val SNOWBALL = Icons(13, 1)
         val WARNING = Icons(14, 1)
-        val X_SMALL = Icons(15, 1)  // 5×5, authored in top-left corner of the cell
+        val X_SMALL = Icons(15, 1)  // 5×5 in top-left corner of the cell
 
         // Row 1 — Card type icons
         val IO_CARD = Icons(0, 1)
@@ -192,21 +157,22 @@ class Icons private constructor(val col: Int, val row: Int) {
         val EXPAND_IDLE = Icons(9, 2)
         val EXPAND_HOVER = Icons(10, 2)
         val EXPAND_PRESSED = Icons(11, 2)
+        val BADGE = Icons(12, 2) // 9x9 in top-left corner of the cell
 
         // Row 3 — Inventory Terminal icons
-        val SORT_ALPHA          = Icons(0, 3)
-        val SORT_COUNT_DESC     = Icons(1, 3)
-        val SORT_COUNT_ASC      = Icons(2, 3)
-        val FILTER_STORAGE      = Icons(3, 3)
-        val FILTER_RECIPES      = Icons(4, 3)
-        val FILTER_BOTH         = Icons(5, 3)
-        val AUTO_FOCUS_ON       = Icons(6, 3)
-        val AUTO_FOCUS_OFF      = Icons(7, 3)
+        val SORT_ALPHA = Icons(0, 3)
+        val SORT_COUNT_DESC = Icons(1, 3)
+        val SORT_COUNT_ASC = Icons(2, 3)
+        val FILTER_STORAGE = Icons(3, 3)
+        val FILTER_RECIPES = Icons(4, 3)
+        val FILTER_BOTH = Icons(5, 3)
+        val AUTO_FOCUS_ON = Icons(6, 3)
+        val AUTO_FOCUS_OFF = Icons(7, 3)
         val CRAFTING_IN_PROGRESS = Icons(8, 3)
-        val CRAFTING_COMPLETE   = Icons(9, 3)
-        val CRAFT_PLUS          = Icons(10, 3)
-        val AUTO_PULL_ON        = Icons(11, 3)
-        val AUTO_PULL_OFF       = Icons(12, 3)
+        val CRAFTING_COMPLETE = Icons(9, 3)
+        val CRAFT_PLUS = Icons(10, 3)
+        val AUTO_PULL_ON = Icons(11, 3)
+        val AUTO_PULL_OFF = Icons(12, 3)
         val CRAFTING_GRID_CLEAR = Icons(13, 3)
         val CRAFTING_GRID_DISTRIBUTE = Icons(14, 3)
         val RESERVED_SLOT = Icons(15, 3)

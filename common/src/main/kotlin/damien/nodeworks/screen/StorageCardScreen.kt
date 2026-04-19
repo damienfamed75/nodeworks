@@ -1,7 +1,29 @@
 package damien.nodeworks.screen
 
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
@@ -11,7 +33,7 @@ class StorageCardScreen(
     menu: StorageCardMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<StorageCardMenu>(menu, playerInventory, title) {
+) : AbstractContainerScreen<StorageCardMenu>(menu, playerInventory, title, W, H) {
 
     companion object {
         private const val W = 140
@@ -45,8 +67,6 @@ class StorageCardScreen(
     private var plusX = 0
 
     init {
-        imageWidth = W
-        imageHeight = H
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -72,17 +92,22 @@ class StorageCardScreen(
         addRenderableWidget(priorityField!!)
     }
 
-    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+    override fun charTyped(event: CharacterEvent): Boolean {
+        val codePoint = event.character
+        val modifiers = 0
         if (priorityField?.isFocused == true) {
             if (codePoint.isDigit()) {
-                return priorityField?.charTyped(codePoint, modifiers) ?: false
+                return priorityField?.charTyped(event) ?: false
             }
             return true // consume non-digits
         }
-        return super.charTyped(codePoint, modifiers)
+        return super.charTyped(event)
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         if (priorityField?.isFocused == true) {
             // Allow typing keys to pass through to the field
             if (keyCode == 256) { // Escape
@@ -94,9 +119,9 @@ class StorageCardScreen(
                 priorityField!!.isFocused = false
                 return true
             }
-            return priorityField!!.keyPressed(keyCode, scanCode, modifiers)
+            return priorityField!!.keyPressed(event)
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
     private fun commitFieldValue() {
@@ -106,7 +131,8 @@ class StorageCardScreen(
         Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 100 + value)
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Flat frame (no title bar)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
@@ -132,7 +158,7 @@ class StorageCardScreen(
         graphics.drawString(font, "+", pX + (btn - font.width("+")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Sync field if server value changed (e.g. from stepper button round-trip)
         val serverVal = menu.getPriority()
         if (serverVal != lastSyncedPriority && priorityField?.isFocused != true) {
@@ -140,11 +166,14 @@ class StorageCardScreen(
             lastSyncedPriority = serverVal
         }
 
-        super.render(graphics, mouseX, mouseY, partialTick)
-        renderTooltip(graphics, mouseX, mouseY)
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
+        // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         if (button == 0) {
             val stepY = topPos + INSET_Y + STEPPER_Y_OFFSET
             val mX = leftPos + minusX
@@ -155,7 +184,7 @@ class StorageCardScreen(
             val my = mouseY.toInt()
 
             if (mx >= mX && mx < mX + btnW && my >= stepY && my < stepY + btnH) {
-                val step = if (hasShiftDown()) 10 else 1
+                val step = if (hasShiftDownCompat()) 10 else 1
                 Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 0)
                 if (step > 1) {
                     // For shift-click, send multiple decrements
@@ -165,8 +194,10 @@ class StorageCardScreen(
                 }
                 return true
             }
-            if (mx >= plusX && mx < plusX + btnW && my >= stepY && my < stepY + btnH) {
-                val step = if (hasShiftDown()) 10 else 1
+            // Bug fix: `plusX` is the local x relative to leftPos — must add leftPos
+            //  to match the actual button draw position (cf. `pX` above).
+            if (mx >= pX && mx < pX + btnW && my >= stepY && my < stepY + btnH) {
+                val step = if (hasShiftDownCompat()) 10 else 1
                 Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 1)
                 if (step > 1) {
                     repeat(step - 1) {
@@ -181,7 +212,7 @@ class StorageCardScreen(
                 commitFieldValue()
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
     override fun removed() {

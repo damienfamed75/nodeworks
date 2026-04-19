@@ -2,10 +2,19 @@ package damien.nodeworks.screen.widget
 
 import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.screen.Icons
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.Font
-import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.item.ItemStack
 
 /**
@@ -90,7 +99,7 @@ object RecipeHintRenderer {
      * on any reachable Processing Storage block.
      */
     fun render(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         font: Font,
         canonicalId: String,
         x: Int,
@@ -112,7 +121,11 @@ object RecipeHintRenderer {
         // This avoids the Z-frustum clipping trap: translating the pose far enough back
         // to hide items (roughly -200 to -300) also pushes flat geometry past MC's GUI
         // near clip plane and makes it disappear entirely.
-        com.mojang.blaze3d.systems.RenderSystem.depthMask(false)
+        // 26.1: `RenderSystem.depthMask(false)` is gone. The old code masked depth
+        //  writes so item-icon quads wouldn't occlude subsequent draws. In the new
+        //  RenderPipeline system each draw's pipeline declares its own depth state,
+        //  and the default GUI pipelines don't write depth — so skipping the mask
+        //  is correct, not a stub.
         try {
             // Background — neutral grey when valid, dark red when the handler doesn't
             // match any known recipe so the row visually flags the problem.
@@ -157,14 +170,14 @@ object RecipeHintRenderer {
                 Icons.endBatch()
             }
         } finally {
-            com.mojang.blaze3d.systems.RenderSystem.depthMask(true)
+            // (depthMask restore no-op — see TODO above)
         }
     }
 
     /** Draw one (icon + ×count) pair. Returns the horizontal advance, or null if the
      *  pair would overflow `right` — caller should finish with ellipsis. */
     private fun drawEntry(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         font: Font,
         entry: Pair<String, Int>,
         cx: Int,
@@ -173,8 +186,8 @@ object RecipeHintRenderer {
         right: Int
     ): Int? {
         val (itemId, count) = entry
-        val id = ResourceLocation.tryParse(itemId) ?: return 0
-        val item = BuiltInRegistries.ITEM.get(id) ?: return 0
+        val id = Identifier.tryParse(itemId) ?: return 0
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return 0
         // Advance is ALWAYS ICON_SIZE — counts overlay the icon vanilla-style and never
         // extend the entry's footprint. Ingredient spacing is therefore consistent
         // regardless of whether a given slot shows a count.
@@ -183,11 +196,11 @@ object RecipeHintRenderer {
         val stack = ItemStack(item, count.coerceAtMost(64).coerceAtLeast(1))
         // Scale the 16×16 native item render down to ICON_SIZE via pose.scale. Translate
         // first so the scale's origin is at the icon's top-left.
-        graphics.pose().pushPose()
-        graphics.pose().translate(cx.toFloat(), iconY.toFloat(), 0f)
-        graphics.pose().scale(ITEM_SCALE, ITEM_SCALE, 1f)
+        graphics.pose().pushMatrix()
+        graphics.pose().translate(cx.toFloat(), iconY.toFloat())
+        graphics.pose().scale((ITEM_SCALE).toFloat(), (ITEM_SCALE).toFloat())
         graphics.renderItem(stack, 0, 0)
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
 
         // Count badge — vanilla-style positioning, scaled for the smaller icon. Vanilla
         // uses (cx + 17 - W, cy + 9) for a 16-wide cell; for our 14-wide cell that's
@@ -206,7 +219,36 @@ object RecipeHintRenderer {
         return ICON_SIZE
     }
 
-    private fun finishWithEllipsis(graphics: GuiGraphics, font: Font, cx: Int, textY: Int) {
+    private fun finishWithEllipsis(graphics: GuiGraphicsExtractor, font: Font, cx: Int, textY: Int) {
         graphics.drawString(font, "\u2026", cx, textY, 0xFF888888.toInt(), false)
+    }
+
+    /**
+     * Stack [handlers] as icon strips, one per row, starting at ([x], [y]) with width [w].
+     * Non-canonical ids (no `>>`) fall back to a plain gray text label — useful for
+     * legacy or user-chosen handler names. Returns the total vertical advance so the
+     * caller can continue laying out below. [rowGap] is the pixel gap between rows.
+     */
+    fun renderHandlers(
+        graphics: GuiGraphicsExtractor,
+        font: Font,
+        handlers: List<String>,
+        x: Int,
+        y: Int,
+        w: Int,
+        rowGap: Int = 1
+    ): Int {
+        if (handlers.isEmpty()) return 0
+        var cy = y
+        for (id in handlers) {
+            if (id.contains(">>")) {
+                render(graphics, font, id, x, cy, w, HINT_HEIGHT)
+                cy += HINT_HEIGHT + rowGap
+            } else {
+                graphics.drawString(font, id, x, cy + (HINT_HEIGHT - font.lineHeight) / 2 + 1, 0xFF888888.toInt(), false)
+                cy += HINT_HEIGHT + rowGap
+            }
+        }
+        return cy - y
     }
 }

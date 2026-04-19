@@ -20,6 +20,11 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getStringOrNull
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /**
@@ -116,6 +121,7 @@ class InstructionStorageBlockEntity(
         super.setLevel(level)
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
+            NodeConnectionHelper.queueRevalidation(level, worldPosition)
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
     }
@@ -173,24 +179,23 @@ class InstructionStorageBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        ContainerHelper.saveAllItems(tag, items, registries)
-        tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        networkId?.let { tag.putString("networkId", it.toString()) }
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
+        ContainerHelper.saveAllItems(output, items)
+        output.putBlockPosList("connections", connections)
+        networkId?.let { output.putString("networkId", it.toString()) }
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
         items.clear()
-        ContainerHelper.loadAllItems(tag, items, registries)
-        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+        ContainerHelper.loadAllItems(input, items)
+        networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
+        connections.addAll(input.getBlockPosList("connections"))
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

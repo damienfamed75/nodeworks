@@ -2,7 +2,6 @@ package damien.nodeworks.script.cpu
 
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
-import net.minecraft.nbt.Tag
 
 /**
  * A fully-planned craft: the static dependency DAG of [Operation]s that the scheduler
@@ -42,18 +41,25 @@ data class CraftPlan(
         var i = 0
         for (t in terminalOpIds) terms[i++] = t
         tag.putIntArray("terminals", terms)
-        submitterUuid?.let { tag.putUUID("submitter", it) }
+        // 26.1: CompoundTag.putUUID / getUUID / hasUUID are gone — use string form for
+        //  consistency with networkId across the codebase; simpler than pulling
+        //  UUIDUtil.CODEC for one field.
+        submitterUuid?.let { tag.putString("submitter", it.toString()) }
     }
 
     companion object {
         fun loadFromNBT(tag: CompoundTag): CraftPlan? {
-            val rootItemId = tag.getString("rootItemId")
-            val rootCount = tag.getLong("rootCount")
+            val rootItemId = tag.getStringOr("rootItemId", "")
             if (rootItemId.isEmpty()) return null
-            val opsList = tag.getList("ops", Tag.TAG_COMPOUND.toInt())
-            val ops = (0 until opsList.size).mapNotNull { Operation.loadFromNBT(opsList.getCompound(it)) }
-            val terms = (tag.getIntArray("terminals") ?: IntArray(0)).toSet()
-            val submitter = if (tag.hasUUID("submitter")) tag.getUUID("submitter") else null
+            val rootCount = tag.getLongOr("rootCount", 0L)
+            val opsList = tag.getListOrEmpty("ops")
+            val ops = (0 until opsList.size).mapNotNull { i ->
+                opsList.getCompound(i).orElse(null)?.let { Operation.loadFromNBT(it) }
+            }
+            val terms = tag.getIntArray("terminals").orElse(IntArray(0)).toSet()
+            val submitter = tag.getStringOr("submitter", "").takeIf { it.isNotEmpty() }?.let {
+                try { java.util.UUID.fromString(it) } catch (_: Exception) { null }
+            }
             return CraftPlan(rootItemId, rootCount, ops, terms, submitter)
         }
     }

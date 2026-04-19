@@ -5,8 +5,8 @@
     "formed=false,overheat_level=2": { "model": "nodeworks:block/co_processor" },
     "formed=false,overheat_level=3": { "model": "nodeworks:block/co_processor" },
     "formed=true,overheat_level=0":  { "model": "nodeworks:block/co_processor_on" },
-    "formed=true,overheat_level=1":  { "model": "nodeworks:block/co_processor_overheating_0" },
-    "formed=true,overheat_level=2":  { "model": "nodeworks:block/co_processor_overheating_1" },
-    "formed=true,overheat_level=3":  { "model": "nodeworks:block/co_processor_overheating_2" }
+    "formed=true,overheat_level=1":  { "model": "nodeworks:block/co_processor_on" },
+    "formed=true,overheat_level=2":  { "model": "nodeworks:block/co_processor_on" },
+    "formed=true,overheat_level=3":  { "model": "nodeworks:block/co_processor_on" }
   }
 }
