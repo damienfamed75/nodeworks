@@ -68,7 +68,9 @@ object NeoForgeTerminalPackets {
                     }
                 }
             }
-            if (isError) logger.warn("[Terminal {}] {}", pos, message)
+            // Terminal errors surface to the player via the TerminalLogPayload above and
+            // to the Diagnostic Tool's Jobs tab via NetworkErrorBuffer — they don't
+            // belong in the server console.
         }
         activeEngines[gp] = engine
         if (!engine.start(terminal.getScriptsCopy())) {

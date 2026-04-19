@@ -67,6 +67,9 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .strength(2.0f, 6.0f)
             .requiresCorrectToolForDrops()
+            // Slime-block place/break/step sounds + slime-block bounce behavior wired in
+            // VariableBlock's fallOn / updateEntityMovementAfterFallOn / stepOn overrides.
+            .sound(net.minecraft.world.level.block.SoundType.SLIME_BLOCK)
     )
 
     val CRAFTING_CORE: Block = register(

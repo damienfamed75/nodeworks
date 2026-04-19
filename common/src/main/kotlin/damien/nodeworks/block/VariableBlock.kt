@@ -10,7 +10,10 @@ import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
@@ -60,5 +63,41 @@ class VariableBlock(properties: Properties) : BaseEntityBlock(properties) {
         val entity = level.getBlockEntity(pos) as? VariableBlockEntity
         entity?.blockDestroyed = true
         return super.playerWillDestroy(level, pos, state, player)
+    }
+
+    // --- Slime-block bounce behaviour ---
+    //
+    // The three overrides below are copied verbatim from vanilla SlimeBlock. We can't
+    // inherit from SlimeBlock because VariableBlock extends BaseEntityBlock (the Variable
+    // needs a block entity for its name/type/value state), so we inline the bounce logic.
+
+    /** Land on the block without taking fall damage — same conditions as SlimeBlock. */
+    override fun fallOn(level: Level, state: BlockState, pos: BlockPos, entity: Entity, fallDistance: Double) {
+        if (!entity.isSuppressingBounce) {
+            entity.causeFallDamage(fallDistance, 0.0f, level.damageSources().fall())
+        }
+    }
+
+    /** Apply the upward bounce impulse after the fall. */
+    override fun updateEntityMovementAfterFallOn(level: BlockGetter, entity: Entity) {
+        if (entity.isSuppressingBounce) {
+            super.updateEntityMovementAfterFallOn(level, entity)
+        } else {
+            val movement = entity.deltaMovement
+            if (movement.y < 0.0) {
+                val factor = if (entity is LivingEntity) 1.0 else 0.8
+                entity.deltaMovement = net.minecraft.world.phys.Vec3(movement.x, -movement.y * factor, movement.z)
+            }
+        }
+    }
+
+    /** Slow horizontal movement when walking on top, matching SlimeBlock's shuffle. */
+    override fun stepOn(level: Level, pos: BlockPos, onState: BlockState, entity: Entity) {
+        val absDeltaY = kotlin.math.abs(entity.deltaMovement.y)
+        if (absDeltaY < 0.1 && !entity.isSteppingCarefully) {
+            val scale = 0.4 + absDeltaY * 0.2
+            entity.deltaMovement = entity.deltaMovement.multiply(scale, 1.0, scale)
+        }
+        super.stepOn(level, pos, onState, entity)
     }
 }

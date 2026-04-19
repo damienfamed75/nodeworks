@@ -11,7 +11,6 @@ import org.luaj.vm2.compiler.LuaC
 import org.luaj.vm2.lib.*
 import org.luaj.vm2.lib.jse.JseBaseLib
 import org.luaj.vm2.lib.jse.JseMathLib
-import org.slf4j.LoggerFactory
 
 /**
  * Manages a sandboxed Lua VM for one terminal. Provides the Nodeworks API
@@ -22,8 +21,6 @@ class ScriptEngine(
     private val networkEntryNode: BlockPos,
     private val logCallback: (String, Boolean) -> Unit // (message, isError)
 ) {
-    private val logger = LoggerFactory.getLogger("nodeworks-script")
-
     private var globals: Globals? = null
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl { errorMsg -> logCallback(errorMsg, true) }
@@ -121,8 +118,9 @@ class ScriptEngine(
             chunk.call()
             true
         } catch (e: LuaError) {
+            // Script-level errors belong in the player-facing terminal log and the
+            // Diagnostic Tool's error buffer — not the server console.
             logCallback("Error: ${e.message}", true)
-            logger.warn("Script error: {}", e.message)
             stop()
             false
         }
@@ -168,11 +166,9 @@ class ScriptEngine(
             pollRedstoneCallbacks()
         } catch (e: LuaError) {
             logCallback("Runtime error: ${e.message}", true)
-            logger.warn("Script runtime error: {}", e.message)
             stop()
         } catch (e: Exception) {
             logCallback("Runtime error: ${e.message}", true)
-            logger.warn("Script runtime exception: {}", e.message, e)
             stop()
         }
     }
