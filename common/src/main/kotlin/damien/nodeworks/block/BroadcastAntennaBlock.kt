@@ -102,4 +102,13 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
         }
         super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
+
+    // Comparator output — fill ratio of the 2 slots (chip + upgrade). Useful as a
+    // "linked and upgraded" signal: 0 empty, ~7 chip only, ~15 both installed.
+    override fun hasAnalogOutputSignal(state: BlockState): Boolean = true
+
+    override fun getAnalogOutputSignal(state: BlockState, level: Level, pos: BlockPos, direction: net.minecraft.core.Direction): Int {
+        val be = level.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return 0
+        return net.minecraft.world.inventory.AbstractContainerMenu.getRedstoneSignalFromContainer(be)
+    }
 }

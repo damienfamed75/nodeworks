@@ -122,4 +122,13 @@ class ReceiverAntennaBlock(properties: Properties) : BaseEntityBlock(properties)
         entity?.blockDestroyed = true
         return super.playerWillDestroy(level, pos, state, player)
     }
+
+    // Comparator output — binary signal (0 or 15) tracking whether the single
+    // link-crystal slot is populated. Useful for "is this receiver linked" detection.
+    override fun hasAnalogOutputSignal(state: BlockState): Boolean = true
+
+    override fun getAnalogOutputSignal(state: BlockState, level: Level, pos: BlockPos, direction: Direction): Int {
+        val be = level.getBlockEntity(pos) as? ReceiverAntennaBlockEntity ?: return 0
+        return net.minecraft.world.inventory.AbstractContainerMenu.getRedstoneSignalFromContainer(be)
+    }
 }
