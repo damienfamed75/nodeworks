@@ -1,68 +1,49 @@
 package damien.nodeworks.script
 
-import damien.nodeworks.block.entity.NodeBlockEntity
-import damien.nodeworks.network.NodeConnectionHelper
+import damien.nodeworks.block.entity.MonitorBlockEntity
 import net.minecraft.core.BlockPos
 import net.minecraft.server.level.ServerLevel
-import net.minecraft.world.level.block.Block
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Updates monitor display counts from the shared NetworkInventoryCache.
- * Runs every 20 ticks (1 second) for each node that has monitors.
+ * Refreshes every Monitor block's displayed item count from the shared
+ * [NetworkInventoryCache]. Runs every 20 ticks (1 second). Monitor BEs register
+ * themselves via [trackMonitor] during `setLevel` and unregister via
+ * [untrackMonitor] during `setRemoved`.
  */
 object MonitorUpdateHelper {
 
-    private val monitoredNodes = ConcurrentHashMap.newKeySet<BlockPos>()
+    private val monitored = ConcurrentHashMap.newKeySet<BlockPos>()
 
-    fun trackNode(pos: BlockPos) {
-        monitoredNodes.add(pos)
+    fun trackMonitor(pos: BlockPos) {
+        monitored.add(pos)
     }
 
-    fun untrackNode(pos: BlockPos) {
-        monitoredNodes.remove(pos)
+    fun untrackMonitor(pos: BlockPos) {
+        monitored.remove(pos)
     }
 
     fun tick(level: ServerLevel, tickCount: Long) {
         if (tickCount % 20 != 0L) return
-        if (monitoredNodes.isEmpty()) return
+        if (monitored.isEmpty()) return
 
         val toRemove = mutableListOf<BlockPos>()
 
-        for (nodePos in monitoredNodes) {
-            if (!level.isLoaded(nodePos)) continue
-            val entity = level.getBlockEntity(nodePos) as? NodeBlockEntity
-            if (entity == null) {
-                toRemove.add(nodePos)
+        for (pos in monitored) {
+            if (!level.isLoaded(pos)) continue
+            val be = level.getBlockEntity(pos) as? MonitorBlockEntity
+            if (be == null) {
+                toRemove.add(pos)
                 continue
             }
-
-            val monitorFaces = entity.getMonitorFaces()
-            if (monitorFaces.isEmpty()) {
-                toRemove.add(nodePos)
-                continue
-            }
-
-            // Get or create the shared cache for this node's network
-            val cache = NetworkInventoryCache.getOrCreate(level, nodePos)
-
-            var changed = false
-            for (face in monitorFaces) {
-                val monitor = entity.getMonitor(face) ?: continue
-                val itemId = monitor.trackedItemId ?: continue
-                val count = cache.count(itemId)
-                if (count != monitor.displayCount) {
-                    entity.updateMonitorCount(face, count)
-                    changed = true
-                }
-            }
-
-            if (changed) {
-                entity.setChanged()
-                level.sendBlockUpdated(nodePos, entity.blockState, entity.blockState, Block.UPDATE_CLIENTS)
+            val itemId = be.trackedItemId ?: continue
+            val cache = NetworkInventoryCache.getOrCreate(level, pos)
+            val count = cache.count(itemId)
+            if (count != be.displayCount) {
+                be.updateDisplayCount(count)
             }
         }
 
-        toRemove.forEach { monitoredNodes.remove(it) }
+        toRemove.forEach { monitored.remove(it) }
     }
 }

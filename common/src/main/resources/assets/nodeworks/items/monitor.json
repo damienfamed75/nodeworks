@@ -1,6 +1,6 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "nodeworks:item/monitor"
+    "model": "nodeworks:block/monitor"
   }
 }

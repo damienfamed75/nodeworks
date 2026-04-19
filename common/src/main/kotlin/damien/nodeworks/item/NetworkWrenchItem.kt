@@ -42,7 +42,7 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
 
         // Must click a connectable block (node, instruction crafter, or network controller)
         val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ProcessingStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock && block !is damien.nodeworks.block.InventoryTerminalBlock) return InteractionResult.PASS
+        if (block !is NodeBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ProcessingStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock && block !is damien.nodeworks.block.InventoryTerminalBlock && block !is damien.nodeworks.block.MonitorBlock) return InteractionResult.PASS
 
         val isNode = block is NodeBlock
 

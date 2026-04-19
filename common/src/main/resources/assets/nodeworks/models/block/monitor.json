@@ -1,21 +1,26 @@
 {
   "parent": "minecraft:block/block",
   "textures": {
-    "front": "nodeworks:block/monitor_face",
-    "back": "nodeworks:block/monitor_back",
-    "side": "nodeworks:block/monitor_side"
+    "up": "nodeworks:block/monitor_top",
+    "down": "nodeworks:block/monitor_bottom",
+    "north": "nodeworks:block/monitor_front",
+    "south": "nodeworks:block/monitor_back",
+    "east": "nodeworks:block/monitor_sides",
+    "west": "nodeworks:block/monitor_sides",
+    "particle": "nodeworks:block/monitor_sides"
   },
   "elements": [
     {
-      "from": [2, 2, 0],
-      "to": [14, 14, 2],
+      "comment": "Base block. Emissive front is rendered by MonitorRenderer (BER) via the EYES pipeline, tinted with the network color.",
+      "from": [0, 0, 0],
+      "to": [16, 16, 16],
       "faces": {
-        "north": { "texture": "#front" },
-        "south": { "texture": "#back" },
-        "east":  { "texture": "#side" },
-        "west":  { "texture": "#side" },
-        "up":    { "texture": "#side" },
-        "down":  { "texture": "#side" }
+        "north": { "texture": "#north", "cullface": "north" },
+        "south": { "texture": "#south", "cullface": "south" },
+        "east":  { "texture": "#east",  "cullface": "east"  },
+        "west":  { "texture": "#west",  "cullface": "west"  },
+        "up":    { "texture": "#up",    "cullface": "up"    },
+        "down":  { "texture": "#down",  "cullface": "down"  }
       }
     }
   ]

@@ -83,50 +83,6 @@ class NodeBlockEntity(
 
     fun hasAnyRedstoneOutput(): Boolean = redstoneOutputs.any { it > 0 }
 
-    // --- Monitors ---
-
-    /** Per-face monitor data. Null = no monitor on that face. */
-    data class MonitorData(val trackedItemId: String?, var displayCount: Long = 0L)
-
-    private val monitors = java.util.EnumMap<Direction, MonitorData>(Direction::class.java)
-
-    fun hasMonitor(face: Direction): Boolean = monitors.containsKey(face)
-    fun getMonitor(face: Direction): MonitorData? = monitors[face]
-    fun getMonitorFaces(): Set<Direction> = monitors.keys.toSet()
-
-    fun attachMonitor(face: Direction) {
-        if (!monitors.containsKey(face)) {
-            monitors[face] = MonitorData(null)
-            markDirtyAndSync()
-            val lvl = level
-            if (lvl is net.minecraft.server.level.ServerLevel) {
-                damien.nodeworks.script.MonitorUpdateHelper.trackNode(worldPosition)
-            }
-        }
-    }
-
-    fun removeMonitor(face: Direction): Boolean {
-        if (monitors.remove(face) != null) {
-            markDirtyAndSync()
-            if (monitors.isEmpty()) {
-                damien.nodeworks.script.MonitorUpdateHelper.untrackNode(worldPosition)
-            }
-            return true
-        }
-        return false
-    }
-
-    fun setMonitorItem(face: Direction, itemId: String?) {
-        val monitor = monitors[face] ?: return
-        monitors[face] = monitor.copy(trackedItemId = itemId)
-        markDirtyAndSync()
-    }
-
-    fun updateMonitorCount(face: Direction, count: Long) {
-        val monitor = monitors[face] ?: return
-        monitor.displayCount = count
-    }
-
     // --- Network connections ---
 
     override fun getConnections(): List<BlockPos> = connections.toList()
@@ -267,13 +223,6 @@ class NodeBlockEntity(
             output.putIntArray("redstoneOutputs", redstoneOutputs.copyOf())
         }
         networkId?.let { output.putString("networkId", it.toString()) }
-        val monitorList = output.childrenList("monitors")
-        for ((face, data) in monitors) {
-            val child = monitorList.addChild()
-            child.putInt("face", face.ordinal)
-            child.putString("item", data.trackedItemId ?: "")
-            child.putLong("count", data.displayCount)
-        }
     }
 
     override fun loadAdditional(input: ValueInput) {
@@ -292,15 +241,6 @@ class NodeBlockEntity(
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
-        monitors.clear()
-        for (child in input.childrenListOrEmpty("monitors")) {
-            val faceOrdinal = child.getIntOr("face", -1)
-            if (faceOrdinal < 0 || faceOrdinal >= Direction.entries.size) continue
-            val face = Direction.entries[faceOrdinal]
-            val itemId = child.getStringOr("item", "").ifEmpty { null }
-            val displayCount = child.getLongOr("count", 0L)
-            monitors[face] = MonitorData(itemId, displayCount)
-        }
         nodeTracker?.onNodeChanged(worldPosition, true)
     }
 
@@ -309,9 +249,6 @@ class NodeBlockEntity(
         if (newLevel is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
             NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
-            if (monitors.isNotEmpty()) {
-                damien.nodeworks.script.MonitorUpdateHelper.trackNode(worldPosition)
-            }
         }
     }
 

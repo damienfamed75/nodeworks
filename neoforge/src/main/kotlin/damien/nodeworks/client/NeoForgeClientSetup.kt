@@ -12,6 +12,7 @@ import damien.nodeworks.render.CraftingStorageRenderer
 import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
+import damien.nodeworks.render.NodeRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.ReceiverAntennaRenderer
 import damien.nodeworks.render.TerminalRenderer
@@ -88,7 +89,8 @@ object NeoForgeClientSetup {
     }
 
     private fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
-        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::MonitorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NodeRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)

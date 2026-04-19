@@ -43,6 +43,14 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
     )
 
+    val MONITOR: Block = register(
+        "monitor",
+        { damien.nodeworks.block.MonitorBlock(it) },
+        BlockBehaviour.Properties.of()
+            .strength(2.0f, 4.0f)
+            .requiresCorrectToolForDrops()
+    )
+
     val INSTRUCTION_STORAGE: Block = register(
         "instruction_storage",
         ::InstructionStorageBlock,
