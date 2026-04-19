@@ -19,13 +19,35 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
 
     override fun useOn(context: UseOnContext): InteractionResult {
         val level = context.level
-        val pos = context.clickedPos
+        val clickedPos = context.clickedPos
         val player = context.player ?: return InteractionResult.PASS
 
         if (level.isClientSide) return InteractionResult.SUCCESS
 
-        val connectable = NodeConnectionHelper.getConnectable(level, pos)
-        if (connectable == null) {
+        // Normal case: clicked block is directly on the network (Node, Terminal, …).
+        // Special case: clicked block is a CPU component (Buffer / Stabilizer /
+        // Substrate / Co-Processor) — those aren't Connectable themselves but they
+        // attach to a Crafting Core which IS Connectable. Walk the multiblock to find
+        // that Core and use its position as the diagnostic entry point so the player
+        // can click ANY piece of a CPU cluster to inspect the network.
+        val pos = run {
+            val direct = NodeConnectionHelper.getConnectable(level, clickedPos)
+            if (direct != null) return@run clickedPos
+
+            val be = level.getBlockEntity(clickedPos)
+            if (be is damien.nodeworks.block.entity.CpuComponentBlockEntity) {
+                val cores = damien.nodeworks.block.entity.CpuComponentBlockEntity.findConnectedCores(level, clickedPos)
+                cores.firstOrNull()?.blockPos?.also { return@run it }
+            }
+            null
+        }
+
+        if (pos == null) {
+            player.sendOverlayMessage(Component.translatable("message.nodeworks.diagnostic_no_network"))
+            return InteractionResult.FAIL
+        }
+
+        val connectable = NodeConnectionHelper.getConnectable(level, pos) ?: run {
             player.sendOverlayMessage(Component.translatable("message.nodeworks.diagnostic_no_network"))
             return InteractionResult.FAIL
         }
