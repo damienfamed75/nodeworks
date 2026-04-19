@@ -1,6 +1,7 @@
 package damien.nodeworks.screen.widget
 
 import damien.nodeworks.network.CardSnapshot
+import damien.nodeworks.screen.Icons
 import damien.nodeworks.compat.blit
 import damien.nodeworks.compat.drawCenteredString
 import damien.nodeworks.compat.drawString
@@ -27,6 +28,25 @@ class AutocompletePopup(
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
+    /**
+     * VSCode-style category tag for rendering a colored badge next to the suggestion.
+     * Each kind carries its own badge letter + background color. Choose based on what
+     * the suggestion *is*, not what it inserts — e.g. `network` is a MODULE even though
+     * it inserts a plain identifier.
+     */
+    enum class Kind(val letter: String, val color: Int) {
+        MODULE(  "M", 0xFF8AB4F8.toInt()), // blue
+        FUNCTION("F", 0xFFB389F9.toInt()), // purple
+        METHOD(  "M", 0xFFB389F9.toInt()), // purple (same family as function)
+        VARIABLE("V", 0xFF9CCC65.toInt()), // green
+        PROPERTY("P", 0xFFFFD54F.toInt()), // amber
+        KEYWORD( "K", 0xFFFF8A65.toInt()), // orange
+        SNIPPET( "S", 0xFFE57373.toInt()), // red
+        TYPE(    "T", 0xFF4DB6AC.toInt()), // teal
+        STRING(  "s", 0xFFBDBDBD.toInt()), // gray
+        TAG(     "#", 0xFFBDBDBD.toInt()); // gray
+    }
+
     data class Suggestion(
         val insertText: String,
         val displayText: String,
@@ -35,7 +55,8 @@ class AutocompletePopup(
         /** If true, the apply logic should also consume any auto-paired characters
          *  following the cursor (e.g. the `")` from typing `handle("` with auto-pair).
          *  Use for full-block snippets that provide their own closing punctuation. */
-        val consumesAutoclose: Boolean = false
+        val consumesAutoclose: Boolean = false,
+        val kind: Kind = Kind.VARIABLE
     )
 
     var visible: Boolean = false
@@ -189,7 +210,9 @@ class AutocompletePopup(
 
         val itemHeight = font.lineHeight + 2
         val visibleCount = minOf(suggestions.size, maxVisible)
-        val popupWidth = suggestions.maxOf { font.width(it.displayText) } + 8
+        // Each row now has a Kind badge to the left of the text. Badge occupies
+        // BADGE_SIZE px from the left edge of content area, then BADGE_GAP before text.
+        val popupWidth = suggestions.maxOf { font.width(it.displayText) } + 8 + BADGE_SIZE + BADGE_GAP
         val actualHeight = visibleCount * itemHeight + 4
 
         graphics.fill(popupX, popupY, popupX + popupWidth, popupY + actualHeight, 0xEE1E1E1E.toInt())
@@ -205,6 +228,7 @@ class AutocompletePopup(
             graphics.drawString(font, "\u25BC", popupX + popupWidth - 10, popupY + actualHeight - font.lineHeight - 1, 0xFF888888.toInt())
         }
 
+        val textX = popupX + 4 + BADGE_SIZE + BADGE_GAP
         for (i in 0 until visibleCount) {
             val suggestionIndex = scrollOffset + i
             val y = popupY + 2 + i * itemHeight
@@ -212,31 +236,60 @@ class AutocompletePopup(
                 graphics.fill(popupX + 1, y, popupX + popupWidth - 1, y + itemHeight, 0xFF3A5FCD.toInt())
             }
             val s = suggestions[suggestionIndex]
+
+            // Kind badge: blit the shared 9×9 white badge sprite ([Icons.BADGE]) tinted
+            // with the kind's color, then draw the single-letter label centered inside.
+            // MC's font.width() includes a 1px trailing space after each glyph, so the
+            // visible letter is (letterW - 1) pixels wide — subtract that to get a
+            // symmetric X offset. Vertically, capital letters render at rows 1..7 of the
+            // 9px line box, so the visible glyph height is 7; pad 1px top + 1px bottom.
+            val badgeX = popupX + 4
+            val badgeY = y + (itemHeight - BADGE_SIZE) / 2
+            Icons.BADGE.drawTopLeftTinted(graphics, badgeX, badgeY, BADGE_SIZE, BADGE_SIZE, s.kind.color)
+            val visualLetterW = (font.width(s.kind.letter) - 1).coerceAtLeast(1)
+            val visualLetterH = 7
+            graphics.drawString(
+                font, s.kind.letter,
+                badgeX + (BADGE_SIZE - visualLetterW) / 2,
+                badgeY + (BADGE_SIZE - visualLetterH) / 2,
+                0xFF1E1E1E.toInt(),
+                false
+            )
+
             val nameColor = if (suggestionIndex == selectedIndex) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt()
             val hintColor = if (suggestionIndex == selectedIndex) 0xFFBBBBBB.toInt() else 0xFF888888.toInt()
             val nameWidth = font.width(s.insertText)
-            graphics.drawString(font, s.insertText, popupX + 4, y + 1, nameColor)
+            graphics.drawString(font, s.insertText, textX, y + 1, nameColor)
             if (s.displayText != s.insertText) {
                 val hint = s.displayText.removePrefix(s.insertText)
-                graphics.drawString(font, hint, popupX + 4 + nameWidth, y + 1, hintColor)
+                graphics.drawString(font, hint, textX + nameWidth, y + 1, hintColor)
             }
         }
     }
 
+    companion object {
+        /** Size of the square Kind badge drawn in each row (px). Chosen so the single-letter
+         *  glyph centers neatly with the default font. */
+        private const val BADGE_SIZE = 9
+        /** Gap between the badge and the suggestion text. */
+        private const val BADGE_GAP = 4
+    }
+
     // ========== Helpers ==========
 
-    private fun suggest(insertText: String, displayText: String = insertText) = Suggestion(insertText, displayText)
+    private fun suggest(insertText: String, displayText: String = insertText, kind: Kind = Kind.VARIABLE) =
+        Suggestion(insertText, displayText, kind = kind)
 
-    private fun snippet(insertText: String, displayText: String, snippetText: String, cursorOffset: Int) =
-        Suggestion(insertText, displayText, snippetText, cursorOffset)
+    private fun snippet(insertText: String, displayText: String, snippetText: String, cursorOffset: Int, kind: Kind = Kind.SNIPPET) =
+        Suggestion(insertText, displayText, snippetText, cursorOffset, kind = kind)
 
     private fun fuzzy(query: String, suggestions: List<Suggestion>): List<Suggestion> {
         return if (query.isEmpty()) suggestions else FuzzyMatch.filter(query, suggestions)
     }
 
-    private fun fuzzyStrings(query: String, items: List<String>): List<Suggestion> {
-        return if (query.isEmpty()) items.map { suggest(it) }
-        else items.map { suggest(it) }.let { FuzzyMatch.filter(query, it) }
+    private fun fuzzyStrings(query: String, items: List<String>, kind: Kind = Kind.STRING): List<Suggestion> {
+        return if (query.isEmpty()) items.map { suggest(it, kind = kind) }
+        else items.map { suggest(it, kind = kind) }.let { FuzzyMatch.filter(query, it) }
     }
 
     // ========== Cursor Context Parser ==========
@@ -742,7 +795,7 @@ class AutocompletePopup(
                 val cardSuggestions = cards
                     .map { it.effectiveAlias to it.capability.type }
                     .distinct()
-                    .map { suggest(it.first, "${it.first} (${it.second})") }
+                    .map { suggest(it.first, "${it.first} (${it.second})", Kind.STRING) }
                 FuzzyMatch.filter(ctx.partial, cardSuggestions)
             }
             ctx.funcExpr.endsWith("network:route") -> {
@@ -750,7 +803,7 @@ class AutocompletePopup(
                     .filter { it.capability.type == "storage" }
                     .map { it.effectiveAlias to it.capability.type }
                     .distinct()
-                    .map { suggest(it.first, "${it.first} (storage)") }
+                    .map { suggest(it.first, "${it.first} (storage)", Kind.STRING) }
                 FuzzyMatch.filter(ctx.partial, storageSuggestions)
             }
             ctx.funcExpr.endsWith("network:getAll") -> {
@@ -763,7 +816,7 @@ class AutocompletePopup(
                 val typeLabels = arrayOf("number", "string", "bool")
                 val suggestions = variables.map { (name, typeOrd) ->
                     val typeLabel = typeLabels.getOrElse(typeOrd) { "unknown" }
-                    suggest(name, "$name ($typeLabel)")
+                    suggest(name, "$name ($typeLabel)", Kind.STRING)
                 }
                 FuzzyMatch.filter(ctx.partial, suggestions)
             }
@@ -791,19 +844,19 @@ class AutocompletePopup(
     }
 
     private val knownTypes = listOf(
-        Suggestion("string", "string"),
-        Suggestion("number", "number"),
-        Suggestion("boolean", "boolean"),
-        Suggestion("any", "any"),
-        Suggestion("InputItems", "InputItems — handler input bag; access slot handles by name"),
-        Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft"),
-        Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get"),
-        Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get"),
-        Suggestion("Job", "Job — processing handler context from network:handle"),
-        Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()"),
-        Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var"),
-        Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:var"),
-        Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:var")
+        Suggestion("string", "string", kind = Kind.TYPE),
+        Suggestion("number", "number", kind = Kind.TYPE),
+        Suggestion("boolean", "boolean", kind = Kind.TYPE),
+        Suggestion("any", "any", kind = Kind.TYPE),
+        Suggestion("InputItems", "InputItems — handler input bag; access slot handles by name", kind = Kind.TYPE),
+        Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft", kind = Kind.TYPE),
+        Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get", kind = Kind.TYPE),
+        Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get", kind = Kind.TYPE),
+        Suggestion("Job", "Job — processing handler context from network:handle", kind = Kind.TYPE),
+        Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()", kind = Kind.TYPE),
+        Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var", kind = Kind.TYPE),
+        Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:var", kind = Kind.TYPE),
+        Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:var", kind = Kind.TYPE)
     )
 
     private fun suggestTypeAnnotation(partial: String): List<Suggestion> {
@@ -815,7 +868,7 @@ class AutocompletePopup(
 
     private fun suggestTag(partial: String): List<Suggestion> {
         customPrefix = partial
-        return fuzzyStrings(partial, itemTags).take(20)
+        return fuzzyStrings(partial, itemTags, Kind.TAG).take(20)
     }
 
     private fun suggestMethodCall(ctx: CursorContext.MethodCall, symbols: Map<String, String>, fullText: String): List<Suggestion> {
@@ -854,37 +907,39 @@ class AutocompletePopup(
     }
 
     private fun suggestWord(partial: String, fullText: String, beforeCursor: String, symbols: Map<String, String>, forced: Boolean): List<Suggestion> {
-        if (partial.length < 2 && !forced) return emptyList()
+        // Require at least one typed character before auto-triggering, matching VSCode.
+        // `forced` (Ctrl+Space) still allows empty-prefix completion.
+        if (partial.isEmpty() && !forced) return emptyList()
 
         val apiFunctions = listOf(
-            suggest("scheduler", "scheduler"),
-            suggest("network", "network"),
-            suggest("print(", "print(message: any)"),
-            suggest("error(", "error(message: string) — throw an error"),
-            suggest("clock(", "clock() → number"),
-            suggest("string", "string library"),
-            suggest("math", "math library"),
-            suggest("table", "table library"),
-            suggest("tostring", "tostring(value: any) → string"),
-            suggest("tonumber", "tonumber(value: any) → number?"),
-            suggest("type", "type(value: any) → string"),
-            suggest("pairs", "pairs(t: table) → function"),
-            suggest("ipairs", "ipairs(t: table) → function"),
-            suggest("select", "select(index: number, ...) → any"),
-            suggest("unpack", "unpack(t: table) → ...")
+            suggest("scheduler", "scheduler — module", Kind.MODULE),
+            suggest("network", "network — module", Kind.MODULE),
+            suggest("print(", "print(message: any)", Kind.FUNCTION),
+            suggest("error(", "error(message: string) — throw an error", Kind.FUNCTION),
+            suggest("clock(", "clock() → number", Kind.FUNCTION),
+            suggest("string", "string library", Kind.MODULE),
+            suggest("math", "math library", Kind.MODULE),
+            suggest("table", "table library", Kind.MODULE),
+            suggest("tostring", "tostring(value: any) → string", Kind.FUNCTION),
+            suggest("tonumber", "tonumber(value: any) → number?", Kind.FUNCTION),
+            suggest("type", "type(value: any) → string", Kind.FUNCTION),
+            suggest("pairs", "pairs(t: table) → function", Kind.FUNCTION),
+            suggest("ipairs", "ipairs(t: table) → function", Kind.FUNCTION),
+            suggest("select", "select(index: number, ...) → any", Kind.FUNCTION),
+            suggest("unpack", "unpack(t: table) → ...", Kind.FUNCTION)
         )
         val keywords = listOf("local", "function", "end",
             "if", "then", "else", "elseif", "for", "while", "do", "return",
-            "true", "false", "nil", "not", "and", "or").map { suggest(it) }
+            "true", "false", "nil", "not", "and", "or").map { suggest(it, kind = Kind.KEYWORD) }
         val userVars = (extractVariableNames(fullText) + extractFunctionParams(beforeCursor)).distinct().map { name ->
             val type = symbols[name]
-            if (type != null) suggest(name, "$name: $type") else suggest(name)
+            if (type != null) suggest(name, "$name: $type", Kind.VARIABLE) else suggest(name, kind = Kind.VARIABLE)
         }
         val userFuncs = extractFunctions(fullText).map { f ->
             val retStr = if (f.returnType != null) " → ${f.returnType}" else ""
-            suggest("${f.name}(", "${f.name}(${f.params})$retStr")
+            suggest("${f.name}(", "${f.name}(${f.params})$retStr", Kind.FUNCTION)
         }
-        val requireSuggest = if (scripts().size > 1) listOf(suggest("require(", "require(module: string) → table")) else emptyList()
+        val requireSuggest = if (scripts().size > 1) listOf(suggest("require(", "require(module: string) → table", Kind.FUNCTION)) else emptyList()
         val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs).distinctBy { it.insertText }
         val matches = FuzzyMatch.filter(partial, all).filter { it.insertText != partial }
         return matches
@@ -902,22 +957,22 @@ class AutocompletePopup(
         }
 
         val methods = listOf(
-            suggest("get(", "get(alias: string) → CardHandle"),
-            suggest("getAll(", "getAll(type: string) → CardHandle[]"),
-            suggest("find(", "find(filter: string) → ItemsHandle?"),
-            suggest("findEach(", "findEach(filter: string) → ItemsHandle[]"),
-            suggest("count(", "count(filter: string) → number"),
-            suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)"),
-            suggest("tryInsert(", "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)"),
-            suggest("craft(", "craft(id: string, count?: number) → CraftBuilder"),
-            suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?"),
+            suggest("get(", "get(alias: string) → CardHandle", Kind.METHOD),
+            suggest("getAll(", "getAll(type: string) → CardHandle[]", Kind.METHOD),
+            suggest("find(", "find(filter: string) → ItemsHandle?", Kind.METHOD),
+            suggest("findEach(", "findEach(filter: string) → ItemsHandle[]", Kind.METHOD),
+            suggest("count(", "count(filter: string) → number", Kind.METHOD),
+            suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)", Kind.METHOD),
+            suggest("tryInsert(", "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)", Kind.METHOD),
+            suggest("craft(", "craft(id: string, count?: number) → CraftBuilder", Kind.METHOD),
+            suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?", Kind.METHOD),
             run {
                 val body = "route(\"\", function(item: ItemsHandle)\n    return true\nend)"
                 snippet("route(", "route(alias, fn(item) → boolean)", body, body.indexOf("\"\"") + 1)
             },
-            suggest("var(", "var(name: string) → VariableHandle"),
-            suggest("handle(", "handle(cardName: string, fn: function(job, ...))"),
-            suggest("debug(", "debug() — print network topology")
+            suggest("var(", "var(name: string) → VariableHandle", Kind.METHOD),
+            suggest("handle(", "handle(cardName: string, fn: function(job, ...))", Kind.METHOD),
+            suggest("debug(", "debug() — print network topology", Kind.METHOD)
         )
         return fuzzy(partial, methods)
     }
@@ -930,7 +985,7 @@ class AutocompletePopup(
             snippet("tick(", "tick(fn: function) → number", tickBody, tickBody.indexOf("\n    \n") + 5),
             snippet("second(", "second(fn: function) → number", secondBody, secondBody.indexOf("\n    \n") + 5),
             snippet("delay(", "delay(ticks: number, fn: function) → number", delayBody, delayBody.indexOf("\n    \n") + 5),
-            suggest("cancel(", "cancel(id: number)")
+            suggest("cancel(", "cancel(id: number)", Kind.METHOD)
         )
         return fuzzy(partial, methods)
     }
@@ -940,34 +995,34 @@ class AutocompletePopup(
     private fun suggestMethodsForType(type: String, partial: String): List<Suggestion> {
         val methods = when (type) {
             "CardHandle" -> listOf(
-                suggest("find(", "find(filter: string) → ItemsHandle?"),
-                suggest("findEach(", "findEach(filter: string) → ItemsHandle[]"),
-                suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)"),
-                suggest("tryInsert(", "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)"),
-                suggest("count(", "count(filter: string) → number"),
-                suggest("face(", "face(side: string) → CardHandle"),
-                suggest("slots(", "slots(...: number) → CardHandle")
+                suggest("find(", "find(filter: string) → ItemsHandle?", Kind.METHOD),
+                suggest("findEach(", "findEach(filter: string) → ItemsHandle[]", Kind.METHOD),
+                suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)", Kind.METHOD),
+                suggest("tryInsert(", "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)", Kind.METHOD),
+                suggest("count(", "count(filter: string) → number", Kind.METHOD),
+                suggest("face(", "face(side: string) → CardHandle", Kind.METHOD),
+                suggest("slots(", "slots(...: number) → CardHandle", Kind.METHOD)
             )
             "RedstoneCard" -> {
                 val onChangeBody = "onChange(function(strength: number)\n    \nend)"
                 listOf(
-                    suggest("powered(", "powered() → boolean"),
-                    suggest("strength(", "strength() → number"),
-                    suggest("set(", "set(boolean | number)"),
+                    suggest("powered(", "powered() → boolean", Kind.METHOD),
+                    suggest("strength(", "strength() → number", Kind.METHOD),
+                    suggest("set(", "set(boolean | number)", Kind.METHOD),
                     snippet("onChange(", "onChange(fn(strength: number))", onChangeBody, onChangeBody.indexOf("\n    \n") + 5),
-                    suggest("face(", "face(side: string) → RedstoneCard")
+                    suggest("face(", "face(side: string) → RedstoneCard", Kind.METHOD)
                 )
             }
             "ItemsHandle" -> listOf(
-                suggest("hasTag(", "hasTag(tag: string) → boolean"),
-                suggest("matches(", "matches(filter: string) → boolean")
+                suggest("hasTag(", "hasTag(tag: string) → boolean", Kind.METHOD),
+                suggest("matches(", "matches(filter: string) → boolean", Kind.METHOD)
             )
-            "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...) — wait for outputs"))
+            "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...) — wait for outputs", Kind.METHOD))
             "CraftBuilder" -> {
                 val connectBody = "connect(function(item: ItemsHandle)\n    \nend)"
                 listOf(
                     snippet("connect(", "connect(fn(item: ItemsHandle))", connectBody, connectBody.indexOf("\n    \n") + 5),
-                    suggest("store(", "store() — send result to network storage")
+                    suggest("store(", "store() — send result to network storage", Kind.METHOD)
                 )
             }
             "VariableHandle", "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle" ->
@@ -980,12 +1035,12 @@ class AutocompletePopup(
     private fun suggestPropertiesForType(type: String, partial: String): List<Suggestion> {
         val props = when (type) {
             "ItemsHandle" -> listOf(
-                suggest("id", "id: string"),
-                suggest("name", "name: string"),
-                suggest("count", "count: number"),
-                suggest("stackable", "stackable: boolean"),
-                suggest("maxStackSize", "maxStackSize: number"),
-                suggest("hasData", "hasData: boolean")
+                suggest("id", "id: string", Kind.PROPERTY),
+                suggest("name", "name: string", Kind.PROPERTY),
+                suggest("count", "count: number", Kind.PROPERTY),
+                suggest("stackable", "stackable: boolean", Kind.PROPERTY),
+                suggest("maxStackSize", "maxStackSize: number", Kind.PROPERTY),
+                suggest("hasData", "hasData: boolean", Kind.PROPERTY)
             )
             "InputItems" -> {
                 // Fields are dynamic — derived from the enclosing `network:handle(...)`
@@ -996,7 +1051,7 @@ class AutocompletePopup(
                 paramNames.mapIndexed { idx, name ->
                     val (itemId, count) = api.inputs[idx]
                     val shortId = itemId.substringAfter(':')
-                    suggest(name, "$name: ItemsHandle ($shortId × $count)")
+                    suggest(name, "$name: ItemsHandle ($shortId × $count)", Kind.PROPERTY)
                 }
             }
             else -> emptyList()
@@ -1128,54 +1183,54 @@ class AutocompletePopup(
             "BoolVariableHandle" -> boolMethods
             else -> numberMethods + stringMethods + boolMethods // VariableHandle fallback: show all
         }
-        return (baseVariableMethods + extra).map { suggest(it.first, it.second) }
+        return (baseVariableMethods + extra).map { suggest(it.first, it.second, Kind.METHOD) }
     }
 
     // ========== Library methods ==========
 
     private fun suggestStringMethods(partial: String): List<Suggestion> {
         val methods = listOf(
-            suggest("format(", "format(fmt: string, ...) → string"),
-            suggest("len(", "len(s: string) → number"),
-            suggest("sub(", "sub(s: string, i: number, j?: number) → string"),
-            suggest("find(", "find(s: string, pattern: string) → number?"),
-            suggest("match(", "match(s: string, pattern: string) → string?"),
-            suggest("gmatch(", "gmatch(s: string, pattern: string) → function"),
-            suggest("gsub(", "gsub(s: string, pattern: string, repl: string) → string"),
-            suggest("rep(", "rep(s: string, n: number) → string"),
-            suggest("reverse(", "reverse(s: string) → string"),
-            suggest("upper(", "upper(s: string) → string"),
-            suggest("lower(", "lower(s: string) → string"),
-            suggest("byte(", "byte(s: string, i?: number) → number"),
-            suggest("char(", "char(...: number) → string")
+            suggest("format(", "format(fmt: string, ...) → string", Kind.METHOD),
+            suggest("len(", "len(s: string) → number", Kind.METHOD),
+            suggest("sub(", "sub(s: string, i: number, j?: number) → string", Kind.METHOD),
+            suggest("find(", "find(s: string, pattern: string) → number?", Kind.METHOD),
+            suggest("match(", "match(s: string, pattern: string) → string?", Kind.METHOD),
+            suggest("gmatch(", "gmatch(s: string, pattern: string) → function", Kind.METHOD),
+            suggest("gsub(", "gsub(s: string, pattern: string, repl: string) → string", Kind.METHOD),
+            suggest("rep(", "rep(s: string, n: number) → string", Kind.METHOD),
+            suggest("reverse(", "reverse(s: string) → string", Kind.METHOD),
+            suggest("upper(", "upper(s: string) → string", Kind.METHOD),
+            suggest("lower(", "lower(s: string) → string", Kind.METHOD),
+            suggest("byte(", "byte(s: string, i?: number) → number", Kind.METHOD),
+            suggest("char(", "char(...: number) → string", Kind.METHOD)
         )
         return fuzzy(partial, methods)
     }
 
     private fun suggestMathMethods(partial: String): List<Suggestion> {
         val methods = listOf(
-            suggest("floor(", "floor(x: number) → number"),
-            suggest("ceil(", "ceil(x: number) → number"),
-            suggest("abs(", "abs(x: number) → number"),
-            suggest("max(", "max(x: number, ...) → number"),
-            suggest("min(", "min(x: number, ...) → number"),
-            suggest("sqrt(", "sqrt(x: number) → number"),
-            suggest("random(", "random(m?: number, n?: number) → number"),
-            suggest("pi", "pi: number"),
-            suggest("huge", "huge: number"),
-            suggest("sin(", "sin(x: number) → number"),
-            suggest("cos(", "cos(x: number) → number"),
-            suggest("fmod(", "fmod(x: number, y: number) → number")
+            suggest("floor(", "floor(x: number) → number", Kind.METHOD),
+            suggest("ceil(", "ceil(x: number) → number", Kind.METHOD),
+            suggest("abs(", "abs(x: number) → number", Kind.METHOD),
+            suggest("max(", "max(x: number, ...) → number", Kind.METHOD),
+            suggest("min(", "min(x: number, ...) → number", Kind.METHOD),
+            suggest("sqrt(", "sqrt(x: number) → number", Kind.METHOD),
+            suggest("random(", "random(m?: number, n?: number) → number", Kind.METHOD),
+            suggest("pi", "pi: number", Kind.PROPERTY),
+            suggest("huge", "huge: number", Kind.PROPERTY),
+            suggest("sin(", "sin(x: number) → number", Kind.METHOD),
+            suggest("cos(", "cos(x: number) → number", Kind.METHOD),
+            suggest("fmod(", "fmod(x: number, y: number) → number", Kind.METHOD)
         )
         return fuzzy(partial, methods)
     }
 
     private fun suggestTableMethods(partial: String): List<Suggestion> {
         val methods = listOf(
-            suggest("insert(", "insert(t: table, value: any)"),
-            suggest("remove(", "remove(t: table, pos?: number) → any"),
-            suggest("sort(", "sort(t: table, comp?: function)"),
-            suggest("concat(", "concat(t: table, sep?: string) → string")
+            suggest("insert(", "insert(t: table, value: any)", Kind.METHOD),
+            suggest("remove(", "remove(t: table, pos?: number) → any", Kind.METHOD),
+            suggest("sort(", "sort(t: table, comp?: function)", Kind.METHOD),
+            suggest("concat(", "concat(t: table, sep?: string) → string", Kind.METHOD)
         )
         return fuzzy(partial, methods)
     }
@@ -1265,14 +1320,14 @@ class AutocompletePopup(
             val params = m.groupValues[2].trim().split(",").joinToString(", ") { it.trim() }
             val retType = m.groupValues[3].ifEmpty { null }
             val retStr = if (retType != null) " → $retType" else ""
-            exports.add(suggest("$funcName(", "$funcName($params)$retStr"))
+            exports.add(suggest("$funcName(", "$funcName($params)$retStr", Kind.FUNCTION))
         }
         // tableVar.field = value
         val fieldPattern = Regex("""${Regex.escape(tableVar)}\.(\w+)\s*=""")
         fieldPattern.findAll(text).forEach { m ->
             val fieldName = m.groupValues[1]
             if (exports.none { it.insertText.startsWith("$fieldName(") }) {
-                exports.add(suggest(fieldName))
+                exports.add(suggest(fieldName, kind = Kind.PROPERTY))
             }
         }
         return exports.distinctBy { it.insertText }

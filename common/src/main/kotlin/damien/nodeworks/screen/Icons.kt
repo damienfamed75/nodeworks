@@ -149,6 +149,10 @@ class Icons private constructor(val col: Int, val row: Int) {
         val EXPAND_IDLE = Icons(9, 2)
         val EXPAND_HOVER = Icons(10, 2)
         val EXPAND_PRESSED = Icons(11, 2)
+        /** 9×9 rounded badge background, authored in the top-left of its cell. White
+         *  pixels so callers can tint it to any kind color — used by the autocomplete
+         *  popup's Kind badges. */
+        val BADGE = Icons(12, 2)
 
         // Row 3 — Inventory Terminal icons
         val SORT_ALPHA          = Icons(0, 3)
