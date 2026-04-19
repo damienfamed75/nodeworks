@@ -4,7 +4,7 @@ import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 
@@ -121,7 +121,9 @@ object CraftTreeBuilder {
             } else "local"
 
             val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
-            val handlerEngine = PlatformServices.modState.findProcessingEngine(level, searchPositions, api.name)
+            val handlerEngine = PlatformServices.modState.findProcessingEngine(
+                level, searchPositions, api.name, apiMatch.apiStorage.remoteDimension
+            )
             val hasHandler = handlerEngine != null
 
             // Processing APIs can yield >1 per batch (e.g. a smelting handler that produces
@@ -212,25 +214,25 @@ object CraftTreeBuilder {
      *  output count. Returns 1 if no matching recipe (safe default — planner will still fail
      *  downstream with a clearer error). */
     private fun resolveRecipeOutputCount(recipe: List<String>, level: ServerLevel): Int {
-        val rm = level.recipeManager ?: return 1
+        val rm = level.recipeAccess() ?: return 1
         val items = recipe.map { itemId ->
             if (itemId.isEmpty()) ItemStack.EMPTY
             else {
-                val id = ResourceLocation.tryParse(itemId) ?: return 1
-                val item = BuiltInRegistries.ITEM.get(id) ?: return 1
+                val id = Identifier.tryParse(itemId) ?: return 1
+                val item = BuiltInRegistries.ITEM.getValue(id) ?: return 1
                 ItemStack(item, 1)
             }
         }
         val input = net.minecraft.world.item.crafting.CraftingInput.of(3, 3, items)
         val holder = rm.getRecipeFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING, input, level).orElse(null)
             ?: return 1
-        val result = holder.value().assemble(input, level.registryAccess())
-        return if (result.isEmpty) 1 else result.count
+        val result = holder.value().assemble(input)
+        return if (result.isEmpty) 1 else result.getCount()
     }
 
     private fun getItemName(itemId: String): String {
-        val id = ResourceLocation.tryParse(itemId) ?: return itemId.substringAfter(':')
-        val item = BuiltInRegistries.ITEM.get(id) ?: return itemId.substringAfter(':')
+        val id = Identifier.tryParse(itemId) ?: return itemId.substringAfter(':')
+        val item = BuiltInRegistries.ITEM.getValue(id) ?: return itemId.substringAfter(':')
         return ItemStack(item).hoverName.string
     }
 }

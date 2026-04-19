@@ -1,23 +1,23 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DWD",
-        "WCW",
-        "DSD"
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DWD",
+    "WCW",
+    "DSD"
+  ],
+  "key": {
+    "D": "nodeworks:substrate",
+    "W": [
+      "minecraft:waxed_copper_bulb",
+      "minecraft:waxed_exposed_copper_bulb",
+      "minecraft:waxed_weathered_copper_bulb",
+      "minecraft:waxed_oxidized_copper_bulb"
     ],
-    "key": {
-        "D": { "item": "nodeworks:substrate" },
-        "W": [
-            { "item": "minecraft:waxed_copper_bulb" },
-            { "item": "minecraft:waxed_exposed_copper_bulb" },
-            { "item": "minecraft:waxed_weathered_copper_bulb" },
-            { "item": "minecraft:waxed_oxidized_copper_bulb" }
-        ],
-        "C": { "item": "minecraft:chest" },
-        "S": { "item": "nodeworks:storage_card" }
-    },
-    "result": {
-        "id": "nodeworks:crafting_storage",
-        "count": 1
-    }
+    "C": "minecraft:chest",
+    "S": "nodeworks:storage_card"
+  },
+  "result": {
+    "id": "nodeworks:crafting_storage",
+    "count": 1
+  }
 }

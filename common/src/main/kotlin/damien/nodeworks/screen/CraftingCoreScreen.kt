@@ -4,12 +4,34 @@ import damien.nodeworks.network.CancelCraftPayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.CraftTreeGraph
 import damien.nodeworks.screen.widget.SlicedButton
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.ItemStack
 
@@ -17,7 +39,13 @@ class CraftingCoreScreen(
     menu: CraftingCoreMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<CraftingCoreMenu>(menu, playerInventory, title) {
+) : AbstractContainerScreen<CraftingCoreMenu>(
+    menu, playerInventory, title,
+    // imageWidth = LEFT_PANEL_W + DIVIDER_W + RIGHT_PANEL_W + PADDING * 2 = 379
+    379,
+    // imageHeight
+    194
+) {
 
     companion object {
         private const val LEFT_PANEL_W = 126  // 6 cols × 18px + 6px scrollbar + 10px padding
@@ -57,8 +85,6 @@ class CraftingCoreScreen(
     }
 
     init {
-        imageWidth = LEFT_PANEL_W + DIVIDER_W + RIGHT_PANEL_W + PADDING * 2
-        imageHeight = 194
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -80,7 +106,8 @@ class CraftingCoreScreen(
 
     // ========== Background Rendering ==========
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         // Title bar with network color
@@ -124,7 +151,7 @@ class CraftingCoreScreen(
         return intArrayOf(barLeft, barTop, barW, FAILURE_BAR_H)
     }
 
-    private fun renderFailureBar(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+    private fun renderFailureBar(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         val (barLeft, barTop, barW, barH) = failureBarBounds().let { arrayOf(it[0], it[1], it[2], it[3]) }
         // Frame + dark-red fill
         NineSlice.WINDOW_FRAME.draw(graphics, barLeft, barTop, barW, barH)
@@ -188,7 +215,7 @@ class CraftingCoreScreen(
     }
 
     private fun renderInfoPanel(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         coreEntity: damien.nodeworks.block.entity.CraftingCoreBlockEntity?,
         contentLeft: Int, contentTop: Int,
         mouseX: Int, mouseY: Int
@@ -239,13 +266,13 @@ class CraftingCoreScreen(
         val countText = "${formatCount(menu.bufferUsed)} / ${formatCount(menu.bufferCapacity)}"
         val scale = 0.5f
         val countWidth = (font.width(countText) * scale).toInt()
-        graphics.pose().pushPose()
-        graphics.pose().translate(0f, 0f, 10f)
-        graphics.pose().scale(scale, scale, 1f)
+        graphics.pose().pushMatrix()
+        graphics.pose().translate((0f).toFloat(), (0f).toFloat())
+        graphics.pose().scale((scale).toFloat(), (scale).toFloat())
         val cx = ((barX + (barW - countWidth) / 2f) / scale).toInt()
         val cy = ((barTop + (barH - font.lineHeight * scale) / 2f + 1f) / scale).toInt()
         graphics.drawString(font, countText, cx, cy, 0xFFFFFFFF.toInt(), true)
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
 
         // Types axis (dual-axis buffer) — rendered below the count bar
         val typesTop = barTop + barH + 4
@@ -290,7 +317,7 @@ class CraftingCoreScreen(
     }
 
     private fun renderBufferGrid(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         startX: Int, startY: Int,
         gridW: Int, gridH: Int,
         cols: Int, sbX: Int, scrollbarW: Int
@@ -311,18 +338,18 @@ class CraftingCoreScreen(
             if (row < 0 || row >= rows) continue
             val ix = startX + col * slotSize
             val iy = startY + row * slotSize
-            val id = ResourceLocation.tryParse(entry.first) ?: continue
-            val item = BuiltInRegistries.ITEM.get(id) ?: continue
+            val id = Identifier.tryParse(entry.first) ?: continue
+            val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
             val stack = ItemStack(item, 1)
             NineSlice.SLOT.draw(graphics, ix - 1, iy - 1, 18, 18)
             graphics.renderItem(stack, ix, iy)
         }
 
         // Count text at higher Z with 0.5x scale
-        graphics.pose().pushPose()
-        graphics.pose().translate(0f, 0f, 200f)
+        graphics.pose().pushMatrix()
+        graphics.pose().translate((0f).toFloat(), (0f).toFloat())
         val scale = 0.5f
-        graphics.pose().scale(scale, scale, 1f)
+        graphics.pose().scale((scale).toFloat(), (scale).toFloat())
         for ((i, entry) in contents.withIndex()) {
             val row = i / cols - bufferScrollOffset
             val col = i % cols
@@ -337,7 +364,7 @@ class CraftingCoreScreen(
                 graphics.drawString(font, ct, cx, cy, 0xFFFFFFFF.toInt(), true)
             }
         }
-        graphics.pose().popPose()
+        graphics.pose().popMatrix()
 
         graphics.disableScissor()
 
@@ -347,14 +374,13 @@ class CraftingCoreScreen(
             val thumbY = startY + (gridH - thumbH) * bufferScrollOffset / maxScroll
             NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, thumbY, scrollbarW, thumbH)
         } else {
-            // Grayed thumb sized as if there's one extra row to scroll
+            // Grayed thumb sized as if there's one extra row to scroll. Pre-migration
+            //  tinted the whole NineSlice via RenderSystem.setShaderColor(0.6,0.6,0.6,0.5);
+            //  NineSlice.draw doesn't accept a tint, so we overlay a semi-transparent
+            //  dark rect to produce the same "grayed" feel.
             val fakeThumbH = maxOf(8, gridH * rows / (rows + 1))
-            com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-            com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.6f, 0.6f, 0.6f, 0.5f)
             NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, startY, scrollbarW, fakeThumbH)
-            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-            com.mojang.blaze3d.systems.RenderSystem.disableBlend()
+            graphics.fill(sbX, startY, sbX + scrollbarW, startY + fakeThumbH, 0x80202020.toInt())
         }
 
         // Empty state
@@ -365,8 +391,8 @@ class CraftingCoreScreen(
 
     // ========== Overlay Rendering ==========
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
 
         // Buffer item tooltips
         val contents = menu.clientBufferContents
@@ -379,8 +405,8 @@ class CraftingCoreScreen(
                 val ix = bufferGridX + col * slotSize
                 val iy = bufferGridY + row * slotSize
                 if (mouseX >= ix && mouseX < ix + 16 && mouseY >= iy && mouseY < iy + 16) {
-                    val id = ResourceLocation.tryParse(entry.first) ?: continue
-                    val item = BuiltInRegistries.ITEM.get(id) ?: continue
+                    val id = Identifier.tryParse(entry.first) ?: continue
+                    val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
                     val stack = ItemStack(item, entry.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                     graphics.renderTooltip(font, stack, mouseX, mouseY)
                     break
@@ -408,7 +434,10 @@ class CraftingCoreScreen(
         }
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
@@ -443,18 +472,24 @@ class CraftingCoreScreen(
         if (mouseX >= dividerX && mouseY >= topPos + TOP_BAR_H && mouseY < topPos + imageHeight - PADDING) {
             return craftGraph.onMouseClicked(mouseX, mouseY)
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         draggingBufferScrollbar = false
         if (craftGraph.dragging) {
             craftGraph.onMouseReleased()
         }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleased(event)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         if (draggingBufferScrollbar && bufferMaxScroll > 0) {
             updateBufferScrollFromMouse(mouseY.toInt())
             return true
@@ -462,7 +497,7 @@ class CraftingCoreScreen(
         if (craftGraph.dragging) {
             return craftGraph.onMouseDragged(mouseX, mouseY)
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+        return super.mouseDragged(event, dragX, dragY)
     }
 
     private fun updateBufferScrollFromMouse(mouseY: Int) {

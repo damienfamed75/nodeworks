@@ -1,7 +1,9 @@
 package damien.nodeworks.block.entity
 
+import damien.nodeworks.network.ChunkForceLoadManager
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
+import net.minecraft.world.level.ChunkPos
 import damien.nodeworks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
 import net.minecraft.core.HolderLookup
@@ -13,6 +15,12 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getLongList
+import damien.nodeworks.compat.putBlockPosList
+import damien.nodeworks.compat.putLongList
 import java.util.UUID
 
 /**
@@ -74,6 +82,17 @@ class NetworkControllerBlockEntity(
             level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
 
+    /** Whether this controller is force-loading the chunks of every block in its network.
+     *  Updated via [setChunkLoadingEnabled]; direct write by NBT load only (to avoid
+     *  triggering claim/unclaim before the level is known). */
+    var chunkLoadingEnabled: Boolean = false
+        private set
+
+    /** Chunk-long keys this controller has claimed with [ChunkForceLoadManager]. Persisted
+     *  in NBT so a reload can re-claim (rebuilding the in-memory refcount map) without
+     *  re-walking the network. */
+    private val claimedChunks: MutableSet<Long> = HashSet()
+
     companion object {
         const val REDSTONE_IGNORED = 0
         const val REDSTONE_LOW = 1
@@ -113,6 +132,16 @@ class NetworkControllerBlockEntity(
         super.setLevel(level)
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
+            NodeConnectionHelper.queueRevalidation(level, worldPosition)
+            // Rebuild the in-memory chunk-load refcount for every chunk this controller
+            // had claimed before the server shut down. Vanilla's forcedchunks.dat already
+            // restored the actual chunk-forced flags; this just gets the manager back in
+            // sync so disabling later correctly decrements.
+            if (chunkLoadingEnabled && claimedChunks.isNotEmpty()) {
+                for (packed in claimedChunks) {
+                    ChunkForceLoadManager.claim(level, ChunkPos.getX(packed), ChunkPos.getZ(packed))
+                }
+            }
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
     }
@@ -121,6 +150,11 @@ class NetworkControllerBlockEntity(
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val lvl = level
         if (lvl is ServerLevel) {
+            // Unclaim chunk-loading ONLY on actual block destruction — chunk unload runs
+            // setRemoved too and we don't want to tear down our own force-loads there.
+            if (blockDestroyed && chunkLoadingEnabled) {
+                releaseAllClaims(lvl)
+            }
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
             networkId?.let {
@@ -131,24 +165,83 @@ class NetworkControllerBlockEntity(
         super.setRemoved()
     }
 
-    // --- Serialization ---
-
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        networkId?.let { tag.putString("networkId", it.toString()) }
-        tag.putInt("networkColor", networkColor)
-        tag.putString("networkName", networkName)
-        tag.putInt("redstoneMode", redstoneMode)
-        tag.putInt("nodeGlowStyle", nodeGlowStyle)
-        tag.putInt("handlerRetryLimit", handlerRetryLimit)
-        if (connections.isNotEmpty()) {
-            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
+    /** Toggle chunk-loading for this controller. Enabling walks the current network
+     *  topology (full connection graph, ignoring LOS) and claims every visited block's
+     *  chunk with [ChunkForceLoadManager]. Disabling releases every previously claimed
+     *  chunk — the manager's refcount ensures chunks still claimed by other enabled
+     *  controllers in the same dimension stay loaded.
+     *
+     *  Topology is snapshotted at enable-time. Extending the network afterwards does NOT
+     *  auto-claim the new blocks' chunks; re-toggle off/on to refresh. */
+    fun setChunkLoadingEnabled(enabled: Boolean) {
+        if (enabled == chunkLoadingEnabled) return
+        val lvl = level as? ServerLevel ?: run {
+            // No level yet (BE construction path) — just store the flag; setLevel will
+            // pick it up via the NBT-load path next time.
+            chunkLoadingEnabled = enabled
+            setChanged()
+            return
         }
+        if (enabled) {
+            val chunks = gatherTopologyChunks(lvl)
+            claimedChunks.clear()
+            claimedChunks.addAll(chunks)
+            for (packed in chunks) {
+                ChunkForceLoadManager.claim(lvl, ChunkPos.getX(packed), ChunkPos.getZ(packed))
+            }
+        } else {
+            releaseAllClaims(lvl)
+        }
+        chunkLoadingEnabled = enabled
+        setChanged()
+        lvl.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
-        val idStr = tag.getString("networkId")
+    private fun releaseAllClaims(lvl: ServerLevel) {
+        for (packed in claimedChunks) {
+            ChunkForceLoadManager.unclaim(lvl, ChunkPos.getX(packed), ChunkPos.getZ(packed))
+        }
+        claimedChunks.clear()
+    }
+
+    /** BFS through the full topological connection graph (LOS-blocked pairs included —
+     *  we want every physically-connected block's chunk loaded regardless of temporary
+     *  obstructions) and return the set of packed ChunkPos longs. */
+    private fun gatherTopologyChunks(lvl: ServerLevel): Set<Long> {
+        val visited = HashSet<BlockPos>()
+        val queue = ArrayDeque<BlockPos>()
+        val chunks = HashSet<Long>()
+        visited.add(worldPosition)
+        queue.add(worldPosition)
+        while (queue.isNotEmpty()) {
+            val pos = queue.removeFirst()
+            chunks.add(ChunkPos.pack(pos.x shr 4, pos.z shr 4))
+            val entity = NodeConnectionHelper.getConnectable(lvl, pos) ?: continue
+            for (conn in entity.getConnections()) {
+                if (visited.add(conn)) queue.add(conn)
+            }
+        }
+        return chunks
+    }
+
+    // --- Serialization ---
+
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
+        networkId?.let { output.putString("networkId", it.toString()) }
+        output.putInt("networkColor", networkColor)
+        output.putString("networkName", networkName)
+        output.putInt("redstoneMode", redstoneMode)
+        output.putInt("nodeGlowStyle", nodeGlowStyle)
+        output.putInt("handlerRetryLimit", handlerRetryLimit)
+        output.putBoolean("chunkLoadingEnabled", chunkLoadingEnabled)
+        output.putLongList("claimedChunks", claimedChunks.toLongArray())
+        output.putBlockPosList("connections", connections)
+    }
+
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
+        val idStr = input.getStringOr("networkId", "")
         if (idStr.isNotEmpty()) {
             try {
                 networkId = UUID.fromString(idStr)
@@ -156,16 +249,17 @@ class NetworkControllerBlockEntity(
                 networkId = UUID.randomUUID()
             }
         }
-        networkColor = if (tag.contains("networkColor")) tag.getInt("networkColor") else 0x83E086
-        networkName = tag.getString("networkName")
-        redstoneMode = if (tag.contains("redstoneMode")) tag.getInt("redstoneMode") else 0
-        nodeGlowStyle = if (tag.contains("nodeGlowStyle")) tag.getInt("nodeGlowStyle") else GLOW_SQUARE
-        handlerRetryLimit = if (tag.contains("handlerRetryLimit")) tag.getInt("handlerRetryLimit") else 50
+        networkColor = input.getIntOr("networkColor", 0x83E086)
+        networkName = input.getStringOr("networkName", "")
+        redstoneMode = input.getIntOr("redstoneMode", 0)
+        nodeGlowStyle = input.getIntOr("nodeGlowStyle", GLOW_SQUARE)
+        handlerRetryLimit = input.getIntOr("handlerRetryLimit", 50)
+        chunkLoadingEnabled = input.getBooleanOr("chunkLoadingEnabled", false)
+        claimedChunks.clear()
+        for (packed in input.getLongList("claimedChunks")) claimedChunks.add(packed)
         connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
-        // Update client-side settings registry
+        connections.addAll(input.getBlockPosList("connections"))
+        // Push loaded settings into client-visible registry so color/glow survive reloads.
         networkId?.let {
             damien.nodeworks.network.NetworkSettingsRegistry.update(
                 it,

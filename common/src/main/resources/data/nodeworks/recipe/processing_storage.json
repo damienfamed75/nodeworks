@@ -1,26 +1,18 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DID",
-        "D D",
-        "NSN"
-    ],
-    "key": {
-        "D": {
-            "item": "minecraft:deepslate"
-        },
-        "I": {
-            "item": "minecraft:iron_block"
-        },
-        "N": {
-            "item": "nodeworks:node"
-        },
-        "S": {
-            "item": "nodeworks:instruction_storage"
-        }
-    },
-    "result": {
-        "id": "nodeworks:processing_storage",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DID",
+    "D D",
+    "NSN"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "I": "minecraft:iron_block",
+    "N": "nodeworks:node",
+    "S": "nodeworks:instruction_storage"
+  },
+  "result": {
+    "id": "nodeworks:processing_storage",
+    "count": 1
+  }
 }

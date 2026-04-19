@@ -5,7 +5,7 @@ import net.minecraft.sounds.SoundEvents
 import net.minecraft.sounds.SoundSource
 import net.minecraft.stats.Stats
 import net.minecraft.world.InteractionHand
-import net.minecraft.world.InteractionResultHolder
+import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
@@ -16,12 +16,14 @@ import net.minecraft.world.level.Level
  */
 class MilkySoulBallItem(properties: Properties) : Item(properties) {
 
-    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResultHolder<ItemStack> {
+    override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
         val stack = player.getItemInHand(hand)
 
+        // Thematic ghast-hurt cry on throw. Pitch jitter keeps repeated throws from
+        // sounding mechanical.
         level.playSound(null, player.x, player.y, player.z,
-            SoundEvents.SNOWBALL_THROW, SoundSource.NEUTRAL, 0.5f,
-            0.4f / (level.getRandom().nextFloat() * 0.4f + 0.8f))
+            SoundEvents.GHAST_HURT, SoundSource.NEUTRAL, 0.6f,
+            0.9f + level.getRandom().nextFloat() * 0.2f)
 
         if (!level.isClientSide) {
             val projectile = MilkySoulBallEntity(level, player)
@@ -35,7 +37,7 @@ class MilkySoulBallItem(properties: Properties) : Item(properties) {
             stack.shrink(1)
         }
 
-        player.cooldowns.addCooldown(this, 4)
-        return InteractionResultHolder.sidedSuccess(stack, level.isClientSide)
+        player.cooldowns.addCooldown(stack, 4)
+        return InteractionResult.SUCCESS
     }
 }

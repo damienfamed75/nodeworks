@@ -18,7 +18,7 @@ class NetworkControllerMenu(
 ) : AbstractContainerMenu(ModScreenHandlers.NETWORK_CONTROLLER, syncId) {
 
     companion object {
-        const val DATA_SLOTS = 5
+        const val DATA_SLOTS = 6
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: NetworkControllerOpenData): NetworkControllerMenu {
             val data = SimpleContainerData(DATA_SLOTS)
@@ -27,6 +27,7 @@ class NetworkControllerMenu(
             data.set(2, openData.redstoneMode)
             data.set(3, openData.nodeGlowStyle)
             data.set(4, openData.handlerRetryLimit)
+            data.set(5, if (openData.chunkLoading) 1 else 0)
             return NetworkControllerMenu(syncId, openData.pos, data, openData.networkName)
         }
 
@@ -42,6 +43,7 @@ class NetworkControllerMenu(
                     2 -> entity.redstoneMode
                     3 -> entity.nodeGlowStyle
                     4 -> entity.handlerRetryLimit
+                    5 -> if (entity.chunkLoadingEnabled) 1 else 0
                     else -> 0
                 }
                 override fun set(index: Int, value: Int) {
@@ -51,6 +53,10 @@ class NetworkControllerMenu(
                         2 -> entity.redstoneMode = value
                         3 -> entity.nodeGlowStyle = value
                         4 -> entity.handlerRetryLimit = value
+                        // chunk-loading (slot 5) is write-through the dedicated payload path
+                        // so we can run the claim/unclaim side-effects; reject direct writes
+                        // here to avoid bypassing that.
+                        5 -> Unit
                     }
                 }
                 override fun getCount(): Int = DATA_SLOTS
@@ -63,6 +69,7 @@ class NetworkControllerMenu(
     val redstoneMode: Int get() = data.get(2)
     val nodeGlowStyle: Int get() = data.get(3)
     val handlerRetryLimit: Int get() = data.get(4)
+    val chunkLoading: Boolean get() = data.get(5) != 0
 
     init {
         addDataSlots(data)

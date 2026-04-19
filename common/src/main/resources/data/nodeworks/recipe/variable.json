@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "SMS",
+    "RKL",
+    "DND"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "M": "nodeworks:milky_soul_ball",
+    "L": "minecraft:lever",
+    "R": "minecraft:redstone",
+    "K": "minecraft:string",
+    "S": "minecraft:slime_block",
+    "N": "nodeworks:node"
+  },
+  "result": {
+    "id": "nodeworks:variable",
+    "count": 1
+  }
+}

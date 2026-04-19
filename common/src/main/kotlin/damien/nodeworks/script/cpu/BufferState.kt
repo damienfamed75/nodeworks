@@ -143,41 +143,31 @@ class BufferState {
     fun loadFromNBT(tag: CompoundTag) {
         items.clear()
 
-        // New format: "items" compound containing Longs
-        if (tag.contains("items", Tag.TAG_COMPOUND.toInt())) {
-            val itemsTag = tag.getCompound("items")
-            for (key in itemsTag.allKeys) {
+        // 26.1: CompoundTag.getCompound / getLong / getInt now return Optional<T>.
+        //  The `contains(key, TAG_COMPOUND)` gate on the legacy branch is preserved
+        //  via Optional.isPresent.
+        val itemsTag = tag.getCompound("items").orElse(null)
+        if (itemsTag != null) {
+            for (key in itemsTag.keySet()) {
                 val v = readLongOrInt(itemsTag, key)
                 if (v > 0) items[key] = v
             }
         } else {
             // Legacy format: top-level keys stored as putInt directly (pre-Phase-1 worlds).
-            // The old code used a `bufferTag` sub-compound — check both just in case.
-            for (key in tag.allKeys) {
-                // Skip known non-item keys (capacity scalars, other state)
+            for (key in tag.keySet()) {
                 if (key in RESERVED_KEYS) continue
                 val v = readLongOrInt(tag, key)
                 if (v > 0) items[key] = v
             }
         }
 
-        countCapacity = if (tag.contains("countCap", Tag.TAG_LONG.toInt())) {
-            tag.getLong("countCap").coerceAtLeast(0L)
-        } else {
-            CpuRules.CORE_BASE_COUNT
-        }
-        typesCapacity = if (tag.contains("typesCap", Tag.TAG_INT.toInt())) {
-            tag.getInt("typesCap").coerceAtLeast(0)
-        } else {
-            CpuRules.CORE_BASE_TYPES
-        }
+        countCapacity = tag.getLong("countCap").orElse(CpuRules.CORE_BASE_COUNT).coerceAtLeast(0L)
+        typesCapacity = tag.getInt("typesCap").orElse(CpuRules.CORE_BASE_TYPES).coerceAtLeast(0)
     }
 
-    private fun readLongOrInt(t: CompoundTag, key: String): Long = when {
-        t.contains(key, Tag.TAG_LONG.toInt()) -> t.getLong(key)
-        t.contains(key, Tag.TAG_INT.toInt()) -> t.getInt(key).toLong()
-        else -> 0L
-    }
+    private fun readLongOrInt(t: CompoundTag, key: String): Long =
+        t.getLong(key).orElse(null)
+            ?: t.getInt(key).orElse(0).toLong()
 
     companion object {
         /** NBT keys that aren't item IDs, used by the legacy-format loader. */

@@ -4,7 +4,29 @@ import damien.nodeworks.network.*
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.NodeSideScreenHandler
 
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
@@ -15,7 +37,7 @@ class NodeSideScreen(
     menu: NodeSideScreenHandler,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<NodeSideScreenHandler>(menu, playerInventory, title) {
+) : AbstractContainerScreen<NodeSideScreenHandler>(menu, playerInventory, title, W, H) {
 
     companion object {
         // Layout constants
@@ -43,8 +65,6 @@ class NodeSideScreen(
     private var sideTitle: Component = title
 
     init {
-        imageWidth = W
-        imageHeight = H
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -81,7 +101,8 @@ class NodeSideScreen(
         updateFacingBlock()
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getNodePos())
@@ -104,7 +125,7 @@ class NodeSideScreen(
         NineSlice.drawPlayerInventory(graphics, leftPos + INV_X, topPos + INV_Y, HOTBAR_GAP)
     }
 
-    private fun renderTabs(graphics: GuiGraphics, mouseX: Int, mouseY: Int, trimColor: Int) {
+    private fun renderTabs(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, trimColor: Int) {
         val currentSide = menu.activeSide.ordinal
         val tabCount = 6
         val totalW = imageWidth - 6
@@ -136,7 +157,7 @@ class NodeSideScreen(
         }
     }
 
-    private fun renderFacingBlock(graphics: GuiGraphics) {
+    private fun renderFacingBlock(graphics: GuiGraphicsExtractor) {
         val labelX = leftPos + 8
         val iconY = topPos + CARD_AREA_Y + 18
 
@@ -159,12 +180,15 @@ class NodeSideScreen(
         graphics.drawString(font, displayName, labelX, iconY + 20, 0xFF888888.toInt())
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
-        renderTooltip(graphics, mouseX, mouseY)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
+        // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         if (button == 0) {
             val currentSide = menu.activeSide.ordinal
             val tabCount = 6
@@ -182,6 +206,6 @@ class NodeSideScreen(
                 }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 }

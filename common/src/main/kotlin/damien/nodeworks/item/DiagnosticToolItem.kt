@@ -26,7 +26,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
 
         val connectable = NodeConnectionHelper.getConnectable(level, pos)
         if (connectable == null) {
-            player.displayClientMessage(Component.translatable("message.nodeworks.diagnostic_no_network"), true)
+            player.sendOverlayMessage(Component.translatable("message.nodeworks.diagnostic_no_network"))
             return InteractionResult.FAIL
         }
 
@@ -96,6 +96,8 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                     details.add("__glow:${entity.nodeGlowStyle}:${entity.networkColor}")
                     val redstoneNames = arrayOf("Ignored", "Active High", "Active Low")
                     details.add("Redstone: ${redstoneNames.getOrElse(entity.redstoneMode) { "Unknown" }}")
+                    details.add("Retries: ${entity.handlerRetryLimit}")
+                    details.add("Chunk Loading: ${if (entity.chunkLoadingEnabled) "on" else "off"}")
                 }
                 is damien.nodeworks.block.entity.TerminalBlockEntity -> {
                     val scriptCount = entity.scripts.size

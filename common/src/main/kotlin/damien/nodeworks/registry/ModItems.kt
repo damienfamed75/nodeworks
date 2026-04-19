@@ -7,14 +7,13 @@ import damien.nodeworks.card.RedstoneCard
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.item.DiagnosticToolItem
 import damien.nodeworks.item.LinkCrystalItem
-import damien.nodeworks.item.MemoryUpgradeItem
 import damien.nodeworks.item.MilkySoulBallItem
 import damien.nodeworks.item.MonitorItem
 import damien.nodeworks.item.NetworkWrenchItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.world.item.Item
 
@@ -54,12 +53,6 @@ object ModItems {
         "processing_set",
         ::ProcessingSet,
         Item.Properties().stacksTo(64)
-    )
-
-    val MEMORY_UPGRADE: Item = register(
-        "memory_upgrade",
-        ::MemoryUpgradeItem,
-        Item.Properties().stacksTo(4)
     )
 
     val LINK_CRYSTAL: Item = register(
@@ -143,8 +136,12 @@ object ModItems {
         factory: (Item.Properties) -> Item,
         properties: Item.Properties
     ): Item {
-        val identifier = ResourceLocation.fromNamespaceAndPath("nodeworks", id)
-        val item = factory(properties)
+        val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
+        // 26.1: Item.Properties must know its id before construction — Item's ctor
+        //  eventually derefs the id to compute defaults (e.g. description id, loot
+        //  table pointer). Same shift as Block.Properties.
+        val itemKey = ResourceKey.create(Registries.ITEM, identifier)
+        val item = factory(properties.setId(itemKey))
         return Registry.register(BuiltInRegistries.ITEM, identifier, item)
     }
 

@@ -8,13 +8,35 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.SlicedButton
 import damien.nodeworks.screen.widget.VirtualSlot
 import damien.nodeworks.screen.widget.VirtualSlotGrid
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.ItemStack
 
@@ -26,7 +48,11 @@ class InventoryTerminalScreen(
     menu: InventoryTerminalMenu,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<InventoryTerminalMenu>(menu, playerInventory, title) {
+// TODO MC 26.1.2: ACS imageWidth/imageHeight are now final. Using a
+// fixed default derived from the pre-migration "small" layout; the dynamic
+// per-layout resize assignments have been commented out in init() below
+// until we can restore mutability (AT or custom size fields).
+) : AbstractContainerScreen<InventoryTerminalMenu>(menu, playerInventory, title, 230, 230) {
 
     // ========== Layout ==========
 
@@ -159,11 +185,15 @@ class InventoryTerminalScreen(
     private var syncedAutoPull = false
 
     private fun computeLayout() {
+        // 26.1: imageWidth/imageHeight are `protected final` at compile time in common/
+        //  (the AT that drops `final` applies at runtime only). AcsCompat writes through
+        //  to the runtime-mutable fields via reflection.
         val gridW = layout.cols * SLOT_SIZE
         val gridH = layout.rows * SLOT_SIZE
         val craftAreaH = if (craftingCollapsed) CRAFT_COLLAPSED_H else CRAFT_H
-        imageWidth = GRID_PAD + 4 + gridW + 2 + SCROLLBAR_W + GRID_PAD + 4
-        imageHeight = TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD + gridH + GRID_PAD + craftAreaH + GRID_PAD + 76 + INV_BOTTOM_PAD
+        val w = GRID_PAD + 4 + gridW + 2 + SCROLLBAR_W + GRID_PAD + 4
+        val h = TOP_BAR_H + SEARCH_PAD + SEARCH_H + SEARCH_PAD + gridH + GRID_PAD + craftAreaH + GRID_PAD + 76 + INV_BOTTOM_PAD
+        damien.nodeworks.compat.AcsCompat.setImageSize(this, w, h)
     }
 
     override fun init() {
@@ -325,7 +355,8 @@ class InventoryTerminalScreen(
 
     // ========== Rendering ==========
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         // Window frame (stretched for performance — large area)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
@@ -424,7 +455,7 @@ class InventoryTerminalScreen(
         NineSlice.INVENTORY_BORDER.drawStretched(graphics, playerHotbarGrid.x - 2, playerHotbarGrid.y - 2, 9 * 18 + 4, 18 + 4)
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Sync persisted auto-pull state to server on first render
         if (!syncedAutoPull) {
             syncedAutoPull = true
@@ -448,7 +479,7 @@ class InventoryTerminalScreen(
         // Hide the craft dialogue field from normal rendering — we render it manually at higher Z
         val fieldWasVisible = craftDialogueField?.visible ?: false
         if (fieldWasVisible) craftDialogueField?.visible = false
-        super.render(graphics, mouseX, mouseY, partialTick)
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         if (fieldWasVisible) craftDialogueField?.visible = true
 
         // Ensure repo view is up-to-date before reading
@@ -463,10 +494,10 @@ class InventoryTerminalScreen(
         for (c in 0 until layout.cols) {
             if (c < craftQueue.size) continue  // slot occupied by a queue entry
             val sx = networkGrid.x + c * 18 + 1
-            graphics.pose().pushPose()
-            graphics.pose().translate(0f, 0f, 200f)
+            graphics.pose().pushMatrix()
+            graphics.pose().translate((0f).toFloat(), (0f).toFloat())
             Icons.RESERVED_SLOT.draw(graphics, sx + 17 - iconSize, pinnedY - 1, iconSize)
-            graphics.pose().popPose()
+            graphics.pose().popMatrix()
         }
 
         // Craft queue reserved row (always visible as first row)
@@ -479,41 +510,41 @@ class InventoryTerminalScreen(
                     // Pending: gray overlay + dim item + queued count in gray (0.5x scale)
                     graphics.renderItem(stack, sx, pinnedY)
                     graphics.fill(sx, pinnedY, sx + 16, pinnedY + 16, 0x80000000.toInt())
-                    graphics.pose().pushPose()
-                    graphics.pose().translate(0f, 0f, 200f)
+                    graphics.pose().pushMatrix()
+                    graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                     val countStr = formatCount(slot.totalRequested.toLong())
                     val scale = 0.5f
-                    graphics.pose().scale(scale, scale, 1f)
+                    graphics.pose().scale((scale).toFloat(), (scale).toFloat())
                     val tw = font.width(countStr)
                     val cx = ((sx + 16).toFloat() / scale - tw).toInt()
                     val cy = ((pinnedY + 16).toFloat() / scale - font.lineHeight).toInt()
                     graphics.drawString(font, countStr, cx, cy, 0xFF888888.toInt(), true)
-                    graphics.pose().popPose()
-                    graphics.pose().pushPose()
-                    graphics.pose().translate(0f, 0f, 200f)
+                    graphics.pose().popMatrix()
+                    graphics.pose().pushMatrix()
+                    graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                     Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 17 - iconSize, pinnedY - 1, iconSize)
-                    graphics.pose().popPose()
+                    graphics.pose().popMatrix()
                 } else {
                     // Items available — render normally with available count (0.5x scale)
                     graphics.renderItem(stack, sx, pinnedY)
                     if (slot.availableCount > 1) {
                         val countStr = formatCount(slot.availableCount.toLong())
                         val scale = 0.5f
-                        graphics.pose().pushPose()
-                        graphics.pose().translate(0f, 0f, 200f)
-                        graphics.pose().scale(scale, scale, 1f)
+                        graphics.pose().pushMatrix()
+                        graphics.pose().translate((0f).toFloat(), (0f).toFloat())
+                        graphics.pose().scale((scale).toFloat(), (scale).toFloat())
                         val tw = font.width(countStr)
                         val cx = ((sx + 16).toFloat() / scale - tw).toInt()
                         val cy = ((pinnedY + 16).toFloat() / scale - font.lineHeight).toInt()
                         graphics.drawString(font, countStr, cx, cy, 0xFFFFFFFF.toInt(), true)
-                        graphics.pose().popPose()
+                        graphics.pose().popMatrix()
                     }
                     // Status icon
-                    graphics.pose().pushPose()
-                    graphics.pose().translate(0f, 0f, 200f)
+                    graphics.pose().pushMatrix()
+                    graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                     val icon = if (slot.isComplete) Icons.CRAFTING_COMPLETE else Icons.CRAFTING_IN_PROGRESS
                     icon.draw(graphics, sx + 17 - iconSize, pinnedY - 1, iconSize)
-                    graphics.pose().popPose()
+                    graphics.pose().popMatrix()
                 }
             }
         }
@@ -525,7 +556,7 @@ class InventoryTerminalScreen(
         networkGrid.renderItems(graphics, scrollOffset, repo.viewSize, 1)
 
         // Craftable overlays (skip pinned row)
-        val altHeld = hasAltDown()
+        val altHeld = hasAltDownCompat()
         for ((i, slot) in networkGrid.slots.withIndex()) {
             val row = i / layout.cols
             if (row < 1) continue // skip pinned row
@@ -540,10 +571,10 @@ class InventoryTerminalScreen(
                 }
                 if (altHeld) {
                     // Show + icon on craftable items (above item Z layer)
-                    graphics.pose().pushPose()
-                    graphics.pose().translate(0f, 0f, 200f)
+                    graphics.pose().pushMatrix()
+                    graphics.pose().translate((0f).toFloat(), (0f).toFloat())
                     Icons.CRAFT_PLUS.draw(graphics, ix + 17 - iconSize, iy - 1, iconSize)
-                    graphics.pose().popPose()
+                    graphics.pose().popMatrix()
                 }
             }
         }
@@ -561,9 +592,9 @@ class InventoryTerminalScreen(
             val viewIndex = scrollOffset * layout.cols + (networkHover.index - layout.cols)
             val entry = repo.getViewEntry(viewIndex)
             if (entry != null) {
-                val id = net.minecraft.resources.ResourceLocation.tryParse(entry.info.itemId)
+                val id = net.minecraft.resources.Identifier.tryParse(entry.info.itemId)
                 if (id != null) {
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
                     if (item != null) {
                         hoverContainer.setItem(0, ItemStack(item))
                         hoveredSlot = net.minecraft.world.inventory.Slot(hoverContainer, 0, networkHover.x - leftPos, networkHover.y - topPos)
@@ -667,7 +698,7 @@ class InventoryTerminalScreen(
                     if (slot.availableCount > 0) {
                         lines.add(Component.literal("Click to extract ${slot.availableCount}").withStyle { it.withColor(0xAAAAAA) })
                     }
-                    graphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY)
+                    graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 }
             }
         } else if (hoveredIsNetworkItem) {
@@ -681,7 +712,7 @@ class InventoryTerminalScreen(
                     if (entry.info.isCraftable) {
                         lines.add(Component.literal("Craftable").withStyle { it.withColor(0x55FF55) })
                     }
-                    graphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY)
+                    graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 }
             }
         } else if (!hoveredIsNetworkItem) {
@@ -692,13 +723,13 @@ class InventoryTerminalScreen(
                 if (hoveredCraft >= 0) {
                     val stack = menu.craftingContainer.getItem(hoveredCraft)
                     if (!stack.isEmpty) {
-                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                        graphics.setTooltipForNextFrame(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
                         craftTooltipShown = true
                     }
                 } else if (isCraftOutputAt(mouseX, mouseY)) {
                     val stack = menu.resultContainer.getItem(0)
                     if (!stack.isEmpty) {
-                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                        graphics.setTooltipForNextFrame(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
                         craftTooltipShown = true
                     }
                 }
@@ -735,7 +766,7 @@ class InventoryTerminalScreen(
                     val invIndex = if (hoveredPlayer.gridType == VirtualSlot.GridType.PLAYER_MAIN) hoveredPlayer.index + 9 else hoveredPlayer.index
                     val stack = Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY
                     if (!stack.isEmpty) {
-                        graphics.renderTooltip(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                        graphics.setTooltipForNextFrame(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
                     }
                 }
             }
@@ -753,8 +784,8 @@ class InventoryTerminalScreen(
             val dx = leftPos + (imageWidth - dw) / 2
             val dy = topPos + (imageHeight - dh) / 2
 
-            graphics.pose().pushPose()
-            graphics.pose().translate(0f, 0f, 400f)
+            graphics.pose().pushMatrix()
+            graphics.pose().translate((0f).toFloat(), (0f).toFloat())
             NineSlice.PANEL_INSET.draw(graphics, dx, dy, dw, dh)
             NineSlice.CONTENT_BORDER.draw(graphics, dx, dy, dw, dh)
 
@@ -770,7 +801,7 @@ class InventoryTerminalScreen(
             craftDialogueField?.let { field ->
                 field.x = dx + 24
                 field.y = dy + 28
-                if (field.visible) field.renderWidget(graphics, mouseX, mouseY, 0f)
+                if (field.visible) field.extractRenderState(graphics, mouseX, mouseY, 0f)
             }
 
             // Count stepper: [-] [field] [+]
@@ -810,28 +841,31 @@ class InventoryTerminalScreen(
             graphics.drawString(font, "Craft", craftBtnX + (btnW - font.width("Craft")) / 2, btnY + 3, craftColor)
             graphics.drawString(font, "Cancel", cancelBtnX + (btnW - font.width("Cancel")) / 2, btnY + 3, cancelColor)
 
-            graphics.pose().popPose()
+            graphics.pose().popMatrix()
         }
 
         // Render carried item on cursor
         val carried = menu.carried
         if (!carried.isEmpty) {
-            graphics.pose().pushPose()
-            graphics.pose().translate(0f, 0f, 300f)
+            graphics.pose().pushMatrix()
+            graphics.pose().translate((0f).toFloat(), (0f).toFloat())
             graphics.renderItem(carried, mouseX - 8, mouseY - 8)
             graphics.renderItemDecorations(font, carried, mouseX - 8, mouseY - 8)
-            graphics.pose().popPose()
+            graphics.pose().popMatrix()
         }
     }
 
-    override fun renderLabels(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+    override fun extractLabels(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         // Don't render default labels
     }
 
 
     // ========== Input ==========
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
@@ -854,13 +888,13 @@ class InventoryTerminalScreen(
             val stepBtnH = 14
             if (mx >= minusBtnX && mx < minusBtnX + stepBtnW && my >= stepperY && my < stepperY + stepBtnH) {
                 val current = craftDialogueField?.value?.toIntOrNull() ?: 1
-                val step = if (hasShiftDown()) 10 else 1
+                val step = if (hasShiftDownCompat()) 10 else 1
                 craftDialogueField?.value = maxOf(1, current - step).toString()
                 return true
             }
             if (mx >= plusBtnX && mx < plusBtnX + stepBtnW && my >= stepperY && my < stepperY + stepBtnH) {
                 val current = craftDialogueField?.value?.toIntOrNull() ?: 1
-                val step = if (hasShiftDown()) 10 else 1
+                val step = if (hasShiftDownCompat()) 10 else 1
                 craftDialogueField?.value = minOf(999, current + step).toString()
                 return true
             }
@@ -891,7 +925,7 @@ class InventoryTerminalScreen(
             }
             // Click inside dialogue — consume
             if (mx >= dx && mx < dx + dw && my >= dy && my < dy + dh) {
-                return super.mouseClicked(mouseX, mouseY, button)
+                return super.mouseClicked(event, doubleClick)
             }
             // Click outside — close
             craftDialogueItemId = null
@@ -911,7 +945,7 @@ class InventoryTerminalScreen(
         // Crafting utility buttons are SlicedButton widgets — click handled automatically
 
         // Double-click collect check
-        val now = net.minecraft.Util.getMillis()
+        val now = net.minecraft.util.Util.getMillis()
         fun checkDoubleClick(slotType: Int, slotIndex: Int, itemId: String): Boolean {
             val isDoubleClick = button == 0
                 && now - lastClickTime < 400
@@ -942,9 +976,9 @@ class InventoryTerminalScreen(
                     val craftItemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(collectItem.item)?.toString() ?: ""
                     if (checkDoubleClick(0, craftSlot, craftItemId)) return true
                 }
-                if (hasShiftDown()) {
+                if (hasShiftDownCompat()) {
                     // Shift-click: move to player inventory
-                    slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ClickType.QUICK_MOVE)
+                    slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ContainerInput.QUICK_MOVE)
                     // Start shift-drag for dragging over more slots
                     slotDragButton = button
                     slotDragShift = true
@@ -952,7 +986,7 @@ class InventoryTerminalScreen(
                     slotDragVisited.add(DragSlotRef(0, slotIdx))
                 } else if (!menu.carried.isEmpty && button == 1) {
                     // Right-click: place one item, start right-drag
-                    slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ClickType.PICKUP)
+                    slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ContainerInput.PICKUP)
                     slotDragButton = 1
                     slotDragShift = false
                     slotDragVisited.clear()
@@ -966,13 +1000,13 @@ class InventoryTerminalScreen(
                     slotDragVisited.add(DragSlotRef(0, slotIdx))
                 } else {
                     // Normal click (pickup or swap)
-                    slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ClickType.PICKUP)
+                    slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ContainerInput.PICKUP)
                 }
                 return true
             }
             // Output slot
             if (isCraftOutputAt(mx, my)) {
-                val clickType = if (hasShiftDown()) net.minecraft.world.inventory.ClickType.QUICK_MOVE else net.minecraft.world.inventory.ClickType.PICKUP
+                val clickType = if (hasShiftDownCompat()) net.minecraft.world.inventory.ContainerInput.QUICK_MOVE else net.minecraft.world.inventory.ContainerInput.PICKUP
                 slotClicked(menu.slots[InventoryTerminalMenu.CRAFT_OUTPUT_SLOT], InventoryTerminalMenu.CRAFT_OUTPUT_SLOT, button, clickType)
                 return true
             }
@@ -998,7 +1032,7 @@ class InventoryTerminalScreen(
                     val slot = craftQueue[queueIdx]
                     if (slot.availableCount > 0) {
                         val action = when {
-                            hasShiftDown() -> 1  // shift to inventory
+                            hasShiftDownCompat() -> 1  // shift to inventory
                             button == 1 -> 2     // right click = half
                             else -> 0            // left click = full stack to cursor
                         }
@@ -1013,7 +1047,7 @@ class InventoryTerminalScreen(
             // Row 2+: network items (offset by 1 row for pinned)
             val viewIndex = scrollOffset * layout.cols + (networkSlot.index - layout.cols)
             val entry = repo.getViewEntry(viewIndex)
-            if (entry != null && entry.info.isCraftable && (hasAltDown() || entry.info.count == 0L)) {
+            if (entry != null && entry.info.isCraftable && (hasAltDownCompat() || entry.info.count == 0L)) {
                 craftDialogueItemId = entry.info.itemId
                 craftDialogueItemName = entry.info.name
                 craftDialogueField?.value = "1"
@@ -1024,7 +1058,7 @@ class InventoryTerminalScreen(
             }
             if (menu.carried.isEmpty && entry != null && entry.info.count > 0) {
                 val action = when {
-                    hasShiftDown() -> 3
+                    hasShiftDownCompat() -> 3
                     button == 1 -> 2
                     else -> 0
                 }
@@ -1054,7 +1088,7 @@ class InventoryTerminalScreen(
                 val playerItemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(collectItem.item)?.toString() ?: ""
                 if (checkDoubleClick(1, virtualIndex, playerItemId)) return true
             }
-            if (hasShiftDown()) {
+            if (hasShiftDownCompat()) {
                 // Shift-click: insert into network
                 PlatformServices.clientNetworking.sendToServer(
                     InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 2)
@@ -1097,10 +1131,13 @@ class InventoryTerminalScreen(
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         // Slot drag across crafting grid and player inventory
         if (slotDragButton >= 0) {
             val mx = mouseX.toInt()
@@ -1115,9 +1152,9 @@ class InventoryTerminalScreen(
                     if (ref !in slotDragVisited) {
                         slotDragVisited.add(ref)
                         if (slotDragShift) {
-                            slotClicked(menu.slots[slotIdx], slotIdx, 0, net.minecraft.world.inventory.ClickType.QUICK_MOVE)
+                            slotClicked(menu.slots[slotIdx], slotIdx, 0, net.minecraft.world.inventory.ContainerInput.QUICK_MOVE)
                         } else if (slotDragButton == 1 && !menu.carried.isEmpty) {
-                            slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ClickType.PICKUP)
+                            slotClicked(menu.slots[slotIdx], slotIdx, 1, net.minecraft.world.inventory.ContainerInput.PICKUP)
                         }
                     }
                     return true
@@ -1161,17 +1198,20 @@ class InventoryTerminalScreen(
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+        return super.mouseDragged(event, dragX, dragY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         // Finish left-drag distribute
         if (slotDragButton == 0 && !slotDragShift && slotDragVisited.isNotEmpty() && !slotDragStack.isEmpty) {
             if (slotDragVisited.size == 1) {
                 // Single click — place all
                 val ref = slotDragVisited.first()
                 if (ref.slotType == 0) {
-                    slotClicked(menu.slots[ref.index], ref.index, 0, net.minecraft.world.inventory.ClickType.PICKUP)
+                    slotClicked(menu.slots[ref.index], ref.index, 0, net.minecraft.world.inventory.ContainerInput.PICKUP)
                 } else {
                     // Player inventory: send via packet
                     PlatformServices.clientNetworking.sendToServer(
@@ -1195,7 +1235,7 @@ class InventoryTerminalScreen(
         slotDragVisited.clear()
 
         draggingScrollbar = false
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleased(event)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
@@ -1203,7 +1243,10 @@ class InventoryTerminalScreen(
         return true
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         // Craft dialogue keys
         if (craftDialogueItemId != null) {
             if (keyCode == InputConstants.KEY_ESCAPE) {
@@ -1223,7 +1266,7 @@ class InventoryTerminalScreen(
                 return true
             }
             // Let the field handle the input
-            return craftDialogueField?.keyPressed(keyCode, scanCode, modifiers) ?: false
+            return craftDialogueField?.keyPressed(event) ?: false
         }
 
         if (searchBox.isFocused) {
@@ -1231,23 +1274,25 @@ class InventoryTerminalScreen(
                 searchBox.isFocused = false
                 return true
             }
-            return searchBox.keyPressed(keyCode, scanCode, modifiers)
+            return searchBox.keyPressed(event)
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
-    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+    override fun charTyped(event: CharacterEvent): Boolean {
+        val codePoint = event.character
+        val modifiers = 0
         if (craftDialogueItemId != null && craftDialogueField?.isFocused == true) {
             // Only allow digits
             if (codePoint.isDigit()) {
-                return craftDialogueField?.charTyped(codePoint, modifiers) ?: false
+                return craftDialogueField?.charTyped(event) ?: false
             }
             return true
         }
         if (searchBox.isFocused) {
-            return searchBox.charTyped(codePoint, modifiers)
+            return searchBox.charTyped(event)
         }
-        return super.charTyped(codePoint, modifiers)
+        return super.charTyped(event)
     }
 
     /** Handle server sync of craft queue state. */
@@ -1304,8 +1349,8 @@ class InventoryTerminalScreen(
 
     private fun getItemStack(itemId: String): ItemStack {
         return itemStackCache.getOrPut(itemId) {
-            val id = ResourceLocation.tryParse(itemId) ?: return@getOrPut ItemStack.EMPTY
-            val item = BuiltInRegistries.ITEM.get(id) ?: return@getOrPut ItemStack.EMPTY
+            val id = Identifier.tryParse(itemId) ?: return@getOrPut ItemStack.EMPTY
+            val item = BuiltInRegistries.ITEM.getValue(id) ?: return@getOrPut ItemStack.EMPTY
             ItemStack(item)
         }
     }

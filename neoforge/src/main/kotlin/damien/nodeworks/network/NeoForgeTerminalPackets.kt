@@ -39,8 +39,53 @@ object NeoForgeTerminalPackets {
         activeEngines.remove(gp)?.stop()
     }
 
-    fun findAnyEngine(level: ServerLevel, terminalPositions: List<BlockPos>): ScriptEngine? {
-        val dimKey = level.dimension()
+    /**
+     * Start (or restart) a terminal's script engine. Used by the packet handler when the
+     * player clicks Run in the Terminal GUI, by the redstone-pulse toggle on the Terminal
+     * block, and by the auto-run scheduler on chunk load. Returns true if the engine
+     * actually started — false if the terminal is missing, has no network entry, or the
+     * script failed to compile.
+     *
+     * Any previously running engine for this position is stopped first, so this is safe
+     * to call regardless of current state.
+     */
+    fun startEngine(level: ServerLevel, pos: BlockPos): Boolean {
+        val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return false
+        val nodePos = terminal.getNetworkStartPos() ?: return false
+        val gp = GlobalPos.of(level.dimension(), pos)
+        activeEngines.remove(gp)?.stop()
+
+        val engine = ScriptEngine(level, nodePos) { message, isError ->
+            if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
+            val logPayload = TerminalLogPayload(pos, message, isError)
+            for (p in level.players()) {
+                if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
+                    PacketDistributor.sendToPlayer(p, logPayload)
+                } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
+                    val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
+                    if (diagMenu.topology.terminalInfos.any { it.pos == pos }) {
+                        PacketDistributor.sendToPlayer(p, logPayload)
+                    }
+                }
+            }
+            // Terminal errors surface to the player via the TerminalLogPayload above and
+            // to the Diagnostic Tool's Jobs tab via NetworkErrorBuffer — they don't
+            // belong in the server console.
+        }
+        activeEngines[gp] = engine
+        if (!engine.start(terminal.getScriptsCopy())) {
+            activeEngines.remove(gp)
+            return false
+        }
+        return true
+    }
+
+    fun findAnyEngine(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        overrideDimension: ResourceKey<Level>? = null,
+    ): ScriptEngine? {
+        val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
             val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
             if (engine.isRunning()) return engine
@@ -48,9 +93,16 @@ object NeoForgeTerminalPackets {
         return null
     }
 
-    /** Find the first active engine on the given network that has a processing handler for the given card name. */
-    fun findEngineWithHandler(level: ServerLevel, terminalPositions: List<BlockPos>, cardName: String): ScriptEngine? {
-        val dimKey = level.dimension()
+    /** Find the first active engine on the given network that has a processing handler for the given card name.
+     *  [overrideDimension] lets callers search a different dimension than `level.dimension()` — required when
+     *  the terminal positions come from a cross-dimensional Receiver Antenna. */
+    fun findEngineWithHandler(
+        level: ServerLevel,
+        terminalPositions: List<BlockPos>,
+        cardName: String,
+        overrideDimension: ResourceKey<Level>? = null,
+    ): ScriptEngine? {
+        val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
             val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
             if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) {
@@ -66,34 +118,7 @@ object NeoForgeTerminalPackets {
         context.enqueueWork {
             val player = context.player()
             val level = player.level() as? ServerLevel ?: return@enqueueWork
-            val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
-
-            val nodePos = terminal.getNetworkStartPos() ?: return@enqueueWork
-
-            val globalPos = GlobalPos.of(level.dimension(), payload.terminalPos)
-            activeEngines.remove(globalPos)?.stop()
-
-            val terminalPos = payload.terminalPos
-            val engine = ScriptEngine(level, nodePos) { message, isError ->
-                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(terminalPos, message, level.server.tickCount.toLong())
-                val logPayload = TerminalLogPayload(terminalPos, message, isError)
-                for (p in level.players()) {
-                    if (p.distanceToSqr(terminalPos.x + 0.5, terminalPos.y + 0.5, terminalPos.z + 0.5) <= 64.0 * 64.0) {
-                        PacketDistributor.sendToPlayer(p, logPayload)
-                    } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
-                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
-                        if (diagMenu.topology.terminalInfos.any { it.pos == terminalPos }) {
-                            PacketDistributor.sendToPlayer(p, logPayload)
-                        }
-                    }
-                }
-                if (isError) logger.warn("[Terminal {}] {}", terminalPos, message)
-            }
-
-            activeEngines[globalPos] = engine
-            if (!engine.start(terminal.getScriptsCopy())) {
-                activeEngines.remove(globalPos)
-            }
+            startEngine(level, payload.terminalPos)
         }
     }
 
@@ -213,38 +238,23 @@ object NeoForgeTerminalPackets {
             if (!level.isLoaded(pos)) continue
             val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
             if (!terminal.autoRun || terminal.scriptText.isBlank()) continue
-            val nodePos = terminal.getNetworkStartPos() ?: continue
-
             if (activeEngines.containsKey(gp)) continue
-
-            val engine = ScriptEngine(level, nodePos) { message, isError ->
-                if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
-                val logPayload = TerminalLogPayload(pos, message, isError)
-                for (p in level.players()) {
-                    if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
-                        PacketDistributor.sendToPlayer(p, logPayload)
-                    } else if (isError && p.containerMenu is damien.nodeworks.screen.DiagnosticMenu) {
-                        val diagMenu = p.containerMenu as damien.nodeworks.screen.DiagnosticMenu
-                        if (diagMenu.topology.terminalInfos.any { it.pos == pos }) {
-                            PacketDistributor.sendToPlayer(p, logPayload)
-                        }
-                    }
-                }
-                if (isError) logger.warn("[Terminal {}] {}", pos, message)
-            }
-            activeEngines[gp] = engine
-            if (engine.start(terminal.getScriptsCopy())) {
-                logger.info("[Terminal {}] Auto-run started", pos)
-            } else {
-                activeEngines.remove(gp)
-            }
+            if (startEngine(level, pos)) logger.info("[Terminal {}] Auto-run started", pos)
         }
     }
 
     fun tickAll(server: MinecraftServer, tickCount: Long) {
         processPendingAutoRun(server, tickCount)
+        // Snapshot before iterating: `engine.tick` may run Lua that reenters this class
+        // (e.g. a RedstoneCard write triggers a neighbour-block update → Terminal's
+        // neighborChanged → startEngine, which mutates activeEngines), and that would
+        // ConcurrentModifyException the live iteration. Also re-resolve the engine from
+        // the map each iteration so a snapshot'd entry that was replaced mid-tick isn't
+        // double-ticked.
         val toRemove = mutableListOf<GlobalPos>()
-        for ((gp, engine) in activeEngines) {
+        val snapshot = activeEngines.keys.toList()
+        for (gp in snapshot) {
+            val engine = activeEngines[gp] ?: continue
             if (!engine.isRunning()) {
                 toRemove.add(gp)
                 continue
@@ -254,6 +264,13 @@ object NeoForgeTerminalPackets {
                 toRemove.add(gp)
             }
         }
-        toRemove.forEach { activeEngines.remove(it)?.stop() }
+        // Only remove if the entry is still the same engine we were about to retire —
+        // a reentrant startEngine may have installed a fresh one at this key.
+        for (gp in toRemove) {
+            val engine = activeEngines[gp] ?: continue
+            if (!engine.isRunning() || !engine.hasWork()) {
+                activeEngines.remove(gp)?.stop()
+            }
+        }
     }
 }

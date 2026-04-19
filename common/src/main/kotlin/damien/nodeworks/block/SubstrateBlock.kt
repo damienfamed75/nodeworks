@@ -22,8 +22,8 @@ class SubstrateBlock(properties: Properties) : BaseEntityBlock(properties) {
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity = SubstrateBlockEntity(pos, state)
 
-    override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, neighborPos: BlockPos, movedByPiston: Boolean) {
-        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston)
+    override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, orientation: net.minecraft.world.level.redstone.Orientation?, movedByPiston: Boolean) {
+        super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
         level.getBlockEntity(pos) as? SubstrateBlockEntity ?: return
         CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.recalculateCapacity() }
     }

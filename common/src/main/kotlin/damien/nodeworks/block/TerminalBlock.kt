@@ -77,19 +77,32 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
         val startPos = terminal.getNetworkStartPos()
         if (startPos == null) {
-            player.displayClientMessage(Component.translatable("message.nodeworks.terminal_no_network"), false)
+            player.sendSystemMessage(Component.translatable("message.nodeworks.terminal_no_network"))
             return InteractionResult.SUCCESS
         }
 
         val serverPlayer = player as ServerPlayer
         val serverLevel = level as ServerLevel
 
+        // Walk the server-side network and pull any cross-dim remote Processing APIs
+        // (reached via Receiver Antennas paired to a remote Broadcast Antenna). The
+        // client can't read these itself because the broadcast BE lives in another
+        // dimension; surface them in openData so the script editor's autocomplete
+        // can suggest remote recipe names in network:craft("..."). Local APIs are
+        // still scanned client-side in TerminalScreen — we only ship what the client
+        // genuinely can't reach.
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, startPos)
+        val remoteApis = snapshot.processingApis
+            .filter { it.remoteDimension != null }
+            .flatMap { it.apis }
+
         val openData = TerminalOpenData(
             terminal.blockPos,
             terminal.getScriptsCopy(),
             PlatformServices.modState.isScriptRunning(serverLevel, terminal.blockPos),
             terminal.autoRun,
-            terminal.layoutIndex
+            terminal.layoutIndex,
+            remoteApis,
         )
 
         PlatformServices.menu.openExtendedMenu(
@@ -103,17 +116,46 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         return InteractionResult.SUCCESS
     }
 
+    /**
+     * Rising-edge redstone pulse toggles the terminal's script: start it if stopped,
+     * stop it if running. Button taps / pressure plate steps / fresh torches all count
+     * as a rising edge from 0 to >0. `lastRedstoneSignal = -1` on a freshly-loaded BE
+     * means the first neighborChanged call just initializes the tracker, so a
+     * permanently-powered terminal doesn't auto-start every time the chunk reloads.
+     */
+    override fun neighborChanged(
+        state: BlockState,
+        level: Level,
+        pos: BlockPos,
+        neighborBlock: Block,
+        orientation: net.minecraft.world.level.redstone.Orientation?,
+        movedByPiston: Boolean
+    ) {
+        super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
+        if (level !is ServerLevel) return
+        val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return
+        val signal = level.getBestNeighborSignal(pos)
+        val prev = terminal.lastRedstoneSignal
+        terminal.lastRedstoneSignal = signal
+        if (prev < 0) return  // first call since BE load — just capture the baseline
+        if (prev == 0 && signal > 0) {
+            if (PlatformServices.modState.isScriptRunning(level, pos)) {
+                PlatformServices.modState.stopScript(level, pos)
+            } else if (terminal.scriptText.isNotBlank()) {
+                PlatformServices.modState.startScript(level, pos)
+            }
+        }
+    }
+
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
         val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
         entity?.blockDestroyed = true
         return super.playerWillDestroy(level, pos, state, player)
     }
 
-    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
-        if (!state.`is`(newState.block)) {
-            val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
-            if (entity != null) entity.blockDestroyed = true
-        }
-        super.onRemove(state, level, pos, newState, movedByPiston)
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
+        if (entity != null) entity.blockDestroyed = true
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 }

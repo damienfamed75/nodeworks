@@ -74,16 +74,24 @@ class InstructionStorageBlock(properties: Properties) : BaseEntityBlock(properti
         return InteractionResult.SUCCESS
     }
 
-    override fun onRemove(state: BlockState, level: Level, pos: BlockPos, newState: BlockState, movedByPiston: Boolean) {
-        if (!state.`is`(newState.block)) {
-            Containers.dropContents(level, pos, level.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: return)
-        }
-        super.onRemove(state, level, pos, newState, movedByPiston)
+    override fun affectNeighborsAfterRemoval(state: BlockState, level: ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+        val be = level.getBlockEntity(pos) as? InstructionStorageBlockEntity
+        if (be != null) Containers.dropContents(level, pos, be)
+        super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: net.minecraft.world.entity.player.Player): BlockState {
         val entity = level.getBlockEntity(pos) as? InstructionStorageBlockEntity
         entity?.blockDestroyed = true
         return super.playerWillDestroy(level, pos, state, player)
+    }
+
+    // Comparator output — fraction of the 12 Instruction Set slots occupied, returned
+    // as 0..15 via the vanilla helper. Empty → 0, any filled slot → at least 1, full → 15.
+    override fun hasAnalogOutputSignal(state: BlockState): Boolean = true
+
+    override fun getAnalogOutputSignal(state: BlockState, level: Level, pos: BlockPos, direction: Direction): Int {
+        val be = level.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: return 0
+        return net.minecraft.world.inventory.AbstractContainerMenu.getRedstoneSignalFromContainer(be)
     }
 }

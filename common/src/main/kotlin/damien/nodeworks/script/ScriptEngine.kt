@@ -11,7 +11,6 @@ import org.luaj.vm2.compiler.LuaC
 import org.luaj.vm2.lib.*
 import org.luaj.vm2.lib.jse.JseBaseLib
 import org.luaj.vm2.lib.jse.JseMathLib
-import org.slf4j.LoggerFactory
 
 /**
  * Manages a sandboxed Lua VM for one terminal. Provides the Nodeworks API
@@ -22,8 +21,6 @@ class ScriptEngine(
     private val networkEntryNode: BlockPos,
     private val logCallback: (String, Boolean) -> Unit // (message, isError)
 ) {
-    private val logger = LoggerFactory.getLogger("nodeworks-script")
-
     private var globals: Globals? = null
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl { errorMsg -> logCallback(errorMsg, true) }
@@ -121,8 +118,9 @@ class ScriptEngine(
             chunk.call()
             true
         } catch (e: LuaError) {
+            // Script-level errors belong in the player-facing terminal log and the
+            // Diagnostic Tool's error buffer — not the server console.
             logCallback("Error: ${e.message}", true)
-            logger.warn("Script error: {}", e.message)
             stop()
             false
         }
@@ -151,16 +149,26 @@ class ScriptEngine(
     fun tick(tickCount: Long) {
         if (globals == null) return
 
+        // The server keeps every Connectable's `networkId` current — when an LOS break or
+        // removed node severs the path, `propagateNetworkId` clears it on the orphaned
+        // side. If our entry node no longer claims a network the terminal is effectively
+        // disconnected; running further would silently operate against a stale snapshot
+        // so stop with a clear error and let auto-run restart us once reconnected.
+        val entry = level.getBlockEntity(networkEntryNode) as? damien.nodeworks.network.Connectable
+        if (entry?.networkId == null) {
+            logCallback("Network disconnected — no controller reachable.", true)
+            stop()
+            return
+        }
+
         try {
             scheduler.tick(tickCount)
             pollRedstoneCallbacks()
         } catch (e: LuaError) {
             logCallback("Runtime error: ${e.message}", true)
-            logger.warn("Script runtime error: {}", e.message)
             stop()
         } catch (e: Exception) {
             logCallback("Runtime error: ${e.message}", true)
-            logger.warn("Script runtime exception: {}", e.message, e)
             stop()
         }
     }
@@ -400,8 +408,8 @@ class ScriptEngine(
                 // For async: result is null but pending is set. Build a CraftResult placeholder.
                 val craftResult = result ?: run {
                     // Async — we don't know the exact output yet. Use the identifier.
-                    val id = net.minecraft.resources.ResourceLocation.tryParse(identifier)
-                    val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) else null
+                    val id = net.minecraft.resources.Identifier.tryParse(identifier)
+                    val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
                     val name = if (item != null) net.minecraft.world.item.ItemStack(item).hoverName.string else identifier
                     CraftingHelper.CraftResult(identifier, name, count,
                         cpu = snapshot.cpus.firstOrNull()?.let { level.getBlockEntity(it.pos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity },

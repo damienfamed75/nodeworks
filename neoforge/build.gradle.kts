@@ -26,7 +26,6 @@ neoForge {
         register("nodeworks") {
             sourceSet(sourceSets.main.get())
             sourceSet(project(":common").sourceSets.main.get())
-            dependency("org.luaj:luaj-jse:3.0")
         }
     }
 }
@@ -47,14 +46,14 @@ dependencies {
     implementation(project(":common"))
 
     // KotlinForForge
-    implementation("thedarkcolour:kotlinforforge-neoforge:5.5.0")
+    implementation("thedarkcolour:kotlinforforge-neoforge:${providers.gradleProperty("kotlinforforge_version").get()}")
 
     // Lua scripting engine
     implementation("org.luaj:luaj-jse:3.0")
     jarJar("org.luaj:luaj-jse:3.0")
 
     // Dev-only testing mods (not bundled in release)
-    runtimeOnly("mezz.jei:jei-1.21.1-neoforge:19.21.0.247")
+    runtimeOnly("mezz.jei:jei-${providers.gradleProperty("minecraft_version").get()}-neoforge:${providers.gradleProperty("jei_version").get()}")
 }
 
 // Copy common resources alongside neoforge resources

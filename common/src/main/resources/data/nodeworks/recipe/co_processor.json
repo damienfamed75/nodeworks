@@ -1,19 +1,19 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DGD",
-        "PCP",
-        "DID"
-    ],
-    "key": {
-        "D": { "item": "nodeworks:substrate" },
-        "G": { "item": "minecraft:purple_stained_glass_pane" },
-        "P": { "item": "minecraft:sticky_piston" },
-        "C": { "item": "minecraft:crafting_table" },
-        "I": { "item": "nodeworks:io_card" }
-    },
-    "result": {
-        "id": "nodeworks:co_processor",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DGD",
+    "PCP",
+    "DID"
+  ],
+  "key": {
+    "D": "nodeworks:substrate",
+    "G": "minecraft:purple_stained_glass_pane",
+    "P": "minecraft:sticky_piston",
+    "C": "minecraft:crafting_table",
+    "I": "nodeworks:io_card"
+  },
+  "result": {
+    "id": "nodeworks:co_processor",
+    "count": 1
+  }
 }

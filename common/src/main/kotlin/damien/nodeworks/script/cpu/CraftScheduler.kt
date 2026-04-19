@@ -2,7 +2,6 @@ package damien.nodeworks.script.cpu
 
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
-import net.minecraft.nbt.Tag
 
 /**
  * Per-CPU craft driver. Holds at most one active [CraftPlan] plus a backlog of
@@ -305,40 +304,37 @@ class CraftScheduler(
     }
 
     fun loadFromNBT(tag: CompoundTag) {
-        // Backward-compat: old format wrote per-thread state under "threads". If that's
-        // what's on disk, take the first thread's plan+completed as our scheduler state
-        // and drop the rest — under the new model there's only one plan at a time.
-        if (tag.contains("threads", Tag.TAG_LIST.toInt())) {
-            val threads = tag.getList("threads", Tag.TAG_COMPOUND.toInt())
-            if (threads.size > 0) {
-                val first = threads.getCompound(0)
-                state = runCatching { State.valueOf(first.getString("state")) }.getOrDefault(State.IDLE)
-                failureReason = first.getString("failReason").takeIf { it.isNotEmpty() }
-                completed.clear()
-                (first.getIntArray("completed") ?: IntArray(0)).forEach { completed.add(it) }
-                plan = if (first.contains("plan", Tag.TAG_COMPOUND.toInt())) {
-                    CraftPlan.loadFromNBT(first.getCompound("plan"))
-                } else null
-                inProgressIds.clear()
-                // Re-derive inProgress flags from the loaded plan (legacy save had no set)
-                plan?.ops?.forEach { if (it.inProgress) inProgressIds.add(it.id) }
-            }
-        } else {
-            state = runCatching { State.valueOf(tag.getString("state")) }.getOrDefault(State.IDLE)
-            failureReason = tag.getString("failReason").takeIf { it.isNotEmpty() }
+        // 26.1: getList returns Optional<ListTag>; getIntArray returns Optional<int[]>;
+        //  getString/getInt/etc. return Optional<T>. The *Or variants cover defaults.
+        //  Backward-compat: old format wrote per-thread state under "threads" — if that's
+        //  still on disk, take the first thread's plan+completed as our scheduler state.
+        val legacyThreads = tag.getList("threads").orElse(null)
+        if (legacyThreads != null && legacyThreads.size > 0) {
+            val first = legacyThreads.getCompoundOrEmpty(0)
+            state = runCatching { State.valueOf(first.getStringOr("state", "IDLE")) }.getOrDefault(State.IDLE)
+            failureReason = first.getStringOr("failReason", "").takeIf { it.isNotEmpty() }
             completed.clear()
-            (tag.getIntArray("completed") ?: IntArray(0)).forEach { completed.add(it) }
+            first.getIntArray("completed").orElse(IntArray(0)).forEach { completed.add(it) }
+            plan = first.getCompound("plan").orElse(null)?.let { CraftPlan.loadFromNBT(it) }
             inProgressIds.clear()
-            (tag.getIntArray("inProgress") ?: IntArray(0)).forEach { inProgressIds.add(it) }
-            plan = if (tag.contains("plan", Tag.TAG_COMPOUND.toInt())) {
-                CraftPlan.loadFromNBT(tag.getCompound("plan"))
-            } else null
+            // Re-derive inProgress flags from the loaded plan (legacy save had no set).
+            plan?.ops?.forEach { if (it.inProgress) inProgressIds.add(it.id) }
+        } else {
+            state = runCatching { State.valueOf(tag.getStringOr("state", "IDLE")) }.getOrDefault(State.IDLE)
+            failureReason = tag.getStringOr("failReason", "").takeIf { it.isNotEmpty() }
+            completed.clear()
+            tag.getIntArray("completed").orElse(IntArray(0)).forEach { completed.add(it) }
+            inProgressIds.clear()
+            tag.getIntArray("inProgress").orElse(IntArray(0)).forEach { inProgressIds.add(it) }
+            plan = tag.getCompound("plan").orElse(null)?.let { CraftPlan.loadFromNBT(it) }
         }
 
         backlog.clear()
-        val bList = tag.getList("backlog", Tag.TAG_COMPOUND.toInt())
+        val bList = tag.getListOrEmpty("backlog")
         for (i in 0 until bList.size) {
-            CraftPlan.loadFromNBT(bList.getCompound(i))?.let { backlog.addLast(it) }
+            bList.getCompound(i).orElse(null)?.let { c ->
+                CraftPlan.loadFromNBT(c)?.let { backlog.addLast(it) }
+            }
         }
     }
 }

@@ -5,6 +5,7 @@ import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
+import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import java.util.concurrent.ConcurrentHashMap
 
@@ -143,9 +144,9 @@ class NetworkInventoryCache(
                     frontBuffer[key] = existing.copy(isCraftable = true)
                 } else {
                     // Not in storage — add phantom with count 0
-                    val id = net.minecraft.resources.ResourceLocation.tryParse(outputId) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
-                    val name = item.description.string
+                    val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
+                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
+                    val name = Component.translatable(item.descriptionId).string
                     frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
                 }
             }
@@ -159,9 +160,9 @@ class NetworkInventoryCache(
                     if (existing != null) {
                         frontBuffer[key] = existing.copy(isCraftable = true)
                     } else {
-                        val id = net.minecraft.resources.ResourceLocation.tryParse(outputId) ?: continue
-                        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
-                        val name = item.description.string
+                        val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
+                        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
+                        val name = Component.translatable(item.descriptionId).string
                         frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
                     }
                 }
@@ -186,7 +187,11 @@ class NetworkInventoryCache(
             }
         }
 
-        // Detect new and changed items
+        // Detect new and changed items. We compare count AND isCraftable: adding or
+        //  removing a Processing Set / Instruction Set for an item that was already
+        //  present in storage only flips the craftable flag, leaving count untouched
+        //  — the old count-only check missed that case, so adds/removes of recipes
+        //  for in-stock items never reached the client.
         for ((key, info) in frontBuffer) {
             val existing = entries[key]
             if (existing == null) {
@@ -195,9 +200,10 @@ class NetworkInventoryCache(
                 entries[key] = SerialEntry(serial, info)
                 changedSerials.add(serial)
                 changed = true
-            } else if (existing.info.count != info.count) {
-                // Count changed
-                entries[key] = existing.copy(info = existing.info.copy(count = info.count))
+            } else if (existing.info.count != info.count || existing.info.isCraftable != info.isCraftable) {
+                entries[key] = existing.copy(
+                    info = existing.info.copy(count = info.count, isCraftable = info.isCraftable)
+                )
                 changedSerials.add(existing.serial)
                 changed = true
             }
@@ -259,8 +265,8 @@ class NetworkInventoryCache(
             entries[key] = existing.copy(info = existing.info.copy(count = existing.info.count + amount))
             changedSerials.add(existing.serial)
         } else {
-            val identifier = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: return
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier) ?: return
+            val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
             val serial = nextSerial++
             entries[key] = SerialEntry(serial, ItemInfo(
                 itemId = itemId,

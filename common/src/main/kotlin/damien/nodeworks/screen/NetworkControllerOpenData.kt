@@ -10,7 +10,8 @@ data class NetworkControllerOpenData(
     val networkName: String,
     val redstoneMode: Int,
     val nodeGlowStyle: Int,
-    val handlerRetryLimit: Int
+    val handlerRetryLimit: Int,
+    val chunkLoading: Boolean,
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, NetworkControllerOpenData> = object : StreamCodec<FriendlyByteBuf, NetworkControllerOpenData> {
@@ -21,7 +22,8 @@ data class NetworkControllerOpenData(
                     buf.readUtf(32),
                     buf.readVarInt(),
                     buf.readVarInt(),
-                    buf.readVarInt()
+                    buf.readVarInt(),
+                    buf.readBoolean(),
                 )
             }
             override fun encode(buf: FriendlyByteBuf, data: NetworkControllerOpenData) {
@@ -31,6 +33,7 @@ data class NetworkControllerOpenData(
                 buf.writeVarInt(data.redstoneMode)
                 buf.writeVarInt(data.nodeGlowStyle)
                 buf.writeVarInt(data.handlerRetryLimit)
+                buf.writeBoolean(data.chunkLoading)
             }
         }
     }

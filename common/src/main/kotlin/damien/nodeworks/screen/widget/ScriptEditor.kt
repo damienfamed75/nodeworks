@@ -1,8 +1,30 @@
 package damien.nodeworks.screen.widget
 
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
-import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.AbstractWidget
 import net.minecraft.client.gui.narration.NarrationElementOutput
 import net.minecraft.network.chat.Component
@@ -87,7 +109,7 @@ class ScriptEditor(
      *  reserved region; (w, h) is its size. The editor has already scissored to the
      *  editor bounds, so the callback can freely draw within (x, y, w, h) without
      *  worrying about the surrounding chrome. */
-    var renderDecoration: (graphics: GuiGraphics, lineIdx: Int, x: Int, y: Int, w: Int, h: Int) -> Unit =
+    var renderDecoration: (graphics: GuiGraphicsExtractor, lineIdx: Int, x: Int, y: Int, w: Int, h: Int) -> Unit =
         { _, _, _, _, _, _ -> }
 
     // --- Public API (matches what TerminalScreen expects) ---
@@ -400,7 +422,7 @@ class ScriptEditor(
 
     // --- Rendering ---
 
-    override fun renderWidget(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractWidgetRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         // Background
         graphics.fill(x, y, x + width, y + height, BG_COLOR)
 
@@ -482,7 +504,10 @@ class ScriptEditor(
 
     // --- Input handling ---
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         if (!isFocused) return false
         cursorBlinkTime = System.currentTimeMillis()
 
@@ -623,7 +648,9 @@ class ScriptEditor(
         return false
     }
 
-    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+    override fun charTyped(event: CharacterEvent): Boolean {
+        val codePoint = event.character
+        val modifiers = 0
         if (!isFocused) return false
         if (codePoint < ' ' && codePoint != '\t') return false
         cursorBlinkTime = System.currentTimeMillis()
@@ -633,16 +660,16 @@ class ScriptEditor(
         return true
     }
 
-    override fun onClick(mouseX: Double, mouseY: Double) {
-        val clickPos = screenToCursor(mouseX, mouseY)
+    override fun onClick(event: MouseButtonEvent, doubleClick: Boolean) {
+        val clickPos = screenToCursor(event.mouseX, event.mouseY)
         cursor = clickPos
         selectStart = -1  // clear selection on click
         cursorBlinkTime = System.currentTimeMillis()
         ensureCursorVisible()
     }
 
-    override fun onDrag(mouseX: Double, mouseY: Double, dragX: Double, dragY: Double) {
-        val newPos = screenToCursor(mouseX, mouseY)
+    override fun onDrag(event: MouseButtonEvent, dragX: Double, dragY: Double) {
+        val newPos = screenToCursor(event.mouseX, event.mouseY)
         if (newPos != cursor) {
             if (selectStart < 0) selectStart = cursor
             cursor = newPos

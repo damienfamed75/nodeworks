@@ -19,6 +19,13 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getIntOrNull
+import damien.nodeworks.compat.getLongOrNull
+import damien.nodeworks.compat.getStringOrNull
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /**
@@ -38,6 +45,19 @@ class CraftingCoreBlockEntity(
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
+        set(value) {
+            val changed = field != value
+            field = value
+            // The CPU's emissive "active" block models are gated on the formed
+            //  blockstate, and formed now requires a network membership — so when
+            //  the network connection is wired/unwired, every cluster component
+            //  needs its blockstate re-pushed. recalculateCapacity() walks the
+            //  cluster and calls setBlock only where the desired state differs,
+            //  so this is cheap when nothing changed.
+            if (changed && level != null && !level!!.isClientSide) {
+                recalculateCapacity()
+            }
+        }
 
     // =====================================================================
     // Buffer (dual-axis: count + unique types, Long-safe item counts)
@@ -492,7 +512,10 @@ class CraftingCoreBlockEntity(
         }
         val totalCooled = totalCooledFloat.toInt()
 
-        isFormed = bufferCount > 0
+        // "Formed" now also requires an active network membership — disconnecting the
+        //  Core from the laser network flips this false, which drives every cluster
+        //  block to swap its emissive-on model for the plain one.
+        isFormed = bufferCount > 0 && networkId != null
         coProcessorCount = coProcessors
         heatGenerated = totalHeat
         heatCooled = totalCooled
@@ -595,6 +618,7 @@ class CraftingCoreBlockEntity(
         super.setLevel(level)
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
+            NodeConnectionHelper.queueRevalidation(level, worldPosition)
             // Defer recalc — neighbors may not be loaded yet.
             // Schedule resume of pending jobs
             // Legacy resume path — only fires when there's no per-op resume info AND no
@@ -724,8 +748,8 @@ class CraftingCoreBlockEntity(
         val snap = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
         val leftovers = clearBuffer()
         for ((itemId, count) in leftovers) {
-            val id = net.minecraft.resources.ResourceLocation.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id) ?: continue
+            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
             var remaining = count
             while (remaining > 0L) {
                 val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
@@ -758,174 +782,160 @@ class CraftingCoreBlockEntity(
     // Serialization
     // =====================================================================
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        tag.putBoolean("isFormed", isFormed)
-        tag.putBoolean("isCrafting", isCrafting)
-        tag.putString("currentCraftItem", currentCraftItem)
-        if (lastFailureReason.isNotEmpty()) tag.putString("lastFailureReason", lastFailureReason)
-        networkId?.let { tag.putString("networkId", it.toString()) }
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
+        output.putBlockPosList("connections", connections)
+        output.putBoolean("isFormed", isFormed)
+        output.putBoolean("isCrafting", isCrafting)
+        output.putString("currentCraftItem", currentCraftItem)
+        if (lastFailureReason.isNotEmpty()) output.putString("lastFailureReason", lastFailureReason)
+        networkId?.let { output.putString("networkId", it.toString()) }
 
-        // Buffer state (items + capacities, Long-safe, handles legacy format on load)
+        // Buffer state — the BufferState helper still speaks the CompoundTag API internally
+        // (streaming ValueOutput doesn't help here since the data is a small fixed blob),
+        // so we round-trip via CompoundTag.CODEC as a store child.
         val bufferTag = CompoundTag()
         bufferState.saveToNBT(bufferTag)
-        tag.put("bufferState", bufferTag)
+        output.store("bufferState", CompoundTag.CODEC, bufferTag)
 
-        // Scheduler state (active threads + backlog) — survives mid-craft world reload
+        // Scheduler state — same pattern.
         val schedulerTag = CompoundTag()
         scheduler.saveToNBT(schedulerTag)
-        tag.put("scheduler", schedulerTag)
+        output.store("scheduler", CompoundTag.CODEC, schedulerTag)
 
-        // Save original craft request + pending job metadata (server-only)
+        // Original craft request + pending job metadata (server-only — stripped in getUpdateTag).
         if (originalCraftId.isNotEmpty()) {
-            tag.putString("originalCraftId", originalCraftId)
-            tag.putLong("originalCraftCount", originalCraftCount)
+            output.putString("originalCraftId", originalCraftId)
+            output.putLong("originalCraftCount", originalCraftCount)
         }
         if (pendingCount > 0) {
-            tag.putInt("pendingCount", pendingCount)
-            val outputsTag = CompoundTag()
-            outputsTag.putInt("size", pendingOutputs.size)
-            for ((i, pair) in pendingOutputs.withIndex()) {
-                outputsTag.putString("id$i", pair.first)
-                outputsTag.putLong("ct$i", pair.second)
+            output.putInt("pendingCount", pendingCount)
+            val outsList = output.childrenList("pendingOutputs")
+            for ((id, ct) in pendingOutputs) {
+                val child = outsList.addChild()
+                child.putString("id", id)
+                child.putLong("ct", ct)
             }
-            tag.put("pendingOutputs", outputsTag)
-
-            val targetsTag = CompoundTag()
-            targetsTag.putInt("size", pendingPullTargets.size)
-            for ((i, pair) in pendingPullTargets.withIndex()) {
-                targetsTag.putLong("p$i", pair.first.asLong())
-                targetsTag.putInt("f$i", pair.second.ordinal)
+            val targetsList = output.childrenList("pendingPullTargets")
+            for ((pos, face) in pendingPullTargets) {
+                val child = targetsList.addChild()
+                child.putLong("p", pos.asLong())
+                child.putInt("f", face.ordinal)
             }
-            tag.put("pendingPullTargets", targetsTag)
         }
 
         // Per-op resume info — survives save/load so an in-progress smelt can pick up where
-        // it left off without re-invoking the handler (which would try to insert items
-        // again that are already in the machine).
+        // it left off without re-invoking the handler.
         if (opResumeInfo.isNotEmpty()) {
-            val list = net.minecraft.nbt.ListTag()
+            val list = output.childrenList("opResumeInfo")
             for ((opId, info) in opResumeInfo) {
-                val c = CompoundTag()
+                val c = list.addChild()
                 c.putInt("op", opId)
                 c.putString("api", info.processingApiName)
-                val outs = CompoundTag()
-                outs.putInt("size", info.outputs.size)
-                for ((i, pair) in info.outputs.withIndex()) {
-                    outs.putString("id$i", pair.first)
-                    outs.putLong("ct$i", pair.second)
+                val outsList = c.childrenList("outputs")
+                for ((id, ct) in info.outputs) {
+                    val o = outsList.addChild()
+                    o.putString("id", id)
+                    o.putLong("ct", ct)
                 }
-                c.put("outputs", outs)
-                val tgts = CompoundTag()
-                tgts.putInt("size", info.pullTargets.size)
-                for ((i, pair) in info.pullTargets.withIndex()) {
-                    tgts.putLong("p$i", pair.first.asLong())
-                    tgts.putInt("f$i", pair.second.ordinal)
+                val tgtsList = c.childrenList("targets")
+                for ((pos, face) in info.pullTargets) {
+                    val t = tgtsList.addChild()
+                    t.putLong("p", pos.asLong())
+                    t.putInt("f", face.ordinal)
                 }
-                c.put("targets", tgts)
-                list.add(c)
             }
-            tag.put("opResumeInfo", list)
         }
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
         connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
-        isFormed = tag.getBoolean("isFormed")
-        isCrafting = tag.getBoolean("isCrafting")
-        currentCraftItem = if (tag.contains("currentCraftItem")) tag.getString("currentCraftItem") else ""
-        lastFailureReason = if (tag.contains("lastFailureReason")) tag.getString("lastFailureReason") else ""
-        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+        connections.addAll(input.getBlockPosList("connections"))
+        isFormed = input.getBooleanOr("isFormed", false)
+        isCrafting = input.getBooleanOr("isCrafting", false)
+        currentCraftItem = input.getStringOr("currentCraftItem", "")
+        lastFailureReason = input.getStringOr("lastFailureReason", "")
+        networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
 
-        // Load buffer — new format first, legacy format as fallback
-        when {
-            tag.contains("bufferState", Tag.TAG_COMPOUND.toInt()) -> {
-                bufferState.loadFromNBT(tag.getCompound("bufferState"))
-            }
-            tag.contains("buffer", Tag.TAG_COMPOUND.toInt()) -> {
-                // Legacy pre-Phase-1 format: top-level "buffer" compound with Int counts
-                bufferState.loadFromNBT(tag.getCompound("buffer"))
-                // Legacy capacity (Int) — migrate if present
-                if (tag.contains("bufferCapacity", Tag.TAG_INT.toInt())) {
-                    val legacyCap = tag.getInt("bufferCapacity").toLong()
-                    bufferState.setCapacities(legacyCap, CpuRules.CORE_BASE_TYPES)
+        // Load buffer — new format first, legacy "buffer" + "bufferCapacity" format as fallback
+        // for pre-Phase-1 worlds. Both come through as CompoundTag sub-values via the codec.
+        val bufferStateTag = input.read("bufferState", CompoundTag.CODEC).orElse(null)
+        if (bufferStateTag != null) {
+            bufferState.loadFromNBT(bufferStateTag)
+        } else {
+            val legacyBuffer = input.read("buffer", CompoundTag.CODEC).orElse(null)
+            if (legacyBuffer != null) {
+                bufferState.loadFromNBT(legacyBuffer)
+                val legacyCap = input.getIntOrNull("bufferCapacity")
+                if (legacyCap != null) {
+                    bufferState.setCapacities(legacyCap.toLong(), CpuRules.CORE_BASE_TYPES)
                 }
             }
         }
 
-        // Scheduler state — loaded if present (may not exist for pre-Phase-2 saves)
-        if (tag.contains("scheduler", Tag.TAG_COMPOUND.toInt())) {
-            scheduler.loadFromNBT(tag.getCompound("scheduler"))
-        }
+        // Scheduler state — optional for pre-Phase-2 saves.
+        input.read("scheduler", CompoundTag.CODEC).ifPresent { scheduler.loadFromNBT(it) }
 
         // Load original craft request + pending job metadata
-        originalCraftId = if (tag.contains("originalCraftId")) tag.getString("originalCraftId") else ""
-        originalCraftCount = when {
-            tag.contains("originalCraftCount", Tag.TAG_LONG.toInt()) -> tag.getLong("originalCraftCount")
-            tag.contains("originalCraftCount", Tag.TAG_INT.toInt()) -> tag.getInt("originalCraftCount").toLong()
-            else -> 0L
-        }
-        pendingCount = if (tag.contains("pendingCount")) tag.getInt("pendingCount") else 0
-        if (pendingCount > 0 && tag.contains("pendingOutputs")) {
-            val outputsTag = tag.getCompound("pendingOutputs")
-            val size = outputsTag.getInt("size")
-            pendingOutputs = (0 until size).mapNotNull { i ->
-                val id = outputsTag.getString("id$i")
-                val ct = when {
-                    outputsTag.contains("ct$i", Tag.TAG_LONG.toInt()) -> outputsTag.getLong("ct$i")
-                    outputsTag.contains("ct$i", Tag.TAG_INT.toInt()) -> outputsTag.getInt("ct$i").toLong()
-                    else -> 0L
-                }
-                if (id.isNotEmpty()) id to ct else null
+        originalCraftId = input.getStringOr("originalCraftId", "")
+        // Long-safe with Int fallback — older saves used putInt for this.
+        originalCraftCount = input.getLongOrNull("originalCraftCount")
+            ?: input.getIntOrNull("originalCraftCount")?.toLong()
+            ?: 0L
+        pendingCount = input.getIntOr("pendingCount", 0)
+        pendingOutputs = if (pendingCount > 0) {
+            val list = input.childrenListOrEmpty("pendingOutputs")
+            val out = ArrayList<Pair<String, Long>>()
+            for (child in list) {
+                val id = child.getStringOr("id", "")
+                if (id.isEmpty()) continue
+                val ct = child.getLongOr("ct", 0L)
+                out += id to ct
             }
-        } else {
-            pendingOutputs = emptyList()
-        }
-        if (pendingCount > 0 && tag.contains("pendingPullTargets")) {
-            val targetsTag = tag.getCompound("pendingPullTargets")
-            val size = targetsTag.getInt("size")
-            pendingPullTargets = (0 until size).map { i ->
-                BlockPos.of(targetsTag.getLong("p$i")) to
-                        net.minecraft.core.Direction.values()[targetsTag.getInt("f$i")]
+            out
+        } else emptyList()
+        pendingPullTargets = if (pendingCount > 0) {
+            val list = input.childrenListOrEmpty("pendingPullTargets")
+            val out = ArrayList<Pair<BlockPos, net.minecraft.core.Direction>>()
+            for (child in list) {
+                val p = child.getLongOr("p", 0L)
+                val f = child.getIntOr("f", 0)
+                val faces = net.minecraft.core.Direction.entries
+                if (f !in faces.indices) continue
+                out += BlockPos.of(p) to faces[f]
             }
-        } else {
-            pendingPullTargets = emptyList()
-        }
+            out
+        } else emptyList()
         resumeScheduled = false
 
         // Per-op resume info — restore so executeProcess can poll without re-invoking handlers.
         opResumeInfo.clear()
-        if (tag.contains("opResumeInfo", Tag.TAG_LIST.toInt())) {
-            val list = tag.getList("opResumeInfo", Tag.TAG_COMPOUND.toInt())
-            for (i in 0 until list.size) {
-                val c = list.getCompound(i)
-                val opId = c.getInt("op")
-                val api = c.getString("api")
-                val outs = c.getCompound("outputs")
-                val outSize = outs.getInt("size")
-                val outputs = (0 until outSize).mapNotNull { j ->
-                    val id = outs.getString("id$j")
-                    if (id.isEmpty()) null else id to outs.getLong("ct$j")
-                }
-                val tgts = c.getCompound("targets")
-                val tgtSize = tgts.getInt("size")
-                val targets = (0 until tgtSize).map { j ->
-                    BlockPos.of(tgts.getLong("p$j")) to
-                            net.minecraft.core.Direction.values()[tgts.getInt("f$j")]
-                }
-                opResumeInfo[opId] = OpResumeInfo(api, outputs, targets)
+        for (c in input.childrenListOrEmpty("opResumeInfo")) {
+            val opId = c.getIntOr("op", -1)
+            if (opId < 0) continue
+            val api = c.getStringOr("api", "")
+            val outputs = ArrayList<Pair<String, Long>>()
+            for (o in c.childrenListOrEmpty("outputs")) {
+                val id = o.getStringOr("id", "")
+                if (id.isEmpty()) continue
+                outputs += id to o.getLongOr("ct", 0L)
             }
+            val targets = ArrayList<Pair<BlockPos, net.minecraft.core.Direction>>()
+            for (t in c.childrenListOrEmpty("targets")) {
+                val p = t.getLongOr("p", 0L)
+                val f = t.getIntOr("f", 0)
+                val faces = net.minecraft.core.Direction.entries
+                if (f !in faces.indices) continue
+                targets += BlockPos.of(p) to faces[f]
+            }
+            opResumeInfo[opId] = OpResumeInfo(api, outputs, targets)
         }
         // Defensive cleanup: opResumeInfo entries reference op IDs that only mean anything
-        // within the loaded scheduler plan. If no plan loaded (or different ops), drop them
-        // — otherwise they'd dangle forever and could collide with the next plan's IDs.
+        // within the loaded scheduler plan. If no plan (or different ops), drop them.
         val planOpIds = scheduler.currentPlan?.ops?.map { it.id }?.toSet().orEmpty()
         if (opResumeInfo.keys.any { it !in planOpIds }) {
             opResumeInfo.keys.retainAll(planOpIds)
@@ -934,7 +944,7 @@ class CraftingCoreBlockEntity(
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {
         val tag = saveWithoutMetadata(registries)
-        // Strip server-only pending job metadata from client sync
+        // Strip server-only pending job metadata from client sync.
         tag.remove("originalCraftId")
         tag.remove("originalCraftCount")
         tag.remove("pendingCount")

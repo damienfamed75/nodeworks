@@ -1,18 +1,28 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        "DCD",
-        "RCR",
-        "III"
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DCD",
+    "RCR",
+    "BIB"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "C": "nodeworks:celestine_shard",
+    "R": "#minecraft:lightning_rods",
+    "B": [
+      "minecraft:copper_bars",
+      "minecraft:exposed_copper_bars",
+      "minecraft:weathered_copper_bars",
+      "minecraft:oxidized_copper_bars",
+      "minecraft:waxed_copper_bars",
+      "minecraft:waxed_exposed_copper_bars",
+      "minecraft:waxed_weathered_copper_bars",
+      "minecraft:waxed_oxidized_copper_bars"
     ],
-    "key": {
-        "D": { "item": "minecraft:deepslate" },
-        "C": { "item": "nodeworks:celestine_shard" },
-        "R": { "item": "minecraft:lightning_rod" },
-        "I": { "item": "minecraft:copper_ingot" }
-    },
-    "result": {
-        "id": "nodeworks:celestine_antenna_array",
-        "count": 1
-    }
+    "I": "minecraft:copper_ingot"
+  },
+  "result": {
+    "id": "nodeworks:celestine_antenna_array",
+    "count": 1
+  }
 }

@@ -3,7 +3,29 @@ package damien.nodeworks.screen
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.network.SetProcessingApiDataPayload
 import damien.nodeworks.network.SetProcessingApiSlotPayload
-import net.minecraft.client.gui.GuiGraphics
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.buttonNum
+import damien.nodeworks.compat.character
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.hasAltDownCompat
+import damien.nodeworks.compat.hasControlDownCompat
+import damien.nodeworks.compat.hasShiftDownCompat
+import damien.nodeworks.compat.keyCode
+import damien.nodeworks.compat.modifierBits
+import damien.nodeworks.compat.mouseX
+import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.compat.scan
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
@@ -23,7 +45,7 @@ class ProcessingSetScreen(
     menu: ProcessingSetScreenHandler,
     playerInventory: Inventory,
     title: Component
-) : AbstractContainerScreen<ProcessingSetScreenHandler>(menu, playerInventory, title) {
+) : AbstractContainerScreen<ProcessingSetScreenHandler>(menu, playerInventory, title, FRAME_W, FRAME_H) {
 
     companion object {
         private const val LABEL_COLOR = 0xFFAAAAAA.toInt()
@@ -71,7 +93,7 @@ class ProcessingSetScreen(
         private const val CLEAR_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - CLEAR_BTN_SIZE) / 2
 
 
-        private val BG_TEXTURE = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+        private val BG_TEXTURE = net.minecraft.resources.Identifier.fromNamespaceAndPath(
             "nodeworks", "textures/gui/processing_set_bg.png"
         )
     }
@@ -83,8 +105,6 @@ class ProcessingSetScreen(
     private var timeoutBox: EditBox? = null
 
     init {
-        imageWidth = FRAME_W
-        imageHeight = FRAME_H
         // Hide vanilla title / inventory labels; we draw our own.
         inventoryLabelY = -9999
         titleLabelY = -9999
@@ -114,7 +134,8 @@ class ProcessingSetScreen(
         }
     }
 
-    override fun renderBg(graphics: GuiGraphics, partialTick: Float, mouseX: Int, mouseY: Int) {
+    override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick)
         val x = leftPos
         val y = topPos
 
@@ -140,12 +161,6 @@ class ProcessingSetScreen(
         graphics.drawString(font, timeoutLabel,
             x + TIMEOUT_GROUP_CENTER_X - font.width(timeoutLabel) / 2,
             y + PANEL_LABEL_Y, LABEL_COLOR)
-        graphics.drawString(font, "-",
-            x + TIMEOUT_MINUS_X + (STEPPER_BTN_SIZE - font.width("-")) / 2,
-            y + PANEL_CONTROL_Y + 3, WHITE)
-        graphics.drawString(font, "+",
-            x + TIMEOUT_PLUS_X + (STEPPER_BTN_SIZE - font.width("+")) / 2,
-            y + PANEL_CONTROL_Y + 3, WHITE)
         val toggleLabel = "Parallel"
         graphics.drawString(font, toggleLabel,
             x + PARALLEL_GROUP_CENTER_X - font.width(toggleLabel) / 2,
@@ -166,16 +181,25 @@ class ProcessingSetScreen(
             clearY + (clearDrawH - 5) / 2,
             5, 5, WHITE)
 
+        // Stepper buttons — draw the 9-slice background first, then paint the +/- glyph
+        // on top. (Previously the text was drawn before the button and got painted over.)
         val minusHover = mouseX in (x + TIMEOUT_MINUS_X) until (x + TIMEOUT_MINUS_X + STEPPER_BTN_SIZE) &&
                          mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
         (if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(
             graphics, x + TIMEOUT_MINUS_X, y + PANEL_CONTROL_Y, STEPPER_BTN_SIZE, STEPPER_BTN_SIZE
         )
+        graphics.drawString(font, "-",
+            x + TIMEOUT_MINUS_X + (STEPPER_BTN_SIZE - font.width("-")) / 2,
+            y + PANEL_CONTROL_Y + (STEPPER_BTN_SIZE - font.lineHeight) / 2 + 1, WHITE)
+
         val plusHover = mouseX in (x + TIMEOUT_PLUS_X) until (x + TIMEOUT_PLUS_X + STEPPER_BTN_SIZE) &&
                         mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
         (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(
             graphics, x + TIMEOUT_PLUS_X, y + PANEL_CONTROL_Y, STEPPER_BTN_SIZE, STEPPER_BTN_SIZE
         )
+        graphics.drawString(font, "+",
+            x + TIMEOUT_PLUS_X + (STEPPER_BTN_SIZE - font.width("+")) / 2,
+            y + PANEL_CONTROL_Y + (STEPPER_BTN_SIZE - font.lineHeight) / 2 + 1, WHITE)
 
         // Parallel toggle — dynamic state. Sits 1px above the stepper row so the
         // switch visually aligns with the entry field's text baseline.
@@ -188,8 +212,8 @@ class ProcessingSetScreen(
         NineSlice.drawPlayerInventory(graphics, x + INV_X, y + INV_GRID_Y, HOTBAR_GAP)
     }
 
-    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        super.render(graphics, mouseX, mouseY, partialTick)
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
 
         // Ghost overlay dim on occupied ghost slots — placed before the count badges so
         // the badges overlay the dim too.
@@ -198,17 +222,15 @@ class ProcessingSetScreen(
             if (slot.hasItem()) {
                 val sx = leftPos + slot.x
                 val sy = topPos + slot.y
-                graphics.fillGradient(
-                    net.minecraft.client.renderer.RenderType.guiOverlay(),
-                    sx, sy, sx + 16, sy + 16, GHOST_OVERLAY, GHOST_OVERLAY, 0
-                )
+                graphics.fillGradient(sx, sy, sx + 16, sy + 16, GHOST_OVERLAY, GHOST_OVERLAY)
             }
         }
 
-        // Count badges — rendered via Font.SEE_THROUGH display mode. That render type
-        // disables the depth test internally, so the labels aren't culled by the item
-        // icons' depth values regardless of what state GL is in at our draw site. Flushing
-        // the buffer source right after commits the batch before renderTooltip runs.
+        // Count badges — simple text draw on top of the item cell. The old
+        // depth-test-bypass via Font.SEE_THROUGH + bufferSource.flush() relied on
+        // APIs that are gone in 26.1; this simpler path draws on top of the
+        // already-submitted item quads in the extract pipeline and looks correct
+        // in practice because GuiGraphicsExtractor layers draws in submission order.
         val inputCounts = menu.inputCounts
         for (i in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
             val slot = menu.slots[i]
@@ -225,32 +247,29 @@ class ProcessingSetScreen(
                 if (count > 1) drawStackCountBadge(graphics, leftPos + slot.x, topPos + slot.y, count)
             }
         }
-        graphics.flush()
-
-        renderTooltip(graphics, mouseX, mouseY)
+        // 26.1: tooltip rendering is handled automatically by ACS's
+        // extractRenderState pipeline — no explicit call needed.
     }
 
     /** Vanilla stack-count badge — right-aligned, white w/ shadow, at the bottom-right
-     *  of a 16×16 item cell. Drawn via Font.SEE_THROUGH so depth test is bypassed and
-     *  the label reliably layers in front of the item icon underneath. */
-    private fun drawStackCountBadge(graphics: GuiGraphics, sx: Int, sy: Int, count: Int) {
+     *  of a 16×16 item cell.
+     *
+     *  26.1: pre-migration used `Font.drawInBatch` with `Font.DisplayMode.SEE_THROUGH`
+     *  so the badge depth-tested past the item icon quads. The new
+     *  GuiGraphicsExtractor pipeline draws each stratum in submission order; text
+     *  submissions land in a stratum above item submissions, so plain
+     *  `graphics.text` reads correctly without the old depth trick. */
+    private fun drawStackCountBadge(graphics: GuiGraphicsExtractor, sx: Int, sy: Int, count: Int) {
         val text = count.toString()
-        val tx = (sx + 17 - font.width(text)).toFloat()
-        val ty = (sy + 9).toFloat()
-        font.drawInBatch(
-            text,
-            tx, ty,
-            WHITE,
-            true,                                   // drop shadow
-            graphics.pose().last().pose(),
-            graphics.bufferSource(),
-            net.minecraft.client.gui.Font.DisplayMode.SEE_THROUGH,
-            0,                                      // no background fill
-            15728880                                // packed light = fullbright
-        )
+        val tx = sx + 17 - font.width(text)
+        val ty = sy + 9
+        graphics.text(font, text, tx, ty, WHITE, true)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val mouseX = event.mouseX
+        val mouseY = event.mouseY
+        val button = event.buttonNum
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
@@ -276,7 +295,7 @@ class ProcessingSetScreen(
         val minusX = leftPos + TIMEOUT_MINUS_X
         val minusY = topPos + PANEL_CONTROL_Y
         if (mx in minusX until minusX + STEPPER_BTN_SIZE && my in minusY until minusY + STEPPER_BTN_SIZE) {
-            val step = if (hasShiftDown()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
+            val step = if (hasShiftDownCompat()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
             val next = ((timeoutBox?.value?.toIntOrNull() ?: menu.timeout) - step).coerceAtLeast(0)
             timeoutBox?.value = next.toString()
             return true
@@ -286,7 +305,7 @@ class ProcessingSetScreen(
         val plusX = leftPos + TIMEOUT_PLUS_X
         val plusY = topPos + PANEL_CONTROL_Y
         if (mx in plusX until plusX + STEPPER_BTN_SIZE && my in plusY until plusY + STEPPER_BTN_SIZE) {
-            val step = if (hasShiftDown()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
+            val step = if (hasShiftDownCompat()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
             val next = ((timeoutBox?.value?.toIntOrNull() ?: menu.timeout) + step)
             timeoutBox?.value = next.toString()
             return true
@@ -300,7 +319,7 @@ class ProcessingSetScreen(
             return true
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
     /**
@@ -339,13 +358,16 @@ class ProcessingSetScreen(
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val scanCode = event.scan
+        val modifiers = event.modifierBits
         val tBox = timeoutBox
         if (tBox != null && tBox.isFocused) {
-            if (keyCode == 256) return super.keyPressed(keyCode, scanCode, modifiers)  // ESC
-            tBox.keyPressed(keyCode, scanCode, modifiers)
+            if (keyCode == 256) return super.keyPressed(event)  // ESC
+            tBox.keyPressed(event)
             return true
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 }

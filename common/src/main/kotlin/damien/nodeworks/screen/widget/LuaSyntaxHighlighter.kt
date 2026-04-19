@@ -1,7 +1,16 @@
 package damien.nodeworks.screen.widget
 
+import damien.nodeworks.compat.blit
+import damien.nodeworks.compat.drawCenteredString
+import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.drawWordWrap
+import damien.nodeworks.compat.renderComponentTooltip
+import damien.nodeworks.compat.renderFakeItem
+import damien.nodeworks.compat.renderItem
+import damien.nodeworks.compat.renderItemDecorations
+import damien.nodeworks.compat.renderTooltip
 import net.minecraft.client.gui.Font
-import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.MultiLineEditBox
 import net.minecraft.client.gui.components.MultilineTextField
 
@@ -44,7 +53,7 @@ object LuaSyntaxHighlighter {
     }
 
     fun render(
-        graphics: GuiGraphics,
+        graphics: GuiGraphicsExtractor,
         font: Font,
         editor: MultiLineEditBox,
         textField: MultilineTextField?,

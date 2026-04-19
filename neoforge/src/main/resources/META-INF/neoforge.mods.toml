@@ -1,5 +1,5 @@
 modLoader = "kotlinforforge"
-loaderVersion = "[5,)"
+loaderVersion = "[6,)"
 
 license = "CC0-1.0"
 
@@ -11,16 +11,21 @@ description = '''
 Scripting-driven automation mod with node networks and Lua terminals.
 '''
 
+# Mixin config — required by NeoForge 26.1 to actually apply the mixins.
+# Without this block the JSON is never scanned; the ServerLevelSetBlockMixin
+# (which drives LOS-break disconnect on the server) silently no-ops, and
+# connectable blocks keep their cached networkId forever after an obstruction.
+[[mixins]]
+config = "nodeworks.mixins.json"
+
 [[dependencies.nodeworks]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.1,)"
-ordering = "NONE"
+versionRange = "[26.1,)"
 side = "BOTH"
 
 [[dependencies.nodeworks]]
 modId = "minecraft"
 type = "required"
-versionRange = "[1.21.1,)"
-ordering = "NONE"
+versionRange = "[26.1.2,)"
 side = "BOTH"

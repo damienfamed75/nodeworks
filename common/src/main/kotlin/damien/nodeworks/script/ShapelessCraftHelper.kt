@@ -3,7 +3,7 @@ package damien.nodeworks.script
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.crafting.CraftingInput
@@ -36,13 +36,13 @@ object ShapelessCraftHelper {
         snapshot: NetworkSnapshot,
         cache: NetworkInventoryCache? = null
     ): CraftResult? {
-        val recipeManager = level.getRecipeManager() ?: return null
+        val recipeManager = level.recipeAccess() ?: return null
 
         // Build the 3x3 crafting grid from the ingredients
         val gridItems = mutableListOf<ItemStack>()
         for ((itemId, count) in ingredients) {
-            val identifier = ResourceLocation.tryParse(itemId) ?: return null
-            val item = BuiltInRegistries.ITEM.get(identifier) ?: return null
+            val identifier = Identifier.tryParse(itemId) ?: return null
+            val item = BuiltInRegistries.ITEM.getValue(identifier) ?: return null
             repeat(count) { gridItems.add(ItemStack(item, 1)) }
         }
 
@@ -73,7 +73,7 @@ object ShapelessCraftHelper {
             return executeCraft(result.first, result.second, ingredients, level, snapshot, cache)
         }
 
-        val resultStack = recipeResult.value().assemble(craftingInput, level.registryAccess())
+        val resultStack = recipeResult.value().assemble(craftingInput)
         return executeCraft(resultStack, craftingInput, ingredients, level, snapshot, cache)
     }
 
@@ -115,7 +115,7 @@ object ShapelessCraftHelper {
                 val input = CraftingInput.of(3, 3, grid.toList())
                 val result = recipeManager.getRecipeFor(RecipeType.CRAFTING, input, level).orElse(null)
                 if (result != null) {
-                    return Pair(result.value().assemble(input, level.registryAccess()), input)
+                    return Pair(result.value().assemble(input), input)
                 }
             }
         }

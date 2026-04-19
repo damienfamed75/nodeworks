@@ -1,9 +1,14 @@
+// MC 26.1.2 marks CreativeModeTab.Output as `protected`. Java sees it fine via the
+// DisplayItemsGenerator SAM contract but Kotlin's stricter access check rejects
+// resolving .accept on it. This blanket suppression lets us keep the idiomatic
+// Kotlin lambda form that EnderIO uses in Java.
+@file:Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
 package damien.nodeworks.registry
 
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.ItemStack
 
@@ -11,7 +16,7 @@ object ModCreativeTab {
 
     val TAB: CreativeModeTab = Registry.register(
         BuiltInRegistries.CREATIVE_MODE_TAB,
-        ResourceLocation.fromNamespaceAndPath("nodeworks", "nodeworks"),
+        Identifier.fromNamespaceAndPath("nodeworks", "nodeworks"),
         CreativeModeTab.builder(CreativeModeTab.Row.TOP, 0)
             .title(Component.literal("Nodeworks"))
             .icon { ItemStack(ModBlocks.NODE.asItem()) }
@@ -50,7 +55,6 @@ object ModCreativeTab {
                 output.accept(ModItems.REDSTONE_CARD)
                 output.accept(ModItems.INSTRUCTION_SET)
                 output.accept(ModItems.PROCESSING_SET)
-                output.accept(ModItems.MEMORY_UPGRADE)
                 output.accept(ModItems.LINK_CRYSTAL)
                 output.accept(ModItems.ANTENNA_COIL_ASSEMBLY)
                 output.accept(ModItems.CELESTINE_ANTENNA_ARRAY)

@@ -9,13 +9,13 @@ import damien.nodeworks.platform.PlatformServices
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
 import net.minecraft.client.renderer.MultiBufferSource
-import net.minecraft.client.renderer.RenderType
+import net.minecraft.client.renderer.rendertype.RenderType
+import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
-import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
+import net.minecraft.resources.Identifier
 import org.joml.Quaternionf
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -30,9 +30,6 @@ object NodeConnectionRenderer {
 
     /** Default network color (RGB, no alpha). Used as fallback when no controller is found. */
     const val DEFAULT_NETWORK_COLOR = 0x888888
-
-    /** How often to refresh line-of-sight cache (ticks). */
-    private const val LOS_REFRESH_INTERVAL = 10
 
     /** Max raycasts per tick during incremental LOS refresh. */
     private const val LOS_RAYCASTS_PER_TICK = 10
@@ -116,9 +113,14 @@ object NodeConnectionRenderer {
     fun isReachable(pos: BlockPos): Boolean = reachablePositions.contains(pos)
 
     private fun connectionKey(a: BlockPos, b: BlockPos): Long {
-        // Deterministic key: hash both positions into a single long
         val (lo, hi) = if (isLessThan(a, b)) a to b else b to a
         return lo.asLong() xor (hi.asLong() * 31)
+    }
+
+    private fun isLessThan(a: BlockPos, b: BlockPos): Boolean {
+        if (a.x != b.x) return a.x < b.x
+        if (a.y != b.y) return a.y < b.y
+        return a.z < b.z
     }
 
     /**
@@ -126,7 +128,6 @@ object NodeConnectionRenderer {
      * to avoid frame spikes. When all connections are checked, rebuilds reachability via BFS.
      */
     private fun refreshLosCache(level: net.minecraft.world.level.Level) {
-        // Build a flat list of connection pairs to check (skip already-cached)
         val pairs = mutableListOf<Pair<BlockPos, BlockPos>>()
         for (nodePos in knownNodes) {
             if (!level.isLoaded(nodePos)) continue
@@ -137,7 +138,6 @@ object NodeConnectionRenderer {
             }
         }
 
-        // Process up to LOS_RAYCASTS_PER_TICK raycasts starting from losRefreshIndex
         var count = 0
         while (losRefreshIndex < pairs.size && count < LOS_RAYCASTS_PER_TICK) {
             val (a, b) = pairs[losRefreshIndex]
@@ -152,14 +152,20 @@ object NodeConnectionRenderer {
             count++
         }
 
-        // When all done, rebuild reachability and reset for next cycle
         if (losRefreshIndex >= pairs.size) {
             losRefreshIndex = 0
-            // Purge stale keys from losCache for removed connections
             val validKeys = pairs.map { connectionKey(it.first, it.second) }.toHashSet()
             losCache.keys.retainAll(validKeys)
 
-            // BFS from all controllers through unblocked connections
+            // Snapshot the previous reachable set before rebuilding so we can diff
+            // and invalidate chunk sections for any block whose reachability flipped.
+            // Every network-tint-driven emissive texture (controller / terminal /
+            // variable / receiver antenna / processing & instruction storage, plus
+            // any future block in the BlockTintSources list) goes through a
+            // NetworkColorTintSource that only re-evaluates on section rebuild,
+            // so LOS changes that don't move a block between chunks otherwise go
+            // visually unnoticed until an unrelated chunk reload.
+            val previousReachable = reachableSnapshot
             reachablePositions.clear()
             for (nodePos in knownNodes) {
                 if (!level.isLoaded(nodePos)) continue
@@ -168,6 +174,29 @@ object NodeConnectionRenderer {
                     bfsReachable(level, nodePos)
                 }
             }
+            invalidateChangedSections(previousReachable, reachablePositions)
+            reachableSnapshot = HashSet(reachablePositions)
+        }
+    }
+
+    /** Snapshot of [reachablePositions] taken after each LOS-refresh cycle so the next
+     *  cycle can diff against it and issue chunk rebuilds only for blocks that flipped. */
+    private var reachableSnapshot: HashSet<BlockPos> = HashSet()
+
+    private fun invalidateChangedSections(before: Set<BlockPos>, after: Set<BlockPos>) {
+        val mc = net.minecraft.client.Minecraft.getInstance()
+        val changed = HashSet<BlockPos>()
+        for (pos in before) if (pos !in after) changed.add(pos)
+        for (pos in after) if (pos !in before) changed.add(pos)
+        if (changed.isEmpty()) return
+        val dirtiedSections = HashSet<Long>()
+        for (pos in changed) {
+            val sx = net.minecraft.core.SectionPos.blockToSectionCoord(pos.x)
+            val sy = net.minecraft.core.SectionPos.blockToSectionCoord(pos.y)
+            val sz = net.minecraft.core.SectionPos.blockToSectionCoord(pos.z)
+            val key = net.minecraft.core.SectionPos.asLong(sx, sy, sz)
+            if (!dirtiedSections.add(key)) continue
+            mc.levelRenderer.setSectionDirtyWithNeighbors(sx, sy, sz)
         }
     }
 
@@ -189,9 +218,32 @@ object NodeConnectionRenderer {
         }
     }
 
+    /** The currently pinned block position (shown highlighted by the Diagnostic Tool), or null. */
+    var pinnedBlock: BlockPos? = null
+
     fun register() {
         NodeBlockEntity.nodeTracker = NodeBlockEntity.NodeTracker { pos, loaded ->
             trackConnectable(pos, loaded)
+        }
+
+        // Invalidate the BlockTintCache for every Connectable block belonging to a
+        // network whose settings just changed. The cache is keyed on (section, pos,
+        // layer) and only refreshes when the section is marked dirty — setSectionDirty
+        // forces a re-query of NetworkColorTintSource.colorInWorld next frame.
+        damien.nodeworks.network.NetworkSettingsRegistry.onChanged = label@{ networkId ->
+            val mc = Minecraft.getInstance()
+            val level = mc.level ?: return@label
+            val renderer = mc.levelRenderer
+            for (pos in knownNodes) {
+                if (!level.isLoaded(pos)) continue
+                val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
+                if (be.networkId != networkId) continue
+                renderer.setSectionDirty(
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.x),
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.y),
+                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.z)
+                )
+            }
         }
 
         PlatformServices.clientEvents.onWorldRender { poseStack, consumers, cameraPos ->
@@ -204,13 +256,12 @@ object NodeConnectionRenderer {
 
     private fun render(
         poseStack: PoseStack,
-        consumers: net.minecraft.client.renderer.MultiBufferSource,
+        consumers: MultiBufferSource,
         cameraPos: net.minecraft.world.phys.Vec3
     ) {
         val mc = Minecraft.getInstance()
         val level = mc.level ?: return
 
-        // Incrementally refresh LOS cache — processes a few raycasts per tick
         val tick = mc.level?.gameTime ?: 0L
         if (tick != losRefreshTick) {
             losRefreshTick = tick
@@ -222,10 +273,8 @@ object NodeConnectionRenderer {
 
         val pose = poseStack.last()
 
-        // Collect visible connection pairs with their network color
         val connections = mutableListOf<ConnectionPair>()
         val colorCache = HashMap<BlockPos, Int>()
-        // Distance cull: skip nodes beyond 64 blocks (connections are max 8 blocks, so 64 is generous)
         val maxDistSq = 64.0 * 64.0
 
         for (nodePos in knownNodes) {
@@ -257,7 +306,8 @@ object NodeConnectionRenderer {
             renderConnectionBeams(poseStack, consumers, level, connections)
         } else {
             // Fallback: thin lines
-            val lineBuffer = consumers.getBuffer(RenderType.lines())
+            // 26.1: RenderType.lines() → RenderTypes.LINES (field, not method).
+            val lineBuffer = consumers.getBuffer(RenderTypes.LINES)
             for (conn in connections) {
                 val from = conn.fromPos.center
                 val to = conn.toPos.center
@@ -267,7 +317,7 @@ object NodeConnectionRenderer {
                 val dx = (to.x - from.x).toFloat()
                 val dy = (to.y - from.y).toFloat()
                 val dz = (to.z - from.z).toFloat()
-                val len = Math.sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
+                val len = sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
                 val nx = if (len > 0) dx / len else 0f
                 val ny = if (len > 0) dy / len else 0f
                 val nz = if (len > 0) dz / len else 0f
@@ -275,10 +325,12 @@ object NodeConnectionRenderer {
                 lineBuffer.addVertex(pose, from.x.toFloat(), from.y.toFloat(), from.z.toFloat())
                     .setColor(lr, lg, lb, 200)
                     .setNormal(pose, nx, ny, nz)
+                    .setLineWidth(1.0f)
 
                 lineBuffer.addVertex(pose, to.x.toFloat(), to.y.toFloat(), to.z.toFloat())
                     .setColor(lr, lg, lb, 200)
                     .setNormal(pose, nx, ny, nz)
+                    .setLineWidth(1.0f)
             }
         }
 
@@ -288,7 +340,7 @@ object NodeConnectionRenderer {
         if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
             val selectedEntity = level.getBlockEntity(selectedPos) as? damien.nodeworks.network.Connectable
             if (selectedEntity != null) {
-                val highlightBuffer = consumers.getBuffer(RenderType.lines())
+                val highlightBuffer = consumers.getBuffer(RenderTypes.LINES)
                 val nid = selectedEntity.networkId
                 hlColor = if (nid != null) damien.nodeworks.network.NetworkSettingsRegistry.getColor(nid) else DEFAULT_NETWORK_COLOR
                 renderSelectionHighlight(poseStack, highlightBuffer, selectedPos)
@@ -308,7 +360,7 @@ object NodeConnectionRenderer {
 
     // ========== Billboard Beam Rendering ==========
 
-    private val LASER_TEXTURE = ResourceLocation.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+    private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
     private const val BEAM_WIDTH = 1.0f / 16f
     private const val BEAM_SCROLL_SPEED = 0.8f
 
@@ -320,12 +372,13 @@ object NodeConnectionRenderer {
     ) {
         val time = (System.currentTimeMillis() % 100000) / 1000f
         val cam = Minecraft.getInstance().gameRenderer.mainCamera
-        val camPos = cam.position
+        val camPos = cam.position()
 
         val pulse = (sin((time * 2.0).toDouble()).toFloat() * 0.3f + 0.7f)
 
-        val opaqueType = RenderType.beaconBeam(LASER_TEXTURE, false)
-        val translucentType = RenderType.beaconBeam(LASER_TEXTURE, true)
+        // 26.1: RenderType.beaconBeam(...) moved to RenderTypes.beaconBeam(...); signature unchanged.
+        val opaqueType = RenderTypes.beaconBeam(LASER_TEXTURE, false)
+        val translucentType = RenderTypes.beaconBeam(LASER_TEXTURE, true)
 
         for (conn in connections) {
             val fromPos = conn.fromPos
@@ -338,7 +391,6 @@ object NodeConnectionRenderer {
             val nb = color and 0xFF
             val colorAlpha = (120 * pulse).toInt().coerceIn(0, 255)
 
-            // World-space endpoints (center to center)
             val fx = fromPos.x + 0.5f; val fy = fromPos.y + 0.5f; val fz = fromPos.z + 0.5f
             val tx = toPos.x + 0.5f; val ty = toPos.y + 0.5f; val tz = toPos.z + 0.5f
 
@@ -371,27 +423,23 @@ object NodeConnectionRenderer {
 
         val dirX = dx / len; val dirY = dy / len; val dirZ = dz / len
 
-        // Find two perpendicular axes
         val refX: Float; val refY: Float; val refZ: Float
         if (kotlin.math.abs(dirY) < 0.9f) { refX = 0f; refY = 1f; refZ = 0f }
         else { refX = 1f; refY = 0f; refZ = 0f }
 
-        // axis1 = normalize(cross(dir, ref))
         var a1x = dirY * refZ - dirZ * refY
         var a1y = dirZ * refX - dirX * refZ
         var a1z = dirX * refY - dirY * refX
         val a1len = sqrt(a1x * a1x + a1y * a1y + a1z * a1z)
         a1x /= a1len; a1y /= a1len; a1z /= a1len
 
-        // axis2 = normalize(cross(dir, axis1))
         var a2x = dirY * a1z - dirZ * a1y
         var a2y = dirZ * a1x - dirX * a1z
         var a2z = dirX * a1y - dirY * a1x
         val a2len = sqrt(a2x * a2x + a2y * a2y + a2z * a2z)
         a2x /= a2len; a2y /= a2len; a2z /= a2len
 
-        // Rotate axes around beam direction
-        val angle = time * 1.0f // 1 radian/sec
+        val angle = time * 1.0f
         val cosA = kotlin.math.cos(angle); val sinA = sin(angle)
         val r1x = a1x * cosA + a2x * sinA
         val r1y = a1y * cosA + a2y * sinA
@@ -413,7 +461,6 @@ object NodeConnectionRenderer {
         val vc = consumers.getBuffer(renderType)
         val pose = poseStack.last()
 
-        // 4 corners at each end: ±axis1 ± axis2 — inline to avoid Triple allocations
         val f0x = fromX - a1x * hw - a2x * hw; val f0y = fromY - a1y * hw - a2y * hw; val f0z = fromZ - a1z * hw - a2z * hw
         val f1x = fromX + a1x * hw - a2x * hw; val f1y = fromY + a1y * hw - a2y * hw; val f1z = fromZ + a1z * hw - a2z * hw
         val f2x = fromX + a1x * hw + a2x * hw; val f2y = fromY + a1y * hw + a2y * hw; val f2z = fromZ + a1z * hw + a2z * hw
@@ -424,7 +471,6 @@ object NodeConnectionRenderer {
         val t3x = toX - a1x * hw + a2x * hw; val t3y = toY - a1y * hw + a2y * hw; val t3z = toZ - a1z * hw + a2z * hw
 
         // 4 sides of the prism (front + back = 8 vertices per side)
-        // Side 1: f0→f1 to t0→t1
         vc.addVertex(pose, f0x, f0y, f0z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, f1x, f1y, f1z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t1x, t1y, t1z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
@@ -433,7 +479,6 @@ object NodeConnectionRenderer {
         vc.addVertex(pose, f0x, f0y, f0z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t0x, t0y, t0z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t1x, t1y, t1z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        // Side 2: f1→f2 to t1→t2
         vc.addVertex(pose, f1x, f1y, f1z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, f2x, f2y, f2z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t2x, t2y, t2z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
@@ -442,7 +487,6 @@ object NodeConnectionRenderer {
         vc.addVertex(pose, f1x, f1y, f1z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t1x, t1y, t1z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t2x, t2y, t2z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        // Side 3: f2→f3 to t2→t3
         vc.addVertex(pose, f2x, f2y, f2z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, f3x, f3y, f3z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t3x, t3y, t3z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
@@ -451,7 +495,6 @@ object NodeConnectionRenderer {
         vc.addVertex(pose, f2x, f2y, f2z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t2x, t2y, t2z).setUv(0f, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t3x, t3y, t3z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-        // Side 4: f3→f0 to t3→t0
         vc.addVertex(pose, f3x, f3y, f3z).setUv(0f, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, f0x, f0y, f0z).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, t0x, t0y, t0z).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
@@ -479,7 +522,6 @@ object NodeConnectionRenderer {
 
         val dirX = dx / len; val dirY = dy / len; val dirZ = dz / len
 
-        // Camera-to-beam-midpoint for billboarding
         val midX = (fromX + toX) / 2f
         val midY = (fromY + toY) / 2f
         val midZ = (fromZ + toZ) / 2f
@@ -487,7 +529,6 @@ object NodeConnectionRenderer {
         val toCamY = (camPos.y - midY).toFloat()
         val toCamZ = (camPos.z - midZ).toFloat()
 
-        // Perpendicular = cross(beamDir, toCam)
         var px = dirY * toCamZ - dirZ * toCamY
         var py = dirZ * toCamX - dirX * toCamZ
         var pz = dirX * toCamY - dirY * toCamX
@@ -540,17 +581,14 @@ object NodeConnectionRenderer {
         val z1 = z + MAX
 
         // 12 edges of a box
-        // Bottom face
         drawLine(buffer, pose, x0, y0, z0, x1, y0, z0)
         drawLine(buffer, pose, x1, y0, z0, x1, y0, z1)
         drawLine(buffer, pose, x1, y0, z1, x0, y0, z1)
         drawLine(buffer, pose, x0, y0, z1, x0, y0, z0)
-        // Top face
         drawLine(buffer, pose, x0, y1, z0, x1, y1, z0)
         drawLine(buffer, pose, x1, y1, z0, x1, y1, z1)
         drawLine(buffer, pose, x1, y1, z1, x0, y1, z1)
         drawLine(buffer, pose, x0, y1, z1, x0, y1, z0)
-        // Vertical edges
         drawLine(buffer, pose, x0, y0, z0, x0, y1, z0)
         drawLine(buffer, pose, x1, y0, z0, x1, y1, z0)
         drawLine(buffer, pose, x1, y0, z1, x1, y1, z1)
@@ -570,18 +608,23 @@ object NodeConnectionRenderer {
         val dx = x1 - x0
         val dy = y1 - y0
         val dz = z1 - z0
-        val len = Math.sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
+        val len = sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
         val nx = if (len > 0) dx / len else 0f
         val ny = if (len > 0) dy / len else 0f
         val nz = if (len > 0) dz / len else 1f
 
+        // 26.1: RenderTypes.LINES vertex format includes a per-vertex LineWidth element.
+        //  Omitting setLineWidth() crashes BufferBuilder with "Missing elements in vertex:
+        //  LineWidth". Pattern copied from vanilla ShapeRenderer.renderLineBox.
         buffer.addVertex(pose, x0, y0, z0)
             .setColor(lr, lg, lb, 255)
             .setNormal(pose, nx, ny, nz)
+            .setLineWidth(1.0f)
 
         buffer.addVertex(pose, x1, y1, z1)
             .setColor(lr, lg, lb, 255)
             .setNormal(pose, nx, ny, nz)
+            .setLineWidth(1.0f)
     }
 
     private fun renderMonitorText(
@@ -606,14 +649,12 @@ object NodeConnectionRenderer {
 
                 poseStack.pushPose()
 
-                // Position at block center
                 poseStack.translate(
                     nodePos.x.toDouble() + 0.5,
                     nodePos.y.toDouble() + 0.5,
                     nodePos.z.toDouble() + 0.5
                 )
 
-                // Rotate to face direction (same as MonitorRenderer)
                 when (face) {
                     Direction.SOUTH -> {}
                     Direction.NORTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat()))
@@ -623,9 +664,7 @@ object NodeConnectionRenderer {
                     Direction.UP -> poseStack.mulPose(Quaternionf().rotateX((Math.PI / 2).toFloat()))
                 }
 
-                // Push to surface, below the item
                 poseStack.translate(0.0, -0.18, 0.502)
-                // Scale and flip Y for text
                 poseStack.scale(0.01f, -0.01f, 0.01f)
 
                 font.drawInBatch(
@@ -656,18 +695,31 @@ object NodeConnectionRenderer {
         }
     }
 
-    private fun isLessThan(a: BlockPos, b: BlockPos): Boolean {
-        if (a.x != b.x) return a.x < b.x
-        if (a.y != b.y) return a.y < b.y
-        return a.z < b.z
-    }
-
     // ========== Diagnostic Pin Highlight ==========
 
-    /** The currently pinned block position, or null. Global across all networks. */
-    var pinnedBlock: BlockPos? = null
-
-    fun renderPinHighlight(poseStack: PoseStack, consumers: MultiBufferSource, cameraPos: net.minecraft.world.phys.Vec3) {
+    /**
+     * Draws a pulsing cyan full-block overlay around the pinned block whenever the
+     * Diagnostic Tool is held. Drawn through walls (ALWAYS_PASS depth) so the
+     * player can locate the block from anywhere.
+     *
+     * 26.1 rewrite: the pre-migration version stamped the block's quads through
+     * an immediate-mode `RenderSystem.setShader` + `BufferUploader.drawWithShader`
+     * path. Both of those APIs are gone in 26.1 (replaced by
+     * `RegisterRenderPipelinesEvent` + `RenderType` dispatch), and `BakedQuad`
+     * switched from `quad.vertices: int[]` to `position(i)` / `packedUV(i)`
+     * accessors. The new flow: look up the block's `BlockStateModel`, collect
+     * its `BlockStateModelPart`s, walk every `BakedQuad`, and emit each vertex
+     * to our registered [PinHighlightRenderType.THROUGH_WALLS] — which uses the
+     * block atlas with translucent blending and depth-test disabled.
+     *
+     * Vertex format is `DefaultVertexFormat.BLOCK` (Position + Color + UV0 + UV2) —
+     * no normal, no overlay.
+     */
+    fun renderPinHighlight(
+        poseStack: PoseStack,
+        consumers: MultiBufferSource,
+        cameraPos: net.minecraft.world.phys.Vec3
+    ) {
         val pos = pinnedBlock ?: return
         val mc = Minecraft.getInstance()
         val player = mc.player ?: return
@@ -675,71 +727,80 @@ object NodeConnectionRenderer {
 
         val mainItem = player.mainHandItem.item
         val offItem = player.offhandItem.item
-        if (mainItem !is damien.nodeworks.item.DiagnosticToolItem && offItem !is damien.nodeworks.item.DiagnosticToolItem) return
+        if (mainItem !is damien.nodeworks.item.DiagnosticToolItem &&
+            offItem !is damien.nodeworks.item.DiagnosticToolItem) return
 
         val blockState = level.getBlockState(pos)
         if (blockState.isAir) return
 
-        // Flush any pending MC render batches first
-        if (consumers is MultiBufferSource.BufferSource) consumers.endBatch()
+        val modelSet = mc.modelManager.blockStateModelSet ?: return
+        val model = modelSet.get(blockState) ?: return
 
-        val model = mc.blockRenderer.getBlockModel(blockState)
-        val random = net.minecraft.util.RandomSource.create()
-
+        // Pulse 0.6 → 1.0 at ~0.5 Hz modulates alpha so the highlight "breathes".
         val time = (System.currentTimeMillis() % 2000) / 2000f
-        val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.15f + 0.75f)
+        val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.2f + 0.8f)
+
+        // Collect model parts with a deterministic seed so quad order is stable.
+        val random = net.minecraft.util.RandomSource.create(blockState.getSeed(pos))
+        val parts = ArrayList<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart>()
+        model.collectParts(random, parts)
+        if (parts.isEmpty()) return
 
         poseStack.pushPose()
-        val x = pos.x.toDouble() - cameraPos.x
-        val y = pos.y.toDouble() - cameraPos.y
-        val z = pos.z.toDouble() - cameraPos.z
-        poseStack.translate(x, y, z)
+        poseStack.translate(
+            (pos.x - cameraPos.x).toFloat(),
+            (pos.y - cameraPos.y).toFloat(),
+            (pos.z - cameraPos.z).toFloat()
+        )
+        // Slight outward breathe around block center so the overlay visibly
+        // pulses without z-fighting the block below it.
+        val scale = 1.0f + pulse * 0.04f
+        poseStack.translate(0.5f, 0.5f, 0.5f)
+        poseStack.scale(scale, scale, scale)
+        poseStack.translate(-0.5f, -0.5f, -0.5f)
+        val pose = poseStack.last()
 
-        // Pulse scale centered on block (1.01–1.07)
-        val scalePulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.03f + 1.04f)
-        poseStack.translate(0.5, 0.5, 0.5)
-        poseStack.scale(scalePulse, scalePulse, scalePulse)
-        poseStack.translate(-0.5, -0.5, -0.5)
+        // Cyan tint (0.6, 0.9, 1.0) with pulse-driven alpha.
+        val r = (0.6f * 255).toInt().coerceIn(0, 255)
+        val g = (0.9f * 255).toInt().coerceIn(0, 255)
+        val b = 255
+        val a = (pulse * 200).toInt().coerceIn(0, 255)
 
-        val matrix = poseStack.last().pose()
+        val buffer = consumers.getBuffer(PinHighlightRenderType.THROUGH_WALLS)
 
-        com.mojang.blaze3d.systems.RenderSystem.disableDepthTest()
-        com.mojang.blaze3d.systems.RenderSystem.enableBlend()
-        com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc()
-        com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.renderer.GameRenderer::getPositionTexShader)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0, net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS)
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(0.6f, 0.9f, 1.0f, pulse)
+        // Fullbright lightmap so the overlay ignores block/sky light.
+        val lightU = 240
+        val lightV = 240
 
-        val tesselator = com.mojang.blaze3d.vertex.Tesselator.getInstance()
-        val buf = tesselator.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS, com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_TEX)
-
-        var quadCount = 0
-        val directions: List<net.minecraft.core.Direction?> = Direction.entries + listOf(null)
-        for (dir in directions) {
-            random.setSeed(42L)
-            for (quad in model.getQuads(blockState, dir, random)) {
-                val verts = quad.vertices
-                for (i in 0 until 4) {
-                    val off = i * 8
-                    val vx = Float.fromBits(verts[off])
-                    val vy = Float.fromBits(verts[off + 1])
-                    val vz = Float.fromBits(verts[off + 2])
-                    val u = Float.fromBits(verts[off + 4])
-                    val v = Float.fromBits(verts[off + 5])
-                    buf.addVertex(matrix, vx, vy, vz).setUv(u, v)
-                }
-                quadCount++
+        for (part in parts) {
+            // `null` direction collects quads without a culling face (interior geometry).
+            emitQuads(buffer, pose, part.getQuads(null), r, g, b, a, lightU, lightV)
+            for (dir in Direction.entries) {
+                emitQuads(buffer, pose, part.getQuads(dir), r, g, b, a, lightU, lightV)
             }
         }
 
-        if (quadCount > 0) {
-            com.mojang.blaze3d.vertex.BufferUploader.drawWithShader(buf.buildOrThrow())
-        }
-
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
-        com.mojang.blaze3d.systems.RenderSystem.enableDepthTest()
-        com.mojang.blaze3d.systems.RenderSystem.disableBlend()
-
         poseStack.popPose()
+    }
+
+    private fun emitQuads(
+        buffer: VertexConsumer,
+        pose: PoseStack.Pose,
+        quads: List<net.minecraft.client.resources.model.geometry.BakedQuad>,
+        r: Int, g: Int, b: Int, a: Int,
+        lightU: Int, lightV: Int
+    ) {
+        for (quad in quads) {
+            for (i in 0 until 4) {
+                val p = quad.position(i)
+                val packedUv = quad.packedUV(i)
+                val u = net.minecraft.client.model.geom.builders.UVPair.unpackU(packedUv)
+                val v = net.minecraft.client.model.geom.builders.UVPair.unpackV(packedUv)
+                buffer.addVertex(pose, p.x(), p.y(), p.z())
+                    .setColor(r, g, b, a)
+                    .setUv(u, v)
+                    .setUv2(lightU, lightV)
+            }
+        }
     }
 }

@@ -15,6 +15,11 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
+import damien.nodeworks.compat.getBlockPosList
+import damien.nodeworks.compat.getStringOrNull
+import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /**
@@ -43,6 +48,20 @@ class TerminalBlockEntity(
 
     /** The current script text (active tab = "main"). */
     val scriptText: String get() = scripts["main"] ?: ""
+
+    /**
+     * Previous best-neighbor redstone signal seen by the Terminal block's neighborChanged
+     * hook. Used for rising-edge detection so a redstone pulse (button, pressure plate,
+     * fresh torch) toggles the script. Seeded in [onLoad] with the block's current
+     * neighbor signal so:
+     *   - a permanently-powered terminal doesn't auto-start on chunk-load
+     *   - the FIRST button press after the player joins the world is detected as a
+     *     rising edge instead of being consumed as baseline capture
+     * -1 is a safety sentinel if [onLoad] somehow runs before the level is reachable;
+     * [TerminalBlock.neighborChanged] performs the same capture-without-trigger in
+     * that case.
+     */
+    var lastRedstoneSignal: Int = -1
 
     fun getScriptsCopy(): Map<String, String> = scripts.toMap()
 
@@ -118,6 +137,14 @@ class TerminalBlockEntity(
         super.setLevel(newLevel)
         if (newLevel is ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
+            NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
+            // Seed the redstone baseline on BE load. Without this the first call to
+            // TerminalBlock.neighborChanged (which typically *is* the player's first
+            // button press after joining the world) would be consumed as baseline
+            // capture, taking two presses to actually run the script. setLevel runs
+            // when the chunk loads the BE and the chunk's blocks are already in place,
+            // so getBestNeighborSignal returns the correct current power level.
+            lastRedstoneSignal = newLevel.getBestNeighborSignal(worldPosition)
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
         if (!newLevel.isClientSide && autoRun && scriptText.isNotBlank()) {
@@ -150,7 +177,7 @@ class TerminalBlockEntity(
             val typeKey = net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type)
             if (typeKey != null) tag.putString("id", typeKey.toString())
             stack.set(net.minecraft.core.component.DataComponents.BLOCK_ENTITY_DATA,
-                net.minecraft.world.item.component.CustomData.of(tag))
+                net.minecraft.world.item.component.TypedEntityData.of(type, tag))
         }
         net.minecraft.world.Containers.dropItemStack(level,
             worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5, stack)
@@ -158,45 +185,39 @@ class TerminalBlockEntity(
 
     // --- Serialization ---
 
-    override fun saveAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.saveAdditional(tag, registries)
-        val names = scripts.keys.toList()
-        tag.putInt("scriptCount", names.size)
-        for ((i, name) in names.withIndex()) {
-            tag.putString("scriptName_$i", name)
-            tag.putString("scriptText_$i", scripts[name] ?: "")
+    override fun saveAdditional(output: ValueOutput) {
+        super.saveAdditional(output)
+        val scriptList = output.childrenList("scripts")
+        for ((name, text) in scripts) {
+            val child = scriptList.addChild()
+            child.putString("name", name)
+            child.putString("text", text)
         }
-        tag.putBoolean("autoRun", autoRun)
-        tag.putInt("layoutIndex", layoutIndex)
-        networkId?.let { tag.putString("networkId", it.toString()) }
-        if (connections.isNotEmpty()) {
-            tag.putLongArray("connections", connections.map { it.asLong() }.toLongArray())
-        }
+        output.putBoolean("autoRun", autoRun)
+        output.putInt("layoutIndex", layoutIndex)
+        networkId?.let { output.putString("networkId", it.toString()) }
+        output.putBlockPosList("connections", connections)
     }
 
-    override fun loadAdditional(tag: CompoundTag, registries: HolderLookup.Provider) {
-        super.loadAdditional(tag, registries)
+    override fun loadAdditional(input: ValueInput) {
+        super.loadAdditional(input)
         scripts.clear()
-        val count = if (tag.contains("scriptCount")) tag.getInt("scriptCount") else 0
-        for (i in 0 until count) {
-            val name = tag.getString("scriptName_$i")
-            val text = tag.getString("scriptText_$i")
-            if (name.isNotEmpty()) {
-                scripts[name] = text
-            }
+        for (child in input.childrenListOrEmpty("scripts")) {
+            val name = child.getStringOr("name", "")
+            val text = child.getStringOr("text", "")
+            if (name.isNotEmpty()) scripts[name] = text
         }
         if ("main" !in scripts) {
             scripts["main"] = ""
         }
-        autoRun = tag.getBoolean("autoRun")
-        layoutIndex = if (tag.contains("layoutIndex")) tag.getInt("layoutIndex") else 0
-        networkId = tag.getString("networkId").takeIf { it.isNotEmpty() }?.let {
+        autoRun = input.getBooleanOr("autoRun", false)
+        layoutIndex = input.getIntOr("layoutIndex", 0)
+        networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         connections.clear()
-        if (tag.contains("connections")) {
-            tag.getLongArray("connections").forEach { connections.add(BlockPos.of(it)) }
-        }
+        connections.addAll(input.getBlockPosList("connections"))
     }
 
     // --- Client sync ---

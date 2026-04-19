@@ -1,18 +1,18 @@
 {
-    "type": "minecraft:crafting_shaped",
-    "pattern": [
-        " R ",
-        "DCD",
-        "DND"
-    ],
-    "key": {
-        "R": { "item": "nodeworks:celestine_receiver_dish" },
-        "D": { "item": "minecraft:deepslate" },
-        "C": { "item": "nodeworks:antenna_coil_assembly" },
-        "N": { "item": "nodeworks:node" }
-    },
-    "result": {
-        "id": "nodeworks:receiver_antenna",
-        "count": 1
-    }
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " R ",
+    "DCD",
+    "DND"
+  ],
+  "key": {
+    "R": "nodeworks:celestine_receiver_dish",
+    "D": "minecraft:deepslate",
+    "C": "nodeworks:antenna_coil_assembly",
+    "N": "nodeworks:node"
+  },
+  "result": {
+    "id": "nodeworks:receiver_antenna",
+    "count": 1
+  }
 }
