@@ -67,6 +67,15 @@ class NodeBlockEntity(
     private val items: NonNullList<ItemStack> = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
     private val connections: LinkedHashSet<BlockPos> = linkedSetOf()
 
+    /** Count of legacy per-face monitors read from an older save. The monitor-on-node
+     *  system was removed in favour of the standalone [damien.nodeworks.block.MonitorBlock];
+     *  [loadAdditional] can't act on legacy data directly (no level yet), so we stash
+     *  the count and drop one Monitor item per entry from [setLevel] when the level
+     *  is available. The drop loses the tracked-item setting — by design, since
+     *  re-placing the Monitor is easy and we avoid trying to synthesize BlockItem NBT
+     *  from a partial legacy record. */
+    private var legacyMonitorDrops: Int = 0
+
     // --- Redstone output per side (0-15) ---
     private val redstoneOutputs = IntArray(6) // indexed by Direction.ordinal
 
@@ -242,6 +251,13 @@ class NodeBlockEntity(
         }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         nodeTracker?.onNodeChanged(worldPosition, true)
+
+        // Legacy migration — prior builds stored monitors attached to node faces under
+        // a "monitors" ListTag. That system is gone; read the count here so setLevel
+        // can drop standalone Monitor items as a replacement. childrenListOrEmpty is
+        // safe when the tag is absent, so new saves cost nothing.
+        val legacy = input.childrenListOrEmpty("monitors")
+        legacyMonitorDrops = legacy.count()
     }
 
     override fun setLevel(newLevel: net.minecraft.world.level.Level) {
@@ -249,6 +265,29 @@ class NodeBlockEntity(
         if (newLevel is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
             NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
+            // Legacy migration: drop one Monitor item per legacy per-face monitor
+            // recorded on this node. The drop happens once (`legacyMonitorDrops` is
+            // zeroed afterward) and isn't re-written on save since saveAdditional
+            // no longer emits the "monitors" key. Scheduled via enqueueTickTask so
+            // Containers.dropItemStack runs after the chunk finishes loading —
+            // spawning entities mid-load can upset the chunk tracker.
+            if (legacyMonitorDrops > 0) {
+                val count = legacyMonitorDrops
+                legacyMonitorDrops = 0
+                newLevel.server.execute {
+                    if (!newLevel.isLoaded(worldPosition)) return@execute
+                    val stack = ItemStack(damien.nodeworks.registry.ModBlocks.MONITOR, count)
+                    net.minecraft.world.Containers.dropItemStack(
+                        newLevel,
+                        worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5,
+                        stack
+                    )
+                    logger.info(
+                        "Migrated $count legacy monitor(s) on node at {} to standalone Monitor item drops.",
+                        worldPosition
+                    )
+                }
+            }
         }
     }
 

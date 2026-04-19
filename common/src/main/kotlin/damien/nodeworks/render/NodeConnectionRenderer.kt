@@ -354,7 +354,7 @@ object NodeConnectionRenderer {
         // Draw monitor count text (after all line drawing to avoid buffer conflicts)
         poseStack.pushPose()
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
-        renderMonitorText(poseStack, consumers, level)
+        renderMonitorText(poseStack, consumers, level, cameraPos)
         poseStack.popPose()
     }
 
@@ -630,17 +630,29 @@ object NodeConnectionRenderer {
     private fun renderMonitorText(
         poseStack: PoseStack,
         consumers: MultiBufferSource,
-        level: net.minecraft.world.level.Level
+        level: net.minecraft.world.level.Level,
+        cameraPos: net.minecraft.world.phys.Vec3
     ) {
         val mc = Minecraft.getInstance()
         val font = mc.font
         val bufferSource = mc.renderBuffers().bufferSource()
+
+        // Same 64-block distance cull as the main connection-render loop so text
+        // work scales with nearby monitors, not total monitors on the network.
+        // Applied BEFORE getBlockEntity / font lookups — the squared-distance check
+        // is the cheapest possible gate.
+        val maxDistSq = 64.0 * 64.0
 
         // Iterate every tracked Connectable (MonitorBlockEntity registers via
         // trackConnectable in setLevel; `knownNodes` is the full live set despite the
         // historical name). Non-monitor positions fall through the `as?` cast and
         // are skipped cheaply.
         for (pos in knownNodes) {
+            val dx = pos.x + 0.5 - cameraPos.x
+            val dy = pos.y + 0.5 - cameraPos.y
+            val dz = pos.z + 0.5 - cameraPos.z
+            if (dx * dx + dy * dy + dz * dz > maxDistSq) continue
+
             if (!level.isLoaded(pos)) continue
             val be = level.getBlockEntity(pos) as? damien.nodeworks.block.entity.MonitorBlockEntity ?: continue
             if (be.trackedItemId == null) continue

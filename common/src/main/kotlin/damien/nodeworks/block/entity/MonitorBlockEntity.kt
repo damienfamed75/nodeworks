@@ -124,6 +124,11 @@ class MonitorBlockEntity(
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        // Notify the client-side settings cache so the emissive tint refreshes the
+        // same tick the BE loads, matching every other Connectable BE in the mod.
+        // Without this the Monitor's glow could stay stale-grey until the next
+        // network topology change pushed a new color.
+        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         trackedItemId = input.getStringOrNull("trackedItem")?.takeIf { it.isNotEmpty() }
         displayCount = input.getLongOrNull("count") ?: 0L
     }
