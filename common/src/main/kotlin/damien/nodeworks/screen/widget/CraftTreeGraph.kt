@@ -32,49 +32,11 @@ class CraftTreeGraph {
         private const val NODE_SPACING_Y = 36f
         private const val WHITE = 0xFFFFFFFF.toInt()
 
-        /**
-         * Draw an XP-orb-style circular status halo behind a GUI item icon.
-         *
-         * Stacks four concentric filled discs from a wide faint outer disc inward to a
-         * tight bright inner disc. Each disc is rendered row-by-row — for each y offset
-         * inside the disc we compute the half-width `dx = √(r² - dy²)` and emit a single
-         * 1px-tall [graphics.fill] rect spanning the chord. Alpha-over blending
-         * accumulates toward the centre, giving a smooth radial fall-off with genuinely
-         * circular shape (unlike concentric rects which always read as square).
-         *
-         * The item is drawn on top of the halo, so glow bleeds through the icon's
-         * transparent pixels — the same readability as the pre-migration silhouette
-         * effect without needing a custom shader.
-         *
-         * [color] is expected as 0xAARRGGBB; only the RGB channels are used — alpha is
-         * driven by the ring table below.
-         */
-        fun drawItemHalo(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int) {
-            val rgb = color and 0xFFFFFF
-            val cx = x + size / 2
-            val cy = y + size / 2
-            // Radii extend ~4px beyond the item's inscribed radius (size/2 ≈ 8) so the
-            // glow reads as an aura rather than just an edge treatment. Outer → inner:
-            // alpha ramps up so overlap at the centre feels bright without washing out.
-            val rings = arrayOf(
-                13 to 0x10,
-                11 to 0x1C,
-                9 to 0x30,
-                7 to 0x48,
-            )
-            for ((radius, alpha) in rings) {
-                fillDisc(graphics, cx, cy, radius, (alpha shl 24) or rgb)
-            }
-        }
-
-        /** Filled-circle helper. Emits one 1px-tall rect per scanline of the disc. */
-        private fun fillDisc(graphics: GuiGraphicsExtractor, cx: Int, cy: Int, radius: Int, argb: Int) {
-            val r2 = radius * radius
-            for (dy in -radius..radius) {
-                val dx = kotlin.math.sqrt((r2 - dy * dy).toDouble()).toInt()
-                graphics.fill(cx - dx, cy + dy, cx + dx + 1, cy + dy + 1, argb)
-            }
-        }
+        /** Thin wrapper around [GlowHighlight.draw] so existing call sites keep their
+         *  familiar `drawItemHalo` name while the actual rendering lives in the shared
+         *  helper (also used by the Diagnostic topology view). */
+        fun drawItemHalo(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int) =
+            GlowHighlight.draw(graphics, x, y, size, color)
     }
 
     data class TreeLayout(

@@ -260,6 +260,15 @@ class DiagnosticScreen(
     private fun screenToWorldZ(sy: Float): Float =
         (sy - viewCenterY - panY) / (zoom * gridSize) + centerZ
 
+    /** Adjust pan so the given block ends up at the centre of the topology viewport.
+     *  Solves `worldToScreenX(rx) = viewCenterX` for panX (and analogous for panY),
+     *  using the rotated world coordinates cached in [rotatedPositions]. */
+    private fun centerViewOn(pos: BlockPos) {
+        val rp = rotatedPositions[pos] ?: return
+        panX = -(rp.first - centerX) * zoom * gridSize
+        panY = -(rp.second - centerZ) * zoom * gridSize
+    }
+
     // ========== Rendering ==========
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -419,6 +428,22 @@ class DiagnosticScreen(
                 val sx = worldToScreenX(group.displayPos.first).roundToInt()
                 val sy = worldToScreenY(group.displayPos.second).roundToInt()
                 val stackOffset = 3 // pixel offset per stacked icon
+                val totalStackOffset = (group.blocks.size - 1) * stackOffset
+
+                // If the currently-selected block is inside this collapsed group, draw
+                // the same network-color glow halo we use for individual blocks — so the
+                // selection stays visible without needing to expand the group.
+                val groupContainsSelection = selectedBlock != null && selectedBlock in group.blocks
+                if (groupContainsSelection) {
+                    val nc = menu.topology.networkColor
+                    val selR = minOf(((nc shr 16) and 0xFF) * 3 / 2, 255)
+                    val selG = minOf(((nc shr 8) and 0xFF) * 3 / 2, 255)
+                    val selB = minOf((nc and 0xFF) * 3 / 2, 255)
+                    val selColor = (0xFF shl 24) or (selR shl 16) or (selG shl 8) or selB
+                    damien.nodeworks.screen.widget.GlowHighlight.draw(
+                        graphics, sx - 8, sy - 8, 16 + totalStackOffset, selColor
+                    )
+                }
 
                 // Draw bottom items first (lowest Y = last in list), top item last (highest Y = index 0)
                 // Each layer gets a higher z-level so it fully covers the one below
@@ -436,7 +461,7 @@ class DiagnosticScreen(
 
                 // Count badge on top of everything
                 val topZ = group.blocks.size * 50f + 100f
-                val totalOffset = (group.blocks.size - 1) * stackOffset
+                val totalOffset = totalStackOffset
                 graphics.pose().pushMatrix()
                 graphics.pose().translate((0f).toFloat(), (0f).toFloat())
 
@@ -1331,6 +1356,18 @@ class DiagnosticScreen(
         graphics: GuiGraphicsExtractor, block: DiagnosticOpenData.NetworkBlock,
         sx: Int, sy: Int, halfBlock: Int, mouseX: Int, mouseY: Int
     ) {
+        // Selection glow — drawn BEFORE the block icon so the icon sits on top and
+        // the aura bleeds around its edges. Matches the Crafting Tree item halo via
+        // the shared [GlowHighlight] helper.
+        if (block == selectedBlock) {
+            val nc = menu.topology.networkColor
+            val selR = minOf(((nc shr 16) and 0xFF) * 3 / 2, 255)
+            val selG = minOf(((nc shr 8) and 0xFF) * 3 / 2, 255)
+            val selB = minOf((nc and 0xFF) * 3 / 2, 255)
+            val selColor = (0xFF shl 24) or (selR shl 16) or (selG shl 8) or selB
+            damien.nodeworks.screen.widget.GlowHighlight.draw(graphics, sx - 8, sy - 8, 16, selColor)
+        }
+
         // Render the block's item icon (16x16 centered on sx,sy)
         val itemStack = BLOCK_ITEMS[block.type]
         if (itemStack != null) {
@@ -1365,19 +1402,6 @@ class DiagnosticScreen(
                     iconU.toFloat(), 16f, 16, 16, 256, 256
                 )
             }
-        }
-
-        // Selection highlight — tight around the 16x16 icon, uses network color
-        if (block == selectedBlock) {
-            val nc = menu.topology.networkColor
-            val selR = minOf(((nc shr 16) and 0xFF) * 3 / 2, 255)
-            val selG = minOf(((nc shr 8) and 0xFF) * 3 / 2, 255)
-            val selB = minOf((nc and 0xFF) * 3 / 2, 255)
-            val selColor = (0xFF shl 24) or (selR shl 16) or (selG shl 8) or selB
-            graphics.fill(sx - 9, sy - 9, sx + 9, sy - 8, selColor)
-            graphics.fill(sx - 9, sy + 8, sx + 9, sy + 9, selColor)
-            graphics.fill(sx - 9, sy - 9, sx - 8, sy + 9, selColor)
-            graphics.fill(sx + 8, sy - 9, sx + 9, sy + 9, selColor)
         }
 
         // Pinned indicator icon (top-left corner of block)
@@ -1522,11 +1546,11 @@ class DiagnosticScreen(
             }
         }
 
-        // Error click → switch to topology, select + pin the terminal
+        // Error click → switch to topology, select + pin the terminal, expand the
+        // group if the terminal sits in one, and pan to center the view on it.
         if (activeTab == 3 && errorClickRegions.isNotEmpty()) {
             for ((yStart, yEnd, termPos) in errorClickRegions) {
                 if (my >= yStart && my < yEnd && mx >= contentLeft + contentW / 2 && mx < contentLeft + contentW) {
-                    // Find the block in topology that matches this terminal pos
                     val block = menu.topology.blocks.firstOrNull { it.pos == termPos }
                     if (block != null) {
                         selectedBlock = block
@@ -1534,6 +1558,8 @@ class DiagnosticScreen(
                         damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock = termPos
                         activeTab = 0
                         craftItemField?.visible = false
+                        blockToGroup[termPos]?.let { expandedGroups.add(it) }
+                        centerViewOn(termPos)
                     }
                     return true
                 }
