@@ -16,11 +16,16 @@ class InventoryRepo {
 
     data class RepoEntry(
         val serial: Long,
-        val info: ItemInfo
-    )
+        val info: ItemInfo,
+        /** 0 = item, 1 = fluid — controls grid rendering and click-to-fill behavior. */
+        val kind: Byte = 0
+    ) {
+        val isFluid: Boolean get() = kind == 1.toByte()
+    }
 
     enum class SortMode { ALPHA, COUNT_DESC, COUNT_ASC }
     enum class FilterMode { STORAGE, RECIPES, BOTH }
+    enum class KindMode { BOTH, ITEMS_ONLY, FLUIDS_ONLY }
 
     /** All entries keyed by serial. */
     private val entries = LinkedHashMap<Long, RepoEntry>()
@@ -49,6 +54,14 @@ class InventoryRepo {
         }
 
     var filterMode: FilterMode = FilterMode.BOTH
+        set(value) {
+            if (field != value) {
+                field = value
+                viewDirty = true
+            }
+        }
+
+    var kindMode: KindMode = KindMode.BOTH
         set(value) {
             if (field != value) {
                 field = value
@@ -104,7 +117,8 @@ class InventoryRepo {
                         maxStackSize = syncEntry.maxStackSize,
                         hasData = syncEntry.hasData,
                         isCraftable = syncEntry.craftable
-                    )
+                    ),
+                    kind = syncEntry.kind
                 )
             } else if (existing != null) {
                 entries[syncEntry.serial] = existing.copy(
@@ -127,10 +141,17 @@ class InventoryRepo {
 
         view = entries.values
             .asSequence()
+            .filter { entry -> matchesKindMode(entry) }
             .filter { entry -> matchesSearch(entry.info, search) }
             .filter { entry -> matchesFilter(entry.info) }
             .sortedWith(getComparator())
             .toList()
+    }
+
+    private fun matchesKindMode(entry: RepoEntry): Boolean = when (kindMode) {
+        KindMode.BOTH -> true
+        KindMode.ITEMS_ONLY -> !entry.isFluid
+        KindMode.FLUIDS_ONLY -> entry.isFluid
     }
 
     private fun matchesSearch(info: ItemInfo, search: String): Boolean {

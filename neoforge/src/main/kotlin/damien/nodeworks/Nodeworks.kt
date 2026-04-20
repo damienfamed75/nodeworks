@@ -236,7 +236,11 @@ class Nodeworks(modBus: IEventBus) {
                 val player = context.player()
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
-                    menu.handleGridClick(player, payload.itemId, payload.action)
+                    if (payload.kind == 1.toByte()) {
+                        menu.handleFluidGridClick(player, payload.itemId, payload.action)
+                    } else {
+                        menu.handleGridClick(player, payload.itemId, payload.action)
+                    }
                 }
             }
         }

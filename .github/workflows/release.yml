@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Deploy key with push access — needed so the version-bump commit can be
+          # pushed back to `main` without triggering branch protection review rules.
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+          fetch-depth: 0
+
+      - name: Bump version
+        id: version
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          VERSION=$(cat VERSION)
+          VERSION_NUM=${VERSION#v}
+          IFS='.' read -r major minor patch <<< "$VERSION_NUM"
+
+          if [[ "$COMMIT_MSG" == BREAKING_CHANGE:* ]]; then
+            major=$((major + 1))
+            minor=0
+            patch=0
+            echo "bump=major" >> "$GITHUB_OUTPUT"
+          elif [[ "$COMMIT_MSG" == feat:* ]]; then
+            minor=$((minor + 1))
+            patch=0
+            echo "bump=minor" >> "$GITHUB_OUTPUT"
+          else
+            patch=$((patch + 1))
+            echo "bump=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+          NEW_VERSION="v${major}.${minor}.${patch}"
+          NEW_VERSION_NUM="${major}.${minor}.${patch}"
+          echo "$NEW_VERSION" > VERSION
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_num=$NEW_VERSION_NUM" >> "$GITHUB_OUTPUT"
+
+      - name: Read Minecraft version
+        id: mc
+        run: |
+          MC_VERSION=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
+          echo "mc_version=$MC_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: bump version to ${{ steps.version.outputs.version }} [skip ci]"
+          git push
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build mod jar
+        run: ./gradlew :neoforge:build -x test
+
+      - name: Locate built jar
+        id: jar
+        run: |
+          # The primary distributable is `neoforge/build/libs/nodeworks-<version>.jar`.
+          # Loader-dev tasks (`-sources`, `-dev`, `-all`) also land here; we pick the
+          # bare versioned jar and leave the rest out of the release asset list.
+          JAR_PATH=$(ls neoforge/build/libs/nodeworks-${{ steps.version.outputs.version_num }}.jar 2>/dev/null | head -1)
+          if [[ -z "$JAR_PATH" ]]; then
+            echo "ERROR: expected jar not found. Contents of neoforge/build/libs:" >&2
+            ls -la neoforge/build/libs/ >&2 || true
+            exit 1
+          fi
+          echo "jar_path=$JAR_PATH" >> "$GITHUB_OUTPUT"
+          echo "jar_name=$(basename "$JAR_PATH")" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.version }}"
+          BUMP="${{ steps.version.outputs.bump }}"
+          MC_VERSION="${{ steps.mc.outputs.mc_version }}"
+          VERSION_NUM="${NEW_VERSION#v}"
+          MAJOR=$(echo "$VERSION_NUM" | cut -d. -f1)
+          MINOR=$(echo "$VERSION_NUM" | cut -d. -f2)
+
+          PREV_TAG=""
+          if [[ "$BUMP" == "major" && $MAJOR -gt 0 ]]; then
+            PREV_TAG="v$((MAJOR - 1)).0.0"
+          elif [[ "$BUMP" == "minor" && $MINOR -gt 0 ]]; then
+            PREV_TAG="v${MAJOR}.$((MINOR - 1)).0"
+          fi
+
+          API_ARGS=(-f tag_name="$NEW_VERSION" -f target_commitish="${{ github.sha }}")
+          if [[ -n "$PREV_TAG" ]] && git rev-parse "$PREV_TAG" >/dev/null 2>&1; then
+            API_ARGS+=(-f previous_tag_name="$PREV_TAG")
+          fi
+
+          # Prepend the MC compatibility line — always the first thing a player checks.
+          {
+            echo "**Minecraft $MC_VERSION (NeoForge)**"
+            echo
+            gh api repos/${{ github.repository }}/releases/generate-notes \
+              "${API_ARGS[@]}" --jq '.body'
+          } > release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.version.outputs.version }} — Minecraft ${{ steps.mc.outputs.mc_version }}
+          body_path: release_notes.md
+          files: ${{ steps.jar.outputs.jar_path }}

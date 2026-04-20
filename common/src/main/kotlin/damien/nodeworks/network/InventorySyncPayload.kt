@@ -27,8 +27,12 @@ data class InventorySyncPayload(
         val count: Long,
         val maxStackSize: Int,
         val hasData: Boolean,
-        val craftable: Boolean = false
-    )
+        val craftable: Boolean = false,
+        /** 0 = item, 1 = fluid. Controls grid rendering + click-to-fill behavior. */
+        val kind: Byte = 0
+    ) {
+        val isFluid: Boolean get() = kind == 1.toByte()
+    }
 
     companion object {
         val TYPE: CustomPacketPayload.Type<InventorySyncPayload> = CustomPacketPayload.Type(
@@ -50,6 +54,7 @@ data class InventorySyncPayload(
                         buf.writeVarInt(entry.maxStackSize)
                         buf.writeBoolean(entry.hasData)
                         buf.writeBoolean(entry.craftable)
+                        buf.writeByte(entry.kind.toInt())
                     }
                     buf.writeVarLong(entry.count)
                 }
@@ -71,21 +76,24 @@ data class InventorySyncPayload(
                     val maxStackSize: Int
                     val hasData: Boolean
                     val craftable: Boolean
+                    val kind: Byte
                     if (hasItemId) {
                         itemId = buf.readUtf(256)
                         name = buf.readUtf(256)
                         maxStackSize = buf.readVarInt()
                         hasData = buf.readBoolean()
                         craftable = buf.readBoolean()
+                        kind = buf.readByte()
                     } else {
                         itemId = null
                         name = null
                         maxStackSize = 64
                         hasData = false
                         craftable = false
+                        kind = 0
                     }
                     val count = buf.readVarLong()
-                    SyncEntry(serial, itemId, name, count, maxStackSize, hasData, craftable)
+                    SyncEntry(serial, itemId, name, count, maxStackSize, hasData, craftable, kind)
                 }
                 val removedCount = buf.readVarInt()
                 val removedSerials = (0 until removedCount).map { buf.readVarLong() }

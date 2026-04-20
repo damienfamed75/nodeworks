@@ -77,6 +77,7 @@ object NeoForgeClientSetup {
             // Initialize client platform services
             PlatformServices.clientNetworking = NeoForgeClientNetworkingService()
             PlatformServices.clientEvents = NeoForgeClientEventService()
+            PlatformServices.fluidRenderer = damien.nodeworks.platform.NeoForgeFluidSpriteRenderer()
 
             // 26.1: ItemProperties.register() is gone. Custom property codecs are
             //  registered on the mod event bus via
