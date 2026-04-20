@@ -2,6 +2,7 @@ package damien.nodeworks.script
 
 import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NetworkSnapshot
+import damien.nodeworks.platform.FluidInfo
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
@@ -25,17 +26,28 @@ class NetworkInventoryCache(
         val info: ItemInfo
     )
 
-    // Double buffer for diff detection
+    data class FluidSerialEntry(
+        val serial: Long,
+        val info: FluidInfo
+    )
+
+    // Double buffer for diff detection — items
     private var frontBuffer = LinkedHashMap<String, ItemInfo>()
     private var backBuffer = LinkedHashMap<String, ItemInfo>()
 
+    // Double buffer for diff detection — fluids
+    private var fluidFrontBuffer = LinkedHashMap<String, FluidInfo>()
+    private var fluidBackBuffer = LinkedHashMap<String, FluidInfo>()
+
     // Serial-tracked entries for delta sync to clients
     private val entries = LinkedHashMap<String, SerialEntry>()
+    private val fluidEntries = LinkedHashMap<String, FluidSerialEntry>()
     private var nextSerial = 1L
 
-    // Change tracking for delta sync
+    // Change tracking for delta sync (shared serial space — items + fluids)
     private val changedSerials = mutableSetOf<Long>()
     private val removedSerials = mutableSetOf<Long>()
+    private val changedFluidSerials = mutableSetOf<Long>()
 
     // Adaptive tick rate
     private var tickInterval = 5 // start fast
@@ -108,7 +120,7 @@ class NetworkInventoryCache(
         return changed
     }
 
-    /** Read all storage card containers into the front buffer. */
+    /** Read all storage card containers into the front buffers (items + fluids). */
     private fun pollContainers() {
         // Swap buffers
         val tmp = backBuffer
@@ -116,18 +128,40 @@ class NetworkInventoryCache(
         frontBuffer = tmp
         frontBuffer.clear()
 
+        val fluidTmp = fluidBackBuffer
+        fluidBackBuffer = fluidFrontBuffer
+        fluidFrontBuffer = fluidTmp
+        fluidFrontBuffer.clear()
+
         // Discover network and read all storage
         val snapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val items = PlatformServices.storage.findAllItemInfo(storage) { true }
-            for (info in items) {
-                val key = cacheKey(info.itemId, info.hasData)
-                val existing = frontBuffer[key]
-                if (existing != null) {
-                    frontBuffer[key] = existing.copy(count = existing.count + info.count)
-                } else {
-                    frontBuffer[key] = info
+            val storage = NetworkStorageHelper.getStorage(level, card)
+            if (storage != null) {
+                val items = PlatformServices.storage.findAllItemInfo(storage) { true }
+                for (info in items) {
+                    val key = cacheKey(info.itemId, info.hasData)
+                    val existing = frontBuffer[key]
+                    if (existing != null) {
+                        frontBuffer[key] = existing.copy(count = existing.count + info.count)
+                    } else {
+                        frontBuffer[key] = info
+                    }
+                }
+            }
+            // Storage cards are fluid-first (see NetworkStorageHelper.getStorage): getStorage
+            // returns null when the block exposes a fluid cap, and getFluidStorage handles
+            // the fluid side. The two branches are mutually exclusive for a given card.
+            val fluidStorage = NetworkStorageHelper.getFluidStorage(level, card)
+            if (fluidStorage != null) {
+                val fluids = PlatformServices.storage.findAllFluidInfo(fluidStorage) { true }
+                for (info in fluids) {
+                    val existing = fluidFrontBuffer[info.fluidId]
+                    if (existing != null) {
+                        fluidFrontBuffer[info.fluidId] = existing.copy(amount = existing.amount + info.amount)
+                    } else {
+                        fluidFrontBuffer[info.fluidId] = info
+                    }
                 }
             }
         }
@@ -209,6 +243,32 @@ class NetworkInventoryCache(
             }
         }
 
+        // Fluids — same diff pattern against fluidFrontBuffer / fluidBackBuffer.
+        val fluidBackKeys = fluidBackBuffer.keys.toSet()
+        for (key in fluidBackKeys) {
+            if (key !in fluidFrontBuffer) {
+                val entry = fluidEntries.remove(key)
+                if (entry != null) {
+                    removedSerials.add(entry.serial)
+                    changedFluidSerials.remove(entry.serial)
+                    changed = true
+                }
+            }
+        }
+        for ((key, info) in fluidFrontBuffer) {
+            val existing = fluidEntries[key]
+            if (existing == null) {
+                val serial = nextSerial++
+                fluidEntries[key] = FluidSerialEntry(serial, info)
+                changedFluidSerials.add(serial)
+                changed = true
+            } else if (existing.info.amount != info.amount) {
+                fluidEntries[key] = existing.copy(info = existing.info.copy(amount = info.amount))
+                changedFluidSerials.add(existing.serial)
+                changed = true
+            }
+        }
+
         return changed
     }
 
@@ -243,7 +303,11 @@ class NetworkInventoryCache(
 
     fun getAllEntries(): Collection<SerialEntry> = entries.values
 
-    fun hasChanges(): Boolean = changedSerials.isNotEmpty() || removedSerials.isNotEmpty()
+    fun getAllFluidEntries(): Collection<FluidSerialEntry> = fluidEntries.values
+
+    fun hasChanges(): Boolean = changedSerials.isNotEmpty() ||
+        changedFluidSerials.isNotEmpty() ||
+        removedSerials.isNotEmpty()
 
     fun consumeChanges(): Pair<List<SerialEntry>, List<Long>> {
         val changed = changedSerials.mapNotNull { serial ->
@@ -253,6 +317,14 @@ class NetworkInventoryCache(
         changedSerials.clear()
         removedSerials.clear()
         return Pair(changed, removed)
+    }
+
+    fun consumeFluidChanges(): List<FluidSerialEntry> {
+        val changed = changedFluidSerials.mapNotNull { serial ->
+            fluidEntries.values.find { it.serial == serial }
+        }
+        changedFluidSerials.clear()
+        return changed
     }
 
     // --- Delta updates from script operations (for immediate feedback) ---

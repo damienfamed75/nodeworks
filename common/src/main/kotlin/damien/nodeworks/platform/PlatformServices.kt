@@ -24,6 +24,26 @@ object PlatformServices {
     lateinit var modState: ModStateService
     lateinit var clientNetworking: ClientNetworkingService
     lateinit var clientEvents: ClientEventService
+
+    /** Set by the loader-specific client init. Falls back to a plain gray square if
+     *  the loader didn't register a renderer (e.g. dedicated server — never touched). */
+    var fluidRenderer: FluidSpriteRenderer = FluidSpriteRenderer.Fallback
+}
+
+/**
+ * Draws a fluid's still texture at a given GUI position. Loader-specific because
+ * 26.1 exposes the fluid still texture via NeoForge's `IClientFluidTypeExtensions`,
+ * which isn't available in the common compile classpath.
+ */
+interface FluidSpriteRenderer {
+    fun render(graphics: net.minecraft.client.gui.GuiGraphicsExtractor, fluidId: String, x: Int, y: Int, size: Int)
+
+    companion object Fallback : FluidSpriteRenderer {
+        override fun render(graphics: net.minecraft.client.gui.GuiGraphicsExtractor, fluidId: String, x: Int, y: Int, size: Int) {
+            // Gray placeholder — the NeoForge impl replaces this at client init.
+            graphics.fill(x, y, x + size, y + size, 0xFF808080.toInt())
+        }
+    }
 }
 
 /**

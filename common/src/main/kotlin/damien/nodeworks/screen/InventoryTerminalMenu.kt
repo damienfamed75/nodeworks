@@ -110,6 +110,7 @@ class InventoryTerminalMenu(
         const val PLAYER_SLOT_COUNT = 36
         const val CRAFT_INPUT_START = 36
         const val CRAFT_OUTPUT_SLOT = 45
+        private const val BUCKET_MB = 1000L
 
         fun createServer(syncId: Int, inv: Inventory, level: ServerLevel, nodePos: BlockPos): InventoryTerminalMenu {
             val menu = InventoryTerminalMenu(syncId, inv, level, nodePos)
@@ -248,6 +249,130 @@ class InventoryTerminalMenu(
         // Force immediate network inventory sync
         needsImmediateSync = true
     }
+
+    /**
+     * Handle a fluid grid click. Fluids fill a single bucket (1000 mB) per click.
+     *
+     * Source of the empty bucket:
+     *  - Carried is a stack of empty buckets → consume one from the cursor.
+     *  - Carried is empty → take one empty bucket from network storage (must exist).
+     *
+     * action: 0 = put filled bucket on cursor (or merge if carried is a bucket).
+     *         3 = shift-click, route filled bucket into player inventory.
+     */
+    fun handleFluidGridClick(player: Player, fluidId: String, action: Int) {
+        val lvl = serverLevel ?: return
+        val snap = snapshot ?: return
+        val c = cache
+
+        val fluidIdentifier = net.minecraft.resources.Identifier.tryParse(fluidId) ?: return
+        val fluid = net.minecraft.core.registries.BuiltInRegistries.FLUID.getValue(fluidIdentifier) ?: return
+        val filledBucketItem = fluid.bucket
+        if (filledBucketItem == null || filledBucketItem == net.minecraft.world.item.Items.AIR) return
+
+        // Confirm the network has 1000 mB available.
+        val available = NetworkStorageHelper.countFluid(lvl, snap, fluidId)
+        if (available < BUCKET_MB) return
+
+        val carried = carried
+        val carriedIsEmptyBucket = !carried.isEmpty &&
+            carried.item == net.minecraft.world.item.Items.BUCKET &&
+            carried.count > 0
+
+        // Step 1 — source the empty bucket. Either the cursor stack or network storage.
+        val bucketSource: BucketSource = when {
+            carriedIsEmptyBucket -> BucketSource.CURSOR
+            carried.isEmpty -> {
+                // Check network for an empty bucket before committing to the drain.
+                val emptyBucketId = "minecraft:bucket"
+                val emptyAvailable = if (c != null) c.count(emptyBucketId) else
+                    NetworkStorageHelper.countItems(lvl, snap, emptyBucketId)
+                if (emptyAvailable < 1L) return
+                BucketSource.NETWORK
+            }
+            else -> return // carried is something we can't consume — bail.
+        }
+
+        // Step 2 — pull 1000 mB from the network's fluid storage. If drain falls short,
+        //  put back what we got and abort (no half-state).
+        var drained = 0L
+        for (card in NetworkStorageHelper.getStorageCards(snap)) {
+            if (drained >= BUCKET_MB) break
+            val storage = NetworkStorageHelper.getFluidStorage(lvl, card) ?: continue
+            val got = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
+                storage, { it == fluidId }, BUCKET_MB - drained
+            )
+            drained += got
+        }
+        if (drained < BUCKET_MB) {
+            // Roll back partial drain — push back into any fluid storage that will accept it.
+            if (drained > 0) NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, drained)
+            return
+        }
+
+        // Step 3 — commit the bucket source (consume the empty bucket for real).
+        when (bucketSource) {
+            BucketSource.CURSOR -> carried.shrink(1)
+            BucketSource.NETWORK -> {
+                val emptyBucketId = "minecraft:bucket"
+                var consumed = 0L
+                for (card in NetworkStorageHelper.getStorageCards(snap)) {
+                    if (consumed >= 1L) break
+                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+                    val got = damien.nodeworks.platform.PlatformServices.storage.extractItems(
+                        storage, { it == emptyBucketId }, 1L - consumed
+                    )
+                    if (got > 0) {
+                        c?.onExtracted(emptyBucketId, false, got)
+                        consumed += got
+                    }
+                }
+                if (consumed < 1L) {
+                    // Bucket vanished between pre-check and commit (another player extracted it).
+                    // Return the drained fluid and bail.
+                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB)
+                    return
+                }
+            }
+        }
+
+        // Step 4 — deliver the filled bucket.
+        val filled = ItemStack(filledBucketItem)
+        if (action == 3) {
+            if (!playerInventory.add(filled)) {
+                // No room — drop as cursor item instead of leaking into the world.
+                if (carried.isEmpty) {
+                    setCarried(filled)
+                } else {
+                    // Last-ditch: put the fluid back so the player can try again with space.
+                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB)
+                    if (bucketSource == BucketSource.CURSOR) carried.grow(1)
+                    else NetworkStorageHelper.insertItemStack(lvl, snap, ItemStack(net.minecraft.world.item.Items.BUCKET), c)
+                    return
+                }
+            }
+        } else {
+            if (carried.isEmpty) {
+                setCarried(filled)
+            } else if (ItemStack.isSameItemSameComponents(carried, filled) &&
+                carried.count + 1 <= carried.maxStackSize) {
+                carried.grow(1)
+            } else {
+                // Can't stack onto carried — try to put into inventory, else rollback.
+                if (!playerInventory.add(filled)) {
+                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB)
+                    if (bucketSource == BucketSource.CURSOR) carried.grow(1)
+                    else NetworkStorageHelper.insertItemStack(lvl, snap, ItemStack(net.minecraft.world.item.Items.BUCKET), c)
+                    return
+                }
+            }
+        }
+
+        playerInventory.setChanged()
+        needsImmediateSync = true
+    }
+
+    private enum class BucketSource { CURSOR, NETWORK }
 
     /**
      * Handle a click on a player inventory slot.
@@ -794,8 +919,8 @@ class InventoryTerminalMenu(
         val reserved = CraftQueueManager.getReservedCounts(serverPlayer.uuid)
 
         if (needsFullSync) {
-            // Build all entries and split into chunks
-            val allEntries = c.getAllEntries().map { entry ->
+            // Build all entries (items + fluids) and split into chunks.
+            val itemEntries = c.getAllEntries().map { entry ->
                 val deduct = reserved[entry.info.itemId] ?: 0
                 InventorySyncPayload.SyncEntry(
                     serial = entry.serial,
@@ -807,6 +932,19 @@ class InventoryTerminalMenu(
                     craftable = entry.info.isCraftable
                 )
             }
+            val fluidEntries = c.getAllFluidEntries().map { entry ->
+                InventorySyncPayload.SyncEntry(
+                    serial = entry.serial,
+                    itemId = entry.info.fluidId,
+                    name = entry.info.name,
+                    count = entry.info.amount,
+                    maxStackSize = 1,
+                    hasData = false,
+                    craftable = false,
+                    kind = 1
+                )
+            }
+            val allEntries = itemEntries + fluidEntries
             fullSyncChunks = allEntries.chunked(FULL_SYNC_CHUNK_SIZE)
             fullSyncChunkIndex = 0
             sendQueueSync(serverPlayer, queue)
@@ -848,7 +986,8 @@ class InventoryTerminalMenu(
 
         if (c.hasChanges()) {
             val (changed, removed) = c.consumeChanges()
-            val entries = changed.map { entry ->
+            val changedFluids = c.consumeFluidChanges()
+            val itemEntries = changed.map { entry ->
                 val deduct = reserved[entry.info.itemId] ?: 0
                 InventorySyncPayload.SyncEntry(
                     serial = entry.serial,
@@ -860,7 +999,19 @@ class InventoryTerminalMenu(
                     craftable = entry.info.isCraftable
                 )
             }
-            sendToClient(serverPlayer, InventorySyncPayload(false, entries, removed))
+            val fluidEntries = changedFluids.map { entry ->
+                InventorySyncPayload.SyncEntry(
+                    serial = entry.serial,
+                    itemId = entry.info.fluidId,
+                    name = entry.info.name,
+                    count = entry.info.amount,
+                    maxStackSize = 1,
+                    hasData = false,
+                    craftable = false,
+                    kind = 1
+                )
+            }
+            sendToClient(serverPlayer, InventorySyncPayload(false, itemEntries + fluidEntries, removed))
         }
     }
 
