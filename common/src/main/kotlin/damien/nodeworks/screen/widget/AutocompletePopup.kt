@@ -1185,7 +1185,8 @@ class AutocompletePopup(
             "ItemsHandle" -> listOf(
                 suggest("id", "id: string", Kind.PROPERTY),
                 suggest("name", "name: string", Kind.PROPERTY),
-                suggest("count", "count: number", Kind.PROPERTY),
+                suggest("count", "count: number (items: units, fluids: mB)", Kind.PROPERTY),
+                suggest("kind", "kind: \"item\" | \"fluid\"", Kind.PROPERTY),
                 suggest("stackable", "stackable: boolean", Kind.PROPERTY),
                 suggest("maxStackSize", "maxStackSize: number", Kind.PROPERTY),
                 suggest("hasData", "hasData: boolean", Kind.PROPERTY)
