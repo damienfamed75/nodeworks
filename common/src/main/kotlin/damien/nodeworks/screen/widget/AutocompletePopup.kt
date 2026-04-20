@@ -26,6 +26,9 @@ class AutocompletePopup(
     private val localApiNames: List<String> = emptyList(),
     private val craftableOutputs: List<String> = emptyList(),
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
+    private val itemIds: List<String> = emptyList(),
+    private val fluidIds: List<String> = emptyList(),
+    private val fluidTags: List<String> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     /**
@@ -883,7 +886,59 @@ class AutocompletePopup(
                 fuzzyStrings(ctx.partial, scriptNames)
             }
 
+            isResourceFilterFunc(ctx.funcExpr) -> suggestResourceFilter(ctx.partial)
+
             else -> emptyList()
+        }
+    }
+
+    /** Lua functions whose string argument is a resource-id filter (items + fluids). */
+    private fun isResourceFilterFunc(funcExpr: String): Boolean =
+        funcExpr.endsWith(":find") ||
+        funcExpr.endsWith(":findEach") ||
+        funcExpr.endsWith(":count") ||
+        funcExpr.endsWith(":tryInsert") ||
+        funcExpr == "find" || funcExpr == "findEach" || funcExpr == "count"
+
+    /**
+     * Resource-filter strings accept:
+     *  - bare item ids (`minecraft:iron_ingot`)
+     *  - `${'$'}item:<id>` / `${'$'}fluid:<id>` kind-qualified ids
+     *  - `*`, `<mod>:*` wildcards
+     *  - `#<tag>` tag matches (handled separately by TagFilter context)
+     *
+     * Suggest sigils when the user is just starting, and pivot to id completion once a
+     * kind prefix is committed.
+     */
+    private fun suggestResourceFilter(partial: String): List<Suggestion> {
+        customPrefix = partial
+        return when {
+            partial.startsWith("\$item:") -> {
+                val inner = partial.removePrefix("\$item:")
+                val hits = FuzzyMatch.filter(inner, itemIds.map { Suggestion(it, it, kind = Kind.STRING) })
+                hits.map { s -> s.copy(insertText = "\$item:${s.insertText}", displayText = "\$item:${s.displayText}") }
+            }
+            partial.startsWith("\$fluid:") -> {
+                val inner = partial.removePrefix("\$fluid:")
+                val hits = FuzzyMatch.filter(inner, fluidIds.map { Suggestion(it, it, kind = Kind.STRING) })
+                hits.map { s -> s.copy(insertText = "\$fluid:${s.insertText}", displayText = "\$fluid:${s.displayText}") }
+            }
+            partial.startsWith("\$") -> {
+                val sigils = listOf(
+                    Suggestion("\$item:", "\$item: — match items only", kind = Kind.STRING),
+                    Suggestion("\$fluid:", "\$fluid: — match fluids only", kind = Kind.STRING)
+                )
+                FuzzyMatch.filter(partial, sigils)
+            }
+            else -> {
+                // No prefix: fuzzy-match against all item ids plus the two sigils.
+                val idSuggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
+                val sigils = listOf(
+                    Suggestion("\$item:", "\$item: — match items only", kind = Kind.STRING),
+                    Suggestion("\$fluid:", "\$fluid: — match fluids only", kind = Kind.STRING)
+                )
+                FuzzyMatch.filter(partial, sigils + idSuggestions).take(20)
+            }
         }
     }
 
@@ -912,7 +967,10 @@ class AutocompletePopup(
 
     private fun suggestTag(partial: String): List<Suggestion> {
         customPrefix = partial
-        return fuzzyStrings(partial, itemTags, Kind.TAG).take(20)
+        // Union item + fluid tags, deduped — `#c:water` is valid for both kinds and users
+        // shouldn't need to know which registry owns it.
+        val union = (itemTags + fluidTags).distinct()
+        return fuzzyStrings(partial, union, Kind.TAG).take(20)
     }
 
     private fun suggestMethodCall(

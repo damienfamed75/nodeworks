@@ -297,68 +297,119 @@ class ScriptEngine(
         })
 
         // network:find(filter) → ItemsHandle or nil (scans real storage, aggregated count)
+        // Respects kind-qualified filters (`item:*`, `fluid:*`). Bare filters check items first.
         networkTable.set("find", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
-                // Get metadata from first match
-                val (info, _) = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
-                    ?: return LuaValue.NIL
-                // Get total count across all storage
-                val totalCount = NetworkStorageHelper.countItems(level, snapshot, filter)
-                val aggregatedInfo = info.copy(count = totalCount)
+                val (kindGate, _) = CardHandle.parseFilterKind(filter)
 
-                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
-                    NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
-                        val storage = NetworkStorageHelper.getStorage(level, card)
-                        if (storage != null) {
-                            val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
-                                CardHandle.matchesFilter(it, filter)
+                if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.ITEM) {
+                    val itemResult = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter)
+                    if (itemResult != null) {
+                        val (info, _) = itemResult
+                        val totalCount = NetworkStorageHelper.countItems(level, snapshot, filter)
+                        val aggregatedInfo = info.copy(count = totalCount)
+                        val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                            NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                                val storage = NetworkStorageHelper.getStorage(level, card)
+                                if (storage != null) {
+                                    val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                        CardHandle.matchesFilter(it, damien.nodeworks.platform.ResourceKind.ITEM, filter)
+                                    }
+                                    if (has > 0) storage else null
+                                } else null
                             }
-                            if (has > 0) storage else null
-                        } else null
+                        }
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
                     }
                 }
-
-                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
+                if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
+                    val fluidResult = NetworkStorageHelper.findFirstFluidInfoAcrossNetwork(level, snapshot, filter)
+                    if (fluidResult != null) {
+                        val (info, _) = fluidResult
+                        val totalAmount = NetworkStorageHelper.countFluid(level, snapshot, filter)
+                        val aggregated = damien.nodeworks.platform.FluidInfo(info.fluidId, info.name, totalAmount)
+                        val fluidSource: () -> damien.nodeworks.platform.FluidStorageHandle? = {
+                            NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                                val storage = NetworkStorageHelper.getFluidStorage(level, card)
+                                if (storage != null) {
+                                    val has = damien.nodeworks.platform.PlatformServices.storage.countFluid(storage) { it == info.fluidId }
+                                    if (has > 0) storage else null
+                                } else null
+                            }
+                        }
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level))
+                    }
+                }
+                return LuaValue.NIL
             }
         })
 
-        // network:findEach(filter) → table of ItemsHandles (scans real storage)
+        // network:findEach(filter) → table of ItemsHandles (scans real storage).
+        // Bare filter lists items then fluids; kind-prefixed filter yields only that kind.
         networkTable.set("findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
-                val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot, filter)
+                val (kindGate, _) = CardHandle.parseFilterKind(filter)
                 val result = LuaTable()
-                for ((i, pair) in allItems.withIndex()) {
-                    val (info, _) = pair
-                    val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
-                        NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
-                            val storage = NetworkStorageHelper.getStorage(level, card)
-                            if (storage != null) {
-                                val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
-                                    it == info.itemId
+                var idx = 1
+                if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.ITEM) {
+                    val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot, filter)
+                    for (pair in allItems) {
+                        val (info, _) = pair
+                        val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                            NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { card ->
+                                val storage = NetworkStorageHelper.getStorage(level, card)
+                                if (storage != null) {
+                                    val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) { it == info.itemId }
+                                    if (has > 0) storage else null
+                                } else null
+                            }
+                        }
+                        val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                        result.set(idx++, ItemsHandle.toLuaTable(handle))
+                    }
+                }
+                if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
+                    val seen = mutableSetOf<String>()
+                    for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
+                        val storage = NetworkStorageHelper.getFluidStorage(level, card) ?: continue
+                        val fluids = damien.nodeworks.platform.PlatformServices.storage.findAllFluidInfo(storage) {
+                            CardHandle.matchesFilter(it, damien.nodeworks.platform.ResourceKind.FLUID, filter)
+                        }
+                        for (info in fluids) {
+                            if (!seen.add(info.fluidId)) continue
+                            val totalAmount = NetworkStorageHelper.countFluid(level, snapshot, "\$fluid:${info.fluidId}")
+                            val aggregated = damien.nodeworks.platform.FluidInfo(info.fluidId, info.name, totalAmount)
+                            val fluidSource: () -> damien.nodeworks.platform.FluidStorageHandle? = {
+                                NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { c ->
+                                    val s = NetworkStorageHelper.getFluidStorage(level, c)
+                                    if (s != null) {
+                                        val has = damien.nodeworks.platform.PlatformServices.storage.countFluid(s) { it == info.fluidId }
+                                        if (has > 0) s else null
+                                    } else null
                                 }
-                                if (has > 0) storage else null
-                            } else null
+                            }
+                            val handle = ItemsHandle.fromFluidInfo(aggregated, "\$fluid:${info.fluidId}", fluidSource, level)
+                            result.set(idx++, ItemsHandle.toLuaTable(handle))
                         }
                     }
-                    val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
-                    result.set(i + 1, ItemsHandle.toLuaTable(handle))
                 }
                 return result
             }
         })
 
-        // network:count(filter) → number (scans real storage)
+        // network:count(filter) → number (items + fluids, or kind-filtered)
         networkTable.set("count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
-                val count = NetworkStorageHelper.countItems(level, snapshot, filter)
-                return LuaValue.valueOf(count.toInt())
+                val count = NetworkStorageHelper.countResource(level, snapshot, filter)
+                return LuaValue.valueOf(count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
             }
         })
 
         // network:insert(itemsHandle, count?) → number moved into network storage
+        // Items route through routeTable + storage cards; fluids go to storage cards' fluid side.
         networkTable.set("insert", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val itemsTable = args.checktable(2)
@@ -373,17 +424,35 @@ class ScriptEngine(
                     throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
                 }
                 val itemsHandle = ref.handle
+                val requested = minOf(maxCount, itemsHandle.count.toLong())
+                if (requested <= 0L) return LuaValue.valueOf(0)
 
-                val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
-
-                val moved = NetworkStorageHelper.insertItems(
-                    level, snapshot, sourceStorage, itemsHandle.filter,
-                    minOf(maxCount, itemsHandle.count.toLong()),
-                    routeTable,
-                    null,
-                    inventoryCache
-                )
-                return LuaValue.valueOf(moved.toInt())
+                val moved: Long = if (itemsHandle.kind == damien.nodeworks.platform.ResourceKind.FLUID) {
+                    val sourceFluid = itemsHandle.fluidSourceStorage() ?: return LuaValue.valueOf(0)
+                    // Drain the source then push into network storages.
+                    val drained = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
+                        sourceFluid,
+                        { it == itemsHandle.itemId },
+                        requested
+                    )
+                    if (drained <= 0L) return LuaValue.valueOf(0)
+                    val placed = NetworkStorageHelper.insertFluidAcrossNetwork(level, snapshot, itemsHandle.itemId, drained)
+                    if (placed < drained) {
+                        // Overflow: push what didn't land back to the source.
+                        damien.nodeworks.platform.PlatformServices.storage.insertFluid(sourceFluid, itemsHandle.itemId, drained - placed)
+                    }
+                    placed
+                } else {
+                    val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
+                    NetworkStorageHelper.insertItems(
+                        level, snapshot, sourceStorage, itemsHandle.filter,
+                        requested,
+                        routeTable,
+                        null,
+                        inventoryCache
+                    )
+                }
+                return LuaValue.valueOf(moved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
             }
         })
 

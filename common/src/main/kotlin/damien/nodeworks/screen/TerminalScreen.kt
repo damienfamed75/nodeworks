@@ -71,6 +71,9 @@ class TerminalScreen(
     // All scanned client-side from block entities in the loaded world
     private val cards: List<CardSnapshot>
     private val itemTags: List<String>
+    private val fluidTags: List<String>
+    private val itemIds: List<String>
+    private val fluidIds: List<String>
     private val variables: List<Pair<String, Int>>
     private val localApiNames: List<String>
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
@@ -489,7 +492,7 @@ class TerminalScreen(
             }
         }
 
-        // Item tags from the client registry — 26.1 replaces `getTagNames()`
+        // Item + fluid tag/id lists from the client registry — 26.1 replaces `getTagNames()`
         // (Stream<TagKey>) with `getTags()` (Stream<HolderSet.Named<T>>); the
         // tag key is exposed via key(), and its Identifier via the record
         // component `location`.
@@ -497,9 +500,28 @@ class TerminalScreen(
             .map { it.key().location.toString() }
             .sorted()
             .toList()
+        val scannedFluidTags = net.minecraft.core.registries.BuiltInRegistries.FLUID.getTags()
+            .map { it.key().location.toString() }
+            .sorted()
+            .toList()
+        val scannedItemIds = net.minecraft.core.registries.BuiltInRegistries.ITEM.keySet()
+            .map { it.toString() }
+            .sorted()
+            .toList()
+        // Filter out minecraft:empty and flowing variants — users almost always want source
+        // fluids (minecraft:water, not minecraft:flowing_water) since that's what shows up
+        // inside tanks.
+        val scannedFluidIds = net.minecraft.core.registries.BuiltInRegistries.FLUID.keySet()
+            .map { it.toString() }
+            .filter { !it.endsWith(":empty") && !it.contains(":flowing_") }
+            .sorted()
+            .toList()
 
         cards = scannedCards
         itemTags = scannedTags
+        fluidTags = scannedFluidTags
+        itemIds = scannedItemIds
+        fluidIds = scannedFluidIds
         variables = scannedVars
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
@@ -593,7 +615,10 @@ class TerminalScreen(
         }
 
         autocomplete =
-            AutocompletePopup(font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis) { scripts }
+            AutocompletePopup(
+                font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis,
+                itemIds, fluidIds, fluidTags
+            ) { scripts }
         // Position popups directly under the cursor's text row. Using yBottomOfLine
         // (instead of yTopOfLine of the next line) deliberately excludes any decoration
         // band above the following line — that band sits BETWEEN cursor and next line and
