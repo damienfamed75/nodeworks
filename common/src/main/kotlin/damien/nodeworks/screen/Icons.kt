@@ -105,7 +105,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         // Col:    0            1            2            3             4           5            6              7              8
         // Row 0:  Checkmark    X            ArrowRight   ArrowLeft     Unpinned    Pinned       RedstoneIgnore RedstoneActive RedstoneInactive GlowSquare GlowCircle GlowDot GlowCreeper GlowCat GlowNone
         // Row 1:  IO Card      Storage Card Redstone Card Variable     CrystalInactive CrystalActive LayoutSmall LayoutWide LayoutTall LayoutLarge SmallScrew
-        // Row 2:  CopyIdle     CopyHover    CopyPressed  TrashIdle     TrashHover  TrashPressed CollapseIdle CollapseHover CollapsePressed ExpandIdle ExpandHover ExpandPressed
+        // Row 2:  CopyIdle     CopyHover    CopyPressed  TrashIdle     TrashHover  TrashPressed CollapseIdle CollapseHover CollapsePressed ExpandIdle ExpandHover ExpandPressed Badge FluidAndItems ItemsOnly FluidsOnly
         // Row 3:  SortAlpha    SortCountDesc SortCountAsc FilterStorage FilterRecipes FilterBoth AutoFocusOn AutoFocusOff CraftInProgress CraftComplete CraftPlus AutoPullOn AutoPullOff CraftGridClear CraftGridDistribute
         // =====================================================================
 
@@ -158,6 +158,9 @@ class Icons private constructor(val col: Int, val row: Int) {
         val EXPAND_HOVER = Icons(10, 2)
         val EXPAND_PRESSED = Icons(11, 2)
         val BADGE = Icons(12, 2) // 9x9 in top-left corner of the cell
+        val FLUID_AND_ITEMS = Icons(13, 2)
+        val ITEMS_ONLY = Icons(14, 2)
+        val FLUIDS_ONLY = Icons(15, 2)
 
         // Row 3 — Inventory Terminal icons
         val SORT_ALPHA = Icons(0, 3)

@@ -2,8 +2,10 @@ package damien.nodeworks.script
 
 import damien.nodeworks.card.IOSideCapability
 import damien.nodeworks.network.CardSnapshot
+import damien.nodeworks.platform.FluidStorageHandle
 import damien.nodeworks.platform.ItemStorageHandle
 import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.platform.ResourceKind
 import damien.nodeworks.platform.SlottedItemStorageHandle
 import org.slf4j.LoggerFactory
 import net.minecraft.core.BlockPos
@@ -38,16 +40,49 @@ class CardHandle private constructor(
             }
         }
 
-        fun matchesFilter(itemId: String, filter: String): Boolean {
+        /**
+         * Parse a user-facing filter string into an optional kind gate and the inner pattern.
+         *
+         * A leading `${'$'}item:` or `${'$'}fluid:` locks the match to that resource kind; the remainder
+         * is the pattern applied to the resource id. `*`, `<mod>:*`, `#tag`, `/regex/`, and exact id
+         * are supported as patterns (kind-agnostic otherwise). The `${'$'}` sigil keeps the kind
+         * prefix orthogonal to mod namespaces — no risk of clashing with a mod named "item".
+         */
+        fun parseFilterKind(filter: String): Pair<ResourceKind?, String> = when {
+            filter.startsWith("\$item:") -> Pair(ResourceKind.ITEM, filter.removePrefix("\$item:"))
+            filter.startsWith("\$fluid:") -> Pair(ResourceKind.FLUID, filter.removePrefix("\$fluid:"))
+            else -> Pair(null, filter)
+        }
+
+        /** Backward-compat overload — assumes the tested id is an item id. */
+        fun matchesFilter(itemId: String, filter: String): Boolean =
+            matchesFilter(itemId, ResourceKind.ITEM, filter)
+
+        fun matchesFilter(resourceId: String, kind: ResourceKind, filter: String): Boolean {
+            val (kindGate, inner) = parseFilterKind(filter)
+            if (kindGate != null && kindGate != kind) return false
+            return matchesIdPattern(resourceId, kind, inner)
+        }
+
+        private fun matchesIdPattern(resourceId: String, kind: ResourceKind, filter: String): Boolean {
             if (filter == "*") return true
 
             if (filter.startsWith("#")) {
                 val tagId = filter.substring(1)
                 val identifier = Identifier.tryParse(tagId) ?: return false
-                val tagKey = TagKey.create(Registries.ITEM, identifier)
-                val itemIdentifier = Identifier.tryParse(itemId) ?: return false
-                val item = BuiltInRegistries.ITEM.getValue(itemIdentifier) ?: return false
-                return item.builtInRegistryHolder().`is`(tagKey)
+                val resIdent = Identifier.tryParse(resourceId) ?: return false
+                return when (kind) {
+                    ResourceKind.ITEM -> {
+                        val tagKey = TagKey.create(Registries.ITEM, identifier)
+                        val item = BuiltInRegistries.ITEM.getValue(resIdent) ?: return false
+                        item.builtInRegistryHolder().`is`(tagKey)
+                    }
+                    ResourceKind.FLUID -> {
+                        val tagKey = TagKey.create(Registries.FLUID, identifier)
+                        val fluid = BuiltInRegistries.FLUID.getValue(resIdent) ?: return false
+                        fluid.builtInRegistryHolder().`is`(tagKey)
+                    }
+                }
             }
 
             if (filter.startsWith("/") && filter.endsWith("/") && filter.length > 2) {
@@ -56,15 +91,15 @@ class CardHandle private constructor(
                 val pattern = regexCache.getOrPut(patternStr) {
                     try { java.util.regex.Pattern.compile(patternStr) } catch (_: Exception) { return false }
                 }
-                return pattern.matcher(itemId).matches()
+                return pattern.matcher(resourceId).matches()
             }
 
             if (filter.endsWith(":*")) {
                 val namespace = filter.removeSuffix(":*")
-                return itemId.startsWith("$namespace:")
+                return resourceId.startsWith("$namespace:")
             }
 
-            return itemId == filter
+            return resourceId == filter
         }
 
         fun create(card: CardSnapshot, level: ServerLevel): LuaTable {
@@ -115,14 +150,20 @@ class CardHandle private constructor(
                 if (requested <= 0L) {
                     return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
                 }
-                val destStorage = self.getItemStorage()
-                    ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
 
-                val bufSrc = itemsHandle.bufferSource
-                val moved: Long = if (bufSrc != null) {
-                    moveFromBuffer(bufSrc, destStorage, requested, atomic)
+                // Dispatch by the handle's kind — an item handle targets the card's item cap,
+                // a fluid handle targets the card's fluid cap. A block with neither matching
+                // cap simply fails the op (returns 0/false).
+                val moved: Long = if (itemsHandle.kind == ResourceKind.FLUID) {
+                    val destFluid = self.getFluidStorage()
+                        ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+                    moveFluidToDest(itemsHandle, destFluid, requested, atomic)
                 } else {
-                    moveFromStorage(itemsHandle, destStorage, requested, atomic)
+                    val destStorage = self.getItemStorage()
+                        ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+                    val bufSrc = itemsHandle.bufferSource
+                    if (bufSrc != null) moveFromBuffer(bufSrc, destStorage, requested, atomic)
+                    else moveFromStorage(itemsHandle, destStorage, requested, atomic)
                 }
 
                 return if (atomic) {
@@ -131,6 +172,34 @@ class CardHandle private constructor(
                     LuaValue.valueOf(moved.toInt())
                 }
             }
+        }
+    }
+
+    private fun moveFluidToDest(
+        itemsHandle: ItemsHandle,
+        destStorage: FluidStorageHandle,
+        requested: Long,
+        atomic: Boolean
+    ): Long {
+        val sourceStorage = itemsHandle.fluidSourceStorage() ?: return 0L
+        val fluidId = itemsHandle.itemId
+        return if (atomic) {
+            val ok = try {
+                PlatformServices.storage.tryMoveAllFluid(
+                    sourceStorage, destStorage,
+                    { it == fluidId },
+                    requested
+                )
+            } catch (_: Exception) { false }
+            if (ok) requested else 0L
+        } else {
+            try {
+                PlatformServices.storage.moveFluid(
+                    sourceStorage, destStorage,
+                    { it == fluidId },
+                    requested
+                )
+            } catch (_: Exception) { 0L }
         }
     }
 
@@ -244,6 +313,13 @@ class CardHandle private constructor(
         return PlatformServices.storage.getItemStorage(level, targetPos, face)
     }
 
+    private fun getFluidStorage(): FluidStorageHandle? {
+        val cap = card.capability
+        val targetPos = cap.adjacentPos
+        val face = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
+        return PlatformServices.storage.getFluidStorage(level, targetPos, face)
+    }
+
     fun toLuaTable(): LuaTable {
         val table = LuaTable()
         val self = this
@@ -268,43 +344,75 @@ class CardHandle private constructor(
             }
         })
 
-        // :find(filter) -> ItemsHandle or nil (aggregated count across all slots)
+        // :find(filter) -> ItemsHandle or nil (aggregated count across all slots/tanks)
+        // Item side first, then fluid, unless the filter carries a kind prefix.
         table.set("find", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
-                val storage = self.getItemStorage() ?: return LuaValue.NIL
+                val (kindGate, _) = parseFilterKind(filter)
 
-                val info = PlatformServices.storage.findFirstItemInfo(storage) { matchesFilter(it, filter) }
-                    ?: return LuaValue.NIL
-
-                // Get the aggregated count across all slots
-                val totalCount = PlatformServices.storage.countItems(storage) { matchesFilter(it, filter) }
-                val aggregatedInfo = damien.nodeworks.platform.ItemInfo(
-                    itemId = info.itemId,
-                    name = info.name,
-                    count = totalCount,
-                    maxStackSize = info.maxStackSize,
-                    hasData = info.hasData
-                )
-
-                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
-                return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
+                if (kindGate == null || kindGate == ResourceKind.ITEM) {
+                    val storage = self.getItemStorage()
+                    if (storage != null) {
+                        val info = PlatformServices.storage.findFirstItemInfo(storage) { matchesFilter(it, ResourceKind.ITEM, filter) }
+                        if (info != null) {
+                            val totalCount = PlatformServices.storage.countItems(storage) { matchesFilter(it, ResourceKind.ITEM, filter) }
+                            val aggregatedInfo = damien.nodeworks.platform.ItemInfo(
+                                itemId = info.itemId,
+                                name = info.name,
+                                count = totalCount,
+                                maxStackSize = info.maxStackSize,
+                                hasData = info.hasData
+                            )
+                            val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
+                            return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
+                        }
+                    }
+                }
+                if (kindGate == null || kindGate == ResourceKind.FLUID) {
+                    val storage = self.getFluidStorage()
+                    if (storage != null) {
+                        val info = PlatformServices.storage.findFirstFluidInfo(storage) { matchesFilter(it, ResourceKind.FLUID, filter) }
+                        if (info != null) {
+                            val totalAmount = PlatformServices.storage.countFluid(storage) { matchesFilter(it, ResourceKind.FLUID, filter) }
+                            val aggregated = damien.nodeworks.platform.FluidInfo(info.fluidId, info.name, totalAmount)
+                            val fluidSource: () -> FluidStorageHandle? = { self.getFluidStorage() }
+                            return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level))
+                        }
+                    }
+                }
+                return LuaValue.NIL
             }
         })
 
-        // :findEach(filter) -> table of ItemsHandles
-        // Returns all unique item types matching the filter
+        // :findEach(filter) -> table of ItemsHandles (items then fluids, filtered by kind prefix if any)
         table.set("findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
-                val storage = self.getItemStorage() ?: return LuaTable()
-
-                val items = PlatformServices.storage.findAllItemInfo(storage) { matchesFilter(it, filter) }
+                val (kindGate, _) = parseFilterKind(filter)
                 val result = LuaTable()
-                val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
-                for ((i, info) in items.withIndex()) {
-                    val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
-                    result.set(i + 1, ItemsHandle.toLuaTable(handle))
+                var idx = 1
+                if (kindGate == null || kindGate == ResourceKind.ITEM) {
+                    val storage = self.getItemStorage()
+                    if (storage != null) {
+                        val items = PlatformServices.storage.findAllItemInfo(storage) { matchesFilter(it, ResourceKind.ITEM, filter) }
+                        val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
+                        for (info in items) {
+                            val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                            result.set(idx++, ItemsHandle.toLuaTable(handle))
+                        }
+                    }
+                }
+                if (kindGate == null || kindGate == ResourceKind.FLUID) {
+                    val storage = self.getFluidStorage()
+                    if (storage != null) {
+                        val fluids = PlatformServices.storage.findAllFluidInfo(storage) { matchesFilter(it, ResourceKind.FLUID, filter) }
+                        val fluidSource: () -> FluidStorageHandle? = { self.getFluidStorage() }
+                        for (info in fluids) {
+                            val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level)
+                            result.set(idx++, ItemsHandle.toLuaTable(handle))
+                        }
+                    }
                 }
                 return result
             }
@@ -319,13 +427,25 @@ class CardHandle private constructor(
         // Best-effort move: returns the actual count moved (0..requested).
         table.set("tryInsert", buildInsertFn(self, atomic = false))
 
-        // :count(filter) -> number
+        // :count(filter) -> number (items + fluids matching, or only one if kind-prefixed)
         table.set("count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
-                val storage = self.getItemStorage() ?: return LuaValue.valueOf(0)
-                val total = PlatformServices.storage.countItems(storage) { matchesFilter(it, filter) }
-                return LuaValue.valueOf(total.toInt())
+                val (kindGate, _) = parseFilterKind(filter)
+                var total = 0L
+                if (kindGate == null || kindGate == ResourceKind.ITEM) {
+                    val itemStorage = self.getItemStorage()
+                    if (itemStorage != null) {
+                        total += PlatformServices.storage.countItems(itemStorage) { matchesFilter(it, ResourceKind.ITEM, filter) }
+                    }
+                }
+                if (kindGate == null || kindGate == ResourceKind.FLUID) {
+                    val fluidStorage = self.getFluidStorage()
+                    if (fluidStorage != null) {
+                        total += PlatformServices.storage.countFluid(fluidStorage) { matchesFilter(it, ResourceKind.FLUID, filter) }
+                    }
+                }
+                return LuaValue.valueOf(total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
             }
         })
 

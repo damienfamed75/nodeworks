@@ -4,7 +4,15 @@
 # against bad commits.
 
 name: build
-on: [pull_request, push]
+
+# PR builds and pushes to every branch EXCEPT main. Main pushes are handled by
+# release.yml (which bumps the version, builds, and publishes a release) — running
+# both on the same push wastes CI minutes and can race on the VERSION bump commit.
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
 
 jobs:
   build:

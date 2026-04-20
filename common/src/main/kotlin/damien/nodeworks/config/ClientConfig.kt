@@ -21,6 +21,7 @@ object ClientConfig {
         var invTerminalAutoFocusSearch: Boolean = true,
         var invTerminalSortMode: String = "ALPHA",
         var invTerminalFilterMode: String = "BOTH",
+        var invTerminalKindMode: String = "BOTH",
         var scriptTerminalLayout: Int = 0
     )
 
@@ -73,6 +74,10 @@ object ClientConfig {
     var invTerminalFilterMode: String
         get() = data.invTerminalFilterMode
         set(value) { data.invTerminalFilterMode = value; save() }
+
+    var invTerminalKindMode: String
+        get() = data.invTerminalKindMode
+        set(value) { data.invTerminalKindMode = value; save() }
 
     // --- Scripting Terminal ---
 

@@ -24,6 +24,29 @@ object PlatformServices {
     lateinit var modState: ModStateService
     lateinit var clientNetworking: ClientNetworkingService
     lateinit var clientEvents: ClientEventService
+
+    /** Set by the loader-specific client init. Falls back to a plain gray square if
+     *  the loader didn't register a renderer (e.g. dedicated server — never touched). */
+    var fluidRenderer: FluidSpriteRenderer = FluidSpriteRenderer.Fallback
+}
+
+/**
+ * Draws a fluid's still texture at a given GUI position. Loader-specific because
+ * 26.1 moved fluid client assets onto vanilla's `ModelManager.fluidStateModelSet`
+ * (→ `FluidModel.stillMaterial().sprite()`), which the common module can reach via
+ * Minecraft APIs but historically lived behind NeoForge's `IClientFluidTypeExtensions`;
+ * keeping the entry point behind a platform service leaves room for loader-specific
+ * fallbacks and Fabric's eventual Transfer-API equivalent.
+ */
+interface FluidSpriteRenderer {
+    fun render(graphics: net.minecraft.client.gui.GuiGraphicsExtractor, fluidId: String, x: Int, y: Int, size: Int)
+
+    companion object Fallback : FluidSpriteRenderer {
+        override fun render(graphics: net.minecraft.client.gui.GuiGraphicsExtractor, fluidId: String, x: Int, y: Int, size: Int) {
+            // Gray placeholder — the NeoForge impl replaces this at client init.
+            graphics.fill(x, y, x + size, y + size, 0xFF808080.toInt())
+        }
+    }
 }
 
 /**
@@ -41,11 +64,22 @@ interface ClientEventService {
 }
 
 /**
- * Abstracts item storage access (Fabric Transfer API vs NeoForge IItemHandler).
+ * Discriminator for the two resource domains a card can bridge — items vs. fluids.
+ * Counts are interpreted per-kind: 1-per-unit for items, 1-per-millibucket for fluids.
+ */
+enum class ResourceKind { ITEM, FLUID }
+
+/**
+ * Abstracts storage access (Fabric Transfer API vs NeoForge IItemHandler / IFluidHandler).
+ * Both item and fluid capabilities are probed via the same service; callers choose by the
+ * resource kind of the query (filter prefix / handle kind).
  */
 interface StorageService {
     /** Get an item storage handle for a block at [pos] accessed from [face]. Returns null if not available. */
     fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle?
+
+    /** Get a fluid storage handle for a block at [pos] accessed from [face]. Returns null if not available or unsupported on this platform. */
+    fun getFluidStorage(level: ServerLevel, pos: BlockPos, face: Direction): FluidStorageHandle? = null
 
     /** Move items between storages. Returns number moved. */
     fun moveItems(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
@@ -103,6 +137,32 @@ interface StorageService {
 
     /** Get a slotted view of the storage, or null if not slotted. */
     fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle?
+
+    // --- Fluid side (default no-op to keep non-implementing loaders compiling) ---
+
+    /** Count fluid (in mB) matching [filter] in [storage]. */
+    fun countFluid(storage: FluidStorageHandle, filter: (String) -> Boolean): Long = 0L
+
+    /** Find the first fluid in [storage] matching [filter], with metadata. */
+    fun findFirstFluidInfo(storage: FluidStorageHandle, filter: (String) -> Boolean): FluidInfo? = null
+
+    /** Find all unique fluid types in [storage] matching [filter]. */
+    fun findAllFluidInfo(storage: FluidStorageHandle, filter: (String) -> Boolean): List<FluidInfo> = emptyList()
+
+    /** Move fluid between storages. Returns amount moved (mB). */
+    fun moveFluid(source: FluidStorageHandle, dest: FluidStorageHandle, filter: (String) -> Boolean, maxAmount: Long): Long = 0L
+
+    /** Atomically move exactly [amount] mB of fluid matching [filter] from [source] to [dest]. */
+    fun tryMoveAllFluid(source: FluidStorageHandle, dest: FluidStorageHandle, filter: (String) -> Boolean, amount: Long): Boolean = false
+
+    /** Insert up to [amount] mB of the given fluid id into [dest]. Returns amount actually inserted. */
+    fun insertFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Long = 0L
+
+    /** Atomically insert exactly [amount] mB of [fluidId] into [dest], or nothing. */
+    fun tryInsertAllFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Boolean = false
+
+    /** Extract up to [maxAmount] mB matching [filter] from [storage]. Returns amount actually removed. */
+    fun extractFluid(storage: FluidStorageHandle, filter: (String) -> Boolean, maxAmount: Long): Long = 0L
 }
 
 /** Metadata for an item found in storage. */
@@ -117,8 +177,18 @@ data class ItemInfo(
     val stackable: Boolean get() = maxStackSize > 1
 }
 
+/** Metadata for a fluid found in storage. Counts are in millibuckets. */
+data class FluidInfo(
+    val fluidId: String,
+    val name: String,
+    val amount: Long
+)
+
 /** Opaque handle to an item storage — platform-specific implementation. */
 interface ItemStorageHandle
+
+/** Opaque handle to a fluid storage — platform-specific implementation. */
+interface FluidStorageHandle
 
 /** Opaque handle to a slotted item storage. */
 interface SlottedItemStorageHandle : ItemStorageHandle {

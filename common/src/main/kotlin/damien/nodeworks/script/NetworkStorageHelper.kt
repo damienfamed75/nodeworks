@@ -3,9 +3,12 @@ package damien.nodeworks.script
 import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.NetworkSnapshot
+import damien.nodeworks.platform.FluidInfo
+import damien.nodeworks.platform.FluidStorageHandle
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
 import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.platform.ResourceKind
 import net.minecraft.server.level.ServerLevel
 
 /**
@@ -20,18 +23,106 @@ object NetworkStorageHelper {
             .sortedByDescending { (it.capability as StorageSideCapability).priority }
     }
 
+    /**
+     * Storage cards are fluid-first: if the adjacent block exposes a fluid capability,
+     * item I/O is disabled on that card. This keeps the Inventory Terminal from mixing
+     * item and fluid totals on hybrid blocks that expose both caps.
+     */
     fun getStorage(level: ServerLevel, card: CardSnapshot): ItemStorageHandle? {
         val cap = card.capability as? StorageSideCapability ?: return null
+        if (PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, cap.defaultFace) != null) return null
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, cap.defaultFace)
+    }
+
+    fun getFluidStorage(level: ServerLevel, card: CardSnapshot): FluidStorageHandle? {
+        val cap = card.capability as? StorageSideCapability ?: return null
+        return PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, cap.defaultFace)
     }
 
     fun countItems(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Long {
         var total = 0L
         for (card in getStorageCards(snapshot)) {
             val storage = getStorage(level, card) ?: continue
-            total += PlatformServices.storage.countItems(storage) { CardHandle.matchesFilter(it, filter) }
+            total += PlatformServices.storage.countItems(storage) { CardHandle.matchesFilter(it, ResourceKind.ITEM, filter) }
         }
         return total
+    }
+
+    fun countFluid(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Long {
+        var total = 0L
+        for (card in getStorageCards(snapshot)) {
+            val storage = getFluidStorage(level, card) ?: continue
+            total += PlatformServices.storage.countFluid(storage) { CardHandle.matchesFilter(it, ResourceKind.FLUID, filter) }
+        }
+        return total
+    }
+
+    /**
+     * Count items + fluids matching [filter] across the network.
+     * A filter like `item:*` skips fluids; `fluid:*` skips items; bare filters sum both.
+     */
+    fun countResource(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Long {
+        val (kindGate, _) = CardHandle.parseFilterKind(filter)
+        var total = 0L
+        if (kindGate == null || kindGate == ResourceKind.ITEM) total += countItems(level, snapshot, filter)
+        if (kindGate == null || kindGate == ResourceKind.FLUID) total += countFluid(level, snapshot, filter)
+        return total
+    }
+
+    fun findFirstFluidInfoAcrossNetwork(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Pair<FluidInfo, CardSnapshot>? {
+        for (card in getStorageCards(snapshot)) {
+            val storage = getFluidStorage(level, card) ?: continue
+            val info = PlatformServices.storage.findFirstFluidInfo(storage) { CardHandle.matchesFilter(it, ResourceKind.FLUID, filter) }
+            if (info != null) return Pair(info, card)
+        }
+        return null
+    }
+
+    fun insertFluidAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        fluidId: String,
+        amount: Long,
+        cache: NetworkInventoryCache? = null
+    ): Long {
+        if (amount <= 0L) return 0L
+        var remaining = amount
+        for (card in getStorageCards(snapshot)) {
+            if (remaining <= 0L) break
+            val storage = getFluidStorage(level, card) ?: continue
+            val inserted = PlatformServices.storage.insertFluid(storage, fluidId, remaining)
+            remaining -= inserted
+        }
+        val placed = amount - remaining
+        if (placed > 0) cache?.onFluidInserted(fluidId, placed)
+        return placed
+    }
+
+    /** Aggregate fluid totals across the whole network in a single pass — used in place
+     *  of per-fluid `countFluid` calls when the caller already needs the full list.
+     *  Returns `(FluidInfo, sourceCard)` pairs with amounts summed across all storage cards. */
+    fun findAllFluidInfoAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String
+    ): List<Pair<FluidInfo, CardSnapshot>> {
+        val aggregated = LinkedHashMap<String, Pair<FluidInfo, CardSnapshot>>()
+        for (card in getStorageCards(snapshot)) {
+            val storage = getFluidStorage(level, card) ?: continue
+            val fluids = PlatformServices.storage.findAllFluidInfo(storage) {
+                CardHandle.matchesFilter(it, ResourceKind.FLUID, filter)
+            }
+            for (info in fluids) {
+                val existing = aggregated[info.fluidId]
+                if (existing != null) {
+                    val merged = existing.first.copy(amount = existing.first.amount + info.amount)
+                    aggregated[info.fluidId] = merged to existing.second
+                } else {
+                    aggregated[info.fluidId] = info to card
+                }
+            }
+        }
+        return aggregated.values.toList()
     }
 
     /** Find the first item ID across all Storage Cards matching the filter. */

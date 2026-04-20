@@ -1,7 +1,10 @@
 package damien.nodeworks.script
 
+import damien.nodeworks.platform.FluidInfo
+import damien.nodeworks.platform.FluidStorageHandle
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
+import damien.nodeworks.platform.ResourceKind
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
 import net.minecraft.resources.Identifier
@@ -51,9 +54,11 @@ class ItemsHandle(
     val filter: String,
     val sourceStorage: () -> ItemStorageHandle?,
     val level: ServerLevel,
-    val bufferSource: BufferSource? = null
+    val bufferSource: BufferSource? = null,
+    val kind: ResourceKind = ResourceKind.ITEM,
+    val fluidSourceStorage: () -> FluidStorageHandle? = { null }
 ) {
-    val stackable: Boolean get() = maxStackSize > 1
+    val stackable: Boolean get() = kind == ResourceKind.ITEM && maxStackSize > 1
 
     companion object {
         /** Create an ItemsHandle from an ItemInfo and source storage reference. */
@@ -67,6 +72,22 @@ class ItemsHandle(
                 filter = filter,
                 sourceStorage = sourceStorage,
                 level = level
+            )
+        }
+
+        /** Create a fluid-backed ItemsHandle from a FluidInfo. Counts are mB. */
+        fun fromFluidInfo(info: FluidInfo, filter: String, fluidSourceStorage: () -> FluidStorageHandle?, level: ServerLevel): ItemsHandle {
+            return ItemsHandle(
+                itemId = info.fluidId,
+                itemName = info.name,
+                count = info.amount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                maxStackSize = 1,
+                hasData = false,
+                filter = filter,
+                sourceStorage = { null },
+                level = level,
+                kind = ResourceKind.FLUID,
+                fluidSourceStorage = fluidSourceStorage
             )
         }
 
@@ -95,6 +116,7 @@ class ItemsHandle(
             table.set("stackable", LuaValue.valueOf(handle.stackable))
             table.set("maxStackSize", LuaValue.valueOf(handle.maxStackSize))
             table.set("hasData", LuaValue.valueOf(handle.hasData))
+            table.set("kind", LuaValue.valueOf(if (handle.kind == ResourceKind.FLUID) "fluid" else "item"))
 
             // :hasTag(tag) → boolean
             table.set("hasTag", object : TwoArgFunction() {
@@ -102,10 +124,19 @@ class ItemsHandle(
                     val tag = tagArg.checkjstring()
                     val tagId = if (tag.startsWith("#")) tag.substring(1) else tag
                     val identifier = Identifier.tryParse(tagId) ?: return LuaValue.FALSE
-                    val tagKey = TagKey.create(Registries.ITEM, identifier)
-                    val itemIdentifier = Identifier.tryParse(handle.itemId) ?: return LuaValue.FALSE
-                    val item = BuiltInRegistries.ITEM.getValue(itemIdentifier) ?: return LuaValue.FALSE
-                    return LuaValue.valueOf(item.builtInRegistryHolder().`is`(tagKey))
+                    val resIdent = Identifier.tryParse(handle.itemId) ?: return LuaValue.FALSE
+                    return when (handle.kind) {
+                        ResourceKind.ITEM -> {
+                            val tagKey = TagKey.create(Registries.ITEM, identifier)
+                            val item = BuiltInRegistries.ITEM.getValue(resIdent) ?: return LuaValue.FALSE
+                            LuaValue.valueOf(item.builtInRegistryHolder().`is`(tagKey))
+                        }
+                        ResourceKind.FLUID -> {
+                            val tagKey = TagKey.create(Registries.FLUID, identifier)
+                            val fluid = BuiltInRegistries.FLUID.getValue(resIdent) ?: return LuaValue.FALSE
+                            LuaValue.valueOf(fluid.builtInRegistryHolder().`is`(tagKey))
+                        }
+                    }
                 }
             })
 
@@ -113,7 +144,7 @@ class ItemsHandle(
             table.set("matches", object : TwoArgFunction() {
                 override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                     val matchFilter = filterArg.checkjstring()
-                    return LuaValue.valueOf(CardHandle.matchesFilter(handle.itemId, matchFilter))
+                    return LuaValue.valueOf(CardHandle.matchesFilter(handle.itemId, handle.kind, matchFilter))
                 }
             })
 

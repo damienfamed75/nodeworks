@@ -3,7 +3,10 @@ plugins {
 }
 
 base {
-    archivesName = providers.gradleProperty("archives_base_name").map { "$it-neoforge" }
+    // Ships as `nodeworks-<version>.jar` — no `-neoforge` suffix since this is the only
+    // loader module producing a distributable jar. If Fabric ever re-enters the picture,
+    // add a suffix then to disambiguate.
+    archivesName = providers.gradleProperty("archives_base_name")
 }
 
 // Make common's resources available to NeoForge's resource loading during dev runs

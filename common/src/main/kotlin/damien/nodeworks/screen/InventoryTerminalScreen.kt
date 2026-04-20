@@ -114,6 +114,7 @@ class InventoryTerminalScreen(
     val repo = InventoryRepo().apply {
         sortMode = InventoryRepo.SortMode.entries.firstOrNull { it.name == ClientConfig.invTerminalSortMode } ?: InventoryRepo.SortMode.ALPHA
         filterMode = InventoryRepo.FilterMode.entries.firstOrNull { it.name == ClientConfig.invTerminalFilterMode } ?: InventoryRepo.FilterMode.BOTH
+        kindMode = InventoryRepo.KindMode.entries.firstOrNull { it.name == ClientConfig.invTerminalKindMode } ?: InventoryRepo.KindMode.BOTH
     }
     private var scrollOffset = 0
     private var maxScroll = 0
@@ -307,6 +308,22 @@ class InventoryTerminalScreen(
         ) { _ ->
             repo.filterMode = InventoryRepo.FilterMode.entries[(repo.filterMode.ordinal + 1) % InventoryRepo.FilterMode.entries.size]
             ClientConfig.invTerminalFilterMode = repo.filterMode.name
+            scrollOffset = 0
+            rebuildWidgets()
+        })
+        sideBtnY += SIDE_BTN_W + SIDE_BTN_GAP
+
+        // Kind mode toggle (items / fluids / both)
+        val kindIcon = when (repo.kindMode) {
+            InventoryRepo.KindMode.BOTH -> Icons.FLUID_AND_ITEMS
+            InventoryRepo.KindMode.ITEMS_ONLY -> Icons.ITEMS_ONLY
+            InventoryRepo.KindMode.FLUIDS_ONLY -> Icons.FLUIDS_ONLY
+        }
+        addRenderableWidget(SlicedButton.create(
+            sideBtnX, sideBtnY, SIDE_BTN_W, SIDE_BTN_W, "", kindIcon
+        ) { _ ->
+            repo.kindMode = InventoryRepo.KindMode.entries[(repo.kindMode.ordinal + 1) % InventoryRepo.KindMode.entries.size]
+            ClientConfig.invTerminalKindMode = repo.kindMode.name
             scrollOffset = 0
             rebuildWidgets()
         })
@@ -555,6 +572,33 @@ class InventoryTerminalScreen(
         // Render network items (skip first row — reserved for pinned)
         networkGrid.renderItems(graphics, scrollOffset, repo.viewSize, 1)
 
+        // Second pass — draw fluid still-textures where the first pass skipped fluid cells
+        // (getItemStackForNetworkSlot returns EMPTY for fluids so they pass through the
+        // item renderer without a sprite). Counts render alongside via the same scaled-
+        // text block used for items.
+        for ((i, slot) in networkGrid.slots.withIndex()) {
+            val row = i / layout.cols
+            if (row < 1) continue
+            val viewIndex = scrollOffset * layout.cols + (i - layout.cols)
+            val entry = repo.getViewEntry(viewIndex) ?: continue
+            if (!entry.isFluid) continue
+            val ix = slot.x + 1
+            val iy = slot.y + 1
+            PlatformServices.fluidRenderer.render(graphics, entry.info.itemId, ix, iy, 16)
+            val countStr = getCountForNetworkSlot(viewIndex)
+            if (countStr != null) {
+                val pose = graphics.pose()
+                pose.pushMatrix()
+                val scale = 0.5f
+                pose.scale(scale, scale)
+                val textWidth = font.width(countStr)
+                val cx = ((ix + 16).toFloat() / scale - textWidth).toInt()
+                val cy = ((iy + 16).toFloat() / scale - font.lineHeight).toInt()
+                graphics.drawString(font, countStr, cx, cy, 0xFFFFFFFF.toInt(), true)
+                pose.popMatrix()
+            }
+        }
+
         // Craftable overlays (skip pinned row)
         val altHeld = hasAltDownCompat()
         for ((i, slot) in networkGrid.slots.withIndex()) {
@@ -705,14 +749,21 @@ class InventoryTerminalScreen(
             val viewIndex = scrollOffset * layout.cols + (hoveredNetwork!!.index - layout.cols)
             val entry = repo.getViewEntry(viewIndex)
             if (entry != null) {
-                val stack = getItemStack(entry.info.itemId)
-                if (!stack.isEmpty) {
-                    val lines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
-                    lines.add(Component.literal("Network: ${formatCount(entry.info.count)}").withStyle { it.withColor(0xAAAAAA) })
-                    if (entry.info.isCraftable) {
-                        lines.add(Component.literal("Craftable").withStyle { it.withColor(0x55FF55) })
-                    }
+                if (entry.isFluid) {
+                    val lines = mutableListOf<Component>(Component.literal(entry.info.name))
+                    lines.add(Component.literal(entry.info.itemId).withStyle { it.withColor(0x666666) })
+                    lines.add(Component.literal("${formatCount(entry.info.count)} mB").withStyle { it.withColor(0xAAAAAA) })
                     graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
+                } else {
+                    val stack = getItemStack(entry.info.itemId)
+                    if (!stack.isEmpty) {
+                        val lines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
+                        lines.add(Component.literal("Network: ${formatCount(entry.info.count)}").withStyle { it.withColor(0xAAAAAA) })
+                        if (entry.info.isCraftable) {
+                            lines.add(Component.literal("Craftable").withStyle { it.withColor(0x55FF55) })
+                        }
+                        graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
+                    }
                 }
             }
         } else if (!hoveredIsNetworkItem) {
@@ -1056,6 +1107,21 @@ class InventoryTerminalScreen(
                 craftError = null  // fresh dialog, no stale error
                 return true
             }
+            // Fluid entry — fill a bucket. Only legal when carried is empty (network supplies
+            // the empty bucket) or carried is an empty bucket (that bucket gets filled).
+            // Filled-bucket items in storage are normal items and follow the item path below.
+            if (entry != null && entry.isFluid && entry.info.count > 0) {
+                val carried = menu.carried
+                val canAct = carried.isEmpty ||
+                    (carried.item == net.minecraft.world.item.Items.BUCKET && carried.count > 0)
+                if (canAct) {
+                    val action = if (hasShiftDownCompat()) 3 else 0
+                    PlatformServices.clientNetworking.sendToServer(
+                        InvTerminalClickPayload(menu.containerId, entry.info.itemId, action, kind = 1)
+                    )
+                }
+                return true
+            }
             if (menu.carried.isEmpty && entry != null && entry.info.count > 0) {
                 val action = when {
                     hasShiftDownCompat() -> 3
@@ -1336,6 +1402,10 @@ class InventoryTerminalScreen(
 
     private fun getItemStackForNetworkSlot(viewIndex: Int): ItemStack {
         val entry = repo.getViewEntry(viewIndex) ?: return ItemStack.EMPTY
+        // Fluids don't use the item-stack render path — they're drawn in a second pass
+        // (renderFluidOverlay) using the fluid's still texture. Returning EMPTY here
+        // keeps the grid's item renderer from drawing anything in the fluid cell.
+        if (entry.isFluid) return ItemStack.EMPTY
         return getItemStack(entry.info.itemId)
     }
 
@@ -1343,7 +1413,9 @@ class InventoryTerminalScreen(
 
     private fun getCountForNetworkSlot(viewIndex: Int): String? {
         val entry = repo.getViewEntry(viewIndex) ?: return null
-        if (entry.info.count <= 1) return null
+        // Always show a count for fluids (in mB) — the bucket icon alone doesn't convey amount.
+        // Items keep the existing "hide on count ≤ 1" convention.
+        if (!entry.isFluid && entry.info.count <= 1) return null
         return countStringCache.getOrPut(entry.info.count) { formatCount(entry.info.count) }
     }
 

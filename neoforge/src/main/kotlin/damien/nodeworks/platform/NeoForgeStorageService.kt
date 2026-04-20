@@ -6,6 +6,8 @@ import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.ItemStack
 import net.neoforged.neoforge.capabilities.Capabilities
+import net.neoforged.neoforge.fluids.FluidStack
+import net.neoforged.neoforge.fluids.capability.IFluidHandler
 import net.neoforged.neoforge.items.IItemHandler
 import net.neoforged.neoforge.items.ItemHandlerHelper
 
@@ -290,9 +292,193 @@ class NeoForgeStorageService : StorageService {
         val resourceHandler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
         return NeoForgeSlottedStorageHandle(IItemHandler.of(resourceHandler))
     }
+
+    // --- Fluid side ---
+
+    override fun getFluidStorage(level: ServerLevel, pos: BlockPos, face: Direction): FluidStorageHandle? {
+        val resourceHandler = level.getCapability(Capabilities.Fluid.BLOCK, pos, face) ?: return null
+        return NeoForgeFluidStorageHandle(IFluidHandler.of(resourceHandler))
+    }
+
+    private fun fluidIdOf(stack: FluidStack): String? =
+        BuiltInRegistries.FLUID.getKey(stack.fluid)?.toString()
+
+    override fun countFluid(storage: FluidStorageHandle, filter: (String) -> Boolean): Long {
+        val handler = (storage as NeoForgeFluidStorageHandle).handler
+        var total = 0L
+        for (tank in 0 until handler.tanks) {
+            val s = handler.getFluidInTank(tank)
+            if (s.isEmpty) continue
+            val id = fluidIdOf(s) ?: continue
+            if (filter(id)) total += s.amount.toLong()
+        }
+        return total
+    }
+
+    override fun findFirstFluidInfo(storage: FluidStorageHandle, filter: (String) -> Boolean): FluidInfo? {
+        val handler = (storage as NeoForgeFluidStorageHandle).handler
+        // Aggregate across tanks — first matching id wins, amount summed.
+        var firstId: String? = null
+        var firstName: String? = null
+        var total = 0L
+        for (tank in 0 until handler.tanks) {
+            val s = handler.getFluidInTank(tank)
+            if (s.isEmpty) continue
+            val id = fluidIdOf(s) ?: continue
+            if (!filter(id)) continue
+            if (firstId == null) {
+                firstId = id
+                firstName = s.hoverName.string
+            }
+            if (id == firstId) total += s.amount.toLong()
+        }
+        return firstId?.let { FluidInfo(it, firstName ?: it, total) }
+    }
+
+    override fun findAllFluidInfo(storage: FluidStorageHandle, filter: (String) -> Boolean): List<FluidInfo> {
+        val handler = (storage as NeoForgeFluidStorageHandle).handler
+        val aggregated = LinkedHashMap<String, FluidInfo>()
+        for (tank in 0 until handler.tanks) {
+            val s = handler.getFluidInTank(tank)
+            if (s.isEmpty) continue
+            val id = fluidIdOf(s) ?: continue
+            if (!filter(id)) continue
+            val existing = aggregated[id]
+            if (existing != null) {
+                aggregated[id] = existing.copy(amount = existing.amount + s.amount.toLong())
+            } else {
+                aggregated[id] = FluidInfo(id, s.hoverName.string, s.amount.toLong())
+            }
+        }
+        return aggregated.values.toList()
+    }
+
+    override fun moveFluid(source: FluidStorageHandle, dest: FluidStorageHandle, filter: (String) -> Boolean, maxAmount: Long): Long {
+        if (maxAmount <= 0L) return 0L
+        val src = (source as NeoForgeFluidStorageHandle).handler
+        val dst = (dest as NeoForgeFluidStorageHandle).handler
+        var moved = 0L
+        var remaining = maxAmount
+        for (tank in 0 until src.tanks) {
+            if (remaining <= 0L) break
+            val s = src.getFluidInTank(tank)
+            if (s.isEmpty) continue
+            val id = fluidIdOf(s) ?: continue
+            if (!filter(id)) continue
+            val take = minOf(remaining, s.amount.toLong()).toInt()
+            val probe = s.copyWithAmount(take)
+            val fillSim = dst.fill(probe, IFluidHandler.FluidAction.SIMULATE)
+            if (fillSim <= 0) continue
+            val drained = src.drain(s.copyWithAmount(fillSim), IFluidHandler.FluidAction.EXECUTE)
+            if (drained.isEmpty) continue
+            val filled = dst.fill(drained, IFluidHandler.FluidAction.EXECUTE)
+            if (filled < drained.amount) {
+                // Sim/real divergence — push the leftover back into source.
+                val leftover = drained.copyWithAmount(drained.amount - filled)
+                src.fill(leftover, IFluidHandler.FluidAction.EXECUTE)
+            }
+            moved += filled.toLong()
+            remaining -= filled.toLong()
+        }
+        return moved
+    }
+
+    override fun tryMoveAllFluid(source: FluidStorageHandle, dest: FluidStorageHandle, filter: (String) -> Boolean, amount: Long): Boolean {
+        if (amount <= 0L) return true
+        if (amount > Int.MAX_VALUE.toLong()) return false
+        val src = (source as NeoForgeFluidStorageHandle).handler
+        val dst = (dest as NeoForgeFluidStorageHandle).handler
+
+        // Find the first matching fluid to move (fluids don't inter-mix across types in one call).
+        var chosenId: String? = null
+        var available = 0L
+        for (tank in 0 until src.tanks) {
+            val s = src.getFluidInTank(tank)
+            if (s.isEmpty) continue
+            val id = fluidIdOf(s) ?: continue
+            if (!filter(id)) continue
+            if (chosenId == null) chosenId = id
+            if (id == chosenId) available += s.amount.toLong()
+        }
+        if (chosenId == null || available < amount) return false
+
+        // Drain simulate, fill simulate, then execute-execute.
+        val drainProbe = FluidStack(BuiltInRegistries.FLUID.getValue(net.minecraft.resources.Identifier.parse(chosenId)), amount.toInt())
+        val drainedSim = src.drain(drainProbe, IFluidHandler.FluidAction.SIMULATE)
+        if (drainedSim.amount < amount.toInt()) return false
+        val fillSim = dst.fill(drainedSim.copy(), IFluidHandler.FluidAction.SIMULATE)
+        if (fillSim < amount.toInt()) return false
+
+        val realDrain = src.drain(drainProbe.copy(), IFluidHandler.FluidAction.EXECUTE)
+        if (realDrain.amount < amount.toInt()) {
+            // Put back anything we accidentally drained.
+            if (!realDrain.isEmpty) src.fill(realDrain, IFluidHandler.FluidAction.EXECUTE)
+            return false
+        }
+        val realFill = dst.fill(realDrain.copy(), IFluidHandler.FluidAction.EXECUTE)
+        if (realFill < amount.toInt()) {
+            // Roll back: extract what went in, push drained back into source.
+            if (realFill > 0) {
+                val back = realDrain.copyWithAmount(realFill)
+                dst.drain(back, IFluidHandler.FluidAction.EXECUTE)
+            }
+            src.fill(realDrain, IFluidHandler.FluidAction.EXECUTE)
+            return false
+        }
+        return true
+    }
+
+    override fun insertFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Long {
+        if (amount <= 0L) return 0L
+        val id = net.minecraft.resources.Identifier.tryParse(fluidId) ?: return 0L
+        val fluid = BuiltInRegistries.FLUID.getValue(id) ?: return 0L
+        val handler = (dest as NeoForgeFluidStorageHandle).handler
+        val toFill = minOf(amount, Int.MAX_VALUE.toLong()).toInt()
+        val stack = FluidStack(fluid, toFill)
+        return handler.fill(stack, IFluidHandler.FluidAction.EXECUTE).toLong()
+    }
+
+    override fun tryInsertAllFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Boolean {
+        if (amount <= 0L) return true
+        if (amount > Int.MAX_VALUE.toLong()) return false
+        val id = net.minecraft.resources.Identifier.tryParse(fluidId) ?: return false
+        val fluid = BuiltInRegistries.FLUID.getValue(id) ?: return false
+        val handler = (dest as NeoForgeFluidStorageHandle).handler
+        val stack = FluidStack(fluid, amount.toInt())
+        val sim = handler.fill(stack.copy(), IFluidHandler.FluidAction.SIMULATE)
+        if (sim < amount.toInt()) return false
+        val real = handler.fill(stack.copy(), IFluidHandler.FluidAction.EXECUTE)
+        if (real < amount.toInt()) {
+            // Unexpected divergence — drain whatever landed.
+            if (real > 0) handler.drain(FluidStack(fluid, real), IFluidHandler.FluidAction.EXECUTE)
+            return false
+        }
+        return true
+    }
+
+    override fun extractFluid(storage: FluidStorageHandle, filter: (String) -> Boolean, maxAmount: Long): Long {
+        if (maxAmount <= 0L) return 0L
+        val handler = (storage as NeoForgeFluidStorageHandle).handler
+        var removed = 0L
+        var remaining = maxAmount
+        for (tank in 0 until handler.tanks) {
+            if (remaining <= 0L) break
+            val s = handler.getFluidInTank(tank)
+            if (s.isEmpty) continue
+            val id = fluidIdOf(s) ?: continue
+            if (!filter(id)) continue
+            val take = minOf(remaining, s.amount.toLong()).toInt()
+            val drained = handler.drain(s.copyWithAmount(take), IFluidHandler.FluidAction.EXECUTE)
+            removed += drained.amount.toLong()
+            remaining -= drained.amount.toLong()
+        }
+        return removed
+    }
 }
 
 class NeoForgeItemStorageHandle(val handler: IItemHandler) : ItemStorageHandle
+
+class NeoForgeFluidStorageHandle(val handler: IFluidHandler) : FluidStorageHandle
 
 class NeoForgeSlottedStorageHandle(
     val handler: IItemHandler
