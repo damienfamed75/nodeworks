@@ -32,8 +32,11 @@ object PlatformServices {
 
 /**
  * Draws a fluid's still texture at a given GUI position. Loader-specific because
- * 26.1 exposes the fluid still texture via NeoForge's `IClientFluidTypeExtensions`,
- * which isn't available in the common compile classpath.
+ * 26.1 moved fluid client assets onto vanilla's `ModelManager.fluidStateModelSet`
+ * (→ `FluidModel.stillMaterial().sprite()`), which the common module can reach via
+ * Minecraft APIs but historically lived behind NeoForge's `IClientFluidTypeExtensions`;
+ * keeping the entry point behind a platform service leaves room for loader-specific
+ * fallbacks and Fabric's eventual Transfer-API equivalent.
  */
 interface FluidSpriteRenderer {
     fun render(graphics: net.minecraft.client.gui.GuiGraphicsExtractor, fluidId: String, x: Int, y: Int, size: Int)

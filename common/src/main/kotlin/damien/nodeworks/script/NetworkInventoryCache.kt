@@ -351,6 +351,40 @@ class NetworkInventoryCache(
         }
     }
 
+    /** Push an immediate fluid-insert delta so `hasChanges()` flips this tick.
+     *  Without this, the menu's broadcastChanges gates on hasChanges() and would
+     *  skip syncing until the next poll (up to MAX_TICK_INTERVAL ticks later). */
+    fun onFluidInserted(fluidId: String, amount: Long) {
+        if (amount <= 0) return
+        val existing = fluidEntries[fluidId]
+        if (existing != null) {
+            fluidEntries[fluidId] = existing.copy(info = existing.info.copy(amount = existing.info.amount + amount))
+            changedFluidSerials.add(existing.serial)
+        } else {
+            // New fluid appeared via delta — we don't have the FluidType's localized name
+            // reachable from the server side cheaply, so use the fluid id as a placeholder.
+            // The next full poll (within MAX_TICK_INTERVAL) overwrites this with the proper
+            // hover name sampled from a live FluidStack.
+            val serial = nextSerial++
+            fluidEntries[fluidId] = FluidSerialEntry(serial, FluidInfo(fluidId, fluidId, amount))
+            changedFluidSerials.add(serial)
+        }
+    }
+
+    fun onFluidExtracted(fluidId: String, amount: Long) {
+        if (amount <= 0) return
+        val existing = fluidEntries[fluidId] ?: return
+        val newAmount = existing.info.amount - amount
+        if (newAmount <= 0) {
+            fluidEntries.remove(fluidId)
+            removedSerials.add(existing.serial)
+            changedFluidSerials.remove(existing.serial)
+        } else {
+            fluidEntries[fluidId] = existing.copy(info = existing.info.copy(amount = newAmount))
+            changedFluidSerials.add(existing.serial)
+        }
+    }
+
     fun onExtracted(itemId: String, hasData: Boolean, amount: Long) {
         if (amount <= 0) return
         val key = cacheKey(itemId, hasData)

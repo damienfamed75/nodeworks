@@ -317,7 +317,6 @@ class NeoForgeStorageService : StorageService {
 
     override fun findFirstFluidInfo(storage: FluidStorageHandle, filter: (String) -> Boolean): FluidInfo? {
         val handler = (storage as NeoForgeFluidStorageHandle).handler
-        val seen = mutableSetOf<String>()
         // Aggregate across tanks — first matching id wins, amount summed.
         var firstId: String? = null
         var firstName: String? = null
@@ -332,7 +331,6 @@ class NeoForgeStorageService : StorageService {
                 firstName = s.hoverName.string
             }
             if (id == firstId) total += s.amount.toLong()
-            seen.add(id)
         }
         return firstId?.let { FluidInfo(it, firstName ?: it, total) }
     }

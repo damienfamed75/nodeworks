@@ -78,7 +78,13 @@ object NetworkStorageHelper {
         return null
     }
 
-    fun insertFluidAcrossNetwork(level: ServerLevel, snapshot: NetworkSnapshot, fluidId: String, amount: Long): Long {
+    fun insertFluidAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        fluidId: String,
+        amount: Long,
+        cache: NetworkInventoryCache? = null
+    ): Long {
         if (amount <= 0L) return 0L
         var remaining = amount
         for (card in getStorageCards(snapshot)) {
@@ -87,7 +93,36 @@ object NetworkStorageHelper {
             val inserted = PlatformServices.storage.insertFluid(storage, fluidId, remaining)
             remaining -= inserted
         }
-        return amount - remaining
+        val placed = amount - remaining
+        if (placed > 0) cache?.onFluidInserted(fluidId, placed)
+        return placed
+    }
+
+    /** Aggregate fluid totals across the whole network in a single pass — used in place
+     *  of per-fluid `countFluid` calls when the caller already needs the full list.
+     *  Returns `(FluidInfo, sourceCard)` pairs with amounts summed across all storage cards. */
+    fun findAllFluidInfoAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String
+    ): List<Pair<FluidInfo, CardSnapshot>> {
+        val aggregated = LinkedHashMap<String, Pair<FluidInfo, CardSnapshot>>()
+        for (card in getStorageCards(snapshot)) {
+            val storage = getFluidStorage(level, card) ?: continue
+            val fluids = PlatformServices.storage.findAllFluidInfo(storage) {
+                CardHandle.matchesFilter(it, ResourceKind.FLUID, filter)
+            }
+            for (info in fluids) {
+                val existing = aggregated[info.fluidId]
+                if (existing != null) {
+                    val merged = existing.first.copy(amount = existing.first.amount + info.amount)
+                    aggregated[info.fluidId] = merged to existing.second
+                } else {
+                    aggregated[info.fluidId] = info to card
+                }
+            }
+        }
+        return aggregated.values.toList()
     }
 
     /** Find the first item ID across all Storage Cards matching the filter. */

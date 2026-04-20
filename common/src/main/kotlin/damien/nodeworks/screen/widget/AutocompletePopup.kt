@@ -892,12 +892,13 @@ class AutocompletePopup(
         }
     }
 
-    /** Lua functions whose string argument is a resource-id filter (items + fluids). */
+    /** Lua functions whose string argument is a resource-id filter (items + fluids).
+     *  `:insert` / `:tryInsert` are NOT resource-filter funcs — their first arg is an
+     *  ItemsHandle, so suggesting resource ids there would be actively misleading. */
     private fun isResourceFilterFunc(funcExpr: String): Boolean =
         funcExpr.endsWith(":find") ||
         funcExpr.endsWith(":findEach") ||
         funcExpr.endsWith(":count") ||
-        funcExpr.endsWith(":tryInsert") ||
         funcExpr == "find" || funcExpr == "findEach" || funcExpr == "count"
 
     /**
@@ -931,13 +932,19 @@ class AutocompletePopup(
                 FuzzyMatch.filter(partial, sigils)
             }
             else -> {
-                // No prefix: fuzzy-match against all item ids plus the two sigils.
+                // No prefix: fuzzy-match across sigils + item ids + fluid ids. Fluid entries
+                // are inserted as `$fluid:<id>` so accepting one commits to the fluid kind —
+                // bare `minecraft:water` would resolve to an item-side lookup first and mislead
+                // the user, so this forces explicit qualification on accept.
                 val idSuggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
+                val fluidSuggestions = fluidIds.map {
+                    Suggestion("\$fluid:$it", "\$fluid:$it", kind = Kind.STRING)
+                }
                 val sigils = listOf(
                     Suggestion("\$item:", "\$item: — match items only", kind = Kind.STRING),
                     Suggestion("\$fluid:", "\$fluid: — match fluids only", kind = Kind.STRING)
                 )
-                FuzzyMatch.filter(partial, sigils + idSuggestions).take(20)
+                FuzzyMatch.filter(partial, sigils + idSuggestions + fluidSuggestions).take(20)
             }
         }
     }

@@ -302,11 +302,14 @@ class InventoryTerminalMenu(
             val got = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
                 storage, { it == fluidId }, BUCKET_MB - drained
             )
-            drained += got
+            if (got > 0) {
+                c?.onFluidExtracted(fluidId, got)
+                drained += got
+            }
         }
         if (drained < BUCKET_MB) {
             // Roll back partial drain — push back into any fluid storage that will accept it.
-            if (drained > 0) NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, drained)
+            if (drained > 0) NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, drained, c)
             return
         }
 
@@ -330,7 +333,7 @@ class InventoryTerminalMenu(
                 if (consumed < 1L) {
                     // Bucket vanished between pre-check and commit (another player extracted it).
                     // Return the drained fluid and bail.
-                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB)
+                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB, c)
                     return
                 }
             }
@@ -345,7 +348,7 @@ class InventoryTerminalMenu(
                     setCarried(filled)
                 } else {
                     // Last-ditch: put the fluid back so the player can try again with space.
-                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB)
+                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB, c)
                     if (bucketSource == BucketSource.CURSOR) carried.grow(1)
                     else NetworkStorageHelper.insertItemStack(lvl, snap, ItemStack(net.minecraft.world.item.Items.BUCKET), c)
                     return

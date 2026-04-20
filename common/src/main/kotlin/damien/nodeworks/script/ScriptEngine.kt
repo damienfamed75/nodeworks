@@ -371,28 +371,21 @@ class ScriptEngine(
                     }
                 }
                 if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
-                    val seen = mutableSetOf<String>()
-                    for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-                        val storage = NetworkStorageHelper.getFluidStorage(level, card) ?: continue
-                        val fluids = damien.nodeworks.platform.PlatformServices.storage.findAllFluidInfo(storage) {
-                            CardHandle.matchesFilter(it, damien.nodeworks.platform.ResourceKind.FLUID, filter)
-                        }
-                        for (info in fluids) {
-                            if (!seen.add(info.fluidId)) continue
-                            val totalAmount = NetworkStorageHelper.countFluid(level, snapshot, "\$fluid:${info.fluidId}")
-                            val aggregated = damien.nodeworks.platform.FluidInfo(info.fluidId, info.name, totalAmount)
-                            val fluidSource: () -> damien.nodeworks.platform.FluidStorageHandle? = {
-                                NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { c ->
-                                    val s = NetworkStorageHelper.getFluidStorage(level, c)
-                                    if (s != null) {
-                                        val has = damien.nodeworks.platform.PlatformServices.storage.countFluid(s) { it == info.fluidId }
-                                        if (has > 0) s else null
-                                    } else null
-                                }
+                    // Single-pass aggregation — avoids O(N*M) rescans from calling countFluid
+                    // per discovered fluid id.
+                    val allFluids = NetworkStorageHelper.findAllFluidInfoAcrossNetwork(level, snapshot, filter)
+                    for ((info, _) in allFluids) {
+                        val fluidSource: () -> damien.nodeworks.platform.FluidStorageHandle? = {
+                            NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { c ->
+                                val s = NetworkStorageHelper.getFluidStorage(level, c)
+                                if (s != null) {
+                                    val has = damien.nodeworks.platform.PlatformServices.storage.countFluid(s) { it == info.fluidId }
+                                    if (has > 0) s else null
+                                } else null
                             }
-                            val handle = ItemsHandle.fromFluidInfo(aggregated, "\$fluid:${info.fluidId}", fluidSource, level)
-                            result.set(idx++, ItemsHandle.toLuaTable(handle))
                         }
+                        val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level)
+                        result.set(idx++, ItemsHandle.toLuaTable(handle))
                     }
                 }
                 return result
@@ -436,7 +429,7 @@ class ScriptEngine(
                         requested
                     )
                     if (drained <= 0L) return LuaValue.valueOf(0)
-                    val placed = NetworkStorageHelper.insertFluidAcrossNetwork(level, snapshot, itemsHandle.itemId, drained)
+                    val placed = NetworkStorageHelper.insertFluidAcrossNetwork(level, snapshot, itemsHandle.itemId, drained, inventoryCache)
                     if (placed < drained) {
                         // Overflow: push what didn't land back to the source.
                         damien.nodeworks.platform.PlatformServices.storage.insertFluid(sourceFluid, itemsHandle.itemId, drained - placed)
