@@ -35,6 +35,7 @@ object NodeworksGuide {
         val guide = Guide.builder(ID)
             .folder("nodeworksguide")
             .extension(TagCompiler.EXTENSION_POINT, NodeworksSceneTagCompiler())
+            .extension(TagCompiler.EXTENSION_POINT, LuaCodeTagCompiler())
             .build()
         log.info("Registered guide id={} folder=nodeworksguide (expected assets path: assets/nodeworks/nodeworksguide/)", ID)
     }

@@ -33,6 +33,8 @@ A **Broadcast Antenna** can be placed directly on a **Processing Storage** which
   <ImportStructure src="./assets/assemblies/receiver_antenna.snbt" />
 </GameScene>
 
+<LuaCode src="./assets/examples/moving-items.lua" />
+
 ## Pairing with a receiver
 
 lorem ipsum

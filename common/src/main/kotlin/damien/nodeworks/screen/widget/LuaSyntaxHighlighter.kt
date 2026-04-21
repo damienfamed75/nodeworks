@@ -1,40 +1,26 @@
 package damien.nodeworks.screen.widget
 
-import damien.nodeworks.compat.blit
-import damien.nodeworks.compat.drawCenteredString
 import damien.nodeworks.compat.drawString
-import damien.nodeworks.compat.drawWordWrap
-import damien.nodeworks.compat.renderComponentTooltip
-import damien.nodeworks.compat.renderFakeItem
-import damien.nodeworks.compat.renderItem
-import damien.nodeworks.compat.renderItemDecorations
-import damien.nodeworks.compat.renderTooltip
+import damien.nodeworks.script.LuaTokenizer
+import damien.nodeworks.script.LuaTokenizer.TokenType
 import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.MultiLineEditBox
 import net.minecraft.client.gui.components.MultilineTextField
 
 /**
- * Renders syntax-highlighted Lua text over a MultiLineEditBox.
- * The editor's text color is set to transparent; this class draws colored text at the same positions.
+ * Renders syntax-highlighted Lua text over a MultiLineEditBox. The editor's text colour
+ * is set to transparent; this class draws coloured text at the same positions using the
+ * shared [LuaTokenizer].
+ *
+ * The primary editor widget is now [ScriptEditor], which draws its own coloured text
+ * directly without needing this overlay. This object remains as a lighter alternative
+ * for screens that use the vanilla MultiLineEditBox and just want colouring layered on
+ * top.
  */
 object LuaSyntaxHighlighter {
 
-    private const val KEYWORD_COLOR = 0xFFC678DD.toInt()     // purple
-    private const val STRING_COLOR = 0xFF98C379.toInt()     // green
-    private const val COMMENT_COLOR = 0xFF5C6370.toInt()    // grey
-    private const val NUMBER_COLOR = 0xFFD19A66.toInt()     // orange
-    private const val FUNCTION_COLOR = 0xFF61AFEF.toInt()   // blue
-    private const val DEFAULT_COLOR = 0xFFABB2BF.toInt()    // light grey
     private const val SELECTION_COLOR = 0xFF0000FF.toInt()
-
-    private val KEYWORDS = setOf(
-        "and", "break", "do", "else", "elseif", "end", "false", "for",
-        "function", "if", "in", "local", "nil", "not", "or", "repeat",
-        "return", "then", "true", "until", "while"
-    )
-
-    private val BUILTINS = setOf("card", "scheduler", "print")
 
     private fun getInnerLeft(editor: MultiLineEditBox): Int {
         return try {
@@ -139,100 +125,6 @@ object LuaSyntaxHighlighter {
         graphics.disableScissor()
     }
 
-    private enum class TokenType {
-        KEYWORD, STRING, COMMENT, NUMBER, FUNCTION, DEFAULT,
-        BLOCK_COMMENT_START, BLOCK_COMMENT_END
-    }
-
-    private data class Token(val text: String, val color: Int, val type: TokenType = TokenType.DEFAULT)
-
-    private fun tokenize(line: String, inBlockComment: Boolean): List<Token> {
-        val tokens = mutableListOf<Token>()
-        var i = 0
-        var currentlyInBlock = inBlockComment
-
-        if (currentlyInBlock) {
-            val endIdx = line.indexOf("]]", i)
-            if (endIdx >= 0) {
-                tokens.add(Token(line.substring(i, endIdx + 2), COMMENT_COLOR, TokenType.BLOCK_COMMENT_END))
-                i = endIdx + 2
-            } else {
-                tokens.add(Token(line, COMMENT_COLOR))
-                return tokens
-            }
-        }
-
-        while (i < line.length) {
-            val ch = line[i]
-
-            if (ch == '-' && i + 1 < line.length && line[i + 1] == '-') {
-                if (i + 3 < line.length && line[i + 2] == '[' && line[i + 3] == '[') {
-                    val endIdx = line.indexOf("]]", i + 4)
-                    if (endIdx >= 0) {
-                        tokens.add(Token(line.substring(i, endIdx + 2), COMMENT_COLOR))
-                        i = endIdx + 2
-                    } else {
-                        tokens.add(Token(line.substring(i), COMMENT_COLOR, TokenType.BLOCK_COMMENT_START))
-                        return tokens
-                    }
-                } else {
-                    tokens.add(Token(line.substring(i), COMMENT_COLOR))
-                    return tokens
-                }
-                continue
-            }
-
-            if (ch == '"') {
-                val end = findStringEnd(line, i + 1, '"')
-                tokens.add(Token(line.substring(i, end), STRING_COLOR))
-                i = end
-                continue
-            }
-
-            if (ch == '\'') {
-                val end = findStringEnd(line, i + 1, '\'')
-                tokens.add(Token(line.substring(i, end), STRING_COLOR))
-                i = end
-                continue
-            }
-
-            if (ch.isDigit() || (ch == '.' && i + 1 < line.length && line[i + 1].isDigit())) {
-                val start = i
-                while (i < line.length && (line[i].isDigit() || line[i] == '.' || line[i] == 'x' || line[i] in 'a'..'f' || line[i] in 'A'..'F')) i++
-                tokens.add(Token(line.substring(start, i), NUMBER_COLOR))
-                continue
-            }
-
-            if (ch.isLetter() || ch == '_') {
-                val start = i
-                while (i < line.length && (line[i].isLetterOrDigit() || line[i] == '_')) i++
-                val word = line.substring(start, i)
-                val color = when {
-                    word in KEYWORDS -> KEYWORD_COLOR
-                    word in BUILTINS -> FUNCTION_COLOR
-                    i < line.length && line[i] == '(' -> FUNCTION_COLOR
-                    else -> DEFAULT_COLOR
-                }
-                tokens.add(Token(word, color))
-                continue
-            }
-
-            tokens.add(Token(ch.toString(), DEFAULT_COLOR))
-            i++
-        }
-
-        return tokens
-    }
-
-    private fun findStringEnd(line: String, start: Int, quote: Char): Int {
-        var i = start
-        while (i < line.length) {
-            if (line[i] == '\\') {
-                i += 2; continue
-            }
-            if (line[i] == quote) return i + 1
-            i++
-        }
-        return line.length
-    }
+    private fun tokenize(line: String, inBlockComment: Boolean) =
+        LuaTokenizer.tokenize(line, inBlockComment)
 }

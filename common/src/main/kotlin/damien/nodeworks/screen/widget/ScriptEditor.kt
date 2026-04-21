@@ -19,6 +19,11 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.compat.renderTooltip
 import damien.nodeworks.compat.scan
+import damien.nodeworks.script.LuaApiDocs
+import damien.nodeworks.script.LuaTokenizer
+import damien.nodeworks.script.LuaTokenizer.Token
+import damien.nodeworks.script.LuaTokenizer.TokenType
+import net.minecraft.ChatFormatting
 import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
@@ -39,24 +44,15 @@ class ScriptEditor(
 ) : AbstractWidget(x, y, width, height, Component.empty()) {
 
     companion object {
-        // Syntax colors (One Dark theme)
-        private const val KEYWORD_COLOR = 0xFFC678DD.toInt()
-        private const val STRING_COLOR = 0xFF98C379.toInt()
-        private const val COMMENT_COLOR = 0xFF5C6370.toInt()
-        private const val NUMBER_COLOR = 0xFFD19A66.toInt()
-        private const val FUNCTION_COLOR = 0xFF61AFEF.toInt()
-        private const val DEFAULT_COLOR = 0xFFABB2BF.toInt()
+        // Syntax colours are sourced from [damien.nodeworks.script.LuaTokenizer] so the
+        // editor, the overlay highlighter, and the guidebook's <LuaCode> tag all use the
+        // same palette. Only FOLD_COLOR and editor-chrome colours (selection, cursor,
+        // background) stay local since they're not syntax classifications.
+        private const val FOLD_COLOR = damien.nodeworks.script.LuaTokenizer.COMMENT_COLOR
         private const val SELECTION_BG = 0xFF264F78.toInt()
         private const val CURSOR_COLOR = 0xFFFFFFFF.toInt()
         private const val BG_COLOR = 0xFF0D0D0D.toInt()
         private const val CURSOR_BLINK_MS = 300L
-
-        private val KEYWORDS = setOf(
-            "and", "break", "do", "else", "elseif", "end", "false", "for",
-            "function", "if", "in", "local", "nil", "not", "or", "repeat",
-            "return", "then", "true", "until", "while"
-        )
-        private val BUILTINS = setOf("card", "scheduler", "print", "network", "clock", "require")
     }
 
     // Text state
@@ -70,6 +66,11 @@ class ScriptEditor(
 
     // Callbacks
     private var valueListener: ((String) -> Unit)? = null
+
+    /** Cache of UNFOLDED tokens per line, populated each render pass. Used by the
+     *  hover-tooltip lookup so we don't re-tokenise every frame — and don't have to redo
+     *  the multi-line block-comment state tracking the render loop already does. */
+    private val renderedLineTokens = HashMap<Int, List<Token>>()
 
     /**
      * A character range on a line that should render as a short replacement string when
@@ -87,8 +88,6 @@ class ScriptEditor(
      *  it). Default returns nothing — folding is opt-in by the caller. */
     var foldsForLine: (lineIdx: Int) -> List<Fold> = { emptyList() }
 
-    /** Color folds render in. Same dim grey used for syntax comments to read as metadata. */
-    private val FOLD_COLOR: Int = 0xFF5C6370.toInt()
 
     /** How many extra pixels of vertical space to leave ABOVE [lineIdx] for a decoration
      *  (e.g. an inline recipe-icon hint). Default 0 — no decoration. Returning >0 for a
@@ -119,8 +118,13 @@ class ScriptEditor(
             return lines.joinToString("\n")
         }
         set(text) {
-            rebuildLines(text)
-            cursor = cursor.coerceAtMost(text.length)
+            // Normalise on the way in: Minecraft's Font draws raw `\r` / `\t` as literal
+            // "CR" / "HT" glyph boxes, so anything loaded from disk (or pasted from an
+            // editor with CRLF line endings + hard tabs) would render as a field of
+            // control-char boxes. [LuaTokenizer.normalize] collapses to LF + soft tabs.
+            val normalized = LuaTokenizer.normalize(text)
+            rebuildLines(normalized)
+            cursor = cursor.coerceAtMost(normalized.length)
             selectStart = -1
             scrollY = 0
             scrollX = 0
@@ -143,8 +147,9 @@ class ScriptEditor(
 
     /** Set text and cursor without resetting scroll — for autocomplete insertion. */
     fun setValueKeepScroll(text: String, newCursor: Int) {
-        rebuildLines(text)
-        cursor = newCursor.coerceIn(0, text.length)
+        val normalized = LuaTokenizer.normalize(text)
+        rebuildLines(normalized)
+        cursor = newCursor.coerceIn(0, normalized.length)
         selectStart = -1
         ensureCursorVisible()
         onTextChanged()
@@ -423,6 +428,8 @@ class ScriptEditor(
     // --- Rendering ---
 
     override fun extractWidgetRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        renderedLineTokens.clear()
+
         // Background
         graphics.fill(x, y, x + width, y + height, BG_COLOR)
 
@@ -479,7 +486,12 @@ class ScriptEditor(
 
             // Syntax-highlighted text — fold-aware. applyFolds() splices the raw token
             // stream so any active fold renders as its short display string in FOLD_COLOR.
-            val tokens = applyFolds(lineIdx, tokenize(line, inBlockComment))
+            // We cache the UNFOLDED tokens for hover-tooltip lookup so [renderHoverTooltip]
+            // can resolve the token the mouse is actually over (folded text is a visual
+            // shortcut — the logical token for docs is still the original).
+            val rawTokens = tokenize(line, inBlockComment)
+            renderedLineTokens[lineIdx] = rawTokens
+            val tokens = applyFolds(lineIdx, rawTokens)
             var tx = textLeft - scrollX
             for (token in tokens) {
                 if (token.type == TokenType.BLOCK_COMMENT_START) inBlockComment = true
@@ -500,6 +512,56 @@ class ScriptEditor(
         }
 
         graphics.disableScissor()
+
+        // Hover docs — outside the scissor so the tooltip can extend past the editor's
+        // clip rect. Rendered last so it draws on top of everything else this frame.
+        renderHoverTooltip(graphics, mouseX, mouseY)
+    }
+
+    /**
+     * If the mouse is over a token that has an entry in [LuaApiDocs], pops a tooltip
+     * showing the signature + description. Uses the tokens cached by
+     * [extractWidgetRenderState] so we don't re-tokenise (and avoid rebuilding the
+     * multi-line block-comment state from scratch).
+     */
+    private fun renderHoverTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
+        if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return
+
+        // Find the line under the mouse. Bail if the mouse is in whitespace below the
+        // last line — no token there to look up.
+        val relY = mouseY - textTop + scrollY
+        val lineIdx = lineAtContentY(relY)
+        if (lineIdx < 0 || lineIdx >= lines.size) return
+
+        val tokens = renderedLineTokens[lineIdx] ?: return
+
+        // Map mouse-x → column on the line. colAtX is fold-aware and returns the raw
+        // column in the UNFOLDED text, which is what we need to index into [tokens].
+        val relX = (mouseX - textLeft + scrollX)
+        val col = colAtX(lineIdx, relX)
+
+        // Walk the unfolded tokens and find the one straddling [col].
+        var running = 0
+        var hoveredIdx = -1
+        for ((i, tok) in tokens.withIndex()) {
+            val next = running + tok.text.length
+            if (col in running until next) {
+                hoveredIdx = i
+                break
+            }
+            running = next
+        }
+        if (hoveredIdx < 0) return
+
+        val doc = LuaApiDocs.resolveAt(tokens, hoveredIdx) ?: return
+
+        val lines = buildList {
+            doc.signature?.let { add(Component.literal(it).withStyle(ChatFormatting.YELLOW)) }
+            for (line in doc.description.split('\n')) {
+                add(Component.literal(line).withStyle(ChatFormatting.GRAY))
+            }
+        }
+        graphics.renderComponentTooltip(font, lines, mouseX, mouseY)
     }
 
     // --- Input handling ---
@@ -687,11 +749,15 @@ class ScriptEditor(
     // --- Text manipulation ---
 
     private fun insertText(text: String) {
+        // Normalise BEFORE length math — expanding `\t` to two spaces changes length, so
+        // using `text.length` instead of `clean.length` would advance the cursor to the
+        // wrong column after a paste containing tabs.
+        val clean = LuaTokenizer.normalize(text)
         val fullText = value
-        if (fullText.length + text.length > characterLimit) return
-        val newText = StringBuilder(fullText).insert(cursor, text).toString()
+        if (fullText.length + clean.length > characterLimit) return
+        val newText = StringBuilder(fullText).insert(cursor, clean).toString()
         rebuildLines(newText)
-        cursor += text.length
+        cursor += clean.length
         onTextChanged()
         ensureCursorVisible()
     }
@@ -836,100 +902,13 @@ class ScriptEditor(
 
     override fun updateWidgetNarration(output: NarrationElementOutput) {}
 
-    // --- Syntax tokenizer (integrated from LuaSyntaxHighlighter) ---
+    // --- Syntax tokenizer ---
+    //
+    // Delegates to the shared [damien.nodeworks.script.LuaTokenizer] so the editor, the
+    // overlay highlighter, and the guidebook's <LuaCode> tag all produce identical token
+    // streams. Local aliases keep existing editor code compiling unchanged — [Token] and
+    // [TokenType] throughout this file are the shared public types.
 
-    private enum class TokenType {
-        KEYWORD, STRING, COMMENT, NUMBER, FUNCTION, DEFAULT,
-        BLOCK_COMMENT_START, BLOCK_COMMENT_END
-    }
-
-    private data class Token(val text: String, val color: Int, val type: TokenType = TokenType.DEFAULT)
-
-    private fun tokenize(line: String, inBlockComment: Boolean): List<Token> {
-        val tokens = mutableListOf<Token>()
-        var i = 0
-        var currentlyInBlock = inBlockComment
-
-        if (currentlyInBlock) {
-            val endIdx = line.indexOf("]]", i)
-            if (endIdx >= 0) {
-                tokens.add(Token(line.substring(i, endIdx + 2), COMMENT_COLOR, TokenType.BLOCK_COMMENT_END))
-                i = endIdx + 2
-            } else {
-                tokens.add(Token(line, COMMENT_COLOR))
-                return tokens
-            }
-        }
-
-        while (i < line.length) {
-            val ch = line[i]
-
-            if (ch == '-' && i + 1 < line.length && line[i + 1] == '-') {
-                if (i + 3 < line.length && line[i + 2] == '[' && line[i + 3] == '[') {
-                    val endIdx = line.indexOf("]]", i + 4)
-                    if (endIdx >= 0) {
-                        tokens.add(Token(line.substring(i, endIdx + 2), COMMENT_COLOR))
-                        i = endIdx + 2
-                    } else {
-                        tokens.add(Token(line.substring(i), COMMENT_COLOR, TokenType.BLOCK_COMMENT_START))
-                        return tokens
-                    }
-                } else {
-                    tokens.add(Token(line.substring(i), COMMENT_COLOR))
-                    return tokens
-                }
-                continue
-            }
-
-            if (ch == '"') {
-                val end = findStringEnd(line, i + 1, '"')
-                tokens.add(Token(line.substring(i, end), STRING_COLOR))
-                i = end
-                continue
-            }
-
-            if (ch == '\'') {
-                val end = findStringEnd(line, i + 1, '\'')
-                tokens.add(Token(line.substring(i, end), STRING_COLOR))
-                i = end
-                continue
-            }
-
-            if (ch.isDigit() || (ch == '.' && i + 1 < line.length && line[i + 1].isDigit())) {
-                val start = i
-                while (i < line.length && (line[i].isDigit() || line[i] == '.' || line[i] == 'x' || line[i] in 'a'..'f' || line[i] in 'A'..'F')) i++
-                tokens.add(Token(line.substring(start, i), NUMBER_COLOR))
-                continue
-            }
-
-            if (ch.isLetter() || ch == '_') {
-                val start = i
-                while (i < line.length && (line[i].isLetterOrDigit() || line[i] == '_')) i++
-                val word = line.substring(start, i)
-                val color = when {
-                    word in KEYWORDS -> KEYWORD_COLOR
-                    word in BUILTINS -> FUNCTION_COLOR
-                    i < line.length && line[i] == '(' -> FUNCTION_COLOR
-                    else -> DEFAULT_COLOR
-                }
-                tokens.add(Token(word, color))
-                continue
-            }
-
-            tokens.add(Token(ch.toString(), DEFAULT_COLOR))
-            i++
-        }
-
-        return tokens
-    }
-
-    private fun findStringEnd(line: String, start: Int, quote: Char): Int {
-        var i = start
-        while (i < line.length) {
-            if (line[i] == '\\') { i += 2; continue }
-            if (line[i] == quote) return i + 1
-            i++
-        }
-        return line.length
-    }
+    private fun tokenize(line: String, inBlockComment: Boolean): List<Token> =
+        damien.nodeworks.script.LuaTokenizer.tokenize(line, inBlockComment)
 }
