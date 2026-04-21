@@ -57,6 +57,10 @@ object NeoForgeClientSetup {
         // AE2's AppEngClient constructor call.
         damien.nodeworks.guide.NodeworksGuide.register()
 
+        // Register user-rebindable keybinds on the mod bus. Vanilla picks these up and
+        // displays them in the controls menu.
+        NodeworksKeyBindings.register(modBus)
+
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
         // We cancel the event to prevent JEI from seeing it, then manually forward to our screen.
@@ -87,6 +91,8 @@ object NeoForgeClientSetup {
             PlatformServices.clientNetworking = NeoForgeClientNetworkingService()
             PlatformServices.clientEvents = NeoForgeClientEventService()
             PlatformServices.fluidRenderer = damien.nodeworks.platform.NeoForgeFluidSpriteRenderer()
+            PlatformServices.guidebook = damien.nodeworks.guide.NodeworksGuidebookService
+            PlatformServices.openDocsKeyHeld = NodeworksKeyBindings.openDocsKeyHeld()
 
             // 26.1: ItemProperties.register() is gone. Custom property codecs are
             //  registered on the mod event bus via

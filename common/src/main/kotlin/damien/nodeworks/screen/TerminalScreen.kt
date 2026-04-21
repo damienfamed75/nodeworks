@@ -49,6 +49,16 @@ class TerminalScreen(
         var savedLogCollapsed = false
         var savedLogPanelHeight = 80
 
+        /** Max pixel width for the hover tooltip text block. Long descriptions wrap via
+         *  `font.split` at this limit so the panel stays readable. */
+        private const val TOOLTIP_MAX_WIDTH_PX = 200
+
+        // Tooltip line colours match [AutocompletePopup]'s name/hint pair so hover
+        // tooltips and completion suggestions read as one visual language — signature
+        // in the bright-name colour, description + fallback hints in the dim-hint one.
+        private const val COLOR_SIGNATURE = 0xFFCCCCCC.toInt()
+        private const val COLOR_DESCRIPTION = 0xFF888888.toInt()
+        private const val COLOR_PLAIN = 0xFFCCCCCC.toInt()
     }
 
     private lateinit var editor: ScriptEditor
@@ -551,6 +561,25 @@ class TerminalScreen(
         val editorH = imageHeight - topBarHeight - tabBarHeight - effectiveLogHeight - editorPadding - 4
 
         editor = ScriptEditor(font, editorX, editorY, editorW, editorH)
+
+        // Feed the autocomplete's existing variable-type inference into the editor's
+        // hover-doc lookup. No parallel inference — same symbol table as completion, so
+        // e.g. `local cards = card; cards:setPowered(…)` hovers resolve via `Card:...`
+        // consistently in both places.
+        editor.symbolTableProvider = {
+            autocomplete.getSymbolTable(
+                editor.value,
+                editor.value.substring(0, editor.getCursorPosition()),
+            )
+        }
+        // G-on-hover → open the guidebook at the doc's anchor. Delegates to the platform
+        // service so :common doesn't import GuideME (neoforge-only dep); see
+        // PlatformServices.guidebook.
+        editor.openGuidebookRef = { ref -> damien.nodeworks.platform.PlatformServices.guidebook.open(ref) }
+        // Key binding is registered loader-side as a `KeyMapping` (rebindable in the
+        // controls menu). The editor polls the held state each frame via this callback
+        // — see PlatformServices.openDocsKeyHeld for the loader impl.
+        editor.isOpenDocsKeyHeld = { damien.nodeworks.platform.PlatformServices.openDocsKeyHeld() }
 
         // Hidden EditBox to signal to JEI and other mods that we have an active text input.
         // JEI checks if the focused element is an EditBox before stealing key events.
@@ -1070,7 +1099,14 @@ class TerminalScreen(
         // Line number gutter
         renderLineNumbers(graphics)
 
-        // Hover type tooltip
+        // Hover tooltip — single 9-sliced panel backed by LuaApiDocs when available,
+        // falling back to the in-file methodSignatures table for symbols we haven't
+        // documented yet. Hidden while the autocomplete popup or new-tab prompt is up
+        // so popups don't stack. Active Hold-G takes precedence: we force-hide
+        // autocomplete below so the tooltip (with its progress bar) stays readable.
+        if (editor.isOpenDocsHoldActive() && autocomplete.visible) {
+            autocomplete.hide()
+        }
         if (!autocomplete.visible && !showNewTabInput) {
             renderTypeTooltip(graphics, mouseX, mouseY)
         }
@@ -1149,59 +1185,119 @@ class TerminalScreen(
             mouseY < editorY || mouseY > editorY + editor.height
         ) return
 
-        val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble()) ?: return
+        // One accumulated list of lines. Each line has its own colour so signatures
+        // render yellow and descriptions render gray within the same 9-sliced panel.
+        data class Line(val text: String, val color: Int)
+        val accum = mutableListOf<Line>()
 
-        // Check built-in method signatures first
-        val methodSig = methodSignatures[word]
-
-        val tooltipText = if (methodSig != null) {
-            methodSig
-        } else {
-            // Check user-defined functions (current script + modules)
-            val funcSig = autocomplete.getFunctionSignature(word, editor.value)
-            if (funcSig != null) {
-                funcSig
-            } else {
-                // Check variable types
-                val type = when (word) {
-                    "network" -> "Network API"
-                    "scheduler" -> "Scheduler API"
-                    "true", "false" -> "boolean"
-                    "nil" -> "nil"
-                    else -> {
-                        val symbols = autocomplete.getSymbolTable(
-                            editor.value,
-                            editor.value.substring(0, editor.getCursorPosition())
-                        )
-                        symbols[word]
-                    }
+        // Prefer LuaApiDocs — type-aware, covers modules/methods/types via the shared
+        // resolver (which already hops module → Type via `LuaApiDocs.moduleTypes` and
+        // typed-local via the autocomplete symbol table).
+        val doc = editor.resolveDocAt(mouseX, mouseY)
+        val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble())
+        if (doc != null) {
+            doc.signature?.let { accum.add(Line(it, COLOR_SIGNATURE)) }
+            // Hard-wrap at [TOOLTIP_MAX_WIDTH_PX] so long descriptions don't run past
+            // the screen. `StringSplitter.splitLines` returns `FormattedText` whose
+            // `getString()` gives us the displayable text; going through `font.split`'s
+            // `FormattedCharSequence` path earlier was wrong — `.toString()` on those
+            // returns the Lambda class name, not the character stream.
+            for (rawLine in doc.description.split('\n')) {
+                for (part in font.splitter.splitLines(rawLine, TOOLTIP_MAX_WIDTH_PX, net.minecraft.network.chat.Style.EMPTY)) {
+                    accum.add(Line(part.string, COLOR_DESCRIPTION))
                 }
-                if (type != null) "$word: $type" else return
             }
-        }
-
-        // Split into name (bright) and hint (dim) — find the first separator
-        val separatorIdx = tooltipText.indexOfFirst { it == '(' || it == ':' || it == '—' || it == '→' }
-        val namePart: String
-        val hintPart: String
-        if (separatorIdx > 0) {
-            namePart = tooltipText.substring(0, separatorIdx)
-            hintPart = tooltipText.substring(separatorIdx)
+        } else if (word != null) {
+            // Fallback path for tokens LuaApiDocs doesn't cover: the in-file
+            // methodSignatures map, user-defined function scanner, and the
+            // autocomplete symbol table (for plain `word: Type` hints on locals).
+            val fallback = methodSignatures[word]
+                ?: autocomplete.getFunctionSignature(word, editor.value)
+                ?: run {
+                    val symbols = autocomplete.getSymbolTable(
+                        editor.value,
+                        editor.value.substring(0, editor.getCursorPosition()),
+                    )
+                    symbols[word]?.let { "$word: $it" }
+                }
+                ?: return
+            accum.add(Line(fallback, COLOR_PLAIN))
         } else {
-            namePart = tooltipText
-            hintPart = ""
+            return
         }
 
-        val tooltipW = font.width(tooltipText) + 6
-        val tooltipH = font.lineHeight + 4
-        val tx = mouseX + 8
-        val ty = mouseY - tooltipH - 2
+        // Hold-G progress footer — only when the current doc points at a guidebook
+        // anchor. Always add a blank spacer above it so the bar sits below text.
+        val showProgressFooter = doc?.guidebookRef != null
+        if (showProgressFooter) {
+            accum.add(Line("", 0))
+        }
+
+        // Compute panel size. Progress footer doesn't contribute width (pipe chars are
+        // narrow, sized against the text lines above).
+        val textWidth = accum.maxOf { font.width(it.text) }
+        val lineHeight = font.lineHeight
+        val progressLineHeight = if (showProgressFooter) lineHeight else 0
+        val tooltipW = textWidth + 6
+        val tooltipH = accum.size * lineHeight + progressLineHeight + 4
+
+        // Position the tooltip above-right of the cursor by default, mirroring vanilla's
+        // item-tooltip convention. When that would clip out of the screen we flip /
+        // clamp — same playbook vanilla uses internally in `GuiGraphics.renderTooltip`:
+        //   * Too far right → place to the left of the cursor instead.
+        //   * Too far up → place below the cursor instead.
+        //   * Still doesn't fit (tooltip wider/taller than screen) → clamp to the edge
+        //     so at least the tooltip text stays on-screen even if it overlaps the
+        //     cursor a bit.
+        val gameW = this.width
+        val gameH = this.height
+        var tx = mouseX + 8
+        var ty = mouseY - tooltipH - 2
+        if (tx + tooltipW > gameW) tx = mouseX - tooltipW - 8
+        if (ty < 0) ty = mouseY + 12
+        // Final clamp in case flipping still isn't enough (e.g. giant tooltip, corner
+        // cursor). Coerce so the panel stays fully visible.
+        tx = tx.coerceIn(0, (gameW - tooltipW).coerceAtLeast(0))
+        ty = ty.coerceIn(0, (gameH - tooltipH).coerceAtLeast(0))
 
         NineSlice.TOOLTIP.draw(graphics, tx - 1, ty - 1, tooltipW + 2, tooltipH + 2)
-        graphics.drawString(font, namePart, tx + 3, ty + 2, 0xFFCCCCCC.toInt())
-        if (hintPart.isNotEmpty()) {
-            graphics.drawString(font, hintPart, tx + 3 + font.width(namePart), ty + 2, 0xFF888888.toInt())
+        for ((i, line) in accum.withIndex()) {
+            graphics.drawString(font, line.text, tx + 3, ty + 2 + i * lineHeight, line.color)
         }
+
+        if (showProgressFooter) {
+            renderHoldGProgressFooter(
+                graphics,
+                tx + 3,
+                ty + 2 + accum.size * lineHeight,
+                tooltipW - 6,
+                editor.getHoldProgressFraction(),
+            )
+        }
+    }
+
+    /** Draws the "Hold G for docs" affordance at the bottom of the tooltip. At zero
+     *  progress it's plain text in dark gray; while the player is holding, the text is
+     *  replaced by a bar of `|` characters that fills left-to-right as progress
+     *  advances — same visual language GuideME uses on item tooltips. */
+    private fun renderHoldGProgressFooter(
+        graphics: GuiGraphicsExtractor,
+        x: Int,
+        y: Int,
+        width: Int,
+        fraction: Float,
+    ) {
+        if (fraction <= 0f) {
+            graphics.drawString(font, "Hold G for docs", x, y, 0xFF555555.toInt())
+            return
+        }
+        val charWidth = font.width("|")
+        val totalChars = (width / charWidth).coerceAtLeast(1)
+        val filled = (fraction * totalChars).toInt().coerceIn(0, totalChars)
+        val filledStr = "|".repeat(filled)
+        val emptyStr = "|".repeat(totalChars - filled)
+        graphics.drawString(font, filledStr, x, y, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, emptyStr, x + filled * charWidth, y, 0xFF555555.toInt())
     }
 
     private fun renderLineNumbers(graphics: GuiGraphicsExtractor) {

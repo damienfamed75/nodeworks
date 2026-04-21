@@ -28,6 +28,33 @@ object PlatformServices {
     /** Set by the loader-specific client init. Falls back to a plain gray square if
      *  the loader didn't register a renderer (e.g. dedicated server — never touched). */
     var fluidRenderer: FluidSpriteRenderer = FluidSpriteRenderer.Fallback
+
+    /** Opens a reference into the in-game guidebook. Refs look like
+     *  `namespace:path#fragment` — same shape `guideme.PageAnchor.parse` accepts.
+     *  Default is a no-op so loader-less contexts (unit tests) don't crash; neoforge
+     *  sets a GuideME-backed implementation at client init. */
+    var guidebook: GuidebookService = GuidebookService.Noop
+
+    /** Reports whether the "open docs on hover" key is currently held down, polled
+     *  via GLFW so it sees through focus routing (typing in a text field doesn't hide
+     *  the held state from us). Used by the Scripting Terminal's editor to drive the
+     *  Hold-G progress bar. Default always returns false so unconfigured loaders just
+     *  never show a hold-progress bar. */
+    var openDocsKeyHeld: () -> Boolean = { false }
+}
+
+/**
+ * Abstracts "open the guide at this ref" so code in `:common` can drive navigation
+ * without importing GuideME directly (it's a neoforge-only dep). The ref format is
+ * whatever the impl understands — for the GuideME-backed impl, `namespace:path` with an
+ * optional `#fragment`.
+ */
+interface GuidebookService {
+    fun open(ref: String)
+
+    companion object Noop : GuidebookService {
+        override fun open(ref: String) {}
+    }
 }
 
 /**

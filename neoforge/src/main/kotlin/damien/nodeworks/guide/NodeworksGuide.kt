@@ -16,6 +16,11 @@ import org.slf4j.LoggerFactory
 object NodeworksGuide {
     val ID: Identifier = Identifier.fromNamespaceAndPath("nodeworks", "guide")
 
+    /** The built Guide. Populated by [register] on client init. `NodeworksGuidebookService`
+     *  reads this to navigate programmatically from the Scripting Terminal's Hold-G. */
+    var instance: Guide? = null
+        private set
+
     /**
      * Build + register the guide. GuideME's builder registers the guide in its global
      * registry when `.build()` is called — no explicit `.register()` step.
@@ -37,6 +42,7 @@ object NodeworksGuide {
             .extension(TagCompiler.EXTENSION_POINT, NodeworksSceneTagCompiler())
             .extension(TagCompiler.EXTENSION_POINT, LuaCodeTagCompiler())
             .build()
+        instance = guide
         log.info("Registered guide id={} folder=nodeworksguide (expected assets path: assets/nodeworks/nodeworksguide/)", ID)
     }
 }

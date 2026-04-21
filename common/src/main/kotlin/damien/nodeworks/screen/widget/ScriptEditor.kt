@@ -23,7 +23,6 @@ import damien.nodeworks.script.LuaApiDocs
 import damien.nodeworks.script.LuaTokenizer
 import damien.nodeworks.script.LuaTokenizer.Token
 import damien.nodeworks.script.LuaTokenizer.TokenType
-import net.minecraft.ChatFormatting
 import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
@@ -53,6 +52,21 @@ class ScriptEditor(
         private const val CURSOR_COLOR = 0xFFFFFFFF.toInt()
         private const val BG_COLOR = 0xFF0D0D0D.toInt()
         private const val CURSOR_BLINK_MS = 300L
+
+        /** Seconds of key-held time needed to trigger the guidebook open. Matches
+         *  GuideME's own OpenGuideHotkey "~half a second" feel. */
+        private const val HOLD_PROGRESS_TARGET = 0.5f
+
+        /** Decay multiplier on release — partial progress drains out quickly so an
+         *  interrupted hold doesn't linger visually. */
+        private const val HOLD_PROGRESS_DECAY = 4.0f
+
+        /** Minimum progress before we start eating the paired character events. Below
+         *  this, the press is treated as a tap and the char flows through normally —
+         *  so quickly pressing G while mouse-over a doc-bearing token still types `g`.
+         *  A single render frame (~16ms) plus a small margin is enough to separate a
+         *  tap from a deliberate hold. */
+        private const val HOLD_TAP_GUARD = 0.05f
     }
 
     // Text state
@@ -67,10 +81,63 @@ class ScriptEditor(
     // Callbacks
     private var valueListener: ((String) -> Unit)? = null
 
+    /** Supplies the variable-type map used by [LuaApiDocs.resolveAt] so hover / G-key
+     *  resolution can fall through from `local cards = card; cards:setPowered(…)` to the
+     *  `Card:setPowered` doc entry. Default returns an empty map so out-of-terminal
+     *  usage of this widget (e.g. unit tests, future embeddings) still gets the bare
+     *  + qualified-literal lookups without extra wiring.
+     *
+     *  The terminal wires this to [AutocompletePopup.getSymbolTable], which already
+     *  does full inference (explicit annotations, function-param types, chain resolution,
+     *  network:get/var special cases). No parallel inference lives here. */
+    var symbolTableProvider: () -> Map<String, String> = { emptyMap() }
+
+    /** Invoked when the player hits the open-docs keybind over a token whose doc entry
+     *  carries a [LuaApiDocs.Doc.guidebookRef]. The wrapping screen is responsible for
+     *  actually navigating — ScriptEditor only knows "this token wants to open this ref". */
+    var openGuidebookRef: (ref: String) -> Unit = {}
+
+    /** Polled each frame to decide whether to advance the Hold-G progress bar. Bypasses
+     *  focus routing (implemented via raw GLFW `isKeyDown` on the loader side) so the
+     *  editor can detect the key as held even while it itself has focus. Default is
+     *  always-false — out-of-terminal usages get no progress bar unless wired.
+     *
+     *  Frame-polling rather than a keyPressed hook because MC auto-repeat fires the
+     *  key-press event many times per second while held, which doesn't map cleanly to
+     *  a smooth progress ramp. Polling each frame gives us a natural delta-time advance
+     *  instead. */
+    var isOpenDocsKeyHeld: () -> Boolean = { false }
+
     /** Cache of UNFOLDED tokens per line, populated each render pass. Used by the
      *  hover-tooltip lookup so we don't re-tokenise every frame — and don't have to redo
      *  the multi-line block-comment state tracking the render loop already does. */
     private val renderedLineTokens = HashMap<Int, List<Token>>()
+
+    /** Last mouse position passed into [extractWidgetRenderState]. Needed by the G-key
+     *  handler so it can resolve the hovered token at the moment of the press — KeyEvent
+     *  doesn't carry mouse coords. */
+    private var lastMouseX: Int = 0
+    private var lastMouseY: Int = 0
+
+    /** Char that [charTyped] deferred while the docs key is held over a doc-bearing
+     *  token. We buffer instead of inserting so we can decide on release whether this
+     *  was a tap (commit the buffered char) or a hold that completed (drop it). Null
+     *  when nothing's pending. */
+    private var pendingTapChar: String? = null
+
+    /** Hold-G progress in frame units, capped at [HOLD_PROGRESS_TARGET]. Incremented per
+     *  frame while [isOpenDocsKeyHeld] returns true AND the mouse is over a doc-bearing
+     *  token; decays when the key is released so a partial-hold doesn't stick around. */
+    private var holdProgress: Float = 0f
+
+    /** Set after a full hold completes so we only fire [openGuidebookRef] once per
+     *  hold — no second firing if the user keeps holding past completion. Reset on
+     *  release. */
+    private var holdCompleted: Boolean = false
+
+    /** Nanotime of the previous render frame, used to compute delta so the progress
+     *  ramp ends up frame-rate-independent. */
+    private var lastFrameNanos: Long = 0L
 
     /**
      * A character range on a line that should render as a short replacement string when
@@ -416,6 +483,23 @@ class ScriptEditor(
         return line.substring(start, end)
     }
 
+    /** Tokenise every line, threading block-comment state through, and stash the result
+     *  in [renderedLineTokens]. Run once per frame at the top of
+     *  [extractWidgetRenderState] so later frame-phase work (hover resolve, hold-G
+     *  advance, actual drawing) all sees the same stable, fully-populated cache. */
+    private fun populateTokenCache() {
+        renderedLineTokens.clear()
+        var inBlockComment = false
+        for (lineIdx in lines.indices) {
+            val tokens = tokenize(lines[lineIdx], inBlockComment)
+            renderedLineTokens[lineIdx] = tokens
+            for (t in tokens) {
+                if (t.type == TokenType.BLOCK_COMMENT_START) inBlockComment = true
+                if (t.type == TokenType.BLOCK_COMMENT_END) inBlockComment = false
+            }
+        }
+    }
+
     /** Convert screen coordinates to cursor position. */
     private fun screenToCursor(mx: Double, my: Double): Int {
         val relY = my - textTop + scrollY
@@ -428,7 +512,18 @@ class ScriptEditor(
     // --- Rendering ---
 
     override fun extractWidgetRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        renderedLineTokens.clear()
+        lastMouseX = mouseX
+        lastMouseY = mouseY
+
+        // Pre-tokenise every line into the cache up-front, before the hold-progress
+        // check needs to read it. Doing this inside the draw loop (as we used to)
+        // leaves [renderedLineTokens] empty when [advanceHoldProgress] runs, which
+        // silently breaks the Hold-G UX — the resolver never finds a doc under the
+        // mouse because there are no tokens yet. The loop below reads from the cache
+        // for rendering, so no re-tokenisation.
+        populateTokenCache()
+
+        advanceHoldProgress(mouseX, mouseY)
 
         // Background
         graphics.fill(x, y, x + width, y + height, BG_COLOR)
@@ -486,11 +581,10 @@ class ScriptEditor(
 
             // Syntax-highlighted text — fold-aware. applyFolds() splices the raw token
             // stream so any active fold renders as its short display string in FOLD_COLOR.
-            // We cache the UNFOLDED tokens for hover-tooltip lookup so [renderHoverTooltip]
-            // can resolve the token the mouse is actually over (folded text is a visual
-            // shortcut — the logical token for docs is still the original).
-            val rawTokens = tokenize(line, inBlockComment)
-            renderedLineTokens[lineIdx] = rawTokens
+            // Raw tokens come from the pre-populated cache so hover lookups stay stable
+            // across the frame (folded text is a visual shortcut — the logical token for
+            // docs is still the original).
+            val rawTokens = renderedLineTokens[lineIdx] ?: tokenize(line, inBlockComment)
             val tokens = applyFolds(lineIdx, rawTokens)
             var tx = textLeft - scrollX
             for (token in tokens) {
@@ -513,34 +607,26 @@ class ScriptEditor(
 
         graphics.disableScissor()
 
-        // Hover docs — outside the scissor so the tooltip can extend past the editor's
-        // clip rect. Rendered last so it draws on top of everything else this frame.
-        renderHoverTooltip(graphics, mouseX, mouseY)
+        // Hover-doc tooltip rendering is the hosting screen's job — it draws a 9-sliced
+        // tooltip backed by [resolveDocAt] and [getHoldProgressFraction]. Keeping it
+        // outside the editor widget lets the screen position the popup above its own
+        // chrome and control z-order against the autocomplete popup etc.
     }
 
     /**
-     * If the mouse is over a token that has an entry in [LuaApiDocs], pops a tooltip
-     * showing the signature + description. Uses the tokens cached by
-     * [extractWidgetRenderState] so we don't re-tokenise (and avoid rebuilding the
-     * multi-line block-comment state from scratch).
+     * Resolve whichever token is under (mouseX, mouseY). Returns null if the mouse isn't
+     * over a known-documented identifier. Shared between the hover tooltip renderer and
+     * the G-key handler so both code paths see the same doc entry.
      */
-    private fun renderHoverTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return
-
-        // Find the line under the mouse. Bail if the mouse is in whitespace below the
-        // last line — no token there to look up.
+    private fun resolveDocUnderMouse(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? {
+        if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return null
         val relY = mouseY - textTop + scrollY
         val lineIdx = lineAtContentY(relY)
-        if (lineIdx < 0 || lineIdx >= lines.size) return
-
-        val tokens = renderedLineTokens[lineIdx] ?: return
-
-        // Map mouse-x → column on the line. colAtX is fold-aware and returns the raw
-        // column in the UNFOLDED text, which is what we need to index into [tokens].
+        if (lineIdx < 0 || lineIdx >= lines.size) return null
+        val tokens = renderedLineTokens[lineIdx] ?: return null
         val relX = (mouseX - textLeft + scrollX)
         val col = colAtX(lineIdx, relX)
 
-        // Walk the unfolded tokens and find the one straddling [col].
         var running = 0
         var hoveredIdx = -1
         for ((i, tok) in tokens.withIndex()) {
@@ -551,18 +637,79 @@ class ScriptEditor(
             }
             running = next
         }
-        if (hoveredIdx < 0) return
-
-        val doc = LuaApiDocs.resolveAt(tokens, hoveredIdx) ?: return
-
-        val lines = buildList {
-            doc.signature?.let { add(Component.literal(it).withStyle(ChatFormatting.YELLOW)) }
-            for (line in doc.description.split('\n')) {
-                add(Component.literal(line).withStyle(ChatFormatting.GRAY))
-            }
-        }
-        graphics.renderComponentTooltip(font, lines, mouseX, mouseY)
+        if (hoveredIdx < 0) return null
+        return LuaApiDocs.resolveAt(tokens, hoveredIdx, symbolTableProvider())
     }
+
+    /** True when the token under (mouseX, mouseY) has a [LuaApiDocs] entry. */
+    fun hasDocUnderMouse(mouseX: Int, mouseY: Int): Boolean =
+        resolveDocUnderMouse(mouseX, mouseY) != null
+
+    /** Public accessor for the hosting screen's tooltip renderer. Returns the doc entry
+     *  for whatever token is under (mouseX, mouseY), or null. Uses the shared per-frame
+     *  token cache + symbol-table provider, so resolution is identical to what the
+     *  hold-G progress logic sees. */
+    fun resolveDocAt(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? =
+        resolveDocUnderMouse(mouseX, mouseY)
+
+    /** Current Hold-G progress as a [0, 1] fraction. The hosting screen uses this to
+     *  render the progress bar in its tooltip footer. */
+    fun getHoldProgressFraction(): Float =
+        (holdProgress / HOLD_PROGRESS_TARGET).coerceIn(0f, 1f)
+
+    /** True while a press of the docs keybind is either buffering (awaiting release)
+     *  or actively advancing the hold timer. The hosting screen uses this to suppress
+     *  autocomplete — when the player is holding to open docs, completion suggestions
+     *  would just obscure the tooltip they're trying to read. */
+    fun isOpenDocsHoldActive(): Boolean = pendingTapChar != null || holdProgress > 0f
+
+    /**
+     * Per-frame Hold-G progress update. Increments [holdProgress] while the docs key
+     * is held AND the mouse is over a doc-bearing token; decays otherwise.
+     *
+     * When progress hits 1.0 we fire [openGuidebookRef] exactly once per hold (guarded
+     * by [holdCompleted]) and keep progress pinned at full so the bar stays solid as
+     * long as the key is held. Releasing the key resets both.
+     *
+     * While progress is > 0 we also flag [suppressNextCharTyped] so auto-repeat of the
+     * held key doesn't spam chars into the editor buffer.
+     */
+    private fun advanceHoldProgress(mouseX: Int, mouseY: Int) {
+        val now = System.nanoTime()
+        val deltaSec = if (lastFrameNanos == 0L) 0f else (now - lastFrameNanos) / 1_000_000_000f
+        lastFrameNanos = now
+
+        val held = isOpenDocsKeyHeld()
+        val doc = if (held) resolveDocUnderMouse(mouseX, mouseY) else null
+        val canAdvance = held && doc?.guidebookRef != null
+
+        if (canAdvance) {
+            holdProgress = (holdProgress + deltaSec).coerceAtMost(HOLD_PROGRESS_TARGET)
+            if (!holdCompleted && holdProgress >= HOLD_PROGRESS_TARGET) {
+                holdCompleted = true
+                // Hold fully formed — the buffered char was never meant to be typed.
+                pendingTapChar = null
+                openGuidebookRef(doc!!.guidebookRef!!)
+            }
+        } else {
+            if (!held) {
+                // Key released. If progress didn't cross the tap-guard we treat this
+                // as a quick tap and commit the buffered char into the editor so the
+                // user's keystroke isn't lost. Past the guard means they held long
+                // enough that we don't think they meant to type — drop it.
+                val wasTap = holdProgress < HOLD_TAP_GUARD
+                val buffered = pendingTapChar
+                pendingTapChar = null
+                if (wasTap && buffered != null) {
+                    if (hasSelection) deleteSelection()
+                    insertText(buffered)
+                }
+                holdCompleted = false
+            }
+            holdProgress = (holdProgress - deltaSec * HOLD_PROGRESS_DECAY).coerceAtLeast(0f)
+        }
+    }
+
 
     // --- Input handling ---
 
@@ -576,6 +723,12 @@ class ScriptEditor(
         val ctrl = (modifiers and 2) != 0
         val shift = (modifiers and 1) != 0
         val (line, col) = cursorToLineCol(cursor)
+
+        // Hold-G progress is advanced per-frame in [extractWidgetRenderState] — not
+        // here. We intentionally don't consume key-presses for the docs keybind so the
+        // base keyPressed logic (typing characters, etc.) stays intact. Char suppression
+        // is flagged from the frame-update path when the user is actively holding to
+        // open docs.
 
         when (keyCode) {
             // Arrow keys
@@ -714,6 +867,20 @@ class ScriptEditor(
         val codePoint = event.character
         val modifiers = 0
         if (!isFocused) return false
+
+        // If the docs key is currently held AND the mouse is over a doc-bearing token,
+        // we don't yet know if this is a tap (→ type the char) or a hold (→ open docs
+        // without typing). Buffer the char and let [advanceHoldProgress] decide when
+        // the key is released (tap: commit to buffer) or when progress completes (hold:
+        // discard). Subsequent auto-repeat chars during the same hold are dropped — we
+        // only keep the first.
+        if (isOpenDocsKeyHeld() && resolveDocUnderMouse(lastMouseX, lastMouseY) != null) {
+            if (pendingTapChar == null) {
+                pendingTapChar = codePoint.toString()
+            }
+            return true
+        }
+
         if (codePoint < ' ' && codePoint != '\t') return false
         cursorBlinkTime = System.currentTimeMillis()
 
