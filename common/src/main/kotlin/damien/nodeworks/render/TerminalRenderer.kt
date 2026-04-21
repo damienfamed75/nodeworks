@@ -4,9 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import net.minecraft.client.renderer.SubmitNodeCollector
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderType
 import net.minecraft.client.renderer.state.level.CameraRenderState
@@ -18,10 +16,10 @@ import net.minecraft.world.phys.Vec3
  * Emissive overlay for the Terminal — glowing front-face screen, tinted with the
  * current network colour. The front face rotates with the block's `facing` property.
  */
-class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<TerminalBlockEntity, TerminalRenderer.TerminalState> {
+open class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<TerminalBlockEntity, TerminalRenderer.TerminalState>(context) {
 
-    class TerminalState : BlockEntityRenderState() {
+    class TerminalState : ConnectableRenderState() {
         var facing: Direction = Direction.NORTH
         var color: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
     }
@@ -33,30 +31,22 @@ class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
 
     override fun createRenderState(): TerminalState = TerminalState()
 
-    override fun extractRenderState(
+    override fun extractConnectable(
         blockEntity: TerminalBlockEntity,
         state: TerminalState,
         partialTicks: Float,
         cameraPosition: Vec3,
-        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
-        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
         state.facing = blockEntity.blockState.getValue(TerminalBlock.FACING)
-        // Match NetworkColorTintSource's reachability gate — an unreachable Terminal
-        // (e.g. LOS to its node was blocked) falls back to the grey default so the
-        // screen goes dim, matching the rest of the network-colour UI.
-        state.color = if (!NodeConnectionRenderer.isReachable(blockEntity.blockPos)) {
-            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        } else {
-            NodeConnectionRenderer.findNetworkColor(blockEntity.level, blockEntity.blockPos)
-        }
+        state.color = resolveNetworkColor(blockEntity)
     }
 
-    override fun submit(
+    override fun submitConnectable(
         state: TerminalState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        camera: CameraRenderState
+        camera: CameraRenderState,
     ) {
         val r = (state.color shr 16) and 0xFF
         val g = (state.color shr 8) and 0xFF

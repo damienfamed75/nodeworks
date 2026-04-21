@@ -23,11 +23,13 @@ broadcasting network's processing sets that the **Broadcast Antenna** was placed
 A **Broadcast Antenna** can be placed directly on a **Processing Storage** which then
 *broadcasts* all the **Processing Sets** in it.
 
+---
+
 <GameScene zoom="2" interactive={true}>
   <ImportStructure src="./assets/assemblies/broadcasting_antenna_on_processing_storage.snbt" />
 </GameScene>
 
-<GameScene zoom="2" interactive={true}>
+<GameScene zoom="6" interactive={true}>
   <ImportStructure src="./assets/assemblies/receiver_antenna.snbt" />
 </GameScene>
 

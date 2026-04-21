@@ -4,9 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import net.minecraft.client.renderer.SubmitNodeCollector
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
@@ -21,10 +19,10 @@ import org.joml.Quaternionf
  * front face. The [CARD_TEXTURE] is a 4×2 image that maps onto the 8 slot cutouts
  * painted into `processing_storage_front.png` at the positions in [SLOT_POSITIONS].
  */
-class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<ProcessingStorageBlockEntity, ProcessingStorageRenderer.RenderState> {
+open class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<ProcessingStorageBlockEntity, ProcessingStorageRenderer.RenderState>(context) {
 
-    class RenderState : BlockEntityRenderState() {
+    class RenderState : ConnectableRenderState() {
         val filled: BooleanArray = BooleanArray(ProcessingStorageBlockEntity.TOTAL_SLOTS)
         var facing: Direction? = null
         var anyFilled: Boolean = false
@@ -58,15 +56,13 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
 
     override fun createRenderState(): RenderState = RenderState()
 
-    override fun extractRenderState(
+    override fun extractConnectable(
         blockEntity: ProcessingStorageBlockEntity,
         state: RenderState,
         partialTicks: Float,
         cameraPosition: Vec3,
-        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
-        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
-
         val blockState = blockEntity.blockState
         state.facing = if (blockState.hasProperty(ProcessingStorageBlock.FACING))
             blockState.getValue(ProcessingStorageBlock.FACING) else null
@@ -79,18 +75,14 @@ class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Context) :
         }
         state.anyFilled = any
 
-        state.networkColor = if (!NodeConnectionRenderer.isReachable(blockEntity.blockPos)) {
-            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        } else {
-            NodeConnectionRenderer.findNetworkColor(blockEntity.level, blockEntity.blockPos)
-        }
+        state.networkColor = resolveNetworkColor(blockEntity)
     }
 
-    override fun submit(
+    override fun submitConnectable(
         state: RenderState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        camera: CameraRenderState
+        camera: CameraRenderState,
     ) {
         val facing = state.facing ?: return
 

@@ -34,6 +34,7 @@ import net.minecraft.world.phys.Vec3
 import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent
+import net.neoforged.neoforge.client.event.RenderFrameEvent
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent
 import net.neoforged.neoforge.client.network.ClientPacketDistributor
 import net.neoforged.neoforge.common.NeoForge
@@ -95,22 +96,31 @@ object NeoForgeClientSetup {
             //  using `minecraft:condition` / `minecraft:select` dispatch types.
 
             NodeConnectionRenderer.register()
+
+            // Reset the frame-scoped laser-beam dedup set at the start of each render
+            // frame. ConnectionBeamRenderer.submit uses this set to ensure a beam between
+            // two Connectables is drawn exactly once per frame regardless of which end's
+            // BER submits first — no lex-order dedup, no silent drops if one BER isn't
+            // wired or one endpoint is unloaded.
+            NeoForge.EVENT_BUS.addListener { _: RenderFrameEvent.Pre ->
+                damien.nodeworks.render.ConnectionBeamRenderer.startFrame()
+            }
         }
     }
 
     private fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
-        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NodeRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.RECEIVER_ANTENNA, ::ReceiverAntennaRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_CORE, ::CraftingCoreRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NeoNodeRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::NeoMonitorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::NeoControllerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::NeoVariableRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::NeoTerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::NeoProcessingStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::NeoInstructionStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.RECEIVER_ANTENNA, ::NeoReceiverAntennaRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_CORE, ::NeoCraftingCoreRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_STORAGE, ::CraftingStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CO_PROCESSOR, ::CoProcessorRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::InventoryTerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::NeoInventoryTerminalRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }

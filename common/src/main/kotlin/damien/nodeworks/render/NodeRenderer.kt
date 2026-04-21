@@ -3,16 +3,12 @@ package damien.nodeworks.render
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.network.NetworkSettingsRegistry
-import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.SubmitNodeCollector
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.client.renderer.texture.OverlayTexture
-import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
@@ -27,8 +23,8 @@ import kotlin.math.sqrt
  * standalone block with its own BER ([MonitorRenderer]) — this class is purely a
  * Node renderer.
  */
-class NodeRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<NodeBlockEntity, NodeRenderer.NodeRenderState> {
+open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<NodeBlockEntity, NodeRenderer.NodeRenderState>(context) {
 
     /** One laser beam from a card slot on a node face to the adjacent block. Extracted
      *  on the main thread so `submit` can emit the geometry without touching the BE. */
@@ -38,12 +34,11 @@ class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val r: Int, val g: Int, val b: Int
     )
 
-    class NodeRenderState : BlockEntityRenderState() {
+    class NodeRenderState : ConnectableRenderState() {
         var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         var glowStyle: Int = 0
         var hasGlow: Boolean = false
         var cardLinks: List<CardLink> = emptyList()
-        var blockPos: BlockPos = BlockPos.ZERO
     }
 
     companion object {
@@ -79,19 +74,17 @@ class NodeRenderer(context: BlockEntityRendererProvider.Context) :
 
     override fun createRenderState(): NodeRenderState = NodeRenderState()
 
-    override fun extractRenderState(
+    override fun extractConnectable(
         blockEntity: NodeBlockEntity,
         state: NodeRenderState,
         partialTicks: Float,
         cameraPosition: Vec3,
-        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
-        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
         val settings = NetworkSettingsRegistry.get(blockEntity.networkId)
         state.networkColor = settings.color
         state.glowStyle = settings.glowStyle
         state.hasGlow = settings.glowStyle != GLOW_STYLE_NONE
-        state.blockPos = blockEntity.blockPos
 
         // Card-link beams: one per card on each face whose adjacent block isn't air.
         val level = blockEntity.level
@@ -111,13 +104,13 @@ class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         }
     }
 
-    override fun submit(
+    override fun submitConnectable(
         state: NodeRenderState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        camera: CameraRenderState
+        camera: CameraRenderState,
     ) {
-        submitCardLinks(state, poseStack, submitNodeCollector)
+        submitCardLinks(state, poseStack, submitNodeCollector, camera)
 
         if (!state.hasGlow) return
 
@@ -167,8 +160,6 @@ class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         }
     }
 
-    override fun shouldRenderOffScreen(): Boolean = true
-
     /** Emits one billboarded beam per [CardLink] from the card slot's exact position on
      *  the node face out to the adjacent block's near face. Billboarding uses the camera
      *  position so the beam always shows its 1px-wide silhouette to the viewer. */
@@ -176,12 +167,13 @@ class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         state: NodeRenderState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
+        camera: CameraRenderState,
     ) {
         if (state.cardLinks.isEmpty()) return
-        val camPos = Minecraft.getInstance().gameRenderer.mainCamera.position()
-        val blockX = state.blockPos.x.toFloat()
-        val blockY = state.blockPos.y.toFloat()
-        val blockZ = state.blockPos.z.toFloat()
+        val camPos = camera.pos
+        val blockX = state.pos.x.toFloat()
+        val blockY = state.pos.y.toFloat()
+        val blockZ = state.pos.z.toFloat()
         val hw = 0.3f / 16f
 
         submitNodeCollector.submitCustomGeometry(poseStack, RenderTypes.beaconBeam(LASER_TEXTURE, true)) { pose, vc ->

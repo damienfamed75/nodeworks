@@ -6,13 +6,10 @@ import damien.nodeworks.network.NetworkSettingsRegistry
 import net.minecraft.client.renderer.OrderedSubmitNodeCollector
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.SubmitNodeCollector
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderSetup
 import net.minecraft.client.renderer.rendertype.RenderType
-import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.resources.Identifier
@@ -34,10 +31,10 @@ import kotlin.math.sin
  * The JSON model's inner_cube element was removed — the dynamic crystal takes
  * that space over.
  */
-class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<NetworkControllerBlockEntity, ControllerRenderer.ControllerState> {
+open class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<NetworkControllerBlockEntity, ControllerRenderer.ControllerState>(context) {
 
-    class ControllerState : BlockEntityRenderState() {
+    class ControllerState : ConnectableRenderState() {
         var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
     }
 
@@ -69,23 +66,22 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
 
     override fun createRenderState(): ControllerState = ControllerState()
 
-    override fun extractRenderState(
+    override fun extractConnectable(
         blockEntity: NetworkControllerBlockEntity,
         state: ControllerState,
         partialTicks: Float,
         cameraPosition: Vec3,
-        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
-        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
         val settings = NetworkSettingsRegistry.get(blockEntity.networkId)
         state.networkColor = settings.color
     }
 
-    override fun submit(
+    override fun submitConnectable(
         state: ControllerState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        camera: CameraRenderState
+        camera: CameraRenderState,
     ) {
         // Time-driven animation. 50ms/tick ≈ the rate vanilla EndCrystalRenderer uses
         // (it takes ageInTicks * 3 degrees); match that so the rotation looks identical.
@@ -153,8 +149,6 @@ class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
 
         poseStack.popPose()
     }
-
-    override fun shouldRenderOffScreen(): Boolean = true
 
     /** Tilt by PI/3 around (sin45, 0, sin45), then rotate around Y by [rotRadians].
      *  Identical to EndCrystalModel's quaternion setup. */

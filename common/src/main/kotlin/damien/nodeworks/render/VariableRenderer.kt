@@ -3,9 +3,7 @@ package damien.nodeworks.render
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.VariableBlockEntity
 import net.minecraft.client.renderer.SubmitNodeCollector
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderType
 import net.minecraft.client.renderer.state.level.CameraRenderState
@@ -16,10 +14,10 @@ import net.minecraft.world.phys.Vec3
  * Emissive overlay for the Variable block — glowing side faces (N/S/E/W only, top/bottom
  * unlit), tinted with the current network colour.
  */
-class VariableRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<VariableBlockEntity, VariableRenderer.VariableState> {
+open class VariableRenderer(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<VariableBlockEntity, VariableRenderer.VariableState>(context) {
 
-    class VariableState : BlockEntityRenderState() {
+    class VariableState : ConnectableRenderState() {
         var color: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
     }
 
@@ -30,26 +28,21 @@ class VariableRenderer(context: BlockEntityRendererProvider.Context) :
 
     override fun createRenderState(): VariableState = VariableState()
 
-    override fun extractRenderState(
+    override fun extractConnectable(
         blockEntity: VariableBlockEntity,
         state: VariableState,
         partialTicks: Float,
         cameraPosition: Vec3,
-        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
-        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
-        state.color = if (!NodeConnectionRenderer.isReachable(blockEntity.blockPos)) {
-            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        } else {
-            NodeConnectionRenderer.findNetworkColor(blockEntity.level, blockEntity.blockPos)
-        }
+        state.color = resolveNetworkColor(blockEntity)
     }
 
-    override fun submit(
+    override fun submitConnectable(
         state: VariableState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        camera: CameraRenderState
+        camera: CameraRenderState,
     ) {
         val r = (state.color shr 16) and 0xFF
         val g = (state.color shr 8) and 0xFF
