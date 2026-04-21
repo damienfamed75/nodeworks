@@ -25,11 +25,11 @@ A **Broadcast Antenna** can be placed directly on a **Processing Storage** which
 
 ---
 
-<GameScene zoom="2" interactive={true}>
+<GameScene zoom="2" interactive={true} paddingTop="20">
   <ImportStructure src="./assets/assemblies/broadcasting_antenna_on_processing_storage.snbt" />
 </GameScene>
 
-<GameScene zoom="6" interactive={true}>
+<GameScene zoom="6" interactive={true} paddingTop="70" paddingLeft="40" paddingRight="20">
   <ImportStructure src="./assets/assemblies/receiver_antenna.snbt" />
 </GameScene>
 

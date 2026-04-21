@@ -1,6 +1,7 @@
 package damien.nodeworks.guide
 
 import guideme.Guide
+import guideme.compiler.TagCompiler
 import net.minecraft.resources.Identifier
 import org.slf4j.LoggerFactory
 
@@ -27,8 +28,13 @@ object NodeworksGuide {
         // Matches AE2's pattern — `defaultNamespace` is derived from the ID's namespace,
         // and `startPage` defaults to `index.md`. `folder` points at our processed-
         // resources path (see neoforge/build.gradle.kts's processResources step).
+        // Registering a TagCompiler under the same tag name as a default GuideME extension
+        // causes PageCompiler's last-write-wins map to pick ours — so `<GameScene>` in any
+        // Nodeworks page goes through NodeworksSceneTagCompiler, which adds per-side padding
+        // attrs (paddingTop/Bottom/Left/Right) while keeping the default behaviour otherwise.
         val guide = Guide.builder(ID)
             .folder("nodeworksguide")
+            .extension(TagCompiler.EXTENSION_POINT, NodeworksSceneTagCompiler())
             .build()
         log.info("Registered guide id={} folder=nodeworksguide (expected assets path: assets/nodeworks/nodeworksguide/)", ID)
     }
