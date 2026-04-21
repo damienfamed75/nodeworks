@@ -107,11 +107,22 @@ print(moved .. " items were moved") -- can be between 0 -> items.count
 ## route
 
 Sets a filter to a target <ItemLink id="storage_card" /> using a predicate function.
-This function should return `true` if the item should be accepted by the storage.
+This function should return `true` if the [ItemsHandle](items-handle.md) should be accepted by the storage.
 
 <LuaCode>
 ```lua
 network:route("cobblestone_only", function(item: ItemsHandle)
+  return item.id == "minecraft:cobblestone" -- true if item id is "minecraft:cobblestone"
+end)
+```
+</LuaCode>
+
+If you have multiple cards with _N suffixes like `non_stackable_0`, `non_stackable_1`, `non_stackable_2` etc.
+then you can refer to all of them using a wildcard *(\*)*
+
+<LuaCode>
+```lua
+network:route("non_stackable_*", function(item: ItemsHandle)
   return item.id == "minecraft:cobblestone" -- true if item id is "minecraft:cobblestone"
 end)
 ```

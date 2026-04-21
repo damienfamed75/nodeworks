@@ -565,11 +565,13 @@ class TerminalScreen(
         // Feed the autocomplete's existing variable-type inference into the editor's
         // hover-doc lookup. No parallel inference — same symbol table as completion, so
         // e.g. `local cards = card; cards:setPowered(…)` hovers resolve via `Card:...`
-        // consistently in both places.
-        editor.symbolTableProvider = {
+        // consistently in both places. The editor passes the character offset of the
+        // hovered token so scope walks anchor at the hover, not the cursor.
+        editor.symbolTableProvider = { scopeAnchor ->
+            val clamped = scopeAnchor.coerceIn(0, editor.value.length)
             autocomplete.getSymbolTable(
                 editor.value,
-                editor.value.substring(0, editor.getCursorPosition()),
+                editor.value.substring(0, clamped),
             )
         }
         // G-on-hover → open the guidebook at the doc's anchor. Delegates to the platform
@@ -1490,14 +1492,24 @@ class TerminalScreen(
                             val newText = text.substring(0, deleteStart) + result.insertText + text.substring(deleteEnd)
                             editor.setValueKeepScroll(newText, deleteStart + result.cursorOffset)
                             suppressAutocomplete = false
-                            // Trigger autocomplete at new cursor position (e.g. inside quotes after snippet)
-                            autocomplete.update(
-                                editor.value,
-                                editor.getCursorPosition(),
-                                editorX,
-                                editorY,
-                                editorScrollY = editor.scrollY
-                            )
+                            // Only re-trigger autocomplete when the accepted result lands the
+                            // cursor *inside* the inserted text — e.g. a snippet with cursor in
+                            // empty quotes, or `func(` auto-closed to `func()` with the cursor
+                            // between the parens. Those are genuine "you might want another
+                            // completion right here" moments. A plain value completion (cursor
+                            // at end of insertion) should dismiss the popup and wait for the
+                            // next keystroke, matching VSCode's behaviour — otherwise accepting
+                            // `cobblestone` in `"$item:cobblestone|"` pops the list right back
+                            // up with `cobblestone_slab` etc. because the prefix still matches.
+                            if (result.cursorOffset < result.insertText.length) {
+                                autocomplete.update(
+                                    editor.value,
+                                    editor.getCursorPosition(),
+                                    editorX,
+                                    editorY,
+                                    editorScrollY = editor.scrollY
+                                )
+                            }
                             return true
                         }
                     }

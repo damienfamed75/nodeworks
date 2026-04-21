@@ -89,8 +89,13 @@ class ScriptEditor(
      *
      *  The terminal wires this to [AutocompletePopup.getSymbolTable], which already
      *  does full inference (explicit annotations, function-param types, chain resolution,
-     *  network:get/var special cases). No parallel inference lives here. */
-    var symbolTableProvider: () -> Map<String, String> = { emptyMap() }
+     *  network:get/var special cases). No parallel inference lives here.
+     *
+     *  [charPos] is the character offset in [value] to anchor the scope walk at — hover
+     *  tooltips use the position of the *hovered token* so a local declared in a function
+     *  resolves correctly when the cursor is outside that function. Autocomplete passes
+     *  the cursor position. */
+    var symbolTableProvider: (charPos: Int) -> Map<String, String> = { emptyMap() }
 
     /** Invoked when the player hits the open-docs keybind over a token whose doc entry
      *  carries a [LuaApiDocs.Doc.guidebookRef]. The wrapping screen is responsible for
@@ -643,7 +648,12 @@ class ScriptEditor(
         for ((i, tok) in tokens.withIndex()) {
             val tokenW = font.width(tok.text)
             if (mouseX in tokenX until tokenX + tokenW) {
-                return LuaApiDocs.resolveAt(tokens, i, symbolTableProvider())
+                // Anchor the symbol-table scope at the END of the hovered line. This makes
+                // a hover tooltip inside `function f(item: ItemsHandle) item:matches() end`
+                // resolve `item` correctly even when the cursor is outside the function —
+                // we want the scope at the token's position, not the cursor's.
+                val scopeAnchor = lines.take(lineIdx + 1).sumOf { it.length } + lineIdx
+                return LuaApiDocs.resolveAt(tokens, i, symbolTableProvider(scopeAnchor))
             }
             tokenX += tokenW
         }

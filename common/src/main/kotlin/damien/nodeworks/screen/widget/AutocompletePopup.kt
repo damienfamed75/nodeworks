@@ -865,14 +865,10 @@ class AutocompletePopup(
                     .filter { it.capability.type == "storage" }
                     .map { it.effectiveAlias }
                     .distinct()
-                val storageSuggestions = storageAliases
-                    .map { suggest(it, "$it (storage)", Kind.STRING) }
-                    .toMutableList()
-                // Offer `<prefix>_*` wildcard suggestions when 2+ storage cards share the
-                // Card Programmer's `_N` suffix convention. E.g. given `cobblestone_0`,
-                // `cobblestone_1`, `cobblestone_2`, suggest `cobblestone_*` too so the user
-                // can route that whole group with one call. Single-match prefixes are
-                // excluded (no point offering a wildcard that collapses to one card).
+
+                // Group aliases sharing the Card Programmer's `_N` suffix convention so we
+                // can offer a single `<prefix>_*` completion per group. Singletons don't
+                // count — a group of one card collapses back into a literal alias.
                 val suffixGroups = storageAliases
                     .mapNotNull { alias ->
                         val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
@@ -880,6 +876,24 @@ class AutocompletePopup(
                     }
                     .groupBy({ it.first }, { it.second })
                     .filterValues { it.size >= 2 }
+
+                // Hide the numbered cards from a grouped set by default — the `_*` wildcard
+                // represents the user's likely intent, and listing ten `cobblestone_N`
+                // entries alongside it is just noise. A user who wants one specific numbered
+                // card types the digit suffix themselves (`cobblestone_2`), which flips the
+                // group into "disambiguation mode" and the individual cards surface again.
+                val hiddenAliases = mutableSetOf<String>()
+                for ((prefix, aliases) in suffixGroups) {
+                    val stem = "${prefix}_"
+                    val disambiguating = ctx.partial.startsWith(stem) &&
+                        ctx.partial.length > stem.length &&
+                        ctx.partial[stem.length].isDigit()
+                    if (!disambiguating) hiddenAliases.addAll(aliases)
+                }
+
+                val storageSuggestions = mutableListOf<Suggestion>()
+                // Wildcards first so they surface above any remaining literal cards in the
+                // fuzzy-matched output — they're the recommended choice for grouped cards.
                 for ((prefix, aliases) in suffixGroups) {
                     val wildcard = "${prefix}_*"
                     val preview = aliases.sorted().take(3).joinToString(", ") +
@@ -887,6 +901,10 @@ class AutocompletePopup(
                     storageSuggestions.add(
                         suggest(wildcard, "$wildcard (${aliases.size} cards: $preview)", Kind.STRING)
                     )
+                }
+                for (alias in storageAliases) {
+                    if (alias in hiddenAliases) continue
+                    storageSuggestions.add(suggest(alias, "$alias (storage)", Kind.STRING))
                 }
                 FuzzyMatch.filter(ctx.partial, storageSuggestions)
             }
