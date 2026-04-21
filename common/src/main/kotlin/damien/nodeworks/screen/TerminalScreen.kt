@@ -2007,6 +2007,21 @@ class TerminalScreen(
         super.onClose()
     }
 
+    override fun removed() {
+        // Persist the live editor buffer before the screen is swapped out. This fires
+        // on ANY setScreen (unlike onClose, which only fires for true close-to-world).
+        // Critical for the Hold-G path: opening the guidebook replaces our screen with
+        // a GuideScreen, and when the player closes that guide (`returnToOnClose`
+        // brings them back here), `init()` rebuilds the editor widget from scratch and
+        // reads `rebuildWithText` / `scripts[activeTab]` — so if we don't save on the
+        // way out, whatever they had typed since the last manual save is lost.
+        if (::editor.isInitialized) {
+            rebuildWithText = editor.value
+            scripts[activeTab] = editor.value
+        }
+        super.removed()
+    }
+
     private fun autoRunLabel(): Component {
         val state = if (autoRun) "\u00A7aON" else "\u00A77OFF"
         return Component.literal("Auto: $state")

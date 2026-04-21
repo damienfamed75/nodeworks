@@ -24,7 +24,16 @@ import net.minecraft.client.Minecraft
 object NodeworksGuidebookService : GuidebookService {
     override fun open(ref: String) {
         val guide = NodeworksGuide.instance ?: return
+        val mc = Minecraft.getInstance()
+        // Capture the current screen BEFORE opening the guide so closing the guide can
+        // restore the player to exactly what they were doing. GuideScreen.onClose() sees
+        // this reference and calls setScreen(returnToOnClose) on its way out — meaning
+        // the Scripting Terminal (with editor text, cursor, scroll, selected tab) pops
+        // back instead of returning the player to the world. Screen instances survive a
+        // setScreen round-trip with their state intact.
+        val previous = mc.screen
         val screen = GuideScreen.openNew(guide, PageAnchor.parse(ref))
-        Minecraft.getInstance().setScreen(screen)
+        screen.setReturnToOnClose(previous)
+        mc.setScreen(screen)
     }
 }
