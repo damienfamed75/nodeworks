@@ -445,6 +445,78 @@ object LuaApiDocs {
      *   5. Variable-self — hovering the bare `cards` identifier returns the `RedstoneCard`
      *      type doc if `cards` is a known local of that type.
      */
+    /**
+     * What kind of container a signature's return type denotes. Drives both for-loop
+     * element-type inference and the auto-pairs-vs-ipairs rewrite: `ARRAY` values iterate
+     * with `ipairs` (integer keys), `MAP` values iterate with `pairs` (non-integer keys),
+     * and `NONE` values aren't iterable.
+     */
+    enum class Container { NONE, ARRAY, MAP }
+
+    /**
+     * Extracted return type of an API signature. [type] is the element type for
+     * containers (so `for _, v in fn() do v.<tab>` completes off [type]), or the scalar
+     * return type when [container] is [Container.NONE].
+     */
+    data class ReturnType(val type: String, val container: Container)
+
+    /**
+     * Parse the return type from a signature string formatted like `"Foo:bar(args) → Type"`,
+     * `"Foo:bar(args) → { Element… }"` / `"Foo:bar(args) → { Element }"` for arrays, or
+     * `"Foo:bar(args) → { [KeyType]: ValueType }"` / `"Foo:bar(args) → { [KeyType] = ValueType }"`
+     * for maps. Arrow can be `→` or `->`. Returns null if no return type is present
+     * (e.g. void methods).
+     */
+    fun parseReturnType(signature: String?): ReturnType? {
+        if (signature == null) return null
+        val arrow = signature.lastIndexOf('→').takeIf { it >= 0 }
+            ?: signature.lastIndexOf("->").takeIf { it >= 0 }
+            ?: return null
+        val rhs = signature.substring(arrow + 1).trim().trimStart('>').trim()
+
+        // Map form: `{ [K]: V }` or `{ [K] = V }`. Element type is V.
+        val mapMatch = Regex("""^\{\s*\[[\w?|\s]+?]\s*[:=]\s*([\w?|\s]+?)\s*}""").find(rhs)
+        if (mapMatch != null) {
+            val element = mapMatch.groupValues[1].trim().substringBefore('|').trim().trimEnd('?')
+            return ReturnType(element, Container.MAP)
+        }
+
+        // Array form: `{ Type… }` or `{ Type }`. Element may carry `?` for nullable —
+        // strip it since the for-loop element is always non-null per iteration.
+        val arrayMatch = Regex("""^\{\s*([\w?|\s]+?)\s*(?:…|\.\.\.)?\s*}""").find(rhs)
+        if (arrayMatch != null) {
+            val element = arrayMatch.groupValues[1].trim().substringBefore('|').trim().trimEnd('?')
+            return ReturnType(element, Container.ARRAY)
+        }
+
+        // Scalar form: first identifier after the arrow, strip any `|` union or `?` suffix.
+        val scalarMatch = Regex("""^([\w?|\s]+?)(?:\s|$)""").find(rhs) ?: return null
+        val scalar = scalarMatch.groupValues[1].trim().substringBefore('|').trim().trimEnd('?')
+        if (scalar.isEmpty()) return null
+        return ReturnType(scalar, Container.NONE)
+    }
+
+    /**
+     * Return type for the given method name, searching every documented entry whose key
+     * ends with `:$methodName` or equals `$methodName`. Matches the same
+     * "look up by short method name" shape autocomplete uses for chain resolution, so a
+     * single definition in [entries] drives both hover docs, chain inference, and for-loop
+     * element inference — no parallel hardcoded maps.
+     *
+     * When multiple entries share a method name (e.g. both `Network:find` and
+     * `CardHandle:find` define `find`) the first match wins; that's fine because they
+     * agree on return type in every case we ship today.
+     */
+    fun methodReturnType(methodName: String): ReturnType? {
+        val suffix = ":$methodName"
+        for ((key, doc) in entries) {
+            if (key == methodName || key.endsWith(suffix)) {
+                parseReturnType(doc.signature)?.let { return it }
+            }
+        }
+        return null
+    }
+
     fun resolveAt(
         tokens: List<LuaTokenizer.Token>,
         index: Int,
@@ -480,8 +552,18 @@ object LuaApiDocs {
             }
         }
         entries[tok.text]?.let { return it }
+        // Variable hover: synthesize a `name: Type` signature and pull the type's
+        // description from its own entry when one exists. This beats returning the raw
+        // type doc (which would hide that the token is a *variable*) while still
+        // surfacing the type's explanation so the user understands what operations apply.
         variableTypes[tok.text]?.let { selfType ->
-            entries[selfType]?.let { return it }
+            val typeDoc = entries[selfType]
+            return Doc(
+                signature = "${tok.text}: $selfType",
+                description = typeDoc?.description ?: "",
+                category = typeDoc?.category ?: Category.TYPE,
+                guidebookRef = typeDoc?.guidebookRef,
+            )
         }
         return null
     }

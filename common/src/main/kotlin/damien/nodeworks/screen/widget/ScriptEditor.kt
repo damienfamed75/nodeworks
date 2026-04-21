@@ -671,6 +671,21 @@ class ScriptEditor(
     fun resolveDocAt(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? =
         resolveDocUnderMouse(mouseX, mouseY)
 
+    /**
+     * Character offset in [value] at the end of the line under (mouseX, mouseY), or null
+     * if the mouse isn't over a text line. Lets the tooltip renderer's fallback path build
+     * a symbol table anchored at the HOVERED token rather than the cursor — so a hover on
+     * a function parameter shows `paramName: Type` even with the cursor outside the body.
+     */
+    fun getHoverScopeAnchor(mouseX: Int, mouseY: Int): Int? {
+        if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return null
+        val relY = mouseY - textTop + scrollY
+        if (relY < 0) return null
+        val lineIdx = lineAtContentY(relY)
+        if (lineIdx < 0 || lineIdx >= lines.size) return null
+        return lines.take(lineIdx + 1).sumOf { it.length } + lineIdx
+    }
+
     /** Current Hold-G progress as a [0, 1] fraction. The hosting screen uses this to
      *  render the progress bar in its tooltip footer. */
     fun getHoldProgressFraction(): Float =

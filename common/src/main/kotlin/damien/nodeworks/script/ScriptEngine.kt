@@ -93,7 +93,7 @@ class ScriptEngine(
                 // Mark as loading (prevents circular require)
                 loaded.set(modName, LuaValue.TRUE)
 
-                val chunk = g.load(stripTypeAnnotations(source), modName)
+                val chunk = g.load(wrapForLoopIterators(stripTypeAnnotations(source)), modName)
                 val result = chunk.call()
 
                 // If the module returned a value, cache that; otherwise cache true
@@ -113,7 +113,7 @@ class ScriptEngine(
 
         // Compile and run the main script (top-level code: variable setup, scheduler registrations)
         return try {
-            val chunk = g.load(stripTypeAnnotations(mainScript), "main")
+            val chunk = g.load(wrapForLoopIterators(stripTypeAnnotations(mainScript)), "main")
             logCallback("Script started.", false)
             chunk.call()
             true
@@ -194,6 +194,11 @@ class ScriptEngine(
         fun stripTypeAnnotations(source: String): String {
             var result = source
 
+            // Container return-type annotations come BEFORE the scalar strip so the
+            // brace-delimited form `: { CardHandle }` / `: { [string]: V }` gets caught
+            // as a whole rather than leaving an unmatched brace behind.
+            result = result.replace(Regex("""\)\s*:\s*\{[^}]*}""")) { ")" }
+
             // Function parameter types: (param:Type) or (param: Type) or (param :Type)
             // Matches uppercase types (CardHandle, ItemsHandle) and builtin types (string, number, boolean, any)
             result = result.replace(Regex("""\b(\w+)\s*:\s*($typePattern)""")) { match ->
@@ -203,7 +208,76 @@ class ScriptEngine(
             // Return type annotations: ): TypeName or ): TypeName?
             result = result.replace(Regex("""\)\s*:\s*($typePattern)""")) { ")" }
 
+            // Container param types: (param: { CardHandle }) — keep the param name,
+            // drop the annotation. Matches the same brace-delimited form as returns.
+            result = result.replace(Regex("""\b(\w+)\s*:\s*\{[^}]*}""")) { it.groupValues[1] }
+
             return result
+        }
+
+        /**
+         * Rewrite `for ... in EXPR do` to `for ... in ipairs(EXPR) do` or `pairs(EXPR)`
+         * when EXPR isn't already wrapped. Iterator choice comes from [LuaApiDocs] —
+         * array-returning calls (`{ X }`) wrap in `ipairs`, map-returning calls
+         * (`{ [K]: V }`) wrap in `pairs`, and anything we can't resolve defaults to
+         * `pairs` since it iterates any table safely.
+         *
+         * Intentionally conservative: if the expression already starts with `ipairs(` /
+         * `pairs(`, or parses to something other than a function/method call, we leave
+         * it alone — users writing custom iterators keep full control.
+         */
+        fun wrapForLoopIterators(source: String): String {
+            // First pass: infer container kind for bare-variable for-loops. Covers two
+            // sources, with the explicit annotation winning when both apply:
+            //   * `local xs: { T }` / `local xs: { [K]: V }` — user-declared container
+            //     type. Authoritative.
+            //   * `local xs = fn()` where fn returns a container (per [LuaApiDocs]) —
+            //     inferred fallback.
+            val containerVars = mutableMapOf<String, LuaApiDocs.Container>()
+            val annotationPattern = Regex("""\blocal\s+(\w+)\s*:\s*(\{[^}]*})""")
+            for (match in annotationPattern.findAll(source)) {
+                val varName = match.groupValues[1]
+                val rt = LuaApiDocs.parseReturnType("() → ${match.groupValues[2]}")
+                if (rt != null && rt.container != LuaApiDocs.Container.NONE) {
+                    containerVars[varName] = rt.container
+                }
+            }
+            val localPattern = Regex("""\blocal\s+(\w+)\s*=\s*(.+)""")
+            for (match in localPattern.findAll(source)) {
+                val varName = match.groupValues[1]
+                if (varName in containerVars) continue // explicit annotation wins
+                val rhs = match.groupValues[2].trim()
+                val methodName = Regex("""(\w+)\s*\(""").findAll(rhs).lastOrNull()?.groupValues?.get(1) ?: continue
+                val rt = LuaApiDocs.methodReturnType(methodName) ?: continue
+                if (rt.container != LuaApiDocs.Container.NONE) {
+                    containerVars[varName] = rt.container
+                }
+            }
+
+            val forPattern = Regex("""\bfor\s+(\w+(?:\s*,\s*\w+)?)\s+in\s+(.+?)\s+do\b""")
+            return forPattern.replace(source) { match ->
+                val binding = match.groupValues[1]
+                val expr = match.groupValues[2].trim()
+                if (expr.startsWith("ipairs(") || expr.startsWith("pairs(")) return@replace match.value
+
+                // Bare variable referring to a tracked container: pick the right wrapper
+                // based on what the original call returned. Falls through to the call
+                // resolution below when the var isn't known to hold a container.
+                val bareContainer = if (Regex("""^\w+$""").matches(expr)) containerVars[expr] else null
+
+                val container = bareContainer ?: run {
+                    val methodName = Regex("""(\w+)\s*\(""").findAll(expr).lastOrNull()?.groupValues?.get(1)
+                    methodName?.let { LuaApiDocs.methodReturnType(it)?.container }
+                }
+                val iter = when (container) {
+                    LuaApiDocs.Container.ARRAY -> "ipairs"
+                    LuaApiDocs.Container.MAP -> "pairs"
+                    // Unknown / scalar / nothing parsed — default to `pairs` because it
+                    // iterates any table shape without needing contiguous integer keys.
+                    else -> "pairs"
+                }
+                "for $binding in $iter($expr) do"
+            }
         }
     }
 

@@ -1213,12 +1213,21 @@ class TerminalScreen(
             // Fallback path for tokens LuaApiDocs doesn't cover: the in-file
             // methodSignatures map, user-defined function scanner, and the
             // autocomplete symbol table (for plain `word: Type` hints on locals).
+            //
+            // The symbol-table lookup uses the HOVER position as its scope anchor, not
+            // the cursor. Otherwise hovering a function parameter (e.g. `from` in
+            // `function getThings(from: { CardHandle })`) wouldn't resolve while the
+            // cursor sits outside the function body — the param's scope would be closed
+            // at cursor time but is still open at the hover line.
             val fallback = methodSignatures[word]
                 ?: autocomplete.getFunctionSignature(word, editor.value)
                 ?: run {
+                    val hoverAnchor = editor.getHoverScopeAnchor(mouseX, mouseY)
+                        ?: editor.getCursorPosition()
+                    val clamped = hoverAnchor.coerceIn(0, editor.value.length)
                     val symbols = autocomplete.getSymbolTable(
                         editor.value,
-                        editor.value.substring(0, editor.getCursorPosition()),
+                        editor.value.substring(0, clamped),
                     )
                     symbols[word]?.let { "$word: $it" }
                 }

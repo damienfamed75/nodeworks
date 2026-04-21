@@ -2,6 +2,7 @@ package damien.nodeworks.screen.widget
 
 import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.screen.Icons
+import damien.nodeworks.script.LuaApiDocs
 import damien.nodeworks.compat.blit
 import damien.nodeworks.compat.drawCenteredString
 import damien.nodeworks.compat.drawString
@@ -371,6 +372,14 @@ class AutocompletePopup(
          *  as [ChainedPropertyAccess] but produces method suggestions. */
         data class ChainedMethodCall(val outerVar: String, val field: String, val partial: String) : CursorContext
 
+        /** `xs[idx].<partial>` — property access on the element type of an indexed container.
+         *  Receiver type comes from the symbol table (serialized `{ T }` / `{ [K]: V }`).
+         *  The index expression itself is ignored — we only need the receiver var. */
+        data class IndexedPropertyAccess(val receiver: String, val partial: String) : CursorContext
+
+        /** `xs[idx]:<partial>` — method call on the element type of an indexed container. */
+        data class IndexedMethodCall(val receiver: String, val partial: String) : CursorContext
+
         /** Resolved exports from a module (require or local table) */
         data class ResolvedExports(val exports: List<Suggestion>, val partial: String) : CursorContext
 
@@ -388,6 +397,12 @@ class AutocompletePopup(
     private fun parseCursorContext(currentLine: String, beforeCursor: String): CursorContext {
         val line = currentLine.trimStart()
         if (line.isEmpty()) return CursorContext.None
+
+        // Never autocomplete inside a comment. Line comments (`--`) terminate at EOL so
+        // we can decide from just the current line. Block comments (`--[[ … ]]`) are
+        // detected by a span-count scan over [beforeCursor] — count openings vs closings;
+        // an odd balance means the cursor is inside an open block.
+        if (isInsideComment(line, beforeCursor)) return CursorContext.None
 
         // Check for tag filter: #partial
         if (line.contains('#')) {
@@ -476,20 +491,114 @@ class AutocompletePopup(
         return -1
     }
 
-    /** Check for type annotation context on the current line. */
+    /** True when the cursor sits inside a Lua comment — either a `--` line comment on
+     *  the current line, or anywhere inside an unclosed `--[[ … ]]` block comment in the
+     *  entire script-prefix up to the cursor.
+     *
+     *  For the line-comment case, we walk the line tracking string delimiters so a `--`
+     *  inside `"foo--bar"` doesn't falsely mark the cursor as commented out. For the
+     *  block-comment case we simply match `--[[` / `]]` pairs across [beforeCursor];
+     *  anything with an odd open-count is currently inside a block. */
+    private fun isInsideComment(currentLine: String, beforeCursor: String): Boolean {
+        // Line-comment: scan the current line for `--` outside of string literals.
+        var inSingle = false
+        var inDouble = false
+        var i = 0
+        while (i < currentLine.length) {
+            val ch = currentLine[i]
+            val escaped = i > 0 && currentLine[i - 1] == '\\'
+            when {
+                !escaped && !inSingle && ch == '"' -> inDouble = !inDouble
+                !escaped && !inDouble && ch == '\'' -> inSingle = !inSingle
+                !inSingle && !inDouble && ch == '-' && i + 1 < currentLine.length && currentLine[i + 1] == '-' ->
+                    return true
+            }
+            i++
+        }
+
+        // Block-comment: count `--[[` openings minus `]]` closings in the text-so-far.
+        val blockOpens = Regex("""--\[\[""").findAll(beforeCursor).count()
+        val blockCloses = Regex("""]]""").findAll(beforeCursor).count()
+        return blockOpens > blockCloses
+    }
+
+    /**
+     * Split a function-parameter list on top-level commas only — commas nested inside a
+     * `{ … }` container-type annotation stay with their parameter. Without this,
+     * `from: { [string]: V }, rest: any` would naively split on every comma and break
+     * the map-type annotation in half.
+     */
+    private fun splitParamList(raw: String): List<String> {
+        val result = mutableListOf<String>()
+        var depth = 0
+        var start = 0
+        for (i in raw.indices) {
+            when (raw[i]) {
+                '{' -> depth++
+                '}' -> depth--
+                ',' -> if (depth == 0) {
+                    result.add(raw.substring(start, i))
+                    start = i + 1
+                }
+            }
+        }
+        result.add(raw.substring(start))
+        return result.mapNotNull { it.trim().takeIf { s -> s.isNotEmpty() } }
+    }
+
+    /**
+     * Parse a single `name: Type` / `name: { T }` / `name: { [K]: V }` param annotation
+     * into `(name, rawTypeString)`. The scalar-annotation parser (`split(":")`) can't
+     * handle the map form because the brace carries its own `:` internally; we split on
+     * the FIRST top-level `:` only, treating any `:` inside a `{ … }` as content.
+     */
+    private fun splitParamAnnotation(param: String): Pair<String, String>? {
+        var depth = 0
+        var colonIdx = -1
+        for (i in param.indices) {
+            when (param[i]) {
+                '{' -> depth++
+                '}' -> depth--
+                ':' -> if (depth == 0) { colonIdx = i; break }
+            }
+        }
+        if (colonIdx < 0) return null
+        val name = param.substring(0, colonIdx).trim().split("\\s+".toRegex()).firstOrNull()?.takeIf { it.isNotEmpty() }
+            ?: return null
+        val type = param.substring(colonIdx + 1).trim().removeSuffix("?").trim()
+        if (type.isEmpty()) return null
+        return name to type
+    }
+
+    /** Check for type annotation context on the current line. Covers scalar forms
+     *  (`: Type`) and container forms (`: { Element }`, `: { [K]: V }`) for locals,
+     *  function params, and function return types. Inside a `{ … }` brace the partial
+     *  completes the element type — for both arrays and maps, the element type is what
+     *  users care about most when annotating. */
     private fun findTypeAnnotationContext(line: String): CursorContext.TypeAnnotation? {
-        // Pattern 1: `local varName: partial` or `local varName : partial`
-        val localMatch = Regex("""\blocal\s+\w+\s*:\s*(\w*)$""").find(line)
-        if (localMatch != null) return CursorContext.TypeAnnotation(localMatch.groupValues[1])
+        // Pattern 1a: `local varName: partial` (scalar)
+        val localScalarMatch = Regex("""\blocal\s+\w+\s*:\s*(\w*)$""").find(line)
+        if (localScalarMatch != null) return CursorContext.TypeAnnotation(localScalarMatch.groupValues[1])
 
-        // Pattern 2: `function(param: partial` or `function name(param: partial`
-        // Also handles: `function name.method(param: partial` and `function(a: Type, b: partial`
-        val funcParamMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*(\w*)$""").find(line)
-        if (funcParamMatch != null) return CursorContext.TypeAnnotation(funcParamMatch.groupValues[1])
+        // Pattern 1b: `local varName: { partial` or `local varName: { [string]: partial` (container)
+        val localContainerMatch = Regex("""\blocal\s+\w+\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
+        if (localContainerMatch != null) return CursorContext.TypeAnnotation(localContainerMatch.groupValues[1])
 
-        // Pattern 3: `function(...): partial` or `function name.method(...): partial`
-        val returnMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*(\w*)$""").find(line)
-        if (returnMatch != null) return CursorContext.TypeAnnotation(returnMatch.groupValues[1])
+        // Pattern 2a: `function(param: partial` (scalar param)
+        val funcParamScalarMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*(\w*)$""").find(line)
+        if (funcParamScalarMatch != null) return CursorContext.TypeAnnotation(funcParamScalarMatch.groupValues[1])
+
+        // Pattern 2b: `function(param: { partial` (container param)
+        val funcParamContainerMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
+        if (funcParamContainerMatch != null) return CursorContext.TypeAnnotation(funcParamContainerMatch.groupValues[1])
+
+        // Pattern 3a: `function(...): partial` (scalar return)
+        val returnScalarMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*(\w*)$""").find(line)
+        if (returnScalarMatch != null) return CursorContext.TypeAnnotation(returnScalarMatch.groupValues[1])
+
+        // Pattern 3b: `function(...): { partial` (container return)
+        val returnContainerMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
+        if (returnContainerMatch != null) return CursorContext.TypeAnnotation(returnContainerMatch.groupValues[1])
 
         return null
     }
@@ -513,6 +622,27 @@ class AutocompletePopup(
             val chainType = resolveExpressionType(trimBefore, forChaining = true)
             if (chainType != null) {
                 return CursorContext.ResolvedMethodCall(chainType, partial)
+            }
+        }
+
+        // Indexed receiver `<receiver>[index]:partial`. `<receiver>` can be either a bare
+        // variable (resolved against the symbol table by
+        // [CursorContext.IndexedMethodCall]) or a container-returning call chain (resolved
+        // inline via [resolveExpressionType] + [elementTypeOf] so we can emit a direct
+        // ResolvedMethodCall with the element type).
+        if (trimBefore.endsWith("]")) {
+            val beforeBracket = stripIndexBrackets(trimBefore)
+            if (beforeBracket != null) {
+                val bareVar = Regex("""(\w+)$""").matchEntire(beforeBracket.trimEnd())
+                if (bareVar != null) {
+                    return CursorContext.IndexedMethodCall(bareVar.groupValues[1], partial)
+                }
+                if (beforeBracket.trimEnd().endsWith(")")) {
+                    val chainRt = resolveExpressionReturnType(beforeBracket.trimEnd())
+                    if (chainRt != null && chainRt.container != LuaApiDocs.Container.NONE) {
+                        return CursorContext.ResolvedMethodCall(chainRt.type, partial)
+                    }
+                }
             }
         }
 
@@ -557,18 +687,64 @@ class AutocompletePopup(
         return null
     }
 
-    /** Map of method names to their return types. Used for chain resolution and variable inference. */
-    private val methodReturnTypes = mapOf(
-        // CardHandle methods
-        "face" to "CardHandle",
-        "slots" to "CardHandle",
-        "find" to "ItemsHandle",
-        // Network methods
-        "get" to "CardHandle",
-        "craft" to "CraftBuilder",
-        "shapeless" to "ItemsHandle",
-        "var" to "VariableHandle"
-    )
+    /**
+     * Unwrap a container type string (as stored in the symbol table: `{ T }` for arrays,
+     * `{ [K]: V }` for maps) into the element type T / V. Returns null when [type] is
+     * null or isn't in container form — callers use that to skip indexed-access
+     * completion on a scalar typed var. Single parser shared with LuaApiDocs.
+     */
+    private fun elementTypeOf(type: String?): String? {
+        if (type == null) return null
+        val rt = LuaApiDocs.parseReturnType("() → $type") ?: return null
+        return if (rt.container != LuaApiDocs.Container.NONE) rt.type else null
+    }
+
+    /**
+     * Strip a balanced trailing `[…]` from [text], returning the prefix. Depth tracks
+     * nested brackets so `xs[ys[0]]` unwraps to `xs`. Returns null when the text doesn't
+     * actually end in a matched index expression.
+     */
+    private fun stripIndexBrackets(text: String): String? {
+        if (!text.endsWith("]")) return null
+        var depth = 0
+        for (i in text.lastIndex downTo 0) {
+            when (text[i]) {
+                ']' -> depth++
+                '[' -> {
+                    depth--
+                    if (depth == 0) return text.substring(0, i)
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Resolve the full [LuaApiDocs.ReturnType] (not just scalar) of a call-ending
+     * expression like `network:getAll("storage")`. Parallels [resolveExpressionType]
+     * but preserves container information so indexed access on a call result (e.g.
+     * `network:getAll("storage")[0]`) can pull out the element type.
+     */
+    private fun resolveExpressionReturnType(expr: String): LuaApiDocs.ReturnType? {
+        val trimmed = expr.trimEnd()
+        if (!trimmed.endsWith(")")) return null
+        val paren = findMatchingParenBackward(trimmed) ?: return null
+        val beforeParen = paren.first.trimEnd()
+        val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
+        return LuaApiDocs.methodReturnType(methodName)
+            ?: userFunctionReturnType(methodName, cachedFullText)
+    }
+
+    /** Scalar return type lookup driving both chain resolution and `local x = fn(...)`
+     *  inference. Delegates to [LuaApiDocs.methodReturnType] so the doc signatures are
+     *  the single source of truth — no parallel hardcoded map to drift. Container-typed
+     *  returns (`{ Type… }`, `{ [K]: V }`) return null here because chaining off an array
+     *  value makes no sense; the for-loop inference path uses
+     *  [LuaApiDocs.methodReturnType] directly to pull element types. */
+    private fun scalarReturnTypeOf(methodName: String): String? {
+        val rt = LuaApiDocs.methodReturnType(methodName) ?: return null
+        return if (rt.container == LuaApiDocs.Container.NONE) rt.type else null
+    }
 
     /** Methods that return non-chainable values (arrays, primitives). No method/property suggestions after these. */
     private val nonChainableMethods = setOf("shapeless", "count", "insert", "hasTag", "matches")
@@ -590,11 +766,15 @@ class AutocompletePopup(
 
         if (forChaining && methodName in nonChainableMethods) return null
 
-        return allReturnTypes[methodName]
+        // Built-in scalars come from LuaApiDocs; user-defined functions override via
+        // [allReturnTypes]. Container-typed built-ins (arrays/maps) intentionally fall
+        // through to null here — you can't chain `.foo` off the array value itself.
+        allReturnTypes[methodName]?.let { return it }
+        return scalarReturnTypeOf(methodName)
     }
 
-    /** Combined map of built-in + user-defined function return types. Rebuilt once per computeSuggestions call. */
-    private var allReturnTypes: Map<String, String> = methodReturnTypes
+    /** User-defined function return types (scalar only). Rebuilt once per computeSuggestions call. */
+    private var allReturnTypes: Map<String, String> = emptyMap()
 
     /** Most recent full-script text stashed by [computeSuggestions] so suggestion helpers
      *  that don't get fullText as a parameter can still inspect the script (e.g. to find
@@ -614,18 +794,42 @@ class AutocompletePopup(
         return pattern.findAll(text).map { it.groupValues[1] }.toSet()
     }
 
-    /** Build the combined return type map from built-in methods + all user function definitions. */
+    /** User-defined function return types pulled from `function name(...): Type` annotations
+     *  in the current script + every module script. Scalar-only; container annotations
+     *  (`{ Type }`, `{ [K]: V }`) still parse but are handled separately by
+     *  [userFunctionReturnType] so for-loop inference can pick them up. */
     private fun buildReturnTypeMap(fullText: String): Map<String, String> {
-        val map = methodReturnTypes.toMutableMap()
-        // Scan current script + all module scripts for function return type annotations
+        val map = mutableMapOf<String, String>()
+        for ((name, retType) in allUserFunctions(fullText)) {
+            if (LuaApiDocs.parseReturnType("() → $retType")?.container == LuaApiDocs.Container.NONE) {
+                map.putIfAbsent(name, retType)
+            }
+        }
+        return map
+    }
+
+    /** Return type for a user-defined function with a `: Type` annotation, or null. Used
+     *  by for-loop inference to resolve `for _, v in myFn() do` to the element type when
+     *  `myFn`'s annotation is a container like `: { CardHandle }`. */
+    private fun userFunctionReturnType(funcName: String, fullText: String): LuaApiDocs.ReturnType? {
+        val retType = allUserFunctions(fullText)[funcName] ?: return null
+        return LuaApiDocs.parseReturnType("() → $retType")
+    }
+
+    /** Scan every in-scope script for `function name(...): ReturnType` annotations,
+     *  returning the raw ReturnType string (unparsed so container notations survive). */
+    private fun allUserFunctions(fullText: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
         val allTexts = mutableListOf(fullText)
         for ((_, scriptText) in scripts()) {
             allTexts.add(scriptText)
         }
-        val funcPattern = Regex("""\bfunction\s+[\w.]*?(\w+)\s*\([^)]*\)\s*:\s*(\w+)""")
+        // Return type can be a bare identifier or a brace-delimited container — capture
+        // everything after the `:` up to the first newline so `{ CardHandle }` parses.
+        val funcPattern = Regex("""\bfunction\s+[\w.]*?(\w+)\s*\([^)]*\)\s*:\s*([^\n]+)""")
         for (text in allTexts) {
             for (match in funcPattern.findAll(text)) {
-                map.putIfAbsent(match.groupValues[1], match.groupValues[2])
+                map.putIfAbsent(match.groupValues[1], match.groupValues[2].trim())
             }
         }
         return map
@@ -665,6 +869,25 @@ class AutocompletePopup(
             }
         }
 
+        // Indexed receiver `<receiver>[index].partial` — property counterpart of the `:`
+        // indexed-method logic in [findColonContext]. Handles both bare-var and
+        // chain-call receivers.
+        if (beforeDot.endsWith("]")) {
+            val beforeBracket = stripIndexBrackets(beforeDot)
+            if (beforeBracket != null) {
+                val bareVar = Regex("""(\w+)$""").matchEntire(beforeBracket.trimEnd())
+                if (bareVar != null) {
+                    return CursorContext.IndexedPropertyAccess(bareVar.groupValues[1], partial)
+                }
+                if (beforeBracket.trimEnd().endsWith(")")) {
+                    val chainRt = resolveExpressionReturnType(beforeBracket.trimEnd())
+                    if (chainRt != null && chainRt.container != LuaApiDocs.Container.NONE) {
+                        return CursorContext.ResolvedPropertyAccess(chainRt.type, partial)
+                    }
+                }
+            }
+        }
+
         // Chain access: `<outerVar>.<field>.<partial>` (e.g. `items.copperIngot.count`).
         // Symbol lookup happens later in computeSuggestions where the symbol table is
         // already built; we only parse the shape here.
@@ -692,7 +915,11 @@ class AutocompletePopup(
     fun getFunctionSignature(funcName: String, fullText: String): String? {
         val allTexts = mutableListOf(fullText)
         for ((_, scriptText) in scripts()) allTexts.add(scriptText)
-        val pattern = Regex("""\bfunction\s+([\w.]*${Regex.escape(funcName)})\s*\(([^)]*)\)\s*(?::\s*(\w+)\??\s*)?""")
+        // Return type can be a scalar (`CardHandle`, `CardHandle?`) or a brace-delimited
+        // container (`{ CardHandle }`, `{ [string]: V }`). The alternation covers both;
+        // without it a function declared `function f(): { T }` would hover without
+        // its return-type annotation.
+        val pattern = Regex("""\bfunction\s+([\w.]*${Regex.escape(funcName)})\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
         for (text in allTexts) {
             val match = pattern.find(text) ?: continue
             val name = match.groupValues[1]
@@ -706,26 +933,42 @@ class AutocompletePopup(
 
     private fun buildSymbolTable(fullText: String, beforeCursor: String): Map<String, String> {
         val symbols = mutableMapOf<String, String>()
+        // Container-typed locals. Populated by both explicit `local xs: { T }` annotations
+        // and inferred `local xs = fn()` assignments where fn returns a container. Tracked
+        // separately from [symbols] (which holds scalar types) so for-loop inference can
+        // resolve element types without the rest of the code having to distinguish.
+        val containerVars = mutableMapOf<String, Pair<String, LuaApiDocs.Container>>()
 
-        // 1. Explicit type annotations: local x: Type = ...
-        Regex("""\blocal\s+(\w+)\s*:\s*(\w+)\??""").findAll(fullText).forEach {
+        // 1a. Explicit scalar type annotations: local x: Type = ...
+        Regex("""\blocal\s+(\w+)\s*:\s*(\w+)\??\s*(?:=|\n|$)""").findAll(fullText).forEach {
             symbols[it.groupValues[1]] = it.groupValues[2]
         }
 
-        // 2. Function parameter annotations — only from scopes the cursor is inside
+        // 1b. Explicit container type annotations: local xs: { T } = ... or local xs: { [K]: V } = ...
+        // Uses [LuaApiDocs.parseReturnType]'s brace grammar so user annotations and doc
+        // signatures share one parser — keeps the two surfaces from drifting.
+        Regex("""\blocal\s+(\w+)\s*:\s*(\{[^}]*})""").findAll(fullText).forEach { match ->
+            val varName = match.groupValues[1]
+            val annotation = match.groupValues[2]
+            val rt = LuaApiDocs.parseReturnType("() → $annotation")
+            if (rt != null && rt.container != LuaApiDocs.Container.NONE) {
+                containerVars[varName] = rt.type to rt.container
+            }
+        }
+
+        // 2. Function parameter annotations — only from scopes the cursor is inside.
+        // Allow container types like `from: { CardHandle }` in the capture by matching
+        // the content between `(` and `)` greedily over non-`)` chars; the post-split
+        // phase handles both scalar `x: Type` and brace-delimited `x: { T }` forms.
         val funcPattern = Regex("""\bfunction\s*\w*\s*\(([^)]*)\)""")
         val endPattern = Regex("""\bend\b""")
         val scopeStack = mutableListOf<List<Pair<String, String>>>()
         for (line in beforeCursor.lines()) {
             for (match in funcPattern.findAll(line.trim())) {
                 val paramTypes = mutableListOf<Pair<String, String>>()
-                for (param in match.groupValues[1].split(",")) {
-                    val parts = param.trim().split(":")
-                    val name = parts[0].trim().split("\\s+".toRegex())[0]
-                    val type = parts.getOrNull(1)?.trim()?.replace("?", "")
-                    if (name.isNotEmpty() && type != null && type.isNotEmpty()) {
-                        paramTypes.add(name to type)
-                    }
+                for (param in splitParamList(match.groupValues[1])) {
+                    val (name, type) = splitParamAnnotation(param) ?: continue
+                    paramTypes.add(name to type)
                 }
                 scopeStack.add(paramTypes)
             }
@@ -733,10 +976,17 @@ class AutocompletePopup(
                 if (scopeStack.isNotEmpty()) scopeStack.removeLast()
             }
         }
-        // Add params from currently open scopes
+        // Add params from currently open scopes to [symbols] AND to [containerVars] when
+        // their annotation parses as a container. The containerVars entry lets a
+        // for-loop over a param (e.g. `for _, v in from do` where `from: { CardHandle }`)
+        // infer the element type without the user having to assign the param locally.
         for (scope in scopeStack) {
             for ((name, type) in scope) {
                 symbols.putIfAbsent(name, type)
+                val rt = LuaApiDocs.parseReturnType("() → $type")
+                if (rt != null && rt.container != LuaApiDocs.Container.NONE) {
+                    containerVars.putIfAbsent(name, rt.type to rt.container)
+                }
             }
         }
 
@@ -772,6 +1022,9 @@ class AutocompletePopup(
         }
 
         // General inference: local x = expr
+        // (`containerVars` was initialized above and may already carry explicit-annotation
+        // entries; RHS-inferred container types are merged in below without overwriting
+        // the explicit user annotation, which is always authoritative.)
         Regex("""\blocal\s+(\w+)\s*=\s*(.+)""").findAll(fullText).forEach { match ->
             val varName = match.groupValues[1]
             if (varName !in symbols) {
@@ -791,19 +1044,127 @@ class AutocompletePopup(
                     if (chainType != null) {
                         symbols[varName] = chainType
                     } else {
-                        // Try user-defined function return type: local x = funcName(...)
-                        val funcCallMatch = Regex("""^(\w+)\s*\(""").find(rhs)
-                        if (funcCallMatch != null) {
-                            val funcName = funcCallMatch.groupValues[1]
-                            val retType = funcReturnTypes[funcName]
-                            if (retType != null) symbols[varName] = retType
+                        // Container-returning call? Record element type + container kind
+                        // so for-loops over this var can resolve without a wrapper.
+                        val methodName = Regex("""(\w+)\s*\(""").findAll(rhs).lastOrNull()?.groupValues?.get(1)
+                        val rt = methodName?.let {
+                            LuaApiDocs.methodReturnType(it) ?: userFunctionReturnType(it, fullText)
+                        }
+                        if (rt != null && rt.container != LuaApiDocs.Container.NONE) {
+                            containerVars.putIfAbsent(varName, rt.type to rt.container)
+                        } else {
+                            // Try user-defined function return type: local x = funcName(...)
+                            val funcCallMatch = Regex("""^(\w+)\s*\(""").find(rhs)
+                            if (funcCallMatch != null) {
+                                val funcName = funcCallMatch.groupValues[1]
+                                val retType = funcReturnTypes[funcName]
+                                if (retType != null) symbols[varName] = retType
+                            }
                         }
                     }
                 }
             }
         }
 
+        // Expose container-typed vars to the scalar [symbols] map using their serialized
+        // form (`{ T }` for arrays, `{ [string]: T }` for maps). The hover-tooltip fallback
+        // in TerminalScreen reads directly from [getSymbolTable], so this gives
+        // `local specificCards: { CardHandle } = …` a proper `specificCards: { CardHandle }`
+        // hover — matching how plain `local n = 0` renders `n: number`. No collision with
+        // property/method completion: those only match known scalar type keys, and
+        // `"{ CardHandle }"` isn't one.
+        for ((name, container) in containerVars) {
+            if (name in symbols) continue
+            val (element, kind) = container
+            symbols[name] = when (kind) {
+                LuaApiDocs.Container.ARRAY -> "{ $element }"
+                LuaApiDocs.Container.MAP -> "{ [string]: $element }"
+                LuaApiDocs.Container.NONE -> element
+            }
+        }
+
+        // For-loop element inference: `for _, v in EXPR do` / `for v in EXPR do` where
+        // EXPR returns a container. Handles three shapes:
+        //   for _, v in fn() do            -- direct container-returning call
+        //   for _, v in ipairs(fn()) do    -- explicit ipairs, any container-returning expr inside
+        //   for _, v in vars do            -- bare var that holds a container (from local inference)
+        //   for _, v in ipairs(vars) do    -- explicit wrapper around a container-holding var
+        // All four unwrap to the same element-type lookup.
+        val forPattern = Regex("""\bfor\s+(\w+)(?:\s*,\s*(\w+))?\s+in\s+(.+?)\s+do\b""")
+        for (match in forPattern.findAll(fullText)) {
+            val keyName = match.groupValues[1]
+            val valName = match.groupValues[2].takeIf { it.isNotEmpty() }
+            val rawExpr = match.groupValues[3].trim()
+            val iterKind = containerFromIterExpr(rawExpr, fullText, containerVars) ?: continue
+            val (elementType, container) = iterKind
+
+            // `for k, v in ...`: k = key, v = element.
+            // `for v in ...`: v = key (first return of the iterator — index for ipairs,
+            // string for pairs). Only when two names are present does the element type
+            // get bound.
+            if (valName != null) {
+                if (valName !in symbols) symbols[valName] = elementType
+                if (keyName !in symbols && keyName != "_") {
+                    val keyType = when (container) {
+                        LuaApiDocs.Container.ARRAY -> "number"
+                        LuaApiDocs.Container.MAP -> "string"
+                        else -> null
+                    }
+                    if (keyType != null) symbols[keyName] = keyType
+                }
+            }
+        }
+
         return symbols
+    }
+
+    /**
+     * Given the expression after `in` in a `for ... in EXPR do` — with or without an
+     * `ipairs(…)` / `pairs(…)` wrapper — return the element type and container kind.
+     * Resolves three shapes:
+     *   * a function/method call (`fn()`, `card:find(…)`) → via [LuaApiDocs.methodReturnType]
+     *   * a bare identifier (`xs`) → via [containerVars] built from earlier `local` scans
+     *   * either of the above inside `ipairs(…)` / `pairs(…)`
+     *
+     * Wrapper choice on the user's side is authoritative when present — `ipairs(xs)` will
+     * narrow the container kind to ARRAY even if `xs` is typed as MAP; that mirrors what
+     * Lua actually does at runtime and keeps key inference (`i: number` vs `k: string`)
+     * honest. Returns null if the expression can't be resolved to a container.
+     */
+    private fun containerFromIterExpr(
+        expr: String,
+        fullText: String,
+        containerVars: Map<String, Pair<String, LuaApiDocs.Container>>,
+    ): Pair<String, LuaApiDocs.Container>? {
+        val forcedWrapper = when {
+            expr.startsWith("ipairs(") && expr.endsWith(")") -> LuaApiDocs.Container.ARRAY
+            expr.startsWith("pairs(") && expr.endsWith(")") -> LuaApiDocs.Container.MAP
+            else -> null
+        }
+        val unwrapped = when (forcedWrapper) {
+            LuaApiDocs.Container.ARRAY -> expr.removePrefix("ipairs(").removeSuffix(")").trim()
+            LuaApiDocs.Container.MAP -> expr.removePrefix("pairs(").removeSuffix(")").trim()
+            else -> expr
+        }
+
+        // Bare identifier: look up the container var table built during `local` inference.
+        if (Regex("""^\w+$""").matches(unwrapped)) {
+            val entry = containerVars[unwrapped] ?: return null
+            val (elementType, container) = entry
+            return elementType to (forcedWrapper ?: container)
+        }
+
+        // Function/method call at the tail — resolve via LuaApiDocs or user fn annotations.
+        if (!unwrapped.endsWith(")")) return null
+        val paren = findMatchingParenBackward(unwrapped) ?: return null
+        val beforeParen = paren.first.trimEnd()
+        val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
+
+        val rt = LuaApiDocs.methodReturnType(methodName)
+            ?: userFunctionReturnType(methodName, fullText)
+            ?: return null
+        if (rt.container == LuaApiDocs.Container.NONE) return null
+        return rt.type to (forcedWrapper ?: rt.container)
     }
 
     // ========== Suggestion Generation ==========
@@ -829,6 +1190,14 @@ class AutocompletePopup(
             is CursorContext.ResolvedPropertyAccess -> suggestPropertiesForType(ctx.resolvedType, ctx.partial)
             is CursorContext.ChainedPropertyAccess -> suggestChainedPropertyAccess(ctx, symbols)
             is CursorContext.ChainedMethodCall -> suggestChainedMethodCall(ctx, symbols)
+            is CursorContext.IndexedPropertyAccess -> {
+                val element = elementTypeOf(symbols[ctx.receiver]) ?: return emptyList()
+                suggestPropertiesForType(element, ctx.partial)
+            }
+            is CursorContext.IndexedMethodCall -> {
+                val element = elementTypeOf(symbols[ctx.receiver]) ?: return emptyList()
+                suggestMethodsForType(element, ctx.partial)
+            }
             is CursorContext.ResolvedExports -> fuzzy(ctx.partial, ctx.exports)
             is CursorContext.MethodCall -> suggestMethodCall(ctx, symbols, fullText)
             is CursorContext.PropertyAccess -> suggestPropertyAccess(ctx, symbols, fullText)
@@ -1121,7 +1490,17 @@ class AutocompletePopup(
             "if", "then", "else", "elseif", "for", "while", "do", "return",
             "true", "false", "nil", "not", "and", "or"
         ).map { suggest(it, kind = Kind.KEYWORD) }
-        val userVars = (extractVariableNames(fullText) + extractFunctionParams(beforeCursor)).distinct().map { name ->
+        // Variables are scoped: only surface names declared BEFORE the cursor. Using
+        // fullText would offer `myVar` in `myVa|\nlocal myVar = 0`, suggesting code that
+        // isn't yet valid. For-loop bindings + function params follow the same rule
+        // because [extractVariableNames] / [extractFunctionParams] both take the
+        // `beforeCursor` slice.
+        //
+        // Functions stay global (scanned from fullText) because declaring a function later
+        // in the file doesn't affect whether the IDE should suggest it — common Lua
+        // convention puts helper definitions at the bottom, and blocking those from
+        // autocomplete would be more annoying than useful.
+        val userVars = (extractVariableNames(beforeCursor) + extractFunctionParams(beforeCursor)).distinct().map { name ->
             val type = symbols[name]
             if (type != null) suggest(name, "$name: $type", Kind.VARIABLE) else suggest(name, kind = Kind.VARIABLE)
         }
@@ -1486,8 +1865,25 @@ class AutocompletePopup(
     // ========== Utility functions ==========
 
     private fun extractVariableNames(text: String): List<String> {
-        val pattern = Regex("""\blocal\s+(\w+)""")
-        return pattern.findAll(text).map { it.groupValues[1] }.distinct().toList()
+        val names = mutableListOf<String>()
+        // `local` declarations
+        Regex("""\blocal\s+(\w+(?:\s*,\s*\w+)*)""").findAll(text).forEach { match ->
+            for (part in match.groupValues[1].split(',')) names.add(part.trim())
+        }
+        // For-loop bindings: generic `for k [, v] in …` and numeric `for i = …, …`.
+        // Leading `_` is ignored because `_` is the conventional throwaway binding and
+        // suggesting it back to the user adds noise.
+        Regex("""\bfor\s+(\w+(?:\s*,\s*\w+)?)\s+in\b""").findAll(text).forEach { match ->
+            for (part in match.groupValues[1].split(',')) {
+                val name = part.trim()
+                if (name.isNotEmpty() && name != "_") names.add(name)
+            }
+        }
+        Regex("""\bfor\s+(\w+)\s*=""").findAll(text).forEach { match ->
+            val name = match.groupValues[1]
+            if (name != "_") names.add(name)
+        }
+        return names.distinct()
     }
 
     /** Extract function parameters that are in scope at the cursor position. */
@@ -1526,8 +1922,9 @@ class AutocompletePopup(
 
     private fun extractFunctions(text: String): List<FunctionInfo> {
         val result = mutableListOf<FunctionInfo>()
-        // Match: function name(params): ReturnType  or  local function name(params): ReturnType
-        val pattern = Regex("""\bfunction\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+)\??\s*)?""")
+        // Match: function name(params): ReturnType  or  local function name(params): ReturnType.
+        // Return type can be scalar (`T`, `T?`) or container (`{ T }`, `{ [K]: V }`).
+        val pattern = Regex("""\bfunction\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
         for (match in pattern.findAll(text)) {
             val name = match.groupValues[1]
             val rawParams = match.groupValues[2].trim()
@@ -1542,9 +1939,14 @@ class AutocompletePopup(
     /** Extract functions and fields defined on a table variable in the given text. */
     private fun extractTableMembers(text: String, tableVar: String): List<Suggestion> {
         val exports = mutableListOf<Suggestion>()
-        // function tableVar.method(params): ReturnType
+        // function tableVar.method(params): ReturnType. Return type can be scalar or
+        // brace-delimited container (`{ T }`, `{ [K]: V }`), mirroring [extractFunctions].
+        // Without the brace alternation, a module exporting
+        // `function a.getAllThings(...): { ItemsHandle }` would lose its return annotation
+        // in the autocomplete display even though the hover tooltip (via a separate path)
+        // renders it correctly.
         val funcPattern =
-            Regex("""\bfunction\s+${Regex.escape(tableVar)}\.(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+)\??\s*)?""")
+            Regex("""\bfunction\s+${Regex.escape(tableVar)}\.(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
         funcPattern.findAll(text).forEach { m ->
             val funcName = m.groupValues[1]
             val params = m.groupValues[2].trim().split(",").joinToString(", ") { it.trim() }
