@@ -223,31 +223,46 @@ class AutocompletePopup(
         val popupWidth = suggestions.maxOf { font.width(it.displayText) } + 8 + BADGE_SIZE + BADGE_GAP
         val actualHeight = visibleCount * itemHeight + 4
 
-        graphics.fill(popupX, popupY, popupX + popupWidth, popupY + actualHeight, 0xEE1E1E1E.toInt())
-        graphics.fill(popupX, popupY, popupX + popupWidth, popupY + 1, 0xFF555555.toInt())
-        graphics.fill(popupX, popupY + actualHeight - 1, popupX + popupWidth, popupY + actualHeight, 0xFF555555.toInt())
-        graphics.fill(popupX, popupY, popupX + 1, popupY + actualHeight, 0xFF555555.toInt())
-        graphics.fill(popupX + popupWidth - 1, popupY, popupX + popupWidth, popupY + actualHeight, 0xFF555555.toInt())
+        // Keep the popup within the game window — same flip-and-clamp policy the hover
+        // tooltip uses. Flipping happens first (popup above the cursor line if there's no
+        // room below, left of the anchor if there's no room right) before the final clamp,
+        // so a dropdown that barely overflows the right edge slides left instead of getting
+        // pinned to the edge with its text cut off.
+        val window = net.minecraft.client.Minecraft.getInstance().window
+        val gameW = window.guiScaledWidth
+        val gameH = window.guiScaledHeight
+        var renderX = popupX
+        var renderY = popupY
+        if (renderX + popupWidth > gameW) renderX = popupX - popupWidth - 4
+        if (renderY + actualHeight > gameH) renderY = popupY - actualHeight - font.lineHeight - 4
+        renderX = renderX.coerceIn(0, (gameW - popupWidth).coerceAtLeast(0))
+        renderY = renderY.coerceIn(0, (gameH - actualHeight).coerceAtLeast(0))
+
+        graphics.fill(renderX, renderY, renderX + popupWidth, renderY + actualHeight, 0xEE1E1E1E.toInt())
+        graphics.fill(renderX, renderY, renderX + popupWidth, renderY + 1, 0xFF555555.toInt())
+        graphics.fill(renderX, renderY + actualHeight - 1, renderX + popupWidth, renderY + actualHeight, 0xFF555555.toInt())
+        graphics.fill(renderX, renderY, renderX + 1, renderY + actualHeight, 0xFF555555.toInt())
+        graphics.fill(renderX + popupWidth - 1, renderY, renderX + popupWidth, renderY + actualHeight, 0xFF555555.toInt())
 
         if (scrollOffset > 0) {
-            graphics.drawString(font, "\u25B2", popupX + popupWidth - 10, popupY + 1, 0xFF888888.toInt())
+            graphics.drawString(font, "\u25B2", renderX + popupWidth - 10, renderY + 1, 0xFF888888.toInt())
         }
         if (scrollOffset + visibleCount < suggestions.size) {
             graphics.drawString(
                 font,
                 "\u25BC",
-                popupX + popupWidth - 10,
-                popupY + actualHeight - font.lineHeight - 1,
+                renderX + popupWidth - 10,
+                renderY + actualHeight - font.lineHeight - 1,
                 0xFF888888.toInt()
             )
         }
 
-        val textX = popupX + 4 + BADGE_SIZE + BADGE_GAP
+        val textX = renderX + 4 + BADGE_SIZE + BADGE_GAP
         for (i in 0 until visibleCount) {
             val suggestionIndex = scrollOffset + i
-            val y = popupY + 2 + i * itemHeight
+            val y = renderY + 2 + i * itemHeight
             if (suggestionIndex == selectedIndex) {
-                graphics.fill(popupX + 1, y, popupX + popupWidth - 1, y + itemHeight, 0xFF3A5FCD.toInt())
+                graphics.fill(renderX + 1, y, renderX + popupWidth - 1, y + itemHeight, 0xFF3A5FCD.toInt())
             }
             val s = suggestions[suggestionIndex]
 
@@ -257,7 +272,7 @@ class AutocompletePopup(
             // visible letter is (letterW - 1) pixels wide — subtract that to get a
             // symmetric X offset. Vertically, capital letters render at rows 1..7 of the
             // 9px line box, so the visible glyph height is 7; pad 1px top + 1px bottom.
-            val badgeX = popupX + 4
+            val badgeX = renderX + 4
             val badgeY = y + (itemHeight - BADGE_SIZE) / 2
             Icons.BADGE.drawTopLeftTinted(graphics, badgeX, badgeY, BADGE_SIZE, BADGE_SIZE, s.kind.color)
             val visualLetterW = (font.width(s.kind.letter) - 1).coerceAtLeast(1)
