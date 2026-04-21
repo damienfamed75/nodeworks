@@ -162,14 +162,15 @@ def _infer_save_offset(data: list) -> tuple[int, int, int] | None:
     """
     from collections import Counter
 
-    # Only BLOCK ENTITIES (entries with an `nbt:` compound) are valid connection targets.
-    # Air and static blocks can't be Connectables. Including them inflates the candidate
-    # pool by positions that happen to land connections on empty rows, producing an offset
-    # that's off-by-one from the true save origin.
+    # Only CONNECTABLES are valid connection targets — concretely, BEs whose `nbt:`
+    # contains a `connections:` field (even empty). Including every BE in the candidate
+    # pool (e.g. chest / furnace neighbours) lets a wrong offset tie with the real one
+    # by incidentally landing its "translated" connections on non-Connectable BE positions,
+    # which then makes `most_common` pick the wrong offset and produce self-loops.
     connectable_positions = [
         tuple(int(v) for v in entry.get("pos", [0, 0, 0]))
         for entry in data
-        if "nbt" in entry
+        if "connections" in entry.get("nbt", {})
     ]
     conn_pairs = []
     for entry in data:

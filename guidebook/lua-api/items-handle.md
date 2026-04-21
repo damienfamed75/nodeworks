@@ -1,10 +1,7 @@
 ---
 navigation:
-  parent: index.md
+  parent: lua-api/index.md
   title: ItemsHandle
-  position: 20
-categories:
-- lua-api
 ---
 
 # ItemsHandle

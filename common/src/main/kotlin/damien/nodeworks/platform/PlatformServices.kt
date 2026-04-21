@@ -149,6 +149,18 @@ interface StorageService {
     fun tryInsertAll(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, count: Long): Boolean
 
     /**
+     * Non-mutating capacity probe: returns how many [item] could be inserted into [dest]
+     * right now, up to [maxCount]. Backs atomic network-wide inserts — we sum the
+     * per-card capacities before committing so a partially-full network never extracts
+     * from source unless the whole move will fit.
+     *
+     * Uses the platform's native simulate primitive (`IItemHandler.insertItem(simulate=true)`
+     * on NeoForge), so the returned number reflects slot-level constraints (stack limits,
+     * filter slots, etc.) — not just free slot count × stack size.
+     */
+    fun simulateInsertItem(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, maxCount: Long): Long = 0L
+
+    /**
      * Move up to [count] items matching [filter] from [source] to [dest] atomically.
      *
      * Either moves exactly [count] and returns true, or moves nothing and returns false.
@@ -187,6 +199,13 @@ interface StorageService {
 
     /** Atomically insert exactly [amount] mB of [fluidId] into [dest], or nothing. */
     fun tryInsertAllFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Boolean = false
+
+    /**
+     * Non-mutating fluid capacity probe. Returns how many mB of [fluidId] could be
+     * filled into [dest] right now, up to [maxAmount]. Backs atomic network-wide
+     * fluid inserts.
+     */
+    fun simulateInsertFluid(dest: FluidStorageHandle, fluidId: String, maxAmount: Long): Long = 0L
 
     /** Extract up to [maxAmount] mB matching [filter] from [storage]. Returns amount actually removed. */
     fun extractFluid(storage: FluidStorageHandle, filter: (String) -> Boolean, maxAmount: Long): Long = 0L

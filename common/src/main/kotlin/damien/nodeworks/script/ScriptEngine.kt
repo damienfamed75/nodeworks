@@ -264,6 +264,146 @@ class ScriptEngine(
         return table
     }
 
+    /**
+     * Backs both `network:insert` (atomic=true → boolean) and `network:tryInsert`
+     * (atomic=false → number). Structured identically to [CardHandle]'s insert pair so
+     * scripts get consistent semantics whether they're targeting a specific card or the
+     * network as a whole. `routeTable` / `inventoryCache` are read from `this` at call
+     * time so routes registered mid-script via `network:route` take effect.
+     */
+    private fun buildNetworkInsertFn(snapshot: NetworkSnapshot, atomic: Boolean): VarArgFunction {
+        return object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val itemsTable = args.checktable(2)
+                val maxCount = if (args.narg() >= 3 && !args.arg(3).isnil()) {
+                    args.checklong(3)
+                } else {
+                    Long.MAX_VALUE
+                }
+                val ref = itemsTable.get("_itemsHandle")
+                if (ref.isnil() || ref !is ItemsHandle.ItemsHandleRef) {
+                    throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
+                }
+                val itemsHandle = ref.handle
+                val requested = minOf(maxCount, itemsHandle.count.toLong())
+                if (requested <= 0L) {
+                    return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+                }
+
+                return if (itemsHandle.kind == damien.nodeworks.platform.ResourceKind.FLUID) {
+                    invokeFluid(snapshot, itemsHandle, requested, atomic)
+                } else {
+                    invokeItems(snapshot, itemsHandle, requested, atomic)
+                }
+            }
+        }
+    }
+
+    /**
+     * Fluid insert path.
+     *
+     * Atomic mode: first sim the network capacity via [NetworkStorageHelper.tryInsertFluidAcrossNetwork]
+     * — which itself runs sim-first — so source is never drained unless the full amount is
+     * known to fit. Draining from the handle's source is the last step; if the network
+     * commit diverges from the sim, unwinds push fluid back.
+     *
+     * Best-effort: drain-then-place, push unused back to source. Fluids are never destroyed
+     * on overflow.
+     */
+    private fun invokeFluid(
+        snapshot: NetworkSnapshot,
+        itemsHandle: ItemsHandle,
+        requested: Long,
+        atomic: Boolean
+    ): LuaValue {
+        val sourceFluid = itemsHandle.fluidSourceStorage()
+            ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+
+        if (atomic) {
+            // Capacity probe BEFORE touching source: sum simulate across cards.
+            val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
+            var capacity = 0L
+            for (card in storageCards) {
+                if (capacity >= requested) break
+                val dest = NetworkStorageHelper.getFluidStorage(level, card) ?: continue
+                capacity += try {
+                    damien.nodeworks.platform.PlatformServices.storage.simulateInsertFluid(
+                        dest, itemsHandle.itemId, requested - capacity
+                    )
+                } catch (_: Exception) { 0L }
+            }
+            if (capacity < requested) return LuaValue.FALSE
+
+            val drained = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
+                sourceFluid, { it == itemsHandle.itemId }, requested
+            )
+            if (drained < requested) {
+                // Source turned out short after the probe passed — refund and bail.
+                if (drained > 0L) {
+                    damien.nodeworks.platform.PlatformServices.storage.insertFluid(
+                        sourceFluid, itemsHandle.itemId, drained
+                    )
+                }
+                return LuaValue.FALSE
+            }
+            val placed = NetworkStorageHelper.insertFluidAcrossNetwork(
+                level, snapshot, itemsHandle.itemId, drained, inventoryCache
+            )
+            if (placed < drained) {
+                // Commit diverged from sim — refund the shortfall to source.
+                damien.nodeworks.platform.PlatformServices.storage.insertFluid(
+                    sourceFluid, itemsHandle.itemId, drained - placed
+                )
+                return LuaValue.FALSE
+            }
+            return LuaValue.TRUE
+        }
+
+        // Best-effort: drain then place what fits; return unused to source.
+        val drained = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
+            sourceFluid, { it == itemsHandle.itemId }, requested
+        )
+        if (drained <= 0L) return LuaValue.valueOf(0)
+        val placed = NetworkStorageHelper.insertFluidAcrossNetwork(
+            level, snapshot, itemsHandle.itemId, drained, inventoryCache
+        )
+        if (placed < drained) {
+            damien.nodeworks.platform.PlatformServices.storage.insertFluid(
+                sourceFluid, itemsHandle.itemId, drained - placed
+            )
+        }
+        return LuaValue.valueOf(placed.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+
+    /**
+     * Item insert path. Delegates to [NetworkStorageHelper] for both modes. The atomic
+     * variant rolls back by reverse-moving on shortfall; best-effort returns the count
+     * that actually landed.
+     */
+    private fun invokeItems(
+        snapshot: NetworkSnapshot,
+        itemsHandle: ItemsHandle,
+        requested: Long,
+        atomic: Boolean
+    ): LuaValue {
+        val sourceStorage = itemsHandle.sourceStorage()
+            ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+
+        return if (atomic) {
+            val ok = NetworkStorageHelper.tryInsertItemsAcrossNetwork(
+                level, snapshot, sourceStorage, itemsHandle.filter,
+                requested, routeTable, inventoryCache
+            )
+            LuaValue.valueOf(ok)
+        } else {
+            val moved = NetworkStorageHelper.insertItems(
+                level, snapshot, sourceStorage, itemsHandle.filter,
+                requested, routeTable, null, inventoryCache
+            )
+            LuaValue.valueOf(moved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        }
+    }
+
     private fun injectApi(g: Globals) {
         val snapshot = networkSnapshot!!
 
@@ -401,53 +541,13 @@ class ScriptEngine(
             }
         })
 
-        // network:insert(itemsHandle, count?) → number moved into network storage
-        // Items route through routeTable + storage cards; fluids go to storage cards' fluid side.
-        networkTable.set("insert", object : VarArgFunction() {
-            override fun invoke(args: Varargs): Varargs {
-                val itemsTable = args.checktable(2)
-                val maxCount = if (args.narg() >= 3 && !args.arg(3).isnil()) {
-                    args.checklong(3)
-                } else {
-                    Long.MAX_VALUE
-                }
+        // network:insert(itemsHandle, count?) → boolean (atomic — either the full count lands
+        // in network storage or nothing moves). Mirrors CardHandle:insert for consistency.
+        // Use network:tryInsert for "move what fits, leave the rest" semantics.
+        networkTable.set("insert", buildNetworkInsertFn(snapshot, atomic = true))
 
-                val ref = itemsTable.get("_itemsHandle")
-                if (ref.isnil() || ref !is ItemsHandle.ItemsHandleRef) {
-                    throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
-                }
-                val itemsHandle = ref.handle
-                val requested = minOf(maxCount, itemsHandle.count.toLong())
-                if (requested <= 0L) return LuaValue.valueOf(0)
-
-                val moved: Long = if (itemsHandle.kind == damien.nodeworks.platform.ResourceKind.FLUID) {
-                    val sourceFluid = itemsHandle.fluidSourceStorage() ?: return LuaValue.valueOf(0)
-                    // Drain the source then push into network storages.
-                    val drained = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
-                        sourceFluid,
-                        { it == itemsHandle.itemId },
-                        requested
-                    )
-                    if (drained <= 0L) return LuaValue.valueOf(0)
-                    val placed = NetworkStorageHelper.insertFluidAcrossNetwork(level, snapshot, itemsHandle.itemId, drained, inventoryCache)
-                    if (placed < drained) {
-                        // Overflow: push what didn't land back to the source.
-                        damien.nodeworks.platform.PlatformServices.storage.insertFluid(sourceFluid, itemsHandle.itemId, drained - placed)
-                    }
-                    placed
-                } else {
-                    val sourceStorage = itemsHandle.sourceStorage() ?: return LuaValue.valueOf(0)
-                    NetworkStorageHelper.insertItems(
-                        level, snapshot, sourceStorage, itemsHandle.filter,
-                        requested,
-                        routeTable,
-                        null,
-                        inventoryCache
-                    )
-                }
-                return LuaValue.valueOf(moved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-            }
-        })
+        // network:tryInsert(itemsHandle, count?) → number (best-effort count moved).
+        networkTable.set("tryInsert", buildNetworkInsertFn(snapshot, atomic = false))
 
         // network:craft(identifier, count?) → CraftBuilder with :connect(fn) and :store()
         networkTable.set("craft", object : VarArgFunction() {

@@ -288,6 +288,13 @@ class AutocompletePopup(
 
         /** Gap between the badge and the suggestion text. */
         private const val BADGE_GAP = 4
+
+        /** Matches aliases produced by the Card Programmer's `_N` auto-suffixing, capturing
+         *  the stable prefix. e.g. `cobblestone_0` → `cobblestone`. Used to detect groups
+         *  of related cards worth offering a `_*` wildcard for in `network:route` completions.
+         *  Anchored start-to-end so a mid-alias digit-suffix like `chest2_part1` doesn't
+         *  accidentally get split. */
+        private val CARD_SUFFIX_REGEX = Regex("^(.+)_\\d+$")
     }
 
     // ========== Helpers ==========
@@ -839,11 +846,33 @@ class AutocompletePopup(
             }
 
             ctx.funcExpr.endsWith("network:route") -> {
-                val storageSuggestions = cards
+                val storageAliases = cards
                     .filter { it.capability.type == "storage" }
-                    .map { it.effectiveAlias to it.capability.type }
+                    .map { it.effectiveAlias }
                     .distinct()
-                    .map { suggest(it.first, "${it.first} (storage)", Kind.STRING) }
+                val storageSuggestions = storageAliases
+                    .map { suggest(it, "$it (storage)", Kind.STRING) }
+                    .toMutableList()
+                // Offer `<prefix>_*` wildcard suggestions when 2+ storage cards share the
+                // Card Programmer's `_N` suffix convention. E.g. given `cobblestone_0`,
+                // `cobblestone_1`, `cobblestone_2`, suggest `cobblestone_*` too so the user
+                // can route that whole group with one call. Single-match prefixes are
+                // excluded (no point offering a wildcard that collapses to one card).
+                val suffixGroups = storageAliases
+                    .mapNotNull { alias ->
+                        val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
+                        match.groupValues[1] to alias
+                    }
+                    .groupBy({ it.first }, { it.second })
+                    .filterValues { it.size >= 2 }
+                for ((prefix, aliases) in suffixGroups) {
+                    val wildcard = "${prefix}_*"
+                    val preview = aliases.sorted().take(3).joinToString(", ") +
+                        if (aliases.size > 3) ", …" else ""
+                    storageSuggestions.add(
+                        suggest(wildcard, "$wildcard (${aliases.size} cards: $preview)", Kind.STRING)
+                    )
+                }
                 FuzzyMatch.filter(ctx.partial, storageSuggestions)
             }
 
@@ -894,12 +923,15 @@ class AutocompletePopup(
 
     /** Lua functions whose string argument is a resource-id filter (items + fluids).
      *  `:insert` / `:tryInsert` are NOT resource-filter funcs — their first arg is an
-     *  ItemsHandle, so suggesting resource ids there would be actively misleading. */
+     *  ItemsHandle, so suggesting resource ids there would be actively misleading.
+     *  `:matches` goes through the same `CardHandle.matchesFilter` logic as `:find`, so it
+     *  gets the same id/tag/regex completions. */
     private fun isResourceFilterFunc(funcExpr: String): Boolean =
         funcExpr.endsWith(":find") ||
         funcExpr.endsWith(":findEach") ||
         funcExpr.endsWith(":count") ||
-        funcExpr == "find" || funcExpr == "findEach" || funcExpr == "count"
+        funcExpr.endsWith(":matches") ||
+        funcExpr == "find" || funcExpr == "findEach" || funcExpr == "count" || funcExpr == "matches"
 
     /**
      * Resource-filter strings accept:

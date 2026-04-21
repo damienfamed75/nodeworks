@@ -1,6 +1,6 @@
 ---
 navigation:
-  title: Nodeworks
+  title: Overview
   position: 0
 ---
 

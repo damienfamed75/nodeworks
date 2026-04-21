@@ -1,0 +1,111 @@
+{
+    DataVersion: 4790,
+    size: [4, 2, 1],
+    data: [
+        {
+            pos: [3, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:chest{facing:north,type:left,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "minecraft:chest{facing:north,type:right,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "b6ccd7fd-0b47-4bb2-a5b1-f58712238a4e",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 3, 0, 0],
+                    [I; 2, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "b6ccd7fd-0b47-4bb2-a5b1-f58712238a4e",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 2, 0, 0]
+                ],
+                networkColor: 6727925
+            }
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:chest{facing:north,type:left,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:chest{facing:north,type:right,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "b6ccd7fd-0b47-4bb2-a5b1-f58712238a4e",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 2, 0, 0]
+                ]
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "minecraft:chest{facing:north,type:left,waterlogged:false}",
+        "minecraft:chest{facing:north,type:right,waterlogged:false}",
+        "nodeworks:node",
+        "nodeworks:network_controller"
+    ]
+}

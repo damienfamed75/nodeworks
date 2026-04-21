@@ -5,33 +5,46 @@ package damien.nodeworks.script
  * [damien.nodeworks.screen.widget.ScriptEditor] hover tooltips and the guidebook's
  * `<LuaCode>` tag. Add a new symbol here and it lights up in every surface immediately.
  *
- * Entries are keyed either by plain identifier (`"network"`) or by a qualified form
- * (`"network:get"`, `"string.format"`). The qualified form is what [resolveAt] looks up
- * when the token under inspection is preceded by `ident` + `:` or `ident` + `.`.
+ * ## Keys
  *
- * When adding docs, keep them short — tooltips are one-liners with maybe 2–3 wrapped
- * lines of description. Full prose belongs in a guidebook page.
+ * Entries are keyed either by plain identifier (`"network"`, `"print"`) or by a
+ * type-qualified form (`"Network:find"`, `"CardHandle:insert"`). The qualified form is
+ * what [resolveAt] looks up when the token under inspection is preceded by `ident` +
+ * `:` — either because the ident is a known global (see [moduleTypes] for the module →
+ * type hop) or because the autocomplete symbol table has inferred the variable's type.
+ *
+ * ## Ground truth
+ *
+ * Every entry here was read off the actual Lua bindings in:
+ *   * [damien.nodeworks.script.ScriptEngine.injectApi] — `network`, `scheduler`,
+ *     `clock`, `print` registrations.
+ *   * [damien.nodeworks.script.CardHandle.create] — card methods.
+ *   * [damien.nodeworks.script.ItemsHandle.toLuaTable] — items-handle fields + methods.
+ *   * [damien.nodeworks.script.SchedulerImpl.createLuaTable] — scheduler methods.
+ *   * [damien.nodeworks.script.VariableHandle.create] — variable methods.
+ *
+ * If any of those files change shape, update the matching entry here so both the
+ * editor tooltips and the guidebook stay accurate.
  */
 object LuaApiDocs {
 
     enum class Category { KEYWORD, MODULE, TYPE, FUNCTION, METHOD }
 
     data class Doc(
-        /** Optional type/signature hint shown as the tooltip's first bolded line. */
         val signature: String? = null,
-        /** One-or-two-line description. Keep it tight. */
         val description: String,
         val category: Category = Category.MODULE,
-        /** Guidebook anchor to open on Hold-G. Format: `namespace:path#anchor` or
-         *  just `namespace:path`. Optional — omit for symbols without a dedicated
-         *  guidebook section. */
+        /** `namespace:path#anchor` or `namespace:path`. Optional. */
         val guidebookRef: String? = null,
     )
 
-    // ---------- Entries ----------
-    //
-    // Ordering is purely for readability in this file — lookup is by key, so arrangement
-    // doesn't affect runtime behaviour. Keep related symbols clustered.
+    /** Maps a top-level module name to its Lua type so method keys stored under the
+     *  type resolve when the user writes the module literal. `card` and `clock` are NOT
+     *  in here — `card` isn't a global at all, and `clock` is a bare function. */
+    private val moduleTypes: Map<String, String> = mapOf(
+        "network" to "Network",
+        "scheduler" to "Scheduler",
+    )
 
     private val entries: Map<String, Doc> = buildMap {
         // ===== Lua keywords =====
@@ -42,237 +55,389 @@ object LuaApiDocs {
         ))
         put("function", Doc(
             signature = "function <name>(<params>) … end",
-            description = "Declares a function. Use `local function` to scope it.",
+            description = "Declares a function. Use `local function` to keep it block-scoped.",
             category = Category.KEYWORD,
         ))
         put("if", Doc(
             signature = "if <cond> then … [elseif …] [else …] end",
-            description = "Conditional branch. `elseif` / `else` are optional.",
+            description = "Conditional branch.",
             category = Category.KEYWORD,
         ))
         put("for", Doc(
             signature = "for i = start, stop[, step] do … end  |  for k, v in pairs(t) do … end",
-            description = "Numeric or generic loop. `pairs` iterates tables; `ipairs` iterates integer-keyed arrays in order.",
+            description = "Numeric or generic loop. `pairs` iterates tables; `ipairs` iterates integer arrays in order.",
             category = Category.KEYWORD,
         ))
         put("while", Doc(
             signature = "while <cond> do … end",
-            description = "Loop that runs while the condition is truthy.",
+            description = "Loops while the condition is truthy.",
             category = Category.KEYWORD,
         ))
         put("return", Doc(
             signature = "return [values…]",
-            description = "Returns from the current function, optionally yielding one or more values.",
+            description = "Returns from the current function, optionally yielding values.",
             category = Category.KEYWORD,
         ))
         put("break", Doc(
-            description = "Exits the innermost enclosing loop immediately.",
+            description = "Exits the innermost enclosing loop.",
             category = Category.KEYWORD,
         ))
 
-        // ===== Global builtins =====
+        // ===== Globals =====
         put("print", Doc(
             signature = "print(…)",
-            description = "Writes arguments to the terminal's output log, space-separated.",
+            description = "Prints its arguments to the terminal's log panel, space-separated.",
             category = Category.FUNCTION,
         ))
         put("require", Doc(
             signature = "require(modName) → module",
-            description = "Loads and returns a Lua module. Modules live on the network's instruction storage.",
+            description = "Loads and returns a Lua module stored on the network's instruction storage.",
+            category = Category.FUNCTION,
+        ))
+        put("clock", Doc(
+            signature = "clock() → number",
+            description = "Seconds elapsed since this script started running, as a decimal. Not a module — `clock` is a plain function.",
             category = Category.FUNCTION,
         ))
 
-        // ===== Top-level API modules =====
-        //
-        // Globals get BOTH a module-value entry (e.g. `"network"`) and a type-level entry
-        // (e.g. `"Network"`) so:
-        //   * Hovering the literal `network` identifier finds the module entry.
-        //   * Hovering a user-declared `local x = network` (→ variableTypes["x"] = "Network")
-        //     resolves via type fallback.
-        // Method keys use the type name (`"Network:get"`) so typed locals
-        // (`local items = card`; `items:frob()`) resolve against the same entries.
-
+        // ===== network / Network =====
         put("network", Doc(
             signature = "network: Network",
-            description = "The network this script is running on. Entry point for inventory queries, routing, and crafting.",
+            description = "The network this script is running on. Look up cards by alias, query storage, register routes, craft.",
             category = Category.MODULE,
             guidebookRef = "nodeworks:lua-api/network.md",
         ))
         put("Network", Doc(
             signature = "type Network",
-            description = "The active network. Queries storage, routes items, registers callbacks.",
+            description = "The active network. Entry point for card lookup (`:get`), storage queries (`:find`), routing, and crafting.",
             category = Category.TYPE,
             guidebookRef = "nodeworks:lua-api/network.md",
         ))
-        put("card", Doc(
-            signature = "card: Card",
-            description = "The card this script was loaded from. Holds per-card state and hardware references.",
-            category = Category.MODULE,
-            guidebookRef = "nodeworks:lua-api/card.md",
-        ))
-        put("Card", Doc(
-            signature = "type Card",
-            description = "A per-card handle: state, aliases, capability references.",
-            category = Category.TYPE,
-            guidebookRef = "nodeworks:lua-api/card.md",
-        ))
-        put("scheduler", Doc(
-            signature = "scheduler: Scheduler",
-            description = "Async primitive — sleep, wait on conditions, yield from coroutine handlers.",
-            category = Category.MODULE,
-            guidebookRef = "nodeworks:lua-api/scheduler.md",
-        ))
-        put("Scheduler", Doc(
-            signature = "type Scheduler",
-            description = "Async control: sleep / wait / yield inside a script coroutine.",
-            category = Category.TYPE,
-            guidebookRef = "nodeworks:lua-api/scheduler.md",
-        ))
-        put("clock", Doc(
-            signature = "clock: Clock",
-            description = "World-time queries. Useful for redstone-card triggers and daily schedules.",
-            category = Category.MODULE,
-            guidebookRef = "nodeworks:lua-api/clock.md",
-        ))
-        put("Clock", Doc(
-            signature = "type Clock",
-            description = "World-time queries (game tick, day number).",
-            category = Category.TYPE,
-            guidebookRef = "nodeworks:lua-api/clock.md",
-        ))
-
-        // ===== Handle types (returned from various API calls) =====
-        put("ItemsHandle", Doc(
-            signature = "type ItemsHandle",
-            description = "A stack of items matching some filter. Chain into `:insert`, `:route`, `:count`, etc.",
-            category = Category.TYPE,
-            guidebookRef = "nodeworks:lua-api/items-handle.md",
-        ))
-        put("CardHandle", Doc(
-            signature = "type CardHandle",
-            description = "A hardware card on the network, accessed by alias.",
-            category = Category.TYPE,
-            guidebookRef = "nodeworks:lua-api/card-handle.md",
-        ))
-        put("RedstoneCard", Doc(
-            signature = "type RedstoneCard : CardHandle",
-            description = "A Redstone Card — read and write redstone signals on the card's associated face.",
-            category = Category.TYPE,
-            guidebookRef = "nodeworks:lua-api/card-handle.md#redstone-card",
-        ))
-
-        // ===== Network methods (keyed against the TYPE name) =====
         put("Network:get", Doc(
-            signature = "Network:get(filter: string) → ItemsHandle",
-            description = "Returns a handle representing all matching items on the network. Filter uses the resource-filter grammar (`\$item:modid:item`, wildcards, etc.).",
+            signature = "Network:get(alias: string) → CardHandle",
+            description = "Returns the card with this alias. Errors if no card matches — use this for required hardware lookups. To query items, use `:find` instead.",
             category = Category.METHOD,
             guidebookRef = "nodeworks:lua-api/network.md#get",
         ))
+        put("Network:getAll", Doc(
+            signature = "Network:getAll(type: string) → { CardHandle… }",
+            description = "Returns a table of every card on the network whose capability type matches (e.g. `\"redstone\"`, `\"storage\"`).",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/network.md",
+        ))
         put("Network:find", Doc(
-            signature = "Network:find(filter: string) → ItemsHandle",
-            description = "Alias of `get` with the same semantics. Use whichever reads more naturally at the call site.",
+            signature = "Network:find(filter: string) → ItemsHandle | nil",
+            description = "Scans all storage on the network for items/fluids matching the filter. Returns an aggregated handle (count summed across storage), or nil if nothing matches. Filters accept item ids, wildcards, `\$item:`/`\$fluid:` sigils.",
             category = Category.METHOD,
             guidebookRef = "nodeworks:lua-api/network.md#find",
         ))
+        put("Network:findEach", Doc(
+            signature = "Network:findEach(filter: string) → { ItemsHandle… }",
+            description = "Like `:find`, but returns a separate handle for every distinct resource matching the filter (items then fluids unless kind-prefixed).",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/network.md",
+        ))
         put("Network:insert", Doc(
-            signature = "Network:insert(stack: ItemsHandle) → ItemsHandle",
-            description = "Inserts a stack into the network's storage, spreading across storage cards by the storage-first rule. Returns the remainder that couldn't fit.",
+            signature = "Network:insert(items: ItemsHandle[, count: number]) → boolean",
+            description = "Atomic move of exactly `count` (or `items.count`) from the handle's source into network storage, honouring storage-card priority and any active routes. Returns true on success, false if the full amount wouldn't fit (nothing moves). Use `:tryInsert` for partial-move semantics.",
             category = Category.METHOD,
             guidebookRef = "nodeworks:lua-api/network.md#insert",
         ))
+        put("Network:tryInsert", Doc(
+            signature = "Network:tryInsert(items: ItemsHandle[, count: number]) → number",
+            description = "Best-effort counterpart to `:insert`. Moves as much as fits into network storage and returns the count actually moved (0..count). Items left over stay in the source.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/network.md#insert",
+        ))
+        put("Network:craft", Doc(
+            signature = "Network:craft(itemId: string[, count: number]) → CraftBuilder | nil",
+            description = "Queues a craft for the given item. Returns a builder with `:connect(fn)` (callback on completion, receives the ItemsHandle) and `:store()` (send result to storage). Returns nil if the craft can't be planned.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/network.md",
+        ))
         put("Network:route", Doc(
-            signature = "Network:route(stack: ItemsHandle, target: string) → ItemsHandle",
-            description = "Moves items from the network to a target (another filter-addressable location). Returns the portion that actually moved.",
+            signature = "Network:route(alias: string, predicate: (ItemsHandle) → boolean)",
+            description = "Declarative routing rule: any item matching `predicate` is directed to the card with this alias. Applied during `network:insert` / `network:tryInsert`.",
             category = Category.METHOD,
             guidebookRef = "nodeworks:lua-api/network.md#route",
         ))
-        put("Network:onInsert", Doc(
-            signature = "Network:onInsert(fn: (stack) → nil)",
-            description = "Registers a callback that fires when any item enters the network. Callback runs inside the script's coroutine, so blocking calls are safe.",
+        put("Network:shapeless", Doc(
+            signature = "Network:shapeless(itemId: string, count: number, …) → ItemsHandle | nil",
+            description = "Crafts via vanilla shapeless recipes using the given item/count pairs pulled from storage. Returns the result handle, or nil if no matching recipe or missing ingredients.",
             category = Category.METHOD,
-            guidebookRef = "nodeworks:lua-api/network.md#on-insert",
+            guidebookRef = "nodeworks:lua-api/network.md",
+        ))
+        put("Network:handle", Doc(
+            signature = "Network:handle(cardName: string, handler: function)",
+            description = "Registers a processing handler for a named Processing Set. The handler is invoked with inputs and must return the output ItemsHandle.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/network.md",
+        ))
+        put("Network:var", Doc(
+            signature = "Network:var(name: string) → VariableHandle",
+            description = "Returns a handle to the network variable with this name. Errors if the variable doesn't exist.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/network.md",
+        ))
+        put("Network:debug", Doc(
+            signature = "Network:debug()",
+            description = "Prints a summary of the network (controller, nodes, cards, variables) to the terminal log.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/network.md",
         ))
 
-        // ===== ItemsHandle methods =====
-        put("ItemsHandle:insert", Doc(
-            signature = "ItemsHandle:insert(items: ItemsHandle) → ItemsHandle",
-            description = "Inserts items into this handle's target (a card, storage, etc.). Returns the remainder that didn't fit.",
-            category = Category.METHOD,
-            guidebookRef = "nodeworks:lua-api/items-handle.md#insert",
+        // ===== scheduler / Scheduler =====
+        put("scheduler", Doc(
+            signature = "scheduler: Scheduler",
+            description = "Registers periodic and delayed callbacks. All scheduled functions run on the server tick inside this script's engine.",
+            category = Category.MODULE,
         ))
-        put("ItemsHandle:find", Doc(
-            signature = "ItemsHandle:find(filter: string) → ItemsHandle",
-            description = "Narrows the handle down to items matching the filter. Useful for scanning a container's contents by mod / tag.",
-            category = Category.METHOD,
-            guidebookRef = "nodeworks:lua-api/items-handle.md#find",
+        put("Scheduler", Doc(
+            signature = "type Scheduler",
+            description = "Task scheduler. Tick / second / delay registrations return an id that can be passed to `:cancel`.",
+            category = Category.TYPE,
         ))
-        put("ItemsHandle:count", Doc(
-            signature = "ItemsHandle:count() → number",
-            description = "Total item count this handle represents right now.",
+        put("Scheduler:tick", Doc(
+            signature = "Scheduler:tick(fn: function) → number",
+            description = "Runs `fn` every server tick (20 tps). Returns a task id for later cancellation.",
             category = Category.METHOD,
-            guidebookRef = "nodeworks:lua-api/items-handle.md#count",
         ))
-
-        // ===== Scheduler methods =====
-        put("Scheduler:sleep", Doc(
-            signature = "Scheduler:sleep(ticks: number)",
-            description = "Pauses the current coroutine for N game ticks (20 ticks = 1 second).",
+        put("Scheduler:second", Doc(
+            signature = "Scheduler:second(fn: function) → number",
+            description = "Runs `fn` every 20 ticks (1 second). Returns a task id.",
             category = Category.METHOD,
-            guidebookRef = "nodeworks:lua-api/scheduler.md#sleep",
         ))
-        put("Scheduler:waitUntil", Doc(
-            signature = "Scheduler:waitUntil(predicate: () → boolean)",
-            description = "Polls the predicate each tick and resumes the coroutine when it returns truthy.",
+        put("Scheduler:delay", Doc(
+            signature = "Scheduler:delay(ticks: number, fn: function) → number",
+            description = "Runs `fn` once, after the given number of ticks. Returns a task id.",
             category = Category.METHOD,
-            guidebookRef = "nodeworks:lua-api/scheduler.md#wait-until",
+        ))
+        put("Scheduler:cancel", Doc(
+            signature = "Scheduler:cancel(id: number)",
+            description = "Cancels a task previously returned by `:tick`, `:second`, or `:delay`.",
+            category = Category.METHOD,
         ))
 
-        // ===== Clock methods =====
-        put("Clock:time", Doc(
-            signature = "Clock:time() → number",
-            description = "Returns the world's current game time in ticks.",
-            category = Category.METHOD,
-            guidebookRef = "nodeworks:lua-api/clock.md#time",
+        // ===== CardHandle =====
+        put("CardHandle", Doc(
+            signature = "type CardHandle",
+            description = "A card on the network accessed by alias. Exposes slot-level inventory operations (`:find`, `:insert`, `:count`) plus face-/slot-filtered variants.",
+            category = Category.TYPE,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
         ))
-        put("Clock:day", Doc(
-            signature = "Clock:day() → number",
-            description = "Returns the current day number (ticks / 24000).",
+        put("CardHandle:face", Doc(
+            signature = "CardHandle:face(name: string) → CardHandle",
+            description = "Returns a new handle with access pinned to a specific face of the adjacent block (`\"north\"`, `\"up\"`, etc.). Useful for machines with distinct input/output faces.",
             category = Category.METHOD,
-            guidebookRef = "nodeworks:lua-api/clock.md#day",
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("CardHandle:slots", Doc(
+            signature = "CardHandle:slots(…indices) → CardHandle",
+            description = "Returns a new handle filtered to specific slot indices (1-based in Lua).",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("CardHandle:find", Doc(
+            signature = "CardHandle:find(filter: string) → ItemsHandle | nil",
+            description = "Like `Network:find`, but scoped to this card's inventory. Counts aggregate across this card's slots/tanks.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("CardHandle:findEach", Doc(
+            signature = "CardHandle:findEach(filter: string) → { ItemsHandle… }",
+            description = "Returns one handle per distinct resource in this card matching the filter.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("CardHandle:insert", Doc(
+            signature = "CardHandle:insert(items: ItemsHandle[, count: number]) → boolean",
+            description = "Atomic move of exactly `count` (or `items.count`) from the handle's source into this card. Returns true on success, false if the full amount wouldn't fit (nothing moves). Use `:tryInsert` for partial-move semantics.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("CardHandle:tryInsert", Doc(
+            signature = "CardHandle:tryInsert(items: ItemsHandle[, count: number]) → number",
+            description = "Best-effort move. Returns the actual count moved (may be less than requested).",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("CardHandle:count", Doc(
+            signature = "CardHandle:count(filter: string) → number",
+            description = "Total quantity on this card matching the filter (items + fluids unless kind-prefixed).",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+
+        // ===== RedstoneCard =====
+        put("RedstoneCard", Doc(
+            signature = "type RedstoneCard",
+            description = "A card attached to a Redstone Card capability. The usual inventory methods (`:find`, `:insert`, `:count`) are unavailable — use the redstone-specific methods below.",
+            category = Category.TYPE,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("RedstoneCard:powered", Doc(
+            signature = "RedstoneCard:powered() → boolean",
+            description = "True if the redstone signal reaching this card's face is > 0.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("RedstoneCard:strength", Doc(
+            signature = "RedstoneCard:strength() → number",
+            description = "Current redstone signal strength at this card's face (0–15).",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("RedstoneCard:set", Doc(
+            signature = "RedstoneCard:set(value: boolean | number)",
+            description = "Emits a redstone signal from this card's face. Boolean maps to 15/0; number is clamped to 0–15.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("RedstoneCard:onChange", Doc(
+            signature = "RedstoneCard:onChange(fn: (strength: number) → nil)",
+            description = "Registers a callback fired whenever the incoming signal strength changes. Replaces any prior callback for this card.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+
+        // ===== ItemsHandle =====
+        put("ItemsHandle", Doc(
+            signature = "type ItemsHandle",
+            description = "A snapshot of items or fluids matching some filter. Carries fields (`.id`, `.name`, `.count`, `.kind`, …) and two helpers (`:hasTag`, `:matches`). Pass handles to `Network:insert` / `CardHandle:insert` to move the underlying resources.",
+            category = Category.TYPE,
+            guidebookRef = "nodeworks:lua-api/items-handle.md",
+        ))
+        put("ItemsHandle:hasTag", Doc(
+            signature = "ItemsHandle:hasTag(tag: string) → boolean",
+            description = "True if this resource is in the given tag (e.g. `\"#minecraft:logs\"` or `\"minecraft:logs\"`). Works for both items and fluids.",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/items-handle.md",
+        ))
+        put("ItemsHandle:matches", Doc(
+            signature = "ItemsHandle:matches(filter: string) → boolean",
+            description = "True if this resource matches the filter, using the same rules `Network:find` uses (item ids, wildcards, `\$item:`/`\$fluid:` sigils).",
+            category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/items-handle.md",
+        ))
+
+        // ===== VariableHandle =====
+        put("VariableHandle", Doc(
+            signature = "type VariableHandle",
+            description = "A handle to a network variable returned by `Network:var`. Subtypes (Number/String/Bool) add type-specific methods.",
+            category = Category.TYPE,
+        ))
+        put("VariableHandle:get", Doc(
+            signature = "VariableHandle:get() → any",
+            description = "Returns the current value of the variable.",
+            category = Category.METHOD,
+        ))
+        put("VariableHandle:set", Doc(
+            signature = "VariableHandle:set(value)",
+            description = "Sets the variable's value. Must match the variable's declared type.",
+            category = Category.METHOD,
+        ))
+        put("VariableHandle:cas", Doc(
+            signature = "VariableHandle:cas(expected, new) → boolean",
+            description = "Atomic compare-and-swap. Sets the variable to `new` only if its current value equals `expected`. Returns true on success.",
+            category = Category.METHOD,
+        ))
+        put("VariableHandle:type", Doc(
+            signature = "VariableHandle:type() → string",
+            description = "Returns the variable's declared type (`\"number\"`, `\"string\"`, `\"boolean\"`).",
+            category = Category.METHOD,
+        ))
+        put("VariableHandle:name", Doc(
+            signature = "VariableHandle:name() → string",
+            description = "Returns the variable's name as declared on the network.",
+            category = Category.METHOD,
+        ))
+        put("VariableHandle:tryLock", Doc(
+            signature = "VariableHandle:tryLock() → boolean",
+            description = "Attempts to take the variable's lock. Returns true if acquired, false if another script holds it.",
+            category = Category.METHOD,
+        ))
+        put("VariableHandle:unlock", Doc(
+            signature = "VariableHandle:unlock()",
+            description = "Releases a lock previously acquired via `:tryLock`.",
+            category = Category.METHOD,
+        ))
+
+        // Number-typed variables:
+        put("NumberVariableHandle", Doc(
+            signature = "type NumberVariableHandle",
+            description = "A `VariableHandle` with numeric-specific helpers in addition to the base methods.",
+            category = Category.TYPE,
+        ))
+        put("NumberVariableHandle:increment", Doc(
+            signature = "NumberVariableHandle:increment([by: number = 1])",
+            description = "Adds `by` (defaults to 1) to the variable, atomically.",
+            category = Category.METHOD,
+        ))
+        put("NumberVariableHandle:decrement", Doc(
+            signature = "NumberVariableHandle:decrement([by: number = 1])",
+            description = "Subtracts `by` (defaults to 1) from the variable, atomically.",
+            category = Category.METHOD,
+        ))
+        put("NumberVariableHandle:min", Doc(
+            signature = "NumberVariableHandle:min(other: number)",
+            description = "Sets the variable to `min(current, other)`, atomically.",
+            category = Category.METHOD,
+        ))
+        put("NumberVariableHandle:max", Doc(
+            signature = "NumberVariableHandle:max(other: number)",
+            description = "Sets the variable to `max(current, other)`, atomically.",
+            category = Category.METHOD,
+        ))
+
+        // String-typed variables:
+        put("StringVariableHandle", Doc(
+            signature = "type StringVariableHandle",
+            description = "A `VariableHandle` with string-specific helpers.",
+            category = Category.TYPE,
+        ))
+        put("StringVariableHandle:append", Doc(
+            signature = "StringVariableHandle:append(str: string)",
+            description = "Appends `str` to the variable's current value.",
+            category = Category.METHOD,
+        ))
+        put("StringVariableHandle:length", Doc(
+            signature = "StringVariableHandle:length() → number",
+            description = "Length of the current string value.",
+            category = Category.METHOD,
+        ))
+        put("StringVariableHandle:clear", Doc(
+            signature = "StringVariableHandle:clear()",
+            description = "Sets the variable to the empty string.",
+            category = Category.METHOD,
+        ))
+
+        // Bool-typed variables:
+        put("BoolVariableHandle", Doc(
+            signature = "type BoolVariableHandle",
+            description = "A `VariableHandle` with a boolean-specific helper.",
+            category = Category.TYPE,
+        ))
+        put("BoolVariableHandle:toggle", Doc(
+            signature = "BoolVariableHandle:toggle()",
+            description = "Flips the boolean variable's value.",
+            category = Category.METHOD,
         ))
     }
 
-    /** Maps a module-global name to its type name. Method keys are stored under the
-     *  TYPE (e.g. `"Network:get"`), so hovering `network:get` needs a way to hop from
-     *  the literal module value `"network"` to the type `"Network"` before lookup.
-     *  Users see the same tooltip whether they write `network:get(…)` at the top level
-     *  or `local n = network; n:get(…)` via a typed local. */
-    private val moduleTypes: Map<String, String> = mapOf(
-        "network" to "Network",
-        "card" to "Card",
-        "scheduler" to "Scheduler",
-        "clock" to "Clock",
-    )
-
-    /** Direct key lookup. Returns the doc entry for an exact symbol, or null if absent. */
+    /** Direct key lookup. */
     fun get(symbol: String): Doc? = entries[symbol]
 
     /**
      * Context-aware lookup with optional variable-type inference.
      *
      * Resolution order:
-     *   1. `owner:member` / `owner.member` literal — covers module-level calls like
-     *      `network:get`.
-     *   2. If the owner is a local variable whose type is known, try
-     *      `OwnerType:member` — covers typed locals like `local cards = card;
-     *      cards:setPowered(true)` which resolves to `Card:setPowered`.
-     *   3. Bare `member` literal.
-     *   4. If the token IS a local variable with a known type, try the type name alone
-     *      — covers hovering the variable name itself (`local items = …; items`).
-     *
-     * [variableTypes] comes from the editor's existing symbol-table inference pass
-     * (see `AutocompletePopup.getSymbolTable`). Pass an empty map for contexts that
-     * don't have live inference (e.g. the guidebook's `<LuaCode>` tag).
+     *   1. Literal `owner:member` (e.g. user registered a custom qualified key).
+     *   2. Module → Type hop via [moduleTypes] — `network:find` → `Network:find`.
+     *   3. Typed-local hop via [variableTypes] — `cards:setPowered` → `RedstoneCard:setPowered`
+     *      when `cards` was declared as a local whose type the autocomplete inferred.
+     *   4. Bare `member`.
+     *   5. Variable-self — hovering the bare `cards` identifier returns the `RedstoneCard`
+     *      type doc if `cards` is a known local of that type.
      */
     fun resolveAt(
         tokens: List<LuaTokenizer.Token>,
@@ -280,14 +445,11 @@ object LuaApiDocs {
         variableTypes: Map<String, String> = emptyMap(),
     ): Doc? {
         val tok = tokens.getOrNull(index) ?: return null
-        // Only identifier-like tokens are eligible for docs. Skip strings / comments /
-        // numbers / punctuation even if they happen to match an entry key.
         val eligible = tok.type == LuaTokenizer.TokenType.DEFAULT ||
             tok.type == LuaTokenizer.TokenType.FUNCTION ||
             tok.type == LuaTokenizer.TokenType.KEYWORD
         if (!eligible) return null
 
-        // Walk back past whitespace to find punctuation + owner.
         var j = index - 1
         while (j >= 0 && tokens[j].text.isBlank()) j--
         if (j >= 0) {
@@ -300,17 +462,10 @@ object LuaApiDocs {
                     val ownerEligible = owner.type == LuaTokenizer.TokenType.DEFAULT ||
                         owner.type == LuaTokenizer.TokenType.FUNCTION
                     if (ownerEligible) {
-                        // 1) Literal owner:member (covers any entry stored under the
-                        //    module-value name, e.g. a user-added `mymod:foo`).
                         entries["${owner.text}${sep.text}${tok.text}"]?.let { return it }
-                        // 2) Module → Type hop: `network` is a value of type `Network`,
-                        //    and method entries are stored under the type (`Network:get`).
-                        //    This is the common path for top-level globals.
                         moduleTypes[owner.text]?.let { ownerType ->
                             entries["$ownerType${sep.text}${tok.text}"]?.let { return it }
                         }
-                        // 3) Typed-variable fallback — owner is a local with an inferred
-                        //    type (from the autocomplete symbol table).
                         variableTypes[owner.text]?.let { ownerType ->
                             entries["$ownerType${sep.text}${tok.text}"]?.let { return it }
                         }
@@ -318,10 +473,7 @@ object LuaApiDocs {
                 }
             }
         }
-        // 3) Bare identifier lookup (keywords, globals).
         entries[tok.text]?.let { return it }
-        // 4) Typed-variable self-hover — e.g. hovering `items` where
-        //    `local items = network:get(…)` shows the `ItemsHandle` type doc.
         variableTypes[tok.text]?.let { selfType ->
             entries[selfType]?.let { return it }
         }

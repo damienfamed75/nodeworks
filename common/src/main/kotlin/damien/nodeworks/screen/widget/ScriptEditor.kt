@@ -620,25 +620,34 @@ class ScriptEditor(
      */
     private fun resolveDocUnderMouse(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? {
         if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return null
+
+        // Y must land strictly inside a line's body row. [lineAtContentY] clamps to
+        // the first/last line when we're above/below all text, and its contract also
+        // returns the next line's index for anything in that line's decoration band —
+        // both would cause hovers outside the text to register as hovers over a token.
         val relY = mouseY - textTop + scrollY
+        if (relY < 0) return null
         val lineIdx = lineAtContentY(relY)
         if (lineIdx < 0 || lineIdx >= lines.size) return null
-        val tokens = renderedLineTokens[lineIdx] ?: return null
-        val relX = (mouseX - textLeft + scrollX)
-        val col = colAtX(lineIdx, relX)
+        val lineTop = yTopOfLine(lineIdx)
+        val lineBottom = lineTop + lineHeight
+        if (relY < lineTop || relY >= lineBottom) return null
 
-        var running = 0
-        var hoveredIdx = -1
+        val tokens = renderedLineTokens[lineIdx] ?: return null
+
+        // X matching via pixel extents, not col-space. Going through [colAtX] would
+        // clamp mouse-left-of-all-text to col=0 and falsely report a hover on the
+        // first token. Walking token widths means we only match when the mouse is
+        // strictly inside a drawn glyph span.
+        var tokenX = textLeft - scrollX
         for ((i, tok) in tokens.withIndex()) {
-            val next = running + tok.text.length
-            if (col in running until next) {
-                hoveredIdx = i
-                break
+            val tokenW = font.width(tok.text)
+            if (mouseX in tokenX until tokenX + tokenW) {
+                return LuaApiDocs.resolveAt(tokens, i, symbolTableProvider())
             }
-            running = next
+            tokenX += tokenW
         }
-        if (hoveredIdx < 0) return null
-        return LuaApiDocs.resolveAt(tokens, hoveredIdx, symbolTableProvider())
+        return null
     }
 
     /** True when the token under (mouseX, mouseY) has a [LuaApiDocs] entry. */

@@ -118,6 +118,21 @@ class NeoForgeStorageService : StorageService {
         return stack.count - leftover.count
     }
 
+    override fun simulateInsertItem(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, maxCount: Long): Long {
+        if (maxCount <= 0L) return 0L
+        val handler = (dest as NeoForgeItemStorageHandle).handler
+        val capped = minOf(maxCount, Int.MAX_VALUE.toLong()).toInt()
+        val stack = ItemStack(item, capped)
+        // NeoForge's transactional simulate: `insertItemStacked(simulate=true)` opens a root
+        // transaction, snapshots each touched slot, performs the insertion on a copy, and aborts
+        // on close — net inventory state is guaranteed restored. Cosmetic slot reshuffling may
+        // be observed (the snapshot mechanism swaps the slot's ItemStack reference with a copy
+        // mid-transaction) but item counts are preserved by the transaction contract, so there
+        // is no duplication or loss risk.
+        val leftover = ItemHandlerHelper.insertItemStacked(handler, stack.copy(), true)
+        return (capped - leftover.count).toLong()
+    }
+
     override fun tryInsertAll(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, count: Long): Boolean {
         if (count <= 0L) return true
         if (count > Int.MAX_VALUE.toLong()) return false
@@ -436,6 +451,16 @@ class NeoForgeStorageService : StorageService {
         val toFill = minOf(amount, Int.MAX_VALUE.toLong()).toInt()
         val stack = FluidStack(fluid, toFill)
         return handler.fill(stack, IFluidHandler.FluidAction.EXECUTE).toLong()
+    }
+
+    override fun simulateInsertFluid(dest: FluidStorageHandle, fluidId: String, maxAmount: Long): Long {
+        if (maxAmount <= 0L) return 0L
+        val id = net.minecraft.resources.Identifier.tryParse(fluidId) ?: return 0L
+        val fluid = BuiltInRegistries.FLUID.getValue(id) ?: return 0L
+        val handler = (dest as NeoForgeFluidStorageHandle).handler
+        val capped = minOf(maxAmount, Int.MAX_VALUE.toLong()).toInt()
+        val stack = FluidStack(fluid, capped)
+        return handler.fill(stack, IFluidHandler.FluidAction.SIMULATE).toLong()
     }
 
     override fun tryInsertAllFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Boolean {

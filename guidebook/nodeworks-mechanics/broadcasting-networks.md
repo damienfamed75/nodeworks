@@ -1,14 +1,10 @@
 ---
 navigation:
-  parent: index.md
+  parent: nodeworks-mechanics/index.md
   title: Broadcasting Network
   icon: broadcast_antenna
-  position: 10
 categories:
 - networking
-item_ids:
-- nodeworks:broadcast_antenna
-- nodeworks:receiver_antenna
 ---
 
 # Broadcasting Network
@@ -26,14 +22,14 @@ A **Broadcast Antenna** can be placed directly on a **Processing Storage** which
 ---
 
 <GameScene zoom="2" interactive={true} paddingTop="20">
-  <ImportStructure src="./assets/assemblies/broadcasting_antenna_on_processing_storage.snbt" />
+  <ImportStructure src="../assets/assemblies/broadcasting_antenna_on_processing_storage.snbt" />
 </GameScene>
 
 <GameScene zoom="6" interactive={true} paddingTop="70" paddingLeft="40" paddingRight="20">
-  <ImportStructure src="./assets/assemblies/receiver_antenna.snbt" />
+  <ImportStructure src="../assets/assemblies/receiver_antenna.snbt" />
 </GameScene>
 
-<LuaCode src="./assets/examples/moving-items.lua" />
+<LuaCode src="../assets/examples/moving-items.lua" />
 
 ## Pairing with a receiver
 

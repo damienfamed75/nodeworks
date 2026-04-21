@@ -98,6 +98,157 @@ object NetworkStorageHelper {
         return placed
     }
 
+    /**
+     * Atomic counterpart to [insertItems]. Moves exactly [requested] items from [source] into
+     * the network's storage cards (honouring routes + callback), or moves nothing and returns
+     * false. Matches [damien.nodeworks.script.CardHandle]'s `insert` semantics: either the full
+     * amount lands, or the source is left untouched.
+     *
+     * **Sim-first, then commit.** We never touch the source until we've verified, via
+     * non-mutating [PlatformServices.StorageService.simulateInsertItem] calls, that every
+     * matching item type the filter picks has enough network-wide capacity. If the probe
+     * shows insufficient space for any single type, we return false with zero mutation —
+     * no extract, no rollback, no chance to dupe or lose items on a partial commit.
+     *
+     * Once the probe passes, the commit runs through best-effort [insertItems] which honours
+     * routes + callbacks. Routing may place items on different cards than the sim priority
+     * walk picked, but capacity is fungible across cards for a given item type, so a clean
+     * sim guarantees commit success under single-threaded server execution.
+     */
+    fun tryInsertItemsAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        source: ItemStorageHandle,
+        filter: String,
+        requested: Long,
+        routeTable: RouteTable? = null,
+        cache: NetworkInventoryCache? = null
+    ): Boolean {
+        if (requested <= 0L) return true
+
+        // Pin the per-type demand from source: scan item types matching the filter and
+        // allocate `requested` across them in source-iteration order. If source doesn't
+        // actually hold `requested` matching items, demand sums short and we fail fast.
+        val demand = LinkedHashMap<String, Long>()
+        var remainingDemand = requested
+        for (info in PlatformServices.storage.findAllItemInfo(source) { CardHandle.matchesFilter(it, filter) }) {
+            if (remainingDemand <= 0L) break
+            val take = minOf(remainingDemand, info.count)
+            if (take > 0L) {
+                demand.merge(info.itemId, take, Long::plus)
+                remainingDemand -= take
+            }
+        }
+        if (remainingDemand > 0L) return false
+
+        // Capacity probe, per item type. Each type checks independently against the full
+        // network — a storage card's free slots are consumed by the first type we probe,
+        // but subsequent probes aren't affected because probes don't mutate. In the rare
+        // real-world case where capacity is tight enough that two types compete for the
+        // same slot, routing at commit time handles the allocation; worst-case we trip the
+        // shortfall guard below and return false without a bad partial state.
+        val storageCards = getStorageCards(snapshot)
+        for ((itemId, need) in demand) {
+            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: return false
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return false
+            var capacity = 0L
+            for (card in storageCards) {
+                if (capacity >= need) break
+                val dest = getStorage(level, card) ?: continue
+                capacity += try {
+                    PlatformServices.storage.simulateInsertItem(dest, item, need - capacity)
+                } catch (_: Exception) { 0L }
+            }
+            if (capacity < need) return false
+        }
+
+        // Sim said it fits — commit. Under single-threaded server execution this should
+        // place `requested` exactly; if routing + sim disagree (shouldn't happen with
+        // vanilla IItemHandler but defensive for modded storages), we treat the shortfall
+        // as a hard failure and unwind by reverse-moving the committed items back to
+        // source. This keeps the atomic contract even on pathological edge cases.
+        val moved = insertItems(level, snapshot, source, filter, requested, routeTable, null, cache)
+        if (moved == requested) return true
+
+        // Unexpected shortfall — unwind. Since source was just drained of at most `moved`
+        // items of types we tracked in `demand`, it necessarily has slot capacity for them
+        // back (fungibility within item type). Rollback runs per-type so cache.onExtracted
+        // receives the correct (itemId, hasData) pairs.
+        for ((itemId, need) in demand) {
+            var toReturn = minOf(need, moved) // can't return more than actually moved
+            if (toReturn <= 0L) continue
+            val variantFilter: (String) -> Boolean = { it == itemId }
+            var returned = 0L
+            for (card in storageCards) {
+                if (toReturn <= 0L) break
+                val dest = getStorage(level, card) ?: continue
+                val back = try {
+                    PlatformServices.storage.moveItems(dest, source, variantFilter, toReturn)
+                } catch (_: Exception) { 0L }
+                toReturn -= back
+                returned += back
+            }
+            if (returned > 0L) {
+                val info = PlatformServices.storage.findFirstItemInfo(source) { it == itemId }
+                if (info != null) cache?.onExtracted(info.itemId, info.hasData, returned)
+            }
+        }
+        return false
+    }
+
+    /**
+     * Atomic counterpart to [insertFluidAcrossNetwork]. Either places exactly [amount] mB of
+     * [fluidId] into network fluid storages, or places nothing and returns false.
+     *
+     * Sim-first: sum `simulateInsertFluid` across storage cards to verify capacity before
+     * any mutation. Only commits if the full amount is known to fit.
+     */
+    fun tryInsertFluidAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        fluidId: String,
+        amount: Long,
+        cache: NetworkInventoryCache? = null
+    ): Boolean {
+        if (amount <= 0L) return true
+
+        val storageCards = getStorageCards(snapshot)
+        var capacity = 0L
+        for (card in storageCards) {
+            if (capacity >= amount) break
+            val storage = getFluidStorage(level, card) ?: continue
+            capacity += try {
+                PlatformServices.storage.simulateInsertFluid(storage, fluidId, amount - capacity)
+            } catch (_: Exception) { 0L }
+        }
+        if (capacity < amount) return false
+
+        // Commit. Since sim passed, this should place all; unwind drain on divergence.
+        var remaining = amount
+        val committed = mutableListOf<Pair<FluidStorageHandle, Long>>()
+        for (card in storageCards) {
+            if (remaining <= 0L) break
+            val storage = getFluidStorage(level, card) ?: continue
+            val inserted = try {
+                PlatformServices.storage.insertFluid(storage, fluidId, remaining)
+            } catch (_: Exception) { 0L }
+            if (inserted > 0L) {
+                committed.add(storage to inserted)
+                remaining -= inserted
+            }
+        }
+        if (remaining == 0L) {
+            cache?.onFluidInserted(fluidId, amount)
+            return true
+        }
+        for ((storage, placed) in committed) {
+            try {
+                PlatformServices.storage.extractFluid(storage, { it == fluidId }, placed)
+            } catch (_: Exception) { /* best-effort rollback */ }
+        }
+        return false
+    }
+
     /** Aggregate fluid totals across the whole network in a single pass — used in place
      *  of per-fluid `countFluid` calls when the caller already needs the full list.
      *  Returns `(FluidInfo, sourceCard)` pairs with amounts summed across all storage cards. */
@@ -243,17 +394,24 @@ object NetworkStorageHelper {
             val count = PlatformServices.storage.countItems(source) { it == itemId }
             val toMove = minOf(remaining, count)
 
-            // 1. Check routes first (precomputed, fast)
-            val routeTarget = routeTable?.findRouteTarget(itemInfo)
-            if (routeTarget != null) {
-                val moved = try {
-                    PlatformServices.storage.moveItemsVariant(source, routeTarget, variantFilter, toMove)
-                } catch (_: Exception) { 0L }
-                if (moved > 0) cache?.onInserted(itemId, hasData, moved)
-                totalMoved += moved
-                remaining -= moved
-                if (moved < toMove && routeTable != null) {
-                    val overflow = routeTable.insertDefault(source, itemId, toMove - moved)
+            // 1. Check routes first (precomputed, fast). A route may have multiple candidate
+            //    cards (wildcard pattern like `cobblestone_*`) — iterate them in order,
+            //    moving what fits before overflowing to open storages.
+            val routeTargets = routeTable?.findRouteTargets(itemInfo) ?: emptyList()
+            if (routeTargets.isNotEmpty()) {
+                var routeRemaining = toMove
+                for (target in routeTargets) {
+                    if (routeRemaining <= 0L) break
+                    val moved = try {
+                        PlatformServices.storage.moveItemsVariant(source, target, variantFilter, routeRemaining)
+                    } catch (_: Exception) { 0L }
+                    if (moved > 0) cache?.onInserted(itemId, hasData, moved)
+                    totalMoved += moved
+                    remaining -= moved
+                    routeRemaining -= moved
+                }
+                if (routeRemaining > 0L && routeTable != null) {
+                    val overflow = routeTable.insertDefault(source, itemId, routeRemaining)
                     if (overflow > 0) cache?.onInserted(itemId, hasData, overflow)
                     totalMoved += overflow
                     remaining -= overflow
