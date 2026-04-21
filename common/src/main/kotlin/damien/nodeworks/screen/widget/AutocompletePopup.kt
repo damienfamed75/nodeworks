@@ -1254,6 +1254,10 @@ class AutocompletePopup(
 
     private fun suggestPropertiesForType(type: String, partial: String): List<Suggestion> {
         val props = when (type) {
+            "CardHandle" -> listOf(
+                suggest("name", "name: string (card's alias)", Kind.PROPERTY)
+            )
+
             "ItemsHandle" -> listOf(
                 suggest("id", "id: string", Kind.PROPERTY),
                 suggest("name", "name: string", Kind.PROPERTY),

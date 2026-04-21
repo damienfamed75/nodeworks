@@ -324,6 +324,12 @@ class CardHandle private constructor(
         val table = LuaTable()
         val self = this
 
+        // .name — readable alias for the card, matching how it's labelled in the terminal
+        // sidebar and Card Programmer. Falls back through the same chain as everywhere else
+        // (`alias ?? autoAlias ?? capabilityType`) so `print(card.name)` always produces
+        // something meaningful even for un-renamed cards.
+        table.set("name", LuaValue.valueOf(card.effectiveAlias))
+
         // :face(name) -> new CardHandle with specific access face
         table.set("face", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {

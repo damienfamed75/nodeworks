@@ -57,7 +57,15 @@ object NeoForgeTerminalPackets {
 
         val engine = ScriptEngine(level, nodePos) { message, isError ->
             if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
-            val logPayload = TerminalLogPayload(pos, message, isError)
+            // Cap script-originated print output so a single absurd log line can't blow past
+            // the network string length and disconnect the player. Truncation happens here
+            // (once, at the send site) rather than in the codec, so the original message is
+            // still available to NetworkErrorBuffer above for in-world diagnostic display.
+            val safeMessage = if (message.length > TerminalLogPayload.MAX_LOG_CHARS) {
+                message.take(TerminalLogPayload.MAX_LOG_CHARS) +
+                    "\n…(truncated, ${message.length - TerminalLogPayload.MAX_LOG_CHARS} more chars)"
+            } else message
+            val logPayload = TerminalLogPayload(pos, safeMessage, isError)
             for (p in level.players()) {
                 if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
                     PacketDistributor.sendToPlayer(p, logPayload)

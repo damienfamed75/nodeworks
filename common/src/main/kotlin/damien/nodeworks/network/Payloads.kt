@@ -259,9 +259,15 @@ data class VariableSettingsPayload(val pos: BlockPos, val key: String, val intVa
 data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, val isError: Boolean) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "terminal_log"))
+        // Terminal log lines are capped well under the codec limit; senders use
+        // [MAX_LOG_CHARS] to truncate so a large `print(…)` output never blows past the
+        // network string length and disconnects the player. Leaves headroom in the codec
+        // for the truncation marker the sender appends.
+        private const val MAX_LOG_BYTES = 1024
+        const val MAX_LOG_CHARS = 960
         val CODEC: StreamCodec<FriendlyByteBuf, TerminalLogPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.message, 1024); buf.writeBoolean(p.isError) },
-            { buf -> TerminalLogPayload(buf.readBlockPos(), buf.readUtf(1024), buf.readBoolean()) }
+            { p, buf -> buf.writeBlockPos(p.terminalPos); buf.writeUtf(p.message, MAX_LOG_BYTES); buf.writeBoolean(p.isError) },
+            { buf -> TerminalLogPayload(buf.readBlockPos(), buf.readUtf(MAX_LOG_BYTES), buf.readBoolean()) }
         )
     }
     override fun type() = TYPE

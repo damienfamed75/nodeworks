@@ -28,7 +28,7 @@ package damien.nodeworks.script
  */
 object LuaApiDocs {
 
-    enum class Category { KEYWORD, MODULE, TYPE, FUNCTION, METHOD }
+    enum class Category { KEYWORD, MODULE, TYPE, FUNCTION, METHOD, PROPERTY }
 
     data class Doc(
         val signature: String? = null,
@@ -235,6 +235,12 @@ object LuaApiDocs {
             signature = "CardHandle:slots(…indices) → CardHandle",
             description = "Returns a new handle filtered to specific slot indices (1-based in Lua).",
             category = Category.METHOD,
+            guidebookRef = "nodeworks:lua-api/card-handle.md",
+        ))
+        put("CardHandle.name", Doc(
+            signature = "CardHandle.name: string",
+            description = "The card's alias — same label shown in the terminal sidebar and Card Programmer. Falls back to the auto-assigned alias for un-renamed cards.",
+            category = Category.PROPERTY,
             guidebookRef = "nodeworks:lua-api/card-handle.md",
         ))
         put("CardHandle:find", Doc(

@@ -39,6 +39,28 @@ local furnace = network:get("furnace") -- gets the IO Card
 
 ---
 
+## getAll
+
+Returns a list of all <ItemLink id="storage_card" />, <ItemLink id="io_card" />, <ItemLink id="redstone_card" />, or a <ItemLink id="variable" />'s in the Network
+
+<GameScene zoom="5" interactive={true} paddingLeft="50" paddingRight="60">
+  <ImportStructure src="../assets/assemblies/chest_connected_storage_card.snbt" />
+  <BoxAnnotation min="2.25 1.1 0.1" max="2 1.9 0.9" color="#AA83E0">
+    <ItemImage id="nodeworks:storage_card" />
+  </BoxAnnotation>
+  <BoxAnnotation min="2.25 0.1 0.1" max="2 0.9 0.9" color="#AA83E0">
+    <ItemImage id="nodeworks:storage_card" />
+  </BoxAnnotation>
+</GameScene>
+
+<LuaCode>
+```lua
+local allCards = network:getAll()
+```
+</LuaCode>
+
+---
+
 ## find
 
 Scans all [Network Storage](../nodeworks-mechanics/network-storage.md) for matching
@@ -117,20 +139,14 @@ end)
 ```
 </LuaCode>
 
-If you have multiple cards with _N suffixes like `non_stackable_0`, `non_stackable_1`, `non_stackable_2` etc.
-then you can refer to all of them using a wildcard *(\*)*
+If you have multiple storage cards with _N suffixes ( `non_stackable_0`, `non_stackable_1`, `non_stackable_2` etc. )
+then you can refer to all of them using a wildcard ( \* )
 
 <LuaCode>
 ```lua
+-- matches all non_stackable_ Storage Cards
 network:route("non_stackable_*", function(item: ItemsHandle)
-  return item.id == "minecraft:cobblestone" -- true if item id is "minecraft:cobblestone"
+  return not item.stackable
 end)
 ```
 </LuaCode>
-
-## Example: shuttle input → output
-
-A tiny script that pulls everything from a container aliased `"input"` and drops it into
-`"output"`. The file lives at `lua-api/examples/route_all.lua` and is loaded into the
-page via the `<LuaCode src="…">` form so your IDE highlights it natively:
-
