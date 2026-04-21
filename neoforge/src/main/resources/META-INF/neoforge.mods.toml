@@ -29,3 +29,11 @@ modId = "minecraft"
 type = "required"
 versionRange = "[26.1.2,)"
 side = "BOTH"
+
+# GuideME drives the in-game guidebook (see docs/authoring.md). Client-only because
+# the rendering pipeline is client-side — a dedicated server never touches it.
+[[dependencies.nodeworks]]
+modId = "guideme"
+type = "required"
+versionRange = "[26.1,)"
+side = "CLIENT"

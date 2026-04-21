@@ -1,0 +1,314 @@
+{
+    DataVersion: 4790,
+    size: [2, 6, 1],
+    data: [
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 2, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 3, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 4, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 5, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:top}"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:processing_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 1b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 2b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 3b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 4b,
+                        id: "nodeworks:processing_set"
+                    }
+                ],
+                id: "nodeworks:processing_storage"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:processing_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 1b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 2b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 3b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 4b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 5b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 6b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:spruce_planks"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:stripped_spruce_wood"],
+                                output_counts: [I; 4],
+                                name: "minecraft:stripped_spruce_wood@1>>minecraft:spruce_planks@4",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 7b,
+                        id: "nodeworks:processing_set"
+                    }
+                ],
+                id: "nodeworks:processing_storage"
+            }
+        },
+        {
+            pos: [1, 1, 0],
+            state: "nodeworks:broadcast_antenna",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "nodeworks:broadcast_antenna",
+                frequency: "4f3f3e1c-b482-4627-b705-eea7ab777794"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:antenna_segment{connected:false,facing:north,part:middle}",
+        "nodeworks:antenna_segment{connected:false,facing:north,part:top}",
+        "nodeworks:processing_storage{facing:north}",
+        "nodeworks:broadcast_antenna"
+    ]
+}

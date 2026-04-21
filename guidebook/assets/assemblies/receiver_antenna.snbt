@@ -1,0 +1,84 @@
+{
+    DataVersion: 4790,
+    size: [3, 2, 1],
+    data: [
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:antenna_segment{connected:true,facing:north,part:receiver}"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "fe4a5493-2348-49fd-995b-b55926854238",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 1, 0, 0]
+                ],
+                networkColor: 5059551
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "fe4a5493-2348-49fd-995b-b55926854238",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 0, 0, 0],
+                    [I; 2, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:receiver_antenna{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                paired_pos: 6047314018246L,
+                                paired_dim: "minecraft:overworld",
+                                frequency: "4f3f3e1c-b482-4627-b705-eea7ab777794"
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:link_crystal"
+                    }
+                ],
+                networkId: "fe4a5493-2348-49fd-995b-b55926854238",
+                id: "nodeworks:receiver_antenna",
+                connections: [
+                    [I; 1, 0, 0]
+                ]
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:antenna_segment{connected:true,facing:north,part:receiver}",
+        "nodeworks:network_controller",
+        "nodeworks:node",
+        "nodeworks:receiver_antenna{facing:north}"
+    ]
+}

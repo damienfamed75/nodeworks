@@ -49,6 +49,13 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterItemTintSources)
         modBus.addListener(::onRegisterRenderPipelines)
 
+        // Register the in-game guide synchronously during mod construction — NOT inside
+        // FMLClientSetupEvent.enqueueWork. GuideME hooks the item-tooltip "Hold G" hint
+        // during its own mod-event-bus construction; any guide registered after that point
+        // has its ItemIndex wired but the tooltip binding never fires. Pattern mirrors
+        // AE2's AppEngClient constructor call.
+        damien.nodeworks.guide.NodeworksGuide.register()
+
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
         // We cancel the event to prevent JEI from seeing it, then manually forward to our screen.
