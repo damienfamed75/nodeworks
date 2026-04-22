@@ -51,7 +51,7 @@ object LuaTokenizer {
      *  they're referenced without a trailing call-parenthesis. Extend via [LuaApiDocs]
      *  entries whose key has no `:` or `.` — those automatically get included here. */
     val BUILTINS: Set<String> = setOf(
-        "card", "scheduler", "print", "network", "clock", "require",
+        "scheduler", "print", "network", "clock", "require",
     )
 
     /**

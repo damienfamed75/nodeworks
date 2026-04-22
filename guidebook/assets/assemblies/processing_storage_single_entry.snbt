@@ -1,0 +1,148 @@
+{
+    DataVersion: 4790,
+    size: [3, 2, 2],
+    data: [
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:processing_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:iron_ingot"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:raw_iron"],
+                                output_counts: [I; 1],
+                                name: "minecraft:raw_iron@1>>minecraft:iron_ingot@1",
+                                input_slots: [I; 0],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:processing_set"
+                    }
+                ],
+                networkId: "e6ebcf4d-2cf8-4d46-8161-145585a4e39f",
+                id: "nodeworks:processing_storage",
+                connections: [
+                    [I; 1, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 27b,
+                        id: "nodeworks:io_card"
+                    }
+                ],
+                networkId: "e6ebcf4d-2cf8-4d46-8161-145585a4e39f",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 2, 0, 0],
+                    [I; 0, 0, 0],
+                    [I; 2, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [1, 0, 1],
+            state: "minecraft:furnace{facing:north,lit:false}",
+            nbt: {
+                lit_total_time: 0,
+                components: {},
+                cooking_time_spent: 0,
+                cooking_total_time: 0,
+                Items: [],
+                id: "minecraft:furnace",
+                lit_time_remaining: 0,
+                RecipesUsed: {}
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "e6ebcf4d-2cf8-4d46-8161-145585a4e39f",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 1, 0, 0]
+                ],
+                networkColor: 5240399
+            }
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                autoRun: 0b,
+                layoutIndex: 0,
+                networkId: "e6ebcf4d-2cf8-4d46-8161-145585a4e39f",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: ""
+                    }
+                ],
+                connections: [
+                    [I; 1, 0, 0]
+                ]
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:processing_storage{facing:north}",
+        "nodeworks:node",
+        "minecraft:furnace{facing:north,lit:false}",
+        "nodeworks:network_controller",
+        "nodeworks:terminal{facing:north}"
+    ]
+}

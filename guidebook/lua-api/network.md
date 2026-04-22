@@ -1,20 +1,18 @@
 ---
 navigation:
   parent: lua-api/index.md
-  title: network
+  title: Network
+  icon: node
 ---
 
 # network
 
-The `network` global is your entry point into the live Nodeworks network the script is
+The `network` module is the entry point into the live Nodeworks network the <ItemLink id="terminal" /> is
 attached to. It queries storage, routes items between handles, and registers callbacks.
-
-> **Tip:** hover any identifier in the Scripting Terminal's editor to see a quick
-> docstring. Press **G** while hovering to jump to the relevant page here.
 
 ## get
 
-Returns a reference to a <ItemLink id="storage_card" />, <ItemLink id="io_card" />, <ItemLink id="redstone_card" />, or a <ItemLink id="variable" /> in your network, typically used at the top of the script.
+Returns a reference to a <ItemLink id="storage_card" />, <ItemLink id="io_card" /> or <ItemLink id="redstone_card" /> in your network, typically used at the top of the script.
 
 You can click on the sidebar of the scripting terminal to auto-get them as well.
 
@@ -41,7 +39,7 @@ local furnace = network:get("furnace") -- gets the IO Card
 
 ## getAll
 
-Returns a list of all <ItemLink id="storage_card" />, <ItemLink id="io_card" />, <ItemLink id="redstone_card" />, or a <ItemLink id="variable" />'s in the Network
+Returns a list of all <ItemLink id="storage_card" />, <ItemLink id="io_card" /> or <ItemLink id="redstone_card" />'s in the Network given a type.
 
 <GameScene zoom="5" interactive={true} paddingLeft="50" paddingRight="60">
   <ImportStructure src="../assets/assemblies/chest_connected_storage_card.snbt" />
@@ -55,7 +53,12 @@ Returns a list of all <ItemLink id="storage_card" />, <ItemLink id="io_card" />,
 
 <LuaCode>
 ```lua
-local allCards = network:getAll()
+local storages = network:getAll("storage") -- get all storage cards
+for _, storage in storages do
+    print(storage.name)
+end
+-- "storage_0"
+-- "storage_1"
 ```
 </LuaCode>
 
@@ -70,11 +73,11 @@ or `nil` if nothing matches.
 <LuaCode>
 ```lua
 local all = network:find("*") -- gets all items and fluids if any
-local allItems = network:find("$item:*")
-local allFluids = network:find("$fluid:*")
-local allCoal = network:find("minecraft:coal")
-local allLogs = network:find("#minecraft:logs")
-local allRaw = network:find("/^Raw.*/") -- find items that start with "Raw"
+local allItems = network:find("$item:*") -- only items
+local allFluids = network:find("$fluid:*") -- only fluids
+local allCoal = network:find("minecraft:coal") -- item id
+local allLogs = network:find("#minecraft:logs") -- tags
+local allRaw = network:find("/^Raw.*/") -- regular expressions
 ```
 </LuaCode>
 
@@ -86,6 +89,53 @@ local allCoal = network:find("minecraft:coal")
 if allCoal then
   print("we have coal")
 end
+```
+</LuaCode>
+
+---
+
+## findEach
+
+Like [find](./network.md#find), scan all [Network Storage](../nodeworks-mechanics/network-storage.md)
+for matching items/fluids matching the filter. But instead returns a list of [ItemsHandle](./items-handle.md)'s.
+Each entry is unique by its Item ID and if it contains NBT Data.
+
+<LuaCode>
+```lua
+for _, items in network:findEach("$item:*") do
+  print(items.id, items.count, items.kind)
+end
+```
+</LuaCode>
+
+If you had diamond sword in your network, some with enchantments and some without
+they would be separated into different entries
+
+<LuaCode>
+```lua
+for _, items in network:findEach("minecraft:diamond_sword") do
+  print(items.id, items.hasData)
+end
+-- "minecraft:diamond_sword" true
+-- "minecraft:diamond_sword" false
+```
+</LuaCode>
+
+---
+
+## count
+
+Returns the total quantity in [Network Storage](../nodeworks-mechanics/network-storage.md)
+that matches the filter. (Fluids count in mB)
+
+<LuaCode>
+```lua
+print("swords:", network:count("minecraft:diamond_sword"))
+print("cobblestone:", network:count("minecraft:cobblestone"))
+print("all:", network:count("*"))
+-- "swords:" 3
+-- "cobblestone:" 256
+-- "all:" 259
 ```
 </LuaCode>
 
@@ -120,7 +170,101 @@ the number of items successfully moved.
 <LuaCode>
 ```lua
 local moved = network:tryInsert(items)
-print(moved .. " items were moved") -- can be between 0 -> items.count
+print(moved .. " items were moved") -- can be 0 to items.count
+```
+</LuaCode>
+
+---
+
+## craft
+
+(also see [Auto-Crafting](../nodeworks-mechanics/autocrafting.md))
+
+Queues a craft for the given item. Returns a [CraftBuilder](./craft-builder.md) or nil.
+
+You can either `store` the crafted item into [Network Storage](../nodeworks-mechanics/network-storage.md)
+as soon as it finishes
+
+<LuaCode>
+```lua
+local builder = network:craft("minecraft:door")
+builder:store() -- put crafted item into network storage
+```
+</LuaCode>
+
+Or you can connect a handler to put it somewhere custom
+
+<LuaCode>
+```lua
+local furnace = network:get("someFurnaceCard")
+local builder = network:craft("minecraft:charcoal")
+builder:connect(function(item: ItemsHandle)
+  furnace:insert(item)
+end)
+```
+</LuaCode>
+
+---
+
+## shapeless
+
+Instantly crafts a shapeless recipe with ingredients from [Network Storage](../nodeworks-mechanics/network-storage.md).
+If the recipe is invalid or ingredients are missing then nothing is crafted and
+the function returns `nil`.
+
+<LuaCode>
+```lua
+-- craft a flint and steel, output automatically goes into network storage.
+network:shapeless("minecraft:flint", 1, "minecraft:iron_ingot", 1)
+```
+</LuaCode>
+
+---
+
+## var
+
+Returns a [VariableHandle](./variable-handle.md) of a <ItemLink id="variable" />
+in the Network that matches the given name. Errors if the variable doesn't exist.
+
+<LuaCode>
+```lua
+local count = network:var("count")
+```
+</LuaCode>
+
+---
+
+## handle
+
+(also see [Auto-Crafting](../nodeworks-mechanics/autocrafting.md))
+
+Registers a processing handler for an in-network <ItemLink id="processing_set" />.
+The handler is invoked with inputs and must use the passed [Job](job.md) to `pull`
+outputs. All items given from the [InputItems](input-items.md) **must** be taken
+by the handler.
+
+<GameScene zoom="5" interactive={true} paddingTop="40" paddingLeft="60" paddingRight="30">
+  <ImportStructure src="../assets/assemblies/processing_storage_single_entry.snbt" />
+  <BoxAnnotation min="1.9 0.1 0.75" max="1.1 0.9 1" color="#83E086">
+    Renamed to **"furnace"**<ItemImage id="nodeworks:io_card" />
+  </BoxAnnotation>
+  <BlockAnnotation x="0" y="0" z="0">
+    <Row>
+      <ItemImage id="minecraft:raw_iron" />
+      **➜**
+      <ItemImage id="minecraft:iron_ingot" />
+    </Row>
+  </BlockAnnotation>
+</GameScene>
+
+<LuaCode>
+```lua
+local furnace = network:get("furnace")
+-- handler for raw iron -> iron ingot
+network:handle("…", function(job: Job, items: InputItems)
+  furnace:face("top"):insert(items.rawIron)
+  job:pull(furnace:face("bottom"))
+end)
 ```
 </LuaCode>
 
@@ -148,5 +292,33 @@ then you can refer to all of them using a wildcard ( \* )
 network:route("non_stackable_*", function(item: ItemsHandle)
   return not item.stackable
 end)
+```
+</LuaCode>
+
+> **Tip:** It's also recommended to turn on the "AutoRun" of the <ItemLink id="terminal" />
+> if it's using `route`
+
+![](../assets/images/autorun.png)
+
+---
+
+## debug
+
+Prints a summary of the network topology
+
+<LuaCode>
+```lua
+network:debug()
+-- === Network Debug ===
+-- Controller: BlockPos{x=-25, y=70, z=10}
+-- Nodes: 1
+--   Node BlockPos{x=-25, y=70, z=9}: 1 cards
+--     NORTH: cobblestone_storage (storage)
+-- Terminals: 1
+--   BlockPos{x=-26, y=70, z=9}
+-- CPUs: 0
+-- Crafters (Instruction Sets): 0
+-- Processing APIs: 0
+-- Variables: 0
 ```
 </LuaCode>

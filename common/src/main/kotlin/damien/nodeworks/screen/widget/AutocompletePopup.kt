@@ -1317,6 +1317,18 @@ class AutocompletePopup(
                 fuzzyStrings(ctx.partial, scriptNames)
             }
 
+            // `network:shapeless("id1", count1, "id2", count2, ...)` — the odd-positioned
+            // string args are specific ingredient item IDs. Unlike `:find` this isn't a
+            // resource filter: tags, regex, and `$item:` / `$fluid:` sigils are all
+            // invalid here, so we suggest only plain item IDs (no fluids either — shapeless
+            // recipes don't consume fluids). Every string-arg position gets the same
+            // suggestions because vanilla doesn't care about ingredient order; there's no
+            // "flip-flop" to resolve in the completion layer itself.
+            ctx.funcExpr.endsWith("network:shapeless") -> {
+                val suggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
+                FuzzyMatch.filter(ctx.partial, suggestions).take(20)
+            }
+
             isResourceFilterFunc(ctx.funcExpr) -> suggestResourceFilter(ctx.partial)
 
             else -> emptyList()
