@@ -41,6 +41,7 @@ object NodeworksGuide {
             .folder("nodeworksguide")
             .extension(TagCompiler.EXTENSION_POINT, NodeworksSceneTagCompiler())
             .extension(TagCompiler.EXTENSION_POINT, LuaCodeTagCompiler())
+            .extension(TagCompiler.EXTENSION_POINT, CategoryIndexDescriptionsTagCompiler())
             .build()
         instance = guide
         log.info("Registered guide id={} folder=nodeworksguide (expected assets path: assets/nodeworks/nodeworksguide/)", ID)

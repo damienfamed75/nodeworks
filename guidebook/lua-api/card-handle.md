@@ -1,7 +1,11 @@
 ---
 navigation:
   parent: lua-api/index.md
-  title: ItemsHandle
+  title: CardHandle
+  icon: blank_card
+categories:
+  - api_types
+description: reference to a single card in a network
 ---
 
 # CardHandle
@@ -165,3 +169,119 @@ print(card:count("#minecraft:coals"))
 
 *Applies to <ItemLink id="redstone_card" />'s only.* The inventory methods above don't apply — a
 redstone card's `card:find()` is nil.
+
+### powered
+
+Returns `true` if the incoming redstone signal is greater than 0.
+
+<GameScene zoom="5" interactive={true} paddingTop="10" paddingLeft="60" paddingRight="30">
+  <ImportStructure src="../assets/assemblies/redstone_read_lever.snbt" />
+  <BoxAnnotation min="1.2 0.2 1.2" max="1 0.8 1.8" color="#F53B68">
+    <ItemImage id="nodeworks:redstone_card" />
+  </BoxAnnotation>
+</GameScene>
+
+<LuaCode>
+```lua
+local card = network:get("redstone_1")
+print(card:powered())
+-- true
+```
+</LuaCode>
+
+### strength
+
+Returns the incoming redstone signal strength from 0 to 15.
+
+<GameScene zoom="5" interactive={true} paddingTop="10" paddingBottom="40" paddingLeft="60" paddingRight="30">
+  <ImportStructure src="../assets/assemblies/redstone_read_strength.snbt" />
+  <BoxAnnotation min="3.2 1.2 0.2" max="3 1.8 0.8" color="#F53B68">
+    <ItemImage id="nodeworks:redstone_card" />
+  </BoxAnnotation>
+</GameScene>
+
+<LuaCode>
+```lua
+local card = network:get("redstone_1")
+print(card:strength())
+-- "14"
+```
+</LuaCode>
+
+### set
+
+Emits a redstone signal. Boolean maps to 15 or 0 just like a <ItemLink id="minecraft:lever" />. Number is clamped to 0 to 15.
+
+<GameScene zoom="5" interactive={true} paddingTop="10" paddingLeft="60" paddingRight="30">
+  <ImportStructure src="../assets/assemblies/redstone_set_true.snbt" />
+  <BoxAnnotation min="3 1 0.2" max="4 1.1 0.8">
+    15 strength
+  </BoxAnnotation>
+  <BoxAnnotation min="4.2 1.2 0.2" max="4 1.8 0.8" color="#F53B68">
+    <ItemImage id="nodeworks:redstone_card" />
+  </BoxAnnotation>
+  <RemoveBlocks id="minecraft:stone" />
+</GameScene>
+
+<LuaCode>
+```lua
+local card = network:get("redstone_1")
+card:set(true) -- emit a signal of 15 strength like a lever
+card:set(false) -- set emitted signal to 0
+```
+</LuaCode>
+
+You can use a number to specify the strength of the signal emitted
+
+<GameScene zoom="5" interactive={true} paddingTop="10" paddingLeft="60" paddingRight="30">
+  <ImportStructure src="../assets/assemblies/redstone_set_low.snbt" />
+  <BoxAnnotation min="3 1 0.2" max="4 1.1 0.8">
+    3 strength
+  </BoxAnnotation>
+  <BoxAnnotation min="4.2 1.2 0.2" max="4 1.8 0.8" color="#F53B68">
+    <ItemImage id="nodeworks:redstone_card" />
+  </BoxAnnotation>
+  <RemoveBlocks id="minecraft:stone" />
+</GameScene>
+
+<LuaCode>
+```lua
+local card = network:get("redstone_1")
+card:set(3)
+```
+</LuaCode>
+
+### onChange
+
+Registers a callback fired whenever the incoming redstone signal strength changes.
+
+<GameScene zoom="5" interactive={true} paddingTop="10" paddingLeft="60" paddingRight="30">
+  <ImportStructure src="../assets/assemblies/redstone_onchange.snbt" />
+  <BoxAnnotation min="3.2 1.2 0.2" max="3 1.8 0.8" color="#F53B68">
+    <ItemImage id="nodeworks:redstone_card" />
+  </BoxAnnotation>
+  <BoxAnnotation min="0 1 0" max="3 2 2">
+    redstone clock/pulser
+  </BoxAnnotation>
+</GameScene>
+
+<LuaCode>
+```lua
+local card = network:get("redstone_1")
+-- print "state changed" when redstone torch turns on and off
+local lastPowered = card:powered()
+card:onChange(function(strength: number)
+    local powered = strength > 0
+    if lastPowered == powered then
+        return
+    end
+    lastPowered = powered
+    print("state changed")
+end)
+```
+</LuaCode>
+
+> **Tip:** It's also recommended to turn on the ["Autorun"](../items-blocks/scripting_terminal.md#autorun) of the <ItemLink id="terminal" />
+> when using `:onChange`
+
+![](../assets/images/autorun.png)

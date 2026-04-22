@@ -2,6 +2,9 @@
 navigation:
   parent: lua-api/index.md
   title: ItemsHandle
+categories:
+  - api_types
+description: a specific resource (items or fluid) with count, source, and transfer ops.
 ---
 
 # ItemsHandle

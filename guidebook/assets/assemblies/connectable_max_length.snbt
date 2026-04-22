@@ -1,0 +1,67 @@
+{
+    DataVersion: 4790,
+    size: [9, 1, 1],
+    data: [
+        {
+            pos: [1, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [6, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [7, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "499ad38a-89c8-46ff-9ea4-3492d5a5293a",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 8, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [8, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "499ad38a-89c8-46ff-9ea4-3492d5a5293a",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 0, 0, 0]
+                ],
+                networkColor: 14755191
+            }
+        }
+    ],
+    entities: [],
+    palette: ["minecraft:air", "nodeworks:node", "nodeworks:network_controller"]
+}

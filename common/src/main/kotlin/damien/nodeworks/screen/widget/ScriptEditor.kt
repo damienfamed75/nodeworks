@@ -469,9 +469,14 @@ class ScriptEditor(
         val relY = my - textTop + scrollY
         val lineIdx = lineAtContentY(relY.toInt())
         if (lineIdx < 0 || lineIdx >= lines.size) return null
-        // Don't treat clicks on the decoration band as being on text.
+        // Must land strictly inside the line's text row. Without the lower bound check,
+        // hovering below all content clamps to the last line via [lineAtContentY] and
+        // falsely reports a word under the cursor — bug previously visible as "tooltip
+        // keeps showing below the last line of a short script" because the tooltip's
+        // fallback path calls this method.
         val lineBodyTop = yTopOfLine(lineIdx)
-        if (relY < lineBodyTop) return null
+        val lineBodyBottom = lineBodyTop + lineHeight
+        if (relY < lineBodyTop || relY >= lineBodyBottom) return null
         val line = lines[lineIdx]
         val relX = (mx - textLeft + scrollX).toInt()
         val col = colAtX(lineIdx, relX)

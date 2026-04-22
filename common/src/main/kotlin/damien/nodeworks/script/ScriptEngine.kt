@@ -286,12 +286,20 @@ class ScriptEngine(
         val cap = card.capability
 
         if (cap is damien.nodeworks.card.RedstoneSideCapability) {
-            // Remove inventory methods that don't apply to redstone
+            // Remove inventory methods that don't apply to redstone. `face` is also cleared
+            // because redstone methods read from `cap.nodeSide` (the side the card is
+            // installed on) — they never consult the CardHandle's `accessFace`, so
+            // `redstone:face("top"):powered()` does nothing useful. Worse, `:face` builds
+            // a fresh CardHandle.toLuaTable which re-installs `find`/`insert`/etc. without
+            // going through this NIL'ing branch, so calling it would resurrect inventory
+            // methods on a block that can't host them and blow up at runtime.
             table.set("find", LuaValue.NIL)
             table.set("findEach", LuaValue.NIL)
             table.set("insert", LuaValue.NIL)
+            table.set("tryInsert", LuaValue.NIL)
             table.set("count", LuaValue.NIL)
             table.set("slots", LuaValue.NIL)
+            table.set("face", LuaValue.NIL)
 
             // powered() → boolean
             table.set("powered", object : OneArgFunction() {

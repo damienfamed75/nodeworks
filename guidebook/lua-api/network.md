@@ -3,6 +3,9 @@ navigation:
   parent: lua-api/index.md
   title: Network
   icon: node
+categories:
+  - api_builtin
+description: query storage, route items, open craft jobs, register handlers
 ---
 
 # Network
@@ -297,7 +300,7 @@ end)
 ```
 </LuaCode>
 
-> **Tip:** It's also recommended to turn on the "AutoRun" of the <ItemLink id="terminal" />
+> **Tip:** It's also recommended to turn on the ["Autorun"](../items-blocks/scripting_terminal.md#autorun) of the <ItemLink id="terminal" />
 > if it's using `route`
 
 ![](../assets/images/autorun.png)

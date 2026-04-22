@@ -25,6 +25,14 @@ package damien.nodeworks.script
  *
  * If any of those files change shape, update the matching entry here so both the
  * editor tooltips and the guidebook stay accurate.
+ *
+ * ## Description style
+ *
+ * Descriptions are surfaced in two narrow-width tooltips (editor + guidebook), so keep
+ * them short. One sentence per entry where possible, two at the absolute max. Avoid em
+ * dashes and dashes as sentence separators — they read as clutter in small tooltips.
+ * Favour periods. Avoid parenthetical asides; if a nuance needs explaining, it belongs
+ * on the guidebook page, not in the tooltip.
  */
 object LuaApiDocs {
 
@@ -101,21 +109,21 @@ object LuaApiDocs {
         put(
             "print", Doc(
                 signature = "print(…)",
-                description = "Prints its arguments to the terminal's log panel, space-separated.",
+                description = "Writes its arguments to the terminal log, space separated.",
                 category = Category.FUNCTION,
             )
         )
         put(
             "require", Doc(
                 signature = "require(modName) → module",
-                description = "Loads and returns a Lua module stored on the network's instruction storage.",
+                description = "Loads and returns a Lua module from another script tab in this terminal.",
                 category = Category.FUNCTION,
             )
         )
         put(
             "clock", Doc(
                 signature = "clock() → number",
-                description = "Seconds elapsed since this script started running, as a decimal. Not a module — `clock` is a plain function.",
+                description = "Fractional seconds since this script started running.",
                 category = Category.FUNCTION,
             )
         )
@@ -124,7 +132,7 @@ object LuaApiDocs {
         put(
             "network", Doc(
                 signature = "network: Network",
-                description = "The network this script is running on. Look up cards by alias, query storage, register routes, craft.",
+                description = "Entry point into the network this script runs on.",
                 category = Category.MODULE,
                 guidebookRef = "nodeworks:lua-api/network.md",
             )
@@ -132,7 +140,7 @@ object LuaApiDocs {
         put(
             "Network", Doc(
                 signature = "type Network",
-                description = "The active network. Entry point for card lookup (`:get`), storage queries (`:find`), routing, and crafting.",
+                description = "The active network. Covers card lookup, storage queries, routing, and crafting.",
                 category = Category.TYPE,
                 guidebookRef = "nodeworks:lua-api/network.md",
             )
@@ -140,7 +148,7 @@ object LuaApiDocs {
         put(
             "Network:get", Doc(
                 signature = "Network:get(alias: string) → CardHandle",
-                description = "Returns the card with this alias. Errors if no card matches — use this for required hardware lookups. To query items, use `:find` instead.",
+                description = "Returns the card with this alias. Errors if no card matches.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#get",
             )
@@ -148,7 +156,7 @@ object LuaApiDocs {
         put(
             "Network:getAll", Doc(
                 signature = "Network:getAll(type: string) → { CardHandle… }",
-                description = "Returns a table of every card on the network whose capability type matches (e.g. `\"redstone\"`, `\"storage\"`).",
+                description = "Returns every card on the network whose capability type matches.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#getAll",
             )
@@ -156,7 +164,7 @@ object LuaApiDocs {
         put(
             "Network:find", Doc(
                 signature = "Network:find(filter: string) → ItemsHandle | nil",
-                description = "Scans all storage on the network for items/fluids matching the filter. Returns an aggregated handle (count summed across storage), or nil if nothing matches. Filters accept item ids, wildcards, `\$item:`/`\$fluid:` sigils.",
+                description = "Scans network storage for matching items or fluids. Returns an aggregated handle, or nil if nothing matches.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#find",
             )
@@ -164,7 +172,7 @@ object LuaApiDocs {
         put(
             "Network:findEach", Doc(
                 signature = "Network:findEach(filter: string) → { ItemsHandle… }",
-                description = "Like `:find`, but returns a separate handle for every distinct resource matching the filter (items then fluids unless kind-prefixed).",
+                description = "Returns a separate handle for every distinct resource matching the filter.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#findEach",
             )
@@ -172,7 +180,7 @@ object LuaApiDocs {
         put(
             "Network:count", Doc(
                 signature = "Network:count(filter: string) → number",
-                description = "Returns the total quantity in Network Storage that matches the filter. (fluids count in mB)",
+                description = "Total quantity in network storage matching the filter. Fluids count in mB.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#count",
             )
@@ -180,7 +188,7 @@ object LuaApiDocs {
         put(
             "Network:insert", Doc(
                 signature = "Network:insert(items: ItemsHandle[, count: number]) → boolean",
-                description = "Atomic move of exactly `count` (or `items.count`) from the handle's source into network storage, honouring storage-card priority and any active routes. Returns true on success, false if the full amount wouldn't fit (nothing moves). Use `:tryInsert` for partial-move semantics.",
+                description = "Moves the full count from the handle's source into storage, or moves nothing. Returns true on success.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#insert",
             )
@@ -188,7 +196,7 @@ object LuaApiDocs {
         put(
             "Network:tryInsert", Doc(
                 signature = "Network:tryInsert(items: ItemsHandle[, count: number]) → number",
-                description = "Best-effort counterpart to `:insert`. Moves as much as fits into network storage and returns the count actually moved (0..count). Items left over stay in the source.",
+                description = "Best-effort move into storage. Returns the count actually moved.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#tryInsert",
             )
@@ -196,7 +204,7 @@ object LuaApiDocs {
         put(
             "Network:craft", Doc(
                 signature = "Network:craft(itemId: string[, count: number]) → CraftBuilder | nil",
-                description = "Queues a craft for the given item. Returns a builder with `:connect(fn)` (callback on completion, receives the ItemsHandle) and `:store()` (send result to storage). Returns nil if the craft can't be planned.",
+                description = "Queues a craft for the given item. Returns a CraftBuilder, or nil if the craft can't be planned.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#craft",
             )
@@ -204,7 +212,7 @@ object LuaApiDocs {
         put(
             "Network:route", Doc(
                 signature = "Network:route(alias: string, predicate: (ItemsHandle) → boolean)",
-                description = "Declarative routing rule: any item matching `predicate` is directed to the card with this alias. Applied during `network:insert` / `network:tryInsert`.",
+                description = "Routing rule. Items matching `predicate` are directed to the card with this alias during `network:insert`.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#route",
             )
@@ -212,7 +220,7 @@ object LuaApiDocs {
         put(
             "Network:shapeless", Doc(
                 signature = "Network:shapeless(itemId: string, count: number, …) → ItemsHandle | nil",
-                description = "Crafts via vanilla shapeless recipes using the given item/count pairs pulled from storage. Returns the result handle, or nil if no matching recipe or missing ingredients.",
+                description = "Crafts via a vanilla shapeless recipe, pulling the given ingredients from storage.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#shapeless",
             )
@@ -220,7 +228,7 @@ object LuaApiDocs {
         put(
             "Network:handle", Doc(
                 signature = "Network:handle(cardName: string, handler: function(job, inputs))",
-                description = "Registers a processing handler for a named Processing Set. The handler is invoked with a `job` object and the recipe's `inputs` table, and must call `job:pull(…)` for each expected output so the Crafting CPU can collect them. The handler itself doesn't return a value.",
+                description = "Registers a processing handler for a Processing Set. The handler uses `job:pull` to emit each output.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#handle",
             )
@@ -228,7 +236,7 @@ object LuaApiDocs {
         put(
             "Network:var", Doc(
                 signature = "Network:var(name: string) → VariableHandle",
-                description = "Returns a handle to the network variable with this name. Errors if the variable doesn't exist.",
+                description = "Returns a handle to the named network variable. Errors if the variable doesn't exist.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#var",
             )
@@ -236,7 +244,7 @@ object LuaApiDocs {
         put(
             "Network:debug", Doc(
                 signature = "Network:debug()",
-                description = "Prints a summary of the network (controller, nodes, cards, variables) to the terminal log.",
+                description = "Prints a summary of the network to the terminal log.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#debug",
             )
@@ -246,42 +254,42 @@ object LuaApiDocs {
         put(
             "scheduler", Doc(
                 signature = "scheduler: Scheduler",
-                description = "Registers periodic and delayed callbacks. All scheduled functions run on the server tick inside this script's engine.",
+                description = "Registers periodic and delayed callbacks that run on the server tick.",
                 category = Category.MODULE,
             )
         )
         put(
             "Scheduler", Doc(
                 signature = "type Scheduler",
-                description = "Task scheduler. Tick / second / delay registrations return an id that can be passed to `:cancel`.",
+                description = "Task scheduler. Every registration returns an id that can be passed to `:cancel`.",
                 category = Category.TYPE,
             )
         )
         put(
             "Scheduler:tick", Doc(
                 signature = "Scheduler:tick(fn: function) → number",
-                description = "Runs `fn` every server tick (20 tps). Returns a task id for later cancellation.",
+                description = "Runs `fn` every server tick. Returns a task id.",
                 category = Category.METHOD,
             )
         )
         put(
             "Scheduler:second", Doc(
                 signature = "Scheduler:second(fn: function) → number",
-                description = "Runs `fn` every 20 ticks (1 second). Returns a task id.",
+                description = "Runs `fn` every 20 ticks. Returns a task id.",
                 category = Category.METHOD,
             )
         )
         put(
             "Scheduler:delay", Doc(
                 signature = "Scheduler:delay(ticks: number, fn: function) → number",
-                description = "Runs `fn` once, after the given number of ticks. Returns a task id.",
+                description = "Runs `fn` once after the given number of ticks. Returns a task id.",
                 category = Category.METHOD,
             )
         )
         put(
             "Scheduler:cancel", Doc(
                 signature = "Scheduler:cancel(id: number)",
-                description = "Cancels a task previously returned by `:tick`, `:second`, or `:delay`.",
+                description = "Cancels a task returned by a scheduler method.",
                 category = Category.METHOD,
             )
         )
@@ -294,7 +302,7 @@ object LuaApiDocs {
         put(
             "Job", Doc(
                 signature = "type Job",
-                description = "The first argument passed to a `network:handle` callback. A handle on the in-flight processing job — call `:pull` for each expected output so the Crafting CPU can collect them. The handler itself does not return a value.",
+                description = "The first argument to a `network:handle` callback. Represents the in-flight processing job.",
                 category = Category.TYPE,
                 guidebookRef = "nodeworks:lua-api/network.md#handle",
             )
@@ -302,7 +310,7 @@ object LuaApiDocs {
         put(
             "Job:pull", Doc(
                 signature = "Job:pull(card: CardHandle, …)",
-                description = "Waits for an output matching the given card (and optionally filter args) and hands it to the Crafting CPU. Call once per expected output.",
+                description = "Pulls an output from the given card so the Crafting CPU can collect it.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#handle",
             )
@@ -310,7 +318,7 @@ object LuaApiDocs {
         put(
             "InputItems", Doc(
                 signature = "type InputItems",
-                description = "The second argument passed to a `network:handle` callback. A per-recipe bag of `ItemsHandle` fields keyed by the recipe's input slot names (e.g. `items.copperIngot`). The editor's autocomplete surfaces exactly the fields the bound recipe exposes.",
+                description = "The second argument to a `network:handle` callback. A per-recipe bag of `ItemsHandle` fields keyed by the recipe's input slot names.",
                 category = Category.TYPE,
                 guidebookRef = "nodeworks:lua-api/network.md#handle",
             )
@@ -318,7 +326,7 @@ object LuaApiDocs {
         put(
             "CraftBuilder", Doc(
                 signature = "type CraftBuilder",
-                description = "Returned by `network:craft(itemId, count)`. Chain `:connect(fn)` to fire a callback when the craft completes (receives the output `ItemsHandle`), or `:store()` to send the result straight to network storage.",
+                description = "Returned by `network:craft`. Configures how the craft result is delivered once it completes.",
                 category = Category.TYPE,
                 guidebookRef = "nodeworks:lua-api/network.md#craft",
             )
@@ -326,7 +334,7 @@ object LuaApiDocs {
         put(
             "CraftBuilder:connect", Doc(
                 signature = "CraftBuilder:connect(fn: function(items: ItemsHandle))",
-                description = "Registers a callback that runs once the craft resolves. The callback receives an `ItemsHandle` for the craft output. Use instead of `:store` when you need to route the result somewhere specific.",
+                description = "Callback fired when the craft completes. Receives the output `ItemsHandle`.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#craft",
             )
@@ -334,7 +342,7 @@ object LuaApiDocs {
         put(
             "CraftBuilder:store", Doc(
                 signature = "CraftBuilder:store()",
-                description = "Resolves the craft and places the output into network storage using the usual routing rules. Shorthand for `:connect(function(items) network:insert(items) end)`.",
+                description = "Sends the craft result into network storage using the normal routing rules.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#craft",
             )
@@ -344,7 +352,7 @@ object LuaApiDocs {
         put(
             "CardHandle", Doc(
                 signature = "type CardHandle",
-                description = "A card on the network accessed by alias. Exposes slot-level inventory operations (`:find`, `:insert`, `:count`) plus face-/slot-filtered variants.",
+                description = "A card on the network accessed by alias.",
                 category = Category.TYPE,
                 guidebookRef = "nodeworks:lua-api/card-handle.md",
             )
@@ -352,33 +360,25 @@ object LuaApiDocs {
         put(
             "CardHandle:face", Doc(
                 signature = "CardHandle:face(name: string) → CardHandle",
-                description = "Returns a new handle with access pinned to a specific face of the adjacent block (`\"north\"`, `\"up\"`, etc.). Useful for machines with distinct input/output faces.",
+                description = "Returns a new handle pinned to a specific face of the adjacent block.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#face",
             )
         )
         put(
             "CardHandle:slots", Doc(
                 signature = "CardHandle:slots(…indices) → CardHandle",
-                description = "Returns a new handle filtered to specific slot indices (1-based in Lua).",
+                description = "Returns a new handle filtered to specific slot indices. Indices are 1-based.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
-            )
-        )
-        put(
-            "CardHandle.name", Doc(
-                signature = "CardHandle.name: string",
-                description = "The card's alias — same label shown in the terminal sidebar and Card Programmer. Falls back to the auto-assigned alias for un-renamed cards.",
-                category = Category.PROPERTY,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#slots",
             )
         )
         put(
             "CardHandle:find", Doc(
                 signature = "CardHandle:find(filter: string) → ItemsHandle | nil",
-                description = "Like `Network:find`, but scoped to this card's inventory. Counts aggregate across this card's slots/tanks.",
+                description = "Like `Network:find`, scoped to this card's inventory.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#find",
             )
         )
         put(
@@ -386,39 +386,58 @@ object LuaApiDocs {
                 signature = "CardHandle:findEach(filter: string) → { ItemsHandle… }",
                 description = "Returns one handle per distinct resource in this card matching the filter.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#findEach",
             )
         )
         put(
             "CardHandle:insert", Doc(
                 signature = "CardHandle:insert(items: ItemsHandle[, count: number]) → boolean",
-                description = "Atomic move of exactly `count` (or `items.count`) from the handle's source into this card. Returns true on success, false if the full amount wouldn't fit (nothing moves). Use `:tryInsert` for partial-move semantics.",
+                description = "Moves the full count from the handle's source into this card, or moves nothing. Returns true on success.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#insert",
             )
         )
         put(
             "CardHandle:tryInsert", Doc(
                 signature = "CardHandle:tryInsert(items: ItemsHandle[, count: number]) → number",
-                description = "Best-effort move. Returns the actual count moved (may be less than requested).",
+                description = "Best-effort move into this card. Returns the count actually moved.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#tryInsert",
             )
         )
         put(
             "CardHandle:count", Doc(
                 signature = "CardHandle:count(filter: string) → number",
-                description = "Total quantity on this card matching the filter (items + fluids unless kind-prefixed).",
+                description = "Total quantity on this card matching the filter.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#count",
+            )
+        )
+        put(
+            "CardHandle.name", Doc(
+                signature = "CardHandle.name: string",
+                description = "The card's alias.",
+                category = Category.PROPERTY,
+                guidebookRef = "nodeworks:lua-api/card-handle.md#properties",
             )
         )
 
-        // ===== RedstoneCard =====
+        // RedstoneCard is the same underlying Lua table as CardHandle — `.name` is set
+        // by CardHandle.create before any redstone-specific rebinding. Mirror the doc
+        // entry under the RedstoneCard key so hover tooltips resolve for variables
+        // typed as RedstoneCard.
+        put(
+            "RedstoneCard.name", Doc(
+                signature = "RedstoneCard.name: string",
+                description = "The card's alias.",
+                category = Category.PROPERTY,
+                guidebookRef = "nodeworks:lua-api/card-handle.md#properties",
+            )
+        )
         put(
             "RedstoneCard", Doc(
                 signature = "type RedstoneCard",
-                description = "A card attached to a Redstone Card capability. The usual inventory methods (`:find`, `:insert`, `:count`) are unavailable — use the redstone-specific methods below.",
+                description = "A card attached to a Redstone Card capability. Exposes redstone methods instead of the inventory methods.",
                 category = Category.TYPE,
                 guidebookRef = "nodeworks:lua-api/card-handle.md",
             )
@@ -426,33 +445,33 @@ object LuaApiDocs {
         put(
             "RedstoneCard:powered", Doc(
                 signature = "RedstoneCard:powered() → boolean",
-                description = "True if the redstone signal reaching this card's face is > 0.",
+                description = "True if the incoming redstone signal is greater than 0.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#powered",
             )
         )
         put(
             "RedstoneCard:strength", Doc(
                 signature = "RedstoneCard:strength() → number",
-                description = "Current redstone signal strength at this card's face (0–15).",
+                description = "Current incoming redstone signal strength from 0 to 15.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#strength",
             )
         )
         put(
             "RedstoneCard:set", Doc(
                 signature = "RedstoneCard:set(value: boolean | number)",
-                description = "Emits a redstone signal from this card's face. Boolean maps to 15/0; number is clamped to 0–15.",
+                description = "Emits a redstone signal. Boolean maps to 15 or 0. Number is clamped to 0 to 15.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#set",
             )
         )
         put(
             "RedstoneCard:onChange", Doc(
                 signature = "RedstoneCard:onChange(fn: (strength: number) → nil)",
-                description = "Registers a callback fired whenever the incoming signal strength changes. Replaces any prior callback for this card.",
+                description = "Registers a callback fired whenever the incoming signal strength changes.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
+                guidebookRef = "nodeworks:lua-api/card-handle.md#onchange",
             )
         )
 
@@ -460,7 +479,7 @@ object LuaApiDocs {
         put(
             "ItemsHandle", Doc(
                 signature = "type ItemsHandle",
-                description = "A snapshot of items or fluids matching some filter. Carries fields (`.id`, `.name`, `.count`, `.kind`, …) and two helpers (`:hasTag`, `:matches`). Pass handles to `Network:insert` / `CardHandle:insert` to move the underlying resources.",
+                description = "A snapshot of items or fluids matching some filter.",
                 category = Category.TYPE,
                 guidebookRef = "nodeworks:lua-api/items-handle.md",
             )
@@ -468,7 +487,7 @@ object LuaApiDocs {
         put(
             "ItemsHandle:hasTag", Doc(
                 signature = "ItemsHandle:hasTag(tag: string) → boolean",
-                description = "True if this resource is in the given tag (e.g. `\"#minecraft:logs\"` or `\"minecraft:logs\"`). Works for both items and fluids.",
+                description = "True if this resource is in the given tag.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/items-handle.md",
             )
@@ -476,7 +495,7 @@ object LuaApiDocs {
         put(
             "ItemsHandle:matches", Doc(
                 signature = "ItemsHandle:matches(filter: string) → boolean",
-                description = "True if this resource matches the filter, using the same rules `Network:find` uses (item ids, wildcards, `\$item:`/`\$fluid:` sigils).",
+                description = "True if this resource matches the filter, using `Network:find` syntax.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/items-handle.md",
             )
@@ -486,14 +505,14 @@ object LuaApiDocs {
         put(
             "VariableHandle", Doc(
                 signature = "type VariableHandle",
-                description = "A handle to a network variable returned by `Network:var`. Subtypes (Number/String/Bool) add type-specific methods.",
+                description = "A handle to a network variable returned by `Network:var`.",
                 category = Category.TYPE,
             )
         )
         put(
             "VariableHandle:get", Doc(
                 signature = "VariableHandle:get() → any",
-                description = "Returns the current value of the variable.",
+                description = "Returns the variable's current value.",
                 category = Category.METHOD,
             )
         )
@@ -507,35 +526,35 @@ object LuaApiDocs {
         put(
             "VariableHandle:cas", Doc(
                 signature = "VariableHandle:cas(expected, new) → boolean",
-                description = "Atomic compare-and-swap. Sets the variable to `new` only if its current value equals `expected`. Returns true on success.",
+                description = "Compare and swap. Sets the variable to `new` only if its current value equals `expected`. Returns true on success.",
                 category = Category.METHOD,
             )
         )
         put(
             "VariableHandle:type", Doc(
                 signature = "VariableHandle:type() → string",
-                description = "Returns the variable's declared type (`\"number\"`, `\"string\"`, `\"boolean\"`).",
+                description = "Returns the variable's declared type as a string.",
                 category = Category.METHOD,
             )
         )
         put(
             "VariableHandle:name", Doc(
                 signature = "VariableHandle:name() → string",
-                description = "Returns the variable's name as declared on the network.",
+                description = "Returns the variable's declared name.",
                 category = Category.METHOD,
             )
         )
         put(
             "VariableHandle:tryLock", Doc(
                 signature = "VariableHandle:tryLock() → boolean",
-                description = "Attempts to take the variable's lock. Returns true if acquired, false if another script holds it.",
+                description = "Attempts to acquire the variable's lock. Returns true on success, false if another script holds it.",
                 category = Category.METHOD,
             )
         )
         put(
             "VariableHandle:unlock", Doc(
                 signature = "VariableHandle:unlock()",
-                description = "Releases a lock previously acquired via `:tryLock`.",
+                description = "Releases a lock acquired via `:tryLock`.",
                 category = Category.METHOD,
             )
         )
@@ -544,35 +563,35 @@ object LuaApiDocs {
         put(
             "NumberVariableHandle", Doc(
                 signature = "type NumberVariableHandle",
-                description = "A `VariableHandle` with numeric-specific helpers in addition to the base methods.",
+                description = "A `VariableHandle` with numeric-specific helpers.",
                 category = Category.TYPE,
             )
         )
         put(
             "NumberVariableHandle:increment", Doc(
                 signature = "NumberVariableHandle:increment([by: number = 1])",
-                description = "Adds `by` (defaults to 1) to the variable, atomically.",
+                description = "Adds `by` to the variable atomically. Defaults to 1.",
                 category = Category.METHOD,
             )
         )
         put(
             "NumberVariableHandle:decrement", Doc(
                 signature = "NumberVariableHandle:decrement([by: number = 1])",
-                description = "Subtracts `by` (defaults to 1) from the variable, atomically.",
+                description = "Subtracts `by` from the variable atomically. Defaults to 1.",
                 category = Category.METHOD,
             )
         )
         put(
             "NumberVariableHandle:min", Doc(
                 signature = "NumberVariableHandle:min(other: number)",
-                description = "Sets the variable to `min(current, other)`, atomically.",
+                description = "Sets the variable to `min(current, other)` atomically.",
                 category = Category.METHOD,
             )
         )
         put(
             "NumberVariableHandle:max", Doc(
                 signature = "NumberVariableHandle:max(other: number)",
-                description = "Sets the variable to `max(current, other)`, atomically.",
+                description = "Sets the variable to `max(current, other)` atomically.",
                 category = Category.METHOD,
             )
         )
@@ -588,7 +607,7 @@ object LuaApiDocs {
         put(
             "StringVariableHandle:append", Doc(
                 signature = "StringVariableHandle:append(str: string)",
-                description = "Appends `str` to the variable's current value.",
+                description = "Appends `str` to the current value.",
                 category = Category.METHOD,
             )
         )
@@ -618,7 +637,7 @@ object LuaApiDocs {
         put(
             "BoolVariableHandle:toggle", Doc(
                 signature = "BoolVariableHandle:toggle()",
-                description = "Flips the boolean variable's value.",
+                description = "Flips the boolean value.",
                 category = Category.METHOD,
             )
         )

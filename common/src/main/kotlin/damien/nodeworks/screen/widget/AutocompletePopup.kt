@@ -1611,8 +1611,7 @@ class AutocompletePopup(
                         "onChange(fn(strength: number))",
                         onChangeBody,
                         onChangeBody.indexOf("\n    \n") + 5
-                    ),
-                    suggest("face(", "face(side: string) → RedstoneCard", Kind.METHOD)
+                    )
                 )
             }
 
@@ -1645,7 +1644,10 @@ class AutocompletePopup(
 
     private fun suggestPropertiesForType(type: String, partial: String): List<Suggestion> {
         val props = when (type) {
-            "CardHandle" -> listOf(
+            // CardHandle and RedstoneCard share the same underlying Lua table (same
+            // `.name` binding from CardHandle.create); the two entries just exist so
+            // method autocomplete can show the appropriate method set per card kind.
+            "CardHandle", "RedstoneCard" -> listOf(
                 suggest("name", "name: string (card's alias)", Kind.PROPERTY)
             )
 
