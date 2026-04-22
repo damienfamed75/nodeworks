@@ -440,7 +440,14 @@ class TerminalScreen(
                                 val pairedData = entity.getItem(0)
                                 if (!pairedData.isEmpty && pairedData.item is damien.nodeworks.item.LinkCrystalItem) {
                                     val chipData = damien.nodeworks.item.LinkCrystalItem.getPairingData(pairedData)
-                                    if (chipData != null && clientLevel.isLoaded(chipData.pos)) {
+                                    // Only Processing-Storage-kind crystals produce an API autocomplete
+                                    // surface. A Network-Controller-kind crystal stuffed into a Receiver
+                                    // Antenna is a type mismatch (see ReceiverAntennaBlockEntity's status
+                                    // 7) — walking the antenna for `getAvailableApis()` would return
+                                    // empty anyway, but being explicit here keeps the intent visible.
+                                    if (chipData != null
+                                        && chipData.kind == damien.nodeworks.item.BroadcastSourceKind.PROCESSING_STORAGE
+                                        && clientLevel.isLoaded(chipData.pos)) {
                                         val broadcast = clientLevel.getBlockEntity(chipData.pos)
                                         if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {
                                             // Mirror the local ProcessingStorage case: in addition to the

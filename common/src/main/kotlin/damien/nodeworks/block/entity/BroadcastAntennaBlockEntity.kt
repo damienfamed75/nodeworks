@@ -1,5 +1,6 @@
 package damien.nodeworks.block.entity
 
+import damien.nodeworks.item.BroadcastSourceKind
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.registry.ModBlockEntities
@@ -25,9 +26,22 @@ import damien.nodeworks.compat.getStringOrNull
 import java.util.UUID
 
 /**
- * Broadcast Antenna — broadcasts Processing Sets from adjacent Processing Storage blocks.
- * NOT Connectable — sits adjacent to Processing Storage, not on the laser network.
- * Has 1 slot for a Link Crystal which gets encoded with the antenna's frequency on insertion.
+ * Broadcast Antenna — broadcasts either Processing Sets from an adjacent
+ * [ProcessingStorageBlockEntity] or the identity of an adjacent
+ * [NetworkControllerBlockEntity], depending on what's next to it. The antenna itself is
+ * NOT Connectable — it doesn't ride the laser network; it sits next to a network member
+ * and exposes a handle via the Link Crystal slot.
+ *
+ * Two broadcast kinds are distinguished via [BroadcastSourceKind]:
+ *   * [BroadcastSourceKind.PROCESSING_STORAGE] — exposes the adjacent storage's
+ *     Processing Sets. Consumed by Receiver Antennas (original behaviour).
+ *   * [BroadcastSourceKind.NETWORK_CONTROLLER] — exposes the adjacent controller's
+ *     network identity. Consumed by the Handheld Inventory Terminal to open a
+ *     remote view of that network.
+ *
+ * If both kinds are adjacent, [NETWORK_CONTROLLER] wins because it represents the
+ * broader surface (the whole network, not a specific Processing Storage). If neither
+ * is adjacent the antenna is "unsourced" and refuses to encode crystals.
  */
 class BroadcastAntennaBlockEntity(
     pos: BlockPos,
@@ -59,6 +73,41 @@ class BroadcastAntennaBlockEntity(
     /** Whether receivers in different dimensions can pair with this antenna. */
     val allowsCrossDimension: Boolean get() =
         items[SLOT_UPGRADE].item == ModItems.MULTI_DIMENSION_RANGE_UPGRADE
+
+    /**
+     * Detect what kind of broadcast source is currently adjacent to this antenna, and
+     * return the position of that source block. Returns null when no valid source is in
+     * range (antenna is unsourced and can't encode crystals).
+     *
+     * Checked in priority order: [NetworkControllerBlockEntity] first (broader scope),
+     * then [ProcessingStorageBlockEntity] (legacy / processing-focused). Unloaded
+     * neighbours are skipped — we can't inspect their BE type, and returning a stale
+     * answer here would cause crystals to encode with the wrong kind.
+     */
+    fun detectSource(): Pair<BroadcastSourceKind, BlockPos>? {
+        val lvl = level ?: return null
+        // First pass: Controller wins because it's the more general source. A player who
+        // deliberately wants the processing-set broadcast can still get it by siting the
+        // antenna away from the Controller — the Controller grabs priority only when both
+        // blocks happen to be adjacent to the same antenna.
+        for (dir in Direction.entries) {
+            val neighbor = worldPosition.relative(dir)
+            if (!lvl.isLoaded(neighbor)) continue
+            val entity = lvl.getBlockEntity(neighbor)
+            if (entity is NetworkControllerBlockEntity) {
+                return BroadcastSourceKind.NETWORK_CONTROLLER to neighbor
+            }
+        }
+        for (dir in Direction.entries) {
+            val neighbor = worldPosition.relative(dir)
+            if (!lvl.isLoaded(neighbor)) continue
+            val entity = lvl.getBlockEntity(neighbor)
+            if (entity is ProcessingStorageBlockEntity) {
+                return BroadcastSourceKind.PROCESSING_STORAGE to neighbor
+            }
+        }
+        return null
+    }
 
     /** Scan adjacent Processing Storage clusters for all Processing Sets. */
     fun getAvailableApis(): List<ProcessingStorageBlockEntity.ProcessingApiInfo> {
@@ -117,7 +166,13 @@ class BroadcastAntennaBlockEntity(
         items[slot] = stack
         if (slot == SLOT_CHIP && stack.item is LinkCrystalItem) {
             val lvl = level ?: return
-            LinkCrystalItem.encode(stack, worldPosition, lvl.dimension(), frequencyId)
+            // Only encode when a valid source is adjacent. An unsourced antenna leaves the
+            // crystal blank so the player gets the "place me in a Broadcast Antenna"
+            // tooltip rather than a paired-but-useless crystal pointing at nothing.
+            val source = detectSource()
+            if (source != null) {
+                LinkCrystalItem.encode(stack, worldPosition, lvl.dimension(), frequencyId, source.first)
+            }
         }
         setChanged()
     }
