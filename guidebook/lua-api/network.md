@@ -5,7 +5,7 @@ navigation:
   icon: node
 ---
 
-# network
+# Network
 
 The `network` module is the entry point into the live Nodeworks network the <ItemLink id="terminal" /> is
 attached to. It queries storage, routes items between handles, and registers callbacks.
@@ -66,7 +66,7 @@ end
 
 ## find
 
-Scans all [Network Storage](../nodeworks-mechanics/network-storage.md) for matching
+Scans all [Network Storage](../nodeworks-mechanics/network-storage.md) for
 items/fluids matching the filter. Returns an aggregated handle *(count summed across storage)*
 or `nil` if nothing matches.
 
@@ -128,6 +128,8 @@ end
 Returns the total quantity in [Network Storage](../nodeworks-mechanics/network-storage.md)
 that matches the filter. (Fluids count in mB)
 
+The filtering is the exact same syntax as [find](network.md#find)
+
 <LuaCode>
 ```lua
 print("swords:", network:count("minecraft:diamond_sword"))
@@ -163,9 +165,9 @@ end
 
 ## tryInsert
 
-Inserts an [ItemsHandle](items-handle.md) into [Network Storage](../nodeworks-mechanics/network-storage.md)
-using the standard <ItemLink id="storage_card" /> priority rules. The function returns
-the number of items successfully moved.
+Like [`insert`](network.md#insert) but moves whatever fits instead of
+all-or-nothing. Returns the count that actually landed (0 up to the requested amount).
+Anything that didn't fit stays in the source. Use this when a partial move is fine.
 
 <LuaCode>
 ```lua

@@ -1,0 +1,94 @@
+{
+    DataVersion: 4790,
+    size: [3, 2, 1],
+    data: [
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:furnace{facing:north,lit:false}",
+            nbt: {
+                lit_total_time: 0,
+                components: {},
+                cooking_time_spent: 0,
+                cooking_total_time: 0,
+                Items: [],
+                id: "minecraft:furnace",
+                lit_time_remaining: 0,
+                RecipesUsed: {}
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:io_card"
+                    }
+                ],
+                networkId: "28d2a163-1af8-44a3-a4f1-b51c7aa73e0a",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 2, 0, 0],
+                    [I; 2, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "28d2a163-1af8-44a3-a4f1-b51c7aa73e0a",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 1, 0, 0]
+                ],
+                networkColor: 14699173
+            }
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                autoRun: 0b,
+                layoutIndex: 0,
+                networkId: "28d2a163-1af8-44a3-a4f1-b51c7aa73e0a",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: ""
+                    }
+                ],
+                connections: [
+                    [I; 1, 0, 0]
+                ]
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "minecraft:furnace{facing:north,lit:false}",
+        "nodeworks:node",
+        "nodeworks:network_controller",
+        "nodeworks:terminal{facing:north}"
+    ]
+}

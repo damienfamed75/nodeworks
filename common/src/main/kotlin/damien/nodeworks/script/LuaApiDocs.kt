@@ -286,6 +286,60 @@ object LuaApiDocs {
             )
         )
 
+        // ===== Job / InputItems / CraftBuilder =====
+        // These types don't come from a global; they arrive as arguments to user
+        // callbacks (`network:handle`, `:connect`) or as a return value from a method.
+        // Documenting them here lets hover tooltips resolve the bare type names and
+        // the short method list under each of them.
+        put(
+            "Job", Doc(
+                signature = "type Job",
+                description = "The first argument passed to a `network:handle` callback. A handle on the in-flight processing job — call `:pull` for each expected output so the Crafting CPU can collect them. The handler itself does not return a value.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/network.md#handle",
+            )
+        )
+        put(
+            "Job:pull", Doc(
+                signature = "Job:pull(card: CardHandle, …)",
+                description = "Waits for an output matching the given card (and optionally filter args) and hands it to the Crafting CPU. Call once per expected output.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/network.md#handle",
+            )
+        )
+        put(
+            "InputItems", Doc(
+                signature = "type InputItems",
+                description = "The second argument passed to a `network:handle` callback. A per-recipe bag of `ItemsHandle` fields keyed by the recipe's input slot names (e.g. `items.copperIngot`). The editor's autocomplete surfaces exactly the fields the bound recipe exposes.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/network.md#handle",
+            )
+        )
+        put(
+            "CraftBuilder", Doc(
+                signature = "type CraftBuilder",
+                description = "Returned by `network:craft(itemId, count)`. Chain `:connect(fn)` to fire a callback when the craft completes (receives the output `ItemsHandle`), or `:store()` to send the result straight to network storage.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/network.md#craft",
+            )
+        )
+        put(
+            "CraftBuilder:connect", Doc(
+                signature = "CraftBuilder:connect(fn: function(items: ItemsHandle))",
+                description = "Registers a callback that runs once the craft resolves. The callback receives an `ItemsHandle` for the craft output. Use instead of `:store` when you need to route the result somewhere specific.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/network.md#craft",
+            )
+        )
+        put(
+            "CraftBuilder:store", Doc(
+                signature = "CraftBuilder:store()",
+                description = "Resolves the craft and places the output into network storage using the usual routing rules. Shorthand for `:connect(function(items) network:insert(items) end)`.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/network.md#craft",
+            )
+        )
+
         // ===== CardHandle =====
         put(
             "CardHandle", Doc(
