@@ -538,10 +538,11 @@ object LuaApiDocs {
             )
         )
         put(
-            "VariableHandle:name", Doc(
-                signature = "VariableHandle:name() → string",
-                description = "Returns the variable's declared name.",
-                category = Category.METHOD,
+            "VariableHandle.name", Doc(
+                signature = "VariableHandle.name: string",
+                description = "The variable's declared name.",
+                category = Category.PROPERTY,
+                guidebookRef = "nodeworks:lua-api/variable-handle.md",
             )
         )
         put(

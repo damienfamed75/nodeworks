@@ -1757,9 +1757,20 @@ class TerminalScreen(
             val clickedIndex = (my - cardListTop + cardScrollOffset) / cardLineHeight
             if (clickedIndex in sidebarEntries.indices) {
                 val entry = sidebarEntries[clickedIndex]
+                // Lua identifiers can't contain spaces or punctuation, so a
+                // card/variable named "iron ingots" or "iron-ingots" becomes
+                // "ironIngots" on the left side. The string argument keeps the
+                // original name verbatim — that's what the network looks up.
+                // The fallback kicks in if the name has NO identifier chars
+                // at all (e.g. "!@#$%"), so the inserted line still compiles.
+                val ident = when (entry.type) {
+                    "card" -> toLuaIdentifier(entry.name, "card")
+                    "var" -> toLuaIdentifier(entry.name, "var")
+                    else -> toLuaIdentifier(entry.name, "x")
+                }
                 val line = when (entry.type) {
-                    "card" -> "local ${entry.name} = network:get(\"${entry.name}\")"
-                    "var" -> "local ${entry.name} = network:var(\"${entry.name}\")"
+                    "card" -> "local $ident = network:get(\"${entry.name}\")"
+                    "var" -> "local $ident = network:var(\"${entry.name}\")"
                     else -> null
                 }
                 if (line != null) {
@@ -1943,6 +1954,33 @@ class TerminalScreen(
             return true
         }
         return super.mouseReleased(event)
+    }
+
+    /**
+     * Turns a user-facing card/variable name into a Lua identifier. Splits on
+     * any character that isn't a Lua identifier character (anything outside
+     * `[a-zA-Z0-9_]`), keeps the first word as-is, capitalizes the first
+     * letter of every subsequent word, and concatenates. If the result would
+     * start with a digit, prefixes an underscore. If the name contains no
+     * identifier characters at all (`"!@#$"`), returns [fallback].
+     *
+     * Examples:
+     *   "iron ingots"  → "ironIngots"
+     *   "iron-ingots"  → "ironIngots"
+     *   "a b c"        → "aBC"
+     *   "1st ingot"    → "_1stIngot"
+     *   "!@#$%"        → [fallback]
+     *   "already"      → "already"  (nothing to merge)
+     */
+    private fun toLuaIdentifier(name: String, fallback: String): String {
+        val parts = name.split(Regex("[^a-zA-Z0-9_]+")).filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return fallback
+        val rest = parts.drop(1).joinToString("") { word ->
+            word[0].uppercaseChar() + word.substring(1)
+        }
+        val ident = parts[0] + rest
+        // Lua identifiers can't start with a digit — prepend an underscore.
+        return if (ident[0].isDigit()) "_$ident" else ident
     }
 
     private fun switchTab(name: String) {

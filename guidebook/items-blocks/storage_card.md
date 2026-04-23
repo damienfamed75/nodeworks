@@ -37,7 +37,7 @@ Card (see [CardHandle](../lua-api/card-handle.md#inventory-cards) for the full s
 <ItemLink id="io_card" />'s blocks are script-controlled inventories.
 Scripts must explicitly move items to/from them. A Storage Card puts its
 block *into* the network's shared pool: `network:find` sees it, the
-<ItemLink id="inventory_terminal" /> lists it, and crafting recipes pull ingredients from it
+<ItemLink id="inventory_terminal" /> and <ItemLink id="portable_inventory_terminal" /> list it, and crafting recipes pull ingredients from it
 automatically.
 
 ## Recipe

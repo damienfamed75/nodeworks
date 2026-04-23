@@ -67,11 +67,11 @@ object VariableHandle {
             }
         })
 
-        table.set("name", object : OneArgFunction() {
-            override fun call(self: LuaValue): LuaValue {
-                return LuaValue.valueOf(getEntity().variableName)
-            }
-        })
+        // .name — readable identifier for the variable, matching how CardHandle
+        // exposes `.name`. Snapshotted at handle creation so `print(v.name)`
+        // returns the name the script used when it looked the variable up,
+        // even if the variable is later renamed in its GUI.
+        table.set("name", LuaValue.valueOf(snapshot.name))
 
         // --- Number methods ---
 

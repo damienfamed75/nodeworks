@@ -1651,6 +1651,12 @@ class AutocompletePopup(
                 suggest("name", "name: string (card's alias)", Kind.PROPERTY)
             )
 
+            // VariableHandle and its typed variants share the same `.name` binding
+            // (set once at handle creation from the variable's declared name).
+            "VariableHandle", "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle" -> listOf(
+                suggest("name", "name: string (variable's declared name)", Kind.PROPERTY)
+            )
+
             "ItemsHandle" -> listOf(
                 suggest("id", "id: string", Kind.PROPERTY),
                 suggest("name", "name: string", Kind.PROPERTY),
@@ -1777,8 +1783,7 @@ class AutocompletePopup(
         "get(" to "get() → value",
         "set(" to "set(value) — set variable value",
         "cas(" to "cas(expected, new) → boolean",
-        "type(" to "type() → string",
-        "name(" to "name() → string"
+        "type(" to "type() → string"
     )
 
     private val numberMethods = listOf(

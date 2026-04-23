@@ -13,6 +13,8 @@ description: reference to a single card in a network
 A reference to a single card on the network. You get one from [`network:get(alias)`](network.md#get)
 or from iterating [`network:getAll(type)`](network.md#getAll).
 
+<ItemImage scale="6" id="blank_card" />
+
 ---
 
 ## Properties

@@ -1,7 +1,7 @@
 ---
 navigation:
   parent: example-setups/index.md
-  icon: chest
+  icon: minecraft:chest
   title: Item Filtering
 ---
 

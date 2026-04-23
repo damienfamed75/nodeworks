@@ -9,7 +9,18 @@ item_ids:
 
 # Redstone Card
 
-asd
+Reads and writes redstone signals at the installed face.
+
+<ItemImage scale="6" id="redstone_card" />
+
+## Installing and Scripting
+
+Installs in a Node face the same way an <ItemLink id="io_card" /> does.
+See [IO Card installation](./io_card.md#installing) for the walkthrough.
+The card reads and writes the redstone signal on *that face*.
+
+See the [RedstoneCard Scripting API](../lua-api/card-handle.md#redstone-card)
+is different from the other cards.
 
 ## Recipe
 
