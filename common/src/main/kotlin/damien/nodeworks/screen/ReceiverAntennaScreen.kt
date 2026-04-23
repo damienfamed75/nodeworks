@@ -68,7 +68,12 @@ class ReceiverAntennaScreen(
 
         graphics.drawString(font, "Insert encoded Link Crystal", leftPos + 8, topPos + 59, 0xFFAAAAAA.toInt())
 
-        NineSlice.drawSlotGrid(graphics, leftPos + CHIP_X, topPos + CHIP_Y, 1, 1)
+        // Crystal slot frame — same 20x20 decoration used by the Portable Inventory
+        // Terminal. The inner 18x18 is offset by 1px so items rendered by the MC
+        // Slot at (CHIP_X, CHIP_Y) line up with the frame's center.
+        NineSlice.PORTABLE_CRYSTAL_SLOT_FRAME.draw(
+            graphics, leftPos + CHIP_X - 1, topPos + CHIP_Y - 1, 20, 20,
+        )
 
         graphics.drawString(font, "Inventory", leftPos + INV_X, topPos + INV_Y - 10, 0xFFAAAAAA.toInt())
         NineSlice.drawPlayerInventory(graphics, leftPos + INV_X, topPos + INV_Y, HOTBAR_GAP)
@@ -77,5 +82,16 @@ class ReceiverAntennaScreen(
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
+
+        // Empty-slot hint: vanilla only shows tooltips for slots that have an
+        // item, so hovering the empty crystal slot gives no feedback. Mirror the
+        // Portable Inventory Terminal's "Link Crystal" label for consistency.
+        val slotX = leftPos + CHIP_X
+        val slotY = topPos + CHIP_Y
+        val overSlot = mouseX >= slotX && mouseX < slotX + 18 &&
+            mouseY >= slotY && mouseY < slotY + 18
+        if (overSlot && menu.slots[0].item.isEmpty) {
+            graphics.renderTooltip(font, Component.literal("Link Crystal"), mouseX, mouseY)
+        }
     }
 }
