@@ -248,11 +248,13 @@ class InventoryTerminalScreen(
             localPlayer?.inventory?.getItem(slot.index) ?: ItemStack.EMPTY
         }
 
-        // Crystal slot (Handheld-only). Sits at the top-right, anchored so the
-        // surrounding 26x26 decorative frame fits flush with the window's top and
-        // right edges. The 18x18 interactive slot is offset 4px in from the frame
-        // on all sides — (crystalSlotX, crystalSlotY) targets the interactive slot
-        // itself, so the frame is drawn at (crystalSlotX - 4, crystalSlotY - 4).
+        // Crystal slot (Handheld-only). Sits at the top-right, anchored inside the
+        // window's top-right corner. The decorative PORTABLE_CRYSTAL_SLOT_FRAME is
+        // 20x20 and wraps the 18x18 interactive slot with a 1px border on all
+        // sides — (crystalSlotX, crystalSlotY) targets the interactive slot
+        // itself, so the frame is drawn at (crystalSlotX - 1, crystalSlotY - 1).
+        // The surrounding WINDOW_FRAME protrusion is positioned independently
+        // in extractBackground, not tied to these coordinates.
         //
         // Real MC Slot behind this visual stays at (-999, -999) in
         // menu.slots[CRYSTAL_SLOT]; we render/hit-test and dispatch clicks via
@@ -397,17 +399,18 @@ class InventoryTerminalScreen(
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
-        // Portable shifts the window frame down 8px so the crystal slot decoration
-        // reads as a header element sitting above the window. The top bar + left
-        // cap sit 3px higher than the frame so the bar visually tucks under the
-        // top of the frame by that amount. Fixed terminal keeps everything flush.
-        // Portable layout anchors:
-        //   barYOffset = 5  → PORTABLE_TOP_BAR at topPos+5..15, left cap at
-        //                     topPos+2..23 (16x21, pipe-style), crystal slot
-        //                     frame at topPos-2..24 (26x26).
-        //   frameYOffset = 22 → WINDOW_FRAME top overlaps the bottom 1px of
-        //                       the left cap's pipe so the pipe visually merges
-        //                       into the frame border seamlessly.
+        // Portable header layout (hasCrystalSlot = true). The main WINDOW_FRAME is
+        // pushed down so the top-bar + crystal slot protrusion read as header
+        // elements stacked above it. Fixed terminal keeps everything flush (both
+        // offsets = 0). Current Portable anchors:
+        //   barYOffset   = 6  → PORTABLE_TOP_BAR at topPos+6..16, left cap at
+        //                       topPos+3..24 (16x21, pipe-style).
+        //   frameYOffset = 22 → WINDOW_FRAME top overlaps the bottom 2px of the
+        //                       left cap's pipe so the pipe merges seamlessly
+        //                       into the frame border.
+        // The protruding WINDOW_FRAME around the crystal slot (drawn further
+        // below) is anchored independently to the top-right corner, not via
+        // these offsets.
         val frameYOffset = if (menu.hasCrystalSlot) 22 else 0
         val barYOffset = if (menu.hasCrystalSlot) 6 else 0
         // Window frame (stretched for performance — large area)

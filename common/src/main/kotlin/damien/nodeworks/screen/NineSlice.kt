@@ -450,32 +450,13 @@ class NineSlice(
         val SCROLLBAR_THUMB = NineSlice(GUI_ATLAS, 8, 128, 8, 16, 2, 2, 3, 3)
         val SCROLLBAR_THUMB_HOVER = NineSlice(GUI_ATLAS, 16, 128, 8, 16, 2, 2, 3, 3)
 
-        /**
-         * Decorative 20x20 frame for the Portable Inventory Terminal's Link Crystal
-         * slot. The actual 18x18 slot area sits in the center of the frame (1px of
-         * decoration on each side). Not a 9-slice — draw at native 20x20 via
-         * `draw(graphics, x, y, 20, 20)`. `tile=false` keeps the center from
-         * re-tiling itself on edge cases (single-blit fast path).
-         */
+        // Portable crystal slot decoration — 20x20, 18x18 slot centered inside a 1px frame.
         val PORTABLE_CRYSTAL_SLOT_FRAME = NineSlice(GUI_ATLAS, 0, 152, 20, 20, 0, 0, 0, 0, tile = false)
 
-        /**
-         * Horizontally-tiled top-bar strip for the Portable Inventory Terminal.
-         * Source is 18 wide × 10 tall; the 9-slice center tiles horizontally (all
-         * insets 0, `tile=true` default) so calling
-         * `draw(graphics, x, y, width, 10)` fills any width at native texel scale.
-         * Height is fixed at 10; the sprite doesn't tile vertically and drawing
-         * taller than 10 would stretch the repeat in the wrong direction.
-         */
+        // Portable top-bar strip — 18x10, tiles horizontally. Drawing taller than 10px stretches.
         val PORTABLE_TOP_BAR = NineSlice(GUI_ATLAS, 26, 152, 18, 10, 0, 0, 0, 0)
 
-        /**
-         * Decorative 16x21 left-end cap for the Portable Inventory Terminal's top
-         * bar. Draws at native size. The top 16x16 portion is the elbow/corner
-         * where the bar turns downward; the bottom 5px runs along the left edge
-         * of the window like a pipe. The cap should be positioned so its top
-         * 16x16 sits in the same spot the old 16x16-only cap did.
-         */
+        // Portable top-bar left cap — 16x21. Top 16x16 is the corner; bottom 5px is the pipe tail.
         val PORTABLE_TOP_BAR_LEFT_CAP = NineSlice(GUI_ATLAS, 44, 152, 16, 21, 0, 0, 0, 0, tile = false)
     }
 }
