@@ -177,6 +177,15 @@ class InventoryTerminalScreen(
     // Reused container for JEI hoveredSlot — avoids allocating new SimpleContainer every frame
     private val hoverContainer = net.minecraft.world.SimpleContainer(1)
 
+    // ========== Crystal slot (Handheld only) ==========
+    // Absolute screen coordinates of the Link Crystal slot, set in init() when
+    // menu.hasCrystalSlot is true. Placed at the right end of the title bar,
+    // vertically centered inside its 22px height. Painted last so it draws on
+    // top of the 9-slice TOP_BAR background and any title text it overlaps.
+    private var crystalSlotX = 0
+    private var crystalSlotY = 0
+    private val CRYSTAL_SLOT_SIZE = 18
+
     init {
         computeLayout()
         inventoryLabelY = -9999
@@ -237,6 +246,15 @@ class InventoryTerminalScreen(
         playerHotbarGrid.moveTo(invX, invY + 3 * 18 + INV_GAP)
         playerHotbarGrid.stackProvider = { slot ->
             localPlayer?.inventory?.getItem(slot.index) ?: ItemStack.EMPTY
+        }
+
+        // Crystal slot (Handheld-only). Sit at the right end of the title bar,
+        // vertically centered inside its 22px height (TOP_BAR_H). The real MC Slot
+        // behind this visual lives at (-999, -999) in menu.slots[CRYSTAL_SLOT] —
+        // we render/hit-test it ourselves and dispatch clicks via slotClicked.
+        if (menu.hasCrystalSlot) {
+            crystalSlotX = leftPos + imageWidth - CRYSTAL_SLOT_SIZE - 2
+            crystalSlotY = topPos + (TOP_BAR_H - CRYSTAL_SLOT_SIZE) / 2
         }
 
         // Search box
@@ -470,6 +488,11 @@ class InventoryTerminalScreen(
         }
         NineSlice.INVENTORY_BORDER.drawStretched(graphics, playerMainGrid.x - 2, playerMainGrid.y - 2, 9 * 18 + 4, 3 * 18 + 4)
         NineSlice.INVENTORY_BORDER.drawStretched(graphics, playerHotbarGrid.x - 2, playerHotbarGrid.y - 2, 9 * 18 + 4, 18 + 4)
+
+        // Crystal slot background (Handheld only)
+        if (menu.hasCrystalSlot) {
+            NineSlice.SLOT.draw(graphics, crystalSlotX, crystalSlotY, CRYSTAL_SLOT_SIZE, CRYSTAL_SLOT_SIZE)
+        }
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -625,9 +648,40 @@ class InventoryTerminalScreen(
 
         Icons.endBatch()
 
+        // Disconnect overlay (Handheld only). Paints over the network grid whenever
+        // the server reports the menu isn't driving a live network — blanks out the
+        // (empty) grid with a neutral veil so the empty state reads as
+        // "disconnected" rather than "this network has no items," and surfaces the
+        // reason so the player knows whether to move closer, swap crystals, etc.
+        if (menu.hasCrystalSlot) {
+            val status = menu.connectionStatus
+            if (status != damien.nodeworks.screen.PortableConnectionStatus.CONNECTED) {
+                val gridW = layout.cols * SLOT_SIZE
+                val gridH = layout.rows * SLOT_SIZE
+                graphics.fill(networkGrid.x, networkGrid.y, networkGrid.x + gridW, networkGrid.y + gridH, 0xC0202020.toInt())
+                val label = disconnectMessage(status)
+                val tw = font.width(label)
+                val cx = networkGrid.x + (gridW - tw) / 2
+                val cy = networkGrid.y + (gridH - font.lineHeight) / 2
+                graphics.drawString(font, label, cx, cy, 0xFFFFFFFF.toInt(), true)
+            }
+        }
+
         // Render player inventory items
         playerMainGrid.renderItems(graphics)
         playerHotbarGrid.renderItems(graphics)
+
+        // Crystal slot contents + hover highlight
+        if (menu.hasCrystalSlot) {
+            val stack = menu.slots[InventoryTerminalMenu.CRYSTAL_SLOT].item
+            if (!stack.isEmpty) {
+                graphics.renderItem(stack, crystalSlotX + 1, crystalSlotY + 1)
+            }
+            if (isCrystalSlotAt(mouseX, mouseY)) {
+                graphics.fill(crystalSlotX + 1, crystalSlotY + 1,
+                    crystalSlotX + 1 + 16, crystalSlotY + 1 + 16, 0x80FFFFFF.toInt())
+            }
+        }
 
         // Set hoveredSlot for JEI R/U key support
         val networkHover = networkGrid.getSlotAt(mouseX, mouseY, 0)
@@ -645,6 +699,9 @@ class InventoryTerminalScreen(
                     }
                 }
             }
+        } else if (menu.hasCrystalSlot && isCrystalSlotAt(mouseX, mouseY)) {
+            // Crystal slot — MC real slot, pointable directly.
+            hoveredSlot = menu.slots[InventoryTerminalMenu.CRYSTAL_SLOT]
         } else {
             // Check crafting grid
             val craftSlot = getCraftSlotAt(mouseX, mouseY)
@@ -821,6 +878,16 @@ class InventoryTerminalScreen(
                     }
                 }
             }
+
+            // Crystal slot tooltip — item tooltip when occupied, hint when empty.
+            if (!craftTooltipShown && menu.hasCrystalSlot && isCrystalSlotAt(mouseX, mouseY)) {
+                val stack = menu.slots[InventoryTerminalMenu.CRYSTAL_SLOT].item
+                if (!stack.isEmpty) {
+                    graphics.setTooltipForNextFrame(font, getTooltipFromItem(Minecraft.getInstance(), stack), stack.tooltipImage, mouseX, mouseY)
+                } else {
+                    graphics.renderTooltip(font, Component.literal("Link Crystal"), mouseX, mouseY)
+                }
+            }
         }
 
         // Craft dialogue overlay
@@ -982,6 +1049,32 @@ class InventoryTerminalScreen(
             craftDialogueItemId = null
             craftError = null
             craftDialogueField?.visible = false
+            return true
+        }
+
+        // Crystal slot click (Handheld only). Dispatches through the real MC Slot so
+        // AbstractContainerMenu's mayPlace / max stack size checks apply and the
+        // result syncs to the server — the menu's onCrystalSlotChanged hook then
+        // persists the crystal to the Portable and re-resolves the network.
+        //
+        // `setSkipNextRelease(true)` mirrors what vanilla's own mouseClicked does
+        // after a slotClicked: it tells the paired mouseReleased to no-op. Without
+        // it, mouseReleased sees a release outside the window rect, computes
+        // `slotId = -999`, and sends a PICKUP click that throws the carried crystal
+        // onto the ground.
+        if (menu.hasCrystalSlot && isCrystalSlotAt(mx, my)) {
+            val clickType = if (hasShiftDownCompat()) {
+                net.minecraft.world.inventory.ContainerInput.QUICK_MOVE
+            } else {
+                net.minecraft.world.inventory.ContainerInput.PICKUP
+            }
+            slotClicked(
+                menu.slots[InventoryTerminalMenu.CRYSTAL_SLOT],
+                InventoryTerminalMenu.CRYSTAL_SLOT,
+                button,
+                clickType,
+            )
+            damien.nodeworks.compat.AcsCompat.setSkipNextRelease(this, true)
             return true
         }
 
@@ -1396,6 +1489,26 @@ class InventoryTerminalScreen(
         val ox = craftX + 3 * 18 + 16
         val oy = craftY + 18
         return mx >= ox && mx < ox + 18 && my >= oy && my < oy + 18
+    }
+
+    /** True when the mouse is over the Handheld's crystal slot. Always false for the
+     *  fixed terminal, where the slot doesn't exist. */
+    private fun isCrystalSlotAt(mx: Int, my: Int): Boolean {
+        if (!menu.hasCrystalSlot) return false
+        return mx >= crystalSlotX && mx < crystalSlotX + CRYSTAL_SLOT_SIZE &&
+               my >= crystalSlotY && my < crystalSlotY + CRYSTAL_SLOT_SIZE
+    }
+
+    /** Short label shown centered over the grid when the Handheld is disconnected.
+     *  Kept terse because the grid-sized overlay doesn't have room for prose. */
+    private fun disconnectMessage(status: damien.nodeworks.screen.PortableConnectionStatus): String = when (status) {
+        damien.nodeworks.screen.PortableConnectionStatus.CONNECTED -> ""
+        damien.nodeworks.screen.PortableConnectionStatus.NO_CRYSTAL -> "No Link Crystal"
+        damien.nodeworks.screen.PortableConnectionStatus.BLANK_CRYSTAL -> "Crystal Not Paired"
+        damien.nodeworks.screen.PortableConnectionStatus.WRONG_KIND -> "Wrong Crystal Type"
+        damien.nodeworks.screen.PortableConnectionStatus.OUT_OF_RANGE -> "Out of Range"
+        damien.nodeworks.screen.PortableConnectionStatus.DIMENSION_MISMATCH -> "Wrong Dimension"
+        damien.nodeworks.screen.PortableConnectionStatus.UNREACHABLE -> "Network Unreachable"
     }
 
     // ========== Helpers ==========

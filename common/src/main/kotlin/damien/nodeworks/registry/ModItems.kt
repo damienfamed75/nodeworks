@@ -9,6 +9,7 @@ import damien.nodeworks.item.DiagnosticToolItem
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MilkySoulBallItem
 import damien.nodeworks.item.NetworkWrenchItem
+import damien.nodeworks.item.PortableInventoryTerminalItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
@@ -122,6 +123,12 @@ object ModItems {
         Item.Properties()
             .stacksTo(1)
             .component(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
+    )
+
+    val PORTABLE_INVENTORY_TERMINAL: Item = register(
+        "portable_inventory_terminal",
+        ::PortableInventoryTerminalItem,
+        Item.Properties().stacksTo(1),
     )
 
     private fun register(

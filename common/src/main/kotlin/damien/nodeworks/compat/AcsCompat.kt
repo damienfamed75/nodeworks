@@ -50,4 +50,20 @@ object AcsCompat {
         slotXField.setInt(slot, x)
         slotYField.setInt(slot, y)
     }
+
+    // `skipNextRelease` is private on AbstractContainerScreen and has no accessor.
+    // Vanilla sets it to true inside its own mouseClicked whenever it dispatches a
+    // slotClicked, which makes the subsequent mouseReleased early-return. When a
+    // screen overrides mouseClicked and calls slotClicked itself (without going
+    // through the super implementation), the flag stays false — so mouseReleased
+    // runs its outside-click release branch, which can fire a PICKUP with
+    // slotId = -999 and end up throwing the carried item on the ground. Setting
+    // this flag manually after a custom slotClicked restores the vanilla behavior.
+    private val skipNextReleaseField: Field by lazy {
+        AbstractContainerScreen::class.java.getDeclaredField("skipNextRelease").apply { isAccessible = true }
+    }
+
+    fun setSkipNextRelease(screen: AbstractContainerScreen<*>, skip: Boolean) {
+        skipNextReleaseField.setBoolean(screen, skip)
+    }
 }

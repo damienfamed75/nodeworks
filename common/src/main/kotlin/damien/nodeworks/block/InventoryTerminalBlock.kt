@@ -81,7 +81,15 @@ class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(propertie
             Component.translatable("container.nodeworks.inventory_terminal"),
             InventoryTerminalOpenData(pos),
             InventoryTerminalOpenData.STREAM_CODEC,
-            { syncId, inv, _ -> InventoryTerminalMenu.createServer(syncId, inv, serverLevel, pos) }
+            { syncId, inv, _ ->
+                // Fixed terminal uses its own position as the network entry point — the
+                // terminal is a Connectable, so NetworkDiscovery walks out from there.
+                val source = damien.nodeworks.screen.NodeBackedSource(
+                    dimension = serverLevel.dimension(),
+                    entryPoint = pos,
+                )
+                InventoryTerminalMenu.createServer(syncId, inv, serverLevel, source, displayPos = pos)
+            }
         )
 
         return InteractionResult.SUCCESS

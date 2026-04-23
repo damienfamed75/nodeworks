@@ -46,6 +46,7 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterMenuScreens)
         modBus.addListener(::onRegisterConditionalItemModelProperties)
         modBus.addListener(::onRegisterSelectItemModelProperties)
+        modBus.addListener(::onRegisterItemTintSources)
         modBus.addListener(::onRegisterRenderPipelines)
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
@@ -115,6 +116,10 @@ object NeoForgeClientSetup {
             net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "link_crystal_linked"),
             damien.nodeworks.client.item.LinkCrystalLinkedProperty.MAP_CODEC
         )
+        event.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "portable_inventory_terminal_linked"),
+            damien.nodeworks.client.item.PortableInventoryTerminalLinkedProperty.MAP_CODEC
+        )
     }
 
     private fun onRegisterSelectItemModelProperties(
@@ -123,6 +128,15 @@ object NeoForgeClientSetup {
         event.register(
             net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "card_programmer_card_type"),
             damien.nodeworks.client.item.CardProgrammerTypeProperty.TYPE
+        )
+    }
+
+    private fun onRegisterItemTintSources(
+        event: net.neoforged.neoforge.client.event.RegisterColorHandlersEvent.ItemTintSources
+    ) {
+        event.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "portable_network_color"),
+            damien.nodeworks.client.item.PortableNetworkColorTintSource.MAP_CODEC
         )
     }
 

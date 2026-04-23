@@ -367,6 +367,24 @@ data class CraftRequestErrorPayload(val containerId: Int, val message: String) :
     override fun type() = TYPE
 }
 
+/**
+ * S2C: Handheld Inventory Terminal connection state. Sent whenever the menu's
+ * resolved [PortableConnectionStatus][damien.nodeworks.screen.PortableConnectionStatus]
+ * changes so the screen can draw an overlay (e.g. "Out of Range") over the grid
+ * explaining why the network is unavailable. Uses the enum's ordinal for the wire
+ * format — keep entry order stable on the enum.
+ */
+data class PortableConnectionStatusPayload(val containerId: Int, val statusOrdinal: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<PortableConnectionStatusPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "portable_connection_status"))
+        val CODEC: StreamCodec<FriendlyByteBuf, PortableConnectionStatusPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.statusOrdinal) },
+            { buf -> PortableConnectionStatusPayload(buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /** C2S: Cancel a crafting job — return buffer contents to network storage. */
 data class CancelCraftPayload(val pos: BlockPos) : CustomPacketPayload {
     companion object {
