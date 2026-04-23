@@ -248,13 +248,18 @@ class InventoryTerminalScreen(
             localPlayer?.inventory?.getItem(slot.index) ?: ItemStack.EMPTY
         }
 
-        // Crystal slot (Handheld-only). Sit at the right end of the title bar,
-        // vertically centered inside its 22px height (TOP_BAR_H). The real MC Slot
-        // behind this visual lives at (-999, -999) in menu.slots[CRYSTAL_SLOT] —
-        // we render/hit-test it ourselves and dispatch clicks via slotClicked.
+        // Crystal slot (Handheld-only). Sits at the top-right, anchored so the
+        // surrounding 26x26 decorative frame fits flush with the window's top and
+        // right edges. The 18x18 interactive slot is offset 4px in from the frame
+        // on all sides — (crystalSlotX, crystalSlotY) targets the interactive slot
+        // itself, so the frame is drawn at (crystalSlotX - 4, crystalSlotY - 4).
+        //
+        // Real MC Slot behind this visual stays at (-999, -999) in
+        // menu.slots[CRYSTAL_SLOT]; we render/hit-test and dispatch clicks via
+        // slotClicked ourselves.
         if (menu.hasCrystalSlot) {
-            crystalSlotX = leftPos + imageWidth - CRYSTAL_SLOT_SIZE - 2
-            crystalSlotY = topPos + (TOP_BAR_H - CRYSTAL_SLOT_SIZE) / 2
+            crystalSlotX = leftPos + imageWidth - CRYSTAL_SLOT_SIZE - 6
+            crystalSlotY = topPos + 3
         }
 
         // Search box
@@ -392,24 +397,49 @@ class InventoryTerminalScreen(
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
+        // Portable shifts the window frame down 8px so the crystal slot decoration
+        // reads as a header element sitting above the window. The top bar + left
+        // cap sit 3px higher than the frame so the bar visually tucks under the
+        // top of the frame by that amount. Fixed terminal keeps everything flush.
+        // Portable layout anchors:
+        //   barYOffset = 5  → PORTABLE_TOP_BAR at topPos+5..15, left cap at
+        //                     topPos+2..23 (16x21, pipe-style), crystal slot
+        //                     frame at topPos-2..24 (26x26).
+        //   frameYOffset = 22 → WINDOW_FRAME top overlaps the bottom 1px of
+        //                       the left cap's pipe so the pipe visually merges
+        //                       into the frame border seamlessly.
+        val frameYOffset = if (menu.hasCrystalSlot) 22 else 0
+        val barYOffset = if (menu.hasCrystalSlot) 6 else 0
         // Window frame (stretched for performance — large area)
-        NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
+        NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos + frameYOffset, imageWidth, imageHeight - frameYOffset)
 
-        // Title bar with network color
+        // Title bar. Portable uses its own 10px-tall horizontally-tiled strip with
+        // no title text — the crystal slot decoration sits on top of it, and the
+        // network color is already conveyed by the emissive item layer + the
+        // dimmed/messaged overlay when disconnected. Fixed terminals use the usual
+        // 9-sliced TOP_BAR with network-color trim + centered title.
         val mc = Minecraft.getInstance()
-        val pos = menu.terminalPos
-        val networkColor = if (pos != null) {
-            val entity = mc.level?.getBlockEntity(pos) as? damien.nodeworks.network.Connectable
-            val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(pos)
-            if (reachable && entity?.networkId != null) {
-                damien.nodeworks.network.NetworkSettingsRegistry.getColor(entity.networkId)
-            } else {
-                cachedNetworkColor ?: damien.nodeworks.render.NodeConnectionRenderer.findNetworkColor(
-                    mc.level, pos
-                ).also { cachedNetworkColor = it }
-            }
-        } else -1
-        NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor)
+        if (menu.hasCrystalSlot) {
+            NineSlice.PORTABLE_TOP_BAR.draw(graphics, leftPos + 4, topPos + barYOffset, imageWidth - 8, 10)
+            // Left end-cap: the top 16x16 is the corner where the bar turns.
+            // The bottom 5px of the 16x21 sprite runs down like a pipe into the
+            // window frame's top edge.
+            NineSlice.PORTABLE_TOP_BAR_LEFT_CAP.draw(graphics, leftPos + 2, topPos + barYOffset - 3, 16, 21)
+        } else {
+            val pos = menu.terminalPos
+            val networkColor = if (pos != null) {
+                val entity = mc.level?.getBlockEntity(pos) as? damien.nodeworks.network.Connectable
+                val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(pos)
+                if (reachable && entity?.networkId != null) {
+                    damien.nodeworks.network.NetworkSettingsRegistry.getColor(entity.networkId)
+                } else {
+                    cachedNetworkColor ?: damien.nodeworks.render.NodeConnectionRenderer.findNetworkColor(
+                        mc.level, pos
+                    ).also { cachedNetworkColor = it }
+                }
+            } else -1
+            NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor)
+        }
 
         // Network item grid background
         networkGrid.renderBackground(graphics)
@@ -489,9 +519,30 @@ class InventoryTerminalScreen(
         NineSlice.INVENTORY_BORDER.drawStretched(graphics, playerMainGrid.x - 2, playerMainGrid.y - 2, 9 * 18 + 4, 3 * 18 + 4)
         NineSlice.INVENTORY_BORDER.drawStretched(graphics, playerHotbarGrid.x - 2, playerHotbarGrid.y - 2, 9 * 18 + 4, 18 + 4)
 
-        // Crystal slot background (Handheld only)
+        // Crystal slot background (Handheld only). Layers:
+        //   1. WINDOW_FRAME (open bottom) anchored to the top-right of the
+        //      window, spanning from 30px in from the right edge out to the
+        //      right edge itself (so the protrusion shares its right border
+        //      with the main window frame). The bottom 3px are transparent so
+        //      the protrusion blends into the main window frame below.
+        //      Position is independent of crystalSlotX/Y — the slot itself can
+        //      shift inside the protrusion without dragging the frame along.
+        //   2. WINDOW_INNER_CORNER_TL at the left junction where the
+        //      protrusion's left side meets the main frame's top edge (Y =
+        //      topPos + frameYOffset). No right-side inner corner: the right
+        //      border is shared with the main frame, so there's no concave
+        //      junction to bevel.
+        //   3. PORTABLE_CRYSTAL_SLOT_FRAME (20x20) painted on top, with the
+        //      18x18 interactive area centered inside its 1px border. Follows
+        //      crystalSlotX/Y — offset by -1 on both axes so the inner slot
+        //      lines up with (crystalSlotX, crystalSlotY).
         if (menu.hasCrystalSlot) {
-            NineSlice.SLOT.draw(graphics, crystalSlotX, crystalSlotY, CRYSTAL_SLOT_SIZE, CRYSTAL_SLOT_SIZE)
+            val protrusionX = leftPos + imageWidth - 30
+            val protrusionY = topPos - 3
+            val protrusionW = 30
+            NineSlice.WINDOW_FRAME.drawOpenBottom(graphics, protrusionX, protrusionY, protrusionW, 31)
+            NineSlice.WINDOW_INNER_CORNER_TL.draw(graphics, protrusionX, topPos + frameYOffset, 3, 3)
+            NineSlice.PORTABLE_CRYSTAL_SLOT_FRAME.draw(graphics, crystalSlotX - 1, crystalSlotY - 1, 20, 20)
         }
     }
 
