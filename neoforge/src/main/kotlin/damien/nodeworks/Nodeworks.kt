@@ -75,6 +75,10 @@ class Nodeworks(modBus: IEventBus) {
         // since NeoForge's RegisterEvent actually allows cross-registry registration.
         event.register(Registries.BLOCK) {
             ModBlocks.initialize()
+            // ModDataComponents MUST come before ModItems — items may reference
+            // component types as defaults, and referencing an unregistered component
+            // crashes the item constructor with an Unregistered value.
+            damien.nodeworks.registry.ModDataComponents.initialize()
             ModItems.initialize()
             ModBlockEntities.initialize()
             damien.nodeworks.registry.ModEntityTypes.initialize()
@@ -453,6 +457,19 @@ class Nodeworks(modBus: IEventBus) {
                 val screen = net.minecraft.client.Minecraft.getInstance().screen
                 if (screen is damien.nodeworks.screen.InventoryTerminalScreen) {
                     screen.setCraftError(payload.message)
+                }
+            }
+        }
+
+        registrar.playToClient(
+            damien.nodeworks.network.PortableConnectionStatusPayload.TYPE,
+            damien.nodeworks.network.PortableConnectionStatusPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.connectionStatus = damien.nodeworks.screen.PortableConnectionStatus.fromOrdinal(payload.statusOrdinal)
                 }
             }
         }

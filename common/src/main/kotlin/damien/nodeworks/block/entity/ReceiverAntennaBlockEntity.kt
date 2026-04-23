@@ -1,5 +1,6 @@
 package damien.nodeworks.block.entity
 
+import damien.nodeworks.item.BroadcastSourceKind
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
@@ -54,15 +55,25 @@ class ReceiverAntennaBlockEntity(
     private var pairedPos: BlockPos? = null
     private var pairedDimension: ResourceKey<Level>? = null
     private var pairedFrequencyId: UUID? = null
+    /** Broadcast kind the crystal was paired against. Receivers only consume
+     *  [BroadcastSourceKind.PROCESSING_STORAGE] crystals; any other kind produces a
+     *  "wrong source kind" status and the receiver stays dark. */
+    private var pairedKind: BroadcastSourceKind? = null
 
     val isPaired: Boolean get() = pairedPos != null && pairedFrequencyId != null
 
     /** 0=not linked, 1=linked, 2=out of range, 3=broadcast not found, 4=freq mismatch,
-     *  5=not loaded, 6=dimension mismatch (broadcast lacks Multi-Dimension upgrade). */
+     *  5=not loaded, 6=dimension mismatch (broadcast lacks Multi-Dimension upgrade),
+     *  7=wrong source kind (crystal is paired to a Network Controller, not a Processing
+     *  Storage — Receiver Antennas only consume processing-set broadcasts). */
     fun getConnectionStatus(level: ServerLevel): Int {
         val pos = pairedPos ?: return 0
         val dim = pairedDimension ?: return 0
         val freq = pairedFrequencyId ?: return 0
+        val kind = pairedKind ?: return 0
+        // Type-check the crystal before we touch the target dimension — a wrong-kind
+        // crystal is invalid regardless of where the broadcast is.
+        if (kind != BroadcastSourceKind.PROCESSING_STORAGE) return 7
         val targetLevel = level.server.getLevel(dim) ?: return 3
         if (!targetLevel.isLoaded(pos)) return 5
         val broadcast = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return 3
@@ -82,11 +93,15 @@ class ReceiverAntennaBlockEntity(
         return 1
     }
 
-    /** Load the paired Broadcast Antenna if in range, same/allowed dimension, matching frequency. */
+    /** Load the paired Broadcast Antenna if in range, same/allowed dimension, matching
+     *  frequency, AND the crystal's kind is [BroadcastSourceKind.PROCESSING_STORAGE].
+     *  A wrong-kind crystal (e.g. paired to a Network Controller) resolves to null here
+     *  so no caller of this method ever receives a broadcast it wasn't meant to consume. */
     fun getBroadcastAntenna(level: ServerLevel): BroadcastAntennaBlockEntity? {
         val pos = pairedPos ?: return null
         val dim = pairedDimension ?: return null
         val freq = pairedFrequencyId ?: return null
+        if (pairedKind != BroadcastSourceKind.PROCESSING_STORAGE) return null
 
         val targetLevel = level.server.getLevel(dim) ?: return null
         if (!targetLevel.isLoaded(pos)) return null
@@ -106,7 +121,9 @@ class ReceiverAntennaBlockEntity(
         return broadcast
     }
 
-    /** Read pairing data from the chip in the slot. */
+    /** Read pairing data from the chip in the slot. All four pairing fields move
+     *  together — any transition through here leaves them either all-set-consistently
+     *  or all-null, never a half-populated state. */
     private fun updatePairingFromChip() {
         val wasPaired = isPaired
         val stack = items[0]
@@ -114,6 +131,7 @@ class ReceiverAntennaBlockEntity(
             pairedPos = null
             pairedDimension = null
             pairedFrequencyId = null
+            pairedKind = null
             if (wasPaired != isPaired) updateSegmentConnectedState()
             return
         }
@@ -122,10 +140,12 @@ class ReceiverAntennaBlockEntity(
             pairedPos = data.pos
             pairedDimension = data.dimension
             pairedFrequencyId = data.frequencyId
+            pairedKind = data.kind
         } else {
             pairedPos = null
             pairedDimension = null
             pairedFrequencyId = null
+            pairedKind = null
         }
         if (wasPaired != isPaired) updateSegmentConnectedState()
     }

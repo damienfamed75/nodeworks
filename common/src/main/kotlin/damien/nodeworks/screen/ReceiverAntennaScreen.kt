@@ -54,6 +54,8 @@ class ReceiverAntennaScreen(
             3 -> "Broadcast Not Found"
             4 -> "Frequency Mismatch"
             5 -> "Not Loaded"
+            6 -> "Dimension Mismatch"
+            7 -> "Wrong Source Kind"
             else -> "Unknown"
         }
         val statusColor = when (statusCode) {

@@ -55,7 +55,15 @@ class NineSlice(
      * the new pipeline handles blend state per-draw. We pack (A, R, G, B) into an
      * Int and let `blit(..., color)` do the rest.
      */
-    fun drawTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int, color: Int, alpha: Float = 1f) {
+    fun drawTinted(
+        graphics: GuiGraphicsExtractor,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        color: Int,
+        alpha: Float = 1f
+    ) {
         val argb = (((alpha.coerceIn(0f, 1f) * 255f).toInt() and 0xFF) shl 24) or (color and 0x00FFFFFF)
         drawInner(graphics, x, y, width, height, argb)
     }
@@ -72,7 +80,59 @@ class NineSlice(
         drawInnerStretched(graphics, x, y, width, height, -1)
     }
 
-    private fun drawInnerStretched(graphics: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int, color: Int) {
+    /**
+     * Draw this 9-slice with the bottom-inset row omitted — top corners, top
+     * edge, side edges, and center all render normally, but the bottom corners
+     * (BL, BR) and bottom edge are skipped. The bottom `bottom` pixels of the
+     * target rect are left transparent, so whatever is behind the frame (or
+     * abuts it from below) shows through.
+     *
+     * Use this when a frame needs to blend into another element below it —
+     * e.g. a frame around a widget that protrudes from the top of another
+     * panel, where the panel's own top border serves as the bottom of the
+     * widget's frame.
+     */
+    fun drawOpenBottom(graphics: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int) {
+        val midSrcW = srcWidth - left - right
+        val midSrcH = srcHeight - top - bottom
+        val midDstW = width - left - right
+        val midDstH = height - top - bottom
+        // Degenerate rect: just blit the whole source, skip the bottom slice.
+        if (midDstW <= 0 || midDstH <= 0) {
+            blitRegion(graphics, x, y, width, height - bottom, u, v, srcWidth, srcHeight - bottom, -1)
+            return
+        }
+        val cx = x + left
+        val cy = y + top
+        val srcCx = u + left
+        val srcCy = v + top
+
+        // Top row: TL corner, top edge, TR corner
+        blitRegion(graphics, x, y, left, top, u, v, left, top, -1)
+        blitRegion(graphics, cx + midDstW, y, right, top, srcCx + midSrcW, v, right, top, -1)
+
+        if (tile) {
+            tileH(graphics, cx, y, midDstW, top, srcCx, v, midSrcW, top, -1)
+            tileV(graphics, x, cy, left, midDstH, u, srcCy, left, midSrcH, -1)
+            tileV(graphics, cx + midDstW, cy, right, midDstH, srcCx + midSrcW, srcCy, right, midSrcH, -1)
+            tileBoth(graphics, cx, cy, midDstW, midDstH, srcCx, srcCy, midSrcW, midSrcH, -1)
+        } else {
+            blitRegion(graphics, cx, y, midDstW, top, srcCx, v, midSrcW, top, -1)
+            blitRegion(graphics, x, cy, left, midDstH, u, srcCy, left, midSrcH, -1)
+            blitRegion(graphics, cx + midDstW, cy, right, midDstH, srcCx + midSrcW, srcCy, right, midSrcH, -1)
+            blitRegion(graphics, cx, cy, midDstW, midDstH, srcCx, srcCy, midSrcW, midSrcH, -1)
+        }
+        // BL corner, bottom edge, BR corner: intentionally skipped.
+    }
+
+    private fun drawInnerStretched(
+        graphics: GuiGraphicsExtractor,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        color: Int
+    ) {
         val midSrcW = srcWidth - left - right
         val midSrcH = srcHeight - top - bottom
         val midDstW = width - left - right
@@ -87,7 +147,18 @@ class NineSlice(
         blitRegion(graphics, x, y, left, top, u, v, left, top, color)
         blitRegion(graphics, cx + midDstW, y, right, top, srcCx + midSrcW, v, right, top, color)
         blitRegion(graphics, x, cy + midDstH, left, bottom, u, srcCy + midSrcH, left, bottom, color)
-        blitRegion(graphics, cx + midDstW, cy + midDstH, right, bottom, srcCx + midSrcW, srcCy + midSrcH, right, bottom, color)
+        blitRegion(
+            graphics,
+            cx + midDstW,
+            cy + midDstH,
+            right,
+            bottom,
+            srcCx + midSrcW,
+            srcCy + midSrcH,
+            right,
+            bottom,
+            color
+        )
         blitRegion(graphics, cx, y, midDstW, top, srcCx, v, midSrcW, top, color)
         blitRegion(graphics, cx, cy + midDstH, midDstW, bottom, srcCx, srcCy + midSrcH, midSrcW, bottom, color)
         blitRegion(graphics, x, cy, left, midDstH, u, srcCy, left, midSrcH, color)
@@ -116,7 +187,18 @@ class NineSlice(
         blitRegion(graphics, x, y, left, top, u, v, left, top, color)
         blitRegion(graphics, cx + midDstW, y, right, top, srcCx + midSrcW, v, right, top, color)
         blitRegion(graphics, x, cy + midDstH, left, bottom, u, srcCy + midSrcH, left, bottom, color)
-        blitRegion(graphics, cx + midDstW, cy + midDstH, right, bottom, srcCx + midSrcW, srcCy + midSrcH, right, bottom, color)
+        blitRegion(
+            graphics,
+            cx + midDstW,
+            cy + midDstH,
+            right,
+            bottom,
+            srcCx + midSrcW,
+            srcCy + midSrcH,
+            right,
+            bottom,
+            color
+        )
 
         if (tile) {
             // Tiled edges and center (more blits, preserves texture pattern)
@@ -278,8 +360,13 @@ class NineSlice(
         // ---------  ------  -------------------  ----------------  ---------------------------
         // (0,   0)   24x24   WINDOW_FRAME         3, 3, 3, 3        Main window background (#2B2B2B) with gradient border
         // (24,  0)   24x24   WINDOW_RECESSED      3, 3, 3, 3        Recessed window panel — darker inset variant of WINDOW_FRAME
+        // (48,  0)   24x24   PORTABLE_FRAME       3, 3, 3, 3        Main window background for the Portable Inventory Terminal
         // (0,  24)   24x24   TOP_BAR              3, 3, 3, 3        Header bar (#3C3C3C) with border
         // (24, 24)   24x24   TITLE_TRIM           3, 3, 3, 3        White trim overlay for title bar — tint with network color
+        // (48, 24)   3x3     WINDOW_INNER_CORNER_TL                 Inner (concave) corner piece for the TL of a pocket
+        // (51, 24)   3x3     WINDOW_INNER_CORNER_TR                 Inner (concave) corner piece for the TR of a pocket
+        // (54, 24)   3x3     WINDOW_INNER_CORNER_BL                 Inner (concave) corner piece for the BL of a pocket
+        // (57, 24)   3x3     WINDOW_INNER_CORNER_BR                 Inner (concave) corner piece for the BR of a pocket
         // (0,  48)   24x16   TAB_ACTIVE           3, 3, 3, 2        Active tab (#2B2B2B) with blue accent top edge
         // (24, 48)   24x16   TAB_INACTIVE         3, 3, 3, 2        Inactive tab (#222222) with subtle border
         // (48, 48)   24x16   TAB_HOVER            3, 3, 3, 2        Hovered tab (#333333) between active/inactive
@@ -302,18 +389,41 @@ class NineSlice(
         // (72, 64)   48x16   TOGGLE_ACTIVE        3, 3, 3, 3        Toggle switch ON state
         // (120,64)   48x16   TOGGLE_INACTIVE      3, 3, 3, 3        Toggle switch OFF state
         //
-        // Free space: (72+, 48–63), (160+, 64–79), (96+, 80–103), (48+, 104–127), (24+, 128+), entire rows 152+
+        // (0, 152)   20x20   PORTABLE_CRYSTAL_SLOT_FRAME            Non-9-sliced decorative slot frame for the
+        //                                                           Portable Inventory Terminal's Link Crystal slot.
+        //                                                           The 18x18 slot area is centered inside (1px frame).
+        // (26,152)   18x10   PORTABLE_TOP_BAR                       Non-9-sliced top-bar strip for the Portable
+        //                                                           Inventory Terminal. Tiles horizontally; fixed 10px tall.
+        // (44,152)   16x21   PORTABLE_TOP_BAR_LEFT_CAP              Non-9-sliced left-end cap for the Portable
+        //                                                           Inventory Terminal's top bar. Top 16x16 is the
+        //                                                           cap corner; bottom 5px extends down the left
+        //                                                           edge of the window like a pipe.
+        //
+        // Free space: (60+, 152–177), (0+, 178+)
         // =====================================================================
 
         // ---- Pre-built slices ----
 
         val WINDOW_FRAME = NineSlice(GUI_ATLAS, 0, 0, 24, 24, 3, 3, 3, 3)
         val WINDOW_RECESSED = NineSlice(GUI_ATLAS, 24, 0, 24, 24, 3, 3, 5, 3)
-        val CARD_PROGRAMMER_FRAME = NineSlice(GUI_ATLAS, 48, 0, 24, 24, 3, 3, 3, 3)
+        val PORTABLE_FRAME = NineSlice(GUI_ATLAS, 48, 0, 24, 24, 5, 5, 5, 5)
         val CARD_PROGRAMMER_TOP_BAR = NineSlice(GUI_ATLAS, 72, 0, 24, 24, 5, 5, 5, 16)
         val CARD_PROGRAMMER_RECESSED = NineSlice(GUI_ATLAS, 96, 0, 24, 24, 3, 3, 5, 3)
         val TOP_BAR = NineSlice(GUI_ATLAS, 0, 24, 24, 24, 3, 3, 3, 3)
         val TITLE_TRIM = NineSlice(GUI_ATLAS, 24, 24, 24, 24, 3, 3, 3, 3)
+
+        /**
+         * 3x3 concave-corner pieces used to produce an inner-corner transition
+         * between two WINDOW_FRAMEs that meet at a right angle (e.g. a widget
+         * frame protruding from the edge of a larger panel). Each one is placed
+         * at the matching corner of the concave pocket — `TL` at the top-left
+         * of the pocket, `BR` at the bottom-right, etc. Draw on top of the
+         * frames at native 3x3 size.
+         */
+        val WINDOW_INNER_CORNER_TL = NineSlice(GUI_ATLAS, 48, 24, 3, 3, 0, 0, 0, 0, tile = false)
+        val WINDOW_INNER_CORNER_TR = NineSlice(GUI_ATLAS, 51, 24, 3, 3, 0, 0, 0, 0, tile = false)
+        val WINDOW_INNER_CORNER_BL = NineSlice(GUI_ATLAS, 54, 24, 3, 3, 0, 0, 0, 0, tile = false)
+        val WINDOW_INNER_CORNER_BR = NineSlice(GUI_ATLAS, 57, 24, 3, 3, 0, 0, 0, 0, tile = false)
         val TAB_ACTIVE = NineSlice(GUI_ATLAS, 0, 48, 24, 16, 3, 3, 3, 2)
         val TAB_INACTIVE = NineSlice(GUI_ATLAS, 24, 48, 24, 16, 3, 3, 3, 2)
         val TAB_HOVER = NineSlice(GUI_ATLAS, 48, 48, 24, 16, 3, 3, 3, 2)
@@ -339,5 +449,14 @@ class NineSlice(
         val SCROLLBAR_TRACK = NineSlice(GUI_ATLAS, 0, 128, 8, 24, 2, 2, 3, 3)
         val SCROLLBAR_THUMB = NineSlice(GUI_ATLAS, 8, 128, 8, 16, 2, 2, 3, 3)
         val SCROLLBAR_THUMB_HOVER = NineSlice(GUI_ATLAS, 16, 128, 8, 16, 2, 2, 3, 3)
+
+        // Portable crystal slot decoration — 20x20, 18x18 slot centered inside a 1px frame.
+        val PORTABLE_CRYSTAL_SLOT_FRAME = NineSlice(GUI_ATLAS, 0, 152, 20, 20, 0, 0, 0, 0, tile = false)
+
+        // Portable top-bar strip — 18x10, tiles horizontally. Drawing taller than 10px stretches.
+        val PORTABLE_TOP_BAR = NineSlice(GUI_ATLAS, 26, 152, 18, 10, 0, 0, 0, 0)
+
+        // Portable top-bar left cap — 16x21. Top 16x16 is the corner; bottom 5px is the pipe tail.
+        val PORTABLE_TOP_BAR_LEFT_CAP = NineSlice(GUI_ATLAS, 44, 152, 16, 21, 0, 0, 0, 0, tile = false)
     }
 }

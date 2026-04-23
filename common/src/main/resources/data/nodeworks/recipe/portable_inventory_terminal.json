@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " R ",
+    "ETE",
+    "NNN"
+  ],
+  "key": {
+    "R": "nodeworks:celestine_receiver_dish",
+    "E": "minecraft:ender_eye",
+    "T": "nodeworks:inventory_terminal",
+    "N": "minecraft:netherite_ingot"
+  },
+  "result": {
+    "id": "nodeworks:portable_inventory_terminal",
+    "count": 1
+  }
+}

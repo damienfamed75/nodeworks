@@ -1,0 +1,18 @@
+{
+  "model": {
+    "type": "minecraft:condition",
+    "property": "nodeworks:portable_inventory_terminal_linked",
+    "on_true": {
+      "type": "minecraft:model",
+      "model": "nodeworks:item/portable_inventory_terminal_linked",
+      "tints": [
+        { "type": "minecraft:constant", "value": -1 },
+        { "type": "nodeworks:portable_network_color" }
+      ]
+    },
+    "on_false": {
+      "type": "minecraft:model",
+      "model": "nodeworks:item/portable_inventory_terminal"
+    }
+  }
+}
