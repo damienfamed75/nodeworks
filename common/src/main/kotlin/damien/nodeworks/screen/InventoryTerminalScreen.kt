@@ -942,6 +942,12 @@ class InventoryTerminalScreen(
                     graphics.renderTooltip(font, Component.literal("Link Crystal"), mouseX, mouseY)
                 }
             }
+
+            // Side-button tooltips — "Feature: Current setting" form.
+            val sideTip = sideButtonTooltip(mouseX, mouseY)
+            if (sideTip != null) {
+                graphics.renderTooltip(font, sideTip, mouseX, mouseY)
+            }
         }
 
         // Craft dialogue overlay
@@ -1551,6 +1557,50 @@ class InventoryTerminalScreen(
         if (!menu.hasCrystalSlot) return false
         return mx >= crystalSlotX && mx < crystalSlotX + CRYSTAL_SLOT_SIZE &&
                my >= crystalSlotY && my < crystalSlotY + CRYSTAL_SLOT_SIZE
+    }
+
+    /**
+     * Returns the tooltip label for whichever side button the mouse is over, or
+     * null if the mouse is outside the side-button strip. Each tooltip shows the
+     * button's purpose plus the current setting, e.g. "Sort: A-Z", "Layout:
+     * Small". Recomputed fresh every frame so toggles reflect immediately.
+     */
+    private fun sideButtonTooltip(mouseX: Int, mouseY: Int): Component? {
+        val btnX = leftPos - SIDE_BTN_W - 4
+        if (mouseX < btnX || mouseX >= btnX + SIDE_BTN_W) return null
+        val step = SIDE_BTN_W + SIDE_BTN_GAP
+        val relY = mouseY - (topPos + TOP_BAR_H + 2)
+        if (relY < 0) return null
+        val index = relY / step
+        // Mouse in the gap between two buttons counts as neither.
+        if (relY - index * step >= SIDE_BTN_W) return null
+        return when (index) {
+            0 -> Component.literal("Layout: ${when (layout) {
+                Layout.SMALL -> "Small"
+                Layout.WIDE -> "Wide"
+                Layout.TALL -> "Tall"
+                Layout.LARGE -> "Large"
+            }}")
+            1 -> Component.literal("Sort: ${when (repo.sortMode) {
+                InventoryRepo.SortMode.ALPHA -> "A-Z"
+                InventoryRepo.SortMode.COUNT_DESC -> "Count (high to low)"
+                InventoryRepo.SortMode.COUNT_ASC -> "Count (low to high)"
+            }}")
+            2 -> Component.literal("Filter: ${when (repo.filterMode) {
+                InventoryRepo.FilterMode.STORAGE -> "Storage"
+                InventoryRepo.FilterMode.RECIPES -> "Recipes"
+                InventoryRepo.FilterMode.BOTH -> "Both"
+            }}")
+            3 -> Component.literal("Kind: ${when (repo.kindMode) {
+                InventoryRepo.KindMode.ITEMS_ONLY -> "Items"
+                InventoryRepo.KindMode.FLUIDS_ONLY -> "Fluids"
+                InventoryRepo.KindMode.BOTH -> "Both"
+            }}")
+            4 -> Component.literal(
+                "Auto-focus search: ${if (ClientConfig.invTerminalAutoFocusSearch) "On" else "Off"}"
+            )
+            else -> null
+        }
     }
 
     /** Short label shown centered over the grid when the Handheld is disconnected.

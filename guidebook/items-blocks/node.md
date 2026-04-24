@@ -3,13 +3,16 @@ navigation:
   parent: items-blocks/index.md
   icon: node
   title: Node
+categories:
+  - connectable
+description: the building block of every network
 item_ids:
 - nodeworks:node
 ---
 
 # Node
 
-A Node is the block that holds cards and joins other Connectables to a
+A Node is the block that holds [Cards](../nodeworks-mechanics/cards.md) and joins other Connectables to a
 network. Every Nodeworks network is built from one or more nodes.
 
 <BlockImage scale="6" id="node" />
@@ -22,7 +25,7 @@ network. Every Nodeworks network is built from one or more nodes.
 ## Faces and Cards
 
 A node has six faces, one per direction. Each face has 9 card slots, and the
-cards on a face only affect the block adjacent to that face. That lets one node
+[Cards](../nodeworks-mechanics/cards.md) on a face only affect the block adjacent to that face. That lets one node
 do different things on different sides (e.g. pull from a chest on top while
 feeding a furnace on the north)
 

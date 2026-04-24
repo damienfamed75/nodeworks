@@ -485,6 +485,26 @@ class InventoryTerminalMenu(
         }
     }
 
+    /**
+     * True when [invIndex] (a raw [playerInventory] index, 0–35) points at the
+     * exact Portable ItemStack this menu was opened against. Used to block
+     * interactions with the Portable's own slot for the duration of the menu:
+     * picking it up closes the menu or leaves the state inconsistent, and
+     * merging items onto it breaks the expected "this is my handheld" model.
+     *
+     * Always false when the menu isn't driving a Handheld (no
+     * [crystalHolderProvider]), so the fixed terminal's callers are unaffected.
+     * Identity comparison (`===`) ensures other Portables the player might
+     * own don't get locked — only the specific stack driving this menu.
+     */
+    private fun isHeldPortableInvSlot(invIndex: Int): Boolean {
+        val holder = crystalHolderProvider ?: return false
+        if (invIndex < 0 || invIndex >= playerInventory.containerSize) return false
+        val held = holder()
+        if (held.isEmpty) return false
+        return playerInventory.getItem(invIndex) === held
+    }
+
     private fun snapshotCraftPattern(): List<String> {
         return (0 until craftingContainer.containerSize).map { i ->
             val stack = craftingContainer.getItem(i)
@@ -713,6 +733,13 @@ class InventoryTerminalMenu(
         // Map virtual slot index to actual inventory index
         // Virtual: 0-26 = main inventory (inv slots 9-35), 27-35 = hotbar (inv slots 0-8)
         val invIndex = if (slotIndex < 27) slotIndex + 9 else slotIndex - 27
+
+        // Block interaction with the Portable's own slot — the stack the
+        // Handheld was opened against. Picking it up mid-session would either
+        // close the menu immediately (stillValid sees empty hand) or leave a
+        // confusing half-state; just refuse the click entirely. Uses identity
+        // (`===`) so other Portables the player might own aren't affected.
+        if (isHeldPortableInvSlot(invIndex)) return
 
         when (action) {
             0 -> { // Left click — swap with carried
@@ -990,6 +1017,9 @@ class InventoryTerminalMenu(
                     // Player inventory (virtual index → real inv index)
                     if (slotIndex < 0 || slotIndex >= 36) continue
                     val invIndex = if (slotIndex < 27) slotIndex + 9 else slotIndex - 27
+                    // Skip the Portable's own slot (Handheld only) — the drag
+                    // shouldn't merge items onto the stack driving this menu.
+                    if (isHeldPortableInvSlot(invIndex)) continue
                     val existing = playerInventory.getItem(invIndex)
                     if (existing.isEmpty) {
                         playerInventory.setItem(invIndex, carried.copyWithCount(amount))
@@ -1043,6 +1073,9 @@ class InventoryTerminalMenu(
         // Collect from player inventory
         for (i in 0 until playerInventory.containerSize) {
             if (result.count >= maxStack) break
+            // Skip the Portable's own slot (Handheld only) — we don't want to
+            // vacuum the stack that's driving this menu into the cursor.
+            if (isHeldPortableInvSlot(i)) continue
             val stack = playerInventory.getItem(i)
             if (!stack.isEmpty && ItemStack.isSameItemSameComponents(result, stack)) {
                 val take = minOf(stack.count, maxStack - result.count)

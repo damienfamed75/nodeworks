@@ -3,6 +3,9 @@ navigation:
   parent: items-blocks/index.md
   icon: storage_card
   title: Storage Card
+categories:
+  - card
+description: marks the adjacent block as part of network storage
 item_ids:
 - nodeworks:storage_card
 ---

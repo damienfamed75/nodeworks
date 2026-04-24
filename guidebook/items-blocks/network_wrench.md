@@ -5,6 +5,7 @@ navigation:
   title: Network Wrench
 categories:
   - tool
+description: used to wire [Connectables](../nodeworks-mechanics/connectables.md) into a network
 item_ids:
 - nodeworks:network_wrench
 ---

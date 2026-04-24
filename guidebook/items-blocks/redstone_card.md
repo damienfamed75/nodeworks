@@ -3,6 +3,9 @@ navigation:
   parent: items-blocks/index.md
   icon: redstone_card
   title: Redstone Card
+categories:
+  - card
+description: reads and writes redstone signals at the installed node face
 item_ids:
 - nodeworks:redstone_card
 ---
