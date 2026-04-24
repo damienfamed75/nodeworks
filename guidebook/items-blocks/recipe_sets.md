@@ -85,5 +85,7 @@ coordinates with whichever external machine actually carries out the recipe.
 
 ## Recipes
 
-<RecipeFor id="instruction_set" />
-<RecipeFor id="processing_set" />
+<Row>
+    <RecipeFor id="instruction_set" />
+    <RecipeFor id="processing_set" />
+</Row>

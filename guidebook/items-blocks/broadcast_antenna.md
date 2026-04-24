@@ -21,12 +21,13 @@ can read/write to the network anywhere in range
 touching <ItemLink id="processing_storage" />) collection of <ItemLink id="processing_set" />s
 which another network can use for [autocrafting](../nodeworks-mechanics/autocrafting.md)
 
-<GameScene zoom="3" interactive={true} paddingTop="20" paddingLeft="50" paddingRight="50">
+<GameScene zoom="4" paddingTop="30" paddingLeft="60" paddingRight="60">
+  <IsometricCamera yaw="180" roll="0" pitch="0" />
   <ImportStructure src="../assets/assemblies/broadcast_antenna_uses.snbt" />
   <BoxAnnotation min="0 0 0" max="2 1 1">
     Both Processing Storage blocks are being broadcasted
   </BoxAnnotation>
-  <BoxAnnotation min="2 0 0" max="3 1 1">
+  <BoxAnnotation min="3 0 0" max="4 1 1">
     Being broadcasted for Portable Inventory Terminals
   </BoxAnnotation>
 </GameScene>
