@@ -132,6 +132,19 @@ class InstructionStorageBlockEntity(
         if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
+            // Queue each cluster-adjacent sibling for revalidation next tick. By
+            // the time the drain runs, this BE is fully gone, so the siblings'
+            // propagate BFS won't cross back through us — halves of a split
+            // cluster correctly re-derive their own networkId (or lose it).
+            // Deferring via the revalidation queue (instead of propagating now)
+            // avoids traversing this about-to-be-removed position as a cluster
+            // neighbor.
+            for (dir in Direction.entries) {
+                val neighbor = worldPosition.relative(dir)
+                if (lvl.isLoaded(neighbor) && lvl.getBlockEntity(neighbor) is InstructionStorageBlockEntity) {
+                    NodeConnectionHelper.queueRevalidation(lvl, neighbor)
+                }
+            }
         }
         super.setRemoved()
     }
@@ -193,6 +206,10 @@ class InstructionStorageBlockEntity(
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        val sideLabel = if (level?.isClientSide == true) "CLIENT" else "SERVER"
+        org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
+            "InstructionStorage.loadAdditional [{}] pos={} networkId={}", sideLabel, worldPosition, networkId
+        )
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         connections.clear()
         connections.addAll(input.getBlockPosList("connections"))

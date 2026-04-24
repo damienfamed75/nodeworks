@@ -4,12 +4,16 @@ import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.VariableBlock
+import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.level.ClipContext
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.phys.HitResult
 import net.minecraft.world.phys.shapes.CollisionContext
 import java.util.concurrent.ConcurrentHashMap
@@ -253,6 +257,11 @@ object NodeConnectionHelper {
         val coveredThisTick = propagatedThisTick(level)
         if (!coveredThisTick.add(startPos.asLong())) return
 
+        val dbgStartBe = level.getBlockEntity(startPos)
+        org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
+            "propagateNetworkId start={} startEntity={}",
+            startPos, dbgStartBe?.javaClass?.simpleName ?: "null"
+        )
         val visited = LinkedHashSet<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         visited.add(startPos)
@@ -265,6 +274,24 @@ object NodeConnectionHelper {
                 if (!level.isLoaded(conn)) continue
                 if (isPairBlocked(level, pos, conn)) continue
                 if (visited.add(conn)) queue.add(conn)
+            }
+            // Cluster-storage adjacency is a connection for network-color purposes
+            // even though there's no laser between neighboring Instruction/Processing
+            // Storage blocks. Without this step, only the storage that touches a
+            // Node via laser inherits the color — trailing storages in a CNSSS
+            // chain stay default-grey. Mirrors the cluster BFS in
+            // InstructionStorageBlockEntity.getAllInstructionSets /
+            // ProcessingStorageBlockEntity.getAllProcessingApis so the visual
+            // matches the logical recipe/API pool.
+            val clusterNeighbors = clusterNeighborsOf(level, pos, entity)
+            if (clusterNeighbors.isNotEmpty()) {
+                org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
+                    "  cluster step at {} ({}) -> {} neighbors: {}",
+                    pos, entity.javaClass.simpleName, clusterNeighbors.size, clusterNeighbors
+                )
+            }
+            for (clusterPos in clusterNeighbors) {
+                if (visited.add(clusterPos)) queue.add(clusterPos)
             }
         }
 
@@ -282,16 +309,26 @@ object NodeConnectionHelper {
             }
         }
 
+        org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
+            "propagateNetworkId visited={} foundControllerId={}",
+            visited.size, foundId
+        )
+
         // Update all visited nodes and sync to client
         for (pos in visited) {
             val entity = getConnectable(level, pos) ?: continue
             if (entity.networkId != foundId) {
+                val before = entity.networkId
                 entity.networkId = foundId
                 val be = entity as? net.minecraft.world.level.block.entity.BlockEntity
                 if (be != null) {
                     be.setChanged()
                     level.sendBlockUpdated(pos, be.blockState, be.blockState, net.minecraft.world.level.block.Block.UPDATE_CLIENTS)
                 }
+                org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
+                    "  assigned networkId at {} ({}): {} -> {}",
+                    pos, be?.javaClass?.simpleName, before, foundId
+                )
             }
         }
     }
@@ -323,10 +360,37 @@ object NodeConnectionHelper {
      *
      *  If any cache entry changed, a propagate is queued; per-tick dedup means N connectables in one
      *  subgraph loading in the same tick only BFS that subgraph once. */
+    /** Face-adjacent positions whose BlockEntity is the same cluster-storage class
+     *  as [entity]. Empty for non-cluster connectables. Loaded-chunk check folded in. */
+    private fun clusterNeighborsOf(level: ServerLevel, pos: BlockPos, entity: Connectable): List<BlockPos> {
+        val clusterClass: Class<out BlockEntity> = when (entity) {
+            is InstructionStorageBlockEntity -> InstructionStorageBlockEntity::class.java
+            is ProcessingStorageBlockEntity -> ProcessingStorageBlockEntity::class.java
+            else -> return emptyList()
+        }
+        val out = ArrayList<BlockPos>(6)
+        for (dir in Direction.entries) {
+            val neighbor = pos.relative(dir)
+            if (!level.isLoaded(neighbor)) continue
+            if (clusterClass.isInstance(level.getBlockEntity(neighbor))) out.add(neighbor)
+        }
+        return out
+    }
+
     fun revalidateOnLoad(level: ServerLevel, self: Connectable) {
         val pos = self.getBlockPos()
         val connections = self.getConnections()
-        if (connections.isEmpty()) return
+        // Cluster storages have adjacency-based connectivity that isn't captured
+        // in [connections] — a newly-placed storage in the middle of a cluster
+        // has zero laser edges but still needs a propagate to inherit the network
+        // color from its cluster siblings. Always run a propagate for them and
+        // return before the LOS-cache-healing path below (which is pointless
+        // without laser connections to reconcile).
+        val isClusterStorage = self is InstructionStorageBlockEntity || self is ProcessingStorageBlockEntity
+        if (connections.isEmpty()) {
+            if (isClusterStorage) propagateNetworkId(level, pos)
+            return
+        }
 
         var anyChanged = false
         for (targetPos in connections) {
@@ -342,7 +406,11 @@ object NodeConnectionHelper {
                 anyChanged = true
             }
         }
-        if (anyChanged) propagateNetworkId(level, pos)
+        // Cluster storages also need a propagate when LOS didn't flip, so a
+        // storage that loaded attached to a live network picks up the color for
+        // its cluster siblings. The per-tick dedup in propagateNetworkId keeps
+        // a run of loading cluster blocks from re-BFSing the same network.
+        if (anyChanged || isClusterStorage) propagateNetworkId(level, pos)
     }
 
     fun removeAllConnections(level: ServerLevel, entity: Connectable) {

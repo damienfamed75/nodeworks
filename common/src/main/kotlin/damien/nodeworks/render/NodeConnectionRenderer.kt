@@ -59,6 +59,10 @@ object NodeConnectionRenderer {
         for (conn in startConnectable.getConnections()) {
             if (!isConnectionBlocked(startPos, conn) && visited.add(conn)) queue.add(conn)
         }
+        // Seed cluster-adjacency edges from the start position, same reasoning as
+        // the server BFS — trailing cluster storages have no laser connections so
+        // they'd otherwise be unreachable from here.
+        enqueueClusterNeighbors(level, startPos, startEntity, visited, queue)
         while (queue.isNotEmpty() && visited.size < 32) {
             val pos = queue.removeFirst()
             val entity = level.getBlockEntity(pos) ?: continue
@@ -67,8 +71,37 @@ object NodeConnectionRenderer {
             for (conn in connectable.getConnections()) {
                 if (!isConnectionBlocked(pos, conn) && visited.add(conn)) queue.add(conn)
             }
+            enqueueClusterNeighbors(level, pos, entity, visited, queue)
         }
         return null
+    }
+
+    /** Enqueue face-adjacent cluster siblings of a storage BE. No-op for non-storage
+     *  BEs. Used by both [bfsReachable] and [findController] to walk the
+     *  adjacency-based connections that Instruction/Processing Storage blocks form. */
+    private fun enqueueClusterNeighbors(
+        level: net.minecraft.world.level.Level,
+        pos: BlockPos,
+        entity: net.minecraft.world.level.block.entity.BlockEntity?,
+        visited: MutableSet<BlockPos>,
+        queue: ArrayDeque<BlockPos>,
+    ) {
+        val instr = entity is damien.nodeworks.block.entity.InstructionStorageBlockEntity
+        val proc = entity is damien.nodeworks.block.entity.ProcessingStorageBlockEntity
+        if (!instr && !proc) return
+        for (dir in Direction.entries) {
+            val neighbor = pos.relative(dir)
+            if (neighbor in visited) continue
+            if (!level.isLoaded(neighbor)) continue
+            val neighborBe = level.getBlockEntity(neighbor)
+            val sameCluster =
+                (instr && neighborBe is damien.nodeworks.block.entity.InstructionStorageBlockEntity) ||
+                (proc && neighborBe is damien.nodeworks.block.entity.ProcessingStorageBlockEntity)
+            if (sameCluster) {
+                visited.add(neighbor)
+                queue.add(neighbor)
+            }
+        }
     }
 
     /** Convenience: find the network color for a position. Checks registry first, falls back to BFS. */
@@ -188,7 +221,8 @@ object NodeConnectionRenderer {
 
         while (queue.isNotEmpty()) {
             val pos = queue.removeFirst()
-            val connectable = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
+            val entity = level.getBlockEntity(pos)
+            val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
             for (targetPos in connectable.getConnections()) {
                 if (targetPos in reachablePositions) continue
                 if (isConnectionBlocked(pos, targetPos)) continue
@@ -196,6 +230,14 @@ object NodeConnectionRenderer {
                 reachablePositions.add(targetPos)
                 queue.add(targetPos)
             }
+            // Cluster-storage adjacency: Instruction/Processing Storages cluster
+            // via face adjacency, not lasers. Without this walk, only the storage
+            // laser-wired to a Node would be reachable — trailing storages in a
+            // CNSSS chain would fail the `isReachable` gate in
+            // ConnectableBER.resolveNetworkColor and render with the default grey
+            // color despite having a correctly synced networkId. Mirrors the
+            // server-side cluster traversal in NodeConnectionHelper.propagateNetworkId.
+            enqueueClusterNeighbors(level, pos, entity, reachablePositions, queue)
         }
     }
 
