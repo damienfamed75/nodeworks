@@ -61,6 +61,20 @@ object NeoForgeClientSetup {
         // displays them in the controls menu.
         NodeworksKeyBindings.register(modBus)
 
+        // Client-side recipe-sync cache. Vanilla 26.1 stopped syncing the
+        // full recipe set to clients; NeoForge keeps the old behavior alive
+        // by firing RecipesReceivedEvent with the full RecipeMap on every
+        // server update. We use it to keep the Soul Sand Infusion client
+        // cache current (and clear it when the player disconnects). HIGHEST
+        // priority so our cache is populated before JEI's own reload reads
+        // from it during registerRecipes.
+        NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST) { event: net.neoforged.neoforge.client.event.RecipesReceivedEvent ->
+            damien.nodeworks.recipe.SoulSandInfusionClientCache.refresh(event.recipeMap)
+        }
+        NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingOut ->
+            damien.nodeworks.recipe.SoulSandInfusionClientCache.clear()
+        }
+
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
         // We cancel the event to prevent JEI from seeing it, then manually forward to our screen.

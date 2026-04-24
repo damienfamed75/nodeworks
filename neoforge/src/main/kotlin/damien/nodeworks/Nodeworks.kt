@@ -59,6 +59,7 @@ class Nodeworks(modBus: IEventBus) {
         NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
         NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
         NeoForge.EVENT_BUS.addListener(::onRegisterCommands)
+        NeoForge.EVENT_BUS.addListener(::onDatapackSync)
 
         // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber)
         damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
@@ -82,6 +83,16 @@ class Nodeworks(modBus: IEventBus) {
             ModItems.initialize()
             ModBlockEntities.initialize()
             damien.nodeworks.registry.ModEntityTypes.initialize()
+            // Recipe types + serializers + display types. Ordering:
+            //   1. ModRecipeTypes — the RecipeType marker the recipe class references.
+            //   2. ModRecipeDisplayTypes — the display Type referenced by Recipe.display()
+            //      implementations. Must be registered before the serializer (below)
+            //      because constructing a Recipe eagerly may touch display Type.
+            //   3. ModRecipeSerializers — the MapCodec/StreamCodec pair that loads
+            //      our JSON and syncs over the network.
+            damien.nodeworks.registry.ModRecipeTypes.initialize()
+            damien.nodeworks.registry.ModRecipeDisplayTypes.initialize()
+            damien.nodeworks.registry.ModRecipeSerializers.initialize()
             damien.nodeworks.registry.ModCreativeTab.initialize()
         }
 
@@ -564,6 +575,18 @@ class Nodeworks(modBus: IEventBus) {
             event.cancellationResult = result
             event.isCanceled = true
         }
+    }
+
+    // Opts our recipe types into the server → client sync. Vanilla 26.1 only
+    // syncs a narrow set (smelting, stonecutter, etc.) for display purposes.
+    // Without this call the client's RecipeMap has our type key but no
+    // entries, so JEI + GuideME can't find the recipe even though gameplay
+    // (which goes through the server) works fine.
+    //
+    // Fires on every player join AND on `/reload`, so the client cache stays
+    // current across datapack reloads.
+    private fun onDatapackSync(event: net.neoforged.neoforge.event.OnDatapackSyncEvent) {
+        event.sendRecipes(damien.nodeworks.registry.ModRecipeTypes.SOUL_SAND_INFUSION)
     }
 }
 

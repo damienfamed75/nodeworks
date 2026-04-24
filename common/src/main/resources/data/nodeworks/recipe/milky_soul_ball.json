@@ -1,0 +1,8 @@
+{
+  "type": "nodeworks:soul_sand_infusion",
+  "held": "minecraft:milk_bucket",
+  "result": {
+    "id": "nodeworks:milky_soul_ball",
+    "count": 4
+  }
+}

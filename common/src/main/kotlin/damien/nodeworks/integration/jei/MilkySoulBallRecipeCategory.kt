@@ -63,11 +63,15 @@ class MilkySoulBallRecipeCategory(guiHelper: IGuiHelper) : IRecipeCategory<Milky
     override fun getHeight(): Int = H
 
     override fun setRecipe(builder: IRecipeLayoutBuilder, recipe: MilkySoulBallRecipe, focuses: IFocusGroup) {
-        // Milk bucket — top-left input
-        builder.addSlot(RecipeIngredientRole.INPUT, 1, 1).addItemStack(recipe.milk)
-        // Soul sand — bottom-left input
-        builder.addSlot(RecipeIngredientRole.INPUT, 1, 21).addItemStack(recipe.soulSand)
-        // 4× Milky Soul Ball — right output
+        // Held item — top-left. `addIngredients(Ingredient)` expands tag-based
+        // recipes into the full set of matching items so JEI rotates through
+        // them in the display.
+        builder.addSlot(RecipeIngredientRole.INPUT, 1, 1).addIngredients(recipe.held)
+        // Soul sand — bottom-left. Always the same for this recipe type, so
+        // hardcoded here instead of carried on each recipe.
+        builder.addSlot(RecipeIngredientRole.INPUT, 1, 21)
+            .addItemStack(ItemStack(net.minecraft.world.level.block.Blocks.SOUL_SAND))
+        // Result — right side.
         builder.addSlot(RecipeIngredientRole.OUTPUT, 99, 12).addItemStack(recipe.result)
     }
 

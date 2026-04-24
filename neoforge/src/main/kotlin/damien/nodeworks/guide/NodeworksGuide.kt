@@ -42,6 +42,13 @@ object NodeworksGuide {
             .extension(TagCompiler.EXTENSION_POINT, NodeworksSceneTagCompiler())
             .extension(TagCompiler.EXTENSION_POINT, LuaCodeTagCompiler())
             .extension(TagCompiler.EXTENSION_POINT, CategoryIndexDescriptionsTagCompiler())
+            // Custom RecipeType renderers — each mapping supplier maps a
+            // Mojang RecipeType to an LytBlock factory. Add one per custom
+            // recipe type we want GuideME to render.
+            .extension(
+                guideme.compiler.tags.RecipeTypeMappingSupplier.EXTENSION_POINT,
+                SoulSandInfusionRecipeContribution(),
+            )
             .build()
         instance = guide
         log.info("Registered guide id={} folder=nodeworksguide (expected assets path: assets/nodeworks/nodeworksguide/)", ID)

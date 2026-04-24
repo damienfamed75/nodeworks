@@ -4,7 +4,6 @@ import damien.nodeworks.network.SetInstructionGridPayload
 import damien.nodeworks.network.SetProcessingApiDataPayload
 import damien.nodeworks.network.SetProcessingApiSlotPayload
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.registry.ModItems
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.screen.ProcessingSetScreen
@@ -79,16 +78,20 @@ class NodeworksJeiPlugin : IModPlugin {
     }
 
     override fun registerRecipes(registration: IRecipeRegistration) {
-        registration.addRecipes(
-            MilkySoulBallRecipeCategory.RECIPE_TYPE,
-            listOf(
-                MilkySoulBallRecipe(
-                    ItemStack(Items.MILK_BUCKET),
-                    ItemStack(Items.SOUL_SAND),
-                    ItemStack(ModItems.MILKY_SOUL_BALL, 4)
-                )
-            )
-        )
+        // Read the Soul Sand Infusion recipe set from our client-side cache.
+        // Vanilla 26.1 doesn't sync the full recipe list to clients — see
+        // `SoulSandInfusionClientCache` and the `RecipesReceivedEvent` hook
+        // in `NeoForgeClientSetup` for how the cache stays current. The cache
+        // is populated BEFORE JEI's reload callback runs (HIGHEST priority on
+        // our listener), so by the time this method executes it has whatever
+        // recipes the server just synced — including any data-pack additions
+        // without code changes.
+        val recipes = damien.nodeworks.recipe.SoulSandInfusionClientCache.recipes()
+            .map { holder ->
+                val recipe = holder.value()
+                MilkySoulBallRecipe(recipe.heldIngredient, recipe.result.create())
+            }
+        registration.addRecipes(MilkySoulBallRecipeCategory.RECIPE_TYPE, recipes)
     }
 
     override fun registerRecipeCatalysts(registration: IRecipeCatalystRegistration) {
