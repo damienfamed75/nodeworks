@@ -498,7 +498,10 @@ class ScriptEngine(
         val t = LuaTable()
         val selfRef = this
 
-        t.set("first", object : TwoArgFunction() {
+        // :getFirst(type) — first card or variable matching [type] AND this channel,
+        // or nil. Renamed from `:first` to keep every "fetch" method in the API on
+        // the `:get*` prefix (`network:get`, `network:getAll`, `Channel:get`).
+        t.set("getFirst", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
                 val type = typeArg.checkjstring()
                 if (type == "variable") {
@@ -512,26 +515,33 @@ class ScriptEngine(
             }
         })
 
-        t.set("all", object : VarArgFunction() {
+        // :getAll(type?) — `HandleList<T>` of every member matching [type] AND this
+        // channel. Omitting [type] returns a HandleList over every member of the
+        // channel; the broadcast method set is then empty (mixed types have no
+        // single broadcast contract), so only `:list()` / `:count()` are useful.
+        t.set("getAll", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
-                // arg 1 is `self`; the optional type lives at arg 2.
                 val type: String? = if (args.narg() >= 2 && !args.arg(2).isnil()) args.checkjstring(2) else null
-                val result = LuaTable()
-                var idx = 1
+                val members = mutableListOf<LuaValue>()
                 if (type == null || type == "variable") {
                     for (v in snapshot.variables) {
                         if (v.channel != color) continue
-                        result.set(idx++, VariableHandle.create(v, level))
+                        members.add(VariableHandle.create(v, level))
                     }
                 }
                 if (type != "variable") {
                     for (card in snapshot.allCards()) {
                         if (card.channel != color) continue
                         if (type != null && card.capability.type != type) continue
-                        result.set(idx++, selfRef.createCardTable(card, card.effectiveAlias))
+                        members.add(selfRef.createCardTable(card, card.effectiveAlias))
                     }
                 }
-                return result
+                val broadcasts = when {
+                    type == null -> emptySet()
+                    type == "variable" -> HandleListMethods.methodsForHandleType("VariableHandle")
+                    else -> HandleListMethods.methodsForCapabilityType(type)
+                }
+                return selfRef.createHandleListTable(members, broadcasts)
             }
         })
 
@@ -549,6 +559,79 @@ class ScriptEngine(
         })
 
         return t
+    }
+
+    /**
+     * Build the Lua handle returned by `network:getAll(type)` and `Channel:getAll(type)`.
+     *
+     * A `HandleList<T>` exposes:
+     *   * `:list()` — the underlying array of T (escape hatch for per-member work)
+     *   * `:count()` — number of members
+     *   * one fan-out method per entry in [HandleListMethods] for the element type —
+     *     calling `list:set(true)` on a `HandleList<RedstoneCard>` invokes `:set(true)`
+     *     on each member, return values discarded.
+     *
+     * [memberTables] is the already-built per-element Lua tables (output of
+     * `createCardTable` / `VariableHandle.create`). [broadcastMethodNames] is read
+     * from [HandleListMethods] and tells us which methods to fan out — the registry
+     * is the single source of truth so adding a new card / device type only requires
+     * updating that one file for HandleList participation.
+     */
+    private fun createHandleListTable(
+        memberTables: List<LuaValue>,
+        broadcastMethodNames: Set<String>,
+    ): LuaTable {
+        val list = LuaTable()
+
+        // :list() — return a Lua array of every member. Built lazily on call so we
+        // can hand back a fresh table each time (callers iterating the result with
+        // ipairs shouldn't accidentally mutate the HandleList's underlying state).
+        list.set("list", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue {
+                val arr = LuaTable()
+                for ((i, m) in memberTables.withIndex()) arr.set(i + 1, m)
+                return arr
+            }
+        })
+
+        // :count() — number of members. Cheap, but worth a dedicated method so
+        // scripts don't need to call :list() and `#` it just to count.
+        list.set("count", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue =
+                LuaValue.valueOf(memberTables.size)
+        })
+
+        // Broadcast wrappers — one per registered method name. Each wrapper looks
+        // up the matching field on every member at call time and invokes it with
+        // the same args. Return values are discarded; the HandleList model is
+        // strictly write-only by design (see HandleListMethods doc comment).
+        for (methodName in broadcastMethodNames) {
+            list.set(methodName, object : VarArgFunction() {
+                override fun invoke(args: Varargs): Varargs {
+                    // args.arg(1) is `self` (the HandleList table); the user's
+                    // argument list starts at index 2 and runs to args.narg().
+                    val userArgs = if (args.narg() <= 1) {
+                        LuaValue.NONE
+                    } else {
+                        val collected = arrayOfNulls<LuaValue>(args.narg() - 1)
+                        for (i in 1 until args.narg()) collected[i - 1] = args.arg(i + 1)
+                        @Suppress("UNCHECKED_CAST")
+                        LuaValue.varargsOf(collected as Array<LuaValue>)
+                    }
+                    for (member in memberTables) {
+                        val fn = member.get(methodName)
+                        if (fn.isfunction()) {
+                            // Invoke as method: pass member as first arg so the
+                            // wrapped function sees `self` correctly.
+                            fn.invoke(LuaValue.varargsOf(arrayOf(member), userArgs))
+                        }
+                    }
+                    return LuaValue.NIL
+                }
+            })
+        }
+
+        return list
     }
 
     /**
@@ -719,16 +802,28 @@ class ScriptEngine(
             }
         })
 
-        // network:getAll(type) → list of CardHandles matching that type
+        // network:getAll(type) → HandleList<T> for cards matching the capability type,
+        // or HandleList<VariableHandle*> for `"variable"`. Variables share the type
+        // string `"variable"` regardless of declared type (number/string/bool); the
+        // HandleList's broadcast methods lock in to the shared `VariableHandle`
+        // surface (`set`, `cas`). Callers wanting type-specific atomics on every
+        // variable should iterate via `:list()`.
         networkTable.set("getAll", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
                 val type = typeArg.checkjstring()
-                val cards = snapshot.allCards().filter { it.capability.type == type }
-                val result = LuaTable()
-                for ((i, card) in cards.withIndex()) {
-                    result.set(i + 1, createCardTable(card, card.effectiveAlias))
+                if (type == "variable") {
+                    val members = snapshot.variables.map { VariableHandle.create(it, level) as LuaValue }
+                    return createHandleListTable(
+                        members,
+                        HandleListMethods.methodsForHandleType("VariableHandle"),
+                    )
                 }
-                return result
+                val cards = snapshot.allCards().filter { it.capability.type == type }
+                val members = cards.map { createCardTable(it, it.effectiveAlias) as LuaValue }
+                return createHandleListTable(
+                    members,
+                    HandleListMethods.methodsForCapabilityType(type),
+                )
             }
         })
 

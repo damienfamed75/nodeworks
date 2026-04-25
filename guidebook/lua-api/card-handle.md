@@ -11,7 +11,7 @@ description: reference to a single card in a network
 # CardHandle
 
 A reference to a single card on the network. You get one from [`network:get(alias)`](network.md#get)
-or from iterating [`network:getAll(type)`](network.md#getAll).
+or from a [HandleList](handle-list.md) returned by [`network:getAll(type)`](network.md#getAll).
 
 <ItemImage scale="6" id="blank_card" />
 

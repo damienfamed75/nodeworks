@@ -810,20 +810,29 @@ class AutocompletePopup(
         val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
         val receiverType = extractReceiverType(beforeParen, methodName)
 
-        // Channel:all("type") narrowing — the static signature only knows `{ CardHandle… }`.
-        // Pull the literal arg and produce a synthetic ReturnType so `local cards = ch:all("redstone")`
-        // populates containerVars with element=RedstoneCard and downstream paths
-        // (indexed access, for-loop element resolution) all see the right type.
-        if (receiverType == "Channel" && methodName == "all") {
+        // Network:getAll("type") and Channel:getAll("type") narrowing — both return a
+        // `HandleList<T>`. We expose the iteration of `:list()` separately, so for
+        // the for-loop / indexed-access path here we surface the *element* type with
+        // ARRAY container kind. That keeps `for _, c in handleList:list() do c:set(true)`
+        // resolving c as RedstoneCard. The wrapper-aware HandleList<T> string is what
+        // [resolveExpressionType] returns for the scalar local-binding case.
+        if ((receiverType == "Channel" || receiverType == "Network") && methodName == "getAll") {
             val arg = paren.second.trim().trim('"', '\'')
             channelElementType(arg)?.let {
                 return LuaApiDocs.ReturnType(it, LuaApiDocs.Container.ARRAY)
             }
         }
-        if (receiverType == "Channel" && methodName == "first") {
+        if (receiverType == "Channel" && methodName == "getFirst") {
             val arg = paren.second.trim().trim('"', '\'')
             channelElementType(arg)?.let {
                 return LuaApiDocs.ReturnType(it, LuaApiDocs.Container.NONE)
+            }
+        }
+        // HandleList:list() — unwrap the parameterised type and report the element
+        // type so `for _, c in handleList:list() do` knows what `c` is.
+        if (receiverType?.startsWith("HandleList<") == true && methodName == "list") {
+            handleListElement(receiverType)?.let {
+                return LuaApiDocs.ReturnType(it, LuaApiDocs.Container.ARRAY)
             }
         }
 
@@ -894,6 +903,9 @@ class AutocompletePopup(
             // Future similar shapes (e.g. ImporterBuilder vars) will need their own
             // membership sets here.
             if (name in channelLocals) return "Channel"
+            // HandleList<T> local — return the parameterised wrapper so chained
+            // `:list()` can unwrap it via [handleListElement].
+            handleListLocals[name]?.let { return it }
             // Other user-variable types (CardHandle locals, etc.) are still
             // resolved at higher levels where the symbol table is available.
         }
@@ -937,31 +949,46 @@ class AutocompletePopup(
         allReturnTypes[methodName]?.let { return it }
         val receiverType = extractReceiverType(beforeParen, methodName)
 
-        // Channel:first("type") / Channel:all("type") — narrow on the literal arg so
-        // `local x = ch:first("observer")` resolves x as ObserverCard rather than the
-        // static `Channel:first → CardHandle | nil`. Receiver-typed (`Channel`) so
-        // unrelated `:first` / `:all` calls on other types pass through to the regular
-        // scalar lookup. `:all` returns a container, which `resolveExpressionType` can't
-        // express on its own — that path bottoms out in `containerFromIterExpr` for
-        // for-loops and `resolveExpressionReturnType` for indexed access; this method
-        // covers the scalar `:first` use case.
-        if (receiverType == "Channel" && methodName == "first") {
+        // Channel:getFirst("type") narrows the scalar return on the literal arg so
+        // `local x = ch:getFirst("observer")` resolves x as ObserverCard rather
+        // than the static `Channel:getFirst → CardHandle | nil`. Receiver-typed
+        // (`Channel`) so unrelated `:getFirst` calls on other types pass through.
+        if (receiverType == "Channel" && methodName == "getFirst") {
             val arg = parenResult.second.trim().trim('"', '\'')
             channelElementType(arg)?.let { return it }
+        }
+
+        // Network:getAll("type") and Channel:getAll("type") return a HandleList<T>.
+        // Encode the parameterised type as a literal string `"HandleList<T>"` so the
+        // method-list dispatch (which keys off the symbol's type string) can match
+        // both the wrapper and the element. `containerFromIterExpr` decides separately
+        // whether iteration unwraps the wrapper, so storing the wrapper here doesn't
+        // break `for _, c in cards do …` loops over the underlying members.
+        if ((receiverType == "Network" || receiverType == "Channel") && methodName == "getAll") {
+            val arg = parenResult.second.trim().trim('"', '\'')
+            channelElementType(arg)?.let { return "HandleList<$it>" }
         }
 
         return scalarReturnTypeOf(methodName, receiverType)
     }
 
-    /** Map a `Channel:first("type")` / `:all("type")` literal argument to the typed
-     *  card class. Centralised so the chain resolver, the for-loop element resolver,
-     *  and any future caller all agree on the same dispatch table. */
+    /** Map a `Channel:getFirst("type")` / `:getAll("type")` literal argument to the
+     *  typed card class. Centralised so the chain resolver, the for-loop element
+     *  resolver, and any future caller all agree on the same dispatch table. */
     private fun channelElementType(typeArg: String): String? = when (typeArg) {
         "redstone" -> "RedstoneCard"
         "observer" -> "ObserverCard"
         "variable" -> "VariableHandle"
         "io", "storage" -> "CardHandle"
         else -> null
+    }
+
+    /** Pull the element type out of a `HandleList<T>` symbol. Returns null when
+     *  the input isn't a parameterised handle-list. */
+    private fun handleListElement(type: String?): String? {
+        if (type == null) return null
+        val match = Regex("""^HandleList<(\w+)>$""").matchEntire(type) ?: return null
+        return match.groupValues[1]
     }
 
     /** User-defined function return types (scalar only). Rebuilt once per computeSuggestions call. */
@@ -973,6 +1000,12 @@ class AutocompletePopup(
      *  bare receiver in `ch:first("observer")` is a Channel without needing the
      *  full per-variable symbol table threaded through every chain-resolver call. */
     private var channelLocals: Set<String> = emptySet()
+
+    /** Names of locals bound to a HandleList<T> via `local x = network:getAll(...)`
+     *  or `local x = ch:getAll(...)`, mapped to the parameterised type string
+     *  (e.g. `"HandleList<RedstoneCard>"`). Lets [extractReceiverType] surface the
+     *  wrapper type for `pistons:list()` chains where `pistons` is a bare ident. */
+    private var handleListLocals: Map<String, String> = emptyMap()
 
     /** Most recent full-script text stashed by [computeSuggestions] so suggestion helpers
      *  that don't get fullText as a parameter can still inspect the script (e.g. to find
@@ -1148,6 +1181,31 @@ class AutocompletePopup(
             .map { it.groupValues[1] }
             .toSet()
 
+        // Pre-pass: collect HandleList<T> locals so `pistons:list()` resolves the
+        // receiver as the parameterised wrapper. Two shapes get matched:
+        //   * `local x = network:getAll("type")`
+        //   * `local x = <channelVar>:getAll("type")`  (and the chained inline form)
+        // Anything that doesn't pattern-match here just means autocomplete won't
+        // unwrap that particular HandleList — the runtime call still works.
+        run {
+            val pairs = mutableMapOf<String, String>()
+            val pattern = Regex(
+                """\blocal\s+(\w+)\s*=\s*(?:[\w:.()"]+:)?getAll\s*\(\s*"(\w+)"\s*\)"""
+            )
+            for (m in pattern.findAll(fullText)) {
+                val varName = m.groupValues[1]
+                val element = when (m.groupValues[2]) {
+                    "redstone" -> "RedstoneCard"
+                    "observer" -> "ObserverCard"
+                    "variable" -> "VariableHandle"
+                    "io", "storage" -> "CardHandle"
+                    else -> null
+                } ?: continue
+                pairs[varName] = "HandleList<$element>"
+            }
+            handleListLocals = pairs
+        }
+
         // 1a. Explicit scalar type annotations: local x: Type = ...
         Regex("""\blocal\s+(\w+)\s*:\s*(\w+)\??\s*(?:=|\n|$)""").findAll(fullText).forEach {
             symbols[it.groupValues[1]] = it.groupValues[2]
@@ -1235,59 +1293,19 @@ class AutocompletePopup(
                 symbols[varName] = "CardHandle"
             }
         }
-        // Special case: network:getAll("type") — the static signature returns
-        // `{ CardHandle… }` because LuaApiDocs has no arg-aware return-type lookup,
-        // but at the assignment site we know the literal type string and can
-        // narrow the element type so chained ops on a loop-bound element resolve
-        // against the right card-specific method list.
-        Regex("""\blocal\s+(\w+)\s*=\s*network:getAll\s*\(\s*"(\w+)"\s*\)""").findAll(fullText).forEach {
-            val varName = it.groupValues[1]
-            val typeArg = it.groupValues[2]
-            val element = when (typeArg) {
-                "redstone" -> "RedstoneCard"
-                "observer" -> "ObserverCard"
-                else -> "CardHandle"
-            }
-            symbols.putIfAbsent(varName, "{ $element }")
-            containerVars.putIfAbsent(varName, element to LuaApiDocs.Container.ARRAY)
-        }
+        // (network:getAll("type") inference dropped — the arg-aware chain resolver
+        // in [resolveExpressionType] now returns `HandleList<T>`, and the general
+        // `local x = expr` inference pass below routes through it. Keeping the old
+        // `{ T }` regex pass here would shadow the HandleList typing because
+        // `putIfAbsent` runs before the general inference fills in the wrapper.)
 
-        // Special case: network:channel("color"):first("type") — narrow the local to
-        // the typed card class so chained method calls resolve correctly. Mirrors the
-        // existing `network:get` arg-aware inference. Must come BEFORE the bare-channel
-        // case below so the chained match wins on the same line.
-        Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(\s*"\w+"\s*\)\s*:\s*first\s*\(\s*"(\w+)"\s*\)""")
-            .findAll(fullText).forEach {
-                val varName = it.groupValues[1]
-                val typeArg = it.groupValues[2]
-                val element = when (typeArg) {
-                    "redstone" -> "RedstoneCard"
-                    "observer" -> "ObserverCard"
-                    "variable" -> "VariableHandle"
-                    else -> "CardHandle"
-                }
-                symbols.putIfAbsent(varName, element)
-            }
-
-        // Special case: network:channel("color"):all("type") — element-aware container,
-        // same shape as the network:getAll inference so `for _, c in cards do c:set(...)`
-        // resolves against the right method list.
-        Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(\s*"\w+"\s*\)\s*:\s*all\s*\(\s*"(\w+)"\s*\)""")
-            .findAll(fullText).forEach {
-                val varName = it.groupValues[1]
-                val typeArg = it.groupValues[2]
-                val element = when (typeArg) {
-                    "redstone" -> "RedstoneCard"
-                    "observer" -> "ObserverCard"
-                    "variable" -> "VariableHandle"
-                    else -> "CardHandle"
-                }
-                symbols.putIfAbsent(varName, "{ $element }")
-                containerVars.putIfAbsent(varName, element to LuaApiDocs.Container.ARRAY)
-            }
+        // (Chained `network:channel("color"):getFirst("type")` and
+        // `:getAll("type")` narrowing now flows through the arg-aware
+        // [resolveExpressionType] / [resolveExpressionReturnType] in the general
+        // inference pass below, so no dedicated regex pre-passes are needed.)
 
         // Special case: network:channel("color") — narrow the local to `Channel` so
-        // chained `:first("observer")` / `:all(...)` resolve against the channel's
+        // chained `:getFirst("observer")` / `:getAll(...)` resolve against the channel's
         // method list rather than CardHandle's. Negative lookahead `(?!\s*:)` keeps
         // the bare-channel form from competing with the chained-first / chained-all
         // patterns above when both could match the same source line.
@@ -1456,14 +1474,28 @@ class AutocompletePopup(
         val beforeParen = paren.first.trimEnd()
         val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
 
-        // Arg-aware narrowing for `Channel:all("type")` — the static signature returns
-        // `{ CardHandle… }` because LuaApiDocs has no per-arg overloads, but the for-
-        // loop body almost always wants methods on the typed card class. Pull the
-        // literal type string out and pick the matching narrow type via the shared
-        // [channelElementType] dispatch.
-        if (methodName == "all") {
+        // Arg-aware narrowing for `network:getAll("type")` and `Channel:getAll("type")`.
+        // Both return `HandleList<T>` whose `:list()` is what for-loops iterate; we
+        // surface the underlying element type with ARRAY container kind so the body
+        // resolves `c` as the right typed card.
+        if (methodName == "getAll") {
             val arg = paren.second.trim().trim('"', '\'')
             channelElementType(arg)?.let {
+                return it to (forcedWrapper ?: LuaApiDocs.Container.ARRAY)
+            }
+        }
+        // `for _, c in handleList:list() do` — the receiver before `:list` carries
+        // the parameterised wrapper (`HandleList<RedstoneCard>`); unwrap it.
+        // Tries the bare-ident lookup in [handleListLocals] first (covers the
+        // common `local pistons = network:getAll(...); for _, p in pistons:list() do`
+        // shape) and falls back to the chain resolver for inline expressions like
+        // `network:getAll("redstone"):list()`.
+        if (methodName == "list") {
+            val beforeColon = beforeParen.substringBeforeLast(':', "").trimEnd()
+            val bareReceiver = Regex("""(\w+)$""").matchEntire(beforeColon)?.groupValues?.get(1)
+            val wrapperType = bareReceiver?.let { handleListLocals[it] }
+                ?: resolveExpressionType(beforeColon)
+            handleListElement(wrapperType)?.let {
                 return it to (forcedWrapper ?: LuaApiDocs.Container.ARRAY)
             }
         }
@@ -1487,8 +1519,13 @@ class AutocompletePopup(
         val handleSnippet = checkHandleSnippetContext(beforeCursor)
         if (handleSnippet != null) return handleSnippet
 
-        val ctx = parseCursorContext(currentLine, beforeCursor)
+        // Build the symbol table FIRST so [parseCursorContext] (which calls
+        // [resolveExpressionType] → [extractReceiverType]) can see [channelLocals]
+        // and any other type-inference state populated by buildSymbolTable. Without
+        // this ordering a chain like `channel:getAll("redstone"):` resolves the
+        // receiver as null because `channel` isn't yet known to be Channel-typed.
         val symbols = buildSymbolTable(fullText, beforeCursor)
+        val ctx = parseCursorContext(currentLine, beforeCursor)
 
         return when (ctx) {
             is CursorContext.StringArg -> suggestStringArg(ctx)
@@ -1617,12 +1654,12 @@ class AutocompletePopup(
                 ))
             }
 
-            // Inside `:first("…")` / `:all("…")` on a `Channel` receiver — same set of
-            // capability-type hints we offer to `network:getAll`. We can't easily know
-            // the receiver type here without re-resolving the chain, so we surface the
-            // hints whenever the funcExpr ends with `:first` or `:all` and accept a
-            // small false-positive surface (these strings on other receivers).
-            ctx.funcExpr.endsWith(":first") || ctx.funcExpr.endsWith(":all") -> {
+            // Inside `:getFirst("…")` / `:getAll("…")` on a `Channel` receiver — same
+            // set of capability-type hints we offer to `network:getAll`. We can't easily
+            // know the receiver type here without re-resolving the chain, so we surface
+            // the hints whenever the funcExpr ends with `:getFirst` or `:getAll` and
+            // accept a small false-positive surface (these strings on other receivers).
+            ctx.funcExpr.endsWith(":getFirst") || ctx.funcExpr.endsWith(":getAll") -> {
                 fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer", "variable"))
             }
 
@@ -1826,6 +1863,7 @@ class AutocompletePopup(
         Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get", kind = Kind.TYPE),
         Suggestion("ObserverCard", "ObserverCard — observer card from network:get", kind = Kind.TYPE),
         Suggestion("Channel", "Channel — dye-color group from network:channel", kind = Kind.TYPE),
+        Suggestion("HandleList", "HandleList — broadcast list from network:getAll / Channel:getAll", kind = Kind.TYPE),
         Suggestion("Job", "Job — processing handler context from network:handle", kind = Kind.TYPE),
         Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()", kind = Kind.TYPE),
         Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:get", kind = Kind.TYPE),
@@ -2048,6 +2086,41 @@ class AutocompletePopup(
     // ========== Type-based methods and properties ==========
 
     private fun suggestMethodsForType(type: String, partial: String): List<Suggestion> {
+        // HandleList<T> — the parameterised wrapper. Always exposes the universal
+        // `:list()` / `:count()` plus the broadcast (write-only) methods for T,
+        // sourced from [HandleListMethods] so the registry stays the single point
+        // of truth. Unknown T (mixed-type lists from `channel:getAll()` with no
+        // arg) gets only the universal pair.
+        handleListElement(type)?.let { elementType ->
+            val methods = mutableListOf(
+                suggest("list(", "list() → { $elementType }", Kind.METHOD),
+                suggest("count(", "count() → number", Kind.METHOD),
+            )
+            // Map element type → registry key. Cards use capability type strings
+            // ("redstone", "io", …); variables use the typed handle name.
+            val capabilityType = when (elementType) {
+                "RedstoneCard" -> "redstone"
+                "ObserverCard" -> "observer"
+                "CardHandle" -> "io"  // io and storage share methods; pick io
+                else -> null
+            }
+            val broadcastNames = when {
+                capabilityType != null ->
+                    damien.nodeworks.script.HandleListMethods.methodsForCapabilityType(capabilityType)
+                else ->
+                    damien.nodeworks.script.HandleListMethods.methodsForHandleType(elementType)
+            }
+            // Reuse the underlying element-type method's signature & description so
+            // the broadcast version reads identically to the per-member call. The
+            // hover tooltip resolution path (LuaApiDocs.resolveAt) does the same
+            // lookup at hover time, so popup labels and tooltips stay in sync.
+            for (name in broadcastNames) {
+                val sourceDoc = LuaApiDocs.get("${elementType}:${name}")
+                val display = sourceDoc?.signature ?: "$name(...) — broadcast to every member"
+                methods.add(suggest("$name(", display, Kind.METHOD))
+            }
+            return fuzzy(partial, methods)
+        }
         val methods = when (type) {
             "CardHandle" -> listOf(
                 suggest("find(", "find(filter: string) → ItemsHandle?", Kind.METHOD),
@@ -2093,8 +2166,8 @@ class AutocompletePopup(
             }
 
             "Channel" -> listOf(
-                suggest("first(", "first(type: string) → CardHandle?", Kind.METHOD),
-                suggest("all(", "all(type: string?) → CardHandle[]", Kind.METHOD),
+                suggest("getFirst(", "getFirst(type: string) → CardHandle?", Kind.METHOD),
+                suggest("getAll(", "getAll(type: string?) → HandleList", Kind.METHOD),
                 suggest("get(", "get(alias: string) → CardHandle", Kind.METHOD),
             )
 

@@ -149,8 +149,39 @@ object LuaApiDocs {
         )
 
         // ===== Channel =====
+        // ===== HandleList =====
+        // Returned by `network:getAll(type)` and `Channel:getAll(type)`. Broadcasts
+        // *write* methods across every member — calling `:set(true)` on a
+        // HandleList<RedstoneCard> invokes set on each card. Read methods don't
+        // broadcast (their return value is the whole point); use `:list()` and a
+        // for-loop when you need per-member reads.
+        put(
+            "HandleList", Doc(
+                signature = "type HandleList",
+                description = "A list of cards or devices that broadcasts write methods across every member. Use :list() for per-member access.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/handle-list.md",
+            )
+        )
+        put(
+            "HandleList:list", Doc(
+                signature = "HandleList:list() → { T… }",
+                description = "Returns the underlying array so scripts can iterate per-member or read individual values.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/handle-list.md#list",
+            )
+        )
+        put(
+            "HandleList:count", Doc(
+                signature = "HandleList:count() → number",
+                description = "Number of members in the list.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/handle-list.md#count",
+            )
+        )
+
         // Returned by `network:channel(color)` — scopes lookups to one dye-color group
-        // covering both cards and devices. The bundled `:first` / `:all` / `:get`
+        // covering both cards and devices. The bundled `:getFirst` / `:getAll` / `:get`
         // mirror the global accessors so once you've narrowed by channel everything
         // reads the same way as the un-scoped network API.
         put(
@@ -162,19 +193,19 @@ object LuaApiDocs {
             )
         )
         put(
-            "Channel:first", Doc(
-                signature = "Channel:first(type: string) → CardHandle | nil",
+            "Channel:getFirst", Doc(
+                signature = "Channel:getFirst(type: string) → CardHandle | nil",
                 description = "First card or device of [type] on this channel, or nil if none match.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/network.md#channel-first",
+                guidebookRef = "nodeworks:lua-api/network.md#channel-getfirst",
             )
         )
         put(
-            "Channel:all", Doc(
-                signature = "Channel:all(type: string?) → { CardHandle… }",
-                description = "Every card or device on this channel matching [type]. Omit [type] to walk every member.",
+            "Channel:getAll", Doc(
+                signature = "Channel:getAll(type: string?) → HandleList",
+                description = "HandleList of every card or device on this channel matching [type]. Omit [type] for every member.",
                 category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/network.md#channel-all",
+                guidebookRef = "nodeworks:lua-api/network.md#channel-getall",
             )
         )
         put(
@@ -195,8 +226,8 @@ object LuaApiDocs {
         )
         put(
             "Network:getAll", Doc(
-                signature = "Network:getAll(type: string) → { CardHandle… }",
-                description = "Returns every card on the network whose capability type matches.",
+                signature = "Network:getAll(type: string) → HandleList",
+                description = "HandleList of every card or variable matching this type. Broadcasts write methods across all members.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#getAll",
             )
@@ -1096,6 +1127,26 @@ object LuaApiDocs {
         return methodReturnType(methodName, receiverType)?.type
     }
 
+    /** Look up the doc for `ownerType:method` (or `.field`), with HandleList<T>
+     *  awareness: a hover on a broadcast method falls back to the underlying T's
+     *  doc so users see the real signature + description + guidebook link instead
+     *  of a synthetic broadcast string. Universal `:list()` / `:count()` resolve
+     *  through the bare `HandleList` type entry. */
+    private fun lookupTypedMethod(ownerType: String, separator: String, methodName: String): Doc? {
+        // Direct hit (e.g. `RedstoneCard:set` for an unwrapped type).
+        entries["$ownerType$separator$methodName"]?.let { return it }
+        // Parameterised HandleList<T>: try the universal HandleList entry first,
+        // then fall back to T's per-method doc so broadcast methods like
+        // `pistons:set` borrow `RedstoneCard:set`'s tooltip.
+        val handleListMatch = Regex("""^HandleList<(\w+)>$""").matchEntire(ownerType)
+        if (handleListMatch != null) {
+            val element = handleListMatch.groupValues[1]
+            entries["HandleList$separator$methodName"]?.let { return it }
+            entries["$element$separator$methodName"]?.let { return it }
+        }
+        return null
+    }
+
     fun resolveAt(
         tokens: List<LuaTokenizer.Token>,
         index: Int,
@@ -1126,7 +1177,7 @@ object LuaApiDocs {
                     if (owner.text == ")") {
                         val chainType = resolveChainEndType(tokens, k, variableTypes)
                         if (chainType != null) {
-                            entries["$chainType${sep.text}${tok.text}"]?.let { return it }
+                            lookupTypedMethod(chainType, sep.text, tok.text)?.let { return it }
                         }
                     } else {
                         val ownerEligible = owner.type == LuaTokenizer.TokenType.DEFAULT ||
@@ -1134,10 +1185,10 @@ object LuaApiDocs {
                         if (ownerEligible) {
                             entries["${owner.text}${sep.text}${tok.text}"]?.let { return it }
                             moduleTypes[owner.text]?.let { ownerType ->
-                                entries["$ownerType${sep.text}${tok.text}"]?.let { return it }
+                                lookupTypedMethod(ownerType, sep.text, tok.text)?.let { return it }
                             }
                             variableTypes[owner.text]?.let { ownerType ->
-                                entries["$ownerType${sep.text}${tok.text}"]?.let { return it }
+                                lookupTypedMethod(ownerType, sep.text, tok.text)?.let { return it }
                             }
                         }
                     }

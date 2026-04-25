@@ -46,7 +46,10 @@ local count = network:get("count")        -- gets a Variable named "count"
 
 ## getAll
 
-Returns a list of all <ItemLink id="storage_card" />, <ItemLink id="io_card" /> or <ItemLink id="redstone_card" />'s in the Network given a type.
+Returns a [HandleList](handle-list.md) of every card or variable matching the
+given type. The HandleList broadcasts write methods (`:set`, `:onChange`, …)
+across every member, so toggling many pistons or registering a handler on
+many observers takes one line. To iterate per-member, call `:list()`.
 
 <GameScene zoom="5" interactive={true} paddingLeft="50" paddingRight="60">
   <ImportStructure src="../assets/assemblies/chest_connected_storage_card.snbt" />
@@ -60,8 +63,12 @@ Returns a list of all <ItemLink id="storage_card" />, <ItemLink id="io_card" /> 
 
 <LuaCode>
 ```lua
-local storages = network:getAll("storage") -- get all storage cards
-for _, storage in storages do
+-- Broadcast: turn every redstone card on at once
+network:getAll("redstone"):set(true)
+
+-- Iterate per-member when you need the value of a read method
+local storages = network:getAll("storage")
+for _, storage in storages:list() do
     print(storage.name)
 end
 -- "storage_0"
