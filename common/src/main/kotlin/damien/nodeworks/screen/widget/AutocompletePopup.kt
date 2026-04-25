@@ -809,6 +809,24 @@ class AutocompletePopup(
         val beforeParen = paren.first.trimEnd()
         val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
         val receiverType = extractReceiverType(beforeParen, methodName)
+
+        // Channel:all("type") narrowing — the static signature only knows `{ CardHandle… }`.
+        // Pull the literal arg and produce a synthetic ReturnType so `local cards = ch:all("redstone")`
+        // populates containerVars with element=RedstoneCard and downstream paths
+        // (indexed access, for-loop element resolution) all see the right type.
+        if (receiverType == "Channel" && methodName == "all") {
+            val arg = paren.second.trim().trim('"', '\'')
+            channelElementType(arg)?.let {
+                return LuaApiDocs.ReturnType(it, LuaApiDocs.Container.ARRAY)
+            }
+        }
+        if (receiverType == "Channel" && methodName == "first") {
+            val arg = paren.second.trim().trim('"', '\'')
+            channelElementType(arg)?.let {
+                return LuaApiDocs.ReturnType(it, LuaApiDocs.Container.NONE)
+            }
+        }
+
         return LuaApiDocs.methodReturnType(methodName, receiverType)
             ?: userFunctionReturnType(methodName, cachedFullText)
     }
@@ -865,13 +883,19 @@ class AutocompletePopup(
         }
 
         // Bare identifier: either a module global (importer, stocker, network, scheduler)
-        // or a user variable whose type we've inferred.
+        // or a user variable we can identify.
         val bareMatch = Regex("""(\w+)$""").matchEntire(receiverExpr)
         if (bareMatch != null) {
             val name = bareMatch.groupValues[1]
             LuaApiDocs.moduleTypeFor(name)?.let { return it }
-            // Symbol-table inference (user variable) is handled in higher-level contexts
-            // where the symbol table is available; don't duplicate that lookup here.
+            // Channel-typed local: lets `ch:first("observer")` route through the
+            // arg-aware narrowing in [resolveExpressionType] without needing the
+            // full per-variable [symbols] map threaded through every chain call.
+            // Future similar shapes (e.g. ImporterBuilder vars) will need their own
+            // membership sets here.
+            if (name in channelLocals) return "Channel"
+            // Other user-variable types (CardHandle locals, etc.) are still
+            // resolved at higher levels where the symbol table is available.
         }
         return null
     }
@@ -912,11 +936,43 @@ class AutocompletePopup(
         // through to null here — you can't chain `.foo` off the array value itself.
         allReturnTypes[methodName]?.let { return it }
         val receiverType = extractReceiverType(beforeParen, methodName)
+
+        // Channel:first("type") / Channel:all("type") — narrow on the literal arg so
+        // `local x = ch:first("observer")` resolves x as ObserverCard rather than the
+        // static `Channel:first → CardHandle | nil`. Receiver-typed (`Channel`) so
+        // unrelated `:first` / `:all` calls on other types pass through to the regular
+        // scalar lookup. `:all` returns a container, which `resolveExpressionType` can't
+        // express on its own — that path bottoms out in `containerFromIterExpr` for
+        // for-loops and `resolveExpressionReturnType` for indexed access; this method
+        // covers the scalar `:first` use case.
+        if (receiverType == "Channel" && methodName == "first") {
+            val arg = parenResult.second.trim().trim('"', '\'')
+            channelElementType(arg)?.let { return it }
+        }
+
         return scalarReturnTypeOf(methodName, receiverType)
+    }
+
+    /** Map a `Channel:first("type")` / `:all("type")` literal argument to the typed
+     *  card class. Centralised so the chain resolver, the for-loop element resolver,
+     *  and any future caller all agree on the same dispatch table. */
+    private fun channelElementType(typeArg: String): String? = when (typeArg) {
+        "redstone" -> "RedstoneCard"
+        "observer" -> "ObserverCard"
+        "variable" -> "VariableHandle"
+        "io", "storage" -> "CardHandle"
+        else -> null
     }
 
     /** User-defined function return types (scalar only). Rebuilt once per computeSuggestions call. */
     private var allReturnTypes: Map<String, String> = emptyMap()
+
+    /** Names of locals bound to a Channel via `local x = network:channel(...)` in the
+     *  current script, refreshed each [computeSuggestions] / [buildSymbolTable] call.
+     *  Lets [resolveExpressionType] / [resolveExpressionReturnType] recognise that the
+     *  bare receiver in `ch:first("observer")` is a Channel without needing the
+     *  full per-variable symbol table threaded through every chain-resolver call. */
+    private var channelLocals: Set<String> = emptySet()
 
     /** Most recent full-script text stashed by [computeSuggestions] so suggestion helpers
      *  that don't get fullText as a parameter can still inspect the script (e.g. to find
@@ -1081,6 +1137,17 @@ class AutocompletePopup(
         // resolve element types without the rest of the code having to distinguish.
         val containerVars = mutableMapOf<String, Pair<String, LuaApiDocs.Container>>()
 
+        // Pre-pass: collect every local bound to `network:channel(...)`. The chain
+        // resolvers below ([resolveExpressionType] / [resolveExpressionReturnType])
+        // need this set to recognise `ch:first("observer")` as a Channel call when
+        // `ch` is a bare ident (the receiver-type extractor can't see [symbols]).
+        // Cheap to scan once up front rather than re-deriving inside every resolver
+        // invocation.
+        channelLocals = Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(""")
+            .findAll(fullText)
+            .map { it.groupValues[1] }
+            .toSet()
+
         // 1a. Explicit scalar type annotations: local x: Type = ...
         Regex("""\blocal\s+(\w+)\s*:\s*(\w+)\??\s*(?:=|\n|$)""").findAll(fullText).forEach {
             symbols[it.groupValues[1]] = it.groupValues[2]
@@ -1209,6 +1276,11 @@ class AutocompletePopup(
                 symbols.putIfAbsent(varName, "Channel")
             }
 
+        // (Channel split-line access — `local x = ch:first("observer")` — is now
+        // handled uniformly by the arg-aware narrowing in [resolveExpressionType] and
+        // [resolveExpressionReturnType], which the general-inference pass below routes
+        // through. No dedicated regex pass needed here.)
+
         // Special case: network:var("name") needs argument to determine specific type
         Regex("""\blocal\s+(\w+)\s*=\s*network:var\s*\(\s*"(\w+)"\s*\)""").findAll(fullText).forEach {
             val varName = it.groupValues[1]
@@ -1254,9 +1326,14 @@ class AutocompletePopup(
                     } else {
                         // Container-returning call? Record element type + container kind
                         // so for-loops over this var can resolve without a wrapper.
-                        val methodName = Regex("""(\w+)\s*\(""").findAll(rhs).lastOrNull()?.groupValues?.get(1)
-                        val rt = methodName?.let {
-                            LuaApiDocs.methodReturnType(it) ?: userFunctionReturnType(it, fullText)
+                        // Prefer [resolveExpressionReturnType] so arg-aware narrowing
+                        // (e.g. `Channel:all("redstone")` → `{ RedstoneCard }`) flows
+                        // through the same path as plain methodReturnType lookups.
+                        val rt = resolveExpressionReturnType(rhs) ?: run {
+                            val methodName = Regex("""(\w+)\s*\(""").findAll(rhs).lastOrNull()?.groupValues?.get(1)
+                            methodName?.let {
+                                LuaApiDocs.methodReturnType(it) ?: userFunctionReturnType(it, fullText)
+                            }
                         }
                         if (rt != null && rt.container != LuaApiDocs.Container.NONE) {
                             containerVars.putIfAbsent(varName, rt.type to rt.container)
@@ -1367,6 +1444,18 @@ class AutocompletePopup(
         val paren = findMatchingParenBackward(unwrapped) ?: return null
         val beforeParen = paren.first.trimEnd()
         val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
+
+        // Arg-aware narrowing for `Channel:all("type")` — the static signature returns
+        // `{ CardHandle… }` because LuaApiDocs has no per-arg overloads, but the for-
+        // loop body almost always wants methods on the typed card class. Pull the
+        // literal type string out and pick the matching narrow type via the shared
+        // [channelElementType] dispatch.
+        if (methodName == "all") {
+            val arg = paren.second.trim().trim('"', '\'')
+            channelElementType(arg)?.let {
+                return it to (forcedWrapper ?: LuaApiDocs.Container.ARRAY)
+            }
+        }
 
         val rt = LuaApiDocs.methodReturnType(methodName)
             ?: userFunctionReturnType(methodName, fullText)
