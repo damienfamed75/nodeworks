@@ -705,13 +705,17 @@ class ScriptEngine(
         // user-shadowed method on the network table can't collide with it.
         networkTable.set("_isNetworkPool", LuaValue.TRUE)
 
-        // network:get(alias) → CardHandle or error
+        // network:get(name) → CardHandle | VariableHandle, or error.
+        // Cards win on a name collision so existing scripts don't change behaviour
+        // when a variable happens to share an alias with a card; a future "validate
+        // unique names across cards + variables" pass on the network would catch
+        // collisions at edit time, but for now the lookup order is the contract.
         networkTable.set("get", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
                 val alias = aliasArg.checkjstring()
-                val card = snapshot.findByAlias(alias)
-                    ?: throw LuaError("Not found on network: '$alias'")
-                return createCardTable(card, alias)
+                snapshot.findByAlias(alias)?.let { return createCardTable(it, alias) }
+                snapshot.findVariable(alias)?.let { return VariableHandle.create(it, level) }
+                throw LuaError("Not found on network: '$alias'")
             }
         })
 
@@ -1045,14 +1049,8 @@ class ScriptEngine(
             }
         })
 
-        networkTable.set("var", object : TwoArgFunction() {
-            override fun call(self: LuaValue, nameArg: LuaValue): LuaValue {
-                val name = nameArg.checkjstring()
-                val varSnapshot = snapshot.findVariable(name)
-                    ?: throw LuaError("Variable not found on network: '$name'")
-                return VariableHandle.create(varSnapshot, level)
-            }
-        })
+        // (network:var was removed — variables are now first-class members of the
+        // network and resolved through `network:get(name)` alongside cards.)
 
         // network:debug() — print full network summary
         networkTable.set("debug", object : OneArgFunction() {

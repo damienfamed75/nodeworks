@@ -11,9 +11,9 @@ description: reference to a <ItemLink id="variable" /> in a network
 # VariableHandle
 
 A `VariableHandle` is a reference to a <ItemLink id="variable" /> in the
-network, returned by [`network:var(name)`](network.md#var). The handle tracks
-the variable's declared type. Each type of variable gains specific
-helpers on top of the shared core API below.
+network, returned by [`network:get(name)`](network.md#get) (the same accessor
+used for cards). The handle tracks the variable's declared type. Each type of
+variable gains specific helpers on top of the shared core API below.
 
 <BlockImage scale="6" id="variable" />
 
@@ -33,7 +33,7 @@ Retrieves and sets the variable's current value
 
 <LuaCode>
 ```lua
-local myNumericVar = network:var("myNumericVar")
+local myNumericVar = network:get("myNumericVar")
 print(myNumericVar:get())
 myNumericVar:set(1)
 print(myNumericVar:get())
@@ -98,9 +98,9 @@ Returns a string that represents the "type" of this `VariableHandle`
 
 <LuaCode>
 ```lua
-local numberVar = network:var("numberVar")
-local boolVar = network:var("boolVar")
-local stringVar = network:var("stringVar")
+local numberVar = network:get("numberVar")
+local boolVar = network:get("boolVar")
+local stringVar = network:get("stringVar")
 print(numberVar:type())
 print(boolVar:type())
 print(stringVar:type())
@@ -122,7 +122,7 @@ returns the new value.
 
 <LuaCode>
 ```lua
-local lights = network:var("lights")
+local lights = network:get("lights")
 print(lights:get())
 lights:toggle()
 print(lights:get())
@@ -143,7 +143,7 @@ was already `true` (another script holds it), it returns `false` **without block
 
 <LuaCode>
 ```lua
-local mutex = network:var("job_mutex") -- bool variable
+local mutex = network:get("job_mutex") -- bool variable
 if mutex:tryLock() then
   -- do job
   mutex:unlock()
@@ -167,7 +167,7 @@ the new value.
 
 <LuaCode>
 ```lua
-local counter = network:var("counter")
+local counter = network:get("counter")
 counter:set(0)
 counter:increment(1) -- +1 -> 1
 counter:increment(5) -- +5 -> 6
@@ -184,7 +184,7 @@ Both return the new value.
 
 <LuaCode>
 ```lua
-local best = network:var("best_score")
+local best = network:get("best_score")
 best:set(42)
 best:max(50) -- 42 vs 50 -> 50 (new high)
 best:max(35) -- 50 vs 35 -> 50 (unchanged)
@@ -206,7 +206,7 @@ string.
 
 <LuaCode>
 ```lua
-local log = network:var("log")
+local log = network:get("log")
 log:clear()
 log:append("start ")
 log:append("middle ")

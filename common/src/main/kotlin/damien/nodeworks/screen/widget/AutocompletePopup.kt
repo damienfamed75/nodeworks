@@ -61,7 +61,7 @@ class AutocompletePopup(
          *  Use for full-block snippets that provide their own closing punctuation. */
         val consumesAutoclose: Boolean = false,
         val kind: Kind = Kind.VARIABLE,
-        /** Optional `local <name> = network:get("...")` (or `:var(...)`) line that
+        /** Optional `local <name> = network:get("...")` line that
          *  should be prepended to the script when this suggestion is accepted. Set
          *  on auto-import suggestions for cards / variables the player hasn't yet
          *  bound to a local. The terminal's accept handler is responsible for
@@ -1200,18 +1200,39 @@ class AutocompletePopup(
         }
 
         // 3. Assignment inference via chain resolution (don't override explicit annotations)
-        // Special case: network:get("alias") — check if alias refers to a redstone card
+        // Special case: network:get("name") — variables now resolve through this same
+        // method, so we check both the card list and the variable list. Cards win
+        // on a name collision (matching the runtime behaviour in
+        // [damien.nodeworks.script.ScriptEngine] — `findByAlias` is consulted before
+        // `findVariable`). Falls through to plain `CardHandle` only when neither
+        // surface knows the name, which is also what the user sees as a runtime
+        // "Not found" error.
         Regex("""\blocal\s+(\w+)\s*=\s*network:get\s*\(\s*"([\w]+)"\s*\)""").findAll(fullText).forEach {
             val varName = it.groupValues[1]
             val alias = it.groupValues[2]
             if (varName !in symbols) {
                 val card = cards.firstOrNull { c -> c.effectiveAlias == alias }
-                val type = when (card?.capability?.type) {
-                    "redstone" -> "RedstoneCard"
-                    "observer" -> "ObserverCard"
-                    else -> "CardHandle"
+                if (card != null) {
+                    symbols[varName] = when (card.capability.type) {
+                        "redstone" -> "RedstoneCard"
+                        "observer" -> "ObserverCard"
+                        else -> "CardHandle"
+                    }
+                    return@forEach
                 }
-                symbols[varName] = type
+                val typeOrd = variables.firstOrNull { v -> v.first == alias }?.second
+                if (typeOrd != null) {
+                    symbols[varName] = when (typeOrd) {
+                        0 -> "NumberVariableHandle"
+                        1 -> "StringVariableHandle"
+                        2 -> "BoolVariableHandle"
+                        else -> "VariableHandle"
+                    }
+                    return@forEach
+                }
+                // Nothing matched — fall back to CardHandle so chained methods at
+                // least resolve against the most general card surface.
+                symbols[varName] = "CardHandle"
             }
         }
         // Special case: network:getAll("type") — the static signature returns
@@ -1281,19 +1302,9 @@ class AutocompletePopup(
         // [resolveExpressionReturnType], which the general-inference pass below routes
         // through. No dedicated regex pass needed here.)
 
-        // Special case: network:var("name") needs argument to determine specific type
-        Regex("""\blocal\s+(\w+)\s*=\s*network:var\s*\(\s*"(\w+)"\s*\)""").findAll(fullText).forEach {
-            val varName = it.groupValues[1]
-            val netVarName = it.groupValues[2]
-            val typeOrd = variables.firstOrNull { v -> v.first == netVarName }?.second
-            val type = when (typeOrd) {
-                0 -> "NumberVariableHandle"
-                1 -> "StringVariableHandle"
-                2 -> "BoolVariableHandle"
-                else -> "VariableHandle"
-            }
-            symbols.putIfAbsent(varName, type)
-        }
+        // (network:var inference dropped — variables resolve through the unified
+        // `network:get(name)` path above which checks the variable list when no
+        // card alias matches.)
 
         // Build function return type map for user-defined functions
         val funcReturnTypes = mutableMapOf<String, String>()
@@ -1528,11 +1539,20 @@ class AutocompletePopup(
         customPrefix = ctx.partial
         return when {
             ctx.funcExpr.endsWith("network:get") -> {
+                // Cards first, variables second — matches the runtime priority in
+                // `network:get` so the string most likely to resolve appears at the
+                // top of the popup. The label suffix in parens (`(io)`, `(number)`)
+                // tells the player which surface they're targeting at a glance.
+                val typeLabels = arrayOf("number", "string", "bool")
                 val cardSuggestions = cards
                     .map { it.effectiveAlias to it.capability.type }
                     .distinct()
                     .map { suggest(it.first, "${it.first} (${it.second})", Kind.STRING) }
-                FuzzyMatch.filter(ctx.partial, cardSuggestions)
+                val varSuggestions = variables.map { (name, typeOrd) ->
+                    val label = typeLabels.getOrElse(typeOrd) { "variable" }
+                    suggest(name, "$name ($label)", Kind.STRING)
+                }
+                FuzzyMatch.filter(ctx.partial, cardSuggestions + varSuggestions)
             }
 
             ctx.funcExpr.endsWith("network:route") -> {
@@ -1610,14 +1630,9 @@ class AutocompletePopup(
                 fuzzyStrings(ctx.partial, craftableOutputs)
             }
 
-            ctx.funcExpr.endsWith("network:var") -> {
-                val typeLabels = arrayOf("number", "string", "bool")
-                val suggestions = variables.map { (name, typeOrd) ->
-                    val typeLabel = typeLabels.getOrElse(typeOrd) { "unknown" }
-                    suggest(name, "$name ($typeLabel)", Kind.STRING)
-                }
-                FuzzyMatch.filter(ctx.partial, suggestions)
-            }
+            // (network:var was removed — variable names now surface alongside card
+            // aliases inside the `network:get` string-arg suggestion below, where the
+            // variable type label keeps them distinguishable from cards.)
 
             ctx.funcExpr.endsWith(":face") -> {
                 val faces = listOf("top", "bottom", "north", "south", "east", "west", "side")
@@ -1813,9 +1828,9 @@ class AutocompletePopup(
         Suggestion("Channel", "Channel — dye-color group from network:channel", kind = Kind.TYPE),
         Suggestion("Job", "Job — processing handler context from network:handle", kind = Kind.TYPE),
         Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()", kind = Kind.TYPE),
-        Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var", kind = Kind.TYPE),
-        Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:var", kind = Kind.TYPE),
-        Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:var", kind = Kind.TYPE)
+        Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:get", kind = Kind.TYPE),
+        Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:get", kind = Kind.TYPE),
+        Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:get", kind = Kind.TYPE)
     )
 
     private fun suggestTypeAnnotation(partial: String): List<Suggestion> {
@@ -1966,7 +1981,9 @@ class AutocompletePopup(
                     insertText = ident,
                     displayText = "$ident — $name (variable)",
                     kind = Kind.VARIABLE,
-                    autoImport = "local $ident = network:var(\"$name\")"
+                    // Variables now ride the unified `network:get` accessor instead
+                    // of the legacy `network:var` (which has been removed).
+                    autoImport = "local $ident = network:get(\"$name\")"
                 )
             }
 
@@ -2003,7 +2020,7 @@ class AutocompletePopup(
                 val body = "route(\"\", function(item: ItemsHandle)\n    return true\nend)"
                 snippet("route(", "route(alias, fn(item) → boolean)", body, body.indexOf("\"\"") + 1)
             },
-            suggest("var(", "var(name: string) → VariableHandle", Kind.METHOD),
+            // (network:var was removed; variables resolve through `network:get(name)`.)
             suggest("handle(", "handle(cardName: string, fn: function(job, ...))", Kind.METHOD),
             suggest("debug(", "debug() — print network topology", Kind.METHOD)
         )

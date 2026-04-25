@@ -1215,7 +1215,7 @@ class TerminalScreen(
         "route" to "network:route(alias: string, fn: function(item) → boolean)",
         "shapeless" to "network:shapeless(item: string, count?: number, ...) → ItemsHandle?",
         "debug" to "network:debug() — print network topology",
-        "var" to "network:var(name: string) → VariableHandle",
+        // (network:var was removed — variables flow through `network:get(name)`.)
         // Network item methods (also on CardHandle)
         "find" to "find(filter: string) → ItemsHandle?",
         "findEach" to "findEach(filter: string) → ItemsHandle[]",
@@ -1866,8 +1866,10 @@ class TerminalScreen(
                     else -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "x")
                 }
                 val line = when (entry.type) {
-                    "card" -> "local $ident = network:get(\"${entry.name}\")"
-                    "var" -> "local $ident = network:var(\"${entry.name}\")"
+                    // Cards and variables both ride the unified `network:get` accessor
+                    // since the `network:var` removal — same generated line shape for
+                    // either click-to-import.
+                    "card", "var" -> "local $ident = network:get(\"${entry.name}\")"
                     else -> null
                 }
                 if (line != null) {

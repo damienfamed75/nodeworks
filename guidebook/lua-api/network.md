@@ -15,7 +15,10 @@ attached to. It queries storage, routes items between handles, and registers cal
 
 ## get
 
-Returns a reference to a <ItemLink id="storage_card" />, <ItemLink id="io_card" /> or <ItemLink id="redstone_card" /> in your network, typically used at the top of the script.
+Returns a reference to anything on the network addressed by name — any
+<ItemLink id="storage_card" />, <ItemLink id="io_card" />, <ItemLink id="redstone_card" />,
+<ItemLink id="observer_card" />, or <ItemLink id="variable" /> — typically used at
+the top of the script. Cards take priority on a name collision with a variable.
 
 You can click on the sidebar of the scripting terminal to auto-get them as well.
 
@@ -33,8 +36,9 @@ You can click on the sidebar of the scripting terminal to auto-get them as well.
 
 <LuaCode>
 ```lua
-local chest = network:get("chest") -- gets the Storage Card
-local furnace = network:get("furnace") -- gets the IO Card
+local chest = network:get("chest")        -- gets the Storage Card
+local furnace = network:get("furnace")    -- gets the IO Card
+local count = network:get("count")        -- gets a Variable named "count"
 ```
 </LuaCode>
 
@@ -221,19 +225,6 @@ the function returns `nil`.
 ```lua
 -- craft a flint and steel, output automatically goes into network storage.
 network:shapeless("minecraft:flint", 1, "minecraft:iron_ingot", 1)
-```
-</LuaCode>
-
----
-
-## var
-
-Returns a [VariableHandle](./variable-handle.md) of a <ItemLink id="variable" />
-in the Network that matches the given name. Errors if the variable doesn't exist.
-
-<LuaCode>
-```lua
-local count = network:var("count")
 ```
 </LuaCode>
 

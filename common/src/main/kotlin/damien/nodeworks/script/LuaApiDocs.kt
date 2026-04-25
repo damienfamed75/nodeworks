@@ -187,8 +187,8 @@ object LuaApiDocs {
         )
         put(
             "Network:get", Doc(
-                signature = "Network:get(alias: string) → CardHandle",
-                description = "Returns the card with this alias. Errors if no card matches.",
+                signature = "Network:get(name: string) → CardHandle | VariableHandle",
+                description = "Returns the card or variable with this name. Errors if neither matches. Cards win on collision.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#get",
             )
@@ -289,14 +289,9 @@ object LuaApiDocs {
                 guidebookRef = "nodeworks:lua-api/network.md#handle",
             )
         )
-        put(
-            "Network:var", Doc(
-                signature = "Network:var(name: string) → VariableHandle",
-                description = "Returns a handle to the named network variable. Errors if the variable doesn't exist.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/network.md#var",
-            )
-        )
+        // (Network:var was removed — variables resolve through `network:get(name)`
+        // alongside cards. The legacy entry isn't kept around as a deprecated alias
+        // because the runtime no longer registers `var` on the network table.)
         put(
             "Network:debug", Doc(
                 signature = "Network:debug()",
@@ -802,7 +797,7 @@ object LuaApiDocs {
         put(
             "VariableHandle", Doc(
                 signature = "type VariableHandle",
-                description = "A handle to a network variable returned by `Network:var`.",
+                description = "A handle to a network variable returned by `Network:get`.",
                 category = Category.TYPE,
             )
         )
