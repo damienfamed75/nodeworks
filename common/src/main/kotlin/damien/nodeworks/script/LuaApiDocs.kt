@@ -147,6 +147,44 @@ object LuaApiDocs {
                 guidebookRef = "nodeworks:lua-api/network.md",
             )
         )
+
+        // ===== Channel =====
+        // Returned by `network:channel(color)` — scopes lookups to one dye-color group
+        // covering both cards and devices. The bundled `:first` / `:all` / `:get`
+        // mirror the global accessors so once you've narrowed by channel everything
+        // reads the same way as the un-scoped network API.
+        put(
+            "Channel", Doc(
+                signature = "type Channel",
+                description = "A dye-color-scoped view of the network's cards and devices.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/network.md#channel",
+            )
+        )
+        put(
+            "Channel:first", Doc(
+                signature = "Channel:first(type: string) → CardHandle | nil",
+                description = "First card or device of [type] on this channel, or nil if none match.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/network.md#channel-first",
+            )
+        )
+        put(
+            "Channel:all", Doc(
+                signature = "Channel:all(type: string?) → { CardHandle… }",
+                description = "Every card or device on this channel matching [type]. Omit [type] to walk every member.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/network.md#channel-all",
+            )
+        )
+        put(
+            "Channel:get", Doc(
+                signature = "Channel:get(alias: string) → CardHandle",
+                description = "Alias lookup scoped to this channel. Errors if no match exists.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/network.md#channel-get",
+            )
+        )
         put(
             "Network:get", Doc(
                 signature = "Network:get(alias: string) → CardHandle",
@@ -161,6 +199,22 @@ object LuaApiDocs {
                 description = "Returns every card on the network whose capability type matches.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#getAll",
+            )
+        )
+        put(
+            "Network:channel", Doc(
+                signature = "Network:channel(color: string) → Channel",
+                description = "Scopes lookups to a single dye-color channel. Errors on unknown color names.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/network.md#channel",
+            )
+        )
+        put(
+            "Network:channels", Doc(
+                signature = "Network:channels() → { string }",
+                description = "Color names of every channel currently in use on the network.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/network.md#channels",
             )
         )
         put(

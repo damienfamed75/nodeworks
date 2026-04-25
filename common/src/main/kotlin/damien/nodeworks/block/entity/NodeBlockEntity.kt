@@ -137,10 +137,10 @@ class NodeBlockEntity(
         val adjacentPos = worldPosition.relative(side)
         val accessFace = side.opposite // face of the target block that faces the node
         return getCards(side).map { info ->
+            val stack = items[sideOffset(side) + info.slotIndex]
             val capability = when (info.card) {
                 is damien.nodeworks.card.IOCard -> IOSideCapability(adjacentPos, accessFace)
                 is damien.nodeworks.card.StorageCard -> {
-                    val stack = items[sideOffset(side) + info.slotIndex]
                     val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
                     StorageSideCapability(adjacentPos, accessFace, priority)
                 }
@@ -148,12 +148,22 @@ class NodeBlockEntity(
                 is damien.nodeworks.card.ObserverCard -> ObserverSideCapability(adjacentPos, accessFace)
                 else -> null
             }
-            SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex)
+            // Pull the channel here so [NetworkDiscovery.snapshotNode] doesn't need a
+            // back-reference to the BlockEntity to read it. White is the default for
+            // pre-channel cards and any card the user hasn't dyed yet — the channel
+            // helper reads directly from CUSTOM_DATA so untouched stacks return WHITE.
+            val channel = damien.nodeworks.card.CardChannel.get(stack)
+            SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex, channel)
         }.filterNotNull()
     }
 
     data class CardInfo(val card: NodeCard, val alias: String?, val slotIndex: Int)
-    data class SideCapabilityInfo(val capability: SideCapability, val alias: String?, val slotIndex: Int)
+    data class SideCapabilityInfo(
+        val capability: SideCapability,
+        val alias: String?,
+        val slotIndex: Int,
+        val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
+    )
 
     // --- Side-aware access ---
 

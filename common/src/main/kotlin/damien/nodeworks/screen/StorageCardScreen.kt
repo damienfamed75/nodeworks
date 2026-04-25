@@ -19,6 +19,7 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.compat.renderTooltip
 import damien.nodeworks.compat.scan
+import damien.nodeworks.screen.widget.ChannelPickerWidget
 import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
@@ -28,6 +29,7 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.item.DyeColor
 
 class StorageCardScreen(
     menu: StorageCardMenu,
@@ -37,7 +39,10 @@ class StorageCardScreen(
 
     companion object {
         private const val W = 140
-        private const val H = 50
+        // H expanded from 50 → 70 to host the channel picker row below the priority
+        // stepper. Inset height grows by the same delta so both controls share one
+        // recessed pane rather than splitting into two.
+        private const val H = 70
         private const val INSET_X = 4
         private const val INSET_Y = 19
         private const val INSET_W = W - 8
@@ -50,13 +55,19 @@ class StorageCardScreen(
         private const val LABEL_TO_BTN_GAP = 4      // gap between "Priority:" and the [-] button
         private const val STEPPER_Y_OFFSET = 7      // y relative to INSET_Y for buttons
         private const val FIELD_Y_OFFSET = 8        // y relative to INSET_Y for the entry
+        // Channel row sits 20px below the priority row (one widget height + breathing room).
+        private const val CHANNEL_Y_OFFSET = STEPPER_Y_OFFSET + STEPPER_BTN_SIZE + 6
+        private const val CHANNEL_LABEL_TO_PICKER_GAP = 4
 
         private const val LABEL_TEXT = "Priority:"
+        private const val CHANNEL_LABEL_TEXT = "Channel:"
     }
 
     private var priorityField: EditBox? = null
     /** Tracks last known server value to detect external changes. */
     private var lastSyncedPriority = -1
+    private var lastSyncedChannel = -1
+    private var picker: ChannelPickerWidget? = null
 
     // X offsets relative to leftPos, computed once in init() so the label-text width
     // (which depends on the font) can drive layout. The whole Label + [-] + entry + [+]
@@ -65,6 +76,8 @@ class StorageCardScreen(
     private var minusX = 0
     private var fieldX = 0
     private var plusX = 0
+    private var channelLabelX = 0
+    private var pickerX = 0
 
     init {
         inventoryLabelY = -9999
@@ -90,6 +103,22 @@ class StorageCardScreen(
         priorityField!!.value = "${menu.getPriority()}"
         lastSyncedPriority = menu.getPriority()
         addRenderableWidget(priorityField!!)
+
+        // Channel row — Channel: [swatch], horizontally centered like the priority row
+        // above. Picker click sends the dye ordinal as a clickMenuButton id offset by
+        // 2000 so it never collides with the priority decrement/increment ids.
+        val channelLabelW = font.width(CHANNEL_LABEL_TEXT)
+        val channelRowW = channelLabelW + CHANNEL_LABEL_TO_PICKER_GAP + ChannelPickerWidget.SWATCH
+        val channelRowStart = (W - channelRowW) / 2
+        channelLabelX = channelRowStart
+        pickerX = channelLabelX + channelLabelW + CHANNEL_LABEL_TO_PICKER_GAP
+        val pickerY = topPos + INSET_Y + CHANNEL_Y_OFFSET
+        val initialChannel = menu.getChannel()
+        lastSyncedChannel = initialChannel.id
+        picker = ChannelPickerWidget(leftPos + pickerX, pickerY, initialChannel) { color ->
+            Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 2000 + color.id)
+        }
+        addRenderableWidget(picker!!)
     }
 
     override fun charTyped(event: CharacterEvent): Boolean {
@@ -156,6 +185,15 @@ class StorageCardScreen(
         (if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, pX, stepY, btn, btn)
         graphics.drawString(font, "-", mX + (btn - font.width("-")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
         graphics.drawString(font, "+", pX + (btn - font.width("+")) / 2, stepY + 3, 0xFFFFFFFF.toInt())
+
+        // "Channel:" label vertically centered against the picker swatch.
+        val channelRowY = topPos + INSET_Y + CHANNEL_Y_OFFSET
+        graphics.drawString(
+            font, CHANNEL_LABEL_TEXT,
+            leftPos + channelLabelX,
+            channelRowY + (ChannelPickerWidget.SWATCH - font.lineHeight) / 2 + 1,
+            0xFFAAAAAA.toInt(),
+        )
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -165,12 +203,24 @@ class StorageCardScreen(
             priorityField?.value = "$serverVal"
             lastSyncedPriority = serverVal
         }
+        val serverChannel = menu.channelData.get(0)
+        if (serverChannel != lastSyncedChannel && picker?.expanded != true) {
+            picker?.setColor(runCatching { DyeColor.byId(serverChannel) }.getOrDefault(DyeColor.WHITE))
+            lastSyncedChannel = serverChannel
+        }
 
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
+        // Render popup overlay last so it layers above buttons/labels.
+        picker?.renderOverlay(graphics, mouseX, mouseY)
         // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        // Channel popup gets priority while open so its grid clicks aren't stolen
+        // by the priority steppers underneath.
+        if (picker?.expanded == true) {
+            if (picker!!.handleOverlayClick(event.mouseX, event.mouseY)) return true
+        }
         val mouseX = event.mouseX
         val mouseY = event.mouseY
         val button = event.buttonNum

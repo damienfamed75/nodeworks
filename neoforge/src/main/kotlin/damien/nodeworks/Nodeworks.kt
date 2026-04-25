@@ -218,6 +218,14 @@ class Nodeworks(modBus: IEventBus) {
                     damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.CARD_SETTINGS = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "card_settings")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.CardSettingsOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.CardSettingsMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -351,6 +359,9 @@ class Nodeworks(modBus: IEventBus) {
                     "type" -> entity.setType(damien.nodeworks.block.entity.VariableType.fromOrdinal(payload.intValue))
                     "value" -> entity.setValue(payload.strValue)
                     "toggle" -> entity.toggleValue()
+                    "channel" -> entity.channel = runCatching {
+                        net.minecraft.world.item.DyeColor.byId(payload.intValue)
+                    }.getOrDefault(net.minecraft.world.item.DyeColor.WHITE)
                 }
             }
         }

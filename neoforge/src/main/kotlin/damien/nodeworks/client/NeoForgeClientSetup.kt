@@ -157,6 +157,10 @@ object NeoForgeClientSetup {
             net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "portable_inventory_terminal_linked"),
             damien.nodeworks.client.item.PortableInventoryTerminalLinkedProperty.MAP_CODEC
         )
+        event.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "card_channel_set"),
+            damien.nodeworks.client.item.CardChannelSetProperty.MAP_CODEC
+        )
     }
 
     private fun onRegisterSelectItemModelProperties(
@@ -174,6 +178,10 @@ object NeoForgeClientSetup {
         event.register(
             net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "portable_network_color"),
             damien.nodeworks.client.item.PortableNetworkColorTintSource.MAP_CODEC
+        )
+        event.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "channel_color"),
+            damien.nodeworks.client.item.ChannelColorTintSource.MAP_CODEC
         )
     }
 
@@ -222,6 +230,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.STORAGE_CARD) { menu, inventory, title ->
             damien.nodeworks.screen.StorageCardScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.CARD_SETTINGS) { menu, inventory, title ->
+            damien.nodeworks.screen.CardSettingsScreen(menu, inventory, title)
         }
     }
 

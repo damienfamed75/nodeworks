@@ -41,6 +41,14 @@ class VariableBlockEntity(
     var variableValue: String = VariableType.NUMBER.defaultValue
         private set
 
+    /** Channel grouping color for this variable. Defaults to [DyeColor.WHITE]
+     *  ("default channel"). Set via the variable GUI's channel picker. */
+    var channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE
+        set(value) {
+            field = value
+            markDirtyAndSync()
+        }
+
     fun setType(type: VariableType) {
         variableType = type
         variableValue = type.defaultValue
@@ -186,6 +194,7 @@ class VariableBlockEntity(
         output.putString("variableName", variableName)
         output.putInt("variableType", variableType.ordinal)
         output.putString("variableValue", variableValue)
+        output.putInt("channel", channel.id)
         networkId?.let { output.putString("networkId", it.toString()) }
         output.putBlockPosList("connections", connections)
     }
@@ -195,6 +204,9 @@ class VariableBlockEntity(
         variableName = input.getStringOr("variableName", "")
         variableType = VariableType.fromOrdinal(input.getIntOr("variableType", 0))
         variableValue = input.getStringOr("variableValue", "").ifEmpty { variableType.defaultValue }
+        channel = runCatching {
+            net.minecraft.world.item.DyeColor.byId(input.getIntOr("channel", 0))
+        }.getOrDefault(net.minecraft.world.item.DyeColor.WHITE)
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }

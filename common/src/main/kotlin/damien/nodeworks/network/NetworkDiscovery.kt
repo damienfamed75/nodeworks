@@ -79,7 +79,14 @@ object NetworkDiscovery {
                     connectable.blockPos, connectable.bufferUsed, connectable.bufferCapacity, connectable.isCrafting
                 ))
                 is VariableBlockEntity -> if (connectable.variableName.isNotEmpty()) {
-                    variables.add(VariableSnapshot(connectable.blockPos, connectable.variableName, connectable.variableType))
+                    variables.add(
+                        VariableSnapshot(
+                            connectable.blockPos,
+                            connectable.variableName,
+                            connectable.variableType,
+                            connectable.channel,
+                        )
+                    )
                 }
             }
 
@@ -121,7 +128,7 @@ object NetworkDiscovery {
             val capabilities = entity.getSideCapabilities(dir)
             if (capabilities.isEmpty()) continue
             sides[dir] = capabilities.map { info ->
-                CardSnapshot(info.capability, info.alias, info.slotIndex)
+                CardSnapshot(info.capability, info.alias, info.slotIndex, info.channel)
             }
         }
 
@@ -145,7 +152,11 @@ data class CpuSnapshot(
 data class VariableSnapshot(
     val pos: BlockPos,
     val name: String,
-    val type: VariableType
+    val type: VariableType,
+    /** Channel grouping color, mirroring [CardSnapshot.channel]. Variables are devices
+     *  rather than slotted cards, so the channel lives on the [VariableBlockEntity]
+     *  itself and is set via the variable GUI's channel picker. */
+    val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
 )
 
 data class ProcessingApiSnapshot(
@@ -271,7 +282,12 @@ data class ProcessingApiMatch(
 data class CardSnapshot(
     val capability: SideCapability,
     val alias: String?,
-    val slotIndex: Int
+    val slotIndex: Int,
+    /** Channel grouping color. Defaults to [DyeColor.WHITE] for cards that haven't
+     *  been dyed yet. Read at snapshot time from the card's `CUSTOM_DATA` via
+     *  [damien.nodeworks.card.CardChannel.get]. Scripts use this to scope lookups
+     *  through `network:channel(color)`. */
+    val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
 ) {
     /** Auto-generated alias for unnamed cards (e.g., io_1, storage_2). */
     var autoAlias: String? = null

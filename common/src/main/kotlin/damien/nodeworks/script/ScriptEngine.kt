@@ -478,6 +478,80 @@ class ScriptEngine(
     }
 
     /**
+     * Construct the Lua handle returned by `network:channel(color)`. Exposes:
+     *   * `:first(type)` — first card or variable matching [type] AND [color]; nil if none.
+     *   * `:all(type?)`  — array of every member matching [type] AND [color]. Omitting
+     *     [type] returns every member of the channel regardless of capability type.
+     *   * `:get(alias)`  — alias lookup scoped to this channel; throws on no match.
+     *
+     * Variables count as channel members alongside cards: scripts ask for
+     * `:first("variable")` to get a `VariableHandle`, or `:all()` to walk every
+     * card AND variable on the channel in one pass. The per-member dispatch
+     * routes through [createCardTable] / [VariableHandle.create] so channel-scoped
+     * lookups return the same typed tables the global accessors do — no method
+     * surface is lost by going through a channel.
+     */
+    private fun createChannelTable(
+        snapshot: NetworkSnapshot,
+        color: net.minecraft.world.item.DyeColor,
+    ): LuaTable {
+        val t = LuaTable()
+        val selfRef = this
+
+        t.set("first", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
+                val type = typeArg.checkjstring()
+                if (type == "variable") {
+                    val v = snapshot.variables.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    return VariableHandle.create(v, level)
+                }
+                val card = snapshot.allCards().firstOrNull {
+                    it.channel == color && it.capability.type == type
+                } ?: return LuaValue.NIL
+                return selfRef.createCardTable(card, card.effectiveAlias)
+            }
+        })
+
+        t.set("all", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                // arg 1 is `self`; the optional type lives at arg 2.
+                val type: String? = if (args.narg() >= 2 && !args.arg(2).isnil()) args.checkjstring(2) else null
+                val result = LuaTable()
+                var idx = 1
+                if (type == null || type == "variable") {
+                    for (v in snapshot.variables) {
+                        if (v.channel != color) continue
+                        result.set(idx++, VariableHandle.create(v, level))
+                    }
+                }
+                if (type != "variable") {
+                    for (card in snapshot.allCards()) {
+                        if (card.channel != color) continue
+                        if (type != null && card.capability.type != type) continue
+                        result.set(idx++, selfRef.createCardTable(card, card.effectiveAlias))
+                    }
+                }
+                return result
+            }
+        })
+
+        t.set("get", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
+                val alias = aliasArg.checkjstring()
+                val card = snapshot.allCards().firstOrNull {
+                    it.channel == color && it.effectiveAlias == alias
+                }
+                if (card != null) return selfRef.createCardTable(card, card.effectiveAlias)
+                val v = snapshot.variables.firstOrNull { it.channel == color && it.name == alias }
+                if (v != null) return VariableHandle.create(v, level)
+                throw LuaError("No card or variable named '$alias' on the ${color.name.lowercase()} channel")
+            }
+        })
+
+        return t
+    }
+
+    /**
      * Backs both `network:insert` (atomic=true → boolean) and `network:tryInsert`
      * (atomic=false → number). Structured identically to [CardHandle]'s insert pair so
      * scripts get consistent semantics whether they're targeting a specific card or the
@@ -649,6 +723,35 @@ class ScriptEngine(
                 val result = LuaTable()
                 for ((i, card) in cards.withIndex()) {
                     result.set(i + 1, createCardTable(card, card.effectiveAlias))
+                }
+                return result
+            }
+        })
+
+        // network:channel(color) → Channel handle scoped to that dye color.
+        // Errors on bad color names so a typo surfaces immediately rather than
+        // silently iterating an empty group.
+        networkTable.set("channel", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, colorArg: LuaValue): LuaValue {
+                val name = colorArg.checkjstring()
+                val color = net.minecraft.world.item.DyeColor.byName(name, null)
+                    ?: throw LuaError("Unknown channel color: '$name'. Use one of the 16 dye color names (white, red, blue, ...).")
+                return createChannelTable(snapshot, color)
+            }
+        })
+
+        // network:channels() → { string } of every channel currently in use on the
+        // network (cards + variables). Order is by DyeColor.id ascending so iteration
+        // is stable across calls. White is included only when at least one card or
+        // variable is actually set to it (which by default is most of them).
+        networkTable.set("channels", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue {
+                val cardChannels = snapshot.allCards().map { it.channel }
+                val varChannels = snapshot.variables.map { it.channel }
+                val seen = (cardChannels + varChannels).toSortedSet(compareBy { it.id })
+                val result = LuaTable()
+                for ((i, color) in seen.withIndex()) {
+                    result.set(i + 1, LuaValue.valueOf(color.name.lowercase()))
                 }
                 return result
             }

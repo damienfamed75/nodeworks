@@ -7,6 +7,7 @@ import damien.nodeworks.compat.drawString
 import damien.nodeworks.compat.keyCode
 import damien.nodeworks.compat.mouseX
 import damien.nodeworks.compat.mouseY
+import damien.nodeworks.screen.widget.ChannelPickerWidget
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -14,6 +15,7 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.item.DyeColor
 
 /**
  * Variable block configuration screen — rebuilt on the shared 9-slice toolkit
@@ -28,7 +30,10 @@ class VariableScreen(
 
     companion object {
         private const val IMAGE_W = 220
-        private const val IMAGE_H = 102
+        // IMAGE_H grew by one ROW_H to host the channel picker as a fourth row
+        // alongside Name / Type / Value. The whole frame stays vertically centered
+        // because [init] recomputes leftPos/topPos against width/height.
+        private const val IMAGE_H = 124
 
         private const val TOP_BAR_H = 20
         private const val PAD = 6           // horizontal/vertical inner padding
@@ -54,6 +59,10 @@ class VariableScreen(
 
     private lateinit var nameField: EditBox
     private lateinit var valueField: EditBox
+    private var picker: ChannelPickerWidget? = null
+    /** Tracks last seen server channel so external mutations push down without
+     *  clobbering an in-flight pick (mirrors lastSyncedPriority in StorageCardScreen). */
+    private var lastSyncedChannel: Int = -1
 
     // Which Set button flashed a checkmark most recently, and when.
     private var checkmarkId: String? = null
@@ -94,6 +103,17 @@ class VariableScreen(
         valueField.setTextColor(0xFFFFFFFF.toInt())
         valueField.value = menu.initialValue
         addRenderableWidget(valueField)
+
+        // Row 4 — Channel picker. Same column origin (controlX) as the fields above
+        // so labels and controls line up. Sends the dye ordinal via the existing
+        // VariableSettingsPayload pipeline (key="channel"), reusing the server
+        // handler that already mutates entity.channel for us.
+        val initialChannel = runCatching { DyeColor.byId(menu.channelId) }.getOrDefault(DyeColor.WHITE)
+        lastSyncedChannel = initialChannel.id
+        picker = ChannelPickerWidget(controlX, rowY(3) + 3, initialChannel) { color ->
+            sendUpdate("channel", color.id, "")
+        }
+        addRenderableWidget(picker!!)
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -125,6 +145,23 @@ class VariableScreen(
             valueField.visible = true
             drawSetButton(graphics, controlX + FIELD_W + 4, valueY, mouseX, mouseY, "value")
         }
+
+        // Row 4 — Channel label (the picker widget renders itself).
+        drawLabel(graphics, "Channel", 3)
+
+        // Sync widget to server value when the popup isn't being interacted with so
+        // an external mutation doesn't snap the swatch back mid-pick.
+        val serverChannel = menu.channelId
+        if (serverChannel != lastSyncedChannel && picker?.expanded != true) {
+            picker?.setColor(runCatching { DyeColor.byId(serverChannel) }.getOrDefault(DyeColor.WHITE))
+            lastSyncedChannel = serverChannel
+        }
+    }
+
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
+        // Render popup overlay above all other widgets so it isn't clipped.
+        picker?.renderOverlay(graphics, mouseX, mouseY)
     }
 
     /** Network color for the title-bar trim. Client-side BFS through connected nodes,
@@ -189,6 +226,11 @@ class VariableScreen(
     }
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        // Channel popup gets first crack at the click while open, otherwise its grid
+        // cells fall through to the buttons sitting below in the layout.
+        if (picker?.expanded == true) {
+            if (picker!!.handleOverlayClick(event.mouseX, event.mouseY)) return true
+        }
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
 

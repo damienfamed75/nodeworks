@@ -887,7 +887,7 @@ class ScriptEditor(
             }
             258 -> { // TAB
                 if (hasSelection) deleteSelection()
-                insertText("  ")
+                insertText("    ")
                 return true
             }
 
@@ -1000,7 +1000,11 @@ class ScriptEditor(
         // that the Enter will push to the next line shouldn't influence indentation.
         val (_, col) = cursorToLineCol(cursor)
         val prefix = lineText.substring(0, col.coerceAtMost(lineText.length)).trimEnd()
-        val extra = if (shouldIndentDeeper(prefix)) "  " else ""
+        // 4-space indent matches the Tab key insertion and the block-indent commands
+        // at [damien.nodeworks.screen.TerminalScreen.indentSelection]; keeping all
+        // three in sync means a `for ... do` + Enter lands at the same column as
+        // pressing Tab once at the start of the line.
+        val extra = if (shouldIndentDeeper(prefix)) "    " else ""
         return baseIndent + extra
     }
 

@@ -56,7 +56,11 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
 
         fun setPriority(stack: ItemStack, priority: Int) {
             val clamped = priority.coerceIn(0, 999)
-            val tag = CompoundTag()
+            // Read-modify-write so we don't clobber sibling keys like the channel
+            // color set via [CardChannel.set]. Pre-channel this method always wrote
+            // a fresh single-key tag, which is fine when nothing else lives in
+            // CUSTOM_DATA; now we merge.
+            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
             tag.putInt("priority", clamped)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }

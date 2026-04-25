@@ -51,7 +51,7 @@ class VariableBlock(properties: Properties) : BaseEntityBlock(properties) {
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.variable"),
-            VariableOpenData(pos, entity.variableName, entity.variableType.ordinal, entity.variableValue),
+            VariableOpenData(pos, entity.variableName, entity.variableType.ordinal, entity.variableValue, entity.channel.id),
             VariableOpenData.STREAM_CODEC,
             { syncId, inv, _ -> VariableMenu.createServer(syncId, inv, entity) }
         )

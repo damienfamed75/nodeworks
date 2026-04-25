@@ -85,6 +85,10 @@ class TerminalScreen(
     private val itemIds: List<String>
     private val fluidIds: List<String>
     private val variables: List<Pair<String, Int>>
+    /** Variable name → channel color, parallel to [variables]. Kept as a separate
+     *  map (instead of widening the [variables] tuple) so AutocompletePopup's
+     *  existing (name, typeOrd) consumer doesn't need a signature change. */
+    private val variableChannels: Map<String, net.minecraft.world.item.DyeColor>
     private val localApiNames: List<String>
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
     private val craftableOutputs: List<String>
@@ -401,7 +405,17 @@ class TerminalScreen(
     }
 
     // Layout presets
-    private data class SidebarEntry(val name: String, val color: Int, val iconU: Int, val iconV: Int, val type: String)
+    private data class SidebarEntry(
+        val name: String,
+        val color: Int,
+        val iconU: Int,
+        val iconV: Int,
+        val type: String,
+        /** Channel color for the card/device, or null when not channel-aware. White
+         *  is treated as null so the default channel doesn't render a pip — only
+         *  explicitly-dyed cards/devices show one. */
+        val channel: net.minecraft.world.item.DyeColor? = null,
+    )
 
     enum class TerminalLayout(val w: Int, val h: Int, val icon: Icons) {
         SMALL(320, 220, Icons.LAYOUT_SMALL),
@@ -419,6 +433,7 @@ class TerminalScreen(
         // Scan client-side block entities for all autocomplete data
         val scannedCards = mutableListOf<CardSnapshot>()
         val scannedVars = mutableListOf<Pair<String, Int>>()
+        val scannedVarChannels = mutableMapOf<String, net.minecraft.world.item.DyeColor>()
         val scannedLocal = mutableListOf<String>()
         val scannedLocalApis =
             mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
@@ -446,7 +461,7 @@ class TerminalScreen(
                             for (dir in net.minecraft.core.Direction.entries) {
                                 val caps = entity.getSideCapabilities(dir)
                                 for (info in caps) {
-                                    scannedCards.add(CardSnapshot(info.capability, info.alias, info.slotIndex))
+                                    scannedCards.add(CardSnapshot(info.capability, info.alias, info.slotIndex, info.channel))
                                 }
                             }
                         }
@@ -454,6 +469,7 @@ class TerminalScreen(
                         is damien.nodeworks.block.entity.VariableBlockEntity -> {
                             if (entity.variableName.isNotEmpty()) {
                                 scannedVars.add(entity.variableName to entity.variableType.ordinal)
+                                scannedVarChannels[entity.variableName] = entity.channel
                             }
                         }
 
@@ -569,6 +585,7 @@ class TerminalScreen(
         itemIds = scannedItemIds
         fluidIds = scannedFluidIds
         variables = scannedVars
+        variableChannels = scannedVarChannels
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
@@ -846,10 +863,16 @@ class TerminalScreen(
                 "fluid" -> 0xFF55AAFF.toInt()
                 else -> 0xFFAAAAAA.toInt()
             }
-            entries.add(SidebarEntry(card.effectiveAlias, color, iconU, 16, "card"))
+            // Pass through the channel from the card snapshot. White renders as no pip
+            // (collapses to null) so default cards keep a clean row.
+            val ch = card.channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(card.effectiveAlias, color, iconU, 16, "card", ch))
         }
         for ((name, typeOrd) in variables) {
-            entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var"))
+            // Same white→null collapse rule as cards so the default channel
+            // doesn't render a stripe.
+            val ch = variableChannels[name]?.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var", ch))
         }
 
         // Sidebar entries (scrollable)
@@ -885,12 +908,22 @@ class TerminalScreen(
                 "var" -> Icons.VARIABLE
                 else -> Icons.IO_CARD
             }
+            // Channel pip — 2×9 vertical stripe LEFT of the icon when the row is
+            // dyed off-white. Reads as "this row belongs to channel X" before your
+            // eye even reaches the icon, which matches how players already scan the
+            // sidebar (left-to-right). Always rendered in the same column regardless
+            // of whether a pip is visible, so icon positions stay stable.
+            entry.channel?.let { ch ->
+                val rgb = ch.textureDiffuseColor or 0xFF000000.toInt()
+                graphics.fill(leftPos + 5, y + 1, leftPos + 7, y + 10, rgb)
+            }
+
             // Observer card art uses the full 16px width of its atlas cell, so the
             // standard 8×8 small-render crops its outer columns. Draw a 10×8 slice
             // (1px wider on each side) shifted left by 1px to keep it centred under
             // the same anchor as the other 8-wide card icons.
-            if (entry.iconU == 64) icon.drawSmallWide(graphics, leftPos + 6, y + 1)
-            else icon.drawSmall(graphics, leftPos + 7, y + 1)
+            if (entry.iconU == 64) icon.drawSmallWide(graphics, leftPos + 9, y + 1)
+            else icon.drawSmall(graphics, leftPos + 10, y + 1)
 
             // Track hover state for scroll timing
             if (hovered) {
@@ -900,8 +933,10 @@ class TerminalScreen(
                 }
             }
 
-            // Name — scroll if hovered and text is too long
-            val nameX = leftPos + 18
+            // Name — scroll if hovered and text is too long. Anchor shifted right by
+            // 3 px to follow the icon, since the channel pip now lives at the row's
+            // left edge (cols 5-6).
+            val nameX = leftPos + 21
             val maxNameW = leftPos + 75 - nameX
             val nameW = font.width(entry.name)
             if (hovered && nameW > maxNameW) {

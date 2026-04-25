@@ -1164,6 +1164,51 @@ class AutocompletePopup(
             containerVars.putIfAbsent(varName, element to LuaApiDocs.Container.ARRAY)
         }
 
+        // Special case: network:channel("color"):first("type") — narrow the local to
+        // the typed card class so chained method calls resolve correctly. Mirrors the
+        // existing `network:get` arg-aware inference. Must come BEFORE the bare-channel
+        // case below so the chained match wins on the same line.
+        Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(\s*"\w+"\s*\)\s*:\s*first\s*\(\s*"(\w+)"\s*\)""")
+            .findAll(fullText).forEach {
+                val varName = it.groupValues[1]
+                val typeArg = it.groupValues[2]
+                val element = when (typeArg) {
+                    "redstone" -> "RedstoneCard"
+                    "observer" -> "ObserverCard"
+                    "variable" -> "VariableHandle"
+                    else -> "CardHandle"
+                }
+                symbols.putIfAbsent(varName, element)
+            }
+
+        // Special case: network:channel("color"):all("type") — element-aware container,
+        // same shape as the network:getAll inference so `for _, c in cards do c:set(...)`
+        // resolves against the right method list.
+        Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(\s*"\w+"\s*\)\s*:\s*all\s*\(\s*"(\w+)"\s*\)""")
+            .findAll(fullText).forEach {
+                val varName = it.groupValues[1]
+                val typeArg = it.groupValues[2]
+                val element = when (typeArg) {
+                    "redstone" -> "RedstoneCard"
+                    "observer" -> "ObserverCard"
+                    "variable" -> "VariableHandle"
+                    else -> "CardHandle"
+                }
+                symbols.putIfAbsent(varName, "{ $element }")
+                containerVars.putIfAbsent(varName, element to LuaApiDocs.Container.ARRAY)
+            }
+
+        // Special case: network:channel("color") — narrow the local to `Channel` so
+        // chained `:first("observer")` / `:all(...)` resolve against the channel's
+        // method list rather than CardHandle's. Negative lookahead `(?!\s*:)` keeps
+        // the bare-channel form from competing with the chained-first / chained-all
+        // patterns above when both could match the same source line.
+        Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(\s*"(\w+)"\s*\)(?!\s*:)""")
+            .findAll(fullText).forEach {
+                val varName = it.groupValues[1]
+                symbols.putIfAbsent(varName, "Channel")
+            }
+
         // Special case: network:var("name") needs argument to determine specific type
         Regex("""\blocal\s+(\w+)\s*=\s*network:var\s*\(\s*"(\w+)"\s*\)""").findAll(fullText).forEach {
             val varName = it.groupValues[1]
@@ -1454,6 +1499,24 @@ class AutocompletePopup(
                 fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer"))
             }
 
+            ctx.funcExpr.endsWith("network:channel") -> {
+                // 16 vanilla dye color names. Stable lowercase form matches both
+                // DyeColor.byName() at runtime and the script-side `channels()` output.
+                fuzzyStrings(ctx.partial, listOf(
+                    "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+                    "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black",
+                ))
+            }
+
+            // Inside `:first("…")` / `:all("…")` on a `Channel` receiver — same set of
+            // capability-type hints we offer to `network:getAll`. We can't easily know
+            // the receiver type here without re-resolving the chain, so we surface the
+            // hints whenever the funcExpr ends with `:first` or `:all` and accept a
+            // small false-positive surface (these strings on other receivers).
+            ctx.funcExpr.endsWith(":first") || ctx.funcExpr.endsWith(":all") -> {
+                fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer", "variable"))
+            }
+
             ctx.funcExpr.endsWith("network:craft") -> {
                 fuzzyStrings(ctx.partial, craftableOutputs)
             }
@@ -1658,6 +1721,7 @@ class AutocompletePopup(
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get", kind = Kind.TYPE),
         Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get", kind = Kind.TYPE),
         Suggestion("ObserverCard", "ObserverCard — observer card from network:get", kind = Kind.TYPE),
+        Suggestion("Channel", "Channel — dye-color group from network:channel", kind = Kind.TYPE),
         Suggestion("Job", "Job — processing handler context from network:handle", kind = Kind.TYPE),
         Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()", kind = Kind.TYPE),
         Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var", kind = Kind.TYPE),
@@ -1837,6 +1901,8 @@ class AutocompletePopup(
         val methods = listOf(
             suggest("get(", "get(alias: string) → CardHandle", Kind.METHOD),
             suggest("getAll(", "getAll(type: string) → CardHandle[]", Kind.METHOD),
+            suggest("channel(", "channel(color: string) → Channel", Kind.METHOD),
+            suggest("channels(", "channels() → string[]", Kind.METHOD),
             suggest("find(", "find(filter: string) → ItemsHandle?", Kind.METHOD),
             suggest("findEach(", "findEach(filter: string) → ItemsHandle[]", Kind.METHOD),
             suggest("count(", "count(filter: string) → number", Kind.METHOD),
@@ -1919,6 +1985,12 @@ class AutocompletePopup(
                     )
                 )
             }
+
+            "Channel" -> listOf(
+                suggest("first(", "first(type: string) → CardHandle?", Kind.METHOD),
+                suggest("all(", "all(type: string?) → CardHandle[]", Kind.METHOD),
+                suggest("get(", "get(alias: string) → CardHandle", Kind.METHOD),
+            )
 
             "ItemsHandle" -> listOf(
                 suggest("hasTag(", "hasTag(tag: string) → boolean", Kind.METHOD),
