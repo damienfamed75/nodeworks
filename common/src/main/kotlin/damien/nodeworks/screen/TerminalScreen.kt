@@ -524,14 +524,17 @@ class TerminalScreen(
             scannedProcessable.addAll(api.outputItemIds)
         }
 
-        // Assign auto-aliases to unnamed cards (same logic as NetworkDiscovery)
+        // Assign auto-aliases to unnamed cards. Routes through the shared
+        // [autoAliasPrefix] so client-side and server-side discovery always
+        // produce the same names — without it the sidebar drifted from
+        // `network:get(...)` lookups when type-specific overrides were added.
         val counters = mutableMapOf<String, Int>()
         for (card in scannedCards) {
             if (card.alias == null) {
                 val type = card.capability.type
                 val count = counters.getOrDefault(type, 0) + 1
                 counters[type] = count
-                card.autoAlias = "${type}_$count"
+                card.autoAlias = "${damien.nodeworks.network.autoAliasPrefix(type)}_$count"
             }
         }
 

@@ -107,12 +107,7 @@ object NetworkDiscovery {
                         val type = card.capability.type
                         val count = counters.getOrDefault(type, 0) + 1
                         counters[type] = count
-                        // The terminal sidebar can only fit a handful of characters before
-                        // names start clipping into the scroll bar, and `observer_1` runs
-                        // exactly into that limit visually. Shorten just observer so its
-                        // default alias stays inside the rendered column.
-                        val prefix = if (type == "observer") "observ" else type
-                        card.autoAlias = "${prefix}_$count"
+                        card.autoAlias = "${autoAliasPrefix(type)}_$count"
                     }
                 }
             }
@@ -283,4 +278,18 @@ data class CardSnapshot(
 
     /** The effective alias — custom name if set, otherwise auto-generated. */
     val effectiveAlias: String get() = alias ?: autoAlias ?: capability.type
+}
+
+/** Map a capability `type` string to the prefix used in auto-aliases.
+ *
+ *  Most types use their type string verbatim (`io` → `io_1`, `storage` → `storage_1`),
+ *  but the terminal sidebar has a hard width limit and `observer_1` overflows the
+ *  rendered column. Override observer to a shorter prefix; everything else passes
+ *  through. Shared between [NetworkDiscovery.assignAutoAliases] and the terminal's
+ *  client-side fallback aliasing pass so both surfaces always agree on what an
+ *  unnamed card is called.
+ */
+fun autoAliasPrefix(type: String): String = when (type) {
+    "observer" -> "observ"
+    else -> type
 }
