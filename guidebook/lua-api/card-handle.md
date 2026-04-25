@@ -287,3 +287,73 @@ end)
 > when using `:onChange`
 
 ![](../assets/images/autorun.png)
+
+## Observer Card <ItemImage scale="0.5" id="nodeworks:observer_card" />
+
+*Applies to <ItemLink id="observer_card" />'s only.* The inventory methods above
+don't apply. An observer card's `card:find()` is nil. The card watches the block
+in front of the installed face and exposes its id, properties, and a change event.
+
+### block
+
+Returns the block id at the watched position as a `"namespace:path"` string.
+
+<LuaCode>
+```lua
+local watcher = network:get("watcher_1")
+print(watcher:block())
+-- "nodeworks:celestine_cluster"
+```
+</LuaCode>
+
+If the watched chunk isn't loaded the call still returns the cached block (Minecraft
+will load the chunk to read it). For high-volume scripts prefer `:onChange` over
+polling `:block()` every tick.
+
+### state
+
+Returns the property table for the watched block. Keys are the block's
+property names (`age`, `facing`, `waterlogged`, `lit`, `axis`, ...). Values
+come back as numbers, booleans, or lowercase strings depending on the
+property's type. Air and other propertyless blocks return an empty table.
+
+<LuaCode>
+```lua
+local s = network:get("watcher_1"):state()
+if s.age == 3 then
+    print("fully grown")
+end
+```
+</LuaCode>
+
+Different blocks expose different properties, what `state()` returns depends
+entirely on what the watched block is. Use `:block()` first if you need to
+branch on which block you're inspecting.
+
+### onChange
+
+Registers a callback that fires whenever the watched block id or any state
+property changes. Replaces any previous handler on the same card. The handler
+receives the new block id and the new property table.
+
+<LuaCode>
+```lua
+local watcher = network:get("watcher_1")
+local breaker = network:get("breaker_1")
+
+watcher:onChange(function(block: string, state: { [string]: any })
+    if block == "nodeworks:celestine_cluster" then
+        breaker:set(true)
+        scheduler:delay(2, function() breaker:set(false) end)
+    end
+end)
+```
+</LuaCode>
+
+The first poll after registration seeds the "last seen" state silently, a
+script that restarts won't fire a phantom event for a block that was already
+in its final form before the script came up.
+
+> **Tip:** Like the redstone `:onChange`, this is the kind of callback you'll
+> usually want autorunning. Turn on ["Autorun"](../items-blocks/scripting_terminal.md#autorun)
+> on the <ItemLink id="terminal" /> so the handler keeps firing across logins.

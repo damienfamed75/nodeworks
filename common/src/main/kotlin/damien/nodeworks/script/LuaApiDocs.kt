@@ -681,6 +681,43 @@ object LuaApiDocs {
             )
         )
 
+        // ===== ObserverCard =====
+        // Reads block id and state at the watched position. Drives stage-aware harvesting,
+        // fluid level checks, and any other "do X when this block becomes Y" automation
+        // without scripts having to poll on a scheduler.
+        put(
+            "ObserverCard", Doc(
+                signature = "type ObserverCard",
+                description = "A card that reads the block at its facing position. Exposes block(), state(), and onChange() instead of inventory methods.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/card-handle.md#observer-card",
+            )
+        )
+        put(
+            "ObserverCard:block", Doc(
+                signature = "ObserverCard:block() → string",
+                description = "Block id at the watched position, e.g. `\"minecraft:diamond_ore\"` or `\"nodeworks:celestine_cluster\"`.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/card-handle.md#block",
+            )
+        )
+        put(
+            "ObserverCard:state", Doc(
+                signature = "ObserverCard:state() → { [string]: any }",
+                description = "Property table for the watched block. Keys are property names; values are numbers, booleans, or lowercase strings.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/card-handle.md#state",
+            )
+        )
+        put(
+            "ObserverCard:onChange", Doc(
+                signature = "ObserverCard:onChange(fn: (block: string, state: { [string]: any }) → nil)",
+                description = "Fires whenever the watched block id or any state property changes. Replaces any prior handler on the same card.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/card-handle.md#observer-onchange",
+            )
+        )
+
         // ===== ItemsHandle =====
         put(
             "ItemsHandle", Doc(

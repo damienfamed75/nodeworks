@@ -219,6 +219,32 @@ class TerminalScreen(
     }
 
     /**
+     * Re-indent a multi-line autocomplete snippet so its body and closing line line up
+     * under the surrounding block. Snippet templates are authored as if they're
+     * inserted at column 0 (the inner empty line has 4 spaces, the closing `end)` has
+     * none); when the cursor is already nested inside a `for`/`function`/`if`, we glue
+     * [leading] onto every newline within the snippet so the inserted text continues
+     * the existing indent ladder. Cursor offset shifts forward by the count of inserted
+     * indent characters that fall before the original cursor position.
+     */
+    private fun indentSnippetLines(
+        snippet: String,
+        cursorOffset: Int,
+        leading: String,
+    ): Pair<String, Int> {
+        val out = StringBuilder(snippet.length + leading.length * 4)
+        var newCursor = cursorOffset
+        for ((i, ch) in snippet.withIndex()) {
+            out.append(ch)
+            if (ch == '\n') {
+                out.append(leading)
+                if (i < cursorOffset) newCursor += leading.length
+            }
+        }
+        return out.toString() to newCursor
+    }
+
+    /**
      * VSCode-style block indent / unindent of the currently-selected lines.
      *
      * @param shift  true = unindent (Shift+Tab), false = indent (Tab).
@@ -806,12 +832,13 @@ class TerminalScreen(
         for (card in cards) {
             val type = card.capability.type
             val iconU = when (type) {
-                "io" -> 0; "storage" -> 16; "redstone" -> 32; else -> 0
+                "io" -> 0; "storage" -> 16; "redstone" -> 32; "observer" -> 64; else -> 0
             }
             val color = when (type) {
                 "io" -> 0xFF83E086.toInt()
                 "storage" -> 0xFFAA83E0.toInt()
                 "redstone" -> 0xFFF53B68.toInt()
+                "observer" -> 0xFFFFEB3B.toInt()
                 "energy" -> 0xFFFFD700.toInt()
                 "fluid" -> 0xFF55AAFF.toInt()
                 else -> 0xFFAAAAAA.toInt()
@@ -848,13 +875,19 @@ class TerminalScreen(
                     0 -> Icons.IO_CARD
                     16 -> Icons.STORAGE_CARD
                     32 -> Icons.REDSTONE_CARD
+                    64 -> Icons.OBSERVER_CARD
                     else -> Icons.IO_CARD
                 }
 
                 "var" -> Icons.VARIABLE
                 else -> Icons.IO_CARD
             }
-            icon.drawSmall(graphics, leftPos + 7, y + 1)
+            // Observer card art uses the full 16px width of its atlas cell, so the
+            // standard 8×8 small-render crops its outer columns. Draw a 10×8 slice
+            // (1px wider on each side) shifted left by 1px to keep it centred under
+            // the same anchor as the other 8-wide card icons.
+            if (entry.iconU == 64) icon.drawSmallWide(graphics, leftPos + 6, y + 1)
+            else icon.drawSmall(graphics, leftPos + 7, y + 1)
 
             // Track hover state for scroll timing
             if (hovered) {
@@ -1506,11 +1539,26 @@ class TerminalScreen(
                             val importPrefix = result.autoImportLine?.let { line ->
                                 if (text.contains(line)) "" else "$line\n"
                             } ?: ""
+                            // Snippet expansion preserves the surrounding indent. Multi-line
+                            // snippet bodies are authored with their *own* relative indent
+                            // (an empty body line + closing `end)` flush left), so when they
+                            // land deep inside an existing block we have to glue the line's
+                            // leading whitespace onto every internal newline. Without this
+                            // fix the inserted body and `end)` clip back to column 0,
+                            // forcing the user to manually re-indent every accept inside a
+                            // for / function / if block.
+                            val lineStart = text.lastIndexOf('\n', (deleteStart - 1).coerceAtLeast(0)) + 1
+                            val lineLeading = text.substring(lineStart, deleteStart)
+                                .takeWhile { it == ' ' || it == '\t' }
+                            val (insertText, cursorOffset) =
+                                if (lineLeading.isNotEmpty() && '\n' in result.insertText)
+                                    indentSnippetLines(result.insertText, result.cursorOffset, lineLeading)
+                                else result.insertText to result.cursorOffset
                             val newText = importPrefix +
                                 text.substring(0, deleteStart) +
-                                result.insertText +
+                                insertText +
                                 text.substring(deleteEnd)
-                            editor.setValueKeepScroll(newText, importPrefix.length + deleteStart + result.cursorOffset)
+                            editor.setValueKeepScroll(newText, importPrefix.length + deleteStart + cursorOffset)
                             suppressAutocomplete = false
                             // Only re-trigger autocomplete when the accepted result lands the
                             // cursor *inside* the inserted text — e.g. a snippet with cursor in
@@ -1521,7 +1569,7 @@ class TerminalScreen(
                             // next keystroke, matching VSCode's behaviour — otherwise accepting
                             // `cobblestone` in `"$item:cobblestone|"` pops the list right back
                             // up with `cobblestone_slab` etc. because the prefix still matches.
-                            if (result.cursorOffset < result.insertText.length) {
+                            if (cursorOffset < insertText.length) {
                                 autocomplete.update(
                                     editor.value,
                                     editor.getCursorPosition(),

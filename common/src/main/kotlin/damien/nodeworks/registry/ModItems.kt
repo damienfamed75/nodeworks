@@ -2,6 +2,7 @@ package damien.nodeworks.registry
 
 import damien.nodeworks.card.IOCard
 import damien.nodeworks.card.InstructionSet
+import damien.nodeworks.card.ObserverCard
 import damien.nodeworks.card.ProcessingSet
 import damien.nodeworks.card.RedstoneCard
 import damien.nodeworks.card.StorageCard
@@ -40,6 +41,12 @@ object ModItems {
     val REDSTONE_CARD: Item = register(
         "redstone_card",
         ::RedstoneCard,
+        Item.Properties().stacksTo(1)
+    )
+
+    val OBSERVER_CARD: Item = register(
+        "observer_card",
+        ::ObserverCard,
         Item.Properties().stacksTo(1)
     )
 

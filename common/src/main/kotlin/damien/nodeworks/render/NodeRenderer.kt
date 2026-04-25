@@ -58,7 +58,8 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         private val CARD_COLORS = mapOf(
             "io"       to Triple(0x83, 0xE0, 0x86), // green
             "storage"  to Triple(0xAA, 0x83, 0xE0), // purple
-            "redstone" to Triple(0xF5, 0x3B, 0x68)  // red
+            "redstone" to Triple(0xF5, 0x3B, 0x68), // red
+            "observer" to Triple(0xFF, 0xEB, 0x3B)  // yellow
         )
 
         /** Fixed 3×3 grid offsets for the 9 card slots on a node face, centered around 0. */
@@ -92,9 +93,16 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             val links = mutableListOf<CardLink>()
             for (side in Direction.entries) {
                 val adjacentPos = blockEntity.blockPos.relative(side)
-                if (level.getBlockState(adjacentPos).isAir) continue
+                val targetIsAir = level.getBlockState(adjacentPos).isAir
                 for (card in blockEntity.getCards(side)) {
                     val (r, g, b) = CARD_COLORS[card.card.cardType] ?: continue
+                    // Inventory cards (io / storage) and the redstone card need a real
+                    // adjacent block to do anything, so we don't draw their beam into
+                    // empty air. Observer cards are useful pointed at air — they fire
+                    // onChange when something *appears* there — so their beam stays
+                    // visible regardless. Future card types that should beam into air
+                    // get added here.
+                    if (targetIsAir && card.card.cardType != "observer") continue
                     links.add(CardLink(side, card.slotIndex, r, g, b))
                 }
             }

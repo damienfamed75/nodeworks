@@ -37,6 +37,14 @@ class Icons private constructor(val col: Int, val row: Int) {
         graphics.blit(ATLAS, x, y, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
     }
 
+    /** Draw a center 10x8 slice of this icon (3px horizontal inset, 4px vertical
+     *  inset). Use for cells whose artwork extends wider than 8px and would lose
+     *  edge columns under [drawSmall]'s 4px crop — typically when the small render
+     *  needs to preserve the leftmost / rightmost authored pixels. */
+    fun drawSmallWide(graphics: GuiGraphicsExtractor, x: Int, y: Int) {
+        graphics.blit(ATLAS, x, y, (u + 3).toFloat(), (v + 4).toFloat(), 10, 8, 256, 256)
+    }
+
     /** Draw only the top-left [w] × [h] region of this cell, at its native size. Useful for
      *  icons smaller than 16×16 (e.g. a 5×5 X) authored in the top-left corner of a cell. */
     fun drawTopLeft(graphics: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int) {
@@ -179,5 +187,8 @@ class Icons private constructor(val col: Int, val row: Int) {
         val CRAFTING_GRID_CLEAR = Icons(13, 3)
         val CRAFTING_GRID_DISTRIBUTE = Icons(14, 3)
         val RESERVED_SLOT = Icons(15, 3)
+
+        // Row 4 - More Card Icons
+        val OBSERVER_CARD = Icons(0, 4)
     }
 }

@@ -65,6 +65,17 @@ class ScriptEngine(
     )
     private val redstoneCallbacks = mutableMapOf<String, RedstoneCallback>()
 
+    /** Observer onChange callbacks. Keyed by card alias → (capability, lastState, callback).
+     *  [lastState] starts populated with the state observed when the script registers the
+     *  callback so a fresh script run doesn't fire a spurious onChange for a block that's
+     *  been sitting in its final form since before the script started. */
+    private data class ObserverCallback(
+        val capability: damien.nodeworks.card.ObserverSideCapability,
+        var lastState: net.minecraft.world.level.block.state.BlockState,
+        val callback: LuaFunction
+    )
+    private val observerCallbacks = mutableMapOf<String, ObserverCallback>()
+
 
     fun start(scripts: Map<String, String>): Boolean {
         stop()
@@ -152,6 +163,7 @@ class ScriptEngine(
         inventoryCache = null // clear local reference, cache lives in global registry
         processingHandlers.clear()
         redstoneCallbacks.clear()
+        observerCallbacks.clear()
         // Stop every registered preset before wiping the scheduler so per-preset
         // cleanup (Stocker's pending craft callbacks, cached CardSnapshot lookups,
         // etc.) runs while the scheduler task ids are still valid. Exceptions in
@@ -169,6 +181,7 @@ class ScriptEngine(
     fun hasWork(): Boolean = scheduler.hasActiveTasks()
         || processingHandlers.isNotEmpty()
         || redstoneCallbacks.isNotEmpty()
+        || observerCallbacks.isNotEmpty()
         || routeTable?.hasRoutes() == true
 
 
@@ -191,6 +204,7 @@ class ScriptEngine(
         try {
             scheduler.tick(tickCount)
             pollRedstoneCallbacks()
+            pollObserverCallbacks()
         } catch (e: LuaError) {
             logCallback("Runtime error: ${e.message}", true)
             stop()
@@ -209,6 +223,57 @@ class ScriptEngine(
                 cb.callback.call(LuaValue.valueOf(currentStrength))
             }
         }
+    }
+
+    /** Polled once per server tick. Skips any observer whose target chunk isn't loaded
+     *  so a far-away farm doesn't pay chunk-load cost from the polling loop alone — when
+     *  the chunk reloads the next poll resyncs `lastState` silently and won't fire a
+     *  spurious onChange for the load delta. Handler exceptions are caught and routed
+     *  through the log so one bad observer can't kill the whole tick. */
+    private fun pollObserverCallbacks() {
+        if (observerCallbacks.isEmpty()) return
+        for ((alias, cb) in observerCallbacks) {
+            val pos = cb.capability.adjacentPos
+            if (!level.isLoaded(pos)) continue
+            val current = level.getBlockState(pos)
+            if (current == cb.lastState) continue
+            cb.lastState = current
+            try {
+                cb.callback.call(
+                    LuaValue.valueOf(blockIdOf(current)),
+                    blockStateToLua(current)
+                )
+            } catch (e: LuaError) {
+                logCallback("[observer:$alias] ${e.message}", true)
+            } catch (e: Exception) {
+                logCallback("[observer:$alias] ${e.message ?: e.javaClass.simpleName}", true)
+            }
+        }
+    }
+
+    /** Block id at [pos] formatted as `"namespace:path"`. Used by observer reads
+     *  and onChange dispatch so scripts can compare against literal id strings. */
+    private fun blockIdOf(state: net.minecraft.world.level.block.state.BlockState): String =
+        net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.block).toString()
+
+    /** Convert a [BlockState]'s property map into a Lua table. Numeric properties
+     *  surface as Lua numbers, booleans as booleans, and enum-like properties (facing,
+     *  half, axis, …) as lowercase strings to match Minecraft's command syntax. Block
+     *  types with no properties produce an empty table. */
+    private fun blockStateToLua(state: net.minecraft.world.level.block.state.BlockState): LuaTable {
+        val t = LuaTable()
+        for (prop in state.properties) {
+            @Suppress("UNCHECKED_CAST")
+            val typed = prop as net.minecraft.world.level.block.state.properties.Property<Comparable<Any>>
+            val value = state.getValue(typed)
+            val lua: LuaValue = when (value) {
+                is Boolean -> LuaValue.valueOf(value)
+                is Number -> LuaValue.valueOf(value.toInt())
+                else -> LuaValue.valueOf(value.toString().lowercase())
+            }
+            t.set(prop.name, lua)
+        }
+        return t
     }
 
     companion object {
@@ -365,6 +430,45 @@ class ScriptEngine(
                     val fn = fnArg.checkfunction()
                     val currentStrength = level.getSignal(cap.adjacentPos, cap.nodeSide)
                     redstoneCallbacks[alias] = RedstoneCallback(cap, currentStrength, fn)
+                    return LuaValue.NIL
+                }
+            })
+        }
+
+        if (cap is damien.nodeworks.card.ObserverSideCapability) {
+            // Observer cards have no inventory and no redirected face — `:face` would
+            // produce a CardHandle table that hides `block`/`state`/`onChange` and would
+            // also re-install inventory methods that crash on a non-storage block. Same
+            // pattern as redstone: scrub the inventory surface, then bind the typed methods.
+            table.set("find", LuaValue.NIL)
+            table.set("findEach", LuaValue.NIL)
+            table.set("insert", LuaValue.NIL)
+            table.set("tryInsert", LuaValue.NIL)
+            table.set("count", LuaValue.NIL)
+            table.set("slots", LuaValue.NIL)
+            table.set("face", LuaValue.NIL)
+
+            // block() → string  — current block id at the watched position.
+            table.set("block", object : OneArgFunction() {
+                override fun call(selfArg: LuaValue): LuaValue =
+                    LuaValue.valueOf(blockIdOf(level.getBlockState(cap.adjacentPos)))
+            })
+
+            // state() → { [string]: any }  — properties of the watched block.
+            table.set("state", object : OneArgFunction() {
+                override fun call(selfArg: LuaValue): LuaValue =
+                    blockStateToLua(level.getBlockState(cap.adjacentPos))
+            })
+
+            // onChange(function(block: string, state: table))
+            // Replaces any prior handler bound to the same alias. `lastState` seeds with the
+            // current block so the very first poll after registration won't fire a phantom
+            // change event for "transition from null to whatever's already there."
+            table.set("onChange", object : TwoArgFunction() {
+                override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
+                    val fn = fnArg.checkfunction()
+                    val seed = level.getBlockState(cap.adjacentPos)
+                    observerCallbacks[alias] = ObserverCallback(cap, seed, fn)
                     return LuaValue.NIL
                 }
             })

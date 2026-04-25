@@ -107,7 +107,12 @@ object NetworkDiscovery {
                         val type = card.capability.type
                         val count = counters.getOrDefault(type, 0) + 1
                         counters[type] = count
-                        card.autoAlias = "${type}_$count"
+                        // The terminal sidebar can only fit a handful of characters before
+                        // names start clipping into the scroll bar, and `observer_1` runs
+                        // exactly into that limit visually. Shorten just observer so its
+                        // default alias stays inside the rendered column.
+                        val prefix = if (type == "observer") "observ" else type
+                        card.autoAlias = "${prefix}_$count"
                     }
                 }
             }

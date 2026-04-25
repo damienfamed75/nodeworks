@@ -1,6 +1,7 @@
 package damien.nodeworks.block.entity
 
 import damien.nodeworks.card.IOSideCapability
+import damien.nodeworks.card.ObserverSideCapability
 import damien.nodeworks.card.RedstoneSideCapability
 import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.card.NodeCard
@@ -144,6 +145,7 @@ class NodeBlockEntity(
                     StorageSideCapability(adjacentPos, accessFace, priority)
                 }
                 is damien.nodeworks.card.RedstoneCard -> RedstoneSideCapability(adjacentPos, worldPosition, side, accessFace)
+                is damien.nodeworks.card.ObserverCard -> ObserverSideCapability(adjacentPos, accessFace)
                 else -> null
             }
             SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex)

@@ -1139,10 +1139,31 @@ class AutocompletePopup(
             val alias = it.groupValues[2]
             if (varName !in symbols) {
                 val card = cards.firstOrNull { c -> c.effectiveAlias == alias }
-                val type = if (card?.capability?.type == "redstone") "RedstoneCard" else "CardHandle"
+                val type = when (card?.capability?.type) {
+                    "redstone" -> "RedstoneCard"
+                    "observer" -> "ObserverCard"
+                    else -> "CardHandle"
+                }
                 symbols[varName] = type
             }
         }
+        // Special case: network:getAll("type") — the static signature returns
+        // `{ CardHandle… }` because LuaApiDocs has no arg-aware return-type lookup,
+        // but at the assignment site we know the literal type string and can
+        // narrow the element type so chained ops on a loop-bound element resolve
+        // against the right card-specific method list.
+        Regex("""\blocal\s+(\w+)\s*=\s*network:getAll\s*\(\s*"(\w+)"\s*\)""").findAll(fullText).forEach {
+            val varName = it.groupValues[1]
+            val typeArg = it.groupValues[2]
+            val element = when (typeArg) {
+                "redstone" -> "RedstoneCard"
+                "observer" -> "ObserverCard"
+                else -> "CardHandle"
+            }
+            symbols.putIfAbsent(varName, "{ $element }")
+            containerVars.putIfAbsent(varName, element to LuaApiDocs.Container.ARRAY)
+        }
+
         // Special case: network:var("name") needs argument to determine specific type
         Regex("""\blocal\s+(\w+)\s*=\s*network:var\s*\(\s*"(\w+)"\s*\)""").findAll(fullText).forEach {
             val varName = it.groupValues[1]
@@ -1430,7 +1451,7 @@ class AutocompletePopup(
             }
 
             ctx.funcExpr.endsWith("network:getAll") -> {
-                fuzzyStrings(ctx.partial, listOf("io", "storage"))
+                fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer"))
             }
 
             ctx.funcExpr.endsWith("network:craft") -> {
@@ -1636,6 +1657,7 @@ class AutocompletePopup(
         Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft", kind = Kind.TYPE),
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get", kind = Kind.TYPE),
         Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get", kind = Kind.TYPE),
+        Suggestion("ObserverCard", "ObserverCard — observer card from network:get", kind = Kind.TYPE),
         Suggestion("Job", "Job — processing handler context from network:handle", kind = Kind.TYPE),
         Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()", kind = Kind.TYPE),
         Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:var", kind = Kind.TYPE),
@@ -1884,6 +1906,20 @@ class AutocompletePopup(
                 )
             }
 
+            "ObserverCard" -> {
+                val onChangeBody = "onChange(function(block: string, state: { [string]: any })\n    \nend)"
+                listOf(
+                    suggest("block(", "block() → string", Kind.METHOD),
+                    suggest("state(", "state() → { [string]: any }", Kind.METHOD),
+                    snippet(
+                        "onChange(",
+                        "onChange(fn(block: string, state: { [string]: any }))",
+                        onChangeBody,
+                        onChangeBody.indexOf("\n    \n") + 5
+                    )
+                )
+            }
+
             "ItemsHandle" -> listOf(
                 suggest("hasTag(", "hasTag(tag: string) → boolean", Kind.METHOD),
                 suggest("matches(", "matches(filter: string) → boolean", Kind.METHOD)
@@ -1967,7 +2003,7 @@ class AutocompletePopup(
             // CardHandle and RedstoneCard share the same underlying Lua table (same
             // `.name` binding from CardHandle.create); the two entries just exist so
             // method autocomplete can show the appropriate method set per card kind.
-            "CardHandle", "RedstoneCard" -> listOf(
+            "CardHandle", "RedstoneCard", "ObserverCard" -> listOf(
                 suggest("name", "name: string (card's alias)", Kind.PROPERTY)
             )
 

@@ -62,3 +62,17 @@ data class RedstoneSideCapability(
 ) : SideCapability {
     override val type: String = "redstone"
 }
+
+/**
+ * Observer Card capability — reads block state at the adjacent position. The
+ * card has no inherent action surface; scripts pull data via `block()` /
+ * `state()` and subscribe to changes via `onChange()`. [accessFace] is the
+ * face of the target block that faces the node and is currently kept for
+ * symmetry with other cards even though state reads don't need a side.
+ */
+data class ObserverSideCapability(
+    override val adjacentPos: BlockPos,
+    val accessFace: Direction
+) : SideCapability {
+    override val type: String = "observer"
+}

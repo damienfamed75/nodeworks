@@ -15,3 +15,4 @@ Here are the cards:
 - <ItemLink id="io_card" />
 - <ItemLink id="storage_card" />
 - <ItemLink id="redstone_card" />
+- <ItemLink id="observer_card" />
