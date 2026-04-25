@@ -22,6 +22,13 @@ with a few quality-of-life extensions the editor handles before the script runs:
 - [print(...)](): log to terminal output
 - [require(name)](): load another script tab from the same terminal by name
 
+## Presets
+
+Declarative builders that wrap common scheduler loops in one-line chains. See
+[Presets](presets.md) for the shared pattern.
+
+<CategoryIndexDescriptions category="api_preset" />
+
 ## Types
 
 <CategoryIndexDescriptions category="api_types" />

@@ -2,6 +2,7 @@
 navigation:
   parent: lua-api/index.md
   title: ItemsHandle
+  icon: minecraft:bundle
 categories:
   - api_types
 description: a specific resource (items or fluid) with count, source, and transfer ops.

@@ -60,7 +60,13 @@ class AutocompletePopup(
          *  following the cursor (e.g. the `")` from typing `handle("` with auto-pair).
          *  Use for full-block snippets that provide their own closing punctuation. */
         val consumesAutoclose: Boolean = false,
-        val kind: Kind = Kind.VARIABLE
+        val kind: Kind = Kind.VARIABLE,
+        /** Optional `local <name> = network:get("...")` (or `:var(...)`) line that
+         *  should be prepended to the script when this suggestion is accepted. Set
+         *  on auto-import suggestions for cards / variables the player hasn't yet
+         *  bound to a local. The terminal's accept handler is responsible for
+         *  inserting it (with a duplicate guard) before applying [insertText]. */
+        val autoImport: String? = null
     )
 
     var visible: Boolean = false
@@ -183,7 +189,11 @@ class AutocompletePopup(
         val cursorOffset: Int = insertText.length,
         /** How many chars AFTER the cursor to also delete (to absorb auto-paired `")`
          *  when a full-block snippet provides its own closing punctuation). */
-        val consumeAfter: Int = 0
+        val consumeAfter: Int = 0,
+        /** Optional `local NAME = network:get("...")` line for auto-import. Forwarded
+         *  from [Suggestion.autoImport]. The terminal's accept handler prepends this
+         *  to the script (idempotent — duplicate import lines are skipped). */
+        val autoImportLine: String? = null
     )
 
     fun accept(textAfterCursor: String = ""): AcceptResult? {
@@ -195,15 +205,15 @@ class AutocompletePopup(
             val cursorPos =
                 if (suggestion.snippetCursor >= 0) suggestion.snippetCursor else suggestion.snippetText.length
             val consume = if (suggestion.consumesAutoclose) countAutocloseChars(textAfterCursor) else 0
-            return AcceptResult(deleteCount, suggestion.snippetText, cursorPos, consume)
+            return AcceptResult(deleteCount, suggestion.snippetText, cursorPos, consume, autoImportLine = suggestion.autoImport)
         }
         // Auto-close parentheses: `func(` → `func()` with cursor between
         val text = suggestion.insertText
         if (text.endsWith("(")) {
             val closed = text + ")"
-            return AcceptResult(deleteCount, closed, text.length) // cursor between ( and )
+            return AcceptResult(deleteCount, closed, text.length, autoImportLine = suggestion.autoImport)
         }
-        return AcceptResult(deleteCount, text, text.length)
+        return AcceptResult(deleteCount, text, text.length, autoImportLine = suggestion.autoImport)
     }
 
     /** Count leading auto-pair chars we'd redundantly preserve otherwise. Matches the
@@ -348,8 +358,11 @@ class AutocompletePopup(
         /** `var.partial` — property access on a variable */
         data class PropertyAccess(val receiver: String, val partial: String) : CursorContext
 
-        /** Inside a string argument: `func("partial` */
-        data class StringArg(val funcExpr: String, val partial: String) : CursorContext
+        /** Inside a string argument: `func("partial`. [argIndex] is the 0-based position of
+         *  this string among the call's comma-separated arguments so position-sensitive
+         *  suggestions can distinguish first-arg from later-arg (e.g. importer:from's
+         *  first arg is a filter, subsequent args are card names). */
+        data class StringArg(val funcExpr: String, val partial: String, val argIndex: Int = 0) : CursorContext
 
         /** Type annotation context: `local x: partial` or `function(a: partial` */
         data class TypeAnnotation(val partial: String) : CursorContext
@@ -357,8 +370,16 @@ class AutocompletePopup(
         /** `#partial` — item tag filter */
         data class TagFilter(val partial: String) : CursorContext
 
-        /** Method call where the receiver type has been resolved from a chain */
-        data class ResolvedMethodCall(val resolvedType: String, val partial: String) : CursorContext
+        /** Method call where the receiver type has been resolved from a chain. [chainExpr]
+         *  is the source text of the chain that produced [resolvedType] (e.g.
+         *  `"stocker:ensure(\"minecraft:iron_ingot\")"`); suggestion filters use it to
+         *  hide methods that don't apply to specific factory paths — `:ensure` / `:craft`
+         *  pre-set the filter, so `:filter(...)` shouldn't be offered after them. */
+        data class ResolvedMethodCall(
+            val resolvedType: String,
+            val partial: String,
+            val chainExpr: String? = null,
+        ) : CursorContext
 
         /** Property access where the receiver type has been resolved from a chain */
         data class ResolvedPropertyAccess(val resolvedType: String, val partial: String) : CursorContext
@@ -464,15 +485,44 @@ class AutocompletePopup(
         // The opening paren for this string arg
         val parenIdx = findMatchingContext(beforeQuote)
         if (parenIdx >= 0) {
+            // Count top-level commas between the `(` and the opening quote — that's how
+            // many arguments came before this one. Skips commas inside nested parens and
+            // string literals so `f("a,b", "c|")` correctly reads as argIndex=1.
+            val argList = line.substring(parenIdx + 1, lastQuoteIdx)
+            val argIndex = countTopLevelCommas(argList)
+
             val funcExpr = beforeQuote.substring(0, parenIdx).trimEnd()
             // Extract the function name/expression (e.g., "network:get", "network:craft", ":face")
             val funcMatch = Regex("""([\w:]+)\s*$""").find(funcExpr)
             if (funcMatch != null) {
-                return CursorContext.StringArg(funcMatch.groupValues[1], partial)
+                return CursorContext.StringArg(funcMatch.groupValues[1], partial, argIndex)
             }
         }
 
         return CursorContext.StringArg("", partial)
+    }
+
+    /** Count commas at bracket/brace/string depth 0. Used to figure out which argument
+     *  position the cursor sits in for context-aware string-arg suggestions. */
+    private fun countTopLevelCommas(s: String): Int {
+        var depth = 0
+        var inString = false
+        var count = 0
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            val escaped = i > 0 && s[i - 1] == '\\'
+            when {
+                !escaped && c == '"' -> inString = !inString
+                !inString -> when (c) {
+                    '(', '{', '[' -> depth++
+                    ')', '}', ']' -> depth--
+                    ',' -> if (depth == 0) count++
+                }
+            }
+            i++
+        }
+        return count
     }
 
     /** Find the position of the `(` that opens the current argument context. */
@@ -608,7 +658,34 @@ class AutocompletePopup(
         val colonMatch = Regex(""":(\w*)$""").find(line) ?: return null
         val partial = colonMatch.groupValues[1]
         val beforeColon = line.substring(0, colonMatch.range.first)
-        val trimBefore = beforeColon.trimEnd()
+        var trimBefore = beforeColon.trimEnd()
+
+        // Multi-line chain: the current line is just whitespace + `:`, so the
+        // expression that `partial` is being called on lives on prior lines.
+        // Walk backward collecting every continuation line (one that starts with
+        // `:` after leading whitespace) up through the first line that doesn't
+        // continue a chain — that's the chain's root receiver. Concatenate the
+        // lot into a single logical expression so [resolveExpressionType] and
+        // [extractReceiverType] can resolve it the same way as a single-line
+        // chain, including receiver-aware method-return lookup. Covers:
+        //
+        //   importer                   -> `importer:<partial>`
+        //       :<partial>
+        //
+        //   stocker:from(network)       -> `stocker:from(network):to("foo"):<partial>`
+        //       :to("foo")
+        //       :<partial>
+        //
+        //   stocker
+        //       :from(network)          -> `stocker:from(network):to(x):<partial>`
+        //       :to(x)
+        //       :<partial>
+        if (trimBefore.isEmpty()) {
+            val priorText = beforeCursor.substring(0, beforeCursor.length - line.length).trimEnd()
+            if (priorText.isEmpty()) return null
+            trimBefore = collectChainExpression(priorText) ?: return null
+        }
+
         if (trimBefore.isEmpty()) return null
 
         // CraftBuilder chain on next line: `network:craft(...)\n  :partial`
@@ -621,7 +698,7 @@ class AutocompletePopup(
         if (trimBefore.endsWith(")")) {
             val chainType = resolveExpressionType(trimBefore, forChaining = true)
             if (chainType != null) {
-                return CursorContext.ResolvedMethodCall(chainType, partial)
+                return CursorContext.ResolvedMethodCall(chainType, partial, chainExpr = trimBefore)
             }
         }
 
@@ -731,8 +808,72 @@ class AutocompletePopup(
         val paren = findMatchingParenBackward(trimmed) ?: return null
         val beforeParen = paren.first.trimEnd()
         val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
-        return LuaApiDocs.methodReturnType(methodName)
+        val receiverType = extractReceiverType(beforeParen, methodName)
+        return LuaApiDocs.methodReturnType(methodName, receiverType)
             ?: userFunctionReturnType(methodName, cachedFullText)
+    }
+
+    /** Walk backward through [priorText] collecting every continuation line
+     *  (one whose first non-whitespace character is `:`) up through the first
+     *  line that doesn't continue a chain. The first non-continuation line is
+     *  the chain's root receiver. Result is the lines joined into a single
+     *  logical expression with no newlines between them so the single-line
+     *  resolution path in [findColonContext] and [resolveExpressionType] can
+     *  operate on it unmodified. Returns null when [priorText] has no
+     *  continuation lines or the root line itself is empty. */
+    private fun collectChainExpression(priorText: String): String? {
+        val lines = priorText.split('\n')
+        // Iterate backward looking for continuation lines. When we hit a line
+        // that doesn't start with `:` after stripping leading whitespace, that's
+        // the root receiver and we stop. If the immediately prior line isn't a
+        // continuation AND doesn't read as a bare expression, bail — we don't
+        // want to stitch unrelated code together.
+        val collected = ArrayDeque<String>()
+        for (i in lines.indices.reversed()) {
+            val stripped = lines[i].trimStart()
+            if (stripped.isEmpty()) continue
+            collected.addFirst(stripped)
+            if (!stripped.startsWith(":")) break
+        }
+        if (collected.isEmpty()) return null
+        // Join with no separator; `partial`'s leading `:` is still on the
+        // current line and isn't part of what we're resolving.
+        return collected.joinToString("")
+    }
+
+    /** Extract the receiver's type name from an expression like `importer:from` or
+     *  `importer:from(...):to`. Used to qualify [LuaApiDocs.methodReturnType] so sibling
+     *  types with matching short method names resolve to the right return type.
+     *
+     *  Supports three shapes:
+     *    * Bare module identifier: `importer:from` → "Importer" (via `moduleTypeFor`)
+     *    * Chained call: `importer:from(...):to` → "ImporterBuilder" (via recursive chain resolve)
+     *    * Symbol-table variable: `myImp:to` → whatever `myImp` was inferred as
+     *
+     *  Returns null if none of those resolve (expression uses something the resolver
+     *  doesn't track yet). The caller falls back to bare-name lookup, so a null here
+     *  just means "no disambiguation available."
+     */
+    private fun extractReceiverType(beforeParen: String, methodName: String): String? {
+        val colonIdx = beforeParen.lastIndexOf(':')
+        if (colonIdx <= 0) return null
+        val receiverExpr = beforeParen.substring(0, colonIdx).trimEnd()
+
+        // Chain: `importer:from(...):to` — recursively resolve the call's return type.
+        if (receiverExpr.endsWith(")")) {
+            return resolveExpressionType(receiverExpr, forChaining = true)
+        }
+
+        // Bare identifier: either a module global (importer, stocker, network, scheduler)
+        // or a user variable whose type we've inferred.
+        val bareMatch = Regex("""(\w+)$""").matchEntire(receiverExpr)
+        if (bareMatch != null) {
+            val name = bareMatch.groupValues[1]
+            LuaApiDocs.moduleTypeFor(name)?.let { return it }
+            // Symbol-table inference (user variable) is handled in higher-level contexts
+            // where the symbol table is available; don't duplicate that lookup here.
+        }
+        return null
     }
 
     /** Scalar return type lookup driving both chain resolution and `local x = fn(...)`
@@ -741,8 +882,8 @@ class AutocompletePopup(
      *  returns (`{ Type… }`, `{ [K]: V }`) return null here because chaining off an array
      *  value makes no sense; the for-loop inference path uses
      *  [LuaApiDocs.methodReturnType] directly to pull element types. */
-    private fun scalarReturnTypeOf(methodName: String): String? {
-        val rt = LuaApiDocs.methodReturnType(methodName) ?: return null
+    private fun scalarReturnTypeOf(methodName: String, receiverType: String? = null): String? {
+        val rt = LuaApiDocs.methodReturnType(methodName, receiverType) ?: return null
         return if (rt.container == LuaApiDocs.Container.NONE) rt.type else null
     }
 
@@ -770,7 +911,8 @@ class AutocompletePopup(
         // [allReturnTypes]. Container-typed built-ins (arrays/maps) intentionally fall
         // through to null here — you can't chain `.foo` off the array value itself.
         allReturnTypes[methodName]?.let { return it }
-        return scalarReturnTypeOf(methodName)
+        val receiverType = extractReceiverType(beforeParen, methodName)
+        return scalarReturnTypeOf(methodName, receiverType)
     }
 
     /** User-defined function return types (scalar only). Rebuilt once per computeSuggestions call. */
@@ -1186,7 +1328,16 @@ class AutocompletePopup(
             is CursorContext.StringArg -> suggestStringArg(ctx)
             is CursorContext.TypeAnnotation -> suggestTypeAnnotation(ctx.partial)
             is CursorContext.TagFilter -> suggestTag(ctx.partial)
-            is CursorContext.ResolvedMethodCall -> suggestMethodsForType(ctx.resolvedType, ctx.partial)
+            is CursorContext.ResolvedMethodCall -> {
+                val raw = suggestMethodsForType(ctx.resolvedType, ctx.partial)
+                // `:ensure()` and `:craft()` factory paths set the filter to the concrete
+                // item id, so `:filter(...)` on the resulting builder is a footgun (would
+                // silently override the auto-set filter). Hide it from suggestions when
+                // the chain came in through one of those entry points.
+                if (ctx.resolvedType == "StockerBuilder" &&
+                    ctx.chainExpr?.let { it.contains(":ensure(") || it.contains(":craft(") } == true
+                ) raw.filter { !it.insertText.startsWith("filter(") } else raw
+            }
             is CursorContext.ResolvedPropertyAccess -> suggestPropertiesForType(ctx.resolvedType, ctx.partial)
             is CursorContext.ChainedPropertyAccess -> suggestChainedPropertyAccess(ctx, symbols)
             is CursorContext.ChainedMethodCall -> suggestChainedMethodCall(ctx, symbols)
@@ -1331,8 +1482,89 @@ class AutocompletePopup(
 
             isResourceFilterFunc(ctx.funcExpr) -> suggestResourceFilter(ctx.partial)
 
+            // Importer / Stocker presets. `:from` and `:to` take card aliases (or the
+            // `network` sentinel); `:filter` takes a resource filter; `:ensure` /
+            // `:craft` take a concrete item id.
+            //
+            // Matches both the unchained form (`importer:from(`) and the chained form
+            // where funcExpr collapses to just `:from` after a prior method call like
+            // `importer:<call>():from(`.
+            ctx.funcExpr.endsWithPresetMethod(":from") ||
+            ctx.funcExpr.endsWithPresetMethod(":to") -> {
+                suggestCardAliasString(ctx.partial)
+            }
+
+            ctx.funcExpr.endsWithPresetMethod(":filter") -> {
+                suggestResourceFilter(ctx.partial)
+            }
+
+            ctx.funcExpr.endsWithPresetMethod(":ensure") ||
+            ctx.funcExpr.endsWithPresetMethod(":craft") && !ctx.funcExpr.endsWith("network:craft") -> {
+                fuzzyStrings(ctx.partial, craftableOutputs)
+            }
+
             else -> emptyList()
         }
+    }
+
+    /** Match a method-name suffix whether the funcExpr is qualified (`importer:from`)
+     *  or collapsed to just `:from` via a chain (`importer:x():from`). Colon kept so
+     *  this doesn't accidentally match fragments like `someFrom`. */
+    private fun String.endsWithPresetMethod(suffix: String): Boolean =
+        this == suffix || this.endsWith("importer$suffix") || this.endsWith("stocker$suffix")
+
+    /** Card alias suggestions used by preset :from / :to string args. Lists every
+     *  alias on the network annotated with its capability kind, plus a
+     *  `<prefix>_*` wildcard completion whenever two or more cards share the Card
+     *  Programmer's `_N` numbered-suffix convention. Mirrors the grouping
+     *  behaviour of `network:route` so `io_1`, `io_2`, `io_3` all collapse into
+     *  a single `io_*` suggestion. Same numbered cards are hidden by default
+     *  (the wildcard is the usual intent) unless the player is disambiguating by
+     *  typing the digit suffix themselves. */
+    private fun suggestCardAliasString(partial: String): List<Suggestion> {
+        // Collect (alias, capability type) pairs, keeping the first capability type
+        // we see per alias so `{"io_1" to "io", "io_1" to "storage"}` (unlikely but
+        // possible) doesn't produce duplicates in the popup.
+        val aliasToType = LinkedHashMap<String, String>()
+        for (card in cards) {
+            aliasToType.putIfAbsent(card.effectiveAlias, card.capability.type)
+        }
+
+        // Group by the prefix before `_N`. Singletons don't count — a lone card
+        // stays a literal alias in the suggestion list.
+        val suffixGroups = aliasToType.keys
+            .mapNotNull { alias ->
+                val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
+                match.groupValues[1] to alias
+            }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { it.size >= 2 }
+
+        // Hide numbered cards from grouped sets unless the user is disambiguating.
+        val hiddenAliases = mutableSetOf<String>()
+        for ((prefix, aliases) in suffixGroups) {
+            val stem = "${prefix}_"
+            val disambiguating = partial.startsWith(stem) &&
+                partial.length > stem.length &&
+                partial[stem.length].isDigit()
+            if (!disambiguating) hiddenAliases.addAll(aliases)
+        }
+
+        val suggestions = mutableListOf<Suggestion>()
+        // Wildcards first so they surface above literal cards in fuzzy-matched output.
+        for ((prefix, aliases) in suffixGroups) {
+            val wildcard = "${prefix}_*"
+            val preview = aliases.sorted().take(3).joinToString(", ") +
+                if (aliases.size > 3) ", …" else ""
+            suggestions.add(
+                suggest(wildcard, "$wildcard (${aliases.size} cards: $preview)", Kind.STRING)
+            )
+        }
+        for ((alias, type) in aliasToType) {
+            if (alias in hiddenAliases) continue
+            suggestions.add(suggest(alias, "$alias ($type)", Kind.STRING))
+        }
+        return FuzzyMatch.filter(partial, suggestions)
     }
 
     /** Lua functions whose string argument is a resource-id filter (items + fluids).
@@ -1437,6 +1669,8 @@ class AutocompletePopup(
         // Built-in objects
         if (receiver == "network") return suggestNetworkMethods(partial, fullText)
         if (receiver == "scheduler") return suggestSchedulerMethods(partial)
+        if (receiver == "importer") return suggestMethodsForType("Importer", partial)
+        if (receiver == "stocker") return suggestMethodsForType("Stocker", partial)
 
         // Look up receiver type in symbol table
         val type = symbols[receiver]
@@ -1483,6 +1717,8 @@ class AutocompletePopup(
         val apiFunctions = listOf(
             suggest("scheduler", "scheduler — module", Kind.MODULE),
             suggest("network", "network — module", Kind.MODULE),
+            suggest("importer", "importer — module", Kind.MODULE),
+            suggest("stocker", "stocker — module", Kind.MODULE),
             suggest("print(", "print(message: any)", Kind.FUNCTION),
             suggest("error(", "error(message: string) — throw an error", Kind.FUNCTION),
             suggest("clock(", "clock() → number", Kind.FUNCTION),
@@ -1527,7 +1763,40 @@ class AutocompletePopup(
                 Kind.FUNCTION
             )
         ) else emptyList()
-        val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs).distinctBy { it.insertText }
+
+        // Auto-import suggestions: every card and variable on the network shows up
+        // as a Lua-safe identifier (via the same naming the sidebar click handler
+        // uses), and accepting one prepends `local NAME = network:get("alias")`
+        // (or `:var(...)`) to the script. Skip aliases whose identifier is already
+        // declared as a local in the script — those will surface as plain user vars.
+        val declared = (extractVariableNames(beforeCursor) + extractFunctionParams(beforeCursor)).toSet()
+        val cardImports = cards
+            .map { it.effectiveAlias to it.capability.type }
+            .distinct()
+            .mapNotNull { (alias, type) ->
+                val ident = damien.nodeworks.script.LuaIdent.toLuaIdentifier(alias, "card")
+                if (ident in declared) return@mapNotNull null
+                Suggestion(
+                    insertText = ident,
+                    displayText = "$ident — $alias ($type)",
+                    kind = Kind.VARIABLE,
+                    autoImport = "local $ident = network:get(\"$alias\")"
+                )
+            }
+        val variableImports = variables
+            .mapNotNull { (name, _) ->
+                val ident = damien.nodeworks.script.LuaIdent.toLuaIdentifier(name, "var")
+                if (ident in declared) return@mapNotNull null
+                Suggestion(
+                    insertText = ident,
+                    displayText = "$ident — $name (variable)",
+                    kind = Kind.VARIABLE,
+                    autoImport = "local $ident = network:var(\"$name\")"
+                )
+            }
+
+        val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs + cardImports + variableImports)
+            .distinctBy { it.insertText }
         val matches = FuzzyMatch.filter(partial, all).filter { it.insertText != partial }
         return matches
     }
@@ -1637,10 +1906,61 @@ class AutocompletePopup(
             "VariableHandle", "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle" ->
                 variableHandleMethods(type)
 
+            "Importer" -> listOf(
+                suggest(
+                    "from(",
+                    "from(...sources: string | CardHandle | network) → ImporterBuilder",
+                    Kind.METHOD
+                )
+            )
+
+            "ImporterBuilder" -> presetBuilderMethods("ImporterBuilder") + listOf(
+                suggest(
+                    "to(",
+                    "to(...targets: string | CardHandle | network) → ImporterBuilder",
+                    Kind.METHOD
+                ),
+                suggest(
+                    "roundrobin(",
+                    "roundrobin(step: number?) → ImporterBuilder",
+                    Kind.METHOD
+                ),
+                suggest("filter(", "filter(pattern: string) → ImporterBuilder", Kind.METHOD)
+            )
+
+            "Stocker" -> listOf(
+                suggest(
+                    "from(",
+                    "from(...sources: string | CardHandle | network) → StockerBuilder",
+                    Kind.METHOD
+                ),
+                suggest("ensure(", "ensure(itemId: string) → StockerBuilder", Kind.METHOD),
+                suggest("craft(", "craft(itemId: string) → StockerBuilder", Kind.METHOD)
+            )
+
+            "StockerBuilder" -> presetBuilderMethods("StockerBuilder") + listOf(
+                suggest(
+                    "to(",
+                    "to(target: string | CardHandle | network) → StockerBuilder",
+                    Kind.METHOD
+                ),
+                suggest("keep(", "keep(amount: number) → StockerBuilder", Kind.METHOD),
+                suggest("batch(", "batch(size: number) → StockerBuilder", Kind.METHOD),
+                suggest("filter(", "filter(pattern: string) → StockerBuilder", Kind.METHOD)
+            )
+
             else -> emptyList()
         }
         return fuzzy(partial, methods)
     }
+
+    /** Shared lifecycle methods on every preset builder (ImporterBuilder, StockerBuilder). */
+    private fun presetBuilderMethods(builderType: String): List<Suggestion> = listOf(
+        suggest("every(", "every(ticks: number) → $builderType", Kind.METHOD),
+        suggest("start(", "start()", Kind.METHOD),
+        suggest("stop(", "stop()", Kind.METHOD),
+        suggest("isRunning(", "isRunning() → boolean", Kind.METHOD)
+    )
 
     private fun suggestPropertiesForType(type: String, partial: String): List<Suggestion> {
         val props = when (type) {

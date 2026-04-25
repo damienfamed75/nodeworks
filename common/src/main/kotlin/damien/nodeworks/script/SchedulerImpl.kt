@@ -98,6 +98,49 @@ class SchedulerImpl(
         currentTick = 0
     }
 
+    // =====================================================================
+    // Kotlin callable task registration
+    //
+    // These exist so native code (preset builders in particular) can schedule
+    // repeated work without going through a Lua round trip. Internally each
+    // helper wraps the Kotlin lambda in a thin [ZeroArgFunction] so the task
+    // list still holds a uniform [LuaFunction] and the main [tick] loop's
+    // error handling path keeps working.
+    // =====================================================================
+
+    private fun addTaskInternal(callback: () -> Unit, interval: Int, repeating: Boolean, firstRunDelay: Int = 0): Int {
+        val id = nextId++
+        val fn = object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+                callback()
+                return LuaValue.NIL
+            }
+        }
+        val nextRun = if (repeating) 0L else currentTick + firstRunDelay
+        tasks.add(ScheduledTask(id, fn, interval, nextRun, repeating))
+        return id
+    }
+
+    /** Schedule a Kotlin callback every tick. Returns the task id for [cancelTaskById]. */
+    fun addTick(callback: () -> Unit): Int = addTaskInternal(callback, interval = 1, repeating = true)
+
+    /** Schedule a Kotlin callback every 20 ticks (once per second). Returns the task id. */
+    fun addSecond(callback: () -> Unit): Int = addTaskInternal(callback, interval = 20, repeating = true)
+
+    /** Schedule a Kotlin callback every [intervalTicks] ticks. Returns the task id. */
+    fun addRepeating(intervalTicks: Int, callback: () -> Unit): Int {
+        require(intervalTicks >= 1) { "intervalTicks must be >= 1" }
+        return addTaskInternal(callback, interval = intervalTicks, repeating = true)
+    }
+
+    /** Cancel a scheduled task previously added via [addTick] / [addSecond] / [addRepeating].
+     *  Returns true if a task with this id was present. */
+    fun cancelTaskById(id: Int): Boolean {
+        val before = tasks.size
+        tasks.removeAll { it.id == id }
+        return tasks.size < before
+    }
+
     fun createLuaTable(): LuaTable {
         val table = LuaTable()
 

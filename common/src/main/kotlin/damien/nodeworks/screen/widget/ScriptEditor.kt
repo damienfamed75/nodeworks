@@ -658,7 +658,23 @@ class ScriptEditor(
                 // resolve `item` correctly even when the cursor is outside the function —
                 // we want the scope at the token's position, not the cursor's.
                 val scopeAnchor = lines.take(lineIdx + 1).sumOf { it.length } + lineIdx
-                return LuaApiDocs.resolveAt(tokens, i, symbolTableProvider(scopeAnchor))
+                // Concatenate every prior line's tokens onto the current line's stream
+                // so [LuaApiDocs.resolveAt]'s chain walker can see method calls from
+                // earlier lines. Without this, multi-line chains like:
+                //   importer
+                //       :from(network)
+                //       :to("...")
+                // can't resolve `:to` because the receiver `:from(...)` lives on a
+                // prior line and the per-line token list ends right before it.
+                val combined = ArrayList<Token>()
+                var combinedIndex = -1
+                for (li in 0 until lineIdx) {
+                    val prior = renderedLineTokens[li] ?: continue
+                    combined.addAll(prior)
+                }
+                combinedIndex = combined.size + i
+                combined.addAll(tokens)
+                return LuaApiDocs.resolveAt(combined, combinedIndex, symbolTableProvider(scopeAnchor))
             }
             tokenX += tokenW
         }
@@ -866,7 +882,7 @@ class ScriptEditor(
             }
             257, 335 -> { // ENTER / NUMPAD ENTER
                 if (hasSelection) deleteSelection()
-                insertText("\n")
+                insertText("\n" + autoIndentOnNewline())
                 return true
             }
             258 -> { // TAB
@@ -968,6 +984,50 @@ class ScriptEditor(
         ensureCursorVisible()
     }
 
+    /** Build the indent string that should be inserted after a newline at the current
+     *  cursor position. Preserves the current line's leading whitespace (so blank
+     *  continuations land at the same column) and adds one extra level (two spaces)
+     *  when the current line ends with a Lua block opener like `then`, `do`, `else`,
+     *  or a trailing `function(...)` / `( ... )` with nothing else on the line.
+     *
+     *  Called from the ENTER key handler; inserted right after the `\n` so the cursor
+     *  ends up in the same column as the code on the line above (or one level deeper). */
+    private fun autoIndentOnNewline(): String {
+        val (curLine, _) = cursorToLineCol(cursor)
+        val lineText = lines.getOrNull(curLine) ?: return ""
+        val baseIndent = lineText.takeWhile { it == ' ' }
+        // Consider only the text up to the cursor on the current line — trailing content
+        // that the Enter will push to the next line shouldn't influence indentation.
+        val (_, col) = cursorToLineCol(cursor)
+        val prefix = lineText.substring(0, col.coerceAtMost(lineText.length)).trimEnd()
+        val extra = if (shouldIndentDeeper(prefix)) "  " else ""
+        return baseIndent + extra
+    }
+
+    /** Whether a line ending in [trimmed] should push the next line one indent deeper.
+     *  Matches Lua's usual block-opening shapes. Conservative about comments — a `then`
+     *  inside a line comment doesn't count. */
+    private fun shouldIndentDeeper(trimmed: String): Boolean {
+        if (trimmed.isEmpty()) return false
+        // Strip trailing line comment before matching keywords.
+        val commentIdx = trimmed.indexOf("--")
+        val code = if (commentIdx >= 0) trimmed.substring(0, commentIdx).trimEnd() else trimmed
+        if (code.isEmpty()) return false
+        // Keywords that open a block. `else` / `elseif ... then` count; bare `elseif`
+        // without `then` doesn't (the user is still mid-expression and will hit enter
+        // again after finishing it).
+        val openers = Regex("""(^|\W)(function|do|then|else|repeat)\s*$""")
+        if (openers.containsMatchIn(code)) return true
+        // A line ending in `function(...)` — user is starting an anonymous function body.
+        if (Regex("""\bfunction\s*\([^)]*\)\s*$""").containsMatchIn(code)) return true
+        // A line ending in an unclosed `(` — chained API calls often do this
+        // (`network:handle("name",` + Enter + new function body).
+        val opens = code.count { it == '(' }
+        val closes = code.count { it == ')' }
+        if (opens > closes) return true
+        return false
+    }
+
     private fun deleteAt(pos: Int) {
         val fullText = value
         if (pos < 0 || pos >= fullText.length) return
@@ -1025,14 +1085,27 @@ class ScriptEditor(
     private fun findWordBoundaryLeft(text: String, pos: Int): Int {
         if (pos <= 0) return 0
         var p = pos - 1
-        // Skip spaces (but stop at newline)
-        while (p > 0 && text[p] == ' ') p--
-        if (p >= 0 && text[p] == '\n') return p
+        val initialP = p
+        // Skip spaces back toward the start of text. Newline isn't a space so the
+        // loop exits cleanly when we hit one.
+        while (p >= 0 && text[p] == ' ') p--
+
+        if (p >= 0 && text[p] == '\n') {
+            // Ran into a newline after scanning back. Match VS Code's Ctrl+Backspace:
+            //   * If we skipped some spaces first, this was an "indented blank line"
+            //     deletion. Delete just the indent, keep the newline — cursor ends
+            //     up at column 0 of the current line.
+            //   * If we didn't skip any spaces, the cursor was already at column 0.
+            //     Delete the newline itself to merge with the previous line.
+            return if (p < initialP) p + 1 else p
+        }
+        // Pure-whitespace prefix all the way back to start-of-text — delete it all.
+        if (p < 0) return 0
         return when {
             // At a delimiter — consume that one delimiter
-            p >= 0 && text[p].isDelimiter() -> p
+            text[p].isDelimiter() -> p
             // At a word char — consume the whole word
-            p >= 0 && text[p].isWordChar() -> {
+            text[p].isWordChar() -> {
                 while (p > 0 && text[p - 1].isWordChar()) p--
                 p
             }

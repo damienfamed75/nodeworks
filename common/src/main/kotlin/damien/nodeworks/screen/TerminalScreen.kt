@@ -1498,8 +1498,19 @@ class TerminalScreen(
                             val cursorPos = cursorAtAccept
                             val deleteStart = cursorPos - result.deleteCount
                             val deleteEnd = (cursorPos + result.consumeAfter).coerceAtMost(text.length)
-                            val newText = text.substring(0, deleteStart) + result.insertText + text.substring(deleteEnd)
-                            editor.setValueKeepScroll(newText, deleteStart + result.cursorOffset)
+                            // Auto-import: if the suggestion carries a local-binding line
+                            // (card or variable), prepend it to the script before doing the
+                            // in-place replacement. Idempotent — if the exact line is
+                            // already in the script we skip the prepend so accepting the
+                            // same suggestion twice in a row doesn't produce duplicates.
+                            val importPrefix = result.autoImportLine?.let { line ->
+                                if (text.contains(line)) "" else "$line\n"
+                            } ?: ""
+                            val newText = importPrefix +
+                                text.substring(0, deleteStart) +
+                                result.insertText +
+                                text.substring(deleteEnd)
+                            editor.setValueKeepScroll(newText, importPrefix.length + deleteStart + result.cursorOffset)
                             suppressAutocomplete = false
                             // Only re-trigger autocomplete when the accepted result lands the
                             // cursor *inside* the inserted text — e.g. a snippet with cursor in
@@ -1764,9 +1775,9 @@ class TerminalScreen(
                 // The fallback kicks in if the name has NO identifier chars
                 // at all (e.g. "!@#$%"), so the inserted line still compiles.
                 val ident = when (entry.type) {
-                    "card" -> toLuaIdentifier(entry.name, "card")
-                    "var" -> toLuaIdentifier(entry.name, "var")
-                    else -> toLuaIdentifier(entry.name, "x")
+                    "card" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "card")
+                    "var" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "var")
+                    else -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "x")
                 }
                 val line = when (entry.type) {
                     "card" -> "local $ident = network:get(\"${entry.name}\")"
@@ -1954,33 +1965,6 @@ class TerminalScreen(
             return true
         }
         return super.mouseReleased(event)
-    }
-
-    /**
-     * Turns a user-facing card/variable name into a Lua identifier. Splits on
-     * any character that isn't a Lua identifier character (anything outside
-     * `[a-zA-Z0-9_]`), keeps the first word as-is, capitalizes the first
-     * letter of every subsequent word, and concatenates. If the result would
-     * start with a digit, prefixes an underscore. If the name contains no
-     * identifier characters at all (`"!@#$"`), returns [fallback].
-     *
-     * Examples:
-     *   "iron ingots"  → "ironIngots"
-     *   "iron-ingots"  → "ironIngots"
-     *   "a b c"        → "aBC"
-     *   "1st ingot"    → "_1stIngot"
-     *   "!@#$%"        → [fallback]
-     *   "already"      → "already"  (nothing to merge)
-     */
-    private fun toLuaIdentifier(name: String, fallback: String): String {
-        val parts = name.split(Regex("[^a-zA-Z0-9_]+")).filter { it.isNotEmpty() }
-        if (parts.isEmpty()) return fallback
-        val rest = parts.drop(1).joinToString("") { word ->
-            word[0].uppercaseChar() + word.substring(1)
-        }
-        val ident = parts[0] + rest
-        // Lua identifiers can't start with a digit — prepend an underscore.
-        return if (ident[0].isDigit()) "_$ident" else ident
     }
 
     private fun switchTab(name: String) {

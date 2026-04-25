@@ -52,6 +52,8 @@ object LuaApiDocs {
     private val moduleTypes: Map<String, String> = mapOf(
         "network" to "Network",
         "scheduler" to "Scheduler",
+        "importer" to "Importer",
+        "stocker" to "Stocker",
     )
 
     private val entries: Map<String, Doc> = buildMap {
@@ -345,6 +347,210 @@ object LuaApiDocs {
                 description = "Sends the craft result into network storage using the normal routing rules.",
                 category = Category.METHOD,
                 guidebookRef = "nodeworks:lua-api/network.md#craft",
+            )
+        )
+
+        // ===== Presets: importer / Importer / ImporterBuilder =====
+        put(
+            "importer", Doc(
+                signature = "importer: Importer",
+                description = "Builds item movers from a chained expression.",
+                category = Category.MODULE,
+                guidebookRef = "nodeworks:lua-api/importer.md",
+            )
+        )
+        put(
+            "Importer", Doc(
+                signature = "type Importer",
+                description = "Factory for `ImporterBuilder`.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/importer.md",
+            )
+        )
+        put(
+            "Importer:from", Doc(
+                signature = "Importer:from(...sources: string | CardHandle | network) → ImporterBuilder",
+                description = "Starts an importer chain from one or more sources.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/importer.md#from",
+            )
+        )
+        put(
+            "ImporterBuilder", Doc(
+                signature = "type ImporterBuilder",
+                description = "A configured or running item mover.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/importer.md",
+            )
+        )
+        put(
+            "ImporterBuilder:to", Doc(
+                signature = "ImporterBuilder:to(...targets: string | CardHandle | network) → ImporterBuilder",
+                description = "Sets the destinations.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/importer.md#to",
+            )
+        )
+        put(
+            "ImporterBuilder:roundrobin", Doc(
+                signature = "ImporterBuilder:roundrobin(step: number?) → ImporterBuilder",
+                description = "Switch to round robin distribution. `step` is items per target per tick (default 1).",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/importer.md#roundrobin",
+            )
+        )
+        put(
+            "ImporterBuilder:filter", Doc(
+                signature = "ImporterBuilder:filter(pattern: string) → ImporterBuilder",
+                description = "Narrows the mover to items matching the pattern. Defaults to `*`.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/importer.md#filter",
+            )
+        )
+        put(
+            "ImporterBuilder:every", Doc(
+                signature = "ImporterBuilder:every(ticks: number) → ImporterBuilder",
+                description = "How often the importer runs. Default 20 ticks.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/presets.md#every",
+            )
+        )
+        put(
+            "ImporterBuilder:start", Doc(
+                signature = "ImporterBuilder:start()",
+                description = "Validates the chain and begins ticking.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/presets.md#start",
+            )
+        )
+        put(
+            "ImporterBuilder:stop", Doc(
+                signature = "ImporterBuilder:stop()",
+                description = "Stops ticking. Restart with `:start()`.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/presets.md#stop",
+            )
+        )
+        put(
+            "ImporterBuilder:isRunning", Doc(
+                signature = "ImporterBuilder:isRunning() → boolean",
+                description = "True if the preset is currently scheduled.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/presets.md#isrunning",
+            )
+        )
+
+        // ===== Presets: stocker / Stocker / StockerBuilder =====
+        put(
+            "stocker", Doc(
+                signature = "stocker: Stocker",
+                description = "Builds level maintainers from a chained expression.",
+                category = Category.MODULE,
+                guidebookRef = "nodeworks:lua-api/stocker.md",
+            )
+        )
+        put(
+            "Stocker", Doc(
+                signature = "type Stocker",
+                description = "Factory for `StockerBuilder`.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/stocker.md",
+            )
+        )
+        put(
+            "Stocker:from", Doc(
+                signature = "Stocker:from(...sources: string | CardHandle | network) → StockerBuilder",
+                description = "Pull from cards or the pool to maintain a level. Never crafts.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/stocker.md#from",
+            )
+        )
+        put(
+            "Stocker:ensure", Doc(
+                signature = "Stocker:ensure(itemId: string) → StockerBuilder",
+                description = "Pull from the pool first, craft the rest if short.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/stocker.md#ensure",
+            )
+        )
+        put(
+            "Stocker:craft", Doc(
+                signature = "Stocker:craft(itemId: string) → StockerBuilder",
+                description = "Always craft to maintain the level. Never pulls.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/stocker.md#craft",
+            )
+        )
+        put(
+            "StockerBuilder", Doc(
+                signature = "type StockerBuilder",
+                description = "A configured or running level maintainer.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/stocker.md",
+            )
+        )
+        put(
+            "StockerBuilder:to", Doc(
+                signature = "StockerBuilder:to(target: string | CardHandle | network) → StockerBuilder",
+                description = "Sets the destination.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/stocker.md#to",
+            )
+        )
+        put(
+            "StockerBuilder:keep", Doc(
+                signature = "StockerBuilder:keep(amount: number) → StockerBuilder",
+                description = "Target stock level. Never extracts above this.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/stocker.md#keep",
+            )
+        )
+        put(
+            "StockerBuilder:batch", Doc(
+                signature = "StockerBuilder:batch(size: number) → StockerBuilder",
+                description = "Coalesce craft requests into this batch size. Default 0.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/stocker.md#batch",
+            )
+        )
+        put(
+            "StockerBuilder:filter", Doc(
+                signature = "StockerBuilder:filter(pattern: string) → StockerBuilder",
+                description = "Pattern counted toward `:keep(n)` in the target.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/stocker.md#filter",
+            )
+        )
+        put(
+            "StockerBuilder:every", Doc(
+                signature = "StockerBuilder:every(ticks: number) → StockerBuilder",
+                description = "How often the stocker checks. Default 20 ticks.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/presets.md#every",
+            )
+        )
+        put(
+            "StockerBuilder:start", Doc(
+                signature = "StockerBuilder:start()",
+                description = "Validates the chain and begins ticking.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/presets.md#start",
+            )
+        )
+        put(
+            "StockerBuilder:stop", Doc(
+                signature = "StockerBuilder:stop()",
+                description = "Stops ticking. Restart with `:start()`.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/presets.md#stop",
+            )
+        )
+        put(
+            "StockerBuilder:isRunning", Doc(
+                signature = "StockerBuilder:isRunning() → boolean",
+                description = "True if the preset is currently scheduled.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/presets.md#isrunning",
             )
         )
 
@@ -717,11 +923,26 @@ object LuaApiDocs {
      * single definition in [entries] drives both hover docs, chain inference, and for-loop
      * element inference — no parallel hardcoded maps.
      *
-     * When multiple entries share a method name (e.g. both `Network:find` and
-     * `CardHandle:find` define `find`) the first match wins; that's fine because they
-     * agree on return type in every case we ship today.
+     * When multiple entries share a method name, the first match wins. For receiver-aware
+     * lookup (e.g. distinguishing `Importer:from` from `Stocker:from` when both return
+     * different builder types), use the overload that takes a [receiverType] argument.
      */
-    fun methodReturnType(methodName: String): ReturnType? {
+    fun methodReturnType(methodName: String): ReturnType? = methodReturnType(methodName, receiverType = null)
+
+    /**
+     * Receiver-aware return-type lookup. When [receiverType] is non-null, the
+     * `"$receiverType:$methodName"` key is checked first so sibling types that share
+     * a short method name (Importer / Stocker both have `:from`; each returns its own
+     * builder) resolve correctly. Falls through to the unqualified bare-name search if
+     * the qualified key isn't found.
+     */
+    fun methodReturnType(methodName: String, receiverType: String?): ReturnType? {
+        if (receiverType != null) {
+            val qualified = "$receiverType:$methodName"
+            entries[qualified]?.signature?.let { sig ->
+                parseReturnType(sig)?.let { return it }
+            }
+        }
         val suffix = ":$methodName"
         for ((key, doc) in entries) {
             if (key == methodName || key.endsWith(suffix)) {
@@ -729,6 +950,64 @@ object LuaApiDocs {
             }
         }
         return null
+    }
+
+    /** Map a bare module name (e.g. `"importer"`) to its canonical type name
+     *  (e.g. `"Importer"`). Returns null for non-module identifiers. Callers use this
+     *  to qualify [methodReturnType] lookups when the receiver is a bare module. */
+    fun moduleTypeFor(moduleName: String): String? = moduleTypes[moduleName]
+
+    /** Resolve the type of the chain ending at [closeParenIdx] (which must point to a
+     *  `)` token). Walks back through the matching `(...)`, finds the method name,
+     *  recurses on the method's own receiver chain, and returns the method's return
+     *  type qualified by that receiver. Returns null when the chain isn't resolvable
+     *  (e.g. non-call syntax, unknown method, balanced-paren scan failure).
+     *
+     *  Used by [resolveAt] to power hover tooltips on chained method calls like
+     *  `importer:from(...):to` where the immediate owner of `to` is `)` and the
+     *  receiver type is whatever `from` returned. */
+    private fun resolveChainEndType(
+        tokens: List<LuaTokenizer.Token>,
+        closeParenIdx: Int,
+        variableTypes: Map<String, String>,
+    ): String? {
+        if (closeParenIdx < 0 || tokens.getOrNull(closeParenIdx)?.text != ")") return null
+        // Walk back to the matching `(`.
+        var depth = 1
+        var m = closeParenIdx - 1
+        while (m >= 0) {
+            when (tokens[m].text) {
+                ")" -> depth++
+                "(" -> {
+                    depth--
+                    if (depth == 0) break
+                }
+            }
+            m--
+        }
+        if (m < 0) return null
+        // Token before `(` is the method name.
+        var n = m - 1
+        while (n >= 0 && tokens[n].text.isBlank()) n--
+        if (n < 0) return null
+        val methodName = tokens[n].text
+
+        // Walk back further to find the receiver of this method call.
+        var p = n - 1
+        while (p >= 0 && tokens[p].text.isBlank()) p--
+        var receiverType: String? = null
+        if (p >= 0 && (tokens[p].text == ":" || tokens[p].text == ".")) {
+            var q = p - 1
+            while (q >= 0 && tokens[q].text.isBlank()) q--
+            if (q >= 0) {
+                val recvTok = tokens[q]
+                receiverType = when {
+                    recvTok.text == ")" -> resolveChainEndType(tokens, q, variableTypes)
+                    else -> moduleTypes[recvTok.text] ?: variableTypes[recvTok.text]
+                }
+            }
+        }
+        return methodReturnType(methodName, receiverType)?.type
     }
 
     fun resolveAt(
@@ -751,15 +1030,29 @@ object LuaApiDocs {
                 while (k >= 0 && tokens[k].text.isBlank()) k--
                 if (k >= 0) {
                     val owner = tokens[k]
-                    val ownerEligible = owner.type == LuaTokenizer.TokenType.DEFAULT ||
-                            owner.type == LuaTokenizer.TokenType.FUNCTION
-                    if (ownerEligible) {
-                        entries["${owner.text}${sep.text}${tok.text}"]?.let { return it }
-                        moduleTypes[owner.text]?.let { ownerType ->
-                            entries["$ownerType${sep.text}${tok.text}"]?.let { return it }
+                    // Punctuation tokens like `)` carry [TokenType.DEFAULT] from the
+                    // tokenizer (it's the catch-all class), so we can't disambiguate
+                    // them from identifiers via [TokenType] alone. Check the closing
+                    // paren by literal text BEFORE the ownerEligible identifier path
+                    // so chained calls like `importer:from(...):to` route through the
+                    // chain walker instead of accidentally hitting the bare-owner
+                    // lookup that would search for `entries["):to"]`.
+                    if (owner.text == ")") {
+                        val chainType = resolveChainEndType(tokens, k, variableTypes)
+                        if (chainType != null) {
+                            entries["$chainType${sep.text}${tok.text}"]?.let { return it }
                         }
-                        variableTypes[owner.text]?.let { ownerType ->
-                            entries["$ownerType${sep.text}${tok.text}"]?.let { return it }
+                    } else {
+                        val ownerEligible = owner.type == LuaTokenizer.TokenType.DEFAULT ||
+                                owner.type == LuaTokenizer.TokenType.FUNCTION
+                        if (ownerEligible) {
+                            entries["${owner.text}${sep.text}${tok.text}"]?.let { return it }
+                            moduleTypes[owner.text]?.let { ownerType ->
+                                entries["$ownerType${sep.text}${tok.text}"]?.let { return it }
+                            }
+                            variableTypes[owner.text]?.let { ownerType ->
+                                entries["$ownerType${sep.text}${tok.text}"]?.let { return it }
+                            }
                         }
                     }
                 }

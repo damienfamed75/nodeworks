@@ -91,7 +91,12 @@ object FuzzyMatch {
 
         val queryLower = query.lowercase()
         return suggestions
-            .filter { it.insertText.removeSuffix("(").lowercase() != queryLower } // exclude exact matches
+            // Only drop TRUE no-op matches where accepting the suggestion would
+            // insert the exact same text the user already typed. Comparing against
+            // `insertText.removeSuffix("(")` was a bug: it dropped method completions
+            // like `to(` when the user typed `to`, even though accepting `to(` would
+            // productively add the open paren and let the user jump to the args.
+            .filter { it.insertText.lowercase() != queryLower }
             .map { it to score(query, it.insertText.removeSuffix("(")) }
             .filter { it.second > 0 }
             .sortedByDescending { it.second }

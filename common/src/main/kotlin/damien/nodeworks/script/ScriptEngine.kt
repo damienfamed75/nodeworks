@@ -17,13 +17,34 @@ import org.luaj.vm2.lib.jse.JseMathLib
  * (card, scheduler, print) and enforces an instruction budget per tick.
  */
 class ScriptEngine(
-    private val level: ServerLevel,
+    internal val level: ServerLevel,
     private val networkEntryNode: BlockPos,
     private val logCallback: (String, Boolean) -> Unit // (message, isError)
 ) {
     private var globals: Globals? = null
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl { errorMsg -> logCallback(errorMsg, true) }
+
+    /** Preset builders (Importer, Stocker) registered by the `importer` / `stocker`
+     *  factory globals. Each preset is stopped in [stop] before the scheduler is
+     *  cleared so per-preset state can unwind cleanly. */
+    internal val presets = mutableListOf<damien.nodeworks.script.preset.PresetBuilder<*>>()
+
+    /** Register a preset builder so it's stopped on script teardown. Called by
+     *  each factory method the instant a builder is created (not when the user
+     *  calls `:run()`) so dangling builders that never start still get cleaned up. */
+    internal fun registerPreset(p: damien.nodeworks.script.preset.PresetBuilder<*>) {
+        p.registryIndex = presets.size
+        presets.add(p)
+    }
+
+    /** Current network snapshot. Rebuilt by [start] and refreshed periodically.
+     *  Presets compare identity (`!==`) to decide when to re-resolve card names. */
+    internal fun currentSnapshot(): NetworkSnapshot? = networkSnapshot
+
+    /** Log an error through the terminal's log callback. Presets use this when
+     *  a tick throws so the player sees the error without the preset unscheduling. */
+    internal fun logError(msg: String) = logCallback(msg, true)
 
     /** Precomputed route table set by network:route(). */
     var routeTable: RouteTable? = null
@@ -131,6 +152,12 @@ class ScriptEngine(
         inventoryCache = null // clear local reference, cache lives in global registry
         processingHandlers.clear()
         redstoneCallbacks.clear()
+        // Stop every registered preset before wiping the scheduler so per-preset
+        // cleanup (Stocker's pending craft callbacks, cached CardSnapshot lookups,
+        // etc.) runs while the scheduler task ids are still valid. Exceptions in
+        // a single preset's stop() never block the rest from unwinding.
+        for (p in presets) { try { p.stop() } catch (_: Exception) {} }
+        presets.clear()
         scheduler.clear()
         globals = null
         networkSnapshot = null
@@ -495,6 +522,11 @@ class ScriptEngine(
         // network object
         val networkTable = LuaTable()
 
+        // Preset builders (Importer / Stocker) recognise the `network` global as a
+        // "pool" source/target via this sentinel. Kept under an internal key so a
+        // user-shadowed method on the network table can't collide with it.
+        networkTable.set("_isNetworkPool", LuaValue.TRUE)
+
         // network:get(alias) → CardHandle or error
         networkTable.set("get", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
@@ -858,6 +890,11 @@ class ScriptEngine(
         })
 
         g.set("network", networkTable)
+
+        // importer / stocker presets — declarative builders that compile down to
+        // scheduler tasks. See damien/nodeworks/script/preset/*.kt.
+        g.set("importer", damien.nodeworks.script.preset.Importer.createGlobal(this))
+        g.set("stocker", damien.nodeworks.script.preset.Stocker.createGlobal(this))
 
         // clock() -> seconds since script started (as a decimal)
         val startTime = System.currentTimeMillis()

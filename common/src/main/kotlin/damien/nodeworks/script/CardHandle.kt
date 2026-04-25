@@ -458,6 +458,12 @@ class CardHandle private constructor(
         // Internal: allows insert() to access this handle's storage as a destination
         table.set("_getStorage", StorageGetter { self.getItemStorage() })
 
+        // Internal: the card's resolved alias, used by preset builders (Importer /
+        // Stocker) to recognise CardHandle tables in :from / :to args. Stored under
+        // an internal key so presets keep working even if the user has shadowed
+        // the user-facing `name` field.
+        table.set("_cardRefName", LuaValue.valueOf(card.effectiveAlias))
+
         // Internal: target coordinates for job persistence (resume after restart)
         val cap = card.capability
         val resolvedFace = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
