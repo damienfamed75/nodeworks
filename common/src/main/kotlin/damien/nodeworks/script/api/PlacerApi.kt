@@ -20,7 +20,7 @@ val PlacerHandleApi: ApiSurface = api(PlacerHandle) {
     method("place") {
         param("item", ItemId, description = "Item id of a block to place. Runtime also accepts an ItemsHandle value.")
         returns(Boolean)
-        description = "Pulls one of `item` from network storage and places it. Returns true on success, false if the source is empty, the target isn't replaceable, or the item isn't a block."
+        description = "Pulls one of `item` from network storage and places it. Returns false on empty source, blocked target, or non-block items."
         guidebookRef = "nodeworks:lua-api/placer-handle.md#place"
     }
 

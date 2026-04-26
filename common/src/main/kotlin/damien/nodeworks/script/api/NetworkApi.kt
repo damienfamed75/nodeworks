@@ -43,7 +43,7 @@ val CraftBuilder: LuaType.Named = LuaTypes.type(
 
 val InputItems: LuaType.Named = LuaTypes.type(
     name = "InputItems",
-    description = "The second argument to a `network:handle` callback. A per-recipe bag of `ItemsHandle` fields keyed by the recipe's input slot names.",
+    description = "Per-recipe bag of `ItemsHandle` fields, the second argument to a `network:handle` callback.",
     guidebookRef = "nodeworks:lua-api/network.md#handle",
 )
 
@@ -165,7 +165,7 @@ val NetworkApi: ApiSurface = api(Network) {
                 param("inputs", InputItems)
                 returns(Void)
             },
-            description = "Body invoked once per craft. Receives the [Job] context and an [InputItems] bag whose fields are the recipe's typed input slots. Use `job:pull` to emit outputs.",
+            description = "Body invoked once per craft. Emit outputs with `job:pull`, read input slots from `inputs.<slot>`.",
         )
         returns(Void)
         description =

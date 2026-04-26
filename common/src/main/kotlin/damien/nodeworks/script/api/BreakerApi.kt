@@ -25,7 +25,7 @@ val BreakBuilder: LuaType.Named = LuaTypes.type(
 val BreakerHandleApi: ApiSurface = api(BreakerHandle) {
     method("mine") {
         returns(BreakBuilder)
-        description = "Starts a multi-tick break of the block in front. Returns a builder, chain :connect(fn) to redirect drops or leave unchained to route drops to network storage."
+        description = "Starts a multi-tick break of the block in front. Drops route to network storage by default, chain `:connect(fn)` to redirect."
         guidebookRef = "nodeworks:lua-api/breaker-handle.md#mine"
     }
 

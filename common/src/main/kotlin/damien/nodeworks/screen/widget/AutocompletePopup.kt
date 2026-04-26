@@ -254,11 +254,13 @@ class AutocompletePopup(
         renderX = renderX.coerceIn(0, (gameW - popupWidth).coerceAtLeast(0))
         renderY = renderY.coerceIn(0, (gameH - actualHeight).coerceAtLeast(0))
 
-        graphics.fill(renderX, renderY, renderX + popupWidth, renderY + actualHeight, 0xEE1E1E1E.toInt())
-        graphics.fill(renderX, renderY, renderX + popupWidth, renderY + 1, 0xFF555555.toInt())
-        graphics.fill(renderX, renderY + actualHeight - 1, renderX + popupWidth, renderY + actualHeight, 0xFF555555.toInt())
-        graphics.fill(renderX, renderY, renderX + 1, renderY + actualHeight, 0xFF555555.toInt())
-        graphics.fill(renderX + popupWidth - 1, renderY, renderX + popupWidth, renderY + actualHeight, 0xFF555555.toInt())
+        damien.nodeworks.screen.NineSlice.TOOLTIP.draw(
+            graphics,
+            renderX - 1,
+            renderY - 1,
+            popupWidth + 2,
+            actualHeight + 2,
+        )
 
         if (scrollOffset > 0) {
             graphics.drawString(font, "\u25B2", renderX + popupWidth - 10, renderY + 1, 0xFF888888.toInt())
