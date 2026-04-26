@@ -50,5 +50,9 @@ object LuaApiBootstrap {
         LuaApiRegistry.register(HandleListApi)
         LuaApiRegistry.register(CraftBuilderApi)
         LuaApiRegistry.register(InputItemsApi)
+        LuaApiRegistry.register(ImporterApi)
+        LuaApiRegistry.register(ImporterBuilderApi)
+        LuaApiRegistry.register(StockerApi)
+        LuaApiRegistry.register(StockerBuilderApi)
     }
 }

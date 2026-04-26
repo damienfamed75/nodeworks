@@ -1935,14 +1935,32 @@ class AutocompletePopup(
         // dispatcher that the simpler card-alias completion can't reproduce yet.
         // Bail out so the legacy branch fires and produces typed-per-recipe templates.
         if (ctx.funcExpr == "network:handle") return null
-        val colon = ctx.funcExpr.indexOf(':')
-        if (colon <= 0) return null
-        val receiver = ctx.funcExpr.substring(0, colon)
-        val methodName = ctx.funcExpr.substring(colon + 1)
+        if (ctx.funcExpr.isEmpty()) return null
 
-        val receiverType = damien.nodeworks.script.api.LuaApiRegistry.moduleType(receiver)?.name
-            ?: symbols[receiver]
-            ?: return null
+        // Two shapes resolve to a (receiverType, methodName) pair:
+        //   `receiver:method` — direct call, receiver is a module global or a typed local
+        //   `:method`         — chained call where the receiver is the chain expression in
+        //                       precedingText, e.g. `importer:from(...):to("|"` collapses
+        //                       to funcExpr=":to" with the chain on the left.
+        val (receiverType, methodName) = if (ctx.funcExpr.startsWith(":")) {
+            val method = ctx.funcExpr.substring(1)
+            if (method.isBlank()) return null
+            val callMarker = ":$method("
+            val callIdx = ctx.precedingText.lastIndexOf(callMarker)
+            if (callIdx < 0) return null
+            val chainExpr = ctx.precedingText.substring(0, callIdx).trimEnd()
+            val type = resolveExpressionType(chainExpr) ?: return null
+            type to method
+        } else {
+            val colon = ctx.funcExpr.indexOf(':')
+            if (colon <= 0) return null
+            val receiver = ctx.funcExpr.substring(0, colon)
+            val method = ctx.funcExpr.substring(colon + 1)
+            val type = damien.nodeworks.script.api.LuaApiRegistry.moduleType(receiver)?.name
+                ?: symbols[receiver]
+                ?: return null
+            type to method
+        }
 
         val methodDoc = damien.nodeworks.script.api.LuaApiRegistry
             .methodsOf(receiverType)
@@ -2135,7 +2153,14 @@ class AutocompletePopup(
                 labels.map { (alias, type) -> suggest(alias, "$alias ($type)", Kind.STRING) },
             )
         }
-        "storage-card-alias" -> suggestStorageCardAliases(partial)
+        "storage-card-alias" -> suggestCardAliasesWithWildcards(
+            partial,
+            cards.filter { it.capability.type == "storage" }
+        )
+        "inventory-card-alias" -> suggestCardAliasesWithWildcards(
+            partial,
+            cards.filter { it.capability.type == "io" || it.capability.type == "storage" }
+        )
         "breaker-alias" -> FuzzyMatch.filter(
             partial,
             breakerAliases.map { suggest(it, "$it (breaker)", Kind.STRING) },
@@ -2158,24 +2183,32 @@ class AutocompletePopup(
         else -> emptyList()
     }
 
-    /** Storage-card autocomplete with wildcard grouping. Cards whose aliases share
+    /** Card-alias autocomplete with wildcard grouping. Cards whose aliases share
      *  a `<prefix>_<digit>` shape group under a `<prefix>_*` wildcard suggestion
-     *  that matches every numbered sibling at runtime, restoring the legacy
-     *  network:route UX where typing `cobblestone` first surfaces
-     *  `cobblestone_*` instead of every individual card.
+     *  that matches every numbered sibling at runtime, restoring the legacy UX
+     *  where typing `cobblestone` first surfaces `cobblestone_*` instead of
+     *  every individual card.
      *
      *  Numbered cards stay hidden until the user starts disambiguating with the
      *  digit suffix (`cobblestone_2`), at which point the individual entries
      *  surface alongside the wildcard. Singletons (only one numbered card with
      *  the prefix) collapse back to a literal alias since the wildcard would
-     *  match exactly one thing. */
-    private fun suggestStorageCardAliases(partial: String): List<Suggestion> {
-        val storageAliases = cards
-            .filter { it.capability.type == "storage" }
-            .map { it.effectiveAlias }
+     *  match exactly one thing.
+     *
+     *  Each suggestion's hint shows the card's capability type, so a mixed list
+     *  (e.g. `inventory-card-alias` covering both IO and Storage) tells the
+     *  player which kind they're picking. */
+    private fun suggestCardAliasesWithWildcards(
+        partial: String,
+        scopedCards: List<CardSnapshot>,
+    ): List<Suggestion> {
+        val aliasToType = scopedCards
+            .map { it.effectiveAlias to it.capability.type }
             .distinct()
+        val aliases = aliasToType.map { it.first }
+        val typeOf: Map<String, String> = aliasToType.toMap()
 
-        val suffixGroups = storageAliases
+        val suffixGroups = aliases
             .mapNotNull { alias ->
                 val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
                 match.groupValues[1] to alias
@@ -2184,24 +2217,25 @@ class AutocompletePopup(
             .filterValues { it.size >= 2 }
 
         val hiddenAliases = mutableSetOf<String>()
-        for ((prefix, aliases) in suffixGroups) {
+        for ((prefix, members) in suffixGroups) {
             val stem = "${prefix}_"
             val disambiguating = partial.startsWith(stem) &&
                 partial.length > stem.length &&
                 partial[stem.length].isDigit()
-            if (!disambiguating) hiddenAliases.addAll(aliases)
+            if (!disambiguating) hiddenAliases.addAll(members)
         }
 
         val out = mutableListOf<Suggestion>()
-        for ((prefix, aliases) in suffixGroups) {
+        for ((prefix, members) in suffixGroups) {
             val wildcard = "${prefix}_*"
-            val preview = aliases.sorted().take(3).joinToString(", ") +
-                if (aliases.size > 3) ", …" else ""
-            out += suggest(wildcard, "$wildcard (${aliases.size} cards: $preview)", Kind.STRING)
+            val preview = members.sorted().take(3).joinToString(", ") +
+                if (members.size > 3) ", …" else ""
+            out += suggest(wildcard, "$wildcard (${members.size} cards: $preview)", Kind.STRING)
         }
-        for (alias in storageAliases) {
+        for (alias in aliases) {
             if (alias in hiddenAliases) continue
-            out += suggest(alias, "$alias (storage)", Kind.STRING)
+            val type = typeOf[alias] ?: continue
+            out += suggest(alias, "$alias ($type)", Kind.STRING)
         }
         return FuzzyMatch.filter(partial, out)
     }

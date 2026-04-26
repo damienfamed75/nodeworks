@@ -84,6 +84,15 @@ val StorageCardAlias: LuaType.StringDomain = LuaType.StringDomain(
     sourceKey = "storage-card-alias",
 )
 
+/** Alias of a card that has inventory transfer surface, IO or Storage. Used by
+ *  importer / stocker `from` and `to` params, redstone and observer cards aren't
+ *  valid sources or destinations there. */
+val InventoryCardAlias: LuaType.StringDomain = LuaType.StringDomain(
+    name = "InventoryCardAlias",
+    description = "An alias of an IO or Storage card on this network. Cards used as importer/stocker sources or destinations.",
+    sourceKey = "inventory-card-alias",
+)
+
 /** Dye color name accepted by `network:channel(color)`. Closed enum since the
  *  runtime maps these via `DyeColor.byName()`, an unknown color raises an error. */
 val DyeColor: LuaType.StringEnum = LuaType.StringEnum(
@@ -169,6 +178,7 @@ internal val ALL_STRING_TYPES: List<LuaType> = listOf(
     TagId,
     CardAlias,
     StorageCardAlias,
+    InventoryCardAlias,
     BreakerAlias,
     PlacerAlias,
     VariableName,
