@@ -18,7 +18,7 @@ val PlacerHandle: LuaType.Named = LuaTypes.type(
 
 val PlacerHandleApi: ApiSurface = api(PlacerHandle) {
     method("place") {
-        param("item", Any, description = "Item id (string) or an ItemsHandle. Strings accept any registered block-placeable item id.")
+        param("item", ItemId, description = "Item id of a block to place. Runtime also accepts an ItemsHandle value.")
         returns(Boolean)
         description = "Pulls one of `item` from network storage and places it. Returns true on success, false if the source is empty, the target isn't replaceable, or the item isn't a block."
         guidebookRef = "nodeworks:lua-api/placer-handle.md#place"

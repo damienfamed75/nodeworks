@@ -875,6 +875,15 @@ class AutocompletePopup(
                 return LuaApiDocs.ReturnType(it, LuaApiDocs.Container.NONE)
             }
         }
+        // Mirror the [resolveExpressionType] narrowing for `network:get` /
+        // `channel:get` so `network:get("redstone_1").` resolves to the property
+        // set of the actual handle type (RedstoneCard, etc.) instead of `any`.
+        if ((receiverType == "Network" || receiverType == "Channel") && methodName == "get") {
+            val arg = paren.second.trim().trim('"', '\'')
+            aliasToType(arg)?.let {
+                return LuaApiDocs.ReturnType(it, LuaApiDocs.Container.NONE)
+            }
+        }
         // HandleList:list(), unwrap the parameterised type and report the element
         // type so `for _, c in handleList:list() do` knows what `c` is.
         if (receiverType?.startsWith("HandleList<") == true && methodName == "list") {
@@ -938,11 +947,14 @@ class AutocompletePopup(
             return resolveExpressionType(receiverExpr, forChaining = true)
         }
 
-        // Bare identifier: either a module global (importer, stocker, network, scheduler)
-        // or a user variable we can identify.
-        val bareMatch = Regex("""(\w+)$""").matchEntire(receiverExpr)
-        if (bareMatch != null) {
-            val name = bareMatch.groupValues[1]
+        // Trailing bare identifier: extract just the last word so structural prefix
+        // like `local io_1 = ` (in `local io_1 = network:get(...)`) doesn't block
+        // recognition. Anything between the identifier and start-of-expression is
+        // assignment / declaration / parenthesis context that doesn't change which
+        // value the chain's `:method` is being called on.
+        val trailingMatch = Regex("""(\w+)\s*$""").find(receiverExpr)
+        if (trailingMatch != null) {
+            val name = trailingMatch.groupValues[1]
             LuaApiDocs.moduleTypeFor(name)?.let { return it }
             // Channel-typed local: lets `ch:first("observer")` route through the
             // arg-aware narrowing in [resolveExpressionType] without needing the
@@ -1005,6 +1017,14 @@ class AutocompletePopup(
             channelElementType(arg)?.let { return it }
         }
 
+        // Network:get("alias") and Channel:get("alias") narrow on the alias's
+        // actual handle type so chained access (`network:get("redstone_1"):set(...)`)
+        // resolves without needing a local binding first.
+        if ((receiverType == "Network" || receiverType == "Channel") && methodName == "get") {
+            val arg = parenResult.second.trim().trim('"', '\'')
+            aliasToType(arg)?.let { return it }
+        }
+
         // Network:getAll("type") and Channel:getAll("type") return a HandleList<T>.
         // Encode the parameterised type as a literal string `"HandleList<T>"` so the
         // method-list dispatch (which keys off the symbol's type string) can match
@@ -1030,6 +1050,35 @@ class AutocompletePopup(
         "placer" -> "PlacerHandle"
         "io", "storage" -> "CardHandle"
         else -> null
+    }
+
+    /** Resolve a literal alias passed to `network:get` / `Channel:get` to its
+     *  handle type. Cards win first, then variables, then breakers, then placers,
+     *  matching the runtime priority in
+     *  [damien.nodeworks.script.ScriptEngine]'s `network:get` binding. Used by
+     *  the chain resolver so `network:get("redstone_1").` knows to suggest
+     *  RedstoneCard methods without needing the user to bind it to a local
+     *  first. Returns null when the alias doesn't match any registered name,
+     *  the caller falls back to the spec's static return type (Any). */
+    private fun aliasToType(alias: String): String? {
+        cards.firstOrNull { it.effectiveAlias == alias }?.let { card ->
+            return when (card.capability.type) {
+                "redstone" -> "RedstoneCard"
+                "observer" -> "ObserverCard"
+                else -> "CardHandle"
+            }
+        }
+        variables.firstOrNull { it.first == alias }?.let { (_, typeOrd) ->
+            return when (typeOrd) {
+                0 -> "NumberVariableHandle"
+                1 -> "StringVariableHandle"
+                2 -> "BoolVariableHandle"
+                else -> "VariableHandle"
+            }
+        }
+        if (alias in breakerAliases) return "BreakerHandle"
+        if (alias in placerAliases) return "PlacerHandle"
+        return null
     }
 
     /** Pull the element type out of a `HandleList<T>` symbol. Returns null when
@@ -1685,117 +1734,6 @@ class AutocompletePopup(
         trySuggestViaTypedAssignment(ctx, symbols)?.let { return it }
 
         return when {
-            ctx.funcExpr.endsWith("network:get") -> {
-                // Cards first, variables next, devices last, matches the runtime
-                // priority in `network:get` so the string most likely to resolve
-                // appears at the top of the popup. The label suffix in parens
-                // (`(io)`, `(number)`, `(breaker)`) tells the player which surface
-                // they're targeting at a glance.
-                val typeLabels = arrayOf("number", "string", "bool")
-                val cardSuggestions = cards
-                    .map { it.effectiveAlias to it.capability.type }
-                    .distinct()
-                    .map { suggest(it.first, "${it.first} (${it.second})", Kind.STRING) }
-                val varSuggestions = variables.map { (name, typeOrd) ->
-                    val label = typeLabels.getOrElse(typeOrd) { "variable" }
-                    suggest(name, "$name ($label)", Kind.STRING)
-                }
-                val breakerSuggestions = breakerAliases.map {
-                    suggest(it, "$it (breaker)", Kind.STRING)
-                }
-                val placerSuggestions = placerAliases.map {
-                    suggest(it, "$it (placer)", Kind.STRING)
-                }
-                FuzzyMatch.filter(
-                    ctx.partial,
-                    cardSuggestions + varSuggestions + breakerSuggestions + placerSuggestions,
-                )
-            }
-
-            ctx.funcExpr.endsWith("network:route") -> {
-                val storageAliases = cards
-                    .filter { it.capability.type == "storage" }
-                    .map { it.effectiveAlias }
-                    .distinct()
-
-                // Group aliases sharing the Card Programmer's `_N` suffix convention so we
-                // can offer a single `<prefix>_*` completion per group. Singletons don't
-                // count, a group of one card collapses back into a literal alias.
-                val suffixGroups = storageAliases
-                    .mapNotNull { alias ->
-                        val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
-                        match.groupValues[1] to alias
-                    }
-                    .groupBy({ it.first }, { it.second })
-                    .filterValues { it.size >= 2 }
-
-                // Hide the numbered cards from a grouped set by default, the `_*` wildcard
-                // represents the user's likely intent, and listing ten `cobblestone_N`
-                // entries alongside it is just noise. A user who wants one specific numbered
-                // card types the digit suffix themselves (`cobblestone_2`), which flips the
-                // group into "disambiguation mode" and the individual cards surface again.
-                val hiddenAliases = mutableSetOf<String>()
-                for ((prefix, aliases) in suffixGroups) {
-                    val stem = "${prefix}_"
-                    val disambiguating = ctx.partial.startsWith(stem) &&
-                        ctx.partial.length > stem.length &&
-                        ctx.partial[stem.length].isDigit()
-                    if (!disambiguating) hiddenAliases.addAll(aliases)
-                }
-
-                val storageSuggestions = mutableListOf<Suggestion>()
-                // Wildcards first so they surface above any remaining literal cards in the
-                // fuzzy-matched output, they're the recommended choice for grouped cards.
-                for ((prefix, aliases) in suffixGroups) {
-                    val wildcard = "${prefix}_*"
-                    val preview = aliases.sorted().take(3).joinToString(", ") +
-                        if (aliases.size > 3) ", …" else ""
-                    storageSuggestions.add(
-                        suggest(wildcard, "$wildcard (${aliases.size} cards: $preview)", Kind.STRING)
-                    )
-                }
-                for (alias in storageAliases) {
-                    if (alias in hiddenAliases) continue
-                    storageSuggestions.add(suggest(alias, "$alias (storage)", Kind.STRING))
-                }
-                FuzzyMatch.filter(ctx.partial, storageSuggestions)
-            }
-
-            ctx.funcExpr.endsWith("network:getAll") -> {
-                fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer", "variable", "breaker", "placer"))
-            }
-
-            ctx.funcExpr.endsWith("network:channel") -> {
-                // 16 vanilla dye color names. Stable lowercase form matches both
-                // DyeColor.byName() at runtime and the script-side `channels()` output.
-                fuzzyStrings(ctx.partial, listOf(
-                    "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
-                    "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black",
-                ))
-            }
-
-            // Inside `:getFirst("…")` / `:getAll("…")` on a `Channel` receiver, same
-            // set of capability-type hints we offer to `network:getAll`. We can't easily
-            // know the receiver type here without re-resolving the chain, so we surface
-            // the hints whenever the funcExpr ends with `:getFirst` or `:getAll` and
-            // accept a small false-positive surface (these strings on other receivers).
-            ctx.funcExpr.endsWith(":getFirst") || ctx.funcExpr.endsWith(":getAll") -> {
-                fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer", "variable", "breaker", "placer"))
-            }
-
-            ctx.funcExpr.endsWith("network:craft") -> {
-                fuzzyStrings(ctx.partial, craftableOutputs)
-            }
-
-            // (network:var was removed, variable names now surface alongside card
-            // aliases inside the `network:get` string-arg suggestion below, where the
-            // variable type label keeps them distinguishable from cards.)
-
-            ctx.funcExpr.endsWith(":face") -> {
-                val faces = listOf("top", "bottom", "north", "south", "east", "west", "side")
-                fuzzyStrings(ctx.partial, faces)
-            }
-
             ctx.funcExpr.endsWith("network:handle") -> {
                 // Full-block snippet: accepting a suggestion inserts the whole handle()
                 // call, closing quote, comma, function signature with typed per-slot
@@ -1825,101 +1763,8 @@ class AutocompletePopup(
                 FuzzyMatch.filter(ctx.partial, suggestions).take(20)
             }
 
-            // `placer:place("|")` and chained / broadcast variants
-            // (`network:getAll("placer"):place`, `placers:place`, etc.). The arg
-            // is a single concrete item id, wildcards / sigils / tags don't
-            // make sense here because Placer can only place a specific block,
-            // not "any item." Use the same plain-itemIds path as :shapeless.
-            ctx.funcExpr.endsWith(":place") -> {
-                val suggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
-                FuzzyMatch.filter(ctx.partial, suggestions).take(20)
-            }
-
-            isResourceFilterFunc(ctx.funcExpr) -> suggestResourceFilter(ctx.partial)
-
-            // Importer / Stocker presets. `:from` and `:to` take card aliases (or the
-            // `network` sentinel), `:filter` takes a resource filter, `:ensure` /
-            // `:craft` take a concrete item id.
-            //
-            // Matches both the unchained form (`importer:from(`) and the chained form
-            // where funcExpr collapses to just `:from` after a prior method call like
-            // `importer:<call>():from(`.
-            ctx.funcExpr.endsWithPresetMethod(":from") ||
-            ctx.funcExpr.endsWithPresetMethod(":to") -> {
-                suggestCardAliasString(ctx.partial)
-            }
-
-            ctx.funcExpr.endsWithPresetMethod(":filter") -> {
-                suggestResourceFilter(ctx.partial)
-            }
-
-            ctx.funcExpr.endsWithPresetMethod(":ensure") ||
-            ctx.funcExpr.endsWithPresetMethod(":craft") && !ctx.funcExpr.endsWith("network:craft") -> {
-                fuzzyStrings(ctx.partial, craftableOutputs)
-            }
-
             else -> emptyList()
         }
-    }
-
-    /** Match a method-name suffix whether the funcExpr is qualified (`importer:from`)
-     *  or collapsed to just `:from` via a chain (`importer:x():from`). Colon kept so
-     *  this doesn't accidentally match fragments like `someFrom`. */
-    private fun String.endsWithPresetMethod(suffix: String): Boolean =
-        this == suffix || this.endsWith("importer$suffix") || this.endsWith("stocker$suffix")
-
-    /** Card alias suggestions used by preset :from / :to string args. Lists every
-     *  alias on the network annotated with its capability kind, plus a
-     *  `<prefix>_*` wildcard completion whenever two or more cards share the Card
-     *  Programmer's `_N` numbered-suffix convention. Mirrors the grouping
-     *  behaviour of `network:route` so `io_1`, `io_2`, `io_3` all collapse into
-     *  a single `io_*` suggestion. Same numbered cards are hidden by default
-     *  (the wildcard is the usual intent) unless the player is disambiguating by
-     *  typing the digit suffix themselves. */
-    private fun suggestCardAliasString(partial: String): List<Suggestion> {
-        // Collect (alias, capability type) pairs, keeping the first capability type
-        // we see per alias so `{"io_1" to "io", "io_1" to "storage"}` (unlikely but
-        // possible) doesn't produce duplicates in the popup.
-        val aliasToType = LinkedHashMap<String, String>()
-        for (card in cards) {
-            aliasToType.putIfAbsent(card.effectiveAlias, card.capability.type)
-        }
-
-        // Group by the prefix before `_N`. Singletons don't count, a lone card
-        // stays a literal alias in the suggestion list.
-        val suffixGroups = aliasToType.keys
-            .mapNotNull { alias ->
-                val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
-                match.groupValues[1] to alias
-            }
-            .groupBy({ it.first }, { it.second })
-            .filterValues { it.size >= 2 }
-
-        // Hide numbered cards from grouped sets unless the user is disambiguating.
-        val hiddenAliases = mutableSetOf<String>()
-        for ((prefix, aliases) in suffixGroups) {
-            val stem = "${prefix}_"
-            val disambiguating = partial.startsWith(stem) &&
-                partial.length > stem.length &&
-                partial[stem.length].isDigit()
-            if (!disambiguating) hiddenAliases.addAll(aliases)
-        }
-
-        val suggestions = mutableListOf<Suggestion>()
-        // Wildcards first so they surface above literal cards in fuzzy-matched output.
-        for ((prefix, aliases) in suffixGroups) {
-            val wildcard = "${prefix}_*"
-            val preview = aliases.sorted().take(3).joinToString(", ") +
-                if (aliases.size > 3) ", …" else ""
-            suggestions.add(
-                suggest(wildcard, "$wildcard (${aliases.size} cards: $preview)", Kind.STRING)
-            )
-        }
-        for ((alias, type) in aliasToType) {
-            if (alias in hiddenAliases) continue
-            suggestions.add(suggest(alias, "$alias ($type)", Kind.STRING))
-        }
-        return FuzzyMatch.filter(partial, suggestions)
     }
 
     /** Resolve a string-arg context through the API registry. Parses the funcExpr to
@@ -2240,18 +2085,6 @@ class AutocompletePopup(
         return FuzzyMatch.filter(partial, out)
     }
 
-    /** Lua functions whose string argument is a resource-id filter (items + fluids).
-     *  `:insert` / `:tryInsert` are NOT resource-filter funcs, their first arg is an
-     *  ItemsHandle, so suggesting resource ids there would be actively misleading.
-     *  `:matches` goes through the same `CardHandle.matchesFilter` logic as `:find`, so it
-     *  gets the same id/tag/regex completions. */
-    private fun isResourceFilterFunc(funcExpr: String): Boolean =
-        funcExpr.endsWith(":find") ||
-        funcExpr.endsWith(":findEach") ||
-        funcExpr.endsWith(":count") ||
-        funcExpr.endsWith(":matches") ||
-        funcExpr == "find" || funcExpr == "findEach" || funcExpr == "count" || funcExpr == "matches"
-
     /**
      * Resource-filter strings accept:
      *  - bare item ids (`minecraft:iron_ingot`)
@@ -2504,58 +2337,6 @@ class AutocompletePopup(
         return matches
     }
 
-    // ========== Network methods ==========
-
-    private fun suggestNetworkMethods(partial: String, fullText: String): List<Suggestion> {
-        // Check for handle snippet context: `network:handle("name", partial`
-        // This is checked here because the cursor context sees `network:handle` as MethodCall
-        // but we need to check if we're in the second argument position
-        val currentLine = fullText.substringBeforeLast('\n', fullText).let {
-            // Actually use the beforeCursor's current line
-            fullText // we'll use a different approach
-        }
-
-        val methods = listOf(
-            suggest("get(", "get(alias: string) → CardHandle", Kind.METHOD),
-            suggest("getAll(", "getAll(type: string) → CardHandle[]", Kind.METHOD),
-            suggest("channel(", "channel(color: string) → Channel", Kind.METHOD),
-            suggest("channels(", "channels() → string[]", Kind.METHOD),
-            suggest("find(", "find(filter: string) → ItemsHandle?", Kind.METHOD),
-            suggest("findEach(", "findEach(filter: string) → ItemsHandle[]", Kind.METHOD),
-            suggest("count(", "count(filter: string) → number", Kind.METHOD),
-            suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)", Kind.METHOD),
-            suggest("tryInsert(", "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)", Kind.METHOD),
-            suggest("craft(", "craft(id: string, count?: number) → CraftBuilder", Kind.METHOD),
-            suggest("shapeless(", "shapeless(item: string, count?: number, ...) → ItemsHandle?", Kind.METHOD),
-            run {
-                val body = "route(\"\", function(item: ItemsHandle)\n    return true\nend)"
-                snippet("route(", "route(alias, fn(item) → boolean)", body, body.indexOf("\"\"") + 1)
-            },
-            // (network:var was removed, variables resolve through `network:get(name)`.)
-            suggest("handle(", "handle(cardName: string, fn: function(job, ...))", Kind.METHOD),
-            suggest("debug(", "debug()  print network topology", Kind.METHOD)
-        )
-        return fuzzy(partial, methods)
-    }
-
-    private fun suggestSchedulerMethods(partial: String): List<Suggestion> {
-        val tickBody = "tick(function()\n    \nend)"
-        val secondBody = "second(function()\n    \nend)"
-        val delayBody = "delay(20, function()\n    \nend)"
-        val methods = listOf(
-            snippet("tick(", "tick(fn: function) → number", tickBody, tickBody.indexOf("\n    \n") + 5),
-            snippet("second(", "second(fn: function) → number", secondBody, secondBody.indexOf("\n    \n") + 5),
-            snippet(
-                "delay(",
-                "delay(ticks: number, fn: function) → number",
-                delayBody,
-                delayBody.indexOf("\n    \n") + 5
-            ),
-            suggest("cancel(", "cancel(id: number)", Kind.METHOD)
-        )
-        return fuzzy(partial, methods)
-    }
-
     // ========== Type-based methods and properties ==========
 
     /** Build method suggestions for [type] from the API registry. Returns null when
@@ -2629,205 +2410,31 @@ class AutocompletePopup(
             }
             return fuzzy(partial, methods)
         }
-        val methods = when (type) {
-            "CardHandle" -> listOf(
-                suggest("find(", "find(filter: string) → ItemsHandle?", Kind.METHOD),
-                suggest("findEach(", "findEach(filter: string) → ItemsHandle[]", Kind.METHOD),
-                suggest("insert(", "insert(items: ItemsHandle, count?: number) → boolean (atomic)", Kind.METHOD),
-                suggest(
-                    "tryInsert(",
-                    "tryInsert(items: ItemsHandle, count?: number) → number (best-effort)",
-                    Kind.METHOD
-                ),
-                suggest("count(", "count(filter: string) → number", Kind.METHOD),
-                suggest("face(", "face(side: string) → CardHandle", Kind.METHOD),
-                suggest("slots(", "slots(...: number) → CardHandle", Kind.METHOD)
-            )
-
-            "RedstoneCard" -> {
-                val onChangeBody = "onChange(function(strength: number)\n    \nend)"
-                listOf(
-                    suggest("powered(", "powered() → boolean", Kind.METHOD),
-                    suggest("strength(", "strength() → number", Kind.METHOD),
-                    suggest("set(", "set(boolean | number)", Kind.METHOD),
-                    snippet(
-                        "onChange(",
-                        "onChange(fn(strength: number))",
-                        onChangeBody,
-                        onChangeBody.indexOf("\n    \n") + 5
-                    )
-                )
-            }
-
-            "ObserverCard" -> {
-                val onChangeBody = "onChange(function(block: string, state: { [string]: any })\n    \nend)"
-                listOf(
-                    suggest("block(", "block() → string", Kind.METHOD),
-                    suggest("state(", "state() → { [string]: any }", Kind.METHOD),
-                    snippet(
-                        "onChange(",
-                        "onChange(fn(block: string, state: { [string]: any }))",
-                        onChangeBody,
-                        onChangeBody.indexOf("\n    \n") + 5
-                    )
-                )
-            }
-
-            "BreakerHandle" -> listOf(
-                suggest("mine(", "mine() → BreakBuilder", Kind.METHOD),
-                suggest("cancel(", "cancel()", Kind.METHOD),
-                suggest("block(", "block() → string", Kind.METHOD),
-                suggest("state(", "state() → { [string]: any }", Kind.METHOD),
-                suggest("isMining(", "isMining() → boolean", Kind.METHOD),
-                suggest("progress(", "progress() → number", Kind.METHOD),
-            )
-
-            "BreakBuilder" -> {
-                val connectBody = "connect(function(items: ItemsHandle)\n    \nend)"
-                listOf(
-                    snippet(
-                        "connect(",
-                        "connect(fn(items: ItemsHandle))",
-                        connectBody,
-                        connectBody.indexOf("\n    \n") + 5
-                    )
-                )
-            }
-
-            "PlacerHandle" -> listOf(
-                suggest("place(", "place(item: string | ItemsHandle) → boolean", Kind.METHOD),
-                suggest("block(", "block() → string", Kind.METHOD),
-                suggest("isBlocked(", "isBlocked() → boolean", Kind.METHOD),
-            )
-
-            "Channel" -> listOf(
-                suggest("getFirst(", "getFirst(type: string) → CardHandle?", Kind.METHOD),
-                suggest("getAll(", "getAll(type: string?) → HandleList", Kind.METHOD),
-                suggest("get(", "get(alias: string) → CardHandle", Kind.METHOD),
-            )
-
-            "ItemsHandle" -> listOf(
-                suggest("hasTag(", "hasTag(tag: string) → boolean", Kind.METHOD),
-                suggest("matches(", "matches(filter: string) → boolean", Kind.METHOD)
-            )
-
-            "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...)  wait for outputs", Kind.METHOD))
-            "CraftBuilder" -> {
-                val connectBody = "connect(function(item: ItemsHandle)\n    \nend)"
-                listOf(
-                    snippet(
-                        "connect(",
-                        "connect(fn(item: ItemsHandle))",
-                        connectBody,
-                        connectBody.indexOf("\n    \n") + 5
-                    ),
-                    suggest("store(", "store()  send result to network storage", Kind.METHOD)
-                )
-            }
-
-            "VariableHandle", "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle" ->
-                variableHandleMethods(type)
-
-            "Importer" -> listOf(
-                suggest(
-                    "from(",
-                    "from(...sources: string | CardHandle | network) → ImporterBuilder",
-                    Kind.METHOD
-                )
-            )
-
-            "ImporterBuilder" -> presetBuilderMethods("ImporterBuilder") + listOf(
-                suggest(
-                    "to(",
-                    "to(...targets: string | CardHandle | network) → ImporterBuilder",
-                    Kind.METHOD
-                ),
-                suggest(
-                    "roundrobin(",
-                    "roundrobin(step: number?) → ImporterBuilder",
-                    Kind.METHOD
-                ),
-                suggest("filter(", "filter(pattern: string) → ImporterBuilder", Kind.METHOD)
-            )
-
-            "Stocker" -> listOf(
-                suggest(
-                    "from(",
-                    "from(...sources: string | CardHandle | network) → StockerBuilder",
-                    Kind.METHOD
-                ),
-                suggest("ensure(", "ensure(itemId: string) → StockerBuilder", Kind.METHOD),
-                suggest("craft(", "craft(itemId: string) → StockerBuilder", Kind.METHOD)
-            )
-
-            "StockerBuilder" -> presetBuilderMethods("StockerBuilder") + listOf(
-                suggest(
-                    "to(",
-                    "to(target: string | CardHandle | network) → StockerBuilder",
-                    Kind.METHOD
-                ),
-                suggest("keep(", "keep(amount: number) → StockerBuilder", Kind.METHOD),
-                suggest("batch(", "batch(size: number) → StockerBuilder", Kind.METHOD),
-                suggest("filter(", "filter(pattern: string) → StockerBuilder", Kind.METHOD)
-            )
-
-            else -> emptyList()
-        }
-        return fuzzy(partial, methods)
+        return emptyList()
     }
-
-    /** Shared lifecycle methods on every preset builder (ImporterBuilder, StockerBuilder). */
-    private fun presetBuilderMethods(builderType: String): List<Suggestion> = listOf(
-        suggest("every(", "every(ticks: number) → $builderType", Kind.METHOD),
-        suggest("start(", "start()", Kind.METHOD),
-        suggest("stop(", "stop()", Kind.METHOD),
-        suggest("isRunning(", "isRunning() → boolean", Kind.METHOD)
-    )
 
     private fun suggestPropertiesForType(type: String, partial: String): List<Suggestion> {
         // Registry-first dispatch, mirrors [suggestMethodsForType].
         suggestionsFromRegistryProperties(type, partial)?.let { return it }
 
-        val props = when (type) {
-            // CardHandle and RedstoneCard share the same underlying Lua table (same
-            // `.name` binding from CardHandle.create), the two entries just exist so
-            // method autocomplete can show the appropriate method set per card kind.
-            "CardHandle", "RedstoneCard", "ObserverCard" -> listOf(
-                suggest("name", "name: string (card's alias)", Kind.PROPERTY)
-            )
-
-            // VariableHandle and its typed variants share the same `.name` binding
-            // (set once at handle creation from the variable's declared name).
-            "VariableHandle", "NumberVariableHandle", "StringVariableHandle", "BoolVariableHandle" -> listOf(
-                suggest("name", "name: string (variable's declared name)", Kind.PROPERTY)
-            )
-
-            "ItemsHandle" -> listOf(
-                suggest("id", "id: string", Kind.PROPERTY),
-                suggest("name", "name: string", Kind.PROPERTY),
-                suggest("count", "count: number (items: units, fluids: mB)", Kind.PROPERTY),
-                suggest("kind", "kind: \"item\" | \"fluid\"", Kind.PROPERTY),
-                suggest("stackable", "stackable: boolean", Kind.PROPERTY),
-                suggest("maxStackSize", "maxStackSize: number", Kind.PROPERTY),
-                suggest("hasData", "hasData: boolean", Kind.PROPERTY)
-            )
-
-            "InputItems" -> {
-                // Fields are dynamic, derived from the enclosing `network:handle(...)`
-                // recipe. When the cursor is outside any handler body, offer no fields
-                // (the handler's items table isn't meaningful in that scope).
-                val api = enclosingHandlerApi ?: return emptyList()
-                val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputs)
+        // InputItems is the one type whose properties can't be statically declared
+        // because they're derived from the enclosing `network:handle(...)` recipe's
+        // input slots. Computed at use-site here, the registry-side InputItems
+        // surface is intentionally empty so this fallback fires.
+        if (type == "InputItems") {
+            val api = enclosingHandlerApi ?: return emptyList()
+            val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputs)
+            return fuzzy(
+                partial,
                 paramNames.mapIndexed { idx, name ->
                     val (itemId, count) = api.inputs[idx]
                     val shortId = itemId.substringAfter(':')
                     suggest(name, "$name: ItemsHandle ($shortId × $count)", Kind.PROPERTY)
-                }
-            }
-
-            else -> emptyList()
+                },
+            )
         }
-        return fuzzy(partial, props)
+
+        return emptyList()
     }
 
     /**
@@ -2922,40 +2529,6 @@ class AutocompletePopup(
 
         val innermostId = scopeStack.asReversed().firstOrNull { it != null } ?: return null
         return localApis.firstOrNull { it.name == innermostId }
-    }
-
-    private val baseVariableMethods = listOf(
-        "get(" to "get() → value",
-        "set(" to "set(value), set variable value",
-        "cas(" to "cas(expected, new) → boolean",
-        "type(" to "type() → string"
-    )
-
-    private val numberMethods = listOf(
-        "increment(" to "increment(n: number) → number",
-        "decrement(" to "decrement(n: number) → number",
-        "min(" to "min(n: number) → number",
-        "max(" to "max(n: number) → number"
-    )
-    private val stringMethods = listOf(
-        "append(" to "append(s: string) → string",
-        "length(" to "length() → number",
-        "clear(" to "clear()"
-    )
-    private val boolMethods = listOf(
-        "toggle(" to "toggle() → boolean",
-        "tryLock(" to "tryLock() → boolean",
-        "unlock(" to "unlock()"
-    )
-
-    private fun variableHandleMethods(kind: String): List<Suggestion> {
-        val extra = when (kind) {
-            "NumberVariableHandle" -> numberMethods
-            "StringVariableHandle" -> stringMethods
-            "BoolVariableHandle" -> boolMethods
-            else -> numberMethods + stringMethods + boolMethods // VariableHandle fallback: show all
-        }
-        return (baseVariableMethods + extra).map { suggest(it.first, it.second, Kind.METHOD) }
     }
 
     // ========== Library methods ==========

@@ -1267,54 +1267,6 @@ class TerminalScreen(
         // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 
-    /** Known method signatures for tooltip display. */
-    private val methodSignatures = mapOf(
-        // Network methods
-        "get" to "network:get(alias: string) → CardHandle",
-        "getAll" to "network:getAll(type: string) → CardHandle[]",
-        "craft" to "network:craft(id: string, count?: number) → CraftBuilder",
-        "handle" to "network:handle(cardName: string, fn: function(job, ...))",
-        "route" to "network:route(alias: string, fn: function(item) → boolean)",
-        "shapeless" to "network:shapeless(item: string, count?: number, ...) → ItemsHandle?",
-        "debug" to "network:debug()  print network topology",
-        // (network:var was removed, variables flow through `network:get(name)`.)
-        // Network item methods (also on CardHandle)
-        "find" to "find(filter: string) → ItemsHandle?",
-        "findEach" to "findEach(filter: string) → ItemsHandle[]",
-        "insert" to "insert(items: ItemsHandle, count?: number) → number",
-        "count" to "count(filter: string) → number",
-        "face" to "face(side: string) → CardHandle",
-        "slots" to "slots(...: number) → CardHandle",
-        // ItemsHandle methods
-        "hasTag" to "hasTag(tag: string) → boolean",
-        "matches" to "matches(filter: string) → boolean",
-        // Scheduler methods
-        "tick" to "scheduler:tick(fn: function) → number",
-        "second" to "scheduler:second(fn: function) → number",
-        "delay" to "scheduler:delay(ticks: number, fn: function) → number",
-        "cancel" to "scheduler:cancel(id: number)",
-        // CraftBuilder methods
-        "connect" to "connect(fn: function(item: ItemsHandle))",
-        "store" to "store()  send result to network storage",
-        // Job methods
-        "pull" to "job:pull(card: CardHandle, ...)  wait for outputs",
-        // RedstoneCard methods
-        "powered" to "powered() → boolean",
-        "strength" to "strength() → number (0-15)",
-        "set" to "set(boolean | number)  emit redstone signal",
-        "onChange" to "onChange(fn: function(strength: number))",
-        // Lua builtins
-        "print" to "print(...)  output to terminal",
-        "error" to "error(message: string)  throw an error",
-        "clock" to "clock() → number (server tick count)",
-        "tostring" to "tostring(value: any) → string",
-        "tonumber" to "tonumber(value: any) → number?",
-        "type" to "type(value: any) → string",
-        "pairs" to "pairs(t: table) → iterator",
-        "ipairs" to "ipairs(t: table) → iterator",
-        "require" to "require(module: string) → table"
-    )
-
     private fun renderTypeTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (mouseX < editorX || mouseX > editorX + editor.width ||
             mouseY < editorY || mouseY > editorY + editor.height
@@ -1343,17 +1295,16 @@ class TerminalScreen(
                 }
             }
         } else if (word != null) {
-            // Fallback path for tokens LuaApiDocs doesn't cover: the in-file
-            // methodSignatures map, user-defined function scanner, and the
-            // autocomplete symbol table (for plain `word: Type` hints on locals).
+            // Fallback path for tokens the registry doesn't cover, user-defined
+            // functions and locals whose types come from the autocomplete symbol
+            // table.
             //
             // The symbol-table lookup uses the HOVER position as its scope anchor, not
             // the cursor. Otherwise hovering a function parameter (e.g. `from` in
             // `function getThings(from: { CardHandle })`) wouldn't resolve while the
             // cursor sits outside the function body, the param's scope would be closed
             // at cursor time but is still open at the hover line.
-            val fallback = methodSignatures[word]
-                ?: autocomplete.getFunctionSignature(word, editor.value)
+            val fallback = autocomplete.getFunctionSignature(word, editor.value)
                 ?: run {
                     val hoverAnchor = editor.getHoverScopeAnchor(mouseX, mouseY)
                         ?: editor.getCursorPosition()
