@@ -25,12 +25,21 @@ val ItemsHandleKind: LuaType.StringEnum = LuaType.StringEnum(
 )
 
 /** Vanilla + modded item registry id. Resolves at autocomplete time so freshly
- *  loaded mods show up without a restart. Used by `network:find`, `craft`,
- *  `shapeless`, etc. */
+ *  loaded mods show up without a restart. Used by `network:find`, `shapeless`,
+ *  any place expecting a generic item id. */
 val ItemId: LuaType.StringDomain = LuaType.StringDomain(
     name = "ItemId",
     description = "Item registry id like `minecraft:diamond` or `nodeworks:io_card`.",
     sourceKey = "item-id",
+)
+
+/** Item id that the network has a planning recipe for. Narrower than [ItemId],
+ *  used by `network:craft` so the autocomplete only suggests outputs the
+ *  Crafting CPU can actually produce. */
+val Craftable: LuaType.StringDomain = LuaType.StringDomain(
+    name = "Craftable",
+    description = "An item id the Crafting CPU can plan a recipe for. Subset of [ItemId] limited to outputs the network knows how to make.",
+    sourceKey = "craftable",
 )
 
 /** Fluid registry id. Same shape as [ItemId] but for fluids. */
@@ -64,12 +73,41 @@ val CardAlias: LuaType.StringDomain = LuaType.StringDomain(
     sourceKey = "card-alias",
 )
 
-/** Channel name for cards configured with named channels. Used by methods that
- *  scope to a specific channel. */
-val ChannelName: LuaType.StringDomain = LuaType.StringDomain(
-    name = "ChannelName",
-    description = "A channel name as set on the Variable / Antenna for this network.",
-    sourceKey = "channel-name",
+/** Alias of a Storage card specifically. Distinct from [CardAlias] because
+ *  routing rules (`network:route`) only apply to storage cards, suggesting other
+ *  card kinds there is misleading. The source also surfaces `<prefix>_*` wildcard
+ *  groups when multiple storage cards share a `_N`-suffixed alias, matching the
+ *  legacy network:route UX. */
+val StorageCardAlias: LuaType.StringDomain = LuaType.StringDomain(
+    name = "StorageCardAlias",
+    description = "An alias of a Storage card on this network.",
+    sourceKey = "storage-card-alias",
+)
+
+/** Dye color name accepted by `network:channel(color)`. Closed enum since the
+ *  runtime maps these via `DyeColor.byName()`, an unknown color raises an error. */
+val DyeColor: LuaType.StringEnum = LuaType.StringEnum(
+    name = "DyeColor",
+    values = listOf(
+        "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+        "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black",
+    ),
+    description = "A vanilla dye color name, used as a network channel identifier.",
+)
+
+/** Effective alias of a Breaker on the network. Resolves at autocomplete time
+ *  against the network's currently-known breakers. */
+val BreakerAlias: LuaType.StringDomain = LuaType.StringDomain(
+    name = "BreakerAlias",
+    description = "An alias of a Breaker device on this network.",
+    sourceKey = "breaker-alias",
+)
+
+/** Effective alias of a Placer on the network. */
+val PlacerAlias: LuaType.StringDomain = LuaType.StringDomain(
+    name = "PlacerAlias",
+    description = "An alias of a Placer device on this network.",
+    sourceKey = "placer-alias",
 )
 
 /** Variable name as defined in the Variable block. Resolves to current network's
@@ -78,6 +116,23 @@ val VariableName: LuaType.StringDomain = LuaType.StringDomain(
     name = "VariableName",
     description = "A variable name declared in a Variable block on this network.",
     sourceKey = "variable-name",
+)
+
+/** Capability/type-string accepted by `network:getAll`, `Channel:getAll`, and
+ *  `Channel:getFirst`. Closed enum, the runtime dispatches on these literals. */
+val NetworkAccessorType: LuaType.StringEnum = LuaType.StringEnum(
+    name = "NetworkAccessorType",
+    values = listOf("io", "storage", "redstone", "observer", "variable", "breaker", "placer"),
+    description = "The capability or device type to filter `network:getAll` / `Channel:getAll` queries by.",
+)
+
+/** Composite name accepted by `network:get` and `Channel:get`. Cards, variables,
+ *  breakers, and placers all share the network's bare-name namespace, the union
+ *  walks every part's source so all surfaces appear in autocomplete. */
+val NetworkName: LuaType.Union = LuaType.Union(
+    name = "NetworkName",
+    parts = listOf(CardAlias, VariableName, BreakerAlias, PlacerAlias),
+    description = "Any addressable name on the network, a card alias, variable, breaker, or placer.",
 )
 
 /** Composite filter string accepted by `find` / `findEach` / `count` / `matches`.
@@ -108,12 +163,18 @@ val FaceName: LuaType.StringEnum = LuaType.StringEnum(
 internal val ALL_STRING_TYPES: List<LuaType> = listOf(
     ItemsHandleKind,
     ItemId,
+    Craftable,
     FluidId,
     BlockId,
     TagId,
     CardAlias,
-    ChannelName,
+    StorageCardAlias,
+    BreakerAlias,
+    PlacerAlias,
     VariableName,
+    DyeColor,
+    NetworkAccessorType,
+    NetworkName,
     Filter,
     FaceName,
 )

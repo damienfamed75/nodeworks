@@ -151,6 +151,7 @@ class MethodBuilder internal constructor(private val name: String) {
     internal fun build(receiver: LuaType.Named, category: ApiCategory): ApiDoc {
         val desc = _description ?: error("${receiver.name}:$name missing required `description`")
         val ret = _returnType ?: error("${receiver.name}:$name missing required `returns(...)`")
+        val (snippetBody, snippetCursor) = buildSnippet(name, params)
         return ApiDoc(
             key = "${receiver.name}:$name",
             displayName = name,
@@ -163,8 +164,44 @@ class MethodBuilder internal constructor(private val name: String) {
             example = example,
             since = since,
             deprecatedFor = deprecatedFor,
+            snippetBody = snippetBody,
+            snippetCursorOffset = snippetCursor,
         )
     }
+}
+
+/** Generate a snippet for accepted method completions when one of two shapes
+ *  applies. Returns (null, 0) for everything else, the caller falls back to a
+ *  plain `name(` insertion.
+ *
+ *  Single-fn-param: full callback template with the cursor in the function body.
+ *  This is what Scheduler:tick / Scheduler:second / CraftBuilder:connect etc. get.
+ *
+ *  String-first-param: inserts `name("")` with the cursor between the quotes so
+ *  the string-position autocomplete (card aliases, item ids, dye colors) fires
+ *  immediately. The user picks a value and continues typing the rest of the
+ *  call, the per-arg string-position dispatch handles each arg as they're typed.
+ *
+ *  Multi-arg with no string first param: no snippet, user types each arg
+ *  themselves so the per-arg autocomplete fires naturally. */
+private fun buildSnippet(name: String, params: List<LuaType.Param>): Pair<String?, Int> {
+    if (params.isEmpty()) return null to 0
+
+    if (params.size == 1) {
+        val fnType = params[0].type as? LuaType.Function ?: return null to 0
+        val fnParamList = fnType.params.joinToString(", ") { "${it.name}: ${it.type.display}" }
+        val body = "$name(function($fnParamList)\n    \nend)"
+        val cursor = body.indexOf("\n    \n") + 5
+        return body to cursor
+    }
+
+    if (LuaType.isStringLike(params[0].type)) {
+        val body = "$name(\"\")"
+        val cursor = name.length + 2
+        return body to cursor
+    }
+
+    return null to 0
 }
 
 class CallbackBuilder internal constructor(private val name: String) {

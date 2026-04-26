@@ -1387,29 +1387,36 @@ class AutocompletePopup(
             if (f.returnType != null) funcReturnTypes[f.name] = f.returnType
         }
 
-        // For-loop element inference runs BEFORE the general `local x = expr` pass so
-        // locals declared inside a for-body that reference the loop variable
-        // (`local a = val.id`) can pick up its inferred type. The pass populates
-        // [symbols] for the value binding and the key binding when the latter isn't `_`.
+        // For-loop element inference. Runs twice (before and after the general
+        // `local x = expr` pass below) so dependencies in either direction
+        // converge:
+        //   `for _, val in fn() do local a = val.id end`  needs the for-loop
+        //     resolved BEFORE the inner local pass to type `a`
+        //   `local xs = fn(); for _, x in xs do end`      needs the local pass
+        //     resolved BEFORE the for-loop to type `x`
+        // putIfAbsent makes the second run cheap and idempotent.
         val forPattern = Regex("""\bfor\s+(\w+)(?:\s*,\s*(\w+))?\s+in\s+(.+?)\s+do\b""")
-        for (match in forPattern.findAll(fullText)) {
-            val keyName = match.groupValues[1]
-            val valName = match.groupValues[2].takeIf { it.isNotEmpty() }
-            val rawExpr = match.groupValues[3].trim()
-            val iterKind = containerFromIterExpr(rawExpr, fullText, containerVars) ?: continue
-            val (elementType, container) = iterKind
-            if (valName != null) {
-                if (valName !in symbols) symbols[valName] = elementType
-                if (keyName !in symbols && keyName != "_") {
-                    val keyType = when (container) {
-                        LuaApiDocs.Container.ARRAY -> "number"
-                        LuaApiDocs.Container.MAP -> "string"
-                        else -> null
+        val runForLoopPass = {
+            for (match in forPattern.findAll(fullText)) {
+                val keyName = match.groupValues[1]
+                val valName = match.groupValues[2].takeIf { it.isNotEmpty() }
+                val rawExpr = match.groupValues[3].trim()
+                val iterKind = containerFromIterExpr(rawExpr, fullText, containerVars) ?: continue
+                val (elementType, container) = iterKind
+                if (valName != null) {
+                    symbols.putIfAbsent(valName, elementType)
+                    if (keyName != "_") {
+                        val keyType = when (container) {
+                            LuaApiDocs.Container.ARRAY -> "number"
+                            LuaApiDocs.Container.MAP -> "string"
+                            else -> null
+                        }
+                        if (keyType != null) symbols.putIfAbsent(keyName, keyType)
                     }
-                    if (keyType != null) symbols[keyName] = keyType
                 }
             }
         }
+        runForLoopPass()
 
         // General inference: local x = expr
         // (`containerVars` was initialized above and may already carry explicit-annotation
@@ -1486,6 +1493,11 @@ class AutocompletePopup(
                 }
             }
         }
+
+        // Second for-loop pass picks up loop variables whose iter expressions are
+        // locals declared by the general inference pass above. See the closure's
+        // header comment for the bidirectional dependency.
+        runForLoopPass()
 
         // Expose container-typed vars to the scalar [symbols] map using their serialized
         // form (`{ T }` for arrays, `{ [string]: T }` for maps). The hover-tooltip fallback
@@ -1919,6 +1931,10 @@ class AutocompletePopup(
         ctx: CursorContext.StringArg,
         symbols: Map<String, String>,
     ): List<Suggestion>? {
+        // network:handle has a per-processing-set full-snippet UX in the legacy
+        // dispatcher that the simpler card-alias completion can't reproduce yet.
+        // Bail out so the legacy branch fires and produces typed-per-recipe templates.
+        if (ctx.funcExpr == "network:handle") return null
         val colon = ctx.funcExpr.indexOf(':')
         if (colon <= 0) return null
         val receiver = ctx.funcExpr.substring(0, colon)
@@ -1934,7 +1950,38 @@ class AutocompletePopup(
             ?: return null
 
         val paramType = methodDoc.params.getOrNull(ctx.argIndex)?.type ?: return null
-        return suggestionsForType(paramType, ctx.partial)
+        val baseSuggestions = suggestionsForType(paramType, ctx.partial) ?: return null
+
+        // When the method's shape is `(<string>, <function>)` and we're inside the
+        // string arg, transform each suggestion into a full-snippet that includes
+        // the function template. Accepting a suggestion drops in the entire call
+        // (`route("alias", function(items: ItemsHandle) ... end)`) with the cursor
+        // in the function body, ready for the user to start writing the predicate.
+        // Only fires for the exact 2-param shape so methods with extra trailing
+        // args don't get their tail truncated.
+        val nextParam = methodDoc.params.getOrNull(ctx.argIndex + 1)
+        if (
+            ctx.argIndex == 0 &&
+            methodDoc.params.size == 2 &&
+            nextParam?.type is damien.nodeworks.script.api.LuaType.Function
+        ) {
+            val fnType = nextParam.type as damien.nodeworks.script.api.LuaType.Function
+            val fnParamList = fnType.params.joinToString(", ") { "${it.name}: ${it.type.display}" }
+            return baseSuggestions.map { s ->
+                val before = "${s.insertText}\", function($fnParamList)\n    "
+                val after = "\nend)"
+                Suggestion(
+                    insertText = s.insertText,
+                    displayText = s.displayText,
+                    snippetText = before + after,
+                    snippetCursor = before.length,
+                    consumesAutoclose = true,
+                    kind = s.kind,
+                )
+            }
+        }
+
+        return baseSuggestions
     }
 
     /** Resolve a string-arg context to a user-defined function's param type and
@@ -2010,13 +2057,22 @@ class AutocompletePopup(
         return suggestionsForType(resolved, ctx.partial)
     }
 
-    /** Match `local <name>: <Type> =`, then `<name> =` against the symbol table.
-     *  Returned name has the trailing `=` stripped and any `?` (nullable) trimmed,
-     *  matching the format [LuaApiRegistry.stringTypeOf] expects. */
+    /** Match `local <name>: <Type> =`, `local <name>: { <Type> } = { ..., "|"`,
+     *  or `<name> =` against the symbol table. Returned name has the trailing `=`
+     *  stripped and any `?` (nullable) trimmed, matching the format
+     *  [LuaApiRegistry.stringTypeOf] expects.
+     *
+     *  The second pattern handles array-literal assignments. The cursor is on an
+     *  element of the array, so the resolved type is the element T (not the
+     *  container `{ T }`), which the caller then dispatches to T's source. */
     private fun parseTypedAssignmentType(precedingText: String, symbols: Map<String, String>): String? {
         val trimmed = precedingText.trimEnd().removeSuffix("=").trimEnd()
         val localMatch = Regex("""\blocal\s+\w+\s*:\s*(\w+)\??$""").find(trimmed)
         if (localMatch != null) return localMatch.groupValues[1]
+
+        val arrayElement = Regex("""\blocal\s+\w+\s*:\s*\{\s*(\w+)\s*\}\s*=\s*\{[^}]*$""")
+            .find(precedingText)
+        if (arrayElement != null) return arrayElement.groupValues[1]
 
         val reassignMatch = Regex("""\b(\w+)$""").find(trimmed)
         if (reassignMatch != null) {
@@ -2071,6 +2127,7 @@ class AutocompletePopup(
         "fluid-id" -> fuzzyStrings(partial, fluidIds)
         "tag-id" -> fuzzyStrings(partial, (itemTags + fluidTags).distinct())
         "block-id" -> emptyList()
+        "craftable" -> fuzzyStrings(partial, craftableOutputs)
         "card-alias" -> {
             val labels = cards.map { it.effectiveAlias to it.capability.type }.distinct()
             FuzzyMatch.filter(
@@ -2078,10 +2135,15 @@ class AutocompletePopup(
                 labels.map { (alias, type) -> suggest(alias, "$alias ($type)", Kind.STRING) },
             )
         }
-        "channel-name" -> fuzzyStrings(partial, listOf(
-            "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
-            "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black",
-        ))
+        "storage-card-alias" -> suggestStorageCardAliases(partial)
+        "breaker-alias" -> FuzzyMatch.filter(
+            partial,
+            breakerAliases.map { suggest(it, "$it (breaker)", Kind.STRING) },
+        )
+        "placer-alias" -> FuzzyMatch.filter(
+            partial,
+            placerAliases.map { suggest(it, "$it (placer)", Kind.STRING) },
+        )
         "variable-name" -> {
             val typeLabels = arrayOf("number", "string", "bool")
             FuzzyMatch.filter(
@@ -2094,6 +2156,54 @@ class AutocompletePopup(
         }
         "filter" -> suggestResourceFilter(partial)
         else -> emptyList()
+    }
+
+    /** Storage-card autocomplete with wildcard grouping. Cards whose aliases share
+     *  a `<prefix>_<digit>` shape group under a `<prefix>_*` wildcard suggestion
+     *  that matches every numbered sibling at runtime, restoring the legacy
+     *  network:route UX where typing `cobblestone` first surfaces
+     *  `cobblestone_*` instead of every individual card.
+     *
+     *  Numbered cards stay hidden until the user starts disambiguating with the
+     *  digit suffix (`cobblestone_2`), at which point the individual entries
+     *  surface alongside the wildcard. Singletons (only one numbered card with
+     *  the prefix) collapse back to a literal alias since the wildcard would
+     *  match exactly one thing. */
+    private fun suggestStorageCardAliases(partial: String): List<Suggestion> {
+        val storageAliases = cards
+            .filter { it.capability.type == "storage" }
+            .map { it.effectiveAlias }
+            .distinct()
+
+        val suffixGroups = storageAliases
+            .mapNotNull { alias ->
+                val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
+                match.groupValues[1] to alias
+            }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { it.size >= 2 }
+
+        val hiddenAliases = mutableSetOf<String>()
+        for ((prefix, aliases) in suffixGroups) {
+            val stem = "${prefix}_"
+            val disambiguating = partial.startsWith(stem) &&
+                partial.length > stem.length &&
+                partial[stem.length].isDigit()
+            if (!disambiguating) hiddenAliases.addAll(aliases)
+        }
+
+        val out = mutableListOf<Suggestion>()
+        for ((prefix, aliases) in suffixGroups) {
+            val wildcard = "${prefix}_*"
+            val preview = aliases.sorted().take(3).joinToString(", ") +
+                if (aliases.size > 3) ", …" else ""
+            out += suggest(wildcard, "$wildcard (${aliases.size} cards: $preview)", Kind.STRING)
+        }
+        for (alias in storageAliases) {
+            if (alias in hiddenAliases) continue
+            out += suggest(alias, "$alias (storage)", Kind.STRING)
+        }
+        return FuzzyMatch.filter(partial, out)
     }
 
     /** Lua functions whose string argument is a resource-id filter (items + fluids).
@@ -2213,9 +2323,13 @@ class AutocompletePopup(
         val receiver = ctx.receiver
         val partial = ctx.partial
 
-        // Built-in objects
-        if (receiver == "network") return suggestNetworkMethods(partial, fullText)
-        if (receiver == "scheduler") return suggestSchedulerMethods(partial)
+        // Built-in objects: route through the registry-backed type-method query so
+        // signatures, snippet templates, and chain return types stay sourced from
+        // the spec. The legacy hand-rolled `suggestNetworkMethods` /
+        // `suggestSchedulerMethods` paths remain in this file for reference but are
+        // no longer reachable, the migrated specs cover their full method sets.
+        if (receiver == "network") return suggestMethodsForType("Network", partial)
+        if (receiver == "scheduler") return suggestMethodsForType("Scheduler", partial)
         if (receiver == "importer") return suggestMethodsForType("Importer", partial)
         if (receiver == "stocker") return suggestMethodsForType("Stocker", partial)
 
