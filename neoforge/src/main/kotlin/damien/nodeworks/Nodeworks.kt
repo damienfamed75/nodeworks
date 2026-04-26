@@ -421,6 +421,7 @@ class Nodeworks(modBus: IEventBus) {
                         "input" -> menu.setInputCount(payload.slotIndex, payload.value)
                         "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
                         "timeout" -> menu.setTimeout(payload.value)
+                        "serial" -> menu.serial = payload.value != 0
                     }
                 }
             }

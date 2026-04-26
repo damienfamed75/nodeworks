@@ -290,7 +290,8 @@ data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, va
 
 /**
  * C2S: Update Processing Set data.
- * key: "input" (slotIndex=0-8, value=count), "output" (slotIndex=0-2, value=count), "timeout" (value=ticks)
+ * key: "input" (slotIndex=0-8, value=count), "output" (slotIndex=0-2, value=count),
+ *      "timeout" (value=ticks), "serial" (value=0/1; 1 = serial / parallel toggle off).
  */
 data class SetProcessingApiDataPayload(val containerId: Int, val key: String, val slotIndex: Int, val value: Int) : CustomPacketPayload {
     companion object {

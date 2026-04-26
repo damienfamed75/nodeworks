@@ -314,11 +314,16 @@ class ProcessingSetScreen(
             return true
         }
 
-        // Parallel toggle.
+        // Parallel toggle. Mirror the change to the server — without this packet, the
+        // server-side menu's `serial` field stays at whatever isSerial(stack) returned
+        // when the menu opened, so saveRecipe persists the wrong value on close.
         val tBtnX = leftPos + TOGGLE_X
         val tBtnY = topPos + PANEL_CONTROL_Y - 1
         if (mx in tBtnX until tBtnX + TOGGLE_W && my in tBtnY until tBtnY + TOGGLE_H) {
             menu.serial = !menu.serial
+            PlatformServices.clientNetworking.sendToServer(
+                SetProcessingApiDataPayload(menu.containerId, "serial", 0, if (menu.serial) 1 else 0)
+            )
             return true
         }
 
