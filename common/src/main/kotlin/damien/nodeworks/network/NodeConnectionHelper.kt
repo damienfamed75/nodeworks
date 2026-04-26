@@ -423,6 +423,21 @@ object NodeConnectionHelper {
         for (neighborPos in neighbors) {
             entity.removeConnection(neighborPos)
         }
+        // Surviving neighbours may have just lost their path to a controller — e.g. destroying
+        // a middle node N2 in C→N1→N2→N3→N4 leaves N3↔N4 intact but no longer reachable from C.
+        // Without this propagate, that orphan subgraph keeps its stale networkId and renders as
+        // if it were still on the network.
+        //
+        // Gated on [blockDestroyed] so this ONLY runs on real player destruction, not on chunk
+        // unload (setRemoved fires for both). During world save the chain
+        // propagate → setChanged → sendBlockUpdated against entities mid-unload will freeze
+        // the save and may corrupt in-memory connections before they're persisted. Per-tick
+        // dedup inside propagateNetworkId keeps the multi-neighbour case cheap.
+        if (entity.blockDestroyed) {
+            for (neighborPos in neighbors) {
+                propagateNetworkId(level, neighborPos)
+            }
+        }
     }
 
     // --- Block change handling ---
