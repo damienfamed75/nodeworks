@@ -7,7 +7,9 @@ import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.AntennaSegmentBlock
+import damien.nodeworks.block.BreakerBlock
 import damien.nodeworks.block.BroadcastAntennaBlock
+import damien.nodeworks.block.PlacerBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CoProcessorBlock
 import damien.nodeworks.block.CraftingStorageBlock
@@ -86,6 +88,22 @@ object ModBlocks {
         ::CraftingCoreBlock,
         BlockBehaviour.Properties.of()
             .strength(4.0f, 8.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val BREAKER: Block = register(
+        "breaker",
+        ::BreakerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val PLACER: Block = register(
+        "placer",
+        ::PlacerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()
     )
 

@@ -132,6 +132,23 @@ class NodeBlockEntity(
         return result
     }
 
+    /** Channel dye-colors for every card on this face, one per card present (no
+     *  deduplication — callers that want the distinct set can call .toSet()).
+     *  Used by [damien.nodeworks.render.NodeRenderer] to tint the per-face glow
+     *  overlay: same-channel faces show that channel's hue, mixed-channel faces
+     *  show the rainbow indicator. Returns empty when no cards are installed,
+     *  which the renderer treats as "use the network color." */
+    fun getFaceChannels(side: Direction): List<net.minecraft.world.item.DyeColor> {
+        val offset = sideOffset(side)
+        val out = mutableListOf<net.minecraft.world.item.DyeColor>()
+        for (i in 0 until SLOTS_PER_SIDE) {
+            val stack = items[offset + i]
+            if (stack.item !is NodeCard) continue
+            out.add(damien.nodeworks.card.CardChannel.get(stack))
+        }
+        return out
+    }
+
     /** Resolves all capabilities for this side based on inserted cards. */
     fun getSideCapabilities(side: Direction): List<SideCapabilityInfo> {
         val adjacentPos = worldPosition.relative(side)

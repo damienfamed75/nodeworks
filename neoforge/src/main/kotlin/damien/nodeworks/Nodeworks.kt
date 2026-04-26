@@ -226,6 +226,22 @@ class Nodeworks(modBus: IEventBus) {
                     damien.nodeworks.screen.CardSettingsMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.BREAKER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "breaker")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.BreakerOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.BreakerMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.PLACER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "placer")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.PlacerOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.PlacerMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -362,6 +378,36 @@ class Nodeworks(modBus: IEventBus) {
                     "channel" -> entity.channel = runCatching {
                         net.minecraft.world.item.DyeColor.byId(payload.intValue)
                     }.getOrDefault(net.minecraft.world.item.DyeColor.WHITE)
+                }
+            }
+        }
+
+        // DeviceSettingsPayload — shared (Breaker, Placer, future devices). Dispatch
+        // by reading the BlockEntity at [pos] and matching its concrete type. Same
+        // proximity check as VariableSettingsPayload so a remote client can't tweak
+        // settings on a device they're not standing near.
+        registrar.playToServer(damien.nodeworks.network.DeviceSettingsPayload.TYPE, damien.nodeworks.network.DeviceSettingsPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) ?: return@enqueueWork
+                val newColor: net.minecraft.world.item.DyeColor? = if (payload.key == "channel") {
+                    runCatching { net.minecraft.world.item.DyeColor.byId(payload.intValue) }.getOrNull()
+                } else null
+                when (entity) {
+                    is damien.nodeworks.block.entity.BreakerBlockEntity -> {
+                        when (payload.key) {
+                            "name" -> entity.deviceName = payload.strValue
+                            "channel" -> if (newColor != null) entity.channel = newColor
+                        }
+                    }
+                    is damien.nodeworks.block.entity.PlacerBlockEntity -> {
+                        when (payload.key) {
+                            "name" -> entity.deviceName = payload.strValue
+                            "channel" -> if (newColor != null) entity.channel = newColor
+                        }
+                    }
                 }
             }
         }

@@ -6,6 +6,7 @@ import damien.nodeworks.network.NetworkSettingsRegistry
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
+import net.minecraft.client.renderer.rendertype.RenderType
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.client.renderer.texture.OverlayTexture
@@ -34,11 +35,30 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val r: Int, val g: Int, val b: Int
     )
 
+    /** Per-face tint mode for the inner glow cube. Resolves to an RGB at submit
+     *  time (so [Mixed] can animate via the frame clock without re-extracting). */
+    sealed class FaceTint {
+        /** No cards on this face — fall back to the network color the controller
+         *  publishes for the whole node. */
+        data object Network : FaceTint()
+        /** Every card on this face shares one channel; render that channel's
+         *  dye color, including DyeColor.WHITE when the user hasn't dyed any
+         *  card on this face. */
+        data class Single(val rgb: Int) : FaceTint()
+        /** Cards on this face span ≥2 distinct channels; render the rainbow
+         *  cycle so the player can see at a glance "this face is mixed." */
+        data object Mixed : FaceTint()
+    }
+
     class NodeRenderState : ConnectableRenderState() {
         var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         var glowStyle: Int = 0
         var hasGlow: Boolean = false
         var cardLinks: List<CardLink> = emptyList()
+        /** Indexed by Direction.ordinal (DOWN=0, UP=1, NORTH=2, SOUTH=3, WEST=4,
+         *  EAST=5). Defaults every face to [FaceTint.Network] so a freshly-spawned
+         *  state with no extract still renders correctly. */
+        var faceTints: Array<FaceTint> = Array(6) { FaceTint.Network }
     }
 
     companion object {
@@ -52,7 +72,19 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         // glowStyle 5 = NONE in the controller GUI — skip rendering
         private const val GLOW_STYLE_NONE = 5
 
+        /** Rainbow-mix face cycle period in ms. 3 seconds = leisurely loop —
+         *  fast enough that you notice the animation on a face you're looking at,
+         *  slow enough to not be visually noisy on a wall of nodes. */
+        private const val MIXED_CYCLE_MS = 3000L
+
         private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+
+        /** Solid-emissive base used for the per-face channel-color "lip" overlay.
+         *  Reuses the same `node_glow_square.png` the main glow cube uses — on a
+         *  4×1-pixel strip the square pattern reads as a uniform colour, and the
+         *  EYES pipeline adds the channel tint via vertex colour. */
+        private val LIP_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_square.png")
+        private val LIP_RENDER_TYPE: RenderType = EmissiveCubeRenderer.renderType(LIP_TEXTURE)
 
         /** Per-card-type beam colour (r, g, b 0–255). */
         private val CARD_COLORS = mapOf(
@@ -88,6 +120,8 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         state.hasGlow = settings.glowStyle != GLOW_STYLE_NONE
 
         // Card-link beams: one per card on each face whose adjacent block isn't air.
+        // Per-face channel-tint resolution piggybacks on the same per-side walk so
+        // we visit the inventory once.
         val level = blockEntity.level
         if (level != null) {
             val links = mutableListOf<CardLink>()
@@ -105,11 +139,26 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
                     if (targetIsAir && card.card.cardType != "observer") continue
                     links.add(CardLink(side, card.slotIndex, r, g, b))
                 }
+                state.faceTints[side.ordinal] = resolveFaceTint(blockEntity.getFaceChannels(side))
             }
             state.cardLinks = links
         } else {
             state.cardLinks = emptyList()
+            for (side in Direction.entries) state.faceTints[side.ordinal] = FaceTint.Network
         }
+    }
+
+    /** Map a face's per-card channel list to the [FaceTint] that should paint
+     *  the glow cube on that face. Empty list → [FaceTint.Network]. Single
+     *  distinct channel (even DyeColor.WHITE) → [FaceTint.Single] with that
+     *  channel's textureDiffuseColor. ≥2 distinct channels → [FaceTint.Mixed]. */
+    private fun resolveFaceTint(channels: List<net.minecraft.world.item.DyeColor>): FaceTint {
+        if (channels.isEmpty()) return FaceTint.Network
+        val first = channels[0]
+        for (i in 1 until channels.size) {
+            if (channels[i] != first) return FaceTint.Mixed
+        }
+        return FaceTint.Single(first.textureDiffuseColor and 0xFFFFFF)
     }
 
     override fun submitConnectable(
@@ -120,10 +169,16 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     ) {
         submitCardLinks(state, poseStack, submitNodeCollector, camera)
 
+        // Per-face channel tint goes on the inner lip of each face's frame ring;
+        // the main glow cube stays uniformly network-coloured. Run the lip pass
+        // even when glowStyle == NONE so faces still indicate their channel.
+        submitFaceLips(state, poseStack, submitNodeCollector)
+
         if (!state.hasGlow) return
 
         val texIndex = state.glowStyle.coerceIn(0, GLOW_TEXTURES.size - 1)
         val renderType = RenderTypes.entityTranslucentEmissive(GLOW_TEXTURES[texIndex])
+
         val r = (state.networkColor shr 16) and 0xFF
         val g = (state.networkColor shr 8) and 0xFF
         val b = state.networkColor and 0xFF
@@ -135,37 +190,201 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val light = 15728880
 
         submitNodeCollector.submitCustomGeometry(poseStack, renderType) { pose, vc ->
-            // +Z
+            // +Z (SOUTH)
             vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
             vc.addVertex(pose, max, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
             vc.addVertex(pose, min, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
             vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
-            // -Z
+            // -Z (NORTH)
             vc.addVertex(pose, min, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
             vc.addVertex(pose, min, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
             vc.addVertex(pose, max, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
             vc.addVertex(pose, max, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
-            // +X
+            // +X (EAST)
             vc.addVertex(pose, max, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
             vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
             vc.addVertex(pose, max, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
             vc.addVertex(pose, max, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
-            // -X
+            // -X (WEST)
             vc.addVertex(pose, min, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
             vc.addVertex(pose, min, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
             vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
             vc.addVertex(pose, min, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
-            // +Y
+            // +Y (UP)
             vc.addVertex(pose, min, max, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
             vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
             vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
             vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
-            // -Y
+            // -Y (DOWN)
             vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
             vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
             vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
             vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
         }
+    }
+
+    /** Emit emissive overlay quads on each face's inner-lip surfaces (the inward-
+     *  facing walls of the 4 frame edges that ring the central opening on a side).
+     *  Faces with [FaceTint.Network] are skipped so their lip stays the plain
+     *  `#frame` texture from the JSON model. Mixed faces sample the shared hue
+     *  clock so all rainbow lips stay phase-locked. */
+    private fun submitFaceLips(
+        state: NodeRenderState,
+        poseStack: PoseStack,
+        submitNodeCollector: SubmitNodeCollector,
+    ) {
+        var anyTinted = false
+        for (i in 0 until 6) {
+            if (state.faceTints[i] !is FaceTint.Network) { anyTinted = true; break }
+        }
+        if (!anyTinted) return
+
+        val now = System.currentTimeMillis()
+        val mixedHue = ((now % MIXED_CYCLE_MS) / MIXED_CYCLE_MS.toFloat()) * 360f
+
+        submitNodeCollector.submitCustomGeometry(poseStack, LIP_RENDER_TYPE) { pose, vc ->
+            for (side in Direction.entries) {
+                val tint = state.faceTints[side.ordinal]
+                if (tint is FaceTint.Network) continue
+                val (r, g, b) = resolveRgb(tint, state.networkColor, mixedHue)
+                emitLipQuadsForFace(pose, vc, side, r, g, b)
+            }
+        }
+    }
+
+    /** Emit the 4 lip quads for a single face. Each quad is a 1-pixel-deep strip on
+     *  the inward-facing wall of one of the face's 4 frame edges; together they
+     *  form a thin rectangular ring around the face's central opening. CCW vertex
+     *  winding from the cavity-facing side so back-face culling keeps them.
+     *
+     *  Two pairs of lateral spans: [a5,aB] (6 px) for strips that sit on the
+     *  long horizontal frame edges (bottom-N/S, top-N/S), [a6,aA] (4 px) for
+     *  strips that sit on the verticals or on the short edges of the U/D rings
+     *  (bottom/top-west/east). Each strip is offset by [eps] along its normal so
+     *  it sits just inside the JSON model's underlying frame face — keeps the
+     *  EYES pipeline (depth-test, no depth-write) from z-fighting that face. */
+    private fun emitLipQuadsForFace(
+        pose: PoseStack.Pose,
+        vc: com.mojang.blaze3d.vertex.VertexConsumer,
+        side: Direction,
+        r: Int, g: Int, b: Int,
+    ) {
+        val a5 = 5f / 16f
+        val a6 = 6f / 16f
+        val aA = 10f / 16f
+        val aB = 11f / 16f
+        val eps = 0.01f / 16f
+        val a6e = a6 + eps  // strip plane just inward of a6 (use with +X/+Y/+Z normals)
+        val aAe = aA - eps  // strip plane just inward of aA (use with -X/-Y/-Z normals)
+        val outer: Float
+        val inner: Float
+        when (side) {
+            Direction.SOUTH, Direction.EAST, Direction.UP -> { outer = 11f / 16f; inner = 10f / 16f }
+            Direction.NORTH, Direction.WEST, Direction.DOWN -> { outer = 5f / 16f; inner = 6f / 16f }
+        }
+        when (side) {
+            Direction.SOUTH -> {
+                // bottom-south top face (long, x=a5..aB)
+                lipQuad(pose, vc, a5, a6e, outer,  aB, a6e, outer,  aB, a6e, inner,   a5, a6e, inner,   0f, 1f, 0f, r, g, b)
+                // top-south bottom face (long, x=a5..aB)
+                lipQuad(pose, vc, a5, aAe, inner,  aB, aAe, inner,  aB, aAe, outer,   a5, aAe, outer,   0f,-1f, 0f, r, g, b)
+                // vertical-SW inner face (short, y=a6..aA)
+                lipQuad(pose, vc, a6e, aA, outer,  a6e, a6, outer,  a6e, a6, inner,   a6e, aA, inner,   1f, 0f, 0f, r, g, b)
+                // vertical-SE inner face (short, y=a6..aA)
+                lipQuad(pose, vc, aAe, a6, inner,  aAe, a6, outer,  aAe, aA, outer,   aAe, aA, inner,  -1f, 0f, 0f, r, g, b)
+            }
+            Direction.NORTH -> {
+                lipQuad(pose, vc, a5, a6e, inner,  aB, a6e, inner,  aB, a6e, outer,   a5, a6e, outer,   0f, 1f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, aAe, outer,  aB, aAe, outer,  aB, aAe, inner,   a5, aAe, inner,   0f,-1f, 0f, r, g, b)
+                lipQuad(pose, vc, a6e, a6, inner,  a6e, a6, outer,  a6e, aA, outer,   a6e, aA, inner,   1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, aAe, a6, outer,  aAe, a6, inner,  aAe, aA, inner,   aAe, aA, outer,  -1f, 0f, 0f, r, g, b)
+            }
+            Direction.EAST -> {
+                // East ring is 4-px on all 4 strips — bottom/top-east are short (z=a6..aA),
+                // vertical-NE/SE are short (y=a6..aA).
+                lipQuad(pose, vc, inner, a6e, aA,  outer, a6e, aA,  outer, a6e, a6,   inner, a6e, a6,   0f, 1f, 0f, r, g, b)
+                lipQuad(pose, vc, inner, aAe, a6,  outer, aAe, a6,  outer, aAe, aA,   inner, aAe, aA,   0f,-1f, 0f, r, g, b)
+                lipQuad(pose, vc, inner, a6, a6e,  outer, a6, a6e,  outer, aA, a6e,   inner, aA, a6e,   0f, 0f, 1f, r, g, b)
+                lipQuad(pose, vc, outer, a6, aAe,  inner, a6, aAe,  inner, aA, aAe,   outer, aA, aAe,   0f, 0f,-1f, r, g, b)
+            }
+            Direction.WEST -> {
+                lipQuad(pose, vc, outer, a6e, aA,  inner, a6e, aA,  inner, a6e, a6,   outer, a6e, a6,   0f, 1f, 0f, r, g, b)
+                lipQuad(pose, vc, outer, aAe, a6,  inner, aAe, a6,  inner, aAe, aA,   outer, aAe, aA,   0f,-1f, 0f, r, g, b)
+                lipQuad(pose, vc, outer, a6, a6e,  inner, a6, a6e,  inner, aA, a6e,   outer, aA, a6e,   0f, 0f, 1f, r, g, b)
+                lipQuad(pose, vc, inner, a6, aAe,  outer, a6, aAe,  outer, aA, aAe,   inner, aA, aAe,   0f, 0f,-1f, r, g, b)
+            }
+            Direction.UP -> {
+                // top-north/top-south are long in X (a5..aB); top-west/top-east are short in Z.
+                lipQuad(pose, vc, a5, inner, a6e,  aB, inner, a6e,  aB, outer, a6e,   a5, outer, a6e,   0f, 0f, 1f, r, g, b)
+                lipQuad(pose, vc, aB, inner, aAe,  a5, inner, aAe,  a5, outer, aAe,   aB, outer, aAe,   0f, 0f,-1f, r, g, b)
+                lipQuad(pose, vc, a6e, inner, aA,  a6e, inner, a6,  a6e, outer, a6,   a6e, outer, aA,   1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, aAe, inner, a6,  aAe, inner, aA,  aAe, outer, aA,   aAe, outer, a6,  -1f, 0f, 0f, r, g, b)
+            }
+            Direction.DOWN -> {
+                lipQuad(pose, vc, a5, outer, a6e,  aB, outer, a6e,  aB, inner, a6e,   a5, inner, a6e,   0f, 0f, 1f, r, g, b)
+                lipQuad(pose, vc, aB, outer, aAe,  a5, outer, aAe,  a5, inner, aAe,   aB, inner, aAe,   0f, 0f,-1f, r, g, b)
+                lipQuad(pose, vc, a6e, outer, aA,  a6e, outer, a6,  a6e, inner, a6,   a6e, inner, aA,   1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, aAe, outer, a6,  aAe, outer, aA,  aAe, inner, aA,   aAe, inner, a6,  -1f, 0f, 0f, r, g, b)
+            }
+        }
+    }
+
+    private fun lipQuad(
+        pose: PoseStack.Pose,
+        vc: com.mojang.blaze3d.vertex.VertexConsumer,
+        x0: Float, y0: Float, z0: Float,
+        x1: Float, y1: Float, z1: Float,
+        x2: Float, y2: Float, z2: Float,
+        x3: Float, y3: Float, z3: Float,
+        nx: Float, ny: Float, nz: Float,
+        r: Int, g: Int, b: Int,
+    ) {
+        val overlay = OverlayTexture.NO_OVERLAY
+        val light = 15728880
+        vc.addVertex(pose, x0, y0, z0).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, nx, ny, nz)
+        vc.addVertex(pose, x1, y1, z1).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, nx, ny, nz)
+        vc.addVertex(pose, x2, y2, z2).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, nx, ny, nz)
+        vc.addVertex(pose, x3, y3, z3).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, nx, ny, nz)
+    }
+
+    /** Resolve a face's [FaceTint] to a concrete (r, g, b) at submit time.
+     *  [networkColor] is the per-network ARGB; [mixedHue] is the current frame's
+     *  rainbow phase shared across every Mixed face on this node. */
+    private fun resolveRgb(tint: FaceTint, networkColor: Int, mixedHue: Float): Triple<Int, Int, Int> = when (tint) {
+        is FaceTint.Network -> Triple(
+            (networkColor shr 16) and 0xFF,
+            (networkColor shr 8) and 0xFF,
+            networkColor and 0xFF,
+        )
+        is FaceTint.Single -> Triple(
+            (tint.rgb shr 16) and 0xFF,
+            (tint.rgb shr 8) and 0xFF,
+            tint.rgb and 0xFF,
+        )
+        is FaceTint.Mixed -> hsvToRgb(mixedHue, 0.85f, 1f)
+    }
+
+    /** HSV → RGB at full byte range. Hue in degrees [0..360), s/v in [0..1].
+     *  Used only for the rainbow-mix face indicator; if other render paths need
+     *  HSV in the future this can move into a shared helper. */
+    private fun hsvToRgb(hueDeg: Float, s: Float, v: Float): Triple<Int, Int, Int> {
+        val h = ((hueDeg % 360f) + 360f) % 360f
+        val c = v * s
+        val x = c * (1f - kotlin.math.abs(((h / 60f) % 2f) - 1f))
+        val m = v - c
+        val (r1, g1, b1) = when {
+            h < 60f  -> Triple(c, x, 0f)
+            h < 120f -> Triple(x, c, 0f)
+            h < 180f -> Triple(0f, c, x)
+            h < 240f -> Triple(0f, x, c)
+            h < 300f -> Triple(x, 0f, c)
+            else     -> Triple(c, 0f, x)
+        }
+        return Triple(
+            ((r1 + m) * 255f).toInt().coerceIn(0, 255),
+            ((g1 + m) * 255f).toInt().coerceIn(0, 255),
+            ((b1 + m) * 255f).toInt().coerceIn(0, 255),
+        )
     }
 
     /** Emits one billboarded beam per [CardLink] from the card slot's exact position on

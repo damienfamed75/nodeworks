@@ -82,6 +82,154 @@ object EmissiveCubeRenderer {
     }
 
     /**
+     * Emit the 4 faces perpendicular to [facing] with each face's UV rotated so the
+     * texture's top edge points toward [facing] in world space — the same piston-style
+     * convention used by `_side.png` block models (Breaker, Placer). Use this when the
+     * underlying JSON model wraps a single side texture around the FACING axis with
+     * per-face `"rotation"` tags; the BER's emissive overlay must apply the same UV
+     * permutation or the glow won't align with the base texture.
+     *
+     * The lookup table below maps each (FACING, perpendicular world face) pair to a
+     * rotation step (0–3, in 90° CW units). Derived by composing the model's per-face
+     * rotation (down=180, up=0, east=90, west=270 at FACING=north) with the blockstate
+     * rotation that puts FACING on the front; for vertical FACINGs (UP/DOWN) the model
+     * gets an X-axis rotation, so the 4 perpendicular world faces are N/S/E/W instead.
+     */
+    fun submitSides(
+        submitter: SubmitNodeCollector,
+        pose: PoseStack,
+        renderType: RenderType,
+        facing: Direction,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        // Each row picks rot so the texture's top points toward [facing]. Derived
+        // directly from each face's CW direction (in EmissiveCubeRenderer's UV
+        // layout): UP/DOWN baselines have top at -Z; N/S/E/W baselines have top at
+        // +Y. The DOWN face is special — its v-axis runs north→south rather than
+        // the MC standard south→north, so rotation values for DOWN are NOT mirrors
+        // of the UP entries.
+        val rotByFace: Map<Direction, Int> = when (facing) {
+            Direction.NORTH -> mapOf(
+                Direction.UP    to 0,
+                Direction.DOWN  to 0,
+                Direction.EAST  to 1,
+                Direction.WEST  to 3,
+            )
+            Direction.SOUTH -> mapOf(
+                Direction.UP    to 2,
+                Direction.DOWN  to 2,
+                Direction.EAST  to 3,
+                Direction.WEST  to 1,
+            )
+            Direction.EAST -> mapOf(
+                Direction.UP    to 1,
+                Direction.DOWN  to 1,
+                Direction.NORTH to 3,
+                Direction.SOUTH to 1,
+            )
+            Direction.WEST -> mapOf(
+                Direction.UP    to 3,
+                Direction.DOWN  to 3,
+                Direction.NORTH to 1,
+                Direction.SOUTH to 3,
+            )
+            Direction.UP -> mapOf(
+                Direction.NORTH to 0,
+                Direction.SOUTH to 0,
+                Direction.EAST  to 0,
+                Direction.WEST  to 0,
+            )
+            Direction.DOWN -> mapOf(
+                Direction.NORTH to 2,
+                Direction.SOUTH to 2,
+                Direction.EAST  to 2,
+                Direction.WEST  to 2,
+            )
+        }
+        if (rotByFace.isEmpty()) return
+        submitter.submitCustomGeometry(pose, renderType) { p, vc ->
+            val mn = INSET
+            val mx = EXTENT
+            for ((face, rot) in rotByFace) {
+                emitFace(p, vc, face, rot, mn, mx, r, g, b, a)
+            }
+        }
+    }
+
+    // Rotate a UV coordinate around (0.5, 0.5) so the visual texture rotates by
+    // [rot] × 90° CW on the face — matching the MC model JSON `"rotation"` tag.
+    // Visual CW rotation requires rotating each vertex's UV CCW around the center,
+    // which is why rot=1 maps (u,v) → (v, 1-u) and rot=3 → (1-v, u).
+    private fun rotUv(u: Float, v: Float, rot: Int): Pair<Float, Float> = when (rot and 3) {
+        0 -> u to v
+        1 -> v to (1f - u)
+        2 -> (1f - u) to (1f - v)
+        else -> (1f - v) to u
+    }
+
+    private fun emitFace(
+        p: PoseStack.Pose,
+        vc: com.mojang.blaze3d.vertex.VertexConsumer,
+        face: Direction,
+        rot: Int,
+        mn: Float, mx: Float,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        // Each face's vertex/UV/normal data is identical to the corresponding
+        // branch in [submit] below; only the UVs are passed through [rotUv] here.
+        when (face) {
+            Direction.SOUTH -> {
+                val (u0, v0) = rotUv(1f, 1f, rot); val (u1, v1) = rotUv(1f, 0f, rot)
+                val (u2, v2) = rotUv(0f, 0f, rot); val (u3, v3) = rotUv(0f, 1f, rot)
+                vc.addVertex(p, mx, mn, mx).setUv(u0, v0).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 0f, 1f)
+                vc.addVertex(p, mx, mx, mx).setUv(u1, v1).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 0f, 1f)
+                vc.addVertex(p, mn, mx, mx).setUv(u2, v2).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 0f, 1f)
+                vc.addVertex(p, mn, mn, mx).setUv(u3, v3).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 0f, 1f)
+            }
+            Direction.NORTH -> {
+                val (u0, v0) = rotUv(1f, 1f, rot); val (u1, v1) = rotUv(1f, 0f, rot)
+                val (u2, v2) = rotUv(0f, 0f, rot); val (u3, v3) = rotUv(0f, 1f, rot)
+                vc.addVertex(p, mn, mn, mn).setUv(u0, v0).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 0f, -1f)
+                vc.addVertex(p, mn, mx, mn).setUv(u1, v1).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 0f, -1f)
+                vc.addVertex(p, mx, mx, mn).setUv(u2, v2).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 0f, -1f)
+                vc.addVertex(p, mx, mn, mn).setUv(u3, v3).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 0f, -1f)
+            }
+            Direction.EAST -> {
+                val (u0, v0) = rotUv(1f, 1f, rot); val (u1, v1) = rotUv(1f, 0f, rot)
+                val (u2, v2) = rotUv(0f, 0f, rot); val (u3, v3) = rotUv(0f, 1f, rot)
+                vc.addVertex(p, mx, mn, mn).setUv(u0, v0).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 1f, 0f, 0f)
+                vc.addVertex(p, mx, mx, mn).setUv(u1, v1).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 1f, 0f, 0f)
+                vc.addVertex(p, mx, mx, mx).setUv(u2, v2).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 1f, 0f, 0f)
+                vc.addVertex(p, mx, mn, mx).setUv(u3, v3).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 1f, 0f, 0f)
+            }
+            Direction.WEST -> {
+                val (u0, v0) = rotUv(1f, 1f, rot); val (u1, v1) = rotUv(1f, 0f, rot)
+                val (u2, v2) = rotUv(0f, 0f, rot); val (u3, v3) = rotUv(0f, 1f, rot)
+                vc.addVertex(p, mn, mn, mx).setUv(u0, v0).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, -1f, 0f, 0f)
+                vc.addVertex(p, mn, mx, mx).setUv(u1, v1).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, -1f, 0f, 0f)
+                vc.addVertex(p, mn, mx, mn).setUv(u2, v2).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, -1f, 0f, 0f)
+                vc.addVertex(p, mn, mn, mn).setUv(u3, v3).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, -1f, 0f, 0f)
+            }
+            Direction.UP -> {
+                val (u0, v0) = rotUv(0f, 1f, rot); val (u1, v1) = rotUv(1f, 1f, rot)
+                val (u2, v2) = rotUv(1f, 0f, rot); val (u3, v3) = rotUv(0f, 0f, rot)
+                vc.addVertex(p, mn, mx, mx).setUv(u0, v0).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 1f, 0f)
+                vc.addVertex(p, mx, mx, mx).setUv(u1, v1).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 1f, 0f)
+                vc.addVertex(p, mx, mx, mn).setUv(u2, v2).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 1f, 0f)
+                vc.addVertex(p, mn, mx, mn).setUv(u3, v3).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, 1f, 0f)
+            }
+            Direction.DOWN -> {
+                val (u0, v0) = rotUv(0f, 0f, rot); val (u1, v1) = rotUv(1f, 0f, rot)
+                val (u2, v2) = rotUv(1f, 1f, rot); val (u3, v3) = rotUv(0f, 1f, rot)
+                vc.addVertex(p, mn, mn, mn).setUv(u0, v0).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, -1f, 0f)
+                vc.addVertex(p, mx, mn, mn).setUv(u1, v1).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, -1f, 0f)
+                vc.addVertex(p, mx, mn, mx).setUv(u2, v2).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, -1f, 0f)
+                vc.addVertex(p, mn, mn, mx).setUv(u3, v3).setColor(r, g, b, a).setOverlay(OVERLAY).setUv2(LIGHT, LIGHT).setNormal(p, 0f, -1f, 0f)
+            }
+        }
+    }
+
+    /**
      * Emit the selected faces of a 1×1×1 cube centered on the block origin (expanded
      * slightly outward via [INSET]) into [submitter]. Only faces whose bit is set in
      * [faceMask] are emitted — skipping unwanted faces keeps the quad count minimal.

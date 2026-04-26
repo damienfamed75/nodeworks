@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PEP",
+    "IOI",
+    "DND"
+  ],
+  "key": {
+    "P": "minecraft:piston",
+    "E": "minecraft:dispenser",
+    "I": "minecraft:diamond",
+    "O": "nodeworks:observer_card",
+    "D": "minecraft:deepslate",
+    "N": "nodeworks:node"
+  },
+  "result": {
+    "id": "nodeworks:placer",
+    "count": 1
+  }
+}

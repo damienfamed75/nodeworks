@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "SPS",
+    "HOA",
+    "DND"
+  ],
+  "key": {
+    "S": "minecraft:sticky_piston",
+    "P": "minecraft:diamond_pickaxe",
+    "H": "minecraft:diamond_shovel",
+    "O": "nodeworks:observer_card",
+    "A": "minecraft:diamond_axe",
+    "D": "minecraft:deepslate",
+    "N": "nodeworks:node"
+  },
+  "result": {
+    "id": "nodeworks:breaker",
+    "count": 1
+  }
+}

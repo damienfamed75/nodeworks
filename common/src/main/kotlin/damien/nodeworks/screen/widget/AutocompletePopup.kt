@@ -30,6 +30,11 @@ class AutocompletePopup(
     private val itemIds: List<String> = emptyList(),
     private val fluidIds: List<String> = emptyList(),
     private val fluidTags: List<String> = emptyList(),
+    /** Effective aliases of every Breaker on the network (auto-alias `breaker_N` or
+     *  GUI-set name). Used to narrow `network:get("name")` to BreakerHandle. */
+    private val breakerAliases: List<String> = emptyList(),
+    /** Effective aliases of every Placer on the network. */
+    private val placerAliases: List<String> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     /**
@@ -979,6 +984,8 @@ class AutocompletePopup(
         "redstone" -> "RedstoneCard"
         "observer" -> "ObserverCard"
         "variable" -> "VariableHandle"
+        "breaker" -> "BreakerHandle"
+        "placer" -> "PlacerHandle"
         "io", "storage" -> "CardHandle"
         else -> null
     }
@@ -1288,6 +1295,14 @@ class AutocompletePopup(
                     }
                     return@forEach
                 }
+                if (alias in breakerAliases) {
+                    symbols[varName] = "BreakerHandle"
+                    return@forEach
+                }
+                if (alias in placerAliases) {
+                    symbols[varName] = "PlacerHandle"
+                    return@forEach
+                }
                 // Nothing matched — fall back to CardHandle so chained methods at
                 // least resolve against the most general card surface.
                 symbols[varName] = "CardHandle"
@@ -1576,10 +1591,11 @@ class AutocompletePopup(
         customPrefix = ctx.partial
         return when {
             ctx.funcExpr.endsWith("network:get") -> {
-                // Cards first, variables second — matches the runtime priority in
-                // `network:get` so the string most likely to resolve appears at the
-                // top of the popup. The label suffix in parens (`(io)`, `(number)`)
-                // tells the player which surface they're targeting at a glance.
+                // Cards first, variables next, devices last — matches the runtime
+                // priority in `network:get` so the string most likely to resolve
+                // appears at the top of the popup. The label suffix in parens
+                // (`(io)`, `(number)`, `(breaker)`) tells the player which surface
+                // they're targeting at a glance.
                 val typeLabels = arrayOf("number", "string", "bool")
                 val cardSuggestions = cards
                     .map { it.effectiveAlias to it.capability.type }
@@ -1589,7 +1605,16 @@ class AutocompletePopup(
                     val label = typeLabels.getOrElse(typeOrd) { "variable" }
                     suggest(name, "$name ($label)", Kind.STRING)
                 }
-                FuzzyMatch.filter(ctx.partial, cardSuggestions + varSuggestions)
+                val breakerSuggestions = breakerAliases.map {
+                    suggest(it, "$it (breaker)", Kind.STRING)
+                }
+                val placerSuggestions = placerAliases.map {
+                    suggest(it, "$it (placer)", Kind.STRING)
+                }
+                FuzzyMatch.filter(
+                    ctx.partial,
+                    cardSuggestions + varSuggestions + breakerSuggestions + placerSuggestions,
+                )
             }
 
             ctx.funcExpr.endsWith("network:route") -> {
@@ -1642,7 +1667,7 @@ class AutocompletePopup(
             }
 
             ctx.funcExpr.endsWith("network:getAll") -> {
-                fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer"))
+                fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer", "variable", "breaker", "placer"))
             }
 
             ctx.funcExpr.endsWith("network:channel") -> {
@@ -1660,7 +1685,7 @@ class AutocompletePopup(
             // the hints whenever the funcExpr ends with `:getFirst` or `:getAll` and
             // accept a small false-positive surface (these strings on other receivers).
             ctx.funcExpr.endsWith(":getFirst") || ctx.funcExpr.endsWith(":getAll") -> {
-                fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer", "variable"))
+                fuzzyStrings(ctx.partial, listOf("io", "storage", "redstone", "observer", "variable", "breaker", "placer"))
             }
 
             ctx.funcExpr.endsWith("network:craft") -> {
@@ -1701,6 +1726,16 @@ class AutocompletePopup(
             // suggestions because vanilla doesn't care about ingredient order; there's no
             // "flip-flop" to resolve in the completion layer itself.
             ctx.funcExpr.endsWith("network:shapeless") -> {
+                val suggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
+                FuzzyMatch.filter(ctx.partial, suggestions).take(20)
+            }
+
+            // `placer:place("|")` and chained / broadcast variants
+            // (`network:getAll("placer"):place`, `placers:place`, etc.). The arg
+            // is a single concrete item id — wildcards / sigils / tags don't
+            // make sense here because Placer can only place a specific block,
+            // not "any item." Use the same plain-itemIds path as :shapeless.
+            ctx.funcExpr.endsWith(":place") -> {
                 val suggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
                 FuzzyMatch.filter(ctx.partial, suggestions).take(20)
             }
@@ -1862,6 +1897,9 @@ class AutocompletePopup(
         Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get", kind = Kind.TYPE),
         Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get", kind = Kind.TYPE),
         Suggestion("ObserverCard", "ObserverCard — observer card from network:get", kind = Kind.TYPE),
+        Suggestion("BreakerHandle", "BreakerHandle — Breaker device from network:get", kind = Kind.TYPE),
+        Suggestion("BreakBuilder", "BreakBuilder — returned by Breaker:mine() for drop routing", kind = Kind.TYPE),
+        Suggestion("PlacerHandle", "PlacerHandle — Placer device from network:get", kind = Kind.TYPE),
         Suggestion("Channel", "Channel — dye-color group from network:channel", kind = Kind.TYPE),
         Suggestion("HandleList", "HandleList — broadcast list from network:getAll / Channel:getAll", kind = Kind.TYPE),
         Suggestion("Job", "Job — processing handler context from network:handle", kind = Kind.TYPE),
@@ -2101,6 +2139,8 @@ class AutocompletePopup(
             val capabilityType = when (elementType) {
                 "RedstoneCard" -> "redstone"
                 "ObserverCard" -> "observer"
+                "BreakerHandle" -> "breaker"
+                "PlacerHandle" -> "placer"
                 "CardHandle" -> "io"  // io and storage share methods; pick io
                 else -> null
             }
@@ -2164,6 +2204,33 @@ class AutocompletePopup(
                     )
                 )
             }
+
+            "BreakerHandle" -> listOf(
+                suggest("mine(", "mine() → BreakBuilder", Kind.METHOD),
+                suggest("cancel(", "cancel()", Kind.METHOD),
+                suggest("block(", "block() → string", Kind.METHOD),
+                suggest("state(", "state() → { [string]: any }", Kind.METHOD),
+                suggest("isMining(", "isMining() → boolean", Kind.METHOD),
+                suggest("progress(", "progress() → number", Kind.METHOD),
+            )
+
+            "BreakBuilder" -> {
+                val connectBody = "connect(function(items: ItemsHandle)\n    \nend)"
+                listOf(
+                    snippet(
+                        "connect(",
+                        "connect(fn(items: ItemsHandle))",
+                        connectBody,
+                        connectBody.indexOf("\n    \n") + 5
+                    )
+                )
+            }
+
+            "PlacerHandle" -> listOf(
+                suggest("place(", "place(item: string | ItemsHandle) → boolean", Kind.METHOD),
+                suggest("block(", "block() → string", Kind.METHOD),
+                suggest("isBlocked(", "isBlocked() → boolean", Kind.METHOD),
+            )
 
             "Channel" -> listOf(
                 suggest("getFirst(", "getFirst(type: string) → CardHandle?", Kind.METHOD),

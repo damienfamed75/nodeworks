@@ -508,6 +508,14 @@ class ScriptEngine(
                     val v = snapshot.variables.firstOrNull { it.channel == color } ?: return LuaValue.NIL
                     return VariableHandle.create(v, level)
                 }
+                if (type == "breaker") {
+                    val b = snapshot.breakers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    return BreakerHandle.create(b, snapshot, level)
+                }
+                if (type == "placer") {
+                    val p = snapshot.placers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    return PlacerHandle.create(p, snapshot, level)
+                }
                 val card = snapshot.allCards().firstOrNull {
                     it.channel == color && it.capability.type == type
                 } ?: return LuaValue.NIL
@@ -523,13 +531,30 @@ class ScriptEngine(
             override fun invoke(args: Varargs): Varargs {
                 val type: String? = if (args.narg() >= 2 && !args.arg(2).isnil()) args.checkjstring(2) else null
                 val members = mutableListOf<LuaValue>()
+                // Variables, breakers, placers, and cards are independent collections
+                // on the snapshot; iterate each only when [type] selects it (or is
+                // null = "all members"). Order in the resulting list is variables →
+                // breakers → placers → cards so a full :getAll() walks devices first
+                // then cards, which roughly matches sidebar ordering.
                 if (type == null || type == "variable") {
                     for (v in snapshot.variables) {
                         if (v.channel != color) continue
                         members.add(VariableHandle.create(v, level))
                     }
                 }
-                if (type != "variable") {
+                if (type == null || type == "breaker") {
+                    for (b in snapshot.breakers) {
+                        if (b.channel != color) continue
+                        members.add(BreakerHandle.create(b, snapshot, level))
+                    }
+                }
+                if (type == null || type == "placer") {
+                    for (p in snapshot.placers) {
+                        if (p.channel != color) continue
+                        members.add(PlacerHandle.create(p, snapshot, level))
+                    }
+                }
+                if (type != "variable" && type != "breaker" && type != "placer") {
                     for (card in snapshot.allCards()) {
                         if (card.channel != color) continue
                         if (type != null && card.capability.type != type) continue
@@ -554,7 +579,11 @@ class ScriptEngine(
                 if (card != null) return selfRef.createCardTable(card, card.effectiveAlias)
                 val v = snapshot.variables.firstOrNull { it.channel == color && it.name == alias }
                 if (v != null) return VariableHandle.create(v, level)
-                throw LuaError("No card or variable named '$alias' on the ${color.name.lowercase()} channel")
+                val b = snapshot.breakers.firstOrNull { it.channel == color && it.effectiveAlias == alias }
+                if (b != null) return BreakerHandle.create(b, snapshot, level)
+                val p = snapshot.placers.firstOrNull { it.channel == color && it.effectiveAlias == alias }
+                if (p != null) return PlacerHandle.create(p, snapshot, level)
+                throw LuaError("No member named '$alias' on the ${color.name.lowercase()} channel")
             }
         })
 
@@ -798,6 +827,8 @@ class ScriptEngine(
                 val alias = aliasArg.checkjstring()
                 snapshot.findByAlias(alias)?.let { return createCardTable(it, alias) }
                 snapshot.findVariable(alias)?.let { return VariableHandle.create(it, level) }
+                snapshot.findBreaker(alias)?.let { return BreakerHandle.create(it, snapshot, level) }
+                snapshot.findPlacer(alias)?.let { return PlacerHandle.create(it, snapshot, level) }
                 throw LuaError("Not found on network: '$alias'")
             }
         })
@@ -816,6 +847,24 @@ class ScriptEngine(
                     return createHandleListTable(
                         members,
                         HandleListMethods.methodsForHandleType("VariableHandle"),
+                    )
+                }
+                if (type == "breaker") {
+                    val members = snapshot.breakers.map {
+                        BreakerHandle.create(it, snapshot, level) as LuaValue
+                    }
+                    return createHandleListTable(
+                        members,
+                        HandleListMethods.methodsForCapabilityType("breaker"),
+                    )
+                }
+                if (type == "placer") {
+                    val members = snapshot.placers.map {
+                        PlacerHandle.create(it, snapshot, level) as LuaValue
+                    }
+                    return createHandleListTable(
+                        members,
+                        HandleListMethods.methodsForCapabilityType("placer"),
                     )
                 }
                 val cards = snapshot.allCards().filter { it.capability.type == type }

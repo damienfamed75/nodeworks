@@ -1,15 +1,18 @@
 package damien.nodeworks.client
 
+import damien.nodeworks.block.entity.BreakerBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.MonitorBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.block.entity.PlacerBlockEntity
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
+import damien.nodeworks.render.BreakerRenderer
 import damien.nodeworks.render.ConnectionBeamRenderer
 import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.CraftingCoreRenderer
@@ -17,6 +20,7 @@ import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.InventoryTerminalRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeRenderer
+import damien.nodeworks.render.PlacerRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.ReceiverAntennaRenderer
 import damien.nodeworks.render.TerminalRenderer
@@ -82,5 +86,15 @@ class NeoCraftingCoreRenderer(ctx: BlockEntityRendererProvider.Context) : Crafti
 
 class NeoInventoryTerminalRenderer(ctx: BlockEntityRendererProvider.Context) : InventoryTerminalRenderer(ctx) {
     override fun getRenderBoundingBox(blockEntity: InventoryTerminalBlockEntity): AABB =
+        ConnectionBeamRenderer.computeBoundingBox(blockEntity)
+}
+
+class NeoBreakerRenderer(ctx: BlockEntityRendererProvider.Context) : BreakerRenderer(ctx) {
+    override fun getRenderBoundingBox(blockEntity: BreakerBlockEntity): AABB =
+        ConnectionBeamRenderer.computeBoundingBox(blockEntity)
+}
+
+class NeoPlacerRenderer(ctx: BlockEntityRendererProvider.Context) : PlacerRenderer(ctx) {
+    override fun getRenderBoundingBox(blockEntity: PlacerBlockEntity): AABB =
         ConnectionBeamRenderer.computeBoundingBox(blockEntity)
 }

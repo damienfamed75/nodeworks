@@ -141,6 +141,8 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_STORAGE, ::CraftingStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CO_PROCESSOR, ::CoProcessorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::NeoInventoryTerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.BREAKER, ::NeoBreakerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PLACER, ::NeoPlacerRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
@@ -233,6 +235,12 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.CARD_SETTINGS) { menu, inventory, title ->
             damien.nodeworks.screen.CardSettingsScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.BREAKER) { menu, inventory, title ->
+            damien.nodeworks.screen.BreakerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.PLACER) { menu, inventory, title ->
+            damien.nodeworks.screen.PlacerScreen(menu, inventory, title)
         }
     }
 

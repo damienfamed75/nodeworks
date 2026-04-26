@@ -27,6 +27,8 @@ object ModCreativeTab {
                 output.accept(ModBlocks.TERMINAL)
                 output.accept(ModBlocks.INVENTORY_TERMINAL)
                 output.accept(ModBlocks.VARIABLE)
+                output.accept(ModBlocks.BREAKER)
+                output.accept(ModBlocks.PLACER)
                 output.accept(ModBlocks.INSTRUCTION_STORAGE)
                 output.accept(ModBlocks.PROCESSING_STORAGE)
                 output.accept(ModBlocks.CRAFTING_CORE)

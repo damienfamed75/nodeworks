@@ -28,6 +28,8 @@ object NetworkDiscovery {
         val crafters = mutableListOf<CrafterSnapshot>()
         val cpus = mutableListOf<CpuSnapshot>()
         val variables = mutableListOf<VariableSnapshot>()
+        val breakers = mutableListOf<BreakerSnapshot>()
+        val placers = mutableListOf<PlacerSnapshot>()
         val processingApis = mutableListOf<ProcessingApiSnapshot>()
         val terminalPositions = mutableListOf<BlockPos>()
         var controller: ControllerSnapshot? = null
@@ -88,6 +90,27 @@ object NetworkDiscovery {
                         )
                     )
                 }
+                is damien.nodeworks.block.entity.BreakerBlockEntity -> {
+                    // Always snapshot breakers (unlike variables which require a name) so
+                    // auto-aliasing produces breaker_N for unnamed devices. The user-set
+                    // [deviceName] becomes the alias if non-empty.
+                    breakers.add(
+                        BreakerSnapshot(
+                            connectable.blockPos,
+                            connectable.deviceName.takeIf { it.isNotEmpty() },
+                            connectable.channel,
+                        )
+                    )
+                }
+                is damien.nodeworks.block.entity.PlacerBlockEntity -> {
+                    placers.add(
+                        PlacerSnapshot(
+                            connectable.blockPos,
+                            connectable.deviceName.takeIf { it.isNotEmpty() },
+                            connectable.channel,
+                        )
+                    )
+                }
             }
 
             for (connection in connectable.getConnections()) {
@@ -99,13 +122,19 @@ object NetworkDiscovery {
             }
         }
 
-        // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1)
-        assignAutoAliases(nodes)
+        // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1) AND
+        // unnamed devices (breaker_1, placer_1, ...). Devices share the same counter
+        // namespace as cards so the alias prefix uniquely identifies the type.
+        assignAutoAliases(nodes, breakers, placers)
 
-        return NetworkSnapshot(nodes, crafters, variables, cpus, processingApis, terminalPositions, controller)
+        return NetworkSnapshot(nodes, crafters, variables, breakers, placers, cpus, processingApis, terminalPositions, controller)
     }
 
-    private fun assignAutoAliases(nodes: List<NodeSnapshot>) {
+    private fun assignAutoAliases(
+        nodes: List<NodeSnapshot>,
+        breakers: List<BreakerSnapshot>,
+        placers: List<PlacerSnapshot>,
+    ) {
         val counters = mutableMapOf<String, Int>()
         for (node in nodes) {
             for ((_, cards) in node.sides) {
@@ -117,6 +146,20 @@ object NetworkDiscovery {
                         card.autoAlias = "${autoAliasPrefix(type)}_$count"
                     }
                 }
+            }
+        }
+        for (b in breakers) {
+            if (b.name == null) {
+                val count = counters.getOrDefault("breaker", 0) + 1
+                counters["breaker"] = count
+                b.autoAlias = "${autoAliasPrefix("breaker")}_$count"
+            }
+        }
+        for (p in placers) {
+            if (p.name == null) {
+                val count = counters.getOrDefault("placer", 0) + 1
+                counters["placer"] = count
+                p.autoAlias = "${autoAliasPrefix("placer")}_$count"
             }
         }
     }
@@ -159,6 +202,29 @@ data class VariableSnapshot(
     val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
 )
 
+/** Snapshot for a Breaker device. [name] is the user-set alias from the GUI;
+ *  [autoAlias] is the discovery-assigned `breaker_N` fallback. [effectiveAlias]
+ *  picks user-set first. Channel groups breakers for `network:channel(...)` lookups. */
+data class BreakerSnapshot(
+    val pos: BlockPos,
+    val name: String?,
+    val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
+) {
+    var autoAlias: String? = null
+    val effectiveAlias: String get() = name ?: autoAlias ?: "breaker"
+}
+
+/** Snapshot for a Placer device. Same shape as [BreakerSnapshot] — devices share
+ *  the alias-resolution rule even though their script methods differ. */
+data class PlacerSnapshot(
+    val pos: BlockPos,
+    val name: String?,
+    val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
+) {
+    var autoAlias: String? = null
+    val effectiveAlias: String get() = name ?: autoAlias ?: "placer"
+}
+
 data class ProcessingApiSnapshot(
     val pos: BlockPos,
     val apis: List<ProcessingStorageBlockEntity.ProcessingApiInfo>,
@@ -176,6 +242,8 @@ data class NetworkSnapshot(
     val nodes: List<NodeSnapshot>,
     val crafters: List<CrafterSnapshot> = emptyList(),
     val variables: List<VariableSnapshot> = emptyList(),
+    val breakers: List<BreakerSnapshot> = emptyList(),
+    val placers: List<PlacerSnapshot> = emptyList(),
     val cpus: List<CpuSnapshot> = emptyList(),
     val processingApis: List<ProcessingApiSnapshot> = emptyList(),
     val terminalPositions: List<BlockPos> = emptyList(),
@@ -189,6 +257,12 @@ data class NetworkSnapshot(
 
     /** Find a variable by name. */
     fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
+
+    /** Find a Breaker by alias (user-set or auto-generated). */
+    fun findBreaker(alias: String): BreakerSnapshot? = breakers.firstOrNull { it.effectiveAlias == alias }
+
+    /** Find a Placer by alias (user-set or auto-generated). */
+    fun findPlacer(alias: String): PlacerSnapshot? = placers.firstOrNull { it.effectiveAlias == alias }
 
     /** Find an available (not busy) Crafting CPU with enough buffer capacity. */
     fun findAvailableCpu(requiredCapacity: Long = 0L): CpuSnapshot? =

@@ -42,6 +42,14 @@ object HandleListMethods {
         "storage" to setOf("insert", "tryInsert"),
         "redstone" to setOf("set", "onChange"),
         "observer" to setOf("onChange"),
+        // Devices — same registry, keyed off the device-type string used by
+        // network:getAll / Channel:getAll. `:mine` returns a BreakBuilder when
+        // called on a single Breaker but the broadcast wrapper drops the return
+        // value (default network-storage routing applies to every member).
+        // `:mine` was chosen instead of `:break` (reserved Lua keyword — would
+        // be a syntax error) and over `:destroy` (suggests drops are deleted).
+        "breaker" to setOf("mine", "cancel"),
+        "placer" to setOf("place"),
     )
 
     /**

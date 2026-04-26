@@ -188,7 +188,9 @@ class Icons private constructor(val col: Int, val row: Int) {
         val CRAFTING_GRID_DISTRIBUTE = Icons(14, 3)
         val RESERVED_SLOT = Icons(15, 3)
 
-        // Row 4 - More Card Icons
+        // Row 4 — More Card / Device Icons
         val OBSERVER_CARD = Icons(0, 4)
+        val BREAKER = Icons(1, 4)
+        val PLACER = Icons(2, 4)
     }
 }

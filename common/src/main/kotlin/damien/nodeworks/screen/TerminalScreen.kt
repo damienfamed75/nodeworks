@@ -89,6 +89,17 @@ class TerminalScreen(
      *  map (instead of widening the [variables] tuple) so AutocompletePopup's
      *  existing (name, typeOrd) consumer doesn't need a signature change. */
     private val variableChannels: Map<String, net.minecraft.world.item.DyeColor>
+    /** Effective aliases of every Breaker on the network — auto-alias `breaker_N`
+     *  unless the player set a name in the device GUI. Passed to AutocompletePopup
+     *  so `network:get("|"` can suggest breakers and `local x = network:get("...")`
+     *  can narrow `x` to BreakerHandle. */
+    private val breakerAliases: List<String>
+    private val placerAliases: List<String>
+    /** (alias, channel) per Breaker / Placer for the sidebar render — keeps the pip
+     *  rendering consistent with cards/variables. The alias-only [breakerAliases] /
+     *  [placerAliases] fields stay because AutocompletePopup just needs the names. */
+    private val breakerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
+    private val placerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
     private val localApiNames: List<String>
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
     private val craftableOutputs: List<String>
@@ -434,6 +445,10 @@ class TerminalScreen(
         val scannedCards = mutableListOf<CardSnapshot>()
         val scannedVars = mutableListOf<Pair<String, Int>>()
         val scannedVarChannels = mutableMapOf<String, net.minecraft.world.item.DyeColor>()
+        // (deviceName, channel) tuples — names get reified into auto-aliases
+        // (`breaker_N`) below, mirroring the server-side discovery pass.
+        val scannedBreakers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
+        val scannedPlacers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
         val scannedLocal = mutableListOf<String>()
         val scannedLocalApis =
             mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
@@ -471,6 +486,12 @@ class TerminalScreen(
                                 scannedVars.add(entity.variableName to entity.variableType.ordinal)
                                 scannedVarChannels[entity.variableName] = entity.channel
                             }
+                        }
+                        is damien.nodeworks.block.entity.BreakerBlockEntity -> {
+                            scannedBreakers.add(entity.deviceName to entity.channel)
+                        }
+                        is damien.nodeworks.block.entity.PlacerBlockEntity -> {
+                            scannedPlacers.add(entity.deviceName to entity.channel)
                         }
 
                         is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> {
@@ -553,6 +574,28 @@ class TerminalScreen(
                 card.autoAlias = "${damien.nodeworks.network.autoAliasPrefix(type)}_$count"
             }
         }
+        // Devices: same counter namespace as cards so the alias prefix uniquely
+        // identifies the type. Reify the (deviceName, channel) tuples into final
+        // (alias, channel) pairs — empty deviceName falls back to `breaker_N` /
+        // `placer_N`. The channel rides along so the sidebar pip renders correctly.
+        val scannedBreakerEntries = scannedBreakers.map { (name, channel) ->
+            val alias = if (name.isNotEmpty()) name else {
+                val count = counters.getOrDefault("breaker", 0) + 1
+                counters["breaker"] = count
+                "${damien.nodeworks.network.autoAliasPrefix("breaker")}_$count"
+            }
+            alias to channel
+        }
+        val scannedPlacerEntries = scannedPlacers.map { (name, channel) ->
+            val alias = if (name.isNotEmpty()) name else {
+                val count = counters.getOrDefault("placer", 0) + 1
+                counters["placer"] = count
+                "${damien.nodeworks.network.autoAliasPrefix("placer")}_$count"
+            }
+            alias to channel
+        }
+        val scannedBreakerAliases = scannedBreakerEntries.map { it.first }
+        val scannedPlacerAliases = scannedPlacerEntries.map { it.first }
 
         // Item + fluid tag/id lists from the client registry — 26.1 replaces `getTagNames()`
         // (Stream<TagKey>) with `getTags()` (Stream<HolderSet.Named<T>>); the
@@ -586,6 +629,10 @@ class TerminalScreen(
         fluidIds = scannedFluidIds
         variables = scannedVars
         variableChannels = scannedVarChannels
+        breakerAliases = scannedBreakerAliases
+        placerAliases = scannedPlacerAliases
+        breakerEntries = scannedBreakerEntries
+        placerEntries = scannedPlacerEntries
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
@@ -701,7 +748,8 @@ class TerminalScreen(
         autocomplete =
             AutocompletePopup(
                 font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis,
-                itemIds, fluidIds, fluidTags
+                itemIds, fluidIds, fluidTags,
+                breakerAliases, placerAliases,
             ) { scripts }
         // Position popups directly under the cursor's text row. Using yBottomOfLine
         // (instead of yTopOfLine of the next line) deliberately excludes any decoration
@@ -874,6 +922,18 @@ class TerminalScreen(
             val ch = variableChannels[name]?.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
             entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var", ch))
         }
+        // Devices: each gets its own iconU discriminator + name colour. Without
+        // this branch the connected breakers / placers exist on the network but
+        // never surface in the terminal sidebar — players can address them in
+        // scripts but can't see them.
+        for ((alias, channel) in breakerEntries) {
+            val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(alias, 0xFFC97847.toInt(), 80, 16, "breaker", ch))
+        }
+        for ((alias, channel) in placerEntries) {
+            val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(alias, 0xFF6BBCD0.toInt(), 96, 16, "placer", ch))
+        }
 
         // Sidebar entries (scrollable)
         val cardListTop = cardStartY + 12
@@ -906,6 +966,8 @@ class TerminalScreen(
                 }
 
                 "var" -> Icons.VARIABLE
+                "breaker" -> Icons.BREAKER
+                "placer" -> Icons.PLACER
                 else -> Icons.IO_CARD
             }
             // Channel pip — 2×9 vertical stripe LEFT of the icon when the row is
@@ -1863,13 +1925,15 @@ class TerminalScreen(
                 val ident = when (entry.type) {
                     "card" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "card")
                     "var" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "var")
+                    "breaker" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "breaker")
+                    "placer" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "placer")
                     else -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "x")
                 }
                 val line = when (entry.type) {
-                    // Cards and variables both ride the unified `network:get` accessor
-                    // since the `network:var` removal — same generated line shape for
-                    // either click-to-import.
-                    "card", "var" -> "local $ident = network:get(\"${entry.name}\")"
+                    // Cards, variables, and devices all ride the unified `network:get`
+                    // accessor — same generated line shape for any click-to-import.
+                    "card", "var", "breaker", "placer" ->
+                        "local $ident = network:get(\"${entry.name}\")"
                     else -> null
                 }
                 if (line != null) {

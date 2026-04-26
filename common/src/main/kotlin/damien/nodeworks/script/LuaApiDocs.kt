@@ -798,6 +798,118 @@ object LuaApiDocs {
             )
         )
 
+        // ===== BreakerHandle =====
+        // Device that breaks the block at its facing position over time. Drops route
+        // to network storage by default; chain `:mine():connect(fn)` to redirect.
+        put(
+            "BreakerHandle", Doc(
+                signature = "type BreakerHandle",
+                description = "A Breaker device. Diamond-pickaxe tier; break duration uses the wooden-pickaxe formula.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md",
+            )
+        )
+        put(
+            "BreakerHandle:mine", Doc(
+                signature = "BreakerHandle:mine() → BreakBuilder",
+                description = "Starts a multi-tick break of the block in front. Returns a builder; chain :connect(fn) to redirect drops, or leave unchained to route drops to network storage.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md#mine",
+            )
+        )
+        put(
+            "BreakerHandle:cancel", Doc(
+                signature = "BreakerHandle:cancel()",
+                description = "Aborts the in-flight break, if any. Safe to call when idle.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md#cancel",
+            )
+        )
+        put(
+            "BreakerHandle:block", Doc(
+                signature = "BreakerHandle:block() → string",
+                description = "Block id at the breaker's facing position.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md#block",
+            )
+        )
+        put(
+            "BreakerHandle:state", Doc(
+                signature = "BreakerHandle:state() → { [string]: any }",
+                description = "Property table for the block at the breaker's facing position.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md#state",
+            )
+        )
+        put(
+            "BreakerHandle:isMining", Doc(
+                signature = "BreakerHandle:isMining() → boolean",
+                description = "True when a break is in progress.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md#isMining",
+            )
+        )
+        put(
+            "BreakerHandle:progress", Doc(
+                signature = "BreakerHandle:progress() → number",
+                description = "0..1 fraction of the current break's progress. 0 when idle.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md#progress",
+            )
+        )
+
+        // ===== BreakBuilder =====
+        put(
+            "BreakBuilder", Doc(
+                signature = "type BreakBuilder",
+                description = "Returned by Breaker:mine(). Configures how the drops route once the break completes.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md#breakbuilder",
+            )
+        )
+        put(
+            "BreakBuilder:connect", Doc(
+                signature = "BreakBuilder:connect(fn: function(items: ItemsHandle))",
+                description = "Redirects drops to a script handler instead of network storage. The handler receives one ItemsHandle per drop stack.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/breaker-handle.md#connect",
+            )
+        )
+
+        // ===== PlacerHandle =====
+        put(
+            "PlacerHandle", Doc(
+                signature = "type PlacerHandle",
+                description = "A Placer device. Pulls one item from network storage and places it as a block in front.",
+                category = Category.TYPE,
+                guidebookRef = "nodeworks:lua-api/placer-handle.md",
+            )
+        )
+        put(
+            "PlacerHandle:place", Doc(
+                signature = "PlacerHandle:place(item: string | ItemsHandle) → boolean",
+                description = "Pulls one of [item] from network storage and places it. Returns true on success, false if the source is empty, the target isn't replaceable, or the item isn't a block.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/placer-handle.md#place",
+            )
+        )
+        put(
+            "PlacerHandle:block", Doc(
+                signature = "PlacerHandle:block() → string",
+                description = "Block id at the placer's facing position.",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/placer-handle.md#block",
+            )
+        )
+        put(
+            "PlacerHandle:isBlocked", Doc(
+                signature = "PlacerHandle:isBlocked() → boolean",
+                description = "True if the target position is non-replaceable (a place would fail).",
+                category = Category.METHOD,
+                guidebookRef = "nodeworks:lua-api/placer-handle.md#isBlocked",
+            )
+        )
+
         // ===== ItemsHandle =====
         put(
             "ItemsHandle", Doc(

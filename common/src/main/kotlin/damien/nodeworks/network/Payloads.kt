@@ -256,6 +256,21 @@ data class VariableSettingsPayload(val pos: BlockPos, val key: String, val intVa
     override fun type() = TYPE
 }
 
+/** C2S: Update a device's settings (name, channel). Shared by Breaker, Placer, and any
+ *  future scriptable connectable that just needs name + channel — keeps the payload
+ *  registry from accumulating one packet per device type. The handler dispatches
+ *  by reading the BlockEntity at [pos]. */
+data class DeviceSettingsPayload(val pos: BlockPos, val key: String, val intValue: Int, val strValue: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<DeviceSettingsPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "device_settings"))
+        val CODEC: StreamCodec<FriendlyByteBuf, DeviceSettingsPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.key, 16); buf.writeVarInt(p.intValue); buf.writeUtf(p.strValue, 256) },
+            { buf -> DeviceSettingsPayload(buf.readBlockPos(), buf.readUtf(16), buf.readVarInt(), buf.readUtf(256)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, val isError: Boolean) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "terminal_log"))
