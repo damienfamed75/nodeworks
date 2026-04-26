@@ -367,7 +367,15 @@ class AutocompletePopup(
          *  this string among the call's comma-separated arguments so position-sensitive
          *  suggestions can distinguish first-arg from later-arg (e.g. importer:from's
          *  first arg is a filter, subsequent args are card names). */
-        data class StringArg(val funcExpr: String, val partial: String, val argIndex: Int = 0) : CursorContext
+        /** [precedingText] is the line content from the start of the line up to the
+         *  opening quote of the string literal, used by the typed-assignment dispatch
+         *  to detect `local x: T = "..."` patterns when there's no enclosing function. */
+        data class StringArg(
+            val funcExpr: String,
+            val partial: String,
+            val argIndex: Int = 0,
+            val precedingText: String = "",
+        ) : CursorContext
 
         /** Type annotation context: `local x: partial` or `function(a: partial` */
         data class TypeAnnotation(val partial: String) : CursorContext
@@ -497,14 +505,16 @@ class AutocompletePopup(
             val argIndex = countTopLevelCommas(argList)
 
             val funcExpr = beforeQuote.substring(0, parenIdx).trimEnd()
-            // Extract the function name/expression (e.g., "network:get", "network:craft", ":face")
-            val funcMatch = Regex("""([\w:]+)\s*$""").find(funcExpr)
+            // Extract the function name/expression (e.g., "network:get", "network:craft",
+            // ":face", "test.Filter"). Includes `.` so module-qualified calls reach the
+            // module-aware dispatch path with their full receiver-and-name.
+            val funcMatch = Regex("""([\w.:]+)\s*$""").find(funcExpr)
             if (funcMatch != null) {
-                return CursorContext.StringArg(funcMatch.groupValues[1], partial, argIndex)
+                return CursorContext.StringArg(funcMatch.groupValues[1], partial, argIndex, beforeQuote)
             }
         }
 
-        return CursorContext.StringArg("", partial)
+        return CursorContext.StringArg("", partial, precedingText = beforeQuote)
     }
 
     /** Count commas at bracket/brace/string depth 0. Used to figure out which argument
@@ -1543,7 +1553,7 @@ class AutocompletePopup(
         val ctx = parseCursorContext(currentLine, beforeCursor)
 
         return when (ctx) {
-            is CursorContext.StringArg -> suggestStringArg(ctx)
+            is CursorContext.StringArg -> suggestStringArg(ctx, symbols, fullText)
             is CursorContext.TypeAnnotation -> suggestTypeAnnotation(ctx.partial)
             is CursorContext.TagFilter -> suggestTag(ctx.partial)
             is CursorContext.ResolvedMethodCall -> {
@@ -1587,8 +1597,31 @@ class AutocompletePopup(
         }
     }
 
-    private fun suggestStringArg(ctx: CursorContext.StringArg): List<Suggestion> {
+    private fun suggestStringArg(
+        ctx: CursorContext.StringArg,
+        symbols: Map<String, String>,
+        fullText: String,
+    ): List<Suggestion> {
         customPrefix = ctx.partial
+
+        // Try registry-driven dispatch first. When the receiver + method resolve to a
+        // migrated spec, the param's declared type drives the completions, no
+        // funcExpr-string special case needed. Falls through to the legacy switch
+        // when the spec isn't migrated yet so unmigrated surfaces keep working.
+        trySuggestViaRegistry(ctx, symbols)?.let { return it }
+
+        // User-defined function with annotated params. Parse the function declaration
+        // out of the script, extract the param at this arg index, dispatch via the
+        // same type→completions logic the registry path uses. Lets the user write
+        // `function findTag(tag: TagId)` and have `findTag("...")` autocomplete tags
+        // without registering anything explicitly.
+        trySuggestViaUserFunction(ctx, fullText)?.let { return it }
+
+        // Typed local assignment, `local x: TagId = "..."` or reassignment of a
+        // previously-typed local `x = "..."`. Dispatches the same way as a function
+        // arg whose declared type is the local's annotation.
+        trySuggestViaTypedAssignment(ctx, symbols)?.let { return it }
+
         return when {
             ctx.funcExpr.endsWith("network:get") -> {
                 // Cards first, variables next, devices last, matches the runtime
@@ -1827,6 +1860,192 @@ class AutocompletePopup(
         return FuzzyMatch.filter(partial, suggestions)
     }
 
+    /** Resolve a string-arg context through the API registry. Parses the funcExpr to
+     *  extract receiver + method, looks up the method's declared param type, then
+     *  dispatches the type to the appropriate completion handler. Returns null if
+     *  the receiver, method, or arg index don't resolve to a typed param so the
+     *  caller can fall back to legacy dispatch. */
+    private fun trySuggestViaRegistry(
+        ctx: CursorContext.StringArg,
+        symbols: Map<String, String>,
+    ): List<Suggestion>? {
+        val colon = ctx.funcExpr.indexOf(':')
+        if (colon <= 0) return null
+        val receiver = ctx.funcExpr.substring(0, colon)
+        val methodName = ctx.funcExpr.substring(colon + 1)
+
+        val receiverType = damien.nodeworks.script.api.LuaApiRegistry.moduleType(receiver)?.name
+            ?: symbols[receiver]
+            ?: return null
+
+        val methodDoc = damien.nodeworks.script.api.LuaApiRegistry
+            .methodsOf(receiverType)
+            .firstOrNull { it.displayName == methodName }
+            ?: return null
+
+        val paramType = methodDoc.params.getOrNull(ctx.argIndex)?.type ?: return null
+        return suggestionsForType(paramType, ctx.partial)
+    }
+
+    /** Resolve a string-arg context to a user-defined function's param type and
+     *  dispatch via [suggestionsForType]. Handles three call shapes:
+     *
+     *  1. Bare function in the same script, `findTag("...")`.
+     *  2. Module-qualified call into a `require`'d script,
+     *     `local m = require("mod"); m.fn("...")`.
+     *  3. Methods on registered receivers go through [trySuggestViaRegistry], not
+     *     here, this path explicitly bails on `:` to avoid double-matching.
+     *
+     *  Returns null when the function can't be located or its param isn't typed
+     *  with a registered string subtype, the caller falls through to legacy. */
+    private fun trySuggestViaUserFunction(
+        ctx: CursorContext.StringArg,
+        fullText: String,
+    ): List<Suggestion>? {
+        if (ctx.funcExpr.contains(':')) return null
+        if (ctx.funcExpr.isEmpty()) return null
+
+        val func = if (ctx.funcExpr.contains('.')) {
+            findRequiredModuleFunction(ctx.funcExpr, fullText) ?: return null
+        } else {
+            extractFunctions(fullText).firstOrNull { it.name == ctx.funcExpr } ?: return null
+        }
+        val typeName = parseParamType(func.params, ctx.argIndex) ?: return null
+        val resolvedType = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName) ?: return null
+        return suggestionsForType(resolvedType, ctx.partial)
+    }
+
+    /** Resolve `<localVar>.<funcName>` to a [FunctionInfo] when [localVar] was
+     *  declared as `local <var> = require("<mod>")` and the module's source defines
+     *  `function <tableVar>.<funcName>(...)`. Cross-script param-type inference,
+     *  the analog of [extractFunctions] but reaching into [scripts] to load the
+     *  module text by name. */
+    private fun findRequiredModuleFunction(funcExpr: String, fullText: String): FunctionInfo? {
+        val dotIdx = funcExpr.indexOf('.')
+        if (dotIdx <= 0) return null
+        val localVar = funcExpr.substring(0, dotIdx)
+        val funcName = funcExpr.substring(dotIdx + 1)
+        if (funcName.contains('.')) return null
+
+        val requirePattern = Regex("""\blocal\s+${Regex.escape(localVar)}\s*=\s*require\(\s*"(\w+)"\s*\)""")
+        val moduleName = requirePattern.find(fullText)?.groupValues?.get(1) ?: return null
+
+        val moduleText = scripts()[moduleName] ?: return null
+        val funcPattern = Regex("""\bfunction\s+\w+\.${Regex.escape(funcName)}\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
+        val match = funcPattern.find(moduleText) ?: return null
+        val params = match.groupValues[1].trim().split(",").joinToString(", ") { it.trim() }
+        val returnType = match.groupValues[2].ifEmpty { null }
+        return FunctionInfo(funcName, params, returnType)
+    }
+
+    /** Resolve a typed assignment to the local's declared type and dispatch via
+     *  [suggestionsForType]. Two patterns are recognised:
+     *
+     *  1. `local <name>: <Type> = "..."`, type comes straight out of the line text
+     *     since the declaration sits to the left of the cursor.
+     *  2. `<name> = "..."` for a previously-declared local, type comes from the
+     *     symbol table that the buildSymbolTable pass populated.
+     *
+     *  Returns null when neither pattern matches or the resolved type isn't a
+     *  registered string subtype, the caller falls through to the legacy switch. */
+    private fun trySuggestViaTypedAssignment(
+        ctx: CursorContext.StringArg,
+        symbols: Map<String, String>,
+    ): List<Suggestion>? {
+        val text = ctx.precedingText
+        if (text.isBlank()) return null
+
+        val typeName = parseTypedAssignmentType(text, symbols) ?: return null
+        val resolved = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName) ?: return null
+        return suggestionsForType(resolved, ctx.partial)
+    }
+
+    /** Match `local <name>: <Type> =`, then `<name> =` against the symbol table.
+     *  Returned name has the trailing `=` stripped and any `?` (nullable) trimmed,
+     *  matching the format [LuaApiRegistry.stringTypeOf] expects. */
+    private fun parseTypedAssignmentType(precedingText: String, symbols: Map<String, String>): String? {
+        val trimmed = precedingText.trimEnd().removeSuffix("=").trimEnd()
+        val localMatch = Regex("""\blocal\s+\w+\s*:\s*(\w+)\??$""").find(trimmed)
+        if (localMatch != null) return localMatch.groupValues[1]
+
+        val reassignMatch = Regex("""\b(\w+)$""").find(trimmed)
+        if (reassignMatch != null) {
+            val name = reassignMatch.groupValues[1]
+            return symbols[name]?.trimEnd('?')
+        }
+        return null
+    }
+
+    /** Pull the type name out of one position in a [FunctionInfo.params] string.
+     *  The params come pre-formatted as `"a: TagId, b: number, c: ItemsHandle?"`,
+     *  this strips comma-separated segments, finds the colon, and returns the
+     *  type token (with `?` suffix removed for nullable). Returns null if the
+     *  segment lacks an annotation, the caller treats that as "untyped, no
+     *  completions to offer". */
+    private fun parseParamType(paramsStr: String, argIndex: Int): String? {
+        if (paramsStr.isBlank()) return null
+        val segments = paramsStr.split(",")
+        val seg = segments.getOrNull(argIndex) ?: return null
+        val colonIdx = seg.indexOf(':')
+        if (colonIdx < 0) return null
+        return seg.substring(colonIdx + 1).trim().trimEnd('?')
+    }
+
+    /** Recursively dispatch a [damien.nodeworks.script.api.LuaType] to its completion
+     *  source. Returns null when the type isn't string-shaped (param expects a typed
+     *  value, not a string literal, so no string-position completions apply). */
+    private fun suggestionsForType(
+        type: damien.nodeworks.script.api.LuaType,
+        partial: String,
+    ): List<Suggestion>? {
+        val unwrapped = damien.nodeworks.script.api.LuaType.unwrap(type)
+        return when (unwrapped) {
+            is damien.nodeworks.script.api.LuaType.StringEnum ->
+                fuzzyStrings(partial, unwrapped.values)
+            is damien.nodeworks.script.api.LuaType.StringDomain ->
+                suggestionsForDomain(unwrapped.sourceKey, partial)
+            is damien.nodeworks.script.api.LuaType.Union ->
+                unwrapped.parts
+                    .flatMap { suggestionsForType(it, partial) ?: emptyList() }
+                    .distinctBy { it.insertText }
+            else -> null
+        }
+    }
+
+    /** Resolve a [damien.nodeworks.script.api.LuaType.StringDomain] source key to
+     *  the popup's local data. Each case here is the bridge from a declared domain
+     *  to the popup's actual data feed, adding a new domain means: declare it in
+     *  [damien.nodeworks.script.api.LuaStringTypes], add a case here, that's it. */
+    private fun suggestionsForDomain(sourceKey: String, partial: String): List<Suggestion> = when (sourceKey) {
+        "item-id" -> fuzzyStrings(partial, itemIds)
+        "fluid-id" -> fuzzyStrings(partial, fluidIds)
+        "tag-id" -> fuzzyStrings(partial, (itemTags + fluidTags).distinct())
+        "block-id" -> emptyList()
+        "card-alias" -> {
+            val labels = cards.map { it.effectiveAlias to it.capability.type }.distinct()
+            FuzzyMatch.filter(
+                partial,
+                labels.map { (alias, type) -> suggest(alias, "$alias ($type)", Kind.STRING) },
+            )
+        }
+        "channel-name" -> fuzzyStrings(partial, listOf(
+            "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+            "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black",
+        ))
+        "variable-name" -> {
+            val typeLabels = arrayOf("number", "string", "bool")
+            FuzzyMatch.filter(
+                partial,
+                variables.map { (name, typeOrd) ->
+                    val label = typeLabels.getOrElse(typeOrd) { "variable" }
+                    suggest(name, "$name ($label)", Kind.STRING)
+                },
+            )
+        }
+        "filter" -> suggestResourceFilter(partial)
+        else -> emptyList()
+    }
+
     /** Lua functions whose string argument is a resource-id filter (items + fluids).
      *  `:insert` / `:tryInsert` are NOT resource-filter funcs, their first arg is an
      *  ItemsHandle, so suggesting resource ids there would be actively misleading.
@@ -1864,8 +2083,8 @@ class AutocompletePopup(
             }
             partial.startsWith("\$") -> {
                 val sigils = listOf(
-                    Suggestion("\$item:", "\$item:, match items only", kind = Kind.STRING),
-                    Suggestion("\$fluid:", "\$fluid:, match fluids only", kind = Kind.STRING)
+                    Suggestion("\$item:", "\$item:  match items only", kind = Kind.STRING),
+                    Suggestion("\$fluid:", "\$fluid:  match fluids only", kind = Kind.STRING)
                 )
                 FuzzyMatch.filter(partial, sigils)
             }
@@ -1879,35 +2098,47 @@ class AutocompletePopup(
                     Suggestion("\$fluid:$it", "\$fluid:$it", kind = Kind.STRING)
                 }
                 val sigils = listOf(
-                    Suggestion("\$item:", "\$item:, match items only", kind = Kind.STRING),
-                    Suggestion("\$fluid:", "\$fluid:, match fluids only", kind = Kind.STRING)
+                    Suggestion("\$item:", "\$item:  match items only", kind = Kind.STRING),
+                    Suggestion("\$fluid:", "\$fluid:  match fluids only", kind = Kind.STRING)
                 )
                 FuzzyMatch.filter(partial, sigils + idSuggestions + fluidSuggestions).take(20)
             }
         }
     }
 
-    private val knownTypes = listOf(
-        Suggestion("string", "string", kind = Kind.TYPE),
-        Suggestion("number", "number", kind = Kind.TYPE),
-        Suggestion("boolean", "boolean", kind = Kind.TYPE),
-        Suggestion("any", "any", kind = Kind.TYPE),
-        Suggestion("InputItems", "InputItems, handler input bag; access slot handles by name", kind = Kind.TYPE),
-        Suggestion("ItemsHandle", "ItemsHandle, item reference from find/craft", kind = Kind.TYPE),
-        Suggestion("CardHandle", "CardHandle, IO/Storage card from network:get", kind = Kind.TYPE),
-        Suggestion("RedstoneCard", "RedstoneCard, redstone card from network:get", kind = Kind.TYPE),
-        Suggestion("ObserverCard", "ObserverCard, observer card from network:get", kind = Kind.TYPE),
-        Suggestion("BreakerHandle", "BreakerHandle, Breaker device from network:get", kind = Kind.TYPE),
-        Suggestion("BreakBuilder", "BreakBuilder, returned by Breaker:mine() for drop routing", kind = Kind.TYPE),
-        Suggestion("PlacerHandle", "PlacerHandle, Placer device from network:get", kind = Kind.TYPE),
-        Suggestion("Channel", "Channel, dye-color group from network:channel", kind = Kind.TYPE),
-        Suggestion("HandleList", "HandleList, broadcast list from network:getAll / Channel:getAll", kind = Kind.TYPE),
-        Suggestion("Job", "Job, processing handler context from network:handle", kind = Kind.TYPE),
-        Suggestion("CraftBuilder", "CraftBuilder, from network:craft(), chain with :connect()", kind = Kind.TYPE),
-        Suggestion("NumberVariableHandle", "NumberVariableHandle, number variable from network:get", kind = Kind.TYPE),
-        Suggestion("StringVariableHandle", "StringVariableHandle, string variable from network:get", kind = Kind.TYPE),
-        Suggestion("BoolVariableHandle", "BoolVariableHandle, bool variable from network:get", kind = Kind.TYPE)
-    )
+    /** Type-annotation autocomplete pool. Lua primitives stay hand-listed at the
+     *  top, every TYPE-category entry the registry knows about (Named types like
+     *  CardHandle and string subtypes like TagId / Filter) is appended at lazy-init.
+     *  The legacy hand-list below is for types not yet migrated to the DSL, when a
+     *  type moves to a spec its entry can be removed from the legacy block. */
+    private val knownTypes: List<Suggestion> by lazy {
+        val primitives = listOf(
+            Suggestion("string", "string", kind = Kind.TYPE),
+            Suggestion("number", "number", kind = Kind.TYPE),
+            Suggestion("boolean", "boolean", kind = Kind.TYPE),
+            Suggestion("any", "any", kind = Kind.TYPE),
+        )
+        val fromRegistry = damien.nodeworks.script.api.LuaApiRegistry.allDocs().values
+            .filter { it.category == damien.nodeworks.script.api.ApiCategory.TYPE }
+            .map { Suggestion(it.displayName, "${it.displayName}  ${it.description}", kind = Kind.TYPE) }
+        val registryNames = fromRegistry.map { it.insertText }.toSet()
+        val legacy = listOf(
+            Suggestion("InputItems", "InputItems  handler input bag, access slot handles by name", kind = Kind.TYPE),
+            Suggestion("RedstoneCard", "RedstoneCard  redstone card from network:get", kind = Kind.TYPE),
+            Suggestion("ObserverCard", "ObserverCard  observer card from network:get", kind = Kind.TYPE),
+            Suggestion("BreakerHandle", "BreakerHandle  Breaker device from network:get", kind = Kind.TYPE),
+            Suggestion("BreakBuilder", "BreakBuilder  returned by Breaker:mine() for drop routing", kind = Kind.TYPE),
+            Suggestion("PlacerHandle", "PlacerHandle  Placer device from network:get", kind = Kind.TYPE),
+            Suggestion("Channel", "Channel  dye-color group from network:channel", kind = Kind.TYPE),
+            Suggestion("HandleList", "HandleList  broadcast list from network:getAll / Channel:getAll", kind = Kind.TYPE),
+            Suggestion("Job", "Job  processing handler context from network:handle", kind = Kind.TYPE),
+            Suggestion("CraftBuilder", "CraftBuilder  from network:craft(), chain with :connect()", kind = Kind.TYPE),
+            Suggestion("NumberVariableHandle", "NumberVariableHandle  number variable from network:get", kind = Kind.TYPE),
+            Suggestion("StringVariableHandle", "StringVariableHandle  string variable from network:get", kind = Kind.TYPE),
+            Suggestion("BoolVariableHandle", "BoolVariableHandle  bool variable from network:get", kind = Kind.TYPE),
+        ).filter { it.insertText !in registryNames }
+        primitives + fromRegistry + legacy
+    }
 
     private fun suggestTypeAnnotation(partial: String): List<Suggestion> {
         // Don't suggest if the partial already exactly matches a known type
@@ -1981,12 +2212,12 @@ class AutocompletePopup(
         if (partial.isEmpty() && !forced) return emptyList()
 
         val apiFunctions = listOf(
-            suggest("scheduler", "scheduler, module", Kind.MODULE),
-            suggest("network", "network, module", Kind.MODULE),
-            suggest("importer", "importer, module", Kind.MODULE),
-            suggest("stocker", "stocker, module", Kind.MODULE),
+            suggest("scheduler", "scheduler  module", Kind.MODULE),
+            suggest("network", "network  module", Kind.MODULE),
+            suggest("importer", "importer  module", Kind.MODULE),
+            suggest("stocker", "stocker  module", Kind.MODULE),
             suggest("print(", "print(message: any)", Kind.FUNCTION),
-            suggest("error(", "error(message: string), throw an error", Kind.FUNCTION),
+            suggest("error(", "error(message: string)  throw an error", Kind.FUNCTION),
             suggest("clock(", "clock() → number", Kind.FUNCTION),
             suggest("string", "string library", Kind.MODULE),
             suggest("math", "math library", Kind.MODULE),
@@ -2044,7 +2275,7 @@ class AutocompletePopup(
                 if (ident in declared) return@mapNotNull null
                 Suggestion(
                     insertText = ident,
-                    displayText = "$ident, $alias ($type)",
+                    displayText = "$ident  $alias ($type)",
                     kind = Kind.VARIABLE,
                     autoImport = "local $ident = network:get(\"$alias\")"
                 )
@@ -2055,7 +2286,7 @@ class AutocompletePopup(
                 if (ident in declared) return@mapNotNull null
                 Suggestion(
                     insertText = ident,
-                    displayText = "$ident, $name (variable)",
+                    displayText = "$ident  $name (variable)",
                     kind = Kind.VARIABLE,
                     // Variables now ride the unified `network:get` accessor instead
                     // of the legacy `network:var` (which has been removed).
@@ -2098,7 +2329,7 @@ class AutocompletePopup(
             },
             // (network:var was removed, variables resolve through `network:get(name)`.)
             suggest("handle(", "handle(cardName: string, fn: function(job, ...))", Kind.METHOD),
-            suggest("debug(", "debug(), print network topology", Kind.METHOD)
+            suggest("debug(", "debug()  print network topology", Kind.METHOD)
         )
         return fuzzy(partial, methods)
     }
@@ -2123,7 +2354,40 @@ class AutocompletePopup(
 
     // ========== Type-based methods and properties ==========
 
+    /** Build method suggestions for [type] from the API registry. Returns null when
+     *  the type isn't registered so the legacy hand-rolled switch can take over,
+     *  this is the migration shim that lets us move types over one at a time. */
+    private fun suggestionsFromRegistryMethods(type: String, partial: String): List<Suggestion>? {
+        val methods = damien.nodeworks.script.api.LuaApiRegistry.methodsOf(type)
+        if (methods.isEmpty()) return null
+        val out = methods.map { doc ->
+            val sigSuffix = doc.signature.substringAfter(doc.displayName)
+            if (doc.snippetBody != null) {
+                snippet("${doc.displayName}(", "${doc.displayName}$sigSuffix", doc.snippetBody, doc.snippetCursorOffset)
+            } else {
+                suggest("${doc.displayName}(", "${doc.displayName}$sigSuffix", Kind.METHOD)
+            }
+        }
+        return fuzzy(partial, out)
+    }
+
+    /** Property-side equivalent of [suggestionsFromRegistryMethods]. */
+    private fun suggestionsFromRegistryProperties(type: String, partial: String): List<Suggestion>? {
+        val props = damien.nodeworks.script.api.LuaApiRegistry.propertiesOf(type)
+        if (props.isEmpty()) return null
+        val out = props.map { doc ->
+            suggest(doc.displayName, doc.signature, Kind.PROPERTY)
+        }
+        return fuzzy(partial, out)
+    }
+
     private fun suggestMethodsForType(type: String, partial: String): List<Suggestion> {
+        // Registry-first: types migrated to the new spec system get their methods
+        // from there so signatures, parameter types, and snippet templates stay in
+        // sync with hover tooltips and the guidebook. Falls through to the legacy
+        // switch when the type hasn't migrated yet.
+        suggestionsFromRegistryMethods(type, partial)?.let { return it }
+
         // HandleList<T>, the parameterised wrapper. Always exposes the universal
         // `:list()` / `:count()` plus the broadcast (write-only) methods for T,
         // sourced from [HandleListMethods] so the registry stays the single point
@@ -2156,7 +2420,7 @@ class AutocompletePopup(
             // lookup at hover time, so popup labels and tooltips stay in sync.
             for (name in broadcastNames) {
                 val sourceDoc = LuaApiDocs.get("${elementType}:${name}")
-                val display = sourceDoc?.signature ?: "$name(...), broadcast to every member"
+                val display = sourceDoc?.signature ?: "$name(...)  broadcast to every member"
                 methods.add(suggest("$name(", display, Kind.METHOD))
             }
             return fuzzy(partial, methods)
@@ -2243,7 +2507,7 @@ class AutocompletePopup(
                 suggest("matches(", "matches(filter: string) → boolean", Kind.METHOD)
             )
 
-            "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...), wait for outputs", Kind.METHOD))
+            "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...)  wait for outputs", Kind.METHOD))
             "CraftBuilder" -> {
                 val connectBody = "connect(function(item: ItemsHandle)\n    \nend)"
                 listOf(
@@ -2253,7 +2517,7 @@ class AutocompletePopup(
                         connectBody,
                         connectBody.indexOf("\n    \n") + 5
                     ),
-                    suggest("store(", "store(), send result to network storage", Kind.METHOD)
+                    suggest("store(", "store()  send result to network storage", Kind.METHOD)
                 )
             }
 
@@ -2317,6 +2581,9 @@ class AutocompletePopup(
     )
 
     private fun suggestPropertiesForType(type: String, partial: String): List<Suggestion> {
+        // Registry-first dispatch, mirrors [suggestMethodsForType].
+        suggestionsFromRegistryProperties(type, partial)?.let { return it }
+
         val props = when (type) {
             // CardHandle and RedstoneCard share the same underlying Lua table (same
             // `.name` binding from CardHandle.create), the two entries just exist so

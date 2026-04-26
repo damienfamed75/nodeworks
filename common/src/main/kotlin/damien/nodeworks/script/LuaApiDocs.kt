@@ -1,5 +1,11 @@
 package damien.nodeworks.script
 
+import damien.nodeworks.script.api.ApiCategory
+import damien.nodeworks.script.api.ApiDoc
+import damien.nodeworks.script.api.LuaApiBootstrap
+import damien.nodeworks.script.api.LuaApiRegistry
+import damien.nodeworks.script.api.LuaType
+
 /**
  * Single source of truth for Lua symbol documentation, consumed by both the in-game
  * [damien.nodeworks.screen.widget.ScriptEditor] hover tooltips and the guidebook's
@@ -48,15 +54,53 @@ object LuaApiDocs {
 
     /** Maps a top-level module name to its Lua type so method keys stored under the
      *  type resolve when the user writes the module literal. `card` and `clock` are NOT
-     *  in here, `card` isn't a global at all, and `clock` is a bare function. */
-    private val moduleTypes: Map<String, String> = mapOf(
-        "network" to "Network",
-        "scheduler" to "Scheduler",
-        "importer" to "Importer",
-        "stocker" to "Stocker",
+     *  in here, `card` isn't a global at all, and `clock` is a bare function.
+     *
+     *  Modules registered via the new DSL ([damien.nodeworks.script.api.LuaApiRegistry])
+     *  are merged in at first access, so adding a `LuaTypes.module(...)` declaration
+     *  in a spec file lights up its entry here automatically. */
+    private val moduleTypes: Map<String, String> by lazy {
+        LuaApiBootstrap.ensureInitialized()
+        buildMap {
+            put("network", "Network")
+            put("importer", "Importer")
+            put("stocker", "Stocker")
+            for (mod in LuaApiRegistry.knownModules()) {
+                mod.moduleGlobal?.let { put(it, mod.name) }
+            }
+        }
+    }
+
+    private val entries: Map<String, Doc> by lazy {
+        LuaApiBootstrap.ensureInitialized()
+        val legacy = legacyEntries()
+        val registry = LuaApiRegistry.allDocs().mapValues { it.value.toLegacyDoc() }
+        legacy + registry
+    }
+
+    /** Convert a DSL-built [ApiDoc] into the legacy [Doc] shape expected by the rest
+     *  of [LuaApiDocs]. Lossy by design, the new model carries richer fields
+     *  ([ApiDoc.params], [ApiDoc.example], deprecation, etc.) that the legacy hover
+     *  format doesn't surface yet, future work will route those through new
+     *  consumer-side rendering. */
+    private fun ApiDoc.toLegacyDoc(): Doc = Doc(
+        signature = signature,
+        description = description,
+        category = when (category) {
+            ApiCategory.KEYWORD -> Category.KEYWORD
+            ApiCategory.MODULE -> Category.MODULE
+            ApiCategory.TYPE -> Category.TYPE
+            ApiCategory.FUNCTION -> Category.FUNCTION
+            ApiCategory.METHOD -> Category.METHOD
+            ApiCategory.PROPERTY -> Category.PROPERTY
+        },
+        guidebookRef = guidebookRef,
     )
 
-    private val entries: Map<String, Doc> = buildMap {
+    /** Hand-rolled legacy entries that haven't migrated to the DSL yet. Every group
+     *  in here is a candidate for [damien.nodeworks.script.api] migration, when an
+     *  entry moves over, delete it from this builder. */
+    private fun legacyEntries(): Map<String, Doc> = buildMap {
         // ===== Lua keywords =====
         put(
             "local", Doc(
@@ -333,48 +377,7 @@ object LuaApiDocs {
         )
 
         // ===== scheduler / Scheduler =====
-        put(
-            "scheduler", Doc(
-                signature = "scheduler: Scheduler",
-                description = "Registers periodic and delayed callbacks that run on the server tick.",
-                category = Category.MODULE,
-            )
-        )
-        put(
-            "Scheduler", Doc(
-                signature = "type Scheduler",
-                description = "Task scheduler. Every registration returns an id that can be passed to `:cancel`.",
-                category = Category.TYPE,
-            )
-        )
-        put(
-            "Scheduler:tick", Doc(
-                signature = "Scheduler:tick(fn: function) → number",
-                description = "Runs `fn` every server tick. Returns a task id.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "Scheduler:second", Doc(
-                signature = "Scheduler:second(fn: function) → number",
-                description = "Runs `fn` every 20 ticks. Returns a task id.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "Scheduler:delay", Doc(
-                signature = "Scheduler:delay(ticks: number, fn: function) → number",
-                description = "Runs `fn` once after the given number of ticks. Returns a task id.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "Scheduler:cancel", Doc(
-                signature = "Scheduler:cancel(id: number)",
-                description = "Cancels a task returned by a scheduler method.",
-                category = Category.METHOD,
-            )
-        )
+        // Migrated to damien.nodeworks.script.api.SchedulerApi, served by LuaApiRegistry.
 
         // ===== Job / InputItems / CraftBuilder =====
         // These types don't come from a global, they arrive as arguments to user
@@ -635,78 +638,7 @@ object LuaApiDocs {
         )
 
         // ===== CardHandle =====
-        put(
-            "CardHandle", Doc(
-                signature = "type CardHandle",
-                description = "A card on the network accessed by alias.",
-                category = Category.TYPE,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
-            )
-        )
-        put(
-            "CardHandle:face", Doc(
-                signature = "CardHandle:face(name: string) → CardHandle",
-                description = "Returns a new handle pinned to a specific face of the adjacent block.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#face",
-            )
-        )
-        put(
-            "CardHandle:slots", Doc(
-                signature = "CardHandle:slots(…indices) → CardHandle",
-                description = "Returns a new handle filtered to specific slot indices. Indices are 1-based.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#slots",
-            )
-        )
-        put(
-            "CardHandle:find", Doc(
-                signature = "CardHandle:find(filter: string) → ItemsHandle | nil",
-                description = "Like `Network:find`, scoped to this card's inventory.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#find",
-            )
-        )
-        put(
-            "CardHandle:findEach", Doc(
-                signature = "CardHandle:findEach(filter: string) → { ItemsHandle… }",
-                description = "Returns one handle per distinct resource in this card matching the filter.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#findEach",
-            )
-        )
-        put(
-            "CardHandle:insert", Doc(
-                signature = "CardHandle:insert(items: ItemsHandle[, count: number]) → boolean",
-                description = "Moves the full count from the handle's source into this card, or moves nothing. Returns true on success.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#insert",
-            )
-        )
-        put(
-            "CardHandle:tryInsert", Doc(
-                signature = "CardHandle:tryInsert(items: ItemsHandle[, count: number]) → number",
-                description = "Best-effort move into this card. Returns the count actually moved.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#tryInsert",
-            )
-        )
-        put(
-            "CardHandle:count", Doc(
-                signature = "CardHandle:count(filter: string) → number",
-                description = "Total quantity on this card matching the filter.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#count",
-            )
-        )
-        put(
-            "CardHandle.name", Doc(
-                signature = "CardHandle.name: string",
-                description = "The card's alias.",
-                category = Category.PROPERTY,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#properties",
-            )
-        )
+        // Migrated to damien.nodeworks.script.api.CardHandleApi.
 
         // RedstoneCard is the same underlying Lua table as CardHandle, `.name` is set
         // by CardHandle.create before any redstone-specific rebinding. Mirror the doc
@@ -911,30 +843,7 @@ object LuaApiDocs {
         )
 
         // ===== ItemsHandle =====
-        put(
-            "ItemsHandle", Doc(
-                signature = "type ItemsHandle",
-                description = "A snapshot of items or fluids matching some filter.",
-                category = Category.TYPE,
-                guidebookRef = "nodeworks:lua-api/items-handle.md",
-            )
-        )
-        put(
-            "ItemsHandle:hasTag", Doc(
-                signature = "ItemsHandle:hasTag(tag: string) → boolean",
-                description = "True if this resource is in the given tag.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/items-handle.md",
-            )
-        )
-        put(
-            "ItemsHandle:matches", Doc(
-                signature = "ItemsHandle:matches(filter: string) → boolean",
-                description = "True if this resource matches the filter, using `Network:find` syntax.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/items-handle.md",
-            )
-        )
+        // Migrated to damien.nodeworks.script.api.ItemsHandleApi.
 
         // ===== VariableHandle =====
         put(

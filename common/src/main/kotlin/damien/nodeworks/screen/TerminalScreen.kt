@@ -1276,7 +1276,7 @@ class TerminalScreen(
         "handle" to "network:handle(cardName: string, fn: function(job, ...))",
         "route" to "network:route(alias: string, fn: function(item) → boolean)",
         "shapeless" to "network:shapeless(item: string, count?: number, ...) → ItemsHandle?",
-        "debug" to "network:debug(), print network topology",
+        "debug" to "network:debug()  print network topology",
         // (network:var was removed, variables flow through `network:get(name)`.)
         // Network item methods (also on CardHandle)
         "find" to "find(filter: string) → ItemsHandle?",
@@ -1295,17 +1295,17 @@ class TerminalScreen(
         "cancel" to "scheduler:cancel(id: number)",
         // CraftBuilder methods
         "connect" to "connect(fn: function(item: ItemsHandle))",
-        "store" to "store(), send result to network storage",
+        "store" to "store()  send result to network storage",
         // Job methods
-        "pull" to "job:pull(card: CardHandle, ...), wait for outputs",
+        "pull" to "job:pull(card: CardHandle, ...)  wait for outputs",
         // RedstoneCard methods
         "powered" to "powered() → boolean",
         "strength" to "strength() → number (0-15)",
-        "set" to "set(boolean | number), emit redstone signal",
+        "set" to "set(boolean | number)  emit redstone signal",
         "onChange" to "onChange(fn: function(strength: number))",
         // Lua builtins
-        "print" to "print(...), output to terminal",
-        "error" to "error(message: string), throw an error",
+        "print" to "print(...)  output to terminal",
+        "error" to "error(message: string)  throw an error",
         "clock" to "clock() → number (server tick count)",
         "tostring" to "tostring(value: any) → string",
         "tonumber" to "tonumber(value: any) → number?",
