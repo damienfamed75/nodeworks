@@ -41,10 +41,12 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         /** No cards on this face — fall back to the network color the controller
          *  publishes for the whole node. */
         data object Network : FaceTint()
+
         /** Every card on this face shares one channel; render that channel's
          *  dye color, including DyeColor.WHITE when the user hasn't dyed any
          *  card on this face. */
         data class Single(val rgb: Int) : FaceTint()
+
         /** Cards on this face span ≥2 distinct channels; render the rainbow
          *  cycle so the player can see at a glance "this face is mixed." */
         data object Mixed : FaceTint()
@@ -55,6 +57,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         var glowStyle: Int = 0
         var hasGlow: Boolean = false
         var cardLinks: List<CardLink> = emptyList()
+
         /** Indexed by Direction.ordinal (DOWN=0, UP=1, NORTH=2, SOUTH=3, WEST=4,
          *  EAST=5). Defaults every face to [FaceTint.Network] so a freshly-spawned
          *  state with no extract still renders correctly. */
@@ -69,6 +72,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_creeper.png"),
             Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_spiral.png")
         )
+
         // glowStyle 5 = NONE in the controller GUI — skip rendering
         private const val GLOW_STYLE_NONE = 5
 
@@ -88,8 +92,8 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
 
         /** Per-card-type beam colour (r, g, b 0–255). */
         private val CARD_COLORS = mapOf(
-            "io"       to Triple(0x83, 0xE0, 0x86), // green
-            "storage"  to Triple(0xAA, 0x83, 0xE0), // purple
+            "io" to Triple(0x83, 0xE0, 0x86), // green
+            "storage" to Triple(0xAA, 0x83, 0xE0), // purple
             "redstone" to Triple(0xF5, 0x3B, 0x68), // red
             "observer" to Triple(0xFF, 0xEB, 0x3B)  // yellow
         )
@@ -149,15 +153,18 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     }
 
     /** Map a face's per-card channel list to the [FaceTint] that should paint
-     *  the glow cube on that face. Empty list → [FaceTint.Network]. Single
-     *  distinct channel (even DyeColor.WHITE) → [FaceTint.Single] with that
-     *  channel's textureDiffuseColor. ≥2 distinct channels → [FaceTint.Mixed]. */
+     *  the glow cube on that face. Empty list (or all-white, the default
+     *  unconfigured channel) → [FaceTint.Network] so the lip stays the plain
+     *  frame texture — a white indicator looked indistinguishable from the
+     *  default lip and was visually noisy. Single non-white channel →
+     *  [FaceTint.Single]. ≥2 distinct channels → [FaceTint.Mixed]. */
     private fun resolveFaceTint(channels: List<net.minecraft.world.item.DyeColor>): FaceTint {
         if (channels.isEmpty()) return FaceTint.Network
         val first = channels[0]
         for (i in 1 until channels.size) {
             if (channels[i] != first) return FaceTint.Mixed
         }
+        if (first == net.minecraft.world.item.DyeColor.WHITE) return FaceTint.Network
         return FaceTint.Single(first.textureDiffuseColor and 0xFFFFFF)
     }
 
@@ -191,35 +198,59 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
 
         submitNodeCollector.submitCustomGeometry(poseStack, renderType) { pose, vc ->
             // +Z (SOUTH)
-            vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, max, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, min, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
-            vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+            vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+            vc.addVertex(pose, max, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+            vc.addVertex(pose, min, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+            vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
             // -Z (NORTH)
-            vc.addVertex(pose, min, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
-            vc.addVertex(pose, min, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
-            vc.addVertex(pose, max, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
-            vc.addVertex(pose, max, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+            vc.addVertex(pose, min, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+            vc.addVertex(pose, min, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+            vc.addVertex(pose, max, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+            vc.addVertex(pose, max, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
             // +X (EAST)
-            vc.addVertex(pose, max, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
-            vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
-            vc.addVertex(pose, max, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
-            vc.addVertex(pose, max, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+            vc.addVertex(pose, max, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+            vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+            vc.addVertex(pose, max, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+            vc.addVertex(pose, max, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
             // -X (WEST)
-            vc.addVertex(pose, min, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
-            vc.addVertex(pose, min, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
-            vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
-            vc.addVertex(pose, min, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+            vc.addVertex(pose, min, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+            vc.addVertex(pose, min, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+            vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+            vc.addVertex(pose, min, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
             // +Y (UP)
-            vc.addVertex(pose, min, max, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
-            vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, min, max, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+            vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
             // -Y (DOWN)
-            vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
-            vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
-            vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
-            vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+            vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+            vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+            vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+            vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
+                .setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
         }
     }
 
@@ -235,7 +266,9 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     ) {
         var anyTinted = false
         for (i in 0 until 6) {
-            if (state.faceTints[i] !is FaceTint.Network) { anyTinted = true; break }
+            if (state.faceTints[i] !is FaceTint.Network) {
+                anyTinted = true; break
+            }
         }
         if (!anyTinted) return
 
@@ -279,52 +312,62 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val outer: Float
         val inner: Float
         when (side) {
-            Direction.SOUTH, Direction.EAST, Direction.UP -> { outer = 11f / 16f; inner = 10f / 16f }
-            Direction.NORTH, Direction.WEST, Direction.DOWN -> { outer = 5f / 16f; inner = 6f / 16f }
+            Direction.SOUTH, Direction.EAST, Direction.UP -> {
+                outer = 11f / 16f; inner = 10f / 16f
+            }
+
+            Direction.NORTH, Direction.WEST, Direction.DOWN -> {
+                outer = 5f / 16f; inner = 6f / 16f
+            }
         }
         when (side) {
             Direction.SOUTH -> {
                 // bottom-south top face (long, x=a5..aB)
-                lipQuad(pose, vc, a5, a6e, outer,  aB, a6e, outer,  aB, a6e, inner,   a5, a6e, inner,   0f, 1f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, a6e, outer, aB, a6e, outer, aB, a6e, inner, a5, a6e, inner, 0f, 1f, 0f, r, g, b)
                 // top-south bottom face (long, x=a5..aB)
-                lipQuad(pose, vc, a5, aAe, inner,  aB, aAe, inner,  aB, aAe, outer,   a5, aAe, outer,   0f,-1f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, aAe, inner, aB, aAe, inner, aB, aAe, outer, a5, aAe, outer, 0f, -1f, 0f, r, g, b)
                 // vertical-SW inner face (short, y=a6..aA)
-                lipQuad(pose, vc, a6e, aA, outer,  a6e, a6, outer,  a6e, a6, inner,   a6e, aA, inner,   1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, a6e, aA, outer, a6e, a6, outer, a6e, a6, inner, a6e, aA, inner, 1f, 0f, 0f, r, g, b)
                 // vertical-SE inner face (short, y=a6..aA)
-                lipQuad(pose, vc, aAe, a6, inner,  aAe, a6, outer,  aAe, aA, outer,   aAe, aA, inner,  -1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, aAe, a6, inner, aAe, a6, outer, aAe, aA, outer, aAe, aA, inner, -1f, 0f, 0f, r, g, b)
             }
+
             Direction.NORTH -> {
-                lipQuad(pose, vc, a5, a6e, inner,  aB, a6e, inner,  aB, a6e, outer,   a5, a6e, outer,   0f, 1f, 0f, r, g, b)
-                lipQuad(pose, vc, a5, aAe, outer,  aB, aAe, outer,  aB, aAe, inner,   a5, aAe, inner,   0f,-1f, 0f, r, g, b)
-                lipQuad(pose, vc, a6e, a6, inner,  a6e, a6, outer,  a6e, aA, outer,   a6e, aA, inner,   1f, 0f, 0f, r, g, b)
-                lipQuad(pose, vc, aAe, a6, outer,  aAe, a6, inner,  aAe, aA, inner,   aAe, aA, outer,  -1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, a6e, inner, aB, a6e, inner, aB, a6e, outer, a5, a6e, outer, 0f, 1f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, aAe, outer, aB, aAe, outer, aB, aAe, inner, a5, aAe, inner, 0f, -1f, 0f, r, g, b)
+                lipQuad(pose, vc, a6e, a6, inner, a6e, a6, outer, a6e, aA, outer, a6e, aA, inner, 1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, aAe, a6, outer, aAe, a6, inner, aAe, aA, inner, aAe, aA, outer, -1f, 0f, 0f, r, g, b)
             }
+
             Direction.EAST -> {
                 // East ring is 4-px on all 4 strips — bottom/top-east are short (z=a6..aA),
                 // vertical-NE/SE are short (y=a6..aA).
-                lipQuad(pose, vc, inner, a6e, aA,  outer, a6e, aA,  outer, a6e, a6,   inner, a6e, a6,   0f, 1f, 0f, r, g, b)
-                lipQuad(pose, vc, inner, aAe, a6,  outer, aAe, a6,  outer, aAe, aA,   inner, aAe, aA,   0f,-1f, 0f, r, g, b)
-                lipQuad(pose, vc, inner, a6, a6e,  outer, a6, a6e,  outer, aA, a6e,   inner, aA, a6e,   0f, 0f, 1f, r, g, b)
-                lipQuad(pose, vc, outer, a6, aAe,  inner, a6, aAe,  inner, aA, aAe,   outer, aA, aAe,   0f, 0f,-1f, r, g, b)
+                lipQuad(pose, vc, inner, a6e, aA, outer, a6e, aA, outer, a6e, a6, inner, a6e, a6, 0f, 1f, 0f, r, g, b)
+                lipQuad(pose, vc, inner, aAe, a6, outer, aAe, a6, outer, aAe, aA, inner, aAe, aA, 0f, -1f, 0f, r, g, b)
+                lipQuad(pose, vc, inner, a6, a6e, outer, a6, a6e, outer, aA, a6e, inner, aA, a6e, 0f, 0f, 1f, r, g, b)
+                lipQuad(pose, vc, outer, a6, aAe, inner, a6, aAe, inner, aA, aAe, outer, aA, aAe, 0f, 0f, -1f, r, g, b)
             }
+
             Direction.WEST -> {
-                lipQuad(pose, vc, outer, a6e, aA,  inner, a6e, aA,  inner, a6e, a6,   outer, a6e, a6,   0f, 1f, 0f, r, g, b)
-                lipQuad(pose, vc, outer, aAe, a6,  inner, aAe, a6,  inner, aAe, aA,   outer, aAe, aA,   0f,-1f, 0f, r, g, b)
-                lipQuad(pose, vc, outer, a6, a6e,  inner, a6, a6e,  inner, aA, a6e,   outer, aA, a6e,   0f, 0f, 1f, r, g, b)
-                lipQuad(pose, vc, inner, a6, aAe,  outer, a6, aAe,  outer, aA, aAe,   inner, aA, aAe,   0f, 0f,-1f, r, g, b)
+                lipQuad(pose, vc, outer, a6e, aA, inner, a6e, aA, inner, a6e, a6, outer, a6e, a6, 0f, 1f, 0f, r, g, b)
+                lipQuad(pose, vc, outer, aAe, a6, inner, aAe, a6, inner, aAe, aA, outer, aAe, aA, 0f, -1f, 0f, r, g, b)
+                lipQuad(pose, vc, outer, a6, a6e, inner, a6, a6e, inner, aA, a6e, outer, aA, a6e, 0f, 0f, 1f, r, g, b)
+                lipQuad(pose, vc, inner, a6, aAe, outer, a6, aAe, outer, aA, aAe, inner, aA, aAe, 0f, 0f, -1f, r, g, b)
             }
+
             Direction.UP -> {
                 // top-north/top-south are long in X (a5..aB); top-west/top-east are short in Z.
-                lipQuad(pose, vc, a5, inner, a6e,  aB, inner, a6e,  aB, outer, a6e,   a5, outer, a6e,   0f, 0f, 1f, r, g, b)
-                lipQuad(pose, vc, aB, inner, aAe,  a5, inner, aAe,  a5, outer, aAe,   aB, outer, aAe,   0f, 0f,-1f, r, g, b)
-                lipQuad(pose, vc, a6e, inner, aA,  a6e, inner, a6,  a6e, outer, a6,   a6e, outer, aA,   1f, 0f, 0f, r, g, b)
-                lipQuad(pose, vc, aAe, inner, a6,  aAe, inner, aA,  aAe, outer, aA,   aAe, outer, a6,  -1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, inner, a6e, aB, inner, a6e, aB, outer, a6e, a5, outer, a6e, 0f, 0f, 1f, r, g, b)
+                lipQuad(pose, vc, aB, inner, aAe, a5, inner, aAe, a5, outer, aAe, aB, outer, aAe, 0f, 0f, -1f, r, g, b)
+                lipQuad(pose, vc, a6e, inner, aA, a6e, inner, a6, a6e, outer, a6, a6e, outer, aA, 1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, aAe, inner, a6, aAe, inner, aA, aAe, outer, aA, aAe, outer, a6, -1f, 0f, 0f, r, g, b)
             }
+
             Direction.DOWN -> {
-                lipQuad(pose, vc, a5, outer, a6e,  aB, outer, a6e,  aB, inner, a6e,   a5, inner, a6e,   0f, 0f, 1f, r, g, b)
-                lipQuad(pose, vc, aB, outer, aAe,  a5, outer, aAe,  a5, inner, aAe,   aB, inner, aAe,   0f, 0f,-1f, r, g, b)
-                lipQuad(pose, vc, a6e, outer, aA,  a6e, outer, a6,  a6e, inner, a6,   a6e, inner, aA,   1f, 0f, 0f, r, g, b)
-                lipQuad(pose, vc, aAe, outer, a6,  aAe, outer, aA,  aAe, inner, aA,   aAe, inner, a6,  -1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, outer, a6e, aB, outer, a6e, aB, inner, a6e, a5, inner, a6e, 0f, 0f, 1f, r, g, b)
+                lipQuad(pose, vc, aB, outer, aAe, a5, outer, aAe, a5, inner, aAe, aB, inner, aAe, 0f, 0f, -1f, r, g, b)
+                lipQuad(pose, vc, a6e, outer, aA, a6e, outer, a6, a6e, inner, a6, a6e, inner, aA, 1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, aAe, outer, a6, aAe, outer, aA, aAe, inner, aA, aAe, inner, a6, -1f, 0f, 0f, r, g, b)
             }
         }
     }
@@ -341,10 +384,30 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     ) {
         val overlay = OverlayTexture.NO_OVERLAY
         val light = 15728880
-        vc.addVertex(pose, x0, y0, z0).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, nx, ny, nz)
-        vc.addVertex(pose, x1, y1, z1).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, nx, ny, nz)
-        vc.addVertex(pose, x2, y2, z2).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, nx, ny, nz)
-        vc.addVertex(pose, x3, y3, z3).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay).setUv2(light, light).setNormal(pose, nx, ny, nz)
+        vc.addVertex(pose, x0, y0, z0)
+            .setUv(0f, 1f)
+            .setColor(r, g, b, 255)
+            .setOverlay(overlay)
+            .setUv2(light, light)
+            .setNormal(pose, nx, ny, nz)
+        vc.addVertex(pose, x1, y1, z1)
+            .setUv(1f, 1f)
+            .setColor(r, g, b, 255)
+            .setOverlay(overlay)
+            .setUv2(light, light)
+            .setNormal(pose, nx, ny, nz)
+        vc.addVertex(pose, x2, y2, z2)
+            .setUv(1f, 0f)
+            .setColor(r, g, b, 255)
+            .setOverlay(overlay)
+            .setUv2(light, light)
+            .setNormal(pose, nx, ny, nz)
+        vc.addVertex(pose, x3, y3, z3)
+            .setUv(0f, 0f)
+            .setColor(r, g, b, 255)
+            .setOverlay(overlay)
+            .setUv2(light, light)
+            .setNormal(pose, nx, ny, nz)
     }
 
     /** Resolve a face's [FaceTint] to a concrete (r, g, b) at submit time.
@@ -356,11 +419,13 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             (networkColor shr 8) and 0xFF,
             networkColor and 0xFF,
         )
+
         is FaceTint.Single -> Triple(
             (tint.rgb shr 16) and 0xFF,
             (tint.rgb shr 8) and 0xFF,
             tint.rgb and 0xFF,
         )
+
         is FaceTint.Mixed -> hsvToRgb(mixedHue, 0.85f, 1f)
     }
 
@@ -373,12 +438,12 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val x = c * (1f - kotlin.math.abs(((h / 60f) % 2f) - 1f))
         val m = v - c
         val (r1, g1, b1) = when {
-            h < 60f  -> Triple(c, x, 0f)
+            h < 60f -> Triple(c, x, 0f)
             h < 120f -> Triple(x, c, 0f)
             h < 180f -> Triple(0f, c, x)
             h < 240f -> Triple(0f, x, c)
             h < 300f -> Triple(x, 0f, c)
-            else     -> Triple(c, 0f, x)
+            else -> Triple(c, 0f, x)
         }
         return Triple(
             ((r1 + m) * 255f).toInt().coerceIn(0, 255),
@@ -411,15 +476,36 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
                 val by = link.side.stepY.toFloat()
                 val bz = link.side.stepZ.toFloat()
 
-                val ox: Float; val oy: Float; val oz: Float
-                val fx: Float; val fy: Float; val fz: Float
+                val ox: Float;
+                val oy: Float;
+                val oz: Float
+                val fx: Float;
+                val fy: Float;
+                val fz: Float
                 when (link.side) {
-                    Direction.NORTH -> { ox = 0.5f + offA; oy = 0.5f + offB; oz = 0.5f; fx = ox; fy = oy; fz = 0f }
-                    Direction.SOUTH -> { ox = 0.5f - offA; oy = 0.5f + offB; oz = 0.5f; fx = ox; fy = oy; fz = 1f }
-                    Direction.WEST  -> { ox = 0.5f; oy = 0.5f + offB; oz = 0.5f - offA; fx = 0f; fy = oy; fz = oz }
-                    Direction.EAST  -> { ox = 0.5f; oy = 0.5f + offB; oz = 0.5f + offA; fx = 1f; fy = oy; fz = oz }
-                    Direction.DOWN  -> { ox = 0.5f + offA; oy = 0.5f; oz = 0.5f + offB; fx = ox; fy = 0f; fz = oz }
-                    Direction.UP    -> { ox = 0.5f + offA; oy = 0.5f; oz = 0.5f + offB; fx = ox; fy = 1f; fz = oz }
+                    Direction.NORTH -> {
+                        ox = 0.5f + offA; oy = 0.5f + offB; oz = 0.5f; fx = ox; fy = oy; fz = 0f
+                    }
+
+                    Direction.SOUTH -> {
+                        ox = 0.5f - offA; oy = 0.5f + offB; oz = 0.5f; fx = ox; fy = oy; fz = 1f
+                    }
+
+                    Direction.WEST -> {
+                        ox = 0.5f; oy = 0.5f + offB; oz = 0.5f - offA; fx = 0f; fy = oy; fz = oz
+                    }
+
+                    Direction.EAST -> {
+                        ox = 0.5f; oy = 0.5f + offB; oz = 0.5f + offA; fx = 1f; fy = oy; fz = oz
+                    }
+
+                    Direction.DOWN -> {
+                        ox = 0.5f + offA; oy = 0.5f; oz = 0.5f + offB; fx = ox; fy = 0f; fz = oz
+                    }
+
+                    Direction.UP -> {
+                        ox = 0.5f + offA; oy = 0.5f; oz = 0.5f + offB; fx = ox; fy = 1f; fz = oz
+                    }
                 }
 
                 val midX = (ox + fx) / 2f + blockX
@@ -437,10 +523,14 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
 
                 val overlay = OverlayTexture.NO_OVERLAY
                 val a = 180
-                vc.addVertex(pose, ox - px, oy - py, oz - pz).setUv(0f, 0f).setColor(link.r, link.g, link.b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-                vc.addVertex(pose, ox + px, oy + py, oz + pz).setUv(0.3f, 0f).setColor(link.r, link.g, link.b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-                vc.addVertex(pose, fx + px, fy + py, fz + pz).setUv(0.3f, 1f).setColor(link.r, link.g, link.b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
-                vc.addVertex(pose, fx - px, fy - py, fz - pz).setUv(0f, 1f).setColor(link.r, link.g, link.b, a).setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, ox - px, oy - py, oz - pz).setUv(0f, 0f).setColor(link.r, link.g, link.b, a)
+                    .setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, ox + px, oy + py, oz + pz).setUv(0.3f, 0f).setColor(link.r, link.g, link.b, a)
+                    .setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, fx + px, fy + py, fz + pz).setUv(0.3f, 1f).setColor(link.r, link.g, link.b, a)
+                    .setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+                vc.addVertex(pose, fx - px, fy - py, fz - pz).setUv(0f, 1f).setColor(link.r, link.g, link.b, a)
+                    .setOverlay(overlay).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
             }
         }
     }
