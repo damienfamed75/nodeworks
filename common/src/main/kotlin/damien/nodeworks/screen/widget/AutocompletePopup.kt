@@ -2409,30 +2409,36 @@ class AutocompletePopup(
         // `forced` (Ctrl+Space) still allows empty-prefix completion.
         if (partial.isEmpty() && !forced) return emptyList()
 
-        val apiFunctions = listOf(
-            suggest("scheduler", "scheduler  module", Kind.MODULE),
-            suggest("network", "network  module", Kind.MODULE),
-            suggest("importer", "importer  module", Kind.MODULE),
-            suggest("stocker", "stocker  module", Kind.MODULE),
-            suggest("print(", "print(message: any)", Kind.FUNCTION),
-            suggest("error(", "error(message: string)  throw an error", Kind.FUNCTION),
-            suggest("clock(", "clock() → number", Kind.FUNCTION),
-            suggest("string", "string library", Kind.MODULE),
-            suggest("math", "math library", Kind.MODULE),
-            suggest("table", "table library", Kind.MODULE),
-            suggest("tostring", "tostring(value: any) → string", Kind.FUNCTION),
-            suggest("tonumber", "tonumber(value: any) → number?", Kind.FUNCTION),
-            suggest("type", "type(value: any) → string", Kind.FUNCTION),
-            suggest("pairs", "pairs(t: table) → function", Kind.FUNCTION),
-            suggest("ipairs", "ipairs(t: table) → function", Kind.FUNCTION),
-            suggest("select", "select(index: number, ...) → any", Kind.FUNCTION),
-            suggest("unpack", "unpack(t: table) → ...", Kind.FUNCTION)
-        )
-        val keywords = listOf(
-            "local", "function", "end",
-            "if", "then", "else", "elseif", "for", "while", "do", "return",
-            "true", "false", "nil", "not", "and", "or"
-        ).map { suggest(it, kind = Kind.KEYWORD) }
+        // If the partial is a complete Lua keyword, the user has typed a syntactic
+        // marker (`do`, `then`, `end`), not an identifier prefix. Suppress the
+        // popup entirely so Enter falls through to inserting a newline instead
+        // of accepting a fuzzy-matched card-import suggestion. Sourced from the
+        // registry so the keyword set stays in sync with [LuaGlobalsApi].
+        if (
+            damien.nodeworks.script.api.LuaApiRegistry.docFor(partial)?.category ==
+            damien.nodeworks.script.api.ApiCategory.KEYWORD
+        ) return emptyList()
+
+        // Registry-driven: every module + bare function + Lua keyword comes from
+        // the same single-source spec ([LuaGlobalsApi] for keywords + bare globals,
+        // each module's spec file for the module aliases). Lowercase-key filter on
+        // module docs picks the script-callable alias (`network`) and skips the
+        // capitalised type entry (`Network`) which is for type-annotation use.
+        val registryGlobals = damien.nodeworks.script.api.LuaApiRegistry.allDocs().values
+        val moduleSuggestions = registryGlobals
+            .filter {
+                it.category == damien.nodeworks.script.api.ApiCategory.MODULE &&
+                    it.displayName.firstOrNull()?.isLowerCase() == true
+            }
+            .map { suggest(it.displayName, it.signature, Kind.MODULE) }
+        val globalFunctionSuggestions = registryGlobals
+            .filter { it.category == damien.nodeworks.script.api.ApiCategory.FUNCTION }
+            .map { suggest("${it.displayName}(", it.signature, Kind.FUNCTION) }
+        val apiFunctions = moduleSuggestions + globalFunctionSuggestions
+
+        val keywords = registryGlobals
+            .filter { it.category == damien.nodeworks.script.api.ApiCategory.KEYWORD }
+            .map { suggest(it.displayName, kind = Kind.KEYWORD) }
         // Variables are scoped: only surface names declared BEFORE the cursor. Using
         // fullText would offer `myVar` in `myVa|\nlocal myVar = 0`, suggesting code that
         // isn't yet valid. For-loop bindings + function params follow the same rule

@@ -101,78 +101,7 @@ object LuaApiDocs {
      *  in here is a candidate for [damien.nodeworks.script.api] migration, when an
      *  entry moves over, delete it from this builder. */
     private fun legacyEntries(): Map<String, Doc> = buildMap {
-        // ===== Lua keywords =====
-        put(
-            "local", Doc(
-                signature = "local <name> = <value>",
-                description = "Declares a variable scoped to the enclosing block.",
-                category = Category.KEYWORD,
-            )
-        )
-        put(
-            "function", Doc(
-                signature = "function <name>(<params>) … end",
-                description = "Declares a function. Use `local function` to keep it block-scoped.",
-                category = Category.KEYWORD,
-            )
-        )
-        put(
-            "if", Doc(
-                signature = "if <cond> then … [elseif …] [else …] end",
-                description = "Conditional branch.",
-                category = Category.KEYWORD,
-            )
-        )
-        put(
-            "for", Doc(
-                signature = "for i = start, stop[, step] do … end  |  for k, v in pairs(t) do … end",
-                description = "Numeric or generic loop. `pairs` iterates tables; `ipairs` iterates integer arrays in order.",
-                category = Category.KEYWORD,
-            )
-        )
-        put(
-            "while", Doc(
-                signature = "while <cond> do … end",
-                description = "Loops while the condition is truthy.",
-                category = Category.KEYWORD,
-            )
-        )
-        put(
-            "return", Doc(
-                signature = "return [values…]",
-                description = "Returns from the current function, optionally yielding values.",
-                category = Category.KEYWORD,
-            )
-        )
-        put(
-            "break", Doc(
-                description = "Exits the innermost enclosing loop.",
-                category = Category.KEYWORD,
-            )
-        )
-
-        // ===== Globals =====
-        put(
-            "print", Doc(
-                signature = "print(…)",
-                description = "Writes its arguments to the terminal log, space separated.",
-                category = Category.FUNCTION,
-            )
-        )
-        put(
-            "require", Doc(
-                signature = "require(modName) → module",
-                description = "Loads and returns a Lua module from another script tab in this terminal.",
-                category = Category.FUNCTION,
-            )
-        )
-        put(
-            "clock", Doc(
-                signature = "clock() → number",
-                description = "Fractional seconds since this script started running.",
-                category = Category.FUNCTION,
-            )
-        )
+        // Keywords + globals migrated to damien.nodeworks.script.api.LuaGlobalsApi.
 
         // ===== network / Network / Channel / HandleList =====
         // Migrated to damien.nodeworks.script.api.NetworkApi (covers Network, Channel,

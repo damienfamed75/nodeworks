@@ -94,6 +94,60 @@ fun function(init: FunctionTypeBuilder.() -> Unit): LuaType.Function {
     return fb.build()
 }
 
+/** Build an [ApiDoc] for a Lua keyword (`local`, `function`, etc.). Keywords have
+ *  a hand-typed signature since they don't have meaningful return types or
+ *  user-callable params. Registered via [LuaApiRegistry.registerGlobal]. */
+fun keyword(
+    name: String,
+    signature: String,
+    description: String,
+    guidebookRef: String? = null,
+): ApiDoc = ApiDoc(
+    key = name,
+    displayName = name,
+    category = ApiCategory.KEYWORD,
+    signature = signature,
+    description = description,
+    guidebookRef = guidebookRef,
+)
+
+/** Build an [ApiDoc] for a top-level Lua function (`print`, `clock`, `tostring`,
+ *  Lua stdlib helpers). The signature is hand-typed because variadic args (`...`)
+ *  and Lua's optional-arg conventions don't map cleanly to the structured
+ *  param/return shape that [method] produces. Registered via
+ *  [LuaApiRegistry.registerGlobal]. */
+fun globalFunction(
+    name: String,
+    signature: String,
+    description: String,
+    guidebookRef: String? = null,
+    example: String? = null,
+): ApiDoc = ApiDoc(
+    key = name,
+    displayName = name,
+    category = ApiCategory.FUNCTION,
+    signature = signature,
+    description = description,
+    guidebookRef = guidebookRef,
+    example = example,
+)
+
+/** Build an [ApiDoc] for a top-level Lua stdlib module (`string`, `math`,
+ *  `table`). Carries no method specs, the modules' methods are registered
+ *  separately on demand or fall through to LuaJ's runtime behaviour. */
+fun globalModule(
+    name: String,
+    description: String,
+    guidebookRef: String? = null,
+): ApiDoc = ApiDoc(
+    key = name,
+    displayName = name,
+    category = ApiCategory.MODULE,
+    signature = "$name: module",
+    description = description,
+    guidebookRef = guidebookRef,
+)
+
 class ApiSurfaceBuilder internal constructor(private val receiver: LuaType.Named) {
     private val methods = mutableListOf<ApiDoc>()
     private val properties = mutableListOf<ApiDoc>()

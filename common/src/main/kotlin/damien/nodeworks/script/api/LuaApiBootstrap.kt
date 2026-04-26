@@ -54,5 +54,8 @@ object LuaApiBootstrap {
         LuaApiRegistry.register(ImporterBuilderApi)
         LuaApiRegistry.register(StockerApi)
         LuaApiRegistry.register(StockerBuilderApi)
+        for (doc in LUA_KEYWORDS) LuaApiRegistry.registerGlobal(doc)
+        for (doc in LUA_GLOBAL_FUNCTIONS) LuaApiRegistry.registerGlobal(doc)
+        for (doc in LUA_STDLIB_MODULES) LuaApiRegistry.registerGlobal(doc)
     }
 }
