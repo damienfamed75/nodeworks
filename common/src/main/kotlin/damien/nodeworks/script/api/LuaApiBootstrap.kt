@@ -35,5 +35,15 @@ object LuaApiBootstrap {
         LuaApiRegistry.register(SchedulerApi)
         LuaApiRegistry.register(ItemsHandleApi)
         LuaApiRegistry.register(CardHandleApi)
+        LuaApiRegistry.register(JobApi)
+        LuaApiRegistry.register(RedstoneCardApi)
+        LuaApiRegistry.register(ObserverCardApi)
+        LuaApiRegistry.register(BreakerHandleApi)
+        LuaApiRegistry.register(BreakBuilderApi)
+        LuaApiRegistry.register(PlacerHandleApi)
+        LuaApiRegistry.register(VariableHandleApi)
+        LuaApiRegistry.register(NumberVariableHandleApi)
+        LuaApiRegistry.register(StringVariableHandleApi)
+        LuaApiRegistry.register(BoolVariableHandleApi)
     }
 }

@@ -384,22 +384,7 @@ object LuaApiDocs {
         // callbacks (`network:handle`, `:connect`) or as a return value from a method.
         // Documenting them here lets hover tooltips resolve the bare type names and
         // the short method list under each of them.
-        put(
-            "Job", Doc(
-                signature = "type Job",
-                description = "The first argument to a `network:handle` callback. Represents the in-flight processing job.",
-                category = Category.TYPE,
-                guidebookRef = "nodeworks:lua-api/network.md#handle",
-            )
-        )
-        put(
-            "Job:pull", Doc(
-                signature = "Job:pull(card: CardHandle, …)",
-                description = "Pulls an output from the given card so the Crafting CPU can collect it.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/network.md#handle",
-            )
-        )
+        // Job migrated to damien.nodeworks.script.api.JobApi.
         put(
             "InputItems", Doc(
                 signature = "type InputItems",
@@ -640,352 +625,15 @@ object LuaApiDocs {
         // ===== CardHandle =====
         // Migrated to damien.nodeworks.script.api.CardHandleApi.
 
-        // RedstoneCard is the same underlying Lua table as CardHandle, `.name` is set
-        // by CardHandle.create before any redstone-specific rebinding. Mirror the doc
-        // entry under the RedstoneCard key so hover tooltips resolve for variables
-        // typed as RedstoneCard.
-        put(
-            "RedstoneCard.name", Doc(
-                signature = "RedstoneCard.name: string",
-                description = "The card's alias.",
-                category = Category.PROPERTY,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#properties",
-            )
-        )
-        put(
-            "RedstoneCard", Doc(
-                signature = "type RedstoneCard",
-                description = "A card attached to a Redstone Card capability. Exposes redstone methods instead of the inventory methods.",
-                category = Category.TYPE,
-                guidebookRef = "nodeworks:lua-api/card-handle.md",
-            )
-        )
-        put(
-            "RedstoneCard:powered", Doc(
-                signature = "RedstoneCard:powered() → boolean",
-                description = "True if the incoming redstone signal is greater than 0.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#powered",
-            )
-        )
-        put(
-            "RedstoneCard:strength", Doc(
-                signature = "RedstoneCard:strength() → number",
-                description = "Current incoming redstone signal strength from 0 to 15.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#strength",
-            )
-        )
-        put(
-            "RedstoneCard:set", Doc(
-                signature = "RedstoneCard:set(value: boolean | number)",
-                description = "Emits a redstone signal. Boolean maps to 15 or 0. Number is clamped to 0 to 15.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#set",
-            )
-        )
-        put(
-            "RedstoneCard:onChange", Doc(
-                signature = "RedstoneCard:onChange(fn: (strength: number) → nil)",
-                description = "Registers a callback fired whenever the incoming signal strength changes.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#onchange",
-            )
-        )
-
-        // ===== ObserverCard =====
-        // Reads block id and state at the watched position. Drives stage-aware harvesting,
-        // fluid level checks, and any other "do X when this block becomes Y" automation
-        // without scripts having to poll on a scheduler.
-        put(
-            "ObserverCard", Doc(
-                signature = "type ObserverCard",
-                description = "A card that reads the block at its facing position. Exposes block(), state(), and onChange() instead of inventory methods.",
-                category = Category.TYPE,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#observer-card",
-            )
-        )
-        put(
-            "ObserverCard:block", Doc(
-                signature = "ObserverCard:block() → string",
-                description = "Block id at the watched position, e.g. `\"minecraft:diamond_ore\"` or `\"nodeworks:celestine_cluster\"`.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#block",
-            )
-        )
-        put(
-            "ObserverCard:state", Doc(
-                signature = "ObserverCard:state() → { [string]: any }",
-                description = "Property table for the watched block. Keys are property names; values are numbers, booleans, or lowercase strings.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#state",
-            )
-        )
-        put(
-            "ObserverCard:onChange", Doc(
-                signature = "ObserverCard:onChange(fn: (block: string, state: { [string]: any }) → nil)",
-                description = "Fires whenever the watched block id or any state property changes. Replaces any prior handler on the same card.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/card-handle.md#observer-onchange",
-            )
-        )
-
-        // ===== BreakerHandle =====
-        // Device that breaks the block at its facing position over time. Drops route
-        // to network storage by default, chain `:mine():connect(fn)` to redirect.
-        put(
-            "BreakerHandle", Doc(
-                signature = "type BreakerHandle",
-                description = "A Breaker device. Diamond-pickaxe tier; break duration uses the wooden-pickaxe formula.",
-                category = Category.TYPE,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md",
-            )
-        )
-        put(
-            "BreakerHandle:mine", Doc(
-                signature = "BreakerHandle:mine() → BreakBuilder",
-                description = "Starts a multi-tick break of the block in front. Returns a builder; chain :connect(fn) to redirect drops, or leave unchained to route drops to network storage.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md#mine",
-            )
-        )
-        put(
-            "BreakerHandle:cancel", Doc(
-                signature = "BreakerHandle:cancel()",
-                description = "Aborts the in-flight break, if any. Safe to call when idle.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md#cancel",
-            )
-        )
-        put(
-            "BreakerHandle:block", Doc(
-                signature = "BreakerHandle:block() → string",
-                description = "Block id at the breaker's facing position.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md#block",
-            )
-        )
-        put(
-            "BreakerHandle:state", Doc(
-                signature = "BreakerHandle:state() → { [string]: any }",
-                description = "Property table for the block at the breaker's facing position.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md#state",
-            )
-        )
-        put(
-            "BreakerHandle:isMining", Doc(
-                signature = "BreakerHandle:isMining() → boolean",
-                description = "True when a break is in progress.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md#isMining",
-            )
-        )
-        put(
-            "BreakerHandle:progress", Doc(
-                signature = "BreakerHandle:progress() → number",
-                description = "0..1 fraction of the current break's progress. 0 when idle.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md#progress",
-            )
-        )
-
-        // ===== BreakBuilder =====
-        put(
-            "BreakBuilder", Doc(
-                signature = "type BreakBuilder",
-                description = "Returned by Breaker:mine(). Configures how the drops route once the break completes.",
-                category = Category.TYPE,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md#breakbuilder",
-            )
-        )
-        put(
-            "BreakBuilder:connect", Doc(
-                signature = "BreakBuilder:connect(fn: function(items: ItemsHandle))",
-                description = "Redirects drops to a script handler instead of network storage. The handler receives one ItemsHandle per drop stack.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/breaker-handle.md#connect",
-            )
-        )
-
-        // ===== PlacerHandle =====
-        put(
-            "PlacerHandle", Doc(
-                signature = "type PlacerHandle",
-                description = "A Placer device. Pulls one item from network storage and places it as a block in front.",
-                category = Category.TYPE,
-                guidebookRef = "nodeworks:lua-api/placer-handle.md",
-            )
-        )
-        put(
-            "PlacerHandle:place", Doc(
-                signature = "PlacerHandle:place(item: string | ItemsHandle) → boolean",
-                description = "Pulls one of [item] from network storage and places it. Returns true on success, false if the source is empty, the target isn't replaceable, or the item isn't a block.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/placer-handle.md#place",
-            )
-        )
-        put(
-            "PlacerHandle:block", Doc(
-                signature = "PlacerHandle:block() → string",
-                description = "Block id at the placer's facing position.",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/placer-handle.md#block",
-            )
-        )
-        put(
-            "PlacerHandle:isBlocked", Doc(
-                signature = "PlacerHandle:isBlocked() → boolean",
-                description = "True if the target position is non-replaceable (a place would fail).",
-                category = Category.METHOD,
-                guidebookRef = "nodeworks:lua-api/placer-handle.md#isBlocked",
-            )
-        )
+        // RedstoneCard, ObserverCard, BreakerHandle, BreakBuilder, PlacerHandle
+        // migrated to damien.nodeworks.script.api.{RedstoneCardApi, ObserverCardApi,
+        // BreakerApi, PlacerApi}.
 
         // ===== ItemsHandle =====
         // Migrated to damien.nodeworks.script.api.ItemsHandleApi.
 
-        // ===== VariableHandle =====
-        put(
-            "VariableHandle", Doc(
-                signature = "type VariableHandle",
-                description = "A handle to a network variable returned by `Network:get`.",
-                category = Category.TYPE,
-            )
-        )
-        put(
-            "VariableHandle:get", Doc(
-                signature = "VariableHandle:get() → any",
-                description = "Returns the variable's current value.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "VariableHandle:set", Doc(
-                signature = "VariableHandle:set(value)",
-                description = "Sets the variable's value. Must match the variable's declared type.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "VariableHandle:cas", Doc(
-                signature = "VariableHandle:cas(expected, new) → boolean",
-                description = "Compare and swap. Sets the variable to `new` only if its current value equals `expected`. Returns true on success.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "VariableHandle:type", Doc(
-                signature = "VariableHandle:type() → string",
-                description = "Returns the variable's declared type as a string.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "VariableHandle.name", Doc(
-                signature = "VariableHandle.name: string",
-                description = "The variable's declared name.",
-                category = Category.PROPERTY,
-                guidebookRef = "nodeworks:lua-api/variable-handle.md",
-            )
-        )
-        put(
-            "VariableHandle:tryLock", Doc(
-                signature = "VariableHandle:tryLock() → boolean",
-                description = "Attempts to acquire the variable's lock. Returns true on success, false if another script holds it.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "VariableHandle:unlock", Doc(
-                signature = "VariableHandle:unlock()",
-                description = "Releases a lock acquired via `:tryLock`.",
-                category = Category.METHOD,
-            )
-        )
-
-        // Number-typed variables:
-        put(
-            "NumberVariableHandle", Doc(
-                signature = "type NumberVariableHandle",
-                description = "A `VariableHandle` with numeric-specific helpers.",
-                category = Category.TYPE,
-            )
-        )
-        put(
-            "NumberVariableHandle:increment", Doc(
-                signature = "NumberVariableHandle:increment([by: number = 1])",
-                description = "Adds `by` to the variable atomically. Defaults to 1.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "NumberVariableHandle:decrement", Doc(
-                signature = "NumberVariableHandle:decrement([by: number = 1])",
-                description = "Subtracts `by` from the variable atomically. Defaults to 1.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "NumberVariableHandle:min", Doc(
-                signature = "NumberVariableHandle:min(other: number)",
-                description = "Sets the variable to `min(current, other)` atomically.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "NumberVariableHandle:max", Doc(
-                signature = "NumberVariableHandle:max(other: number)",
-                description = "Sets the variable to `max(current, other)` atomically.",
-                category = Category.METHOD,
-            )
-        )
-
-        // String-typed variables:
-        put(
-            "StringVariableHandle", Doc(
-                signature = "type StringVariableHandle",
-                description = "A `VariableHandle` with string-specific helpers.",
-                category = Category.TYPE,
-            )
-        )
-        put(
-            "StringVariableHandle:append", Doc(
-                signature = "StringVariableHandle:append(str: string)",
-                description = "Appends `str` to the current value.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "StringVariableHandle:length", Doc(
-                signature = "StringVariableHandle:length() → number",
-                description = "Length of the current string value.",
-                category = Category.METHOD,
-            )
-        )
-        put(
-            "StringVariableHandle:clear", Doc(
-                signature = "StringVariableHandle:clear()",
-                description = "Sets the variable to the empty string.",
-                category = Category.METHOD,
-            )
-        )
-
-        // Bool-typed variables:
-        put(
-            "BoolVariableHandle", Doc(
-                signature = "type BoolVariableHandle",
-                description = "A `VariableHandle` with a boolean-specific helper.",
-                category = Category.TYPE,
-            )
-        )
-        put(
-            "BoolVariableHandle:toggle", Doc(
-                signature = "BoolVariableHandle:toggle()",
-                description = "Flips the boolean value.",
-                category = Category.METHOD,
-            )
-        )
+        // VariableHandle and its Number/String/Bool variants migrated to
+        // damien.nodeworks.script.api.VariableApi.
     }
 
     /** Direct key lookup. */
@@ -1148,6 +796,50 @@ object LuaApiDocs {
         return methodReturnType(methodName, receiverType)?.type
     }
 
+    /** Resolve the element type at the end of an indexed chain like
+     *  `findEach(...)[0]` or `myList[i]`. Walks back from the closing `]` to the
+     *  matching `[`, then looks at the token before `[`:
+     *    * `)` → recurse via [resolveChainEndType] for the chain's own (already
+     *      element-form) return type. The `[N]` is a no-op since
+     *      [methodReturnType] already strips the container wrapper.
+     *    * Identifier → look up its container annotation in [variableTypes] and
+     *      strip the wrapper to get the element type.
+     *
+     *  Returns null when the bracket isn't balanced or the indexed value isn't a
+     *  container, callers fall through to other resolution paths in that case. */
+    private fun resolveIndexedEndType(
+        tokens: List<LuaTokenizer.Token>,
+        closeBracketIdx: Int,
+        variableTypes: Map<String, String>,
+    ): String? {
+        if (closeBracketIdx < 0 || tokens.getOrNull(closeBracketIdx)?.text != "]") return null
+        var depth = 1
+        var m = closeBracketIdx - 1
+        while (m >= 0) {
+            when (tokens[m].text) {
+                "]" -> depth++
+                "[" -> {
+                    depth--
+                    if (depth == 0) break
+                }
+            }
+            m--
+        }
+        if (m < 0) return null
+        var n = m - 1
+        while (n >= 0 && tokens[n].text.isBlank()) n--
+        if (n < 0) return null
+        val prev = tokens[n]
+        return when (prev.text) {
+            ")" -> resolveChainEndType(tokens, n, variableTypes)
+            else -> {
+                val varType = variableTypes[prev.text] ?: return null
+                val rt = parseReturnType("() → $varType") ?: return null
+                if (rt.container != Container.NONE) rt.type else null
+            }
+        }
+    }
+
     /** Look up the doc for `ownerType:method` (or `.field`), with HandleList<T>
      *  awareness: a hover on a broadcast method falls back to the underlying T's
      *  doc so users see the real signature + description + guidebook link instead
@@ -1199,6 +891,11 @@ object LuaApiDocs {
                         val chainType = resolveChainEndType(tokens, k, variableTypes)
                         if (chainType != null) {
                             lookupTypedMethod(chainType, sep.text, tok.text)?.let { return it }
+                        }
+                    } else if (owner.text == "]") {
+                        val elementType = resolveIndexedEndType(tokens, k, variableTypes)
+                        if (elementType != null) {
+                            lookupTypedMethod(elementType, sep.text, tok.text)?.let { return it }
                         }
                     } else {
                         val ownerEligible = owner.type == LuaTokenizer.TokenType.DEFAULT ||

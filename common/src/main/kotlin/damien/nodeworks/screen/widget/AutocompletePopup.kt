@@ -779,6 +779,38 @@ class AutocompletePopup(
         return null
     }
 
+    /** Strip a trailing `[…]` from [expr] and resolve the resulting prefix to its
+     *  element type. Used by both the symbol-table inference for
+     *  `local x = chain[N]` and the property-access inference for `chain[N].field`.
+     *  Returns null when the prefix doesn't resolve to a container. */
+    private fun resolveIndexedElementType(expr: String, symbols: Map<String, String>): String? {
+        val prefix = stripIndexBrackets(expr)?.trimEnd() ?: return null
+        val rt = if (prefix.endsWith(")")) {
+            resolveExpressionReturnType(prefix)
+        } else {
+            val containerType = symbols[prefix] ?: return null
+            LuaApiDocs.parseReturnType("() → $containerType")
+        }
+        return if (rt != null && rt.container != LuaApiDocs.Container.NONE) rt.type else null
+    }
+
+    /** Look up the declared type of a property on a registered TYPE. Tries the
+     *  migrated registry first (returnType.display gives canonical form), falls
+     *  back to parsing the legacy `Type.field` entry's signature for unmigrated
+     *  surfaces. Returns null when the property isn't documented anywhere, the
+     *  caller leaves the symbol untyped in that case. */
+    private fun lookupPropertyType(typeName: String, fieldName: String): String? {
+        val registryProp = damien.nodeworks.script.api.LuaApiRegistry
+            .propertiesOf(typeName)
+            .firstOrNull { it.displayName == fieldName }
+        if (registryProp != null) return registryProp.returnType.display
+
+        val legacySig = LuaApiDocs.get("$typeName.$fieldName")?.signature ?: return null
+        val colonIdx = legacySig.indexOf(':')
+        if (colonIdx < 0) return null
+        return legacySig.substring(colonIdx + 1).trim()
+    }
+
     /**
      * Unwrap a container type string (as stored in the symbol table: `{ T }` for arrays,
      * `{ [K]: V }` for maps) into the element type T / V. Returns null when [type] is
@@ -1355,6 +1387,30 @@ class AutocompletePopup(
             if (f.returnType != null) funcReturnTypes[f.name] = f.returnType
         }
 
+        // For-loop element inference runs BEFORE the general `local x = expr` pass so
+        // locals declared inside a for-body that reference the loop variable
+        // (`local a = val.id`) can pick up its inferred type. The pass populates
+        // [symbols] for the value binding and the key binding when the latter isn't `_`.
+        val forPattern = Regex("""\bfor\s+(\w+)(?:\s*,\s*(\w+))?\s+in\s+(.+?)\s+do\b""")
+        for (match in forPattern.findAll(fullText)) {
+            val keyName = match.groupValues[1]
+            val valName = match.groupValues[2].takeIf { it.isNotEmpty() }
+            val rawExpr = match.groupValues[3].trim()
+            val iterKind = containerFromIterExpr(rawExpr, fullText, containerVars) ?: continue
+            val (elementType, container) = iterKind
+            if (valName != null) {
+                if (valName !in symbols) symbols[valName] = elementType
+                if (keyName !in symbols && keyName != "_") {
+                    val keyType = when (container) {
+                        LuaApiDocs.Container.ARRAY -> "number"
+                        LuaApiDocs.Container.MAP -> "string"
+                        else -> null
+                    }
+                    if (keyType != null) symbols[keyName] = keyType
+                }
+            }
+        }
+
         // General inference: local x = expr
         // (`containerVars` was initialized above and may already carry explicit-annotation
         // entries, RHS-inferred container types are merged in below without overwriting
@@ -1372,6 +1428,32 @@ class AutocompletePopup(
                 }
                 if (literalType != null) {
                     symbols[varName] = literalType
+                } else if (rhs.endsWith("]")) {
+                    // Indexed RHS like `findEach(...)[0]` or `myList[i]`. Strip the
+                    // trailing `[…]`, resolve the prefix, and pull out the element
+                    // type if the prefix is a container. Falls through silently
+                    // when the prefix isn't a container so a non-indexable typo
+                    // doesn't pollute the symbol table.
+                    val elementType = resolveIndexedElementType(rhs, symbols)
+                    if (elementType != null) symbols[varName] = elementType
+                } else if (Regex(""".+\.\w+$""").containsMatchIn(rhs)) {
+                    // Property access at end like `chain.id` or `chain[0].id`. Resolve
+                    // the prefix's type, then look up the field's declared type on it.
+                    // Routes through both the migrated registry and the legacy entries
+                    // so unmigrated types still infer as long as their property docs
+                    // exist under the legacy `Type.field` key.
+                    val dotIdx = rhs.lastIndexOf('.')
+                    val prefix = rhs.substring(0, dotIdx).trimEnd()
+                    val field = rhs.substring(dotIdx + 1).trim()
+                    val prefixType = when {
+                        prefix.endsWith("]") -> resolveIndexedElementType(prefix, symbols)
+                        prefix.endsWith(")") -> resolveExpressionType(prefix)
+                        else -> symbols[prefix]
+                    }
+                    if (prefixType != null) {
+                        val fieldType = lookupPropertyType(prefixType, field)
+                        if (fieldType != null) symbols[varName] = fieldType
+                    }
                 } else if (rhs.endsWith(")")) {
                     // Try chain resolution (handles method calls like :find, :face, etc.)
                     val chainType = resolveExpressionType(rhs)
@@ -1419,38 +1501,6 @@ class AutocompletePopup(
                 LuaApiDocs.Container.ARRAY -> "{ $element }"
                 LuaApiDocs.Container.MAP -> "{ [string]: $element }"
                 LuaApiDocs.Container.NONE -> element
-            }
-        }
-
-        // For-loop element inference: `for _, v in EXPR do` / `for v in EXPR do` where
-        // EXPR returns a container. Handles three shapes:
-        //   for _, v in fn() do            -- direct container-returning call
-        //   for _, v in ipairs(fn()) do    -- explicit ipairs, any container-returning expr inside
-        //   for _, v in vars do            -- bare var that holds a container (from local inference)
-        //   for _, v in ipairs(vars) do    -- explicit wrapper around a container-holding var
-        // All four unwrap to the same element-type lookup.
-        val forPattern = Regex("""\bfor\s+(\w+)(?:\s*,\s*(\w+))?\s+in\s+(.+?)\s+do\b""")
-        for (match in forPattern.findAll(fullText)) {
-            val keyName = match.groupValues[1]
-            val valName = match.groupValues[2].takeIf { it.isNotEmpty() }
-            val rawExpr = match.groupValues[3].trim()
-            val iterKind = containerFromIterExpr(rawExpr, fullText, containerVars) ?: continue
-            val (elementType, container) = iterKind
-
-            // `for k, v in ...`: k = key, v = element.
-            // `for v in ...`: v = key (first return of the iterator, index for ipairs,
-            // string for pairs). Only when two names are present does the element type
-            // get bound.
-            if (valName != null) {
-                if (valName !in symbols) symbols[valName] = elementType
-                if (keyName !in symbols && keyName != "_") {
-                    val keyType = when (container) {
-                        LuaApiDocs.Container.ARRAY -> "number"
-                        LuaApiDocs.Container.MAP -> "string"
-                        else -> null
-                    }
-                    if (keyType != null) symbols[keyName] = keyType
-                }
             }
         }
 
