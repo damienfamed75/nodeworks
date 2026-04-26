@@ -26,16 +26,16 @@ import guideme.scene.level.GuidebookLevel
  * `LytBox.computeLayout` (a `final` method on the parent class) reads each padding field
  * twice per layout pass:
  *
- *   1. Before calling `computeBoxLayout`, to offset `x` and shrink `availableWidth` — so
+ *   1. Before calling `computeBoxLayout`, to offset `x` and shrink `availableWidth`, so
  *      the subclass sees a reduced box. `LytGuidebookScene.computeBoxLayout` then uses
  *      `this.paddingTop + paddingBottom` again to grow `prefSceneSize` which becomes the
  *      viewport size (and, via `viewport.setBounds`, the camera's ortho viewport size).
  *   2. After `computeBoxLayout` returns, to `innerLayout.expand(paddingLeft, paddingTop,
- *      paddingRight, paddingBottom)` — adding the same value AGAIN as an outer canvas
+ *      paddingRight, paddingBottom)`, adding the same value AGAIN as an outer canvas
  *      margin around the viewport.
  *
  * Same fields, two uses. A non-zero `paddingTop` grows the viewport AND stamps extra
- * canvas above/below the viewport. No halving or color-trickery hides that — the only
+ * canvas above/below the viewport. No halving or color-trickery hides that, the only
  * actual fix is to decouple the two.
  *
  * ## How we decouple them
@@ -48,9 +48,9 @@ import guideme.scene.level.GuidebookLevel
  *   2. Temporarily write the camera-padding values INTO the LytBox padding fields. This
  *      is what `LytGuidebookScene.computeBoxLayout` (the superclass implementation we're
  *      about to call) reads when sizing the viewport.
- *   3. Delegate to `super.computeBoxLayout` — viewport grows as expected.
+ *   3. Delegate to `super.computeBoxLayout`, viewport grows as expected.
  *   4. Restore LytBox padding back to `0` in a `finally` so the subsequent
- *      `innerLayout.expand` in `LytBox.computeLayout` expands by zero — no outer margin.
+ *      `innerLayout.expand` in `LytBox.computeLayout` expands by zero, no outer margin.
  *
  * Net: viewport grows by exactly the user-specified amount, outer `LytGuidebookScene`
  * rect stays flush to the viewport. No double-count, no empty outer ring.
@@ -63,13 +63,13 @@ import guideme.scene.level.GuidebookLevel
  * propagation) and instantiate our [NodeworksGameScene] subclass in place of the default.
  *
  * We rebuild the `elementTagCompilers` lookup from the `SceneElementTagCompiler`
- * extension point the same way super does (in `onExtensionsBuilt`) — super's copy is
+ * extension point the same way super does (in `onExtensionsBuilt`), super's copy is
  * private, but the rebuild is cheap and lets us keep full fidelity with the default
  * child-tag dispatch.
  *
  * ## Attributes
  *
- * `paddingTop` / `paddingBottom` / `paddingLeft` / `paddingRight` — all layout pixels,
+ * `paddingTop` / `paddingBottom` / `paddingLeft` / `paddingRight`, all layout pixels,
  * all optional, all inherit the uniform `padding` default when absent. Unlike the
  * default `<GameScene>` behaviour, these values are the ACTUAL camera-viewport growth
  * (no 2× inflation), so `paddingTop="40"` really means "40 more pixels of camera view
@@ -117,7 +117,7 @@ class NodeworksSceneTagCompiler : SceneTagCompiler() {
         cameraSettings.zoom = zoom
         val scene = GuidebookScene(level, cameraSettings)
 
-        // Child-tag dispatch. Same shape as super.compile — iterate MDX children, look up
+        // Child-tag dispatch. Same shape as super.compile, iterate MDX children, look up
         // a SceneElementTagCompiler by tag name, delegate to it. Unknown tags produce an
         // inline error in the parent layout container exactly like the default compiler.
         for (child in el.children()) {
@@ -146,7 +146,7 @@ class NodeworksSceneTagCompiler : SceneTagCompiler() {
         lytScene.cameraPadBottom = padBottom
         lytScene.cameraPadLeft = padLeft
         lytScene.cameraPadRight = padRight
-        // setScene must be called AFTER cameraSettings is final — it snapshots them into
+        // setScene must be called AFTER cameraSettings is final, it snapshots them into
         // initialCameraSettings, which drives the interactive Reset View button. Doing it
         // here (post-offset-compensation) means Reset returns to the shifted framing, not
         // the raw centerScene output.
@@ -190,7 +190,7 @@ class NodeworksGameScene(extensions: ExtensionCollection) : LytGuidebookScene(ex
     var cameraPadRight: Int = 0
 
     init {
-        // LytGuidebookScene's constructor calls setPadding(5) — reset to zero so the outer
+        // LytGuidebookScene's constructor calls setPadding(5), reset to zero so the outer
         // LytBox never expands. Real padding lives in cameraPad* and is swapped in during
         // computeBoxLayout only.
         setPadding(0)
@@ -204,7 +204,7 @@ class NodeworksGameScene(extensions: ExtensionCollection) : LytGuidebookScene(ex
     ): LytRect {
         // Stash current (zero) padding and install the camera-padding values. The super
         // implementation reads `this.paddingTop` etc. when computing prefSceneSize and
-        // viewport bounds — with the swap, the viewport ends up the right size. The
+        // viewport bounds, with the swap, the viewport ends up the right size. The
         // `finally` ensures the fields are back to zero before LytBox.computeLayout's
         // subsequent `innerLayout.expand(paddingLeft, ...)` call runs.
         val savedTop = paddingTop

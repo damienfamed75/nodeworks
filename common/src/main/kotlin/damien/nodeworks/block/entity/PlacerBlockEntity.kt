@@ -43,7 +43,7 @@ class PlacerBlockEntity(
             markDirtyAndSync()
         }
 
-    /** Position the placer is targeting — one block away in the FACING direction. */
+    /** Position the placer is targeting, one block away in the FACING direction. */
     val targetPos: BlockPos
         get() = worldPosition.relative(blockState.getValue(PlacerBlock.FACING))
 

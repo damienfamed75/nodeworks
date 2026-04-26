@@ -18,9 +18,9 @@ import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.DyeColor
 
 /**
- * Variable block configuration screen — rebuilt on the shared 9-slice toolkit
+ * Variable block configuration screen, rebuilt on the shared 9-slice toolkit
  * (WINDOW_FRAME + TOP_BAR + BUTTON + INPUT_FIELD + TOGGLE_ACTIVE/INACTIVE). Three
- * fixed rows: Name / Type / Value. Not scrollable — everything fits at once.
+ * fixed rows: Name / Type / Value. Not scrollable, everything fits at once.
  */
 class VariableScreen(
     menu: VariableMenu,
@@ -69,7 +69,7 @@ class VariableScreen(
     private var checkmarkTime: Long = 0
 
     init {
-        // We draw our own title inside the 9-slice TOP_BAR; hide the default labels.
+        // We draw our own title inside the 9-slice TOP_BAR, hide the default labels.
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -87,7 +87,7 @@ class VariableScreen(
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
-        // Plain bordered MC EditBox — matches the other Nodeworks input fields
+        // Plain bordered MC EditBox, matches the other Nodeworks input fields
         // (Processing Set timeout, Storage Card priority, Card Programmer counter).
         // 26.1: text color alpha byte must be non-zero or GuiGraphicsExtractor.text drops the draw.
         nameField = EditBox(font, controlX, rowY(0) + 3, FIELD_W, FIELD_H - 4, Component.literal("Name"))
@@ -104,7 +104,7 @@ class VariableScreen(
         valueField.value = menu.initialValue
         addRenderableWidget(valueField)
 
-        // Row 4 — Channel picker. Same column origin (controlX) as the fields above
+        // Row 4, Channel picker. Same column origin (controlX) as the fields above
         // so labels and controls line up. Sends the dye ordinal via the existing
         // VariableSettingsPayload pipeline (key="channel"), reusing the server
         // handler that already mutates entity.channel for us.
@@ -123,19 +123,19 @@ class VariableScreen(
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
         NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor())
 
-        // Row 1 — Name field + Set
+        // Row 1, Name field + Set
         drawLabel(graphics, "Name", 0)
         val nameFieldY = rowY(0) + 1
         drawSetButton(graphics, controlX + FIELD_W + 4, nameFieldY, mouseX, mouseY, "name")
 
-        // Row 2 — Type selector (Number / String / Bool)
+        // Row 2, Type selector (Number / String / Bool)
         drawLabel(graphics, "Type", 1)
         val typeY = rowY(1) + 1
         for (i in 0 until 3) {
             drawTypeButton(graphics, controlX + i * (TYPE_BTN_W + TYPE_BTN_GAP), typeY, i, mouseX, mouseY)
         }
 
-        // Row 3 — Value field + Set, or Bool toggle
+        // Row 3, Value field + Set, or Bool toggle
         drawLabel(graphics, "Value", 2)
         val valueY = rowY(2) + 1
         if (menu.variableType == VariableType.BOOL.ordinal) {
@@ -146,7 +146,7 @@ class VariableScreen(
             drawSetButton(graphics, controlX + FIELD_W + 4, valueY, mouseX, mouseY, "value")
         }
 
-        // Row 4 — Channel label (the picker widget renders itself).
+        // Row 4, Channel label (the picker widget renders itself).
         drawLabel(graphics, "Channel", 3)
 
         // Sync widget to server value when the popup isn't being interacted with so
@@ -210,7 +210,7 @@ class VariableScreen(
 
     private fun drawBoolToggle(graphics: GuiGraphicsExtractor, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
         // TOGGLE_ACTIVE / TOGGLE_INACTIVE already encode the on/off state visually
-        // (slider position + color) — no extra TRUE/FALSE label needed.
+        // (slider position + color), no extra TRUE/FALSE label needed.
         val slice = if (menu.boolValue) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
         slice.draw(graphics, bx, by, TOGGLE_W, TOGGLE_H)
     }
@@ -234,7 +234,7 @@ class VariableScreen(
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
 
-        // Row 1: Name Set — drops focus on the name field after committing.
+        // Row 1: Name Set, drops focus on the name field after committing.
         val nameSetX = controlX + FIELD_W + 4
         val nameSetY = rowY(0) + 1
         if (mx in nameSetX until nameSetX + SET_BTN_W && my in nameSetY until nameSetY + SET_BTN_H) {
@@ -280,10 +280,10 @@ class VariableScreen(
 
         // Let MC's widget chain handle EditBox focus (super finds the widget whose bounds
         // contain the click via ContainerEventHandler.getChildAt). If super handles it,
-        // it already changed focus — we're done.
+        // it already changed focus, we're done.
         if (super.mouseClicked(event, doubleClick)) return true
 
-        // Click landed in empty space (no button, no field) — drop focus on whichever
+        // Click landed in empty space (no button, no field), drop focus on whichever
         // field was focused so the caret disappears, matching VSCode/IntelliJ behavior.
         clearFieldFocus()
         return false

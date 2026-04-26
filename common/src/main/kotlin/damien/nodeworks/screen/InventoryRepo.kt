@@ -10,14 +10,14 @@ import damien.nodeworks.platform.ItemInfo
  * Supports JEI-style search syntax:
  * - Plain text: search by item name
  * - @mod: filter by mod/namespace (e.g. @minecraft)
- * - #tag: filter by item tag (e.g. #forge:ingots) — future, currently matches itemId
+ * - #tag: filter by item tag (e.g. #forge:ingots), future, currently matches itemId
  */
 class InventoryRepo {
 
     data class RepoEntry(
         val serial: Long,
         val info: ItemInfo,
-        /** 0 = item, 1 = fluid — controls grid rendering and click-to-fill behavior. */
+        /** 0 = item, 1 = fluid, controls grid rendering and click-to-fill behavior. */
         val kind: Byte = 0
     ) {
         val isFluid: Boolean get() = kind == 1.toByte()
@@ -75,7 +75,7 @@ class InventoryRepo {
 
     /**
      * Handle a sync packet from the server.
-     * Full syncs may arrive in multiple chunks — entries are buffered and
+     * Full syncs may arrive in multiple chunks, entries are buffered and
      * the view is only rebuilt after the final chunk arrives.
      */
     fun handleUpdate(payload: InventorySyncPayload) {
@@ -95,7 +95,7 @@ class InventoryRepo {
                 viewDirty = true
             }
         } else {
-            // Delta update — apply immediately
+            // Delta update, apply immediately
             for (serial in payload.removedSerials) {
                 entries.remove(serial)
             }

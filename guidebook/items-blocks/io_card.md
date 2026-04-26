@@ -39,7 +39,7 @@ inventory:
 - `card:count(filter)` totals matching items (and fluids, in mB).
 
 Unlike a <ItemLink id="storage_card" />, an IO card's block is **not** part of
-[Network Storage](../nodeworks-mechanics/network-storage.md). Scripts have to explicitly move items to or from it;
+[Network Storage](../nodeworks-mechanics/network-storage.md). Scripts have to explicitly move items to or from it,
 `network:find` across the whole network won't see its contents, and the
 <ItemLink id="inventory_terminal" /> or <ItemLink id="portable_inventory_terminal" /> won't list them.
 

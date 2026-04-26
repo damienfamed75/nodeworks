@@ -219,7 +219,7 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
     )
 
-    /** Register a block only — no BlockItem. Used for internal multiblock parts that the
+    /** Register a block only, no BlockItem. Used for internal multiblock parts that the
      *  player should never hold (e.g. AntennaSegmentBlock). */
     private fun registerBlockOnly(
         id: String,
@@ -227,10 +227,10 @@ object ModBlocks {
         properties: BlockBehaviour.Properties
     ): Block {
         val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        // 26.1: Block.Properties must know its id before construction — the constructor
+        // 26.1: Block.Properties must know its id before construction, the constructor
         //  path walks Properties.effectiveDrops() which derefs the id to compute the
         //  default loot table key. Prior to 26.1 the id was set after the fact by
-        //  Registry.register; now it must be supplied up front.
+        //  Registry.register, now it must be supplied up front.
         val blockKey = ResourceKey.create(Registries.BLOCK, identifier)
         val block = factory(properties.setId(blockKey))
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)

@@ -4,7 +4,7 @@ import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode
 
 /**
- * Transforms a [CraftTreeNode] into a [CraftPlan] — an ordered list of [Operation]s with
+ * Transforms a [CraftTreeNode] into a [CraftPlan], an ordered list of [Operation]s with
  * explicit dependencies. Everything is iterative (no recursion) so deep craft trees
  * cannot blow the JVM stack.
  *
@@ -16,7 +16,7 @@ import damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode
  *   - root of the plan → [Operation.Deliver] (final flush to network storage / reserved slot)
  *
  * "missing" and "process_no_handler" nodes should have been rejected upstream by
- * [CpuFeasibility.check]; planning them now produces a failure result.
+ * [CpuFeasibility.check], planning them now produces a failure result.
  */
 object CraftPlanner {
 
@@ -26,7 +26,7 @@ object CraftPlanner {
      * Plan a craft tree.
      *
      * [snapshot] is needed to look up the 3×3 Instruction Set recipe pattern for
-     * craft_template nodes — the tree only carries the template name.
+     * craft_template nodes, the tree only carries the template name.
      */
     fun plan(tree: CraftTreeNode, snapshot: NetworkSnapshot): PlanResult {
         val ops = mutableListOf<Operation>()
@@ -76,7 +76,7 @@ object CraftPlanner {
                 "process_template" -> {
                     // One Process op per tree node. The executor iterates the handler N times
                     // internally (N = ceil(totalNeeded / api.outputs-per-batch)), so parallelism
-                    // comes from the tree having multiple distinct process_template nodes — not
+                    // comes from the tree having multiple distinct process_template nodes, not
                     // from splitting a single branch into competing ops. Same-item branches in
                     // different parts of the tree (e.g. two recipes each needing iron ingots)
                     // become two ops that co-processors can run concurrently.
@@ -97,7 +97,7 @@ object CraftPlanner {
                 "craft_template" -> {
                     val inputDeps = node.children.mapNotNull { outputOpOf[IdentityKey(it)] }
                     // Resolve the recipe pattern by looking up the Instruction Set that
-                    // produces this item. Tree only carries the template name; here we
+                    // produces this item. Tree only carries the template name, here we
                     // fetch the actual 9-slot pattern so the Execute op is self-contained.
                     val recipe = resolveRecipePattern(node.itemId, snapshot)
                         ?: return PlanResult(
@@ -119,7 +119,7 @@ object CraftPlanner {
                     outputOpOf[nodeKey] = executeId
                 }
                 else -> {
-                    // Unknown source — skip silently; feasibility check should have flagged.
+                    // Unknown source, skip silently, feasibility check should have flagged.
                 }
             }
         }

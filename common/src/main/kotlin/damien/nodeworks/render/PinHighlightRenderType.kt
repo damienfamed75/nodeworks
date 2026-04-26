@@ -15,14 +15,14 @@ import net.minecraft.resources.Identifier
 
 /**
  * Custom RenderType + RenderPipeline for the Diagnostic Tool's pinned-block
- * highlight — draws the block's full baked mesh tinted cyan with depth-test
+ * highlight, draws the block's full baked mesh tinted cyan with depth-test
  * disabled so the silhouette shows through walls.
  *
  * Pre-migration used `RenderSystem.setShader` + `BufferUploader.drawWithShader`
  * to stamp the block's quads with a custom fragment shader. Those APIs are
- * gone in MC 26.1; the replacement stack is a registered [RenderPipeline] +
+ * gone in MC 26.1, the replacement stack is a registered [RenderPipeline] +
  * a [RenderType] referencing it. Pattern copied from EnderIO 26.1's
- * `OutlineRenderType.CUTOUT_NO_DEPTH` — same shape (block-atlas snippet +
+ * `OutlineRenderType.CUTOUT_NO_DEPTH`, same shape (block-atlas snippet +
  * depth-always + translucent blend) but with translucent alpha instead of
  * an alpha-cutout since we want the tinted colour to blend rather than
  * hard-discard.

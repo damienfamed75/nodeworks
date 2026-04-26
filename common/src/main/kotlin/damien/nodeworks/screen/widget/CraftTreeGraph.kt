@@ -52,16 +52,16 @@ class CraftTreeGraph {
     var lastDragX = 0.0
     var lastDragY = 0.0
 
-    /** Tree node IDs of branches currently being worked on — amber highlight + flow dots. */
+    /** Tree node IDs of branches currently being worked on, amber highlight + flow dots. */
     var activeNodeIds: Set<Int> = emptySet()
 
-    /** Tree node IDs of branches that have fully completed — green highlight. */
+    /** Tree node IDs of branches that have fully completed, green highlight. */
     var completedNodeIds: Set<Int> = emptySet()
 
     private var lastTree: Any? = null
     /** Structural hash of [lastTree]. Compared each frame so re-synced trees with the same
      *  shape don't trigger an autoFit reset (which would wipe the user's pan/zoom every
-     *  time the server pushes a tree update — annoying with 4 Hz active-state syncs). */
+     *  time the server pushes a tree update, annoying with 4 Hz active-state syncs). */
     private var lastTreeHash: Int = 0
     private var cachedLayout: TreeLayout? = null
 
@@ -136,7 +136,7 @@ class CraftTreeGraph {
 
         // Always rebuild layout when the tree reference changes (positions map is keyed by
         // node identity, and the server pushes a fresh tree on every resync). But only
-        // auto-fit when the structure is genuinely new — preserves the user's pan/zoom
+        // auto-fit when the structure is genuinely new, preserves the user's pan/zoom
         // across the steady-stream syncs that happen during an active craft.
         if (tree !== lastTree) {
             val newHash = tree.hashCode()
@@ -173,7 +173,7 @@ class CraftTreeGraph {
         val activeLineColor = 0xFFFF8212.toInt()
         val time = (System.currentTimeMillis() % 10000) / 1000f
 
-        // PASS 1 — draw all INACTIVE connectors. Iteration order across nodes is undefined,
+        // PASS 1, draw all INACTIVE connectors. Iteration order across nodes is undefined,
         // so without this pass split, a later node's gray connector could draw over an
         // earlier node's amber active connector. Splitting guarantees amber + flow dots
         // are always on top.
@@ -189,14 +189,14 @@ class CraftTreeGraph {
                 val midY = (sy + 16 + cy) / 2
                 val childIsStorage = child.source == "storage"
                 val childActive = !childIsStorage && child.nodeId in activeNodeIds
-                if (childActive || isActive) continue  // skip — drawn in pass 2
+                if (childActive || isActive) continue  // skip, drawn in pass 2
                 graphics.fill(cx, cy, cx + 1, midY, lineColor)
                 graphics.fill(minOf(sx, cx), midY, maxOf(sx, cx) + 1, midY + 1, lineColor)
                 graphics.fill(sx, midY, sx + 1, sy + 16, lineColor)
             }
         }
 
-        // PASS 2 — draw all ACTIVE connectors + animated flow dots on top of pass 1.
+        // PASS 2, draw all ACTIVE connectors + animated flow dots on top of pass 1.
         for ((node, pos) in layout.positions) {
             val sx = (originX + pos.first * zoom).roundToInt()
             val sy = (originY + pos.second * zoom).roundToInt()
@@ -249,7 +249,7 @@ class CraftTreeGraph {
             }
         }
 
-        // PASS 3 — node icons + labels (drawn on top of all connectors).
+        // PASS 3, node icons + labels (drawn on top of all connectors).
         for ((node, pos) in layout.positions) {
             val sx = (originX + pos.first * zoom).roundToInt()
             val sy = (originY + pos.second * zoom).roundToInt()
@@ -274,7 +274,7 @@ class CraftTreeGraph {
                     val iconX = sx - 8
                     val iconY = sy
 
-                    // Status halo — XP-orb-style radial glow behind the item. Five concentric
+                    // Status halo, XP-orb-style radial glow behind the item. Five concentric
                     //  filled rects from a wide faint outer ring inward to a tighter bright
                     //  inner ring. The overlap stacks alpha toward the centre so the fall-off
                     //  reads as soft rather than a hard square. Cheap (5 fills), no shader,
@@ -329,7 +329,7 @@ class CraftTreeGraph {
                 graphics.pose().popMatrix()
             }
 
-            // Checkmark for completed (skip root node — it's the final output)
+            // Checkmark for completed (skip root node, it's the final output)
             val isComplete = node.inStorage >= node.count && node.source != "storage"
             if (isComplete && node !== root) {
                 graphics.pose().pushMatrix()

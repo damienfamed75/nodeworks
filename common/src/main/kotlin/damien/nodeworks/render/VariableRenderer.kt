@@ -11,7 +11,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 
 /**
- * Emissive overlay for the Variable block — glowing side faces (N/S/E/W only, top/bottom
+ * Emissive overlay for the Variable block, glowing side faces (N/S/E/W only, top/bottom
  * unlit), tinted with the current network colour.
  */
 open class VariableRenderer(context: BlockEntityRendererProvider.Context) :

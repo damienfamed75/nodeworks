@@ -82,7 +82,7 @@ class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(propertie
             InventoryTerminalOpenData(pos),
             InventoryTerminalOpenData.STREAM_CODEC,
             { syncId, inv, _ ->
-                // Fixed terminal uses its own position as the network entry point — the
+                // Fixed terminal uses its own position as the network entry point, the
                 // terminal is a Connectable, so NetworkDiscovery walks out from there.
                 val source = damien.nodeworks.screen.NodeBackedSource(
                     dimension = serverLevel.dimension(),

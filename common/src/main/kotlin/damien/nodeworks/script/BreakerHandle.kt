@@ -13,9 +13,9 @@ import org.luaj.vm2.lib.OneArgFunction
 import org.luaj.vm2.lib.TwoArgFunction
 
 /**
- * Lua handle for a Breaker device — initiates a multi-tick break of the block at
+ * Lua handle for a Breaker device, initiates a multi-tick break of the block at
  * the device's facing position. `:mine()` returns a [BreakBuilder]-shaped Lua
- * table that the script can chain `:connect(fn)` onto for redirecting drops; if
+ * table that the script can chain `:connect(fn)` onto for redirecting drops, if
  * no chain follows, drops route to network storage automatically.
  *
  * Per-method `getEntity()` closure mirrors [VariableHandle]'s pattern so the
@@ -40,9 +40,9 @@ object BreakerHandle {
         table.set("name", LuaValue.valueOf(alias))
 
         // :mine() → BreakBuilder
-        // Named "mine" (not "break") because `break` is a reserved Lua keyword;
+        // Named "mine" (not "break") because `break` is a reserved Lua keyword,
         // `:break()` would be a syntax error in scripts. "destroy" was rejected
-        // because it suggests the resulting drops are deleted — `:mine()` mirrors
+        // because it suggests the resulting drops are deleted, `:mine()` mirrors
         // what a player does with a pickaxe and yields drops by default. Starts
         // the multi-tick break sequence and returns a builder Lua table the
         // script can chain `:connect(fn)` onto. When the breaker is busy or the
@@ -57,7 +57,7 @@ object BreakerHandle {
             }
         })
 
-        // :cancel() — abort the in-progress break, if any. Safe to call when idle.
+        // :cancel(), abort the in-progress break, if any. Safe to call when idle.
         table.set("cancel", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 getEntity().cancel()
@@ -65,9 +65,9 @@ object BreakerHandle {
             }
         })
 
-        // :block() / :state() — mirror Observer Card. The Breaker is already querying
+        // :block() / :state(), mirror Observer Card. The Breaker is already querying
         // BlockState internally for the duration formula so exposing these reads is
-        // free; saves the user from placing a separate Observer Card next to every
+        // free, saves the user from placing a separate Observer Card next to every
         // breaker for stage-gated farms.
         table.set("block", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
@@ -114,7 +114,7 @@ object BreakerHandle {
         return t
     }
 
-    // ---- Drop routing — called from BreakerBlockEntity.completeBreak ----
+    // ---- Drop routing, called from BreakerBlockEntity.completeBreak ----
 
     /** Default routing: insert each dropped stack into network storage via the
      *  pool. Items that don't fit (storage full / no storage card matching) spawn
@@ -123,7 +123,7 @@ object BreakerHandle {
     fun routeDropsToNetwork(level: ServerLevel, breaker: BreakerBlockEntity, drops: List<ItemStack>) {
         if (drops.isEmpty()) return
         val target = breaker.targetPos
-        // Discover the breaker's network at completion time — the BlockEntity is
+        // Discover the breaker's network at completion time, the BlockEntity is
         // independent of the script engine but a fresh BFS from the breaker's
         // position gives us the same storage-card list `network:onInsert` would.
         val snapshot = damien.nodeworks.network.NetworkDiscovery
@@ -158,13 +158,13 @@ object BreakerHandle {
             // Build a minimal ItemsHandle-shaped Lua table for the handler. The
             // BufferSource isn't wired here (we don't have the CPU context the
             // crafting handlers do), so :insert / :extract on this items handle
-            // would no-op — that's OK since the handler is meant to read the
+            // would no-op, that's OK since the handler is meant to read the
             // drop's id / count and decide what to do.
             val itemTable = buildSimpleItemsHandle(stack)
             try {
                 handler.call(itemTable)
             } catch (e: LuaError) {
-                // Silent — script-level errors in a connect handler shouldn't take
+                // Silent, script-level errors in a connect handler shouldn't take
                 // down the breaker. The BreakerBlockEntity logs a generic error if
                 // we want to surface this to the terminal later.
             } catch (_: Exception) {
@@ -175,7 +175,7 @@ object BreakerHandle {
 
     /** Build a minimal Lua table with the .id / .name / .count / .kind fields the
      *  user's connect handler will inspect. This is a strict subset of the full
-     *  [ItemsHandle.toLuaTable] surface — the breaker drop path doesn't have the
+     *  [ItemsHandle.toLuaTable] surface, the breaker drop path doesn't have the
      *  source-storage / buffer-source plumbing that crafting flows do. */
     private fun buildSimpleItemsHandle(stack: ItemStack): LuaTable {
         val t = LuaTable()

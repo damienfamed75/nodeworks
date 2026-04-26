@@ -20,22 +20,22 @@ import net.minecraft.world.level.Level
 
 /**
  * "Right-click soul sand with X in hand → drop Y" recipe. The target block is
- * always soul sand — the mechanic is thematically tied to the block, so a
+ * always soul sand, the mechanic is thematically tied to the block, so a
  * different target would be a different [RecipeType]. Fields:
  *
- *   * [heldIngredient] — the item in the player's hand that triggers the
+ *   * [heldIngredient], the item in the player's hand that triggers the
  *     interaction. Taking an [Ingredient] rather than a raw item lets data
  *     packs use tags and support multi-item matches (e.g. "any milk-like
  *     bucket") without code changes.
- *   * [result] — the [ItemStackTemplate] materialized into an [ItemStack] at
+ *   * [result], the [ItemStackTemplate] materialized into an [ItemStack] at
  *     drop time via [ItemStackTemplate.create]. Using the template codec
  *     (rather than [ItemStack.CODEC]) lets the recipe parse during the data
- *     reload before mod-item components are fully resolved — `ItemStack.CODEC`
+ *     reload before mod-item components are fully resolved, `ItemStack.CODEC`
  *     eagerly validates components and fails with "Item ... does not have
  *     components yet" for custom items mid-reload.
  *
  * The held item's consumption behavior piggybacks on
- * [ItemStack.getCraftingRemainingItem] — milk / lava / water buckets return
+ * [ItemStack.getCraftingRemainingItem], milk / lava / water buckets return
  * an empty bucket automatically, and any modded item that sets a crafting
  * remainder participates without this recipe needing to know about it.
  *
@@ -54,7 +54,7 @@ class SoulSandInfusionRecipe(
 
     override fun assemble(input: SingleRecipeInput): ItemStack = result.create()
 
-    /** Not in any recipe book — this isn't a crafting-grid recipe. */
+    /** Not in any recipe book, this isn't a crafting-grid recipe. */
     override fun showNotification(): Boolean = false
 
     override fun group(): String = ""
@@ -67,7 +67,7 @@ class SoulSandInfusionRecipe(
 
     /**
      * Single-ingredient placement info derived from [heldIngredient]. We
-     * can't use [PlacementInfo.NOT_PLACEABLE] — vanilla's [RecipeManager]
+     * can't use [PlacementInfo.NOT_PLACEABLE], vanilla's [RecipeManager]
      * logs "can't be placed due to empty ingredients and will be ignored"
      * and drops any non-[Recipe.isSpecial] recipe whose placement info is
      * `impossibleToPlace`. That drops us out of the client-visible recipe
@@ -77,14 +77,14 @@ class SoulSandInfusionRecipe(
      * Using the held ingredient is the same shape as vanilla's
      * [SingleItemRecipe] (stonecutter / smelting / blasting inputs) and
      * accurately describes the only thing we require "placed" in the
-     * input slot — the held item.
+     * input slot, the held item.
      */
     private val cachedPlacementInfo: PlacementInfo by lazy {
         PlacementInfo.create(heldIngredient)
     }
     override fun placementInfo(): PlacementInfo = cachedPlacementInfo
 
-    /** Value is irrelevant; the recipe never appears in a recipe book.
+    /** Value is irrelevant, the recipe never appears in a recipe book.
      *  CRAFTING_MISC is the closest semantic fit if something ever reflects
      *  on this value for display. */
     override fun recipeBookCategory(): RecipeBookCategory =

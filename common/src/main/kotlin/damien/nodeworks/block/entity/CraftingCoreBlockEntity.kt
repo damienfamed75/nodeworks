@@ -29,13 +29,13 @@ import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /**
- * Crafting Core — the brain of a multiblock Crafting CPU.
+ * Crafting Core, the brain of a multiblock Crafting CPU.
  *
  * Discovers CPU components (Buffer, Co-Processor, Substrate, Stabilizer) via free-form
  * adjacency BFS. Holds the buffer (both count and unique-types limits, Long-safe) and
  * drives craft execution.
  *
- * See docs/design/crafting-cpu.md for design rationale; [CpuRules] for tunables.
+ * See docs/design/crafting-cpu.md for design rationale, [CpuRules] for tunables.
  */
 class CraftingCoreBlockEntity(
     pos: BlockPos,
@@ -49,7 +49,7 @@ class CraftingCoreBlockEntity(
             val changed = field != value
             field = value
             // The CPU's emissive "active" block models are gated on the formed
-            //  blockstate, and formed now requires a network membership — so when
+            //  blockstate, and formed now requires a network membership, so when
             //  the network connection is wired/unwired, every cluster component
             //  needs its blockstate re-pushed. recalculateCapacity() walks the
             //  cluster and calls setBlock only where the desired state differs,
@@ -70,14 +70,14 @@ class CraftingCoreBlockEntity(
     val bufferState = BufferState()
 
     // =====================================================================
-    // Scheduler — per-CPU operation scheduler
+    // Scheduler, per-CPU operation scheduler
     // =====================================================================
 
     /** Executor that translates [Operation]s into real side effects on this CPU. */
     private val opExecutor: CpuOpExecutor = CpuOpExecutor(this)
 
     /** The scheduler that drives all in-flight crafts for this CPU.
-     *  Phase 2 uses a single thread; Phase 3 adds one per Co-Processor. */
+     *  Phase 2 uses a single thread, Phase 3 adds one per Co-Processor. */
     val scheduler: CraftScheduler = CraftScheduler(threadCount = 1, executor = opExecutor)
 
     /** Number of Co-Processor blocks discovered in the last multiblock scan. */
@@ -92,14 +92,14 @@ class CraftingCoreBlockEntity(
     var heatCooled: Int = 0
         private set
 
-    /** Current throttle multiplier — heatPenalty × substrateBonus. Fed to [CpuRules.opCost]
+    /** Current throttle multiplier, heatPenalty × substrateBonus. Fed to [CpuRules.opCost]
      *  by the [damien.nodeworks.script.cpu.CpuOpExecutor] every op. Recalculated whenever
      *  the multiblock changes. Range ≈ [THROTTLE_FLOOR, COOLING_BONUS_CAP]. */
     var throttle: Float = 1.0f
         private set
 
     /** Tree node IDs (from [damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode.nodeId])
-     *  whose op is currently being worked on right now. Live view — recomputed from the
+     *  whose op is currently being worked on right now. Live view, recomputed from the
      *  scheduler/executor state every read. */
     val activeNodeIds: Set<Int>
         get() {
@@ -128,10 +128,10 @@ class CraftingCoreBlockEntity(
      * reaches DONE (true) or FAILED (false). Safe to call from any server-side context.
      */
     fun submitCraft(plan: CraftPlan, currentTick: Long, onComplete: ((Boolean) -> Unit)? = null) {
-        // Wipe ALL stale resume info — opIds are plan-scoped (planner starts at 0) and any
+        // Wipe ALL stale resume info, opIds are plan-scoped (planner starts at 0) and any
         // entry left over from a previous craft will collide with this plan's op IDs and
         // incorrectly trigger the resume path (which skips handler invocation).
-        // The save/load resume flow does NOT go through here — it restores the same plan
+        // The save/load resume flow does NOT go through here, it restores the same plan
         // it saved, with the matching opResumeInfo intact, via NBT.
         if (opResumeInfo.isNotEmpty()) {
             opResumeInfo.clear()
@@ -143,13 +143,13 @@ class CraftingCoreBlockEntity(
         setOriginalCraft(plan.rootItemId, plan.rootCount)
     }
 
-    /** Set on first tick so we run [recalculateCapacity] exactly once after BE load — the
+    /** Set on first tick so we run [recalculateCapacity] exactly once after BE load, the
      *  multiblock scan can only succeed once adjacent chunks are loaded and their BEs exist,
      *  which isn't guaranteed during [loadAdditional] but is by the time the ticker runs. */
     @Transient
     private var capacityInitialized: Boolean = false
 
-    /** Per-tick entry point — called by the block's BlockEntityTicker. */
+    /** Per-tick entry point, called by the block's BlockEntityTicker. */
     fun serverTick(level: ServerLevel) {
         if (!capacityInitialized) {
             capacityInitialized = true
@@ -209,7 +209,7 @@ class CraftingCoreBlockEntity(
     var originalCraftCount: Long = 0L
         private set
 
-    /** Craft tree snapshot taken at craft start — reflects the original storage state. Not persisted. */
+    /** Craft tree snapshot taken at craft start, reflects the original storage state. Not persisted. */
     @Transient
     var craftTreeSnapshot: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
 
@@ -256,9 +256,9 @@ class CraftingCoreBlockEntity(
         else setChanged()
     }
 
-    /** Per-op resume state — captured when a Process op's handler registers a pull, used
+    /** Per-op resume state, captured when a Process op's handler registers a pull, used
      *  on world reload to restart polling without re-invoking the handler. The handler's
-     *  side effects (items placed in machines) survive the reload as actual block state;
+     *  side effects (items placed in machines) survive the reload as actual block state,
      *  we just need to keep watching for the outputs to arrive. */
     data class OpResumeInfo(
         val processingApiName: String,
@@ -273,7 +273,7 @@ class CraftingCoreBlockEntity(
      *  for the Process op identified by [opId].
      *
      *  Limitation: handlers that call `job:pull` more than once per invocation get only
-     *  their LAST pull recorded for resume — overwrites are last-wins. Typical handlers
+     *  their LAST pull recorded for resume, overwrites are last-wins. Typical handlers
      *  call pull once and aren't affected. Multi-pull handlers that fail to resume cleanly
      *  fall through to the standard fail-and-flush path. */
     fun setOpResume(opId: Int, info: OpResumeInfo) {
@@ -288,7 +288,7 @@ class CraftingCoreBlockEntity(
         if (opResumeInfo.remove(opId) != null) setChanged()
     }
 
-    /** Wipe all pending job metadata (but keep originalCraft — cleared by clearAllCraftState). */
+    /** Wipe all pending job metadata (but keep originalCraft, cleared by clearAllCraftState). */
     fun clearPendingJob() {
         if (pendingOutputs.isNotEmpty() || pendingCount > 0 || pendingPullTargets.isNotEmpty()) {
             pendingOutputs = emptyList()
@@ -313,7 +313,7 @@ class CraftingCoreBlockEntity(
     }
 
     // =====================================================================
-    // Buffer operations — all count parameters/returns are Long
+    // Buffer operations, all count parameters/returns are Long
     // =====================================================================
 
     /**
@@ -330,7 +330,7 @@ class CraftingCoreBlockEntity(
 
     /**
      * Remove up to [count] of [itemId] from the buffer.
-     * Returns the amount actually removed (≤ count; 0 if nothing to remove).
+     * Returns the amount actually removed (≤ count, 0 if nothing to remove).
      */
     fun removeFromBuffer(itemId: String, count: Long): Long {
         val removed = bufferState.extract(itemId, count)
@@ -357,7 +357,7 @@ class CraftingCoreBlockEntity(
         markDirtyAndSync()
     }
 
-    /** Cancel the current job: abort scheduler threads; buffer contents return to network
+    /** Cancel the current job: abort scheduler threads, buffer contents return to network
      *  storage via the executor's standard onPlanFailed flush. */
     fun cancelJob() {
         if (level !is net.minecraft.server.level.ServerLevel) return
@@ -389,7 +389,7 @@ class CraftingCoreBlockEntity(
         var heatGen = 0
 
         // Collect discovered component positions by type so we can do the adjacency pass
-        // after the graph walk. Substrate's contribution is *positional* — we count faces
+        // after the graph walk. Substrate's contribution is *positional*, we count faces
         // between Substrate blocks and heat-generating components (Buffer / Co-Processor).
         val heatGenPositions = HashSet<BlockPos>()
         // Heat value per heat-gen, so we can count which heat is "reached" by Stabilizers.
@@ -444,8 +444,8 @@ class CraftingCoreBlockEntity(
             }
         }
 
-        // Substrate adjacency pass — count every face where a Substrate block touches a
-        // Buffer or Co-Processor. Substrate-to-Substrate faces don't count; Substrate touching
+        // Substrate adjacency pass, count every face where a Substrate block touches a
+        // Buffer or Co-Processor. Substrate-to-Substrate faces don't count, Substrate touching
         // the Core itself doesn't count (Core doesn't generate heat). This is what makes
         // placement a puzzle: packed layouts (Substrate sandwiched between components) yield
         // more adjacencies per block than chains along one axis.
@@ -456,7 +456,7 @@ class CraftingCoreBlockEntity(
             }
         }
 
-        // PER-HEAT-GEN LOCAL BALANCE — for each heat-generator, compute its own heat
+        // PER-HEAT-GEN LOCAL BALANCE, for each heat-generator, compute its own heat
         // (base + hotspot adjacency penalty) and its own cooling (Stabilizer faces
         // directly touching it × per-face rating). Every rule operates at block-adjacency
         // distance so the player can reason about each block individually.
@@ -512,14 +512,14 @@ class CraftingCoreBlockEntity(
         }
         val totalCooled = totalCooledFloat.toInt()
 
-        // "Formed" now also requires an active network membership — disconnecting the
+        // "Formed" now also requires an active network membership, disconnecting the
         //  Core from the laser network flips this false, which drives every cluster
         //  block to swap its emissive-on model for the plain one.
         isFormed = bufferCount > 0 && networkId != null
         coProcessorCount = coProcessors
         heatGenerated = totalHeat
         heatCooled = totalCooled
-        // Throttle = heatPenalty × substrateBonus. No coolingBonus — only Substrate can
+        // Throttle = heatPenalty × substrateBonus. No coolingBonus, only Substrate can
         // push throttle above 1.0×. Keeps the "what makes it faster" story crisp.
         throttle = CpuRules.heatPenalty(totalHeat, totalCooled) *
                    CpuRules.substrateBonus(substrateAdjacencies)
@@ -555,7 +555,7 @@ class CraftingCoreBlockEntity(
         for (p in coProcessorPositions) {
             val s = lvl.getBlockState(p)
             if (s.block !is damien.nodeworks.block.CoProcessorBlock) continue
-            // An unformed CPU has no meaningful overheat signal — pin level to 0.
+            // An unformed CPU has no meaningful overheat signal, pin level to 0.
             val wantLevel = if (formed) (overheatLevelByPosition[p] ?: 0) else 0
             var next = s
             if (next.getValue(coFormed) != formed) next = next.setValue(coFormed, formed)
@@ -619,11 +619,11 @@ class CraftingCoreBlockEntity(
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
             NodeConnectionHelper.queueRevalidation(level, worldPosition)
-            // Defer recalc — neighbors may not be loaded yet.
+            // Defer recalc, neighbors may not be loaded yet.
             // Schedule resume of pending jobs
-            // Legacy resume path — only fires when there's no per-op resume info AND no
+            // Legacy resume path, only fires when there's no per-op resume info AND no
             // persisted scheduler plan. Per-op resume (handled in CpuOpExecutor.executeProcess)
-            // is the canonical recovery for new saves; the legacy path stays for compat with
+            // is the canonical recovery for new saves, the legacy path stays for compat with
             // pre-Phase-3 saves where Process state wasn't tracked per op.
             if (isCrafting && pendingCount > 0 && pendingPullTargets.isNotEmpty() &&
                 !resumeScheduled &&
@@ -668,7 +668,7 @@ class CraftingCoreBlockEntity(
             }
         }
 
-        // Synthetic API info — only outputs matter for polling.
+        // Synthetic API info, only outputs matter for polling.
         // ProcessingApiInfo.outputs is (String, Int). We down-cast our Long pendingOutputs
         // for the synthetic API (the underlying processing pipeline will be refactored in
         // a later phase to handle Long end-to-end).
@@ -707,7 +707,7 @@ class CraftingCoreBlockEntity(
         val craftCount = originalCraftCount
 
         if (craftId.isEmpty()) {
-            logger.info("CPU at {}: pulls complete but no original craft — flushing buffer", worldPosition)
+            logger.info("CPU at {}: pulls complete but no original craft, flushing buffer", worldPosition)
             flushBufferAndRelease(lvl)
             return
         }
@@ -715,7 +715,7 @@ class CraftingCoreBlockEntity(
         logger.info("CPU at {}: pulls complete, re-invoking craft('{}', {})", worldPosition, craftId, craftCount)
 
         // Re-invoke craft with the original request, reusing this CPU.
-        // CraftingHelper.craft signature still takes Int — caller-side cast is narrowed.
+        // CraftingHelper.craft signature still takes Int, caller-side cast is narrowed.
         // (Helper will be updated to Long in a later phase of the refactor.)
         val snap = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
         damien.nodeworks.script.CraftingHelper.currentPendingJob = null
@@ -791,19 +791,19 @@ class CraftingCoreBlockEntity(
         if (lastFailureReason.isNotEmpty()) output.putString("lastFailureReason", lastFailureReason)
         networkId?.let { output.putString("networkId", it.toString()) }
 
-        // Buffer state — the BufferState helper still speaks the CompoundTag API internally
+        // Buffer state, the BufferState helper still speaks the CompoundTag API internally
         // (streaming ValueOutput doesn't help here since the data is a small fixed blob),
         // so we round-trip via CompoundTag.CODEC as a store child.
         val bufferTag = CompoundTag()
         bufferState.saveToNBT(bufferTag)
         output.store("bufferState", CompoundTag.CODEC, bufferTag)
 
-        // Scheduler state — same pattern.
+        // Scheduler state, same pattern.
         val schedulerTag = CompoundTag()
         scheduler.saveToNBT(schedulerTag)
         output.store("scheduler", CompoundTag.CODEC, schedulerTag)
 
-        // Original craft request + pending job metadata (server-only — stripped in getUpdateTag).
+        // Original craft request + pending job metadata (server-only, stripped in getUpdateTag).
         if (originalCraftId.isNotEmpty()) {
             output.putString("originalCraftId", originalCraftId)
             output.putLong("originalCraftCount", originalCraftCount)
@@ -824,7 +824,7 @@ class CraftingCoreBlockEntity(
             }
         }
 
-        // Per-op resume info — survives save/load so an in-progress smelt can pick up where
+        // Per-op resume info, survives save/load so an in-progress smelt can pick up where
         // it left off without re-invoking the handler.
         if (opResumeInfo.isNotEmpty()) {
             val list = output.childrenList("opResumeInfo")
@@ -861,7 +861,7 @@ class CraftingCoreBlockEntity(
         }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
 
-        // Load buffer — new format first, legacy "buffer" + "bufferCapacity" format as fallback
+        // Load buffer, new format first, legacy "buffer" + "bufferCapacity" format as fallback
         // for pre-Phase-1 worlds. Both come through as CompoundTag sub-values via the codec.
         val bufferStateTag = input.read("bufferState", CompoundTag.CODEC).orElse(null)
         if (bufferStateTag != null) {
@@ -877,12 +877,12 @@ class CraftingCoreBlockEntity(
             }
         }
 
-        // Scheduler state — optional for pre-Phase-2 saves.
+        // Scheduler state, optional for pre-Phase-2 saves.
         input.read("scheduler", CompoundTag.CODEC).ifPresent { scheduler.loadFromNBT(it) }
 
         // Load original craft request + pending job metadata
         originalCraftId = input.getStringOr("originalCraftId", "")
-        // Long-safe with Int fallback — older saves used putInt for this.
+        // Long-safe with Int fallback, older saves used putInt for this.
         originalCraftCount = input.getLongOrNull("originalCraftCount")
             ?: input.getIntOrNull("originalCraftCount")?.toLong()
             ?: 0L
@@ -912,7 +912,7 @@ class CraftingCoreBlockEntity(
         } else emptyList()
         resumeScheduled = false
 
-        // Per-op resume info — restore so executeProcess can poll without re-invoking handlers.
+        // Per-op resume info, restore so executeProcess can poll without re-invoking handlers.
         opResumeInfo.clear()
         for (c in input.childrenListOrEmpty("opResumeInfo")) {
             val opId = c.getIntOr("op", -1)

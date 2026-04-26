@@ -31,12 +31,12 @@ open class ConnectableRenderState : BlockEntityRenderState() {
  *      BE's own [Connectable.getConnections]).
  *   2. Submit beam geometry before any BE-specific geometry, so beams draw
  *      beneath / behind the block's own visual layers.
- *   3. Return `true` from [shouldRenderOffScreen] — pairs with the neoforge subclass's
+ *   3. Return `true` from [shouldRenderOffScreen], pairs with the neoforge subclass's
  *      `getRenderBoundingBox` override to keep the BER alive whenever any beam it draws
  *      is in frame, not just when the source block itself is.
  *
  * Subclasses implement [extractConnectable] / [submitConnectable] for their block-specific
- * logic; the top-level `extractRenderState` / `submit` overrides are `final` so the
+ * logic, the top-level `extractRenderState` / `submit` overrides are `final` so the
  * scaffolding can't accidentally be bypassed.
  *
  * [resolveNetworkColor] is the shared network-color lookup that degrades correctly in
@@ -96,7 +96,7 @@ abstract class ConnectableBER<T, S : ConnectableRenderState>(
      * grey default when the block is unreachable in the live network.
      *
      * In GuideME scene renders the level isn't `Minecraft.getInstance().level` and the
-     * reachability BFS has never run — in that case we skip the reachability gate and
+     * reachability BFS has never run, in that case we skip the reachability gate and
      * always resolve through [NodeConnectionRenderer.findNetworkColor] so preview scenes
      * stay vibrant.
      */

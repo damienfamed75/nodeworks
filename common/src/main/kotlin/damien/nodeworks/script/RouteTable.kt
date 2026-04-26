@@ -23,7 +23,7 @@ class RouteTable(
 ) {
     /**
      * A single route. [cards] is a list because a pattern like `"cobblestone_*"` expands to
-     * every alias matching the wildcard; items that match [predicate] spread across that set
+     * every alias matching the wildcard, items that match [predicate] spread across that set
      * of cards (highest-priority first, then insertion order).
      */
     data class Route(val pattern: String, val predicate: LuaFunction, val cards: List<CardSnapshot>)
@@ -41,7 +41,7 @@ class RouteTable(
 
     /**
      * Add a route. [pattern] may contain `*` wildcards (e.g. `"cobblestone_*"`) to match any
-     * sequence of characters in an alias — the resulting route claims every currently-known
+     * sequence of characters in an alias, the resulting route claims every currently-known
      * storage card whose alias matches the pattern. Non-wildcard patterns resolve to a single
      * card by exact alias.
      */

@@ -83,12 +83,12 @@ The layout matters as much as the count:
 - Each Coolant block outputs a total cooling value (1 alone, higher in a
   cluster). That output is **split evenly across the heat sources the
   Coolant is touching**. A Coolant sandwiched between two Buffers gives
-  half its cooling to each; a Coolant sitting in the middle of six heat
+  half its cooling to each, a Coolant sitting in the middle of six heat
   sources is almost useless on any one of them.
 - When the CPU's total cooling can't cover its total heat, speed **throttles
   down** proportionally, all the way to a floor of **25%**. The CPU never
   stops, it just crawls.
-- Coolant only neutralizes heat; it never boosts speed above 100%. The only
+- Coolant only neutralizes heat, it never boosts speed above 100%. The only
   block that does that is Substrate, up to the 4× cap.
 
 <GameScene zoom="5" interactive={false} paddingLeft="60" paddingRight="60">

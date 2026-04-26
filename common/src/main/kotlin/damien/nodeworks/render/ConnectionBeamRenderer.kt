@@ -21,13 +21,13 @@ import kotlin.math.sqrt
  * terminals, and other [Connectable]s.
  *
  * Every [Connectable] block entity whose renderer delegates to this helper emits beams for
- * connections where its own position is the "lower" endpoint (see [isLessThan]) — each
+ * connections where its own position is the "lower" endpoint (see [isLessThan]), each
  * connection pair thus renders exactly once despite both ends independently extracting their
  * own beam list. Each participating BER should also return `true` from `shouldRenderOffScreen`
  * so 26.1's frustum culler keeps the BER alive while its outgoing beams are in frame.
  *
  * The original laser rendering lived in [NodeConnectionRenderer] as a world-level
- * `RenderLevelStageEvent` subscription; moving it into per-BE BERs means GuideME scene
+ * `RenderLevelStageEvent` subscription, moving it into per-BE BERs means GuideME scene
  * renders (and any other non-main-world render pass that dispatches through BERs) also get
  * the lasers. The world-level renderer still owns LOS cache maintenance, reachability
  * tracking, selection/pin highlights, and monitor-count text overlay.
@@ -43,8 +43,8 @@ object ConnectionBeamRenderer {
 
     /**
      * Pre-extracted render data for a single beam. All coordinates are **block-relative**
-     * (target offset from the source node in block units) so the BER's pose transform —
-     * already centered on the source block — needs no extra translation to render.
+     * (target offset from the source node in block units) so the BER's pose transform,
+     * already centered on the source block, needs no extra translation to render.
      */
     data class Beam(
         val toDx: Float,
@@ -57,24 +57,24 @@ object ConnectionBeamRenderer {
     )
 
     /** Canonical keys (min(a,b), max(a,b) hash) for beam pairs already drawn in the current
-     *  render frame. First BER to submit a given pair wins the draw; every later BER that
+     *  render frame. First BER to submit a given pair wins the draw, every later BER that
      *  extracts the *same* pair skips it. Cleared at the top of each frame by [startFrame].
      *
      *  Why this over the old "extract only from the lex-lower end" rule: lex-dedup meant a
      *  single forgotten BER wiring (as happened with Monitor) or an unloaded lower endpoint
      *  would silently drop a beam. Now both endpoints always extract, so as long as *either*
-     *  BER runs, the beam renders — no silent failures. */
+     *  BER runs, the beam renders, no silent failures. */
     private val drawnThisFrame = HashSet<Long>()
 
     /** Called by the platform layer once per render frame, before any BER submits. Neoforge
-     *  wires this through `RenderFrameEvent.Pre`; see `NeoForgeClientSetup`. */
+     *  wires this through `RenderFrameEvent.Pre`, see `NeoForgeClientSetup`. */
     fun startFrame() {
         drawnThisFrame.clear()
     }
 
     /**
      * Collect the beams this [Connectable] should render this frame. Called from each
-     * BER's `extractRenderState`. Emits every outgoing connection — dedup is deferred
+     * BER's `extractRenderState`. Emits every outgoing connection, dedup is deferred
      * to [submit] via the frame-scoped [drawnThisFrame] set, so missing a BER wiring or
      * having one endpoint in an unloaded chunk never drops a beam as long as the other
      * endpoint renders.
@@ -84,14 +84,14 @@ object ConnectionBeamRenderer {
         val level = be.level ?: return emptyList()
         val myPos = be.blockPos
 
-        // Resolve the source network's color once; defaults to the neutral grey used elsewhere
+        // Resolve the source network's color once, defaults to the neutral grey used elsewhere
         // so a connection to a disconnected-but-still-paired neighbor still draws something.
         val myNetworkColor = connectable.networkId
             ?.let { NetworkSettingsRegistry.getColor(it) }
             ?: NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
 
         // The LOS cache + reachability BFS that drives [blocked] only run against the main
-        // client level via NodeConnectionRenderer's world-render hook — GuideME scenes and
+        // client level via NodeConnectionRenderer's world-render hook, GuideME scenes and
         // any other offscreen preview pass render BEs from a different level where that
         // cache is never populated, which would flip every beam to the blocked-red style.
         // Short-circuit the gate for non-main-world renders so preview scenes always show
@@ -103,7 +103,7 @@ object ConnectionBeamRenderer {
             val targetBe = level.getBlockEntity(targetPos) as? Connectable ?: continue
 
             val pairColor = when {
-                // Connected networks share a color; pick the known one.
+                // Connected networks share a color, pick the known one.
                 connectable.networkId != null -> myNetworkColor
                 targetBe.networkId != null -> NetworkSettingsRegistry.getColor(targetBe.networkId!!)
                 else -> NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
@@ -132,10 +132,10 @@ object ConnectionBeamRenderer {
 
     /**
      * Emit geometry for each extracted [Beam]. Call from BER `submit` right after any
-     * existing `submitCustomGeometry` calls — we batch all beams into one opaque + one
+     * existing `submitCustomGeometry` calls, we batch all beams into one opaque + one
      * translucent render-type to minimise pipeline switches.
      *
-     * `blockWorldPos` is the source BE's world position; `camWorld` is the camera's
+     * `blockWorldPos` is the source BE's world position, `camWorld` is the camera's
      * world-space position (take from [CameraRenderState.pos]). Together they translate
      * the camera into the BER's block-relative coordinate space for billboard math.
      */
@@ -149,7 +149,7 @@ object ConnectionBeamRenderer {
         if (beams.isEmpty()) return
 
         // Claim each beam in the frame-scoped dedup set. A beam claimed by an earlier BER
-        // this frame is filtered out here — only the first submitter draws it. Using the
+        // this frame is filtered out here, only the first submitter draws it. Using the
         // canonical (sorted) pair key means it doesn't matter which end extracted first.
         val active = ArrayList<Beam>(beams.size)
         for (beam in beams) {
@@ -168,7 +168,7 @@ object ConnectionBeamRenderer {
 
         // Camera in block-local coords: (camWorld - thisBlockWorld). The BER's pose stack
         // is already translated to the block origin, so we don't re-apply camera position
-        // in the vertex math — the GPU takes care of that via the view matrix.
+        // in the vertex math, the GPU takes care of that via the view matrix.
         val camLocalX = (camWorld.x - blockWorldPos.x).toFloat()
         val camLocalY = (camWorld.y - blockWorldPos.y).toFloat()
         val camLocalZ = (camWorld.z - blockWorldPos.z).toFloat()
@@ -179,7 +179,7 @@ object ConnectionBeamRenderer {
         // Source position is always the centre of *this* block in BER-local space.
         val fx = 0.5f; val fy = 0.5f; val fz = 0.5f
 
-        // Prism core (white, rotating) — only for unblocked beams.
+        // Prism core (white, rotating), only for unblocked beams.
         submitNodeCollector.submitCustomGeometry(poseStack, opaqueType) { pose, vc ->
             for (beam in active) {
                 if (beam.blocked) continue
@@ -194,7 +194,7 @@ object ConnectionBeamRenderer {
             }
         }
 
-        // Billboarded glow — colored pulse for unblocked, red for blocked.
+        // Billboarded glow, colored pulse for unblocked, red for blocked.
         submitNodeCollector.submitCustomGeometry(poseStack, translucentType) { pose, vc ->
             for (beam in active) {
                 val tx = fx + beam.toDx; val ty = fy + beam.toDy; val tz = fz + beam.toDz
@@ -230,7 +230,7 @@ object ConnectionBeamRenderer {
 
     /** AABB encompassing this Connectable's block plus every block it has a connection to.
      *  BERs use this as `getRenderBoundingBox` so 26.1's frustum culler keeps the BER alive
-     *  whenever any part of an outgoing beam is visible — the default unit-cube box culls
+     *  whenever any part of an outgoing beam is visible, the default unit-cube box culls
      *  the whole BER (and thus its beams) the moment the source block leaves the frustum. */
     fun computeBoundingBox(connectable: Connectable): AABB {
         val be = connectable as? net.minecraft.world.level.block.entity.BlockEntity
@@ -245,7 +245,7 @@ object ConnectionBeamRenderer {
         return AABB(minX, minY, minZ, maxX, maxY, maxZ)
     }
 
-    /** Lexicographic position ordering. Each connection pair has exactly one "lower" end;
+    /** Lexicographic position ordering. Each connection pair has exactly one "lower" end,
      *  that end's BER is responsible for drawing the beam. */
     private fun isLessThan(a: BlockPos, b: BlockPos): Boolean {
         if (a.x != b.x) return a.x < b.x
@@ -253,7 +253,7 @@ object ConnectionBeamRenderer {
         return a.z < b.z
     }
 
-    // ========== Geometry helpers — ported from the pre-refactor NodeConnectionRenderer ==========
+    // ========== Geometry helpers, ported from the pre-refactor NodeConnectionRenderer ==========
 
     /** Solid rotating rectangular prism along the beam axis. */
     private fun renderPrismBeam(

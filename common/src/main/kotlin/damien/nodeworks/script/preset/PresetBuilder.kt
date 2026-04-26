@@ -60,7 +60,7 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
 
     /** Hook for subclasses to refresh any cached card resolutions when the
      *  network topology changes. [lastSnapshotSeen] is still the previous
-     *  snapshot when this is called; the base class updates it afterwards. */
+     *  snapshot when this is called, the base class updates it afterwards. */
     protected open fun onSnapshotChanged(snapshot: NetworkSnapshot) {}
 
     @Suppress("UNCHECKED_CAST")
@@ -125,7 +125,7 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
         }
     }
 
-    /** Memoised Lua table. First call materialises the shared + subclass methods;
+    /** Memoised Lua table. First call materialises the shared + subclass methods,
      *  every chained call like `builder:to(...):every(...)` returns the same table
      *  so the handle is stable. */
     fun toLuaTable(): LuaTable {

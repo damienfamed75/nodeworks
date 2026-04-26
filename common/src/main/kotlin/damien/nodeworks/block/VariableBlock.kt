@@ -71,7 +71,7 @@ class VariableBlock(properties: Properties) : BaseEntityBlock(properties) {
     // inherit from SlimeBlock because VariableBlock extends BaseEntityBlock (the Variable
     // needs a block entity for its name/type/value state), so we inline the bounce logic.
 
-    /** Land on the block without taking fall damage — same conditions as SlimeBlock. */
+    /** Land on the block without taking fall damage, same conditions as SlimeBlock. */
     override fun fallOn(level: Level, state: BlockState, pos: BlockPos, entity: Entity, fallDistance: Double) {
         if (!entity.isSuppressingBounce) {
             entity.causeFallDamage(fallDistance, 0.0f, level.damageSources().fall())

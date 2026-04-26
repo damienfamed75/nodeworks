@@ -4,7 +4,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 
 /**
- * Open-payload for the shared "Card Settings" GUI. Mirrors [StorageCardOpenData] —
+ * Open-payload for the shared "Card Settings" GUI. Mirrors [StorageCardOpenData],
  * we just need to know which hand is holding the card so the menu can read/write
  * the right ItemStack.
  */

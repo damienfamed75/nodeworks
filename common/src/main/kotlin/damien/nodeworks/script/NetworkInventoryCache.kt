@@ -31,11 +31,11 @@ class NetworkInventoryCache(
         val info: FluidInfo
     )
 
-    // Double buffer for diff detection — items
+    // Double buffer for diff detection, items
     private var frontBuffer = LinkedHashMap<String, ItemInfo>()
     private var backBuffer = LinkedHashMap<String, ItemInfo>()
 
-    // Double buffer for diff detection — fluids
+    // Double buffer for diff detection, fluids
     private var fluidFrontBuffer = LinkedHashMap<String, FluidInfo>()
     private var fluidBackBuffer = LinkedHashMap<String, FluidInfo>()
 
@@ -44,7 +44,7 @@ class NetworkInventoryCache(
     private val fluidEntries = LinkedHashMap<String, FluidSerialEntry>()
     private var nextSerial = 1L
 
-    // Change tracking for delta sync (shared serial space — items + fluids)
+    // Change tracking for delta sync (shared serial space, items + fluids)
     private val changedSerials = mutableSetOf<Long>()
     private val removedSerials = mutableSetOf<Long>()
     private val changedFluidSerials = mutableSetOf<Long>()
@@ -108,7 +108,7 @@ class NetworkInventoryCache(
             lastChangeDetected = true
         } else {
             if (lastChangeDetected) {
-                // First idle tick after changes — stay fast for one more cycle
+                // First idle tick after changes, stay fast for one more cycle
                 lastChangeDetected = false
             } else {
                 // Slow down gradually
@@ -174,10 +174,10 @@ class NetworkInventoryCache(
                 val key = cacheKey(outputId, false)
                 val existing = frontBuffer[key]
                 if (existing != null) {
-                    // Already in storage — mark as craftable
+                    // Already in storage, mark as craftable
                     frontBuffer[key] = existing.copy(isCraftable = true)
                 } else {
-                    // Not in storage — add phantom with count 0
+                    // Not in storage, add phantom with count 0
                     val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
                     val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
                     val name = Component.translatable(item.descriptionId).string
@@ -224,7 +224,7 @@ class NetworkInventoryCache(
         // Detect new and changed items. We compare count AND isCraftable: adding or
         //  removing a Processing Set / Instruction Set for an item that was already
         //  present in storage only flips the craftable flag, leaving count untouched
-        //  — the old count-only check missed that case, so adds/removes of recipes
+        //, the old count-only check missed that case, so adds/removes of recipes
         //  for in-stock items never reached the client.
         for ((key, info) in frontBuffer) {
             val existing = entries[key]
@@ -243,7 +243,7 @@ class NetworkInventoryCache(
             }
         }
 
-        // Fluids — same diff pattern against fluidFrontBuffer / fluidBackBuffer.
+        // Fluids, same diff pattern against fluidFrontBuffer / fluidBackBuffer.
         val fluidBackKeys = fluidBackBuffer.keys.toSet()
         for (key in fluidBackKeys) {
             if (key !in fluidFrontBuffer) {
@@ -361,7 +361,7 @@ class NetworkInventoryCache(
             fluidEntries[fluidId] = existing.copy(info = existing.info.copy(amount = existing.info.amount + amount))
             changedFluidSerials.add(existing.serial)
         } else {
-            // New fluid appeared via delta — we don't have the FluidType's localized name
+            // New fluid appeared via delta, we don't have the FluidType's localized name
             // reachable from the server side cheaply, so use the fluid id as a placeholder.
             // The next full poll (within MAX_TICK_INTERVAL) overwrites this with the proper
             // hover name sampled from a live FluidStack.

@@ -61,7 +61,7 @@ class NodeSideScreen(
     private var facingBlockStack: ItemStack = ItemStack.EMPTY
     private var facingBlockName: String = ""
 
-    /** Displayed title — updated when switching sides. */
+    /** Displayed title, updated when switching sides. */
     private var sideTitle: Component = title
 
     init {

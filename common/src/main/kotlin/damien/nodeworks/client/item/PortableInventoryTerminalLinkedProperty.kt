@@ -11,13 +11,13 @@ import net.minecraft.world.item.ItemStack
 
 /**
  * Item-model predicate for the Portable Inventory Terminal. Returns true when the
- * Portable has an installed Link Crystal with pairing data (regardless of kind) —
+ * Portable has an installed Link Crystal with pairing data (regardless of kind),
  * mirrors the LinkCrystal's own linked/unlinked semantic so the two items read as
  * a matched pair visually: "slot is populated with a live crystal."
  *
- * The linked model is responsible for showing the emissive accent layer; the
+ * The linked model is responsible for showing the emissive accent layer, the
  * unlinked model is a single flat texture. An installed but blank (un-encoded)
- * crystal renders as unlinked — there's nothing for the accent to represent yet.
+ * crystal renders as unlinked, there's nothing for the accent to represent yet.
  *
  * Registered under `nodeworks:portable_inventory_terminal_linked` and referenced
  * from `assets/nodeworks/items/portable_inventory_terminal.json`.

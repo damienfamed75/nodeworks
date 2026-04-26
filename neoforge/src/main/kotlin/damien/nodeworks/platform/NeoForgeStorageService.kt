@@ -16,7 +16,7 @@ class NeoForgeStorageService : StorageService {
     override fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle? {
         // 26.1: Capabilities.ItemHandler.BLOCK (IItemHandler) was replaced by
         //  Capabilities.Item.BLOCK (ResourceHandler<ItemResource>). The IItemHandler.of(...)
-        //  adapter is NeoForge's official migration ease path — keeps existing slot-based
+        //  adapter is NeoForge's official migration ease path, keeps existing slot-based
         //  logic intact while consuming the new resource-handler capability.
         val resourceHandler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
         return NeoForgeItemStorageHandle(IItemHandler.of(resourceHandler))
@@ -125,7 +125,7 @@ class NeoForgeStorageService : StorageService {
         val stack = ItemStack(item, capped)
         // NeoForge's transactional simulate: `insertItemStacked(simulate=true)` opens a root
         // transaction, snapshots each touched slot, performs the insertion on a copy, and aborts
-        // on close — net inventory state is guaranteed restored. Cosmetic slot reshuffling may
+        // on close, net inventory state is guaranteed restored. Cosmetic slot reshuffling may
         // be observed (the snapshot mechanism swaps the slot's ItemStack reference with a copy
         // mid-transaction) but item counts are preserved by the transaction contract, so there
         // is no duplication or loss risk.
@@ -138,7 +138,7 @@ class NeoForgeStorageService : StorageService {
         if (count > Int.MAX_VALUE.toLong()) return false
         val handler = (dest as NeoForgeItemStorageHandle).handler
         val stack = ItemStack(item, count.toInt())
-        // Simulate first — insertItemStacked with simulate=true returns leftover WITHOUT
+        // Simulate first, insertItemStacked with simulate=true returns leftover WITHOUT
         // mutating the handler. On a single-threaded server, the subsequent real insert
         // sees the same state the sim did, so a successful sim guarantees a successful commit.
         val sim = ItemHandlerHelper.insertItemStacked(handler, stack.copy(), true)
@@ -146,7 +146,7 @@ class NeoForgeStorageService : StorageService {
         val real = ItemHandlerHelper.insertItemStacked(handler, stack.copy(), false)
         if (!real.isEmpty) {
             // Unexpected divergence between sim and real. Extract back exactly what we placed
-            // to keep the atomic contract; matches on item type which is unambiguous (the stack
+            // to keep the atomic contract, matches on item type which is unambiguous (the stack
             // we passed in has no NBT components, so matches are straightforward).
             val inserted = stack.count - real.count
             extractByItem(handler, item, inserted)
@@ -165,7 +165,7 @@ class NeoForgeStorageService : StorageService {
         val src = (source as NeoForgeItemStorageHandle).handler
         val dst = (dest as NeoForgeItemStorageHandle).handler
 
-        // Phase 1 — real extract from source, collecting exactly `count` matching items.
+        // Phase 1, real extract from source, collecting exactly `count` matching items.
         // If source doesn't have enough, put what we took right back and return false.
         val extracted = mutableListOf<ItemStack>()
         var remaining = count
@@ -186,7 +186,7 @@ class NeoForgeStorageService : StorageService {
             return false
         }
 
-        // Phase 2 — atomic insert into dest, per item type. Sim-then-commit in sequence is
+        // Phase 2, atomic insert into dest, per item type. Sim-then-commit in sequence is
         // safe on a single-threaded server: each commit updates state so the next item type's
         // sim correctly reflects prior commits' effects.
         val byItem = extracted.groupBy { it.item }
@@ -204,7 +204,7 @@ class NeoForgeStorageService : StorageService {
             }
             val real = ItemHandlerHelper.insertItemStacked(dst, stack.copy(), false)
             if (!real.isEmpty) {
-                // Sim/real divergence — take back what did land and unwind everything.
+                // Sim/real divergence, take back what did land and unwind everything.
                 val landed = amount - real.count
                 if (landed > 0) extractByItem(dst, item, landed)
                 for ((it2, amt2) in committedToDst) extractByItem(dst, it2, amt2)
@@ -218,7 +218,7 @@ class NeoForgeStorageService : StorageService {
 
     /** Put a list of stacks back into [src] in slot order. Should always succeed fully on a
      *  single-threaded server since the items came from this handler a moment ago. Any genuine
-     *  overflow drops on the floor rather than looping forever — better than hanging. */
+     *  overflow drops on the floor rather than looping forever, better than hanging. */
     private fun restoreToSource(src: IItemHandler, stacks: List<ItemStack>) {
         for (s in stacks) {
             val leftover = ItemHandlerHelper.insertItemStacked(src, s.copy(), false)
@@ -332,7 +332,7 @@ class NeoForgeStorageService : StorageService {
 
     override fun findFirstFluidInfo(storage: FluidStorageHandle, filter: (String) -> Boolean): FluidInfo? {
         val handler = (storage as NeoForgeFluidStorageHandle).handler
-        // Aggregate across tanks — first matching id wins, amount summed.
+        // Aggregate across tanks, first matching id wins, amount summed.
         var firstId: String? = null
         var firstName: String? = null
         var total = 0L
@@ -388,7 +388,7 @@ class NeoForgeStorageService : StorageService {
             if (drained.isEmpty) continue
             val filled = dst.fill(drained, IFluidHandler.FluidAction.EXECUTE)
             if (filled < drained.amount) {
-                // Sim/real divergence — push the leftover back into source.
+                // Sim/real divergence, push the leftover back into source.
                 val leftover = drained.copyWithAmount(drained.amount - filled)
                 src.fill(leftover, IFluidHandler.FluidAction.EXECUTE)
             }
@@ -474,7 +474,7 @@ class NeoForgeStorageService : StorageService {
         if (sim < amount.toInt()) return false
         val real = handler.fill(stack.copy(), IFluidHandler.FluidAction.EXECUTE)
         if (real < amount.toInt()) {
-            // Unexpected divergence — drain whatever landed.
+            // Unexpected divergence, drain whatever landed.
             if (real > 0) handler.drain(FluidStack(fluid, real), IFluidHandler.FluidAction.EXECUTE)
             return false
         }

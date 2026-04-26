@@ -13,20 +13,20 @@ import net.neoforged.neoforge.client.settings.KeyConflictContext
  * menu and are fully user-rebindable.
  *
  * Everything exposed here is a raw `KeyMapping` reference rather than a
- * "is this pressed?" boolean accessor — the calling code (typically a widget's
+ * "is this pressed?" boolean accessor, the calling code (typically a widget's
  * `keyPressed`) gets the GLFW keyCode + scanCode from the event and asks the mapping
  * to match, which correctly accounts for rebinding, scancode-bound keys, etc.
  */
 object NodeworksKeyBindings {
     /** Key shown in controls as "Open Docs on Hover". Default: G. Conflict context is
      *  [KeyConflictContext.GUI] so a rebinding conflict is only flagged against other
-     *  GUI-scope keys — the binding only fires from the Scripting Terminal's editor
-     *  widget anyway. Category is MISC; a custom category would need a registered
+     *  GUI-scope keys, the binding only fires from the Scripting Terminal's editor
+     *  widget anyway. Category is MISC, a custom category would need a registered
      *  translation entry and we're keeping the footprint small for now. */
     val openDocs: KeyMapping = KeyMapping(
         "key.nodeworks.open_docs",
         KeyConflictContext.GUI,
-        InputConstants.Type.KEYSYM.getOrCreate(71), // GLFW_KEY_G (Key, not Type — bundles both)
+        InputConstants.Type.KEYSYM.getOrCreate(71), // GLFW_KEY_G (Key, not Type, bundles both)
         KeyMapping.Category.MISC,
     )
 
@@ -36,7 +36,7 @@ object NodeworksKeyBindings {
         }
     }
 
-    /** Polls the current held state of the bound key directly via GLFW — bypasses focus
+    /** Polls the current held state of the bound key directly via GLFW, bypasses focus
      *  routing so we see the key as held even while a text widget has focus. Matches the
      *  pattern GuideME's own OpenGuideHotkey uses to drive its item-tooltip progress bar. */
     fun openDocsKeyHeld(): () -> Boolean = {

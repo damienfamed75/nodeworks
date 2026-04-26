@@ -15,9 +15,9 @@ attached to. It queries storage, routes items between handles, and registers cal
 
 ## get
 
-Returns a reference to anything on the network addressed by name — any
+Returns a reference to anything on the network addressed by name, any
 <ItemLink id="storage_card" />, <ItemLink id="io_card" />, <ItemLink id="redstone_card" />,
-<ItemLink id="observer_card" />, or <ItemLink id="variable" /> — typically used at
+<ItemLink id="observer_card" />, or <ItemLink id="variable" />, typically used at
 the top of the script. Cards take priority on a name collision with a variable.
 
 You can click on the sidebar of the scripting terminal to auto-get them as well.

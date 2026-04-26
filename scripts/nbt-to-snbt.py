@@ -4,8 +4,11 @@
 Usage:
     python scripts/nbt-to-snbt.py <in.nbt> [out.snbt]
 
+This script exists purely so then I can automatically export snbt live when creating
+documentation without any extra steps.
+
 If no output path is given, writes SNBT to stdout. The output is a drop-in replacement
-for the hand-authored .snbt files under guidebook/assets/assemblies/ — safe to pipe
+for the hand-authored .snbt files under guidebook/assets/assemblies/, safe to pipe
 directly into that directory.
 
 IMPORTANT: This writes GuideME's `<ImportStructure>` format, which is NOT the same as
@@ -30,7 +33,7 @@ from pathlib import Path
 def format_state(name: str, properties: dict) -> str:
     """Emit a GuideME state string: `modid:block` or `modid:block{prop:val,prop2:val2}`.
 
-    Property values are serialized unquoted — matches AE2's output. Keys are emitted in
+    Property values are serialized unquoted, matches AE2's output. Keys are emitted in
     sorted order so regenerating the same structure produces byte-identical output.
     """
     if not properties:
@@ -73,7 +76,7 @@ def _format_key(k: str) -> str:
 def _format_typed_array(prefix: str, items) -> str:
     """Emit a typed array `[<prefix>; v1, v2, …]`. Byte/Int/Long arrays all use this shape."""
     # Typed-array elements are always bare numerics (no per-item suffix), and these arrays
-    # are usually small — keep them on one line.
+    # are usually small, keep them on one line.
     return f"[{prefix}; " + ", ".join(str(int(v)) for v in items) + "]"
 
 
@@ -82,13 +85,13 @@ def snbt_serialize(value, indent_level: int = 0) -> str:
 
     We can't round-trip nbtlib's default `str(tag)` output because it produces
     compact single-line output without the indentation + key ordering AE2 uses.
-    We also can't naively coerce nbtlib tags to plain Python int/float — that drops
+    We also can't naively coerce nbtlib tags to plain Python int/float, that drops
     the Byte/Short/Long/Float/Double distinction, and SNBT needs the suffixes.
     """
     pad = "    " * indent_level
     inner_pad = "    " * (indent_level + 1)
 
-    # Typed tag handling FIRST — these subclasses would otherwise match `isinstance(int)`
+    # Typed tag handling FIRST, these subclasses would otherwise match `isinstance(int)`
     # below and lose their SNBT suffix. `Int` intentionally falls through to the generic
     # int branch since plain integers have no suffix.
     if _NBTLIB_AVAILABLE:
@@ -162,7 +165,7 @@ def _infer_save_offset(data: list) -> tuple[int, int, int] | None:
     """
     from collections import Counter
 
-    # Only CONNECTABLES are valid connection targets — concretely, BEs whose `nbt:`
+    # Only CONNECTABLES are valid connection targets, concretely, BEs whose `nbt:`
     # contains a `connections:` field (even empty). Including every BE in the candidate
     # pool (e.g. chest / furnace neighbours) lets a wrong offset tie with the real one
     # by incidentally landing its "translated" connections on non-Connectable BE positions,
@@ -184,7 +187,7 @@ def _infer_save_offset(data: list) -> tuple[int, int, int] | None:
     if not conn_pairs or not connectable_positions:
         return None
 
-    # Score every (connection, candidate-target) offset; the real origin is the most common.
+    # Score every (connection, candidate-target) offset, the real origin is the most common.
     offsets: Counter = Counter()
     for _source, conn in conn_pairs:
         for target in connectable_positions:
@@ -237,9 +240,9 @@ def convert_structure(root) -> dict:
             palette: ["mod:block{prop:val,...}", ...]
         }
     """
-    # Only recurse into compounds/lists; leave leaf tags as their nbtlib subclass so
+    # Only recurse into compounds/lists, leave leaf tags as their nbtlib subclass so
     # `snbt_serialize` can pick the right SNBT suffix (0b, 42L, 1.5f, [I;…]) for each.
-    # Typed arrays (ByteArray/IntArray/LongArray) are intentionally NOT descended into —
+    # Typed arrays (ByteArray/IntArray/LongArray) are intentionally NOT descended into,
     # they're treated as a single leaf value by the serializer.
     def py(x):
         if isinstance(x, bool):
@@ -304,7 +307,7 @@ def main() -> int:
         print(f"File not found: {src}", file=sys.stderr)
         return 1
 
-    # Structure block saves are gzipped; fall back to uncompressed for hand-crafted cases.
+    # Structure block saves are gzipped, fall back to uncompressed for hand-crafted cases.
     try:
         f = File.load(src, gzipped=True)
     except (OSError, EOFError):

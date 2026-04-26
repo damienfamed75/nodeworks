@@ -39,7 +39,7 @@ object NodeConnectionRenderer {
     private const val MIN = 5f / 16f
     private const val MAX = 11f / 16f
 
-    /** Global tracker — any Connectable block entity can register/unregister here. */
+    /** Global tracker, any Connectable block entity can register/unregister here. */
     fun trackConnectable(pos: BlockPos, loaded: Boolean) {
         if (loaded) knownNodes.add(pos) else knownNodes.remove(pos)
     }
@@ -60,7 +60,7 @@ object NodeConnectionRenderer {
             if (!isConnectionBlocked(startPos, conn) && visited.add(conn)) queue.add(conn)
         }
         // Seed cluster-adjacency edges from the start position, same reasoning as
-        // the server BFS — trailing cluster storages have no laser connections so
+        // the server BFS, trailing cluster storages have no laser connections so
         // they'd otherwise be unreachable from here.
         enqueueClusterNeighbors(level, startPos, startEntity, visited, queue)
         while (queue.isNotEmpty() && visited.size < 32) {
@@ -138,7 +138,7 @@ object NodeConnectionRenderer {
     }
 
     /**
-     * Incrementally refresh the LOS cache — processes a limited number of raycasts per tick
+     * Incrementally refresh the LOS cache, processes a limited number of raycasts per tick
      * to avoid frame spikes. When all connections are checked, rebuilds reachability via BFS.
      */
     private fun refreshLosCache(level: net.minecraft.world.level.Level) {
@@ -232,7 +232,7 @@ object NodeConnectionRenderer {
             }
             // Cluster-storage adjacency: Instruction/Processing Storages cluster
             // via face adjacency, not lasers. Without this walk, only the storage
-            // laser-wired to a Node would be reachable — trailing storages in a
+            // laser-wired to a Node would be reachable, trailing storages in a
             // CNSSS chain would fail the `isReachable` gate in
             // ConnectableBER.resolveNetworkColor and render with the default grey
             // color despite having a correctly synced networkId. Mirrors the
@@ -251,7 +251,7 @@ object NodeConnectionRenderer {
 
         // Invalidate the BlockTintCache for every Connectable block belonging to a
         // network whose settings just changed. The cache is keyed on (section, pos,
-        // layer) and only refreshes when the section is marked dirty — setSectionDirty
+        // layer) and only refreshes when the section is marked dirty, setSectionDirty
         // forces a re-query of NetworkColorTintSource.colorInWorld next frame.
         damien.nodeworks.network.NetworkSettingsRegistry.onChanged = label@{ networkId ->
             val mc = Minecraft.getInstance()
@@ -315,7 +315,7 @@ object NodeConnectionRenderer {
 
         poseStack.popPose()
 
-        // Monitor count text — stays here because it wants camera-relative billboarding
+        // Monitor count text, stays here because it wants camera-relative billboarding
         // over the entire knownNodes set, not a per-BER pass.
         poseStack.pushPose()
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
@@ -395,12 +395,12 @@ object NodeConnectionRenderer {
 
         // Same 64-block distance cull as the main connection-render loop so text
         // work scales with nearby monitors, not total monitors on the network.
-        // Applied BEFORE getBlockEntity / font lookups — the squared-distance check
+        // Applied BEFORE getBlockEntity / font lookups, the squared-distance check
         // is the cheapest possible gate.
         val maxDistSq = 64.0 * 64.0
 
         // Iterate every tracked Connectable (MonitorBlockEntity registers via
-        // trackConnectable in setLevel; `knownNodes` is the full live set despite the
+        // trackConnectable in setLevel, `knownNodes` is the full live set despite the
         // historical name). Non-monitor positions fall through the `as?` cast and
         // are skipped cheaply.
         for (pos in knownNodes) {
@@ -449,7 +449,7 @@ object NodeConnectionRenderer {
                 bufferSource,
                 Font.DisplayMode.POLYGON_OFFSET,
                 0,
-                15728880
+                RenderUtils.FULL_BRIGHT
             )
 
             poseStack.popPose()
@@ -480,10 +480,10 @@ object NodeConnectionRenderer {
      * switched from `quad.vertices: int[]` to `position(i)` / `packedUV(i)`
      * accessors. The new flow: look up the block's `BlockStateModel`, collect
      * its `BlockStateModelPart`s, walk every `BakedQuad`, and emit each vertex
-     * to our registered [PinHighlightRenderType.THROUGH_WALLS] — which uses the
+     * to our registered [PinHighlightRenderType.THROUGH_WALLS], which uses the
      * block atlas with translucent blending and depth-test disabled.
      *
-     * Vertex format is `DefaultVertexFormat.BLOCK` (Position + Color + UV0 + UV2) —
+     * Vertex format is `DefaultVertexFormat.BLOCK` (Position + Color + UV0 + UV2),
      * no normal, no overlay.
      */
     fun renderPinHighlight(

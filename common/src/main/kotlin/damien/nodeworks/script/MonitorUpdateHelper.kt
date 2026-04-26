@@ -15,11 +15,11 @@ import java.util.concurrent.ConcurrentHashMap
  * **Cache-lookup dedupe:** [NetworkInventoryCache.getOrCreate] calls
  * `NetworkDiscovery.discoverNetwork` every invocation just to resolve the
  * UUID-keyed cache entry. Calling it once per monitor would rediscover the same
- * network N times — a trivially-observable perf hit on big networks. Instead we
+ * network N times, a trivially-observable perf hit on big networks. Instead we
  * group monitors by [MonitorBlockEntity.networkId] and only ask the registry for
  * one cache per unique network per tick. Monitors with `networkId == null` (not
  * yet joined / orphaned) fall through to a per-position lookup since there's no
- * other way to key them — that path is rare (a single monitor tracking nothing
+ * other way to key them, that path is rare (a single monitor tracking nothing
  * useful anyway).
  */
 object MonitorUpdateHelper {
@@ -63,7 +63,7 @@ object MonitorUpdateHelper {
         }
 
         // Resolve a cache PER NETWORK once. Any monitor on the same network reuses it.
-        // We pick the first monitor's position as the entry node — the cache's key is
+        // We pick the first monitor's position as the entry node, the cache's key is
         // the controller UUID so every monitor on the same network hits the same slot.
         val cachesByNet = HashMap<UUID, NetworkInventoryCache>(uniqueNetIds.size)
         for (entry in entries) {
@@ -75,7 +75,7 @@ object MonitorUpdateHelper {
             if (count != entry.be.displayCount) entry.be.updateDisplayCount(count)
         }
 
-        // Orphans (no networkId yet) — one lookup each, same as the old path.
+        // Orphans (no networkId yet), one lookup each, same as the old path.
         for (entry in orphans) {
             val cache = NetworkInventoryCache.getOrCreate(level, entry.be.blockPos)
             val count = cache.count(entry.itemId)

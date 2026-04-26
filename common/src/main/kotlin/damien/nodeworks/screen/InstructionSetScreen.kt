@@ -42,7 +42,7 @@ class InstructionSetScreen(
         private const val FRAME_W = 180
         private const val BG_H = 78  // upper panel height (matches exported PNG)
 
-        // Lower (inventory) panel — identical layout to ProcessingSetScreen.
+        // Lower (inventory) panel, identical layout to ProcessingSetScreen.
         private const val INV_PANEL_Y = 80
         private const val INV_PANEL_H = 96
         private const val INV_LABEL_Y = INV_PANEL_Y + 4
@@ -58,7 +58,7 @@ class InstructionSetScreen(
         private const val RESULT_X = 128
         private const val RESULT_Y = INPUT_SECTION_Y + 18  // middle row
 
-        // Clear-all button — matches ProcessingSetScreen placement (left of the input grid,
+        // Clear-all button, matches ProcessingSetScreen placement (left of the input grid,
         // vertically centered on it). Same CLEAR_BTN_X/Y since both GUIs have INPUT_SECTION_Y=13.
         private const val CLEAR_BTN_SIZE = 14
         private const val CLEAR_BTN_X = 16
@@ -84,7 +84,7 @@ class InstructionSetScreen(
         val x = leftPos
         val y = topPos
 
-        // Upper panel — single blit of the pre-composited static background.
+        // Upper panel, single blit of the pre-composited static background.
         graphics.blit(BG_TEXTURE, x, y, 0f, 0f, FRAME_W, BG_H, FRAME_W, BG_H)
 
         // Slot frames drawn at runtime over the black placeholders in the PNG.
@@ -97,7 +97,7 @@ class InstructionSetScreen(
         }
         NineSlice.SLOT.draw(graphics, x + RESULT_X - 1, y + RESULT_Y - 1, 18, 18)
 
-        // Clear-all button — matches ProcessingSetScreen: drawn 13×13 (1px shorter on bottom
+        // Clear-all button, matches ProcessingSetScreen: drawn 13×13 (1px shorter on bottom
         // and right) so the 5×5 X icon visually centers against the BUTTON 9-slice's
         // asymmetric shadow. Click hitbox stays at the full CLEAR_BTN_SIZE.
         val clearX = x + CLEAR_BTN_X
@@ -111,7 +111,7 @@ class InstructionSetScreen(
             clearY + (clearDrawH - 5) / 2,
             5, 5, WHITE)
 
-        // Player inventory — separate panel.
+        // Player inventory, separate panel.
         NineSlice.WINDOW_FRAME.draw(graphics, x, y + INV_PANEL_Y, FRAME_W, INV_PANEL_H)
         graphics.drawString(font, "Inventory", x + INV_X, y + INV_LABEL_Y, LABEL_COLOR)
         NineSlice.drawPlayerInventory(graphics, x + INV_X, y + INV_GRID_Y, HOTBAR_GAP)

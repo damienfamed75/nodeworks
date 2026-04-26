@@ -19,10 +19,6 @@ import kotlin.math.sqrt
  * Renders the glowing emissive overlay on the outside of each Node's central core
  * (tinted to the network colour) plus the per-card-slot laser beams that connect a
  * node face to its adjacent block.
- *
- * The monitor-face rendering previously lived here, but the Monitor is now its own
- * standalone block with its own BER ([MonitorRenderer]) — this class is purely a
- * Node renderer.
  */
 open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     ConnectableBER<NodeBlockEntity, NodeRenderer.NodeRenderState>(context) {
@@ -38,16 +34,16 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     /** Per-face tint mode for the inner glow cube. Resolves to an RGB at submit
      *  time (so [Mixed] can animate via the frame clock without re-extracting). */
     sealed class FaceTint {
-        /** No cards on this face — fall back to the network color the controller
+        /** No cards on this face, fall back to the network color the controller
          *  publishes for the whole node. */
         data object Network : FaceTint()
 
-        /** Every card on this face shares one channel; render that channel's
+        /** Every card on this face shares one channel, render that channel's
          *  dye color, including DyeColor.WHITE when the user hasn't dyed any
          *  card on this face. */
         data class Single(val rgb: Int) : FaceTint()
 
-        /** Cards on this face span ≥2 distinct channels; render the rainbow
+        /** Cards on this face span ≥2 distinct channels, render the rainbow
          *  cycle so the player can see at a glance "this face is mixed." */
         data object Mixed : FaceTint()
     }
@@ -73,10 +69,10 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_spiral.png")
         )
 
-        // glowStyle 5 = NONE in the controller GUI — skip rendering
+        // glowStyle 5 = NONE in the controller GUI, skip rendering
         private const val GLOW_STYLE_NONE = 5
 
-        /** Rainbow-mix face cycle period in ms. 3 seconds = leisurely loop —
+        /** Rainbow-mix face cycle period in ms. 3 seconds = leisurely loop,
          *  fast enough that you notice the animation on a face you're looking at,
          *  slow enough to not be visually noisy on a wall of nodes. */
         private const val MIXED_CYCLE_MS = 3000L
@@ -84,7 +80,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
 
         /** Solid-emissive base used for the per-face channel-color "lip" overlay.
-         *  Reuses the same `node_glow_square.png` the main glow cube uses — on a
+         *  Reuses the same `node_glow_square.png` the main glow cube uses, on a
          *  4×1-pixel strip the square pattern reads as a uniform colour, and the
          *  EYES pipeline adds the channel tint via vertex colour. */
         private val LIP_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_square.png")
@@ -136,8 +132,8 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
                     val (r, g, b) = CARD_COLORS[card.card.cardType] ?: continue
                     // Inventory cards (io / storage) and the redstone card need a real
                     // adjacent block to do anything, so we don't draw their beam into
-                    // empty air. Observer cards are useful pointed at air — they fire
-                    // onChange when something *appears* there — so their beam stays
+                    // empty air. Observer cards are useful pointed at air, they fire
+                    // onChange when something *appears* there, so their beam stays
                     // visible regardless. Future card types that should beam into air
                     // get added here.
                     if (targetIsAir && card.card.cardType != "observer") continue
@@ -155,7 +151,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     /** Map a face's per-card channel list to the [FaceTint] that should paint
      *  the glow cube on that face. Empty list (or all-white, the default
      *  unconfigured channel) → [FaceTint.Network] so the lip stays the plain
-     *  frame texture — a white indicator looked indistinguishable from the
+     *  frame texture, a white indicator looked indistinguishable from the
      *  default lip and was visually noisy. Single non-white channel →
      *  [FaceTint.Single]. ≥2 distinct channels → [FaceTint.Mixed]. */
     private fun resolveFaceTint(channels: List<net.minecraft.world.item.DyeColor>): FaceTint {
@@ -176,7 +172,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     ) {
         submitCardLinks(state, poseStack, submitNodeCollector, camera)
 
-        // Per-face channel tint goes on the inner lip of each face's frame ring;
+        // Per-face channel tint goes on the inner lip of each face's frame ring,
         // the main glow cube stays uniformly network-coloured. Run the lip pass
         // even when glowStyle == NONE so faces still indicate their channel.
         submitFaceLips(state, poseStack, submitNodeCollector)
@@ -194,63 +190,62 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val min = 5.9f / 16f
         val max = 10.1f / 16f
         val overlay = OverlayTexture.NO_OVERLAY
-        val light = 15728880
 
         submitNodeCollector.submitCustomGeometry(poseStack, renderType) { pose, vc ->
             // +Z (SOUTH)
             vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
             vc.addVertex(pose, max, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
             vc.addVertex(pose, min, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
             vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 0f, 1f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
             // -Z (NORTH)
             vc.addVertex(pose, min, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, -1f)
             vc.addVertex(pose, min, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, -1f)
             vc.addVertex(pose, max, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, -1f)
             vc.addVertex(pose, max, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 0f, -1f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, -1f)
             // +X (EAST)
             vc.addVertex(pose, max, min, min).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 1f, 0f, 0f)
             vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 1f, 0f, 0f)
             vc.addVertex(pose, max, max, max).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 1f, 0f, 0f)
             vc.addVertex(pose, max, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 1f, 0f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 1f, 0f, 0f)
             // -X (WEST)
             vc.addVertex(pose, min, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, -1f, 0f, 0f)
             vc.addVertex(pose, min, max, max).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, -1f, 0f, 0f)
             vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, -1f, 0f, 0f)
             vc.addVertex(pose, min, min, min).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, -1f, 0f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, -1f, 0f, 0f)
             // +Y (UP)
             vc.addVertex(pose, min, max, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 1f, 0f)
             vc.addVertex(pose, max, max, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 1f, 0f)
             vc.addVertex(pose, max, max, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 1f, 0f)
             vc.addVertex(pose, min, max, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, 1f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 1f, 0f)
             // -Y (DOWN)
             vc.addVertex(pose, min, min, min).setUv(0f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, -1f, 0f)
             vc.addVertex(pose, max, min, min).setUv(1f, 0f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, -1f, 0f)
             vc.addVertex(pose, max, min, max).setUv(1f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, -1f, 0f)
             vc.addVertex(pose, min, min, max).setUv(0f, 1f).setColor(r, g, b, 255).setOverlay(overlay)
-                .setUv2(light, light).setNormal(pose, 0f, -1f, 0f)
+                .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, -1f, 0f)
         }
     }
 
@@ -286,7 +281,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     }
 
     /** Emit the 4 lip quads for a single face. Each quad is a 1-pixel-deep strip on
-     *  the inward-facing wall of one of the face's 4 frame edges; together they
+     *  the inward-facing wall of one of the face's 4 frame edges, together they
      *  form a thin rectangular ring around the face's central opening. CCW vertex
      *  winding from the cavity-facing side so back-face culling keeps them.
      *
@@ -294,7 +289,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
      *  long horizontal frame edges (bottom-N/S, top-N/S), [a6,aA] (4 px) for
      *  strips that sit on the verticals or on the short edges of the U/D rings
      *  (bottom/top-west/east). Each strip is offset by [eps] along its normal so
-     *  it sits just inside the JSON model's underlying frame face — keeps the
+     *  it sits just inside the JSON model's underlying frame face, keeps the
      *  EYES pipeline (depth-test, no depth-write) from z-fighting that face. */
     private fun emitLipQuadsForFace(
         pose: PoseStack.Pose,
@@ -340,7 +335,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             }
 
             Direction.EAST -> {
-                // East ring is 4-px on all 4 strips — bottom/top-east are short (z=a6..aA),
+                // East ring is 4-px on all 4 strips, bottom/top-east are short (z=a6..aA),
                 // vertical-NE/SE are short (y=a6..aA).
                 lipQuad(pose, vc, inner, a6e, aA, outer, a6e, aA, outer, a6e, a6, inner, a6e, a6, 0f, 1f, 0f, r, g, b)
                 lipQuad(pose, vc, inner, aAe, a6, outer, aAe, a6, outer, aAe, aA, inner, aAe, aA, 0f, -1f, 0f, r, g, b)
@@ -356,7 +351,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             }
 
             Direction.UP -> {
-                // top-north/top-south are long in X (a5..aB); top-west/top-east are short in Z.
+                // top-north/top-south are long in X (a5..aB), top-west/top-east are short in Z.
                 lipQuad(pose, vc, a5, inner, a6e, aB, inner, a6e, aB, outer, a6e, a5, outer, a6e, 0f, 0f, 1f, r, g, b)
                 lipQuad(pose, vc, aB, inner, aAe, a5, inner, aAe, a5, outer, aAe, aB, outer, aAe, 0f, 0f, -1f, r, g, b)
                 lipQuad(pose, vc, a6e, inner, aA, a6e, inner, a6, a6e, outer, a6, a6e, outer, aA, 1f, 0f, 0f, r, g, b)
@@ -372,46 +367,46 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         }
     }
 
+    /** Yea it's ugly but it's a hot path */
     private fun lipQuad(
         pose: PoseStack.Pose,
         vc: com.mojang.blaze3d.vertex.VertexConsumer,
-        x0: Float, y0: Float, z0: Float,
-        x1: Float, y1: Float, z1: Float,
-        x2: Float, y2: Float, z2: Float,
-        x3: Float, y3: Float, z3: Float,
-        nx: Float, ny: Float, nz: Float,
-        r: Int, g: Int, b: Int,
+        x0: Float, y0: Float, z0: Float, // v0
+        x1: Float, y1: Float, z1: Float, // v1
+        x2: Float, y2: Float, z2: Float, // v2
+        x3: Float, y3: Float, z3: Float, // v3
+        nx: Float, ny: Float, nz: Float, // normal
+        r: Int, g: Int, b: Int, // color
     ) {
         val overlay = OverlayTexture.NO_OVERLAY
-        val light = 15728880
         vc.addVertex(pose, x0, y0, z0)
             .setUv(0f, 1f)
             .setColor(r, g, b, 255)
             .setOverlay(overlay)
-            .setUv2(light, light)
+            .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT)
             .setNormal(pose, nx, ny, nz)
         vc.addVertex(pose, x1, y1, z1)
             .setUv(1f, 1f)
             .setColor(r, g, b, 255)
             .setOverlay(overlay)
-            .setUv2(light, light)
+            .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT)
             .setNormal(pose, nx, ny, nz)
         vc.addVertex(pose, x2, y2, z2)
             .setUv(1f, 0f)
             .setColor(r, g, b, 255)
             .setOverlay(overlay)
-            .setUv2(light, light)
+            .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT)
             .setNormal(pose, nx, ny, nz)
         vc.addVertex(pose, x3, y3, z3)
             .setUv(0f, 0f)
             .setColor(r, g, b, 255)
             .setOverlay(overlay)
-            .setUv2(light, light)
+            .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT)
             .setNormal(pose, nx, ny, nz)
     }
 
     /** Resolve a face's [FaceTint] to a concrete (r, g, b) at submit time.
-     *  [networkColor] is the per-network ARGB; [mixedHue] is the current frame's
+     *  [networkColor] is the per-network ARGB, [mixedHue] is the current frame's
      *  rainbow phase shared across every Mixed face on this node. */
     private fun resolveRgb(tint: FaceTint, networkColor: Int, mixedHue: Float): Triple<Int, Int, Int> = when (tint) {
         is FaceTint.Network -> Triple(
@@ -430,7 +425,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     }
 
     /** HSV → RGB at full byte range. Hue in degrees [0..360), s/v in [0..1].
-     *  Used only for the rainbow-mix face indicator; if other render paths need
+     *  Used only for the rainbow-mix face indicator, if other render paths need
      *  HSV in the future this can move into a shared helper. */
     private fun hsvToRgb(hueDeg: Float, s: Float, v: Float): Triple<Int, Int, Int> {
         val h = ((hueDeg % 360f) + 360f) % 360f

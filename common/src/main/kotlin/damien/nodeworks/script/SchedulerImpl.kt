@@ -7,8 +7,8 @@ import org.luaj.vm2.lib.*
  * Manages tick-based scheduling for Lua scripts.
  *
  * Two systems:
- * 1. Scheduled tasks — :tick(fn), :second(fn), :delay(ticks, fn), :cancel(id)
- * 2. Pending jobs — polling callbacks checked each tick (used by job:pull and network:process)
+ * 1. Scheduled tasks, :tick(fn), :second(fn), :delay(ticks, fn), :cancel(id)
+ * 2. Pending jobs, polling callbacks checked each tick (used by job:pull and network:process)
  */
 class SchedulerImpl(
     /** Called when a scheduled task throws an error. The error is logged but execution continues. */

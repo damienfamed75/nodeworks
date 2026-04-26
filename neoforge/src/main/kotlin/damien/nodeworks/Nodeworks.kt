@@ -76,7 +76,7 @@ class Nodeworks(modBus: IEventBus) {
         // since NeoForge's RegisterEvent actually allows cross-registry registration.
         event.register(Registries.BLOCK) {
             ModBlocks.initialize()
-            // ModDataComponents MUST come before ModItems — items may reference
+            // ModDataComponents MUST come before ModItems, items may reference
             // component types as defaults, and referencing an unregistered component
             // crashes the item constructor with an Unregistered value.
             damien.nodeworks.registry.ModDataComponents.initialize()
@@ -84,11 +84,11 @@ class Nodeworks(modBus: IEventBus) {
             ModBlockEntities.initialize()
             damien.nodeworks.registry.ModEntityTypes.initialize()
             // Recipe types + serializers + display types. Ordering:
-            //   1. ModRecipeTypes — the RecipeType marker the recipe class references.
-            //   2. ModRecipeDisplayTypes — the display Type referenced by Recipe.display()
+            //   1. ModRecipeTypes, the RecipeType marker the recipe class references.
+            //   2. ModRecipeDisplayTypes, the display Type referenced by Recipe.display()
             //      implementations. Must be registered before the serializer (below)
             //      because constructing a Recipe eagerly may touch display Type.
-            //   3. ModRecipeSerializers — the MapCodec/StreamCodec pair that loads
+            //   3. ModRecipeSerializers, the MapCodec/StreamCodec pair that loads
             //      our JSON and syncs over the network.
             damien.nodeworks.registry.ModRecipeTypes.initialize()
             damien.nodeworks.registry.ModRecipeDisplayTypes.initialize()
@@ -267,7 +267,7 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
-        // SetStoragePriorityPayload removed — priority is now per-card via StorageCard GUI
+        // SetStoragePriorityPayload removed, priority is now per-card via StorageCard GUI
         registrar.playToServer(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC, NeoForgeTerminalPackets::handleOpenInstructionSet)
         registrar.playToServer(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC, NeoForgeTerminalPackets::handleSetInstructionGrid)
         registrar.playToServer(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC) { payload, context ->
@@ -382,7 +382,7 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
-        // DeviceSettingsPayload — shared (Breaker, Placer, future devices). Dispatch
+        // DeviceSettingsPayload, shared (Breaker, Placer, future devices). Dispatch
         // by reading the BlockEntity at [pos] and matching its concrete type. Same
         // proximity check as VariableSettingsPayload so a remote client can't tweak
         // settings on a device they're not standing near.
@@ -613,10 +613,10 @@ class Nodeworks(modBus: IEventBus) {
 
     private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
         damien.nodeworks.script.ResumeScheduler.onServerStop()
-        // Drop cached SavedData handles — a restart in the same JVM (integrated server quit+rejoin)
+        // Drop cached SavedData handles, a restart in the same JVM (integrated server quit+rejoin)
         // must re-resolve them against the freshly loaded level.dataStorage.
         damien.nodeworks.network.NodeConnectionHelper.clearServerCaches()
-        // Wipe chunk-load refcounts — each controller's setLevel on the next run will
+        // Wipe chunk-load refcounts, each controller's setLevel on the next run will
         // re-claim, rebuilding the map from scratch against a fresh level.
         damien.nodeworks.network.ChunkForceLoadManager.clearAll()
     }

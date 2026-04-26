@@ -25,7 +25,7 @@ The Network Wrench is the tool you use to wire
 2. **Right-click any [Connectable](../nodeworks-mechanics/connectables.md#every-connectable)** within range and line-of-sight. A laser beam
    renders between the two blocks.
 
-Only Nodes can be selected as the starting endpoint; the second click can target
+Only Nodes can be selected as the starting endpoint, the second click can target
 any Connectable.
 
 ## Disconnecting

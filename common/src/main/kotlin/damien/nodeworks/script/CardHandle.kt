@@ -43,10 +43,10 @@ class CardHandle private constructor(
         /**
          * Parse a user-facing filter string into an optional kind gate and the inner pattern.
          *
-         * A leading `${'$'}item:` or `${'$'}fluid:` locks the match to that resource kind; the remainder
+         * A leading `${'$'}item:` or `${'$'}fluid:` locks the match to that resource kind, the remainder
          * is the pattern applied to the resource id. `*`, `<mod>:*`, `#tag`, `/regex/`, and exact id
          * are supported as patterns (kind-agnostic otherwise). The `${'$'}` sigil keeps the kind
-         * prefix orthogonal to mod namespaces — no risk of clashing with a mod named "item".
+         * prefix orthogonal to mod namespaces, no risk of clashing with a mod named "item".
          */
         fun parseFilterKind(filter: String): Pair<ResourceKind?, String> = when {
             filter.startsWith("\$item:") -> Pair(ResourceKind.ITEM, filter.removePrefix("\$item:"))
@@ -54,7 +54,7 @@ class CardHandle private constructor(
             else -> Pair(null, filter)
         }
 
-        /** Backward-compat overload — assumes the tested id is an item id. */
+        /** Backward-compat overload, assumes the tested id is an item id. */
         fun matchesFilter(itemId: String, filter: String): Boolean =
             matchesFilter(itemId, ResourceKind.ITEM, filter)
 
@@ -123,7 +123,7 @@ class CardHandle private constructor(
      *
      * Atomic mode (insert): moves `handle.count` exactly, or 0. Returns boolean.
      *   - Buffer-backed source: extract requested → attempt insert → rollback any shortfall.
-     *   - Storage-backed source: move up to requested and accept whatever landed; moveItems
+     *   - Storage-backed source: move up to requested and accept whatever landed, moveItems
      *     already extracts-then-inserts under the hood, so partial shortfall means the source
      *     still holds the leftover. We then extract-back-to-source any already-moved items
      *     to keep atomicity. (Today's move API doesn't expose simulate, so this is the cost.)
@@ -151,7 +151,7 @@ class CardHandle private constructor(
                     return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
                 }
 
-                // Dispatch by the handle's kind — an item handle targets the card's item cap,
+                // Dispatch by the handle's kind, an item handle targets the card's item cap,
                 // a fluid handle targets the card's fluid cap. A block with neither matching
                 // cap simply fails the op (returns 0/false).
                 val moved: Long = if (itemsHandle.kind == ResourceKind.FLUID) {
@@ -206,9 +206,9 @@ class CardHandle private constructor(
     /**
      * Buffer → destination.
      *
-     * Atomic path uses [PlatformServices.StorageService.tryInsertAll] — checks destination
+     * Atomic path uses [PlatformServices.StorageService.tryInsertAll], checks destination
      * capacity via the platform's native transaction/simulation, moves only if all fits.
-     * On failure, nothing is extracted from the buffer — no rollback needed.
+     * On failure, nothing is extracted from the buffer, no rollback needed.
      *
      * Best-effort path extracts in stack-sized batches, committing each real insert and
      * returning any shortfall to the buffer before stopping.
@@ -264,7 +264,7 @@ class CardHandle private constructor(
     /**
      * Storage → destination.
      *
-     * Atomic path uses [PlatformServices.StorageService.tryMoveAll] — a platform-native
+     * Atomic path uses [PlatformServices.StorageService.tryMoveAll], a platform-native
      * transaction encloses the extract+insert, so either the full [requested] count moves
      * or neither side is touched. Eliminates the duplication class of bugs that come with
      * extract-partial-then-rollback-by-filter.
@@ -324,7 +324,7 @@ class CardHandle private constructor(
         val table = LuaTable()
         val self = this
 
-        // .name — readable alias for the card, matching how it's labelled in the terminal
+        // .name, readable alias for the card, matching how it's labelled in the terminal
         // sidebar and Card Programmer. Falls back through the same chain as everywhere else
         // (`alias ?? autoAlias ?? capabilityType`) so `print(card.name)` always produces
         // something meaningful even for un-renamed cards.

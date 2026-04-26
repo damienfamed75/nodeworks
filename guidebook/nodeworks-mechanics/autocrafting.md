@@ -113,7 +113,7 @@ If a craft fails, the <ItemLink id="crafting_core" /> starts emitting red
 redstone dust particles in a pulsing cloud around the block. It keeps
 pulsing until you either open the Core's GUI and dismiss the error or
 start a new craft that succeeds. Scan for the red dust first when
-something's off; the Core itself is the fastest way to find which CPU
+something's off, the Core itself is the fastest way to find which CPU
 is complaining.
 
 ![](../assets/images/crafting_cpu_erroring.png)

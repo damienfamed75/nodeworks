@@ -19,9 +19,9 @@ import org.luaj.vm2.lib.VarArgFunction
  * Factory for [StockerBuilder]. Exposed as the `stocker` Lua global.
  *
  * Three entry points:
- *   * `stocker:from(filter, sources...)` — pull from specific cards (or the pool)
- *   * `stocker:ensure(itemId)` — pull from the pool first, craft the rest if short
- *   * `stocker:craft(itemId)` — always craft (never pull)
+ *   * `stocker:from(filter, sources...)`, pull from specific cards (or the pool)
+ *   * `stocker:ensure(itemId)`, pull from the pool first, craft the rest if short
+ *   * `stocker:craft(itemId)`, always craft (never pull)
  */
 object Stocker {
 
@@ -108,7 +108,7 @@ class StockerBuilder(
     private var pendingCraftCount: Int = 0
 
     // Per-snapshot cached resolutions. Sources expand wildcards (e.g. `"chest_*"` fans
-    // out to every matching card); target stays single because "maintain 64 in each of
+    // out to every matching card), target stays single because "maintain 64 in each of
     // chest_*" has ambiguous semantics that a power user can express with multiple
     // stockers if they really want it.
     private var resolvedSources: List<ResolvedRef> = emptyList()
@@ -186,7 +186,7 @@ class StockerBuilder(
         // 2b. CRAFT_ONLY with a Named target: the CPU writes craft output back into the
         // network pool, so we still have to drain pool → target each tick or the items
         // pile up in storage and never reach the named card. POOL_OR_CRAFT already does
-        // this implicitly through its `[Pool]` source in step 2; CRAFT_ONLY has empty
+        // this implicitly through its `[Pool]` source in step 2, CRAFT_ONLY has empty
         // sources so it needs the explicit move.
         if (mode == StockerMode.CRAFT_ONLY && targetRef is CardRef.Named) {
             val drained = movePoolToTarget(snapshot, level, targetRef, filterPred, need.toLong())
@@ -302,7 +302,7 @@ class StockerBuilder(
         if (pending != null && !pending.isComplete) {
             pending.onCompleteCallback = decrement
         } else {
-            // Synchronous completion (rare) — decrement immediately.
+            // Synchronous completion (rare), decrement immediately.
             decrement(true)
         }
     }

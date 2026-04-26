@@ -11,7 +11,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 
 /**
- * Emissive overlay for the Receiver Antenna — glowing side faces (N/S/E/W, top/bottom
+ * Emissive overlay for the Receiver Antenna, glowing side faces (N/S/E/W, top/bottom
  * unlit), tinted with the current network colour.
  */
 open class ReceiverAntennaRenderer(context: BlockEntityRendererProvider.Context) :

@@ -12,7 +12,7 @@ import guideme.libs.mdast.model.MdAstParagraph
 import guideme.libs.mdast.mdx.model.MdxJsxElementFields
 
 /**
- * `<CategoryIndexDescriptions category="…" />` — variant of GuideME's built-in
+ * `<CategoryIndexDescriptions category="…" />`, variant of GuideME's built-in
  * `<CategoryIndex>` that also renders a short description alongside each page link.
  *
  * ## Frontmatter
@@ -38,19 +38,19 @@ import guideme.libs.mdast.mdx.model.MdxJsxElementFields
  * ## Output shape
  *
  * ```
- *  • <pageTitleLink> — <rendered description>
- *  • <otherPageLink> — <other description>
+ *  • <pageTitleLink>, <rendered description>
+ *  • <otherPageLink>, <other description>
  * ```
  *
  * Pages without a `description` frontmatter key render with just the title (same as
  * built-in `<CategoryIndex>`). Pages in the category that can't be found in the page
- * collection render an "Unknown page" placeholder — matches the upstream behavior.
+ * collection render an "Unknown page" placeholder, matches the upstream behavior.
  *
  * ## Ordering
  *
  * Entries are sorted by `navigation.position` first (ascending, default 0), then by
  * title alphabetically as a tie-breaker. Users control order via the `position` field
- * they already set in each page's frontmatter — same convention that drives the sidebar.
+ * they already set in each page's frontmatter, same convention that drives the sidebar.
  */
 class CategoryIndexDescriptionsTagCompiler : BlockTagCompiler() {
     override fun getTagNames(): Set<String> = setOf(TAG_NAME)
@@ -110,11 +110,11 @@ class CategoryIndexDescriptionsTagCompiler : BlockTagCompiler() {
 
     /**
      * Parse [description] as a standalone markdown snippet and splice its first paragraph's
-     * flow content into [into]. We resolve link targets against [owningPageId] — the page
-     * the description was written on — so relative paths in a description work as if they
+     * flow content into [into]. We resolve link targets against [owningPageId], the page
+     * the description was written on, so relative paths in a description work as if they
      * were written in that page's body, not the index page rendering them.
      *
-     * Multi-paragraph descriptions get only their first paragraph used; longer content
+     * Multi-paragraph descriptions get only their first paragraph used, longer content
      * belongs in the page body, not the index blurb.
      */
     private fun renderDescriptionInline(
@@ -123,7 +123,7 @@ class CategoryIndexDescriptionsTagCompiler : BlockTagCompiler() {
         description: String,
         owningPageId: net.minecraft.resources.Identifier,
     ) {
-        // PageCompiler.parse handles a bare snippet fine — no frontmatter fences needed.
+        // PageCompiler.parse handles a bare snippet fine, no frontmatter fences needed.
         // We reuse the owning page's id so any relative link resolution in the description
         // targets the right directory (matches how `<ItemLink>` / markdown links work
         // when the description is read in context on the owning page).
@@ -143,7 +143,7 @@ class CategoryIndexDescriptionsTagCompiler : BlockTagCompiler() {
     companion object {
         const val TAG_NAME: String = "CategoryIndexDescriptions"
 
-        /** Label PageCompiler attaches to parse errors. Purely for log attribution — any
+        /** Label PageCompiler attaches to parse errors. Purely for log attribution, any
          *  string works but this one flags the source clearly. */
         private const val SNIPPET_SOURCE_PACK: String = "nodeworks:category-index-description"
     }

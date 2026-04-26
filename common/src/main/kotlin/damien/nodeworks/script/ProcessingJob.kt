@@ -13,7 +13,7 @@ import org.luaj.vm2.lib.*
  * job:pull(card, ...) checks if outputs are available. If ready, extracts atomically
  * into the CPU buffer and signals completion. If not, registers a pending poll on the scheduler.
  *
- * Items stay in the CPU buffer — the caller (releaseCraftResult / finishCrafting) is
+ * Items stay in the CPU buffer, the caller (releaseCraftResult / finishCrafting) is
  * responsible for flushing them to network storage and releasing the CPU.
  */
 class ProcessingJob(
@@ -87,9 +87,9 @@ class ProcessingJob(
                     return LuaValue.TRUE
                 }
 
-                // Async — persist pull targets on CPU for resume after restart.
+                // Async, persist pull targets on CPU for resume after restart.
                 // Per-op resume (preferred) lets the new scheduler restart polling on the
-                // exact op that was in-flight; the legacy global addPendingOp is still called
+                // exact op that was in-flight, the legacy global addPendingOp is still called
                 // for backwards compat with the legacy resume path.
                 cpu.addPendingOp(api.outputs.map { it.first to it.second.toLong() }, pullTargets)
                 if (opId >= 0) {
@@ -179,7 +179,7 @@ class ProcessingJob(
     }
 
     /**
-     * Public entry for resume — start polling with pre-built getters.
+     * Public entry for resume, start polling with pre-built getters.
      * Same logic as job:pull() but bypasses the Lua API.
      */
     fun startPoll(getters: List<CardHandle.StorageGetter>) {

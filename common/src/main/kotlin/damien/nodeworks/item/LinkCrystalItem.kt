@@ -18,11 +18,11 @@ import java.util.function.Consumer
 
 /**
  * Describes what a Broadcast Antenna is exposing when a Link Crystal is paired to it.
- * The crystal carries this alongside the antenna's position so consumers can type-check —
+ * The crystal carries this alongside the antenna's position so consumers can type-check,
  * e.g. a Handheld Inventory Terminal only accepts crystals paired to a [NETWORK_CONTROLLER]
  * source, while a Receiver Antenna only accepts [PROCESSING_STORAGE] crystals.
  *
- * The kind is a snapshot taken at encoding time; if the antenna's adjacent block changes
+ * The kind is a snapshot taken at encoding time, if the antenna's adjacent block changes
  * after a crystal is encoded, the mismatch surfaces at consumer-resolution time rather
  * than silently switching the crystal's meaning underneath the player.
  */
@@ -32,8 +32,8 @@ enum class BroadcastSourceKind {
 }
 
 /**
- * Link Crystal — used to pair remote consumers (Receiver Antennas, Handheld Inventory
- * Terminals, etc.) to a Broadcast Antenna. Blank when crafted; encodes with the antenna's
+ * Link Crystal, used to pair remote consumers (Receiver Antennas, Handheld Inventory
+ * Terminals, etc.) to a Broadcast Antenna. Blank when crafted, encodes with the antenna's
  * frequency, position, dimension, and source-kind when placed in a Broadcast Antenna slot.
  * The encoded crystal is then inserted into whatever consumer it's meant to drive.
  */
@@ -98,7 +98,7 @@ class LinkCrystalItem(properties: Properties) : Item(properties) {
             val kind = if (kindStr.isEmpty()) {
                 BroadcastSourceKind.PROCESSING_STORAGE
             } else {
-                // Unrecognised kind (forwards-compat — e.g. a newer mod version added a
+                // Unrecognised kind (forwards-compat, e.g. a newer mod version added a
                 // variant we don't know). Treat it as an unpairable crystal rather than
                 // silently coercing to a wrong kind.
                 try { BroadcastSourceKind.valueOf(kindStr) } catch (_: IllegalArgumentException) { return null }

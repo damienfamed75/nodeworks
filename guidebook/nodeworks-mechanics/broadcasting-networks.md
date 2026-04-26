@@ -9,7 +9,7 @@ categories:
 
 # Broadcasting Network
 
-A broadcasting network extends a Nodeworks network across distance — or across dimensions entirely.
+A broadcasting network extends a Nodeworks network across distance, or across dimensions entirely.
 It's made of two halves: a **Broadcast Antenna** that projects the source network's state, and a
 **Receiver Antenna** that subscribes to one. Once paired, the receiver-side network can use the
 broadcasting network's processing sets that the **Broadcast Antenna** was placed above.

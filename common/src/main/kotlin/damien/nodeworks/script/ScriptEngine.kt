@@ -128,7 +128,7 @@ class ScriptEngine(
                 val chunk = g.load(wrapForLoopIterators(stripTypeAnnotations(source)), modName)
                 val result = chunk.call()
 
-                // If the module returned a value, cache that; otherwise cache true
+                // If the module returned a value, cache that, otherwise cache true
                 val moduleValue = if (result.isnil()) LuaValue.TRUE else result
                 loaded.set(modName, moduleValue)
                 return moduleValue
@@ -151,7 +151,7 @@ class ScriptEngine(
             true
         } catch (e: LuaError) {
             // Script-level errors belong in the player-facing terminal log and the
-            // Diagnostic Tool's error buffer — not the server console.
+            // Diagnostic Tool's error buffer, not the server console.
             logCallback("Error: ${e.message}", true)
             stop()
             false
@@ -177,7 +177,7 @@ class ScriptEngine(
 
     fun isRunning(): Boolean = globals != null
 
-    /** Whether this engine should stay alive — has scheduler tasks, handlers, or routing. */
+    /** Whether this engine should stay alive, has scheduler tasks, handlers, or routing. */
     fun hasWork(): Boolean = scheduler.hasActiveTasks()
         || processingHandlers.isNotEmpty()
         || redstoneCallbacks.isNotEmpty()
@@ -189,14 +189,14 @@ class ScriptEngine(
     fun tick(tickCount: Long) {
         if (globals == null) return
 
-        // The server keeps every Connectable's `networkId` current — when an LOS break or
+        // The server keeps every Connectable's `networkId` current, when an LOS break or
         // removed node severs the path, `propagateNetworkId` clears it on the orphaned
         // side. If our entry node no longer claims a network the terminal is effectively
-        // disconnected; running further would silently operate against a stale snapshot
+        // disconnected, running further would silently operate against a stale snapshot
         // so stop with a clear error and let auto-run restart us once reconnected.
         val entry = level.getBlockEntity(networkEntryNode) as? damien.nodeworks.network.Connectable
         if (entry?.networkId == null) {
-            logCallback("Network disconnected — no controller reachable.", true)
+            logCallback("Network disconnected, no controller reachable.", true)
             stop()
             return
         }
@@ -226,7 +226,7 @@ class ScriptEngine(
     }
 
     /** Polled once per server tick. Skips any observer whose target chunk isn't loaded
-     *  so a far-away farm doesn't pay chunk-load cost from the polling loop alone — when
+     *  so a far-away farm doesn't pay chunk-load cost from the polling loop alone, when
      *  the chunk reloads the next poll resyncs `lastState` silently and won't fire a
      *  spurious onChange for the load delta. Handler exceptions are caught and routed
      *  through the log so one bad observer can't kill the whole tick. */
@@ -300,7 +300,7 @@ class ScriptEngine(
             // Return type annotations: ): TypeName or ): TypeName?
             result = result.replace(Regex("""\)\s*:\s*($typePattern)""")) { ")" }
 
-            // Container param types: (param: { CardHandle }) — keep the param name,
+            // Container param types: (param: { CardHandle }), keep the param name,
             // drop the annotation. Matches the same brace-delimited form as returns.
             result = result.replace(Regex("""\b(\w+)\s*:\s*\{[^}]*}""")) { it.groupValues[1] }
 
@@ -309,21 +309,21 @@ class ScriptEngine(
 
         /**
          * Rewrite `for ... in EXPR do` to `for ... in ipairs(EXPR) do` or `pairs(EXPR)`
-         * when EXPR isn't already wrapped. Iterator choice comes from [LuaApiDocs] —
+         * when EXPR isn't already wrapped. Iterator choice comes from [LuaApiDocs],
          * array-returning calls (`{ X }`) wrap in `ipairs`, map-returning calls
          * (`{ [K]: V }`) wrap in `pairs`, and anything we can't resolve defaults to
          * `pairs` since it iterates any table safely.
          *
          * Intentionally conservative: if the expression already starts with `ipairs(` /
          * `pairs(`, or parses to something other than a function/method call, we leave
-         * it alone — users writing custom iterators keep full control.
+         * it alone, users writing custom iterators keep full control.
          */
         fun wrapForLoopIterators(source: String): String {
             // First pass: infer container kind for bare-variable for-loops. Covers two
             // sources, with the explicit annotation winning when both apply:
-            //   * `local xs: { T }` / `local xs: { [K]: V }` — user-declared container
+            //   * `local xs: { T }` / `local xs: { [K]: V }`, user-declared container
             //     type. Authoritative.
-            //   * `local xs = fn()` where fn returns a container (per [LuaApiDocs]) —
+            //   * `local xs = fn()` where fn returns a container (per [LuaApiDocs]),
             //     inferred fallback.
             val containerVars = mutableMapOf<String, LuaApiDocs.Container>()
             val annotationPattern = Regex("""\blocal\s+(\w+)\s*:\s*(\{[^}]*})""")
@@ -364,7 +364,7 @@ class ScriptEngine(
                 val iter = when (container) {
                     LuaApiDocs.Container.ARRAY -> "ipairs"
                     LuaApiDocs.Container.MAP -> "pairs"
-                    // Unknown / scalar / nothing parsed — default to `pairs` because it
+                    // Unknown / scalar / nothing parsed, default to `pairs` because it
                     // iterates any table shape without needing contiguous integer keys.
                     else -> "pairs"
                 }
@@ -380,7 +380,7 @@ class ScriptEngine(
         if (cap is damien.nodeworks.card.RedstoneSideCapability) {
             // Remove inventory methods that don't apply to redstone. `face` is also cleared
             // because redstone methods read from `cap.nodeSide` (the side the card is
-            // installed on) — they never consult the CardHandle's `accessFace`, so
+            // installed on), they never consult the CardHandle's `accessFace`, so
             // `redstone:face("top"):powered()` does nothing useful. Worse, `:face` builds
             // a fresh CardHandle.toLuaTable which re-installs `find`/`insert`/etc. without
             // going through this NIL'ing branch, so calling it would resurrect inventory
@@ -409,7 +409,7 @@ class ScriptEngine(
                 }
             })
 
-            // set(boolean | number) — emit redstone signal
+            // set(boolean | number), emit redstone signal
             table.set("set", object : TwoArgFunction() {
                 override fun call(selfArg: LuaValue, valueArg: LuaValue): LuaValue {
                     val strength = when {
@@ -424,7 +424,7 @@ class ScriptEngine(
                 }
             })
 
-            // onChange(function(strength: number)) — register callback for signal changes
+            // onChange(function(strength: number)), register callback for signal changes
             table.set("onChange", object : TwoArgFunction() {
                 override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
                     val fn = fnArg.checkfunction()
@@ -436,7 +436,7 @@ class ScriptEngine(
         }
 
         if (cap is damien.nodeworks.card.ObserverSideCapability) {
-            // Observer cards have no inventory and no redirected face — `:face` would
+            // Observer cards have no inventory and no redirected face, `:face` would
             // produce a CardHandle table that hides `block`/`state`/`onChange` and would
             // also re-install inventory methods that crash on a non-storage block. Same
             // pattern as redstone: scrub the inventory surface, then bind the typed methods.
@@ -448,13 +448,13 @@ class ScriptEngine(
             table.set("slots", LuaValue.NIL)
             table.set("face", LuaValue.NIL)
 
-            // block() → string  — current block id at the watched position.
+            // block() → string, current block id at the watched position.
             table.set("block", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue =
                     LuaValue.valueOf(blockIdOf(level.getBlockState(cap.adjacentPos)))
             })
 
-            // state() → { [string]: any }  — properties of the watched block.
+            // state() → { [string]: any }, properties of the watched block.
             table.set("state", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue =
                     blockStateToLua(level.getBlockState(cap.adjacentPos))
@@ -479,16 +479,16 @@ class ScriptEngine(
 
     /**
      * Construct the Lua handle returned by `network:channel(color)`. Exposes:
-     *   * `:first(type)` — first card or variable matching [type] AND [color]; nil if none.
-     *   * `:all(type?)`  — array of every member matching [type] AND [color]. Omitting
+     *   * `:first(type)`, first card or variable matching [type] AND [color], nil if none.
+     *   * `:all(type?)`, array of every member matching [type] AND [color]. Omitting
      *     [type] returns every member of the channel regardless of capability type.
-     *   * `:get(alias)`  — alias lookup scoped to this channel; throws on no match.
+     *   * `:get(alias)`, alias lookup scoped to this channel, throws on no match.
      *
      * Variables count as channel members alongside cards: scripts ask for
      * `:first("variable")` to get a `VariableHandle`, or `:all()` to walk every
      * card AND variable on the channel in one pass. The per-member dispatch
      * routes through [createCardTable] / [VariableHandle.create] so channel-scoped
-     * lookups return the same typed tables the global accessors do — no method
+     * lookups return the same typed tables the global accessors do, no method
      * surface is lost by going through a channel.
      */
     private fun createChannelTable(
@@ -498,7 +498,7 @@ class ScriptEngine(
         val t = LuaTable()
         val selfRef = this
 
-        // :getFirst(type) — first card or variable matching [type] AND this channel,
+        // :getFirst(type), first card or variable matching [type] AND this channel,
         // or nil. Renamed from `:first` to keep every "fetch" method in the API on
         // the `:get*` prefix (`network:get`, `network:getAll`, `Channel:get`).
         t.set("getFirst", object : TwoArgFunction() {
@@ -523,16 +523,16 @@ class ScriptEngine(
             }
         })
 
-        // :getAll(type?) — `HandleList<T>` of every member matching [type] AND this
+        // :getAll(type?), `HandleList<T>` of every member matching [type] AND this
         // channel. Omitting [type] returns a HandleList over every member of the
-        // channel; the broadcast method set is then empty (mixed types have no
+        // channel, the broadcast method set is then empty (mixed types have no
         // single broadcast contract), so only `:list()` / `:count()` are useful.
         t.set("getAll", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val type: String? = if (args.narg() >= 2 && !args.arg(2).isnil()) args.checkjstring(2) else null
                 val members = mutableListOf<LuaValue>()
                 // Variables, breakers, placers, and cards are independent collections
-                // on the snapshot; iterate each only when [type] selects it (or is
+                // on the snapshot, iterate each only when [type] selects it (or is
                 // null = "all members"). Order in the resulting list is variables →
                 // breakers → placers → cards so a full :getAll() walks devices first
                 // then cards, which roughly matches sidebar ordering.
@@ -594,15 +594,15 @@ class ScriptEngine(
      * Build the Lua handle returned by `network:getAll(type)` and `Channel:getAll(type)`.
      *
      * A `HandleList<T>` exposes:
-     *   * `:list()` — the underlying array of T (escape hatch for per-member work)
-     *   * `:count()` — number of members
-     *   * one fan-out method per entry in [HandleListMethods] for the element type —
+     *   * `:list()`, the underlying array of T (escape hatch for per-member work)
+     *   * `:count()`, number of members
+     *   * one fan-out method per entry in [HandleListMethods] for the element type,
      *     calling `list:set(true)` on a `HandleList<RedstoneCard>` invokes `:set(true)`
      *     on each member, return values discarded.
      *
      * [memberTables] is the already-built per-element Lua tables (output of
      * `createCardTable` / `VariableHandle.create`). [broadcastMethodNames] is read
-     * from [HandleListMethods] and tells us which methods to fan out — the registry
+     * from [HandleListMethods] and tells us which methods to fan out, the registry
      * is the single source of truth so adding a new card / device type only requires
      * updating that one file for HandleList participation.
      */
@@ -612,7 +612,7 @@ class ScriptEngine(
     ): LuaTable {
         val list = LuaTable()
 
-        // :list() — return a Lua array of every member. Built lazily on call so we
+        // :list(), return a Lua array of every member. Built lazily on call so we
         // can hand back a fresh table each time (callers iterating the result with
         // ipairs shouldn't accidentally mutate the HandleList's underlying state).
         list.set("list", object : OneArgFunction() {
@@ -623,21 +623,21 @@ class ScriptEngine(
             }
         })
 
-        // :count() — number of members. Cheap, but worth a dedicated method so
+        // :count(), number of members. Cheap, but worth a dedicated method so
         // scripts don't need to call :list() and `#` it just to count.
         list.set("count", object : OneArgFunction() {
             override fun call(selfArg: LuaValue): LuaValue =
                 LuaValue.valueOf(memberTables.size)
         })
 
-        // Broadcast wrappers — one per registered method name. Each wrapper looks
+        // Broadcast wrappers, one per registered method name. Each wrapper looks
         // up the matching field on every member at call time and invokes it with
-        // the same args. Return values are discarded; the HandleList model is
+        // the same args. Return values are discarded, the HandleList model is
         // strictly write-only by design (see HandleListMethods doc comment).
         for (methodName in broadcastMethodNames) {
             list.set(methodName, object : VarArgFunction() {
                 override fun invoke(args: Varargs): Varargs {
-                    // args.arg(1) is `self` (the HandleList table); the user's
+                    // args.arg(1) is `self` (the HandleList table), the user's
                     // argument list starts at index 2 and runs to args.narg().
                     val userArgs = if (args.narg() <= 1) {
                         LuaValue.NONE
@@ -702,8 +702,8 @@ class ScriptEngine(
      * Fluid insert path.
      *
      * Atomic mode: first sim the network capacity via [NetworkStorageHelper.tryInsertFluidAcrossNetwork]
-     * — which itself runs sim-first — so source is never drained unless the full amount is
-     * known to fit. Draining from the handle's source is the last step; if the network
+     *, which itself runs sim-first, so source is never drained unless the full amount is
+     * known to fit. Draining from the handle's source is the last step, if the network
      * commit diverges from the sim, unwinds push fluid back.
      *
      * Best-effort: drain-then-place, push unused back to source. Fluids are never destroyed
@@ -737,7 +737,7 @@ class ScriptEngine(
                 sourceFluid, { it == itemsHandle.itemId }, requested
             )
             if (drained < requested) {
-                // Source turned out short after the probe passed — refund and bail.
+                // Source turned out short after the probe passed, refund and bail.
                 if (drained > 0L) {
                     damien.nodeworks.platform.PlatformServices.storage.insertFluid(
                         sourceFluid, itemsHandle.itemId, drained
@@ -749,7 +749,7 @@ class ScriptEngine(
                 level, snapshot, itemsHandle.itemId, drained, inventoryCache
             )
             if (placed < drained) {
-                // Commit diverged from sim — refund the shortfall to source.
+                // Commit diverged from sim, refund the shortfall to source.
                 damien.nodeworks.platform.PlatformServices.storage.insertFluid(
                     sourceFluid, itemsHandle.itemId, drained - placed
                 )
@@ -758,7 +758,7 @@ class ScriptEngine(
             return LuaValue.TRUE
         }
 
-        // Best-effort: drain then place what fits; return unused to source.
+        // Best-effort: drain then place what fits, return unused to source.
         val drained = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
             sourceFluid, { it == itemsHandle.itemId }, requested
         )
@@ -776,7 +776,7 @@ class ScriptEngine(
 
     /**
      * Item insert path. Delegates to [NetworkStorageHelper] for both modes. The atomic
-     * variant rolls back by reverse-moving on shortfall; best-effort returns the count
+     * variant rolls back by reverse-moving on shortfall, best-effort returns the count
      * that actually landed.
      */
     private fun invokeItems(
@@ -819,7 +819,7 @@ class ScriptEngine(
 
         // network:get(name) → CardHandle | VariableHandle, or error.
         // Cards win on a name collision so existing scripts don't change behaviour
-        // when a variable happens to share an alias with a card; a future "validate
+        // when a variable happens to share an alias with a card, a future "validate
         // unique names across cards + variables" pass on the network would catch
         // collisions at edit time, but for now the lookup order is the contract.
         networkTable.set("get", object : TwoArgFunction() {
@@ -835,7 +835,7 @@ class ScriptEngine(
 
         // network:getAll(type) → HandleList<T> for cards matching the capability type,
         // or HandleList<VariableHandle*> for `"variable"`. Variables share the type
-        // string `"variable"` regardless of declared type (number/string/bool); the
+        // string `"variable"` regardless of declared type (number/string/bool), the
         // HandleList's broadcast methods lock in to the shared `VariableHandle`
         // surface (`set`, `cas`). Callers wanting type-specific atomics on every
         // variable should iterate via `:list()`.
@@ -955,7 +955,7 @@ class ScriptEngine(
         })
 
         // network:findEach(filter) → table of ItemsHandles (scans real storage).
-        // Bare filter lists items then fluids; kind-prefixed filter yields only that kind.
+        // Bare filter lists items then fluids, kind-prefixed filter yields only that kind.
         networkTable.set("findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
@@ -980,7 +980,7 @@ class ScriptEngine(
                     }
                 }
                 if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
-                    // Single-pass aggregation — avoids O(N*M) rescans from calling countFluid
+                    // Single-pass aggregation, avoids O(N*M) rescans from calling countFluid
                     // per discovered fluid id.
                     val allFluids = NetworkStorageHelper.findAllFluidInfoAcrossNetwork(level, snapshot, filter)
                     for ((info, _) in allFluids) {
@@ -1010,7 +1010,7 @@ class ScriptEngine(
             }
         })
 
-        // network:insert(itemsHandle, count?) → boolean (atomic — either the full count lands
+        // network:insert(itemsHandle, count?) → boolean (atomic, either the full count lands
         // in network storage or nothing moves). Mirrors CardHandle:insert for consistency.
         // Use network:tryInsert for "move what fits, leave the rest" semantics.
         networkTable.set("insert", buildNetworkInsertFn(snapshot, atomic = true))
@@ -1038,7 +1038,7 @@ class ScriptEngine(
 
                 // For async: result is null but pending is set. Build a CraftResult placeholder.
                 val craftResult = result ?: run {
-                    // Async — we don't know the exact output yet. Use the identifier.
+                    // Async, we don't know the exact output yet. Use the identifier.
                     val id = net.minecraft.resources.Identifier.tryParse(identifier)
                     val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
                     val name = if (item != null) net.minecraft.world.item.ItemStack(item).hoverName.string else identifier
@@ -1074,18 +1074,18 @@ class ScriptEngine(
                 // Build the CraftBuilder table
                 val builder = LuaTable()
 
-                // :connect(fn) — release to storage, call fn with ItemsHandle
+                // :connect(fn), release to storage, call fn with ItemsHandle
                 builder.set("connect", object : TwoArgFunction() {
                     override fun call(selfArg: LuaValue, callbackArg: LuaValue): LuaValue {
                         val callback = callbackArg.checkfunction()
 
                         if (pending == null || pending.isComplete) {
-                            // Instant — release and call now
+                            // Instant, release and call now
                             val handle = releaseAndCreateHandle()
                             try { callback.call(handle) }
                             catch (e: LuaError) { logCallback("craft callback error: ${e.message}", true) }
                         } else {
-                            // Async — wait for pending job, then release and call
+                            // Async, wait for pending job, then release and call
                             pending.onCompleteCallback = { success ->
                                 if (success) {
                                     val handle = releaseAndCreateHandle()
@@ -1102,7 +1102,7 @@ class ScriptEngine(
                     }
                 })
 
-                // :store() — release to storage, no callback
+                // :store(), release to storage, no callback
                 builder.set("store", object : OneArgFunction() {
                     override fun call(selfArg: LuaValue): LuaValue {
                         if (pending == null || pending.isComplete) {
@@ -1120,7 +1120,7 @@ class ScriptEngine(
             }
         })
 
-        // network:route(alias, predicate) — register a declarative storage route
+        // network:route(alias, predicate), register a declarative storage route
         // Items where predicate(itemsHandle) returns true go to that storage
         routeTable = RouteTable(level, snapshot)
         networkTable.set("route", object : ThreeArgFunction() {
@@ -1180,7 +1180,7 @@ class ScriptEngine(
             }
         })
 
-        // network:handle(cardName, handlerFn) — register a processing handler
+        // network:handle(cardName, handlerFn), register a processing handler
         // cardName matches the name set on a Processing Set in Processing Storage.
         // The handler function receives input items as arguments and should return
         // the result ItemsHandle from the processing machine's output.
@@ -1193,10 +1193,10 @@ class ScriptEngine(
             }
         })
 
-        // (network:var was removed — variables are now first-class members of the
+        // (network:var was removed, variables are now first-class members of the
         // network and resolved through `network:get(name)` alongside cards.)
 
-        // network:debug() — print full network summary
+        // network:debug(), print full network summary
         networkTable.set("debug", object : OneArgFunction() {
             override fun call(selfArg: LuaValue): LuaValue {
                 val sb = StringBuilder()
@@ -1240,7 +1240,7 @@ class ScriptEngine(
 
         g.set("network", networkTable)
 
-        // importer / stocker presets — declarative builders that compile down to
+        // importer / stocker presets, declarative builders that compile down to
         // scheduler tasks. See damien/nodeworks/script/preset/*.kt.
         g.set("importer", damien.nodeworks.script.preset.Importer.createGlobal(this))
         g.set("stocker", damien.nodeworks.script.preset.Stocker.createGlobal(this))

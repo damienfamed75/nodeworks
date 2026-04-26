@@ -16,7 +16,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.DyeColor
 
-/** Placer settings screen — same shape as [BreakerScreen]. Two rows: name + channel. */
+/** Placer settings screen, same shape as [BreakerScreen]. Two rows: name + channel. */
 class PlacerScreen(
     menu: PlacerMenu,
     playerInventory: Inventory,

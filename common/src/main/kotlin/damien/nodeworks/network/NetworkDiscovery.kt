@@ -44,7 +44,7 @@ object NetworkDiscovery {
             when (connectable) {
                 is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
                 is InstructionStorageBlockEntity -> {
-                    // Storage block connected via laser — scan its cluster for all recipes
+                    // Storage block connected via laser, scan its cluster for all recipes
                     val clusterSets = connectable.getAllInstructionSets()
                     if (clusterSets.isNotEmpty()) {
                         crafters.add(CrafterSnapshot(connectable.blockPos, clusterSets))
@@ -115,7 +115,7 @@ object NetworkDiscovery {
 
             for (connection in connectable.getConnections()) {
                 if (connection in visited) continue
-                // Only mark visited after LOS passes — another path may have clear LOS
+                // Only mark visited after LOS passes, another path may have clear LOS
                 if (!NodeConnectionHelper.checkLineOfSight(level, pos, connection)) continue
                 visited.add(connection)
                 queue.add(connection)
@@ -202,7 +202,7 @@ data class VariableSnapshot(
     val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
 )
 
-/** Snapshot for a Breaker device. [name] is the user-set alias from the GUI;
+/** Snapshot for a Breaker device. [name] is the user-set alias from the GUI,
  *  [autoAlias] is the discovery-assigned `breaker_N` fallback. [effectiveAlias]
  *  picks user-set first. Channel groups breakers for `network:channel(...)` lookups. */
 data class BreakerSnapshot(
@@ -214,7 +214,7 @@ data class BreakerSnapshot(
     val effectiveAlias: String get() = name ?: autoAlias ?: "breaker"
 }
 
-/** Snapshot for a Placer device. Same shape as [BreakerSnapshot] — devices share
+/** Snapshot for a Placer device. Same shape as [BreakerSnapshot], devices share
  *  the alias-resolution rule even though their script methods differ. */
 data class PlacerSnapshot(
     val pos: BlockPos,
@@ -229,11 +229,11 @@ data class ProcessingApiSnapshot(
     val pos: BlockPos,
     val apis: List<ProcessingStorageBlockEntity.ProcessingApiInfo>,
     val remoteTerminalPositions: List<BlockPos>? = null,
-    /** Dimension the remote provider network lives in — null for local APIs, non-null when
+    /** Dimension the remote provider network lives in, null for local APIs, non-null when
      *  this snapshot was pulled via a Receiver Antenna paired to a remote (possibly cross-
      *  dimensional) Broadcast Antenna. Consumers that need to resolve an active script
      *  engine at a remoteTerminalPosition MUST pass this dimension to `findProcessingEngine`
-     *  — otherwise the engine lookup uses the caller's dimension and returns null, and the
+     *, otherwise the engine lookup uses the caller's dimension and returns null, and the
      *  craft tree marks the recipe as `process_no_handler`. */
     val remoteDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>? = null
 )
@@ -366,7 +366,7 @@ data class CardSnapshot(
     /** Auto-generated alias for unnamed cards (e.g., io_1, storage_2). */
     var autoAlias: String? = null
 
-    /** The effective alias — custom name if set, otherwise auto-generated. */
+    /** The effective alias, custom name if set, otherwise auto-generated. */
     val effectiveAlias: String get() = alias ?: autoAlias ?: capability.type
 }
 
@@ -374,7 +374,7 @@ data class CardSnapshot(
  *
  *  Most types use their type string verbatim (`io` → `io_1`, `storage` → `storage_1`),
  *  but the terminal sidebar has a hard width limit and `observer_1` overflows the
- *  rendered column. Override observer to a shorter prefix; everything else passes
+ *  rendered column. Override observer to a shorter prefix, everything else passes
  *  through. Shared between [NetworkDiscovery.assignAutoAliases] and the terminal's
  *  client-side fallback aliasing pass so both surfaces always agree on what an
  *  unnamed card is called.

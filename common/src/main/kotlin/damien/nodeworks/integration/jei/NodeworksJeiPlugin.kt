@@ -79,12 +79,12 @@ class NodeworksJeiPlugin : IModPlugin {
 
     override fun registerRecipes(registration: IRecipeRegistration) {
         // Read the Soul Sand Infusion recipe set from our client-side cache.
-        // Vanilla 26.1 doesn't sync the full recipe list to clients — see
+        // Vanilla 26.1 doesn't sync the full recipe list to clients, see
         // `SoulSandInfusionClientCache` and the `RecipesReceivedEvent` hook
         // in `NeoForgeClientSetup` for how the cache stays current. The cache
         // is populated BEFORE JEI's reload callback runs (HIGHEST priority on
         // our listener), so by the time this method executes it has whatever
-        // recipes the server just synced — including any data-pack additions
+        // recipes the server just synced, including any data-pack additions
         // without code changes.
         val recipes = damien.nodeworks.recipe.SoulSandInfusionClientCache.recipes()
             .map { holder ->
@@ -212,7 +212,7 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(container.containerId, index, itemId)
                 )
-                // Always reset the count — stale counts from previous recipes otherwise
+                // Always reset the count, stale counts from previous recipes otherwise
                 //  linger when the item changes.
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiDataPayload(container.containerId, "input", index, count)
@@ -242,7 +242,7 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
      * empty, not an ItemStack, or carries non-default data components (potion
      * contents, enchantments, stew effects). Skipping those avoids placing
      * misleading "Uncraftable Potion" / blank-enchanted placeholders into the grid
-     * — the Processing Set only keeps `itemId:count`, so anything component-
+     *, the Processing Set only keeps `itemId:count`, so anything component-
      * dependent can't round-trip.
      *
      * Count is clamped to at least 1 to preserve the set's invariant.

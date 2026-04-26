@@ -13,7 +13,7 @@ import net.minecraft.world.inventory.Slot
 import net.minecraft.world.item.ItemStack
 
 /**
- * Processing Storage screen handler — fixed 2 columns × 4 rows = 8 API card slots.
+ * Processing Storage screen handler, fixed 2 columns × 4 rows = 8 API card slots.
  * No upgrades. Slot positions are synced with [ProcessingStorageScreen]'s layout.
  */
 class ProcessingStorageScreenHandler(
@@ -28,12 +28,12 @@ class ProcessingStorageScreenHandler(
         const val COLS = 2
         const val ROWS = 4
 
-        // Card grid — 2 cols × 4 rows, horizontally centered in a 176-wide frame.
+        // Card grid, 2 cols × 4 rows, horizontally centered in a 176-wide frame.
         // Slot origin: (70, 28). Each slot is 18×18.
         const val GRID_X = 70
         const val GRID_Y = 28
 
-        // Player inventory — INV_X / INV_Y are the FRAME origin passed to drawPlayerInventory.
+        // Player inventory, INV_X / INV_Y are the FRAME origin passed to drawPlayerInventory.
         // Slot positions sit 1px inside (matches the 1px border of NineSlice.SLOT, same
         // pattern as CardProgrammer's inventory).
         const val INV_X = 8

@@ -13,7 +13,7 @@ import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.DyeColor
 
 /**
- * Minimal "Card Settings" screen. Only renders the channel picker today; if more
+ * Minimal "Card Settings" screen. Only renders the channel picker today, if more
  * per-card settings ever land they'd grow here without needing a per-card screen.
  *
  * The channel picker lives at a fixed offset inside a recessed inset, with a
@@ -64,7 +64,7 @@ class CardSettingsScreen(
         val initial = menu.getChannel()
         lastSyncedChannel = initial.id
         picker = ChannelPickerWidget(leftPos + pickerX, pickerY, initial) { color ->
-            // Server sees the choice via the menu button id; the screen-side widget
+            // Server sees the choice via the menu button id, the screen-side widget
             // already updated currentColor synchronously so the swatch reflects the
             // pick before the round-trip lands. The next data-sync tick then pushes
             // the same value back via [extractRenderState].
@@ -102,7 +102,7 @@ class CardSettingsScreen(
     }
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
-        // Route clicks to the popup first so it can claim them — otherwise a click
+        // Route clicks to the popup first so it can claim them, otherwise a click
         // in the popup grid would also fall through to whatever widget sits behind.
         if (picker?.expanded == true) {
             if (picker!!.handleOverlayClick(event.mouseX, event.mouseY)) return true

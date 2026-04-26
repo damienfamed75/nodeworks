@@ -8,7 +8,7 @@
   },
   "elements": [
     {
-      "comment": "4x4x4 grey center — untinted",
+      "comment": "4x4x4 grey center, untinted",
       "from": [6, 6, 6],
       "to": [10, 10, 10],
       "faces": {

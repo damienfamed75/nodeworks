@@ -13,7 +13,7 @@ import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
 
 /**
- * Stabilizer — contributes cooling to the adjacent CPU multiblock. The combined
+ * Stabilizer, contributes cooling to the adjacent CPU multiblock. The combined
  * cooling from multiple Stabilizers diminishes per block (see [damien.nodeworks.script.cpu.CpuRules.totalCooling]),
  * so brute-forcing with more Stabilizers is only effective up to a point.
  */

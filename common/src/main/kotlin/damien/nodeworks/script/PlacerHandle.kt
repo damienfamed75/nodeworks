@@ -15,11 +15,11 @@ import org.luaj.vm2.lib.OneArgFunction
 import org.luaj.vm2.lib.TwoArgFunction
 
 /**
- * Lua handle for a Placer device — pulls one item from network storage and places
+ * Lua handle for a Placer device, pulls one item from network storage and places
  * it as a block in front of the device. Synchronous: `:place(...)` returns
  * `true` / `false` in the same tick the script called it.
  *
- * Mirrors [VariableHandle]'s shape — a `getEntity()` closure refetches the live
+ * Mirrors [VariableHandle]'s shape, a `getEntity()` closure refetches the live
  * BlockEntity each call so the handle survives BlockEntity churn (player breaks
  * the placer, places a new one, the script keeps working on the next snapshot).
  */
@@ -38,11 +38,11 @@ object PlacerHandle {
             level.getBlockEntity(pos) as? PlacerBlockEntity
                 ?: throw LuaError("Placer '$alias' has been removed")
 
-        // .name — same convention as VariableHandle / CardHandle
+        // .name, same convention as VariableHandle / CardHandle
         table.set("name", LuaValue.valueOf(alias))
 
         // :place(idOrItemsHandle) → boolean
-        // String form pulls from network storage; ItemsHandle form pulls from the
+        // String form pulls from network storage, ItemsHandle form pulls from the
         // referenced source. Returns false on any failure (no item available, target
         // not replaceable, item isn't a BlockItem) so the script can branch on the
         // return value rather than relying on a callback.
@@ -65,14 +65,14 @@ object PlacerHandle {
                 val blockItem = item as? BlockItem ?: return LuaValue.FALSE
 
                 // Pull one of [itemId] from network storage. Walks storage cards in
-                // priority order; first card with stock wins. Bail if nothing in
+                // priority order, first card with stock wins. Bail if nothing in
                 // network has it (the per-card extract returns 0).
                 if (!extractOneFromNetwork(level, networkSnapshot, itemId)) {
                     return LuaValue.FALSE
                 }
 
                 // Place the block. UPDATE_ALL fires neighbor changes so adjacent
-                // observers / redstone notice. Default state — no fancy
+                // observers / redstone notice. Default state, no fancy
                 // BlockItem.useOn rotation logic for v1.
                 val newState = blockItem.block.defaultBlockState()
                 level.setBlock(target, newState, Block.UPDATE_ALL)
@@ -90,7 +90,7 @@ object PlacerHandle {
             }
         })
 
-        // :block() → string  — current block id at the targeted position. Useful
+        // :block() → string, current block id at the targeted position. Useful
         // for "is the slot still empty" checks before calling :place.
         table.set("block", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
@@ -100,7 +100,7 @@ object PlacerHandle {
             }
         })
 
-        // :isBlocked() → boolean — true if a place would fail because the target
+        // :isBlocked() → boolean, true if a place would fail because the target
         // is non-air and not replaceable.
         table.set("isBlocked", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {

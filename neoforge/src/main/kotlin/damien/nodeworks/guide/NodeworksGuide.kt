@@ -23,18 +23,18 @@ object NodeworksGuide {
 
     /**
      * Build + register the guide. GuideME's builder registers the guide in its global
-     * registry when `.build()` is called — no explicit `.register()` step.
+     * registry when `.build()` is called, no explicit `.register()` step.
      *
-     * Call this from the client-setup phase; guides are client-only.
+     * Call this from the client-setup phase, guides are client-only.
      */
     private val log = LoggerFactory.getLogger("nodeworks-guide")
 
     fun register() {
-        // Matches AE2's pattern — `defaultNamespace` is derived from the ID's namespace,
+        // Matches AE2's pattern, `defaultNamespace` is derived from the ID's namespace,
         // and `startPage` defaults to `index.md`. `folder` points at our processed-
         // resources path (see neoforge/build.gradle.kts's processResources step).
         // Registering a TagCompiler under the same tag name as a default GuideME extension
-        // causes PageCompiler's last-write-wins map to pick ours — so `<GameScene>` in any
+        // causes PageCompiler's last-write-wins map to pick ours, so `<GameScene>` in any
         // Nodeworks page goes through NodeworksSceneTagCompiler, which adds per-side padding
         // attrs (paddingTop/Bottom/Left/Right) while keeping the default behaviour otherwise.
         val guide = Guide.builder(ID)
@@ -42,7 +42,7 @@ object NodeworksGuide {
             .extension(TagCompiler.EXTENSION_POINT, NodeworksSceneTagCompiler())
             .extension(TagCompiler.EXTENSION_POINT, LuaCodeTagCompiler())
             .extension(TagCompiler.EXTENSION_POINT, CategoryIndexDescriptionsTagCompiler())
-            // Custom RecipeType renderers — each mapping supplier maps a
+            // Custom RecipeType renderers, each mapping supplier maps a
             // Mojang RecipeType to an LytBlock factory. Add one per custom
             // recipe type we want GuideME to render.
             .extension(

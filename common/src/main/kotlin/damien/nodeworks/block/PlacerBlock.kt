@@ -23,7 +23,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
 /**
- * Placer — pulls one item from network storage on demand and places it as a block
+ * Placer, pulls one item from network storage on demand and places it as a block
  * in front of the device. Pairs with Breaker for closed-loop renewable farms
  * (sapling replant, sugar cane, kelp, sweet berries). Synchronous: the placement
  * resolves in the same tick `placer:place(...)` is called, no ticker needed.

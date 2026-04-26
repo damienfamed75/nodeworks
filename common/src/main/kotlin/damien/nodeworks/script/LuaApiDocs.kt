@@ -10,18 +10,18 @@ package damien.nodeworks.script
  * Entries are keyed either by plain identifier (`"network"`, `"print"`) or by a
  * type-qualified form (`"Network:find"`, `"CardHandle:insert"`). The qualified form is
  * what [resolveAt] looks up when the token under inspection is preceded by `ident` +
- * `:` — either because the ident is a known global (see [moduleTypes] for the module →
+ * `:`, either because the ident is a known global (see [moduleTypes] for the module →
  * type hop) or because the autocomplete symbol table has inferred the variable's type.
  *
  * ## Ground truth
  *
  * Every entry here was read off the actual Lua bindings in:
- *   * [damien.nodeworks.script.ScriptEngine.injectApi] — `network`, `scheduler`,
+ *   * [damien.nodeworks.script.ScriptEngine.injectApi], `network`, `scheduler`,
  *     `clock`, `print` registrations.
- *   * [damien.nodeworks.script.CardHandle.create] — card methods.
- *   * [damien.nodeworks.script.ItemsHandle.toLuaTable] — items-handle fields + methods.
- *   * [damien.nodeworks.script.SchedulerImpl.createLuaTable] — scheduler methods.
- *   * [damien.nodeworks.script.VariableHandle.create] — variable methods.
+ *   * [damien.nodeworks.script.CardHandle.create], card methods.
+ *   * [damien.nodeworks.script.ItemsHandle.toLuaTable], items-handle fields + methods.
+ *   * [damien.nodeworks.script.SchedulerImpl.createLuaTable], scheduler methods.
+ *   * [damien.nodeworks.script.VariableHandle.create], variable methods.
  *
  * If any of those files change shape, update the matching entry here so both the
  * editor tooltips and the guidebook stay accurate.
@@ -30,8 +30,8 @@ package damien.nodeworks.script
  *
  * Descriptions are surfaced in two narrow-width tooltips (editor + guidebook), so keep
  * them short. One sentence per entry where possible, two at the absolute max. Avoid em
- * dashes and dashes as sentence separators — they read as clutter in small tooltips.
- * Favour periods. Avoid parenthetical asides; if a nuance needs explaining, it belongs
+ * dashes and dashes as sentence separators, they read as clutter in small tooltips.
+ * Favour periods. Avoid parenthetical asides, if a nuance needs explaining, it belongs
  * on the guidebook page, not in the tooltip.
  */
 object LuaApiDocs {
@@ -48,7 +48,7 @@ object LuaApiDocs {
 
     /** Maps a top-level module name to its Lua type so method keys stored under the
      *  type resolve when the user writes the module literal. `card` and `clock` are NOT
-     *  in here — `card` isn't a global at all, and `clock` is a bare function. */
+     *  in here, `card` isn't a global at all, and `clock` is a bare function. */
     private val moduleTypes: Map<String, String> = mapOf(
         "network" to "Network",
         "scheduler" to "Scheduler",
@@ -151,9 +151,9 @@ object LuaApiDocs {
         // ===== Channel =====
         // ===== HandleList =====
         // Returned by `network:getAll(type)` and `Channel:getAll(type)`. Broadcasts
-        // *write* methods across every member — calling `:set(true)` on a
+        // *write* methods across every member, calling `:set(true)` on a
         // HandleList<RedstoneCard> invokes set on each card. Read methods don't
-        // broadcast (their return value is the whole point); use `:list()` and a
+        // broadcast (their return value is the whole point), use `:list()` and a
         // for-loop when you need per-member reads.
         put(
             "HandleList", Doc(
@@ -180,7 +180,7 @@ object LuaApiDocs {
             )
         )
 
-        // Returned by `network:channel(color)` — scopes lookups to one dye-color group
+        // Returned by `network:channel(color)`, scopes lookups to one dye-color group
         // covering both cards and devices. The bundled `:getFirst` / `:getAll` / `:get`
         // mirror the global accessors so once you've narrowed by channel everything
         // reads the same way as the un-scoped network API.
@@ -320,7 +320,7 @@ object LuaApiDocs {
                 guidebookRef = "nodeworks:lua-api/network.md#handle",
             )
         )
-        // (Network:var was removed — variables resolve through `network:get(name)`
+        // (Network:var was removed, variables resolve through `network:get(name)`
         // alongside cards. The legacy entry isn't kept around as a deprecated alias
         // because the runtime no longer registers `var` on the network table.)
         put(
@@ -377,7 +377,7 @@ object LuaApiDocs {
         )
 
         // ===== Job / InputItems / CraftBuilder =====
-        // These types don't come from a global; they arrive as arguments to user
+        // These types don't come from a global, they arrive as arguments to user
         // callbacks (`network:handle`, `:connect`) or as a return value from a method.
         // Documenting them here lets hover tooltips resolve the bare type names and
         // the short method list under each of them.
@@ -708,7 +708,7 @@ object LuaApiDocs {
             )
         )
 
-        // RedstoneCard is the same underlying Lua table as CardHandle — `.name` is set
+        // RedstoneCard is the same underlying Lua table as CardHandle, `.name` is set
         // by CardHandle.create before any redstone-specific rebinding. Mirror the doc
         // entry under the RedstoneCard key so hover tooltips resolve for variables
         // typed as RedstoneCard.
@@ -800,7 +800,7 @@ object LuaApiDocs {
 
         // ===== BreakerHandle =====
         // Device that breaks the block at its facing position over time. Drops route
-        // to network storage by default; chain `:mine():connect(fn)` to redirect.
+        // to network storage by default, chain `:mine():connect(fn)` to redirect.
         put(
             "BreakerHandle", Doc(
                 signature = "type BreakerHandle",
@@ -1087,11 +1087,11 @@ object LuaApiDocs {
      *
      * Resolution order:
      *   1. Literal `owner:member` (e.g. user registered a custom qualified key).
-     *   2. Module → Type hop via [moduleTypes] — `network:find` → `Network:find`.
-     *   3. Typed-local hop via [variableTypes] — `cards:setPowered` → `RedstoneCard:setPowered`
+     *   2. Module → Type hop via [moduleTypes], `network:find` → `Network:find`.
+     *   3. Typed-local hop via [variableTypes], `cards:setPowered` → `RedstoneCard:setPowered`
      *      when `cards` was declared as a local whose type the autocomplete inferred.
      *   4. Bare `member`.
-     *   5. Variable-self — hovering the bare `cards` identifier returns the `RedstoneCard`
+     *   5. Variable-self, hovering the bare `cards` identifier returns the `RedstoneCard`
      *      type doc if `cards` is a known local of that type.
      */
     /**
@@ -1130,7 +1130,7 @@ object LuaApiDocs {
             return ReturnType(element, Container.MAP)
         }
 
-        // Array form: `{ Type… }` or `{ Type }`. Element may carry `?` for nullable —
+        // Array form: `{ Type… }` or `{ Type }`. Element may carry `?` for nullable,
         // strip it since the for-loop element is always non-null per iteration.
         val arrayMatch = Regex("""^\{\s*([\w?|\s]+?)\s*(?:…|\.\.\.)?\s*}""").find(rhs)
         if (arrayMatch != null) {
@@ -1150,7 +1150,7 @@ object LuaApiDocs {
      * ends with `:$methodName` or equals `$methodName`. Matches the same
      * "look up by short method name" shape autocomplete uses for chain resolution, so a
      * single definition in [entries] drives both hover docs, chain inference, and for-loop
-     * element inference — no parallel hardcoded maps.
+     * element inference, no parallel hardcoded maps.
      *
      * When multiple entries share a method name, the first match wins. For receiver-aware
      * lookup (e.g. distinguishing `Importer:from` from `Stocker:from` when both return
@@ -1161,7 +1161,7 @@ object LuaApiDocs {
     /**
      * Receiver-aware return-type lookup. When [receiverType] is non-null, the
      * `"$receiverType:$methodName"` key is checked first so sibling types that share
-     * a short method name (Importer / Stocker both have `:from`; each returns its own
+     * a short method name (Importer / Stocker both have `:from`, each returns its own
      * builder) resolve correctly. Falls through to the unqualified bare-name search if
      * the qualified key isn't found.
      */

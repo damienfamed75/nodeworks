@@ -21,18 +21,18 @@ import org.joml.Quaternionf
 /**
  * Block Entity renderer for the standalone Monitor block.
  *
- *  1. Emissive front face — tinted with the network colour, same treatment as the
+ *  1. Emissive front face, tinted with the network colour, same treatment as the
  *     Terminal. Drawn via the shared [EmissiveCubeRenderer] so the pipeline matches
  *     every other emissive block in the mod. Only the facing direction's face is
  *     emitted.
  *
- *  2. Tracked item icon — a scaled-down 3D item render centered on the front face,
+ *  2. Tracked item icon, a scaled-down 3D item render centered on the front face,
  *     sticking out ~2 px. Resolved on the main thread via [ItemModelResolver] so the
  *     submit pass doesn't touch the registry.
  *
  *  The displayed count text is drawn by [NodeConnectionRenderer.renderMonitorText]
  *  (world-space, needs the bufferSource + pose stack context from the level render
- *  pass — easier to share that hook than to re-wire a font-in-BER path).
+ *  pass, easier to share that hook than to re-wire a font-in-BER path).
  */
 open class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
     ConnectableBER<MonitorBlockEntity, MonitorRenderer.MonitorState>(context) {
@@ -95,7 +95,7 @@ open class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
-        // Emissive front + back faces — both tinted with the network colour. Separate
+        // Emissive front + back faces, both tinted with the network colour. Separate
         // render types because each face has its own texture (the back design usually
         // differs from the front screen).
         val r = (state.color shr 16) and 0xFF

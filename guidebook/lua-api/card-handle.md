@@ -26,7 +26,7 @@ or from a [HandleList](handle-list.md) returned by [`network:getAll(type)`](netw
 
 ## Inventory Cards <ItemImage scale="0.5" id="nodeworks:storage_card" /> <ItemImage scale="0.5" id="nodeworks:io_card" />
 
-*Applies to IO Cards and Storage Cards.* Both expose the same Lua API — the
+*Applies to IO Cards and Storage Cards.* Both expose the same Lua API, the
 difference is in how the network treats the block they're attached to. See
 <ItemLink id="storage_card" /> and <ItemLink id="io_card" /> for the in-world
 behavior.
@@ -169,7 +169,7 @@ print(card:count("#minecraft:coals"))
 
 ## Redstone Card <ItemImage scale="0.5" id="nodeworks:redstone_card" />
 
-*Applies to <ItemLink id="redstone_card" />'s only.* The inventory methods above don't apply — a
+*Applies to <ItemLink id="redstone_card" />'s only.* The inventory methods above don't apply, a
 redstone card's `card:find()` is nil.
 
 ### powered

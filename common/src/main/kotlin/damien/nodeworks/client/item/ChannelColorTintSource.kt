@@ -14,9 +14,9 @@ import net.minecraft.world.item.ItemStack
  * and a fully-transparent color when the channel is white so the overlay layer
  * disappears for default cards.
  *
- * Hooks into the per-card item model via `tints[1]` — `tints[0]` stays at constant
+ * Hooks into the per-card item model via `tints[1]`, `tints[0]` stays at constant
  * `-1` to leave the base card texture untinted. The same source serves every card
- * type (IO / Storage / Redstone / Observer); each card's item-model JSON references
+ * type (IO / Storage / Redstone / Observer), each card's item-model JSON references
  * `nodeworks:channel_color` and the read of [CardChannel.get] is what differentiates
  * the displayed colour at runtime.
  *
@@ -31,7 +31,7 @@ data class ChannelColorTintSource(private val unit: Unit = Unit) : ItemTintSourc
         // the entire layer's contribution to the final image).
         if (color == DyeColor.WHITE) return 0x00000000
         // Force alpha to 0xFF so the indicator shows at full opacity. The dye's
-        // textureDiffuseColor is RGB-only; we OR the alpha back in to get a clean
+        // textureDiffuseColor is RGB-only, we OR the alpha back in to get a clean
         // opaque tint.
         return 0xFF000000.toInt() or (color.textureDiffuseColor and 0xFFFFFF)
     }

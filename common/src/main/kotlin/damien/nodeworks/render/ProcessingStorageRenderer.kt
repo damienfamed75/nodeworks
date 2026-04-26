@@ -51,7 +51,6 @@ open class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Contex
         )
 
         private const val Z_OFFSET = 0.001f
-        private const val FULLBRIGHT = 15728880
     }
 
     override fun createRenderState(): RenderState = RenderState()
@@ -87,7 +86,7 @@ open class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Contex
         val facing = state.facing ?: return
 
         // Emissive front-face glow (network-tinted). Submitted in block-local space,
-        // no translate/rotate — [EmissiveCubeRenderer.faceOf] selects the correct
+        // no translate/rotate, [EmissiveCubeRenderer.faceOf] selects the correct
         // face directly from the block's facing direction.
         val r = (state.networkColor shr 16) and 0xFF
         val g = (state.networkColor shr 8) and 0xFF
@@ -103,7 +102,7 @@ open class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Contex
         poseStack.translate(0.5, 0.5, 0.5)
         rotateToFace(poseStack, facing)
 
-        // 26.1 renamed entityCutoutNoCull → entityCutout (no-cull is the default;
+        // 26.1 renamed entityCutoutNoCull → entityCutout (no-cull is the default,
         //  entityCutoutCull is the new cull variant).
         val renderType = RenderTypes.entityCutout(CARD_TEXTURE)
         val z = 0.5f + Z_OFFSET
@@ -119,13 +118,13 @@ open class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Contex
                 val yTop = (16 - pxY) / 16f - 0.5f
 
                 vc.addVertex(pose, x1, yBot, z).setColor(255, 255, 255, 255).setUv(0f, 1f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x2, yBot, z).setColor(255, 255, 255, 255).setUv(1f, 1f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x2, yTop, z).setColor(255, 255, 255, 255).setUv(1f, 0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x1, yTop, z).setColor(255, 255, 255, 255).setUv(0f, 0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
             }
         }
 

@@ -53,7 +53,6 @@ open class InstructionStorageRenderer(context: BlockEntityRendererProvider.Conte
         )
 
         private const val Z_OFFSET = 0.001f
-        private const val FULLBRIGHT = 15728880
     }
 
     override fun createRenderState(): RenderState = RenderState()
@@ -118,13 +117,13 @@ open class InstructionStorageRenderer(context: BlockEntityRendererProvider.Conte
                 val yTop = (16 - pxY) / 16f - 0.5f
 
                 vc.addVertex(pose, x1, yBot, z).setColor(255, 255, 255, 255).setUv(0f, 1f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x2, yBot, z).setColor(255, 255, 255, 255).setUv(1f, 1f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x2, yTop, z).setColor(255, 255, 255, 255).setUv(1f, 0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x1, yTop, z).setColor(255, 255, 255, 255).setUv(0f, 0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
             }
         }
 

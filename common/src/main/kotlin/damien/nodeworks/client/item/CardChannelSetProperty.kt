@@ -10,14 +10,14 @@ import net.minecraft.world.item.ItemDisplayContext
 import net.minecraft.world.item.ItemStack
 
 /**
- * Conditional item-model property — true when the card has been dyed to a non-white
+ * Conditional item-model property, true when the card has been dyed to a non-white
  * channel. Used to switch each card item between a plain model (layer0 only, no
  * indicator) and a layered model that adds the tinted `channel_indicator` overlay.
  *
  * Why a conditional dispatch instead of always rendering layer1 with a transparent
  * tint: a tint of `0x00000000` zeroes the layer's pixel contribution mathematically,
  * but Minecraft's item-render pipeline still pushes that layer's geometry into the
- * scene — which produces the visible "punched-out" transparent pixels reported on
+ * scene, which produces the visible "punched-out" transparent pixels reported on
  * white-channel cards. Splitting at the model-selection layer means white-channel
  * cards have no layer1 at all and render exactly as before channels existed.
  *

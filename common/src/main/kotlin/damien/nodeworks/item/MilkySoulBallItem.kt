@@ -12,7 +12,7 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 
 /**
- * Milky Soul Ball — throwable projectile that applies Wither effect on hit.
+ * Milky Soul Ball, throwable projectile that applies Wither effect on hit.
  */
 class MilkySoulBallItem(properties: Properties) : Item(properties) {
 

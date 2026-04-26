@@ -16,7 +16,7 @@ methods across every member**. You get one from
 [`Channel:getAll(type)`](network.md#channel-getall).
 
 Calling a write method on the list invokes that method on each member with
-the same arguments, in order. Read methods aren't exposed on the list — their
+the same arguments, in order. Read methods aren't exposed on the list, their
 return values are the whole point of calling them, and silently dropping
 them across N members would be a footgun. To read per-member, call `:list()`
 and iterate.
@@ -37,8 +37,8 @@ end)
 
 ## Which methods broadcast
 
-Only **write methods** — ones whose call site doesn't depend on the return
-value — fan out across the list. The currently broadcast methods per type:
+Only **write methods**, ones whose call site doesn't depend on the return
+value, fan out across the list. The currently broadcast methods per type:
 
 | Element type | Broadcast methods |
 |---|---|
@@ -50,7 +50,7 @@ value — fan out across the list. The currently broadcast methods per type:
 | `BoolVariableHandle` | `set`, `cas`, `toggle`, `unlock` |
 
 Reads like `:powered()`, `:count()`, `:get()`, `:block()` are intentionally
-absent from the list — call `:list()` and inspect each member individually.
+absent from the list, call `:list()` and inspect each member individually.
 
 ## list
 

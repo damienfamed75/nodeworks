@@ -31,12 +31,12 @@ import net.minecraft.world.phys.AABB
 /**
  * NeoForge-only BER subclasses that override [getRenderBoundingBox] to encompass every
  * block this Connectable has a laser link to. The default unit-cube box causes 26.1's
- * frustum culler to drop the BER — and thus the connection beams it submits — the moment
+ * frustum culler to drop the BER, and thus the connection beams it submits, the moment
  * the source block leaves the viewport, making long-range lasers vanish whenever the
  * player looks away from either endpoint.
  *
  * The override lives here (not in :common) because [getRenderBoundingBox] comes from
- * `IBlockEntityRendererExtension`, a NeoForge-only extension of `BlockEntityRenderer`;
+ * `IBlockEntityRendererExtension`, a NeoForge-only extension of `BlockEntityRenderer`,
  * the common module compiles against pure NeoForm and can't see that interface.
  */
 class NeoNodeRenderer(ctx: BlockEntityRendererProvider.Context) : NodeRenderer(ctx) {

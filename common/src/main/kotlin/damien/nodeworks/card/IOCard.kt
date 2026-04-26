@@ -11,7 +11,7 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.level.Level
 
 /**
- * IO Card — provides direct scriptable access to an adjacent block's inventory.
+ * IO Card, provides direct scriptable access to an adjacent block's inventory.
  * Works with any block exposing item storage: chests, barrels, hoppers, furnaces, modded machines.
  * The scripting system specifies which face of the target block to access at runtime.
  */

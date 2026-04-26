@@ -22,7 +22,7 @@ object FuzzyMatch {
         val queryLower = query.lowercase()
         val candidateLower = candidate.lowercase()
 
-        // Exact prefix match — highest score
+        // Exact prefix match, highest score
         if (candidateLower.startsWith(queryLower)) {
             return 1000 + (100 - candidate.length) // shorter candidates rank higher
         }

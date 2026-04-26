@@ -40,7 +40,7 @@ class StorageCardMenu(
             id == 0 -> priorityData.set(0, (priorityData.get(0) - 1).coerceIn(0, 999))
             id == 1 -> priorityData.set(0, (priorityData.get(0) + 1).coerceIn(0, 999))
             id in 100..1099 -> priorityData.set(0, (id - 100).coerceIn(0, 999)) // direct value set
-            // Channel picker uses ids 2000..2015 — outside the priority range so the two
+            // Channel picker uses ids 2000..2015, outside the priority range so the two
             // controls can't accidentally collide if one expands later.
             id in 2000..2015 -> channelData.set(0, id - 2000)
         }

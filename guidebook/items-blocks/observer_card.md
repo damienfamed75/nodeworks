@@ -5,7 +5,7 @@ navigation:
   title: Observer Card
 categories:
   - card
-description: reads the block at the installed node face — id, properties, and change events
+description: reads the block at the installed node face, id, properties, and change events
 item_ids:
 - nodeworks:observer_card
 ---

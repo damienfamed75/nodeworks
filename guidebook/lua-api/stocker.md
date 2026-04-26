@@ -14,7 +14,7 @@ description: keep a target topped up by pulling, crafting, or both
 The `stocker` global builds level maintainers. You set a target container, a
 `:keep(n)` watermark, and a source (pull, craft, or both), and the stocker
 tops the target up whenever it dips below the watermark. It never extracts
-once the watermark is reached; if the player dumps extras in, they stay.
+once the watermark is reached, if the player dumps extras in, they stay.
 
 ## Three source modes
 
@@ -31,7 +31,7 @@ Stocker:from(...sources: string | CardHandle | network): StockerBuilder
 
 Pull from specific cards or the network pool. Never crafts if short. Good for
 "pull from this specific buffer chest" or "pull from the pool, wait if empty."
-Pair with [`:filter`](./stocker.md#filter) to match only a specific item type; without a
+Pair with [`:filter`](./stocker.md#filter) to match only a specific item type, without a
 filter the stocker tops up the target to `:keep(n)` worth of any items.
 
 <LuaCode>
@@ -52,7 +52,7 @@ Stocker:ensure(itemId: string): StockerBuilder
 ```
 </LuaCode>
 
-Pull from the network pool first; craft the rest if the pool is short. The
+Pull from the network pool first, craft the rest if the pool is short. The
 most common form, covers the "always have N of this" pattern. Takes an exact
 item id because crafting needs a concrete output to plan against.
 
@@ -93,7 +93,7 @@ StockerBuilder:to(target: string | CardHandle | network): StockerBuilder
 
 Sets the destination. Accepts a card alias, CardHandle object, or `network`
 for "keep the level in the pool itself." The stocker counts matching items in
-the target; when you use `network`, it counts across every storage card.
+the target, when you use `network`, it counts across every storage card.
 
 ### keep
 
@@ -150,11 +150,11 @@ crafts would thrash the CPU.
 <LuaCode>
 ```lua
 stocker:craft("minecraft:iron_ingot"):to("chest"):keep(64):batch(32):start()
--- Shortfall of 10 crafts a full 32; target may temporarily hold 74 after delivery.
+-- Shortfall of 10 crafts a full 32, target may temporarily hold 74 after delivery.
 ```
 </LuaCode>
 
-The target can temporarily exceed `:keep(n)` by the batch leftover; subsequent
+The target can temporarily exceed `:keep(n)` by the batch leftover, subsequent
 ticks do nothing until the stock drops below the watermark again.
 
 ## Example: arrow dispenser with fallback crafting
@@ -171,7 +171,7 @@ stocker:ensure("minecraft:arrow")
 </LuaCode>
 
 Every second: if the dispenser has fewer than 64 arrows, pull from the pool
-first; if still short, craft 16 more. Repeats until the dispenser is full.
+first, if still short, craft 16 more. Repeats until the dispenser is full.
 
 ## See also
 

@@ -5,7 +5,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 
 /**
- * Open-payload for the Breaker Settings GUI. Mirrors [VariableOpenData] —
+ * Open-payload for the Breaker Settings GUI. Mirrors [VariableOpenData],
  * carries the device's position so the menu can address the BlockEntity, plus
  * the current name and channel for the screen to render at open time. Updates
  * after open flow back via the existing settings payload pipeline (same

@@ -46,7 +46,7 @@ class ReceiverAntennaMenu(
     }
 
     init {
-        // Chip slot — centered
+        // Chip slot, centered
         addSlot(ChipSlot(antennaInventory, 0, 81, 37))
 
         // Player inventory (3 rows)

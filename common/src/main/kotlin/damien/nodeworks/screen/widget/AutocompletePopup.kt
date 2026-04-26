@@ -40,7 +40,7 @@ class AutocompletePopup(
     /**
      * VSCode-style category tag for rendering a colored badge next to the suggestion.
      * Each kind carries its own badge letter + background color. Choose based on what
-     * the suggestion *is*, not what it inserts — e.g. `network` is a MODULE even though
+     * the suggestion *is*, not what it inserts, e.g. `network` is a MODULE even though
      * it inserts a plain identifier.
      */
     enum class Kind(val letter: String, val color: Int) {
@@ -90,7 +90,7 @@ class AutocompletePopup(
 
     /** Optional resolver for the on-screen Y of a line's BOTTOM (relative to the editor's
      *  top-left), accounting for decoration heights above each line. Set by the caller
-     *  after constructing the editor; without this the popup falls back to uniform line
+     *  after constructing the editor, without this the popup falls back to uniform line
      *  height and lands above the cursor whenever decorations push lines down. */
     var lineBottomYResolver: ((lineIdx: Int) -> Int)? = null
 
@@ -113,7 +113,7 @@ class AutocompletePopup(
 
         // VSCode parity: don't auto-trigger when the cursor is in the middle of a word
         // (char immediately after is a word char). Typing inside "conn|ection" shouldn't
-        // pop the menu — the user is editing an existing identifier, not completing one.
+        // pop the menu, the user is editing an existing identifier, not completing one.
         // Explicit Ctrl+Space (forced=true) bypasses this so the user can still request it.
         if (!forced && cursor < text.length) {
             val nextCh = text[cursor]
@@ -150,7 +150,7 @@ class AutocompletePopup(
         // Use the editor's variable-height line layout when available so the popup lands
         // just below the cursor's text row even when recipe-hint decorations push lines
         // down. Resolver path uses a 1-px gap (the resolver already returns content-Y
-        // accounting for the editor's internal textTop padding); fallback path keeps the
+        // accounting for the editor's internal textTop padding), fallback path keeps the
         // legacy 4-px gap to match historical behavior on callers without a resolver.
         val resolver = lineBottomYResolver
         popupY = if (resolver != null) {
@@ -197,7 +197,7 @@ class AutocompletePopup(
         val consumeAfter: Int = 0,
         /** Optional `local NAME = network:get("...")` line for auto-import. Forwarded
          *  from [Suggestion.autoImport]. The terminal's accept handler prepends this
-         *  to the script (idempotent — duplicate import lines are skipped). */
+         *  to the script (idempotent, duplicate import lines are skipped). */
         val autoImportLine: String? = null
     )
 
@@ -239,7 +239,7 @@ class AutocompletePopup(
         val popupWidth = suggestions.maxOf { font.width(it.displayText) } + 8 + BADGE_SIZE + BADGE_GAP
         val actualHeight = visibleCount * itemHeight + 4
 
-        // Keep the popup within the game window — same flip-and-clamp policy the hover
+        // Keep the popup within the game window, same flip-and-clamp policy the hover
         // tooltip uses. Flipping happens first (popup above the cursor line if there's no
         // room below, left of the anchor if there's no room right) before the final clamp,
         // so a dropdown that barely overflows the right edge slides left instead of getting
@@ -285,9 +285,9 @@ class AutocompletePopup(
             // Kind badge: blit the shared 9×9 white badge sprite ([Icons.BADGE]) tinted
             // with the kind's color, then draw the single-letter label centered inside.
             // MC's font.width() includes a 1px trailing space after each glyph, so the
-            // visible letter is (letterW - 1) pixels wide — subtract that to get a
+            // visible letter is (letterW - 1) pixels wide, subtract that to get a
             // symmetric X offset. Vertically, capital letters render at rows 1..7 of the
-            // 9px line box, so the visible glyph height is 7; pad 1px top + 1px bottom.
+            // 9px line box, so the visible glyph height is 7, pad 1px top + 1px bottom.
             val badgeX = renderX + 4
             val badgeY = y + (itemHeight - BADGE_SIZE) / 2
             Icons.BADGE.drawTopLeftTinted(graphics, badgeX, badgeY, BADGE_SIZE, BADGE_SIZE, s.kind.color)
@@ -357,10 +357,10 @@ class AutocompletePopup(
      * The context at the cursor position, determined by scanning backwards from the cursor.
      */
     private sealed interface CursorContext {
-        /** `var:partial` — method call on a variable */
+        /** `var:partial`, method call on a variable */
         data class MethodCall(val receiver: String, val partial: String) : CursorContext
 
-        /** `var.partial` — property access on a variable */
+        /** `var.partial`, property access on a variable */
         data class PropertyAccess(val receiver: String, val partial: String) : CursorContext
 
         /** Inside a string argument: `func("partial`. [argIndex] is the 0-based position of
@@ -372,13 +372,13 @@ class AutocompletePopup(
         /** Type annotation context: `local x: partial` or `function(a: partial` */
         data class TypeAnnotation(val partial: String) : CursorContext
 
-        /** `#partial` — item tag filter */
+        /** `#partial`, item tag filter */
         data class TagFilter(val partial: String) : CursorContext
 
         /** Method call where the receiver type has been resolved from a chain. [chainExpr]
          *  is the source text of the chain that produced [resolvedType] (e.g.
-         *  `"stocker:ensure(\"minecraft:iron_ingot\")"`); suggestion filters use it to
-         *  hide methods that don't apply to specific factory paths — `:ensure` / `:craft`
+         *  `"stocker:ensure(\"minecraft:iron_ingot\")"`), suggestion filters use it to
+         *  hide methods that don't apply to specific factory paths, `:ensure` / `:craft`
          *  pre-set the filter, so `:filter(...)` shouldn't be offered after them. */
         data class ResolvedMethodCall(
             val resolvedType: String,
@@ -389,27 +389,27 @@ class AutocompletePopup(
         /** Property access where the receiver type has been resolved from a chain */
         data class ResolvedPropertyAccess(val resolvedType: String, val partial: String) : CursorContext
 
-        /** `<outerVar>.<field>.<partial>` — chain through a table-like typed variable.
-         *  Symbols are resolved in [computeSuggestions]; for InputItems the field is
+        /** `<outerVar>.<field>.<partial>`, chain through a table-like typed variable.
+         *  Symbols are resolved in [computeSuggestions], for InputItems the field is
          *  an ItemsHandle, so the partial completes ItemsHandle properties. */
         data class ChainedPropertyAccess(val outerVar: String, val field: String, val partial: String) : CursorContext
 
-        /** `<outerVar>.<field>:<partial>` — chained method call. Same resolution rule
+        /** `<outerVar>.<field>:<partial>`, chained method call. Same resolution rule
          *  as [ChainedPropertyAccess] but produces method suggestions. */
         data class ChainedMethodCall(val outerVar: String, val field: String, val partial: String) : CursorContext
 
-        /** `xs[idx].<partial>` — property access on the element type of an indexed container.
+        /** `xs[idx].<partial>`, property access on the element type of an indexed container.
          *  Receiver type comes from the symbol table (serialized `{ T }` / `{ [K]: V }`).
-         *  The index expression itself is ignored — we only need the receiver var. */
+         *  The index expression itself is ignored, we only need the receiver var. */
         data class IndexedPropertyAccess(val receiver: String, val partial: String) : CursorContext
 
-        /** `xs[idx]:<partial>` — method call on the element type of an indexed container. */
+        /** `xs[idx]:<partial>`, method call on the element type of an indexed container. */
         data class IndexedMethodCall(val receiver: String, val partial: String) : CursorContext
 
         /** Resolved exports from a module (require or local table) */
         data class ResolvedExports(val exports: List<Suggestion>, val partial: String) : CursorContext
 
-        /** Plain word at cursor — global completions */
+        /** Plain word at cursor, global completions */
         data class Word(val partial: String) : CursorContext
 
         /** Nothing useful at cursor */
@@ -426,7 +426,7 @@ class AutocompletePopup(
 
         // Never autocomplete inside a comment. Line comments (`--`) terminate at EOL so
         // we can decide from just the current line. Block comments (`--[[ … ]]`) are
-        // detected by a span-count scan over [beforeCursor] — count openings vs closings;
+        // detected by a span-count scan over [beforeCursor], count openings vs closings,
         // an odd balance means the cursor is inside an open block.
         if (isInsideComment(line, beforeCursor)) return CursorContext.None
 
@@ -456,7 +456,7 @@ class AutocompletePopup(
         val dotCtx = findDotContext(line)
         if (dotCtx != null) return dotCtx
 
-        // Don't autocomplete after `local ` — user is naming a new variable
+        // Don't autocomplete after `local `, user is naming a new variable
         if (Regex("""\blocal\s+\w*$""").containsMatchIn(line)) return CursorContext.None
 
         // Fall back to word completion
@@ -470,7 +470,7 @@ class AutocompletePopup(
 
     /** Check if cursor is inside a string argument like `network:get("partial` */
     private fun findStringArgContext(line: String): CursorContext.StringArg? {
-        // Find the last unmatched " — we're inside a string if quote count is odd
+        // Find the last unmatched ", we're inside a string if quote count is odd
         var quoteCount = 0
         var lastQuoteIdx = -1
         for (i in line.indices) {
@@ -490,7 +490,7 @@ class AutocompletePopup(
         // The opening paren for this string arg
         val parenIdx = findMatchingContext(beforeQuote)
         if (parenIdx >= 0) {
-            // Count top-level commas between the `(` and the opening quote — that's how
+            // Count top-level commas between the `(` and the opening quote, that's how
             // many arguments came before this one. Skips commas inside nested parens and
             // string literals so `f("a,b", "c|")` correctly reads as argIndex=1.
             val argList = line.substring(parenIdx + 1, lastQuoteIdx)
@@ -546,13 +546,13 @@ class AutocompletePopup(
         return -1
     }
 
-    /** True when the cursor sits inside a Lua comment — either a `--` line comment on
+    /** True when the cursor sits inside a Lua comment, either a `--` line comment on
      *  the current line, or anywhere inside an unclosed `--[[ … ]]` block comment in the
      *  entire script-prefix up to the cursor.
      *
      *  For the line-comment case, we walk the line tracking string delimiters so a `--`
      *  inside `"foo--bar"` doesn't falsely mark the cursor as commented out. For the
-     *  block-comment case we simply match `--[[` / `]]` pairs across [beforeCursor];
+     *  block-comment case we simply match `--[[` / `]]` pairs across [beforeCursor],
      *  anything with an odd open-count is currently inside a block. */
     private fun isInsideComment(currentLine: String, beforeCursor: String): Boolean {
         // Line-comment: scan the current line for `--` outside of string literals.
@@ -578,7 +578,7 @@ class AutocompletePopup(
     }
 
     /**
-     * Split a function-parameter list on top-level commas only — commas nested inside a
+     * Split a function-parameter list on top-level commas only, commas nested inside a
      * `{ … }` container-type annotation stay with their parameter. Without this,
      * `from: { [string]: V }, rest: any` would naively split on every comma and break
      * the map-type annotation in half.
@@ -604,7 +604,7 @@ class AutocompletePopup(
     /**
      * Parse a single `name: Type` / `name: { T }` / `name: { [K]: V }` param annotation
      * into `(name, rawTypeString)`. The scalar-annotation parser (`split(":")`) can't
-     * handle the map form because the brace carries its own `:` internally; we split on
+     * handle the map form because the brace carries its own `:` internally, we split on
      * the FIRST top-level `:` only, treating any `:` inside a `{ … }` as content.
      */
     private fun splitParamAnnotation(param: String): Pair<String, String>? {
@@ -628,7 +628,7 @@ class AutocompletePopup(
     /** Check for type annotation context on the current line. Covers scalar forms
      *  (`: Type`) and container forms (`: { Element }`, `: { [K]: V }`) for locals,
      *  function params, and function return types. Inside a `{ … }` brace the partial
-     *  completes the element type — for both arrays and maps, the element type is what
+     *  completes the element type, for both arrays and maps, the element type is what
      *  users care about most when annotating. */
     private fun findTypeAnnotationContext(line: String): CursorContext.TypeAnnotation? {
         // Pattern 1a: `local varName: partial` (scalar)
@@ -669,7 +669,7 @@ class AutocompletePopup(
         // expression that `partial` is being called on lives on prior lines.
         // Walk backward collecting every continuation line (one that starts with
         // `:` after leading whitespace) up through the first line that doesn't
-        // continue a chain — that's the chain's root receiver. Concatenate the
+        // continue a chain, that's the chain's root receiver. Concatenate the
         // lot into a single logical expression so [resolveExpressionType] and
         // [extractReceiverType] can resolve it the same way as a single-line
         // chain, including receiver-aware method-return lookup. Covers:
@@ -699,7 +699,7 @@ class AutocompletePopup(
             return CursorContext.ResolvedMethodCall("CraftBuilder", partial)
         }
 
-        // If `)` before `:` — resolve the full chain type (exclude non-chainable methods)
+        // If `)` before `:`, resolve the full chain type (exclude non-chainable methods)
         if (trimBefore.endsWith(")")) {
             val chainType = resolveExpressionType(trimBefore, forChaining = true)
             if (chainType != null) {
@@ -729,9 +729,9 @@ class AutocompletePopup(
         }
 
         // Chain method call: `<outerVar>.<field>:<partial>` (e.g. `items.copperIngot:count`).
-        // For InputItems, `field` is an ItemsHandle — resolve to ItemsHandle method list.
+        // For InputItems, `field` is an ItemsHandle, resolve to ItemsHandle method list.
         // The outerVar's type is in the symbol table, but buildSymbolTable runs in
-        // computeSuggestions; we detect the shape here and defer resolution via a
+        // computeSuggestions, we detect the shape here and defer resolution via a
         // dedicated ChainedMethodCall context.
         val chainMatch = Regex("""(\w+)\.(\w+)$""").find(trimBefore)
         if (chainMatch != null) {
@@ -772,7 +772,7 @@ class AutocompletePopup(
     /**
      * Unwrap a container type string (as stored in the symbol table: `{ T }` for arrays,
      * `{ [K]: V }` for maps) into the element type T / V. Returns null when [type] is
-     * null or isn't in container form — callers use that to skip indexed-access
+     * null or isn't in container form, callers use that to skip indexed-access
      * completion on a scalar typed var. Single parser shared with LuaApiDocs.
      */
     private fun elementTypeOf(type: String?): String? {
@@ -815,7 +815,7 @@ class AutocompletePopup(
         val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
         val receiverType = extractReceiverType(beforeParen, methodName)
 
-        // Network:getAll("type") and Channel:getAll("type") narrowing — both return a
+        // Network:getAll("type") and Channel:getAll("type") narrowing, both return a
         // `HandleList<T>`. We expose the iteration of `:list()` separately, so for
         // the for-loop / indexed-access path here we surface the *element* type with
         // ARRAY container kind. That keeps `for _, c in handleList:list() do c:set(true)`
@@ -833,7 +833,7 @@ class AutocompletePopup(
                 return LuaApiDocs.ReturnType(it, LuaApiDocs.Container.NONE)
             }
         }
-        // HandleList:list() — unwrap the parameterised type and report the element
+        // HandleList:list(), unwrap the parameterised type and report the element
         // type so `for _, c in handleList:list() do` knows what `c` is.
         if (receiverType?.startsWith("HandleList<") == true && methodName == "list") {
             handleListElement(receiverType)?.let {
@@ -858,7 +858,7 @@ class AutocompletePopup(
         // Iterate backward looking for continuation lines. When we hit a line
         // that doesn't start with `:` after stripping leading whitespace, that's
         // the root receiver and we stop. If the immediately prior line isn't a
-        // continuation AND doesn't read as a bare expression, bail — we don't
+        // continuation AND doesn't read as a bare expression, bail, we don't
         // want to stitch unrelated code together.
         val collected = ArrayDeque<String>()
         for (i in lines.indices.reversed()) {
@@ -868,7 +868,7 @@ class AutocompletePopup(
             if (!stripped.startsWith(":")) break
         }
         if (collected.isEmpty()) return null
-        // Join with no separator; `partial`'s leading `:` is still on the
+        // Join with no separator, `partial`'s leading `:` is still on the
         // current line and isn't part of what we're resolving.
         return collected.joinToString("")
     }
@@ -891,7 +891,7 @@ class AutocompletePopup(
         if (colonIdx <= 0) return null
         val receiverExpr = beforeParen.substring(0, colonIdx).trimEnd()
 
-        // Chain: `importer:from(...):to` — recursively resolve the call's return type.
+        // Chain: `importer:from(...):to`, recursively resolve the call's return type.
         if (receiverExpr.endsWith(")")) {
             return resolveExpressionType(receiverExpr, forChaining = true)
         }
@@ -908,7 +908,7 @@ class AutocompletePopup(
             // Future similar shapes (e.g. ImporterBuilder vars) will need their own
             // membership sets here.
             if (name in channelLocals) return "Channel"
-            // HandleList<T> local — return the parameterised wrapper so chained
+            // HandleList<T> local, return the parameterised wrapper so chained
             // `:list()` can unwrap it via [handleListElement].
             handleListLocals[name]?.let { return it }
             // Other user-variable types (CardHandle locals, etc.) are still
@@ -919,9 +919,9 @@ class AutocompletePopup(
 
     /** Scalar return type lookup driving both chain resolution and `local x = fn(...)`
      *  inference. Delegates to [LuaApiDocs.methodReturnType] so the doc signatures are
-     *  the single source of truth — no parallel hardcoded map to drift. Container-typed
+     *  the single source of truth, no parallel hardcoded map to drift. Container-typed
      *  returns (`{ Type… }`, `{ [K]: V }`) return null here because chaining off an array
-     *  value makes no sense; the for-loop inference path uses
+     *  value makes no sense, the for-loop inference path uses
      *  [LuaApiDocs.methodReturnType] directly to pull element types. */
     private fun scalarReturnTypeOf(methodName: String, receiverType: String? = null): String? {
         val rt = LuaApiDocs.methodReturnType(methodName, receiverType) ?: return null
@@ -948,9 +948,9 @@ class AutocompletePopup(
 
         if (forChaining && methodName in nonChainableMethods) return null
 
-        // Built-in scalars come from LuaApiDocs; user-defined functions override via
+        // Built-in scalars come from LuaApiDocs, user-defined functions override via
         // [allReturnTypes]. Container-typed built-ins (arrays/maps) intentionally fall
-        // through to null here — you can't chain `.foo` off the array value itself.
+        // through to null here, you can't chain `.foo` off the array value itself.
         allReturnTypes[methodName]?.let { return it }
         val receiverType = extractReceiverType(beforeParen, methodName)
 
@@ -1033,7 +1033,7 @@ class AutocompletePopup(
     }
 
     /** User-defined function return types pulled from `function name(...): Type` annotations
-     *  in the current script + every module script. Scalar-only; container annotations
+     *  in the current script + every module script. Scalar-only, container annotations
      *  (`{ Type }`, `{ [K]: V }`) still parse but are handled separately by
      *  [userFunctionReturnType] so for-loop inference can pick them up. */
     private fun buildReturnTypeMap(fullText: String): Map<String, String> {
@@ -1062,7 +1062,7 @@ class AutocompletePopup(
         for ((_, scriptText) in scripts()) {
             allTexts.add(scriptText)
         }
-        // Return type can be a bare identifier or a brace-delimited container — capture
+        // Return type can be a bare identifier or a brace-delimited container, capture
         // everything after the `:` up to the first newline so `{ CardHandle }` parses.
         val funcPattern = Regex("""\bfunction\s+[\w.]*?(\w+)\s*\([^)]*\)\s*:\s*([^\n]+)""")
         for (text in allTexts) {
@@ -1080,7 +1080,7 @@ class AutocompletePopup(
         val beforeDot = line.substring(0, dotMatch.range.first).trimEnd()
         if (beforeDot.isEmpty()) return null
 
-        // If `)` before `.` — check for require("module"). or resolve chain type
+        // If `)` before `.`, check for require("module"). or resolve chain type
         if (beforeDot.endsWith(")")) {
             // require("module").partial → suggest module exports
             val requireMatch = Regex("""require\(\s*"(\w+)"\s*\)$""").find(beforeDot)
@@ -1107,7 +1107,7 @@ class AutocompletePopup(
             }
         }
 
-        // Indexed receiver `<receiver>[index].partial` — property counterpart of the `:`
+        // Indexed receiver `<receiver>[index].partial`, property counterpart of the `:`
         // indexed-method logic in [findColonContext]. Handles both bare-var and
         // chain-call receivers.
         if (beforeDot.endsWith("]")) {
@@ -1128,7 +1128,7 @@ class AutocompletePopup(
 
         // Chain access: `<outerVar>.<field>.<partial>` (e.g. `items.copperIngot.count`).
         // Symbol lookup happens later in computeSuggestions where the symbol table is
-        // already built; we only parse the shape here.
+        // already built, we only parse the shape here.
         val chainMatch = Regex("""(\w+)\.(\w+)$""").find(beforeDot)
         if (chainMatch != null) {
             return CursorContext.ChainedPropertyAccess(
@@ -1154,7 +1154,7 @@ class AutocompletePopup(
         val allTexts = mutableListOf(fullText)
         for ((_, scriptText) in scripts()) allTexts.add(scriptText)
         // Return type can be a scalar (`CardHandle`, `CardHandle?`) or a brace-delimited
-        // container (`{ CardHandle }`, `{ [string]: V }`). The alternation covers both;
+        // container (`{ CardHandle }`, `{ [string]: V }`). The alternation covers both,
         // without it a function declared `function f(): { T }` would hover without
         // its return-type annotation.
         val pattern = Regex("""\bfunction\s+([\w.]*${Regex.escape(funcName)})\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
@@ -1193,7 +1193,7 @@ class AutocompletePopup(
         //   * `local x = network:getAll("type")`
         //   * `local x = <channelVar>:getAll("type")`  (and the chained inline form)
         // Anything that doesn't pattern-match here just means autocomplete won't
-        // unwrap that particular HandleList — the runtime call still works.
+        // unwrap that particular HandleList, the runtime call still works.
         run {
             val pairs = mutableMapOf<String, String>()
             val pattern = Regex(
@@ -1220,7 +1220,7 @@ class AutocompletePopup(
 
         // 1b. Explicit container type annotations: local xs: { T } = ... or local xs: { [K]: V } = ...
         // Uses [LuaApiDocs.parseReturnType]'s brace grammar so user annotations and doc
-        // signatures share one parser — keeps the two surfaces from drifting.
+        // signatures share one parser, keeps the two surfaces from drifting.
         Regex("""\blocal\s+(\w+)\s*:\s*(\{[^}]*})""").findAll(fullText).forEach { match ->
             val varName = match.groupValues[1]
             val annotation = match.groupValues[2]
@@ -1230,9 +1230,9 @@ class AutocompletePopup(
             }
         }
 
-        // 2. Function parameter annotations — only from scopes the cursor is inside.
+        // 2. Function parameter annotations, only from scopes the cursor is inside.
         // Allow container types like `from: { CardHandle }` in the capture by matching
-        // the content between `(` and `)` greedily over non-`)` chars; the post-split
+        // the content between `(` and `)` greedily over non-`)` chars, the post-split
         // phase handles both scalar `x: Type` and brace-delimited `x: { T }` forms.
         val funcPattern = Regex("""\bfunction\s*\w*\s*\(([^)]*)\)""")
         val endPattern = Regex("""\bend\b""")
@@ -1265,10 +1265,10 @@ class AutocompletePopup(
         }
 
         // 3. Assignment inference via chain resolution (don't override explicit annotations)
-        // Special case: network:get("name") — variables now resolve through this same
+        // Special case: network:get("name"), variables now resolve through this same
         // method, so we check both the card list and the variable list. Cards win
         // on a name collision (matching the runtime behaviour in
-        // [damien.nodeworks.script.ScriptEngine] — `findByAlias` is consulted before
+        // [damien.nodeworks.script.ScriptEngine], `findByAlias` is consulted before
         // `findVariable`). Falls through to plain `CardHandle` only when neither
         // surface knows the name, which is also what the user sees as a runtime
         // "Not found" error.
@@ -1303,12 +1303,12 @@ class AutocompletePopup(
                     symbols[varName] = "PlacerHandle"
                     return@forEach
                 }
-                // Nothing matched — fall back to CardHandle so chained methods at
+                // Nothing matched, fall back to CardHandle so chained methods at
                 // least resolve against the most general card surface.
                 symbols[varName] = "CardHandle"
             }
         }
-        // (network:getAll("type") inference dropped — the arg-aware chain resolver
+        // (network:getAll("type") inference dropped, the arg-aware chain resolver
         // in [resolveExpressionType] now returns `HandleList<T>`, and the general
         // `local x = expr` inference pass below routes through it. Keeping the old
         // `{ T }` regex pass here would shadow the HandleList typing because
@@ -1319,7 +1319,7 @@ class AutocompletePopup(
         // [resolveExpressionType] / [resolveExpressionReturnType] in the general
         // inference pass below, so no dedicated regex pre-passes are needed.)
 
-        // Special case: network:channel("color") — narrow the local to `Channel` so
+        // Special case: network:channel("color"), narrow the local to `Channel` so
         // chained `:getFirst("observer")` / `:getAll(...)` resolve against the channel's
         // method list rather than CardHandle's. Negative lookahead `(?!\s*:)` keeps
         // the bare-channel form from competing with the chained-first / chained-all
@@ -1330,12 +1330,12 @@ class AutocompletePopup(
                 symbols.putIfAbsent(varName, "Channel")
             }
 
-        // (Channel split-line access — `local x = ch:first("observer")` — is now
+        // (Channel split-line access, `local x = ch:first("observer")`, is now
         // handled uniformly by the arg-aware narrowing in [resolveExpressionType] and
         // [resolveExpressionReturnType], which the general-inference pass below routes
         // through. No dedicated regex pass needed here.)
 
-        // (network:var inference dropped — variables resolve through the unified
+        // (network:var inference dropped, variables resolve through the unified
         // `network:get(name)` path above which checks the variable list when no
         // card alias matches.)
 
@@ -1347,7 +1347,7 @@ class AutocompletePopup(
 
         // General inference: local x = expr
         // (`containerVars` was initialized above and may already carry explicit-annotation
-        // entries; RHS-inferred container types are merged in below without overwriting
+        // entries, RHS-inferred container types are merged in below without overwriting
         // the explicit user annotation, which is always authoritative.)
         Regex("""\blocal\s+(\w+)\s*=\s*(.+)""").findAll(fullText).forEach { match ->
             val varName = match.groupValues[1]
@@ -1399,7 +1399,7 @@ class AutocompletePopup(
         // form (`{ T }` for arrays, `{ [string]: T }` for maps). The hover-tooltip fallback
         // in TerminalScreen reads directly from [getSymbolTable], so this gives
         // `local specificCards: { CardHandle } = …` a proper `specificCards: { CardHandle }`
-        // hover — matching how plain `local n = 0` renders `n: number`. No collision with
+        // hover, matching how plain `local n = 0` renders `n: number`. No collision with
         // property/method completion: those only match known scalar type keys, and
         // `"{ CardHandle }"` isn't one.
         for ((name, container) in containerVars) {
@@ -1428,7 +1428,7 @@ class AutocompletePopup(
             val (elementType, container) = iterKind
 
             // `for k, v in ...`: k = key, v = element.
-            // `for v in ...`: v = key (first return of the iterator — index for ipairs,
+            // `for v in ...`: v = key (first return of the iterator, index for ipairs,
             // string for pairs). Only when two names are present does the element type
             // get bound.
             if (valName != null) {
@@ -1448,15 +1448,15 @@ class AutocompletePopup(
     }
 
     /**
-     * Given the expression after `in` in a `for ... in EXPR do` — with or without an
-     * `ipairs(…)` / `pairs(…)` wrapper — return the element type and container kind.
+     * Given the expression after `in` in a `for ... in EXPR do`, with or without an
+     * `ipairs(…)` / `pairs(…)` wrapper, return the element type and container kind.
      * Resolves three shapes:
      *   * a function/method call (`fn()`, `card:find(…)`) → via [LuaApiDocs.methodReturnType]
      *   * a bare identifier (`xs`) → via [containerVars] built from earlier `local` scans
      *   * either of the above inside `ipairs(…)` / `pairs(…)`
      *
-     * Wrapper choice on the user's side is authoritative when present — `ipairs(xs)` will
-     * narrow the container kind to ARRAY even if `xs` is typed as MAP; that mirrors what
+     * Wrapper choice on the user's side is authoritative when present, `ipairs(xs)` will
+     * narrow the container kind to ARRAY even if `xs` is typed as MAP, that mirrors what
      * Lua actually does at runtime and keeps key inference (`i: number` vs `k: string`)
      * honest. Returns null if the expression can't be resolved to a container.
      */
@@ -1483,14 +1483,14 @@ class AutocompletePopup(
             return elementType to (forcedWrapper ?: container)
         }
 
-        // Function/method call at the tail — resolve via LuaApiDocs or user fn annotations.
+        // Function/method call at the tail, resolve via LuaApiDocs or user fn annotations.
         if (!unwrapped.endsWith(")")) return null
         val paren = findMatchingParenBackward(unwrapped) ?: return null
         val beforeParen = paren.first.trimEnd()
         val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
 
         // Arg-aware narrowing for `network:getAll("type")` and `Channel:getAll("type")`.
-        // Both return `HandleList<T>` whose `:list()` is what for-loops iterate; we
+        // Both return `HandleList<T>` whose `:list()` is what for-loops iterate, we
         // surface the underlying element type with ARRAY container kind so the body
         // resolves `c` as the right typed card.
         if (methodName == "getAll") {
@@ -1499,10 +1499,10 @@ class AutocompletePopup(
                 return it to (forcedWrapper ?: LuaApiDocs.Container.ARRAY)
             }
         }
-        // `for _, c in handleList:list() do` — the receiver before `:list` carries
-        // the parameterised wrapper (`HandleList<RedstoneCard>`); unwrap it.
+        // `for _, c in handleList:list() do`, the receiver before `:list` carries
+        // the parameterised wrapper (`HandleList<RedstoneCard>`), unwrap it.
         // Tries the bare-ident lookup in [handleListLocals] first (covers the
-        // common `local pistons = network:getAll(...); for _, p in pistons:list() do`
+        // common `local pistons = network:getAll(...), for _, p in pistons:list() do`
         // shape) and falls back to the chain resolver for inline expressions like
         // `network:getAll("redstone"):list()`.
         if (methodName == "list") {
@@ -1591,7 +1591,7 @@ class AutocompletePopup(
         customPrefix = ctx.partial
         return when {
             ctx.funcExpr.endsWith("network:get") -> {
-                // Cards first, variables next, devices last — matches the runtime
+                // Cards first, variables next, devices last, matches the runtime
                 // priority in `network:get` so the string most likely to resolve
                 // appears at the top of the popup. The label suffix in parens
                 // (`(io)`, `(number)`, `(breaker)`) tells the player which surface
@@ -1625,7 +1625,7 @@ class AutocompletePopup(
 
                 // Group aliases sharing the Card Programmer's `_N` suffix convention so we
                 // can offer a single `<prefix>_*` completion per group. Singletons don't
-                // count — a group of one card collapses back into a literal alias.
+                // count, a group of one card collapses back into a literal alias.
                 val suffixGroups = storageAliases
                     .mapNotNull { alias ->
                         val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
@@ -1634,7 +1634,7 @@ class AutocompletePopup(
                     .groupBy({ it.first }, { it.second })
                     .filterValues { it.size >= 2 }
 
-                // Hide the numbered cards from a grouped set by default — the `_*` wildcard
+                // Hide the numbered cards from a grouped set by default, the `_*` wildcard
                 // represents the user's likely intent, and listing ten `cobblestone_N`
                 // entries alongside it is just noise. A user who wants one specific numbered
                 // card types the digit suffix themselves (`cobblestone_2`), which flips the
@@ -1650,7 +1650,7 @@ class AutocompletePopup(
 
                 val storageSuggestions = mutableListOf<Suggestion>()
                 // Wildcards first so they surface above any remaining literal cards in the
-                // fuzzy-matched output — they're the recommended choice for grouped cards.
+                // fuzzy-matched output, they're the recommended choice for grouped cards.
                 for ((prefix, aliases) in suffixGroups) {
                     val wildcard = "${prefix}_*"
                     val preview = aliases.sorted().take(3).joinToString(", ") +
@@ -1679,7 +1679,7 @@ class AutocompletePopup(
                 ))
             }
 
-            // Inside `:getFirst("…")` / `:getAll("…")` on a `Channel` receiver — same
+            // Inside `:getFirst("…")` / `:getAll("…")` on a `Channel` receiver, same
             // set of capability-type hints we offer to `network:getAll`. We can't easily
             // know the receiver type here without re-resolving the chain, so we surface
             // the hints whenever the funcExpr ends with `:getFirst` or `:getAll` and
@@ -1692,7 +1692,7 @@ class AutocompletePopup(
                 fuzzyStrings(ctx.partial, craftableOutputs)
             }
 
-            // (network:var was removed — variable names now surface alongside card
+            // (network:var was removed, variable names now surface alongside card
             // aliases inside the `network:get` string-arg suggestion below, where the
             // variable type label keeps them distinguishable from cards.)
 
@@ -1703,7 +1703,7 @@ class AutocompletePopup(
 
             ctx.funcExpr.endsWith("network:handle") -> {
                 // Full-block snippet: accepting a suggestion inserts the whole handle()
-                // call — closing quote, comma, function signature with typed per-slot
+                // call, closing quote, comma, function signature with typed per-slot
                 // parameters, empty body, and matching closing `end)`. Cursor lands on
                 // the indented body line so the player can start typing logic immediately.
                 // See docs/design/processing-set-handler-ux.md Phase B.
@@ -1718,12 +1718,12 @@ class AutocompletePopup(
                 fuzzyStrings(ctx.partial, scriptNames)
             }
 
-            // `network:shapeless("id1", count1, "id2", count2, ...)` — the odd-positioned
+            // `network:shapeless("id1", count1, "id2", count2, ...)`, the odd-positioned
             // string args are specific ingredient item IDs. Unlike `:find` this isn't a
             // resource filter: tags, regex, and `$item:` / `$fluid:` sigils are all
-            // invalid here, so we suggest only plain item IDs (no fluids either — shapeless
+            // invalid here, so we suggest only plain item IDs (no fluids either, shapeless
             // recipes don't consume fluids). Every string-arg position gets the same
-            // suggestions because vanilla doesn't care about ingredient order; there's no
+            // suggestions because vanilla doesn't care about ingredient order, there's no
             // "flip-flop" to resolve in the completion layer itself.
             ctx.funcExpr.endsWith("network:shapeless") -> {
                 val suggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
@@ -1732,7 +1732,7 @@ class AutocompletePopup(
 
             // `placer:place("|")` and chained / broadcast variants
             // (`network:getAll("placer"):place`, `placers:place`, etc.). The arg
-            // is a single concrete item id — wildcards / sigils / tags don't
+            // is a single concrete item id, wildcards / sigils / tags don't
             // make sense here because Placer can only place a specific block,
             // not "any item." Use the same plain-itemIds path as :shapeless.
             ctx.funcExpr.endsWith(":place") -> {
@@ -1743,7 +1743,7 @@ class AutocompletePopup(
             isResourceFilterFunc(ctx.funcExpr) -> suggestResourceFilter(ctx.partial)
 
             // Importer / Stocker presets. `:from` and `:to` take card aliases (or the
-            // `network` sentinel); `:filter` takes a resource filter; `:ensure` /
+            // `network` sentinel), `:filter` takes a resource filter, `:ensure` /
             // `:craft` take a concrete item id.
             //
             // Matches both the unchained form (`importer:from(`) and the chained form
@@ -1790,7 +1790,7 @@ class AutocompletePopup(
             aliasToType.putIfAbsent(card.effectiveAlias, card.capability.type)
         }
 
-        // Group by the prefix before `_N`. Singletons don't count — a lone card
+        // Group by the prefix before `_N`. Singletons don't count, a lone card
         // stays a literal alias in the suggestion list.
         val suffixGroups = aliasToType.keys
             .mapNotNull { alias ->
@@ -1828,7 +1828,7 @@ class AutocompletePopup(
     }
 
     /** Lua functions whose string argument is a resource-id filter (items + fluids).
-     *  `:insert` / `:tryInsert` are NOT resource-filter funcs — their first arg is an
+     *  `:insert` / `:tryInsert` are NOT resource-filter funcs, their first arg is an
      *  ItemsHandle, so suggesting resource ids there would be actively misleading.
      *  `:matches` goes through the same `CardHandle.matchesFilter` logic as `:find`, so it
      *  gets the same id/tag/regex completions. */
@@ -1864,14 +1864,14 @@ class AutocompletePopup(
             }
             partial.startsWith("\$") -> {
                 val sigils = listOf(
-                    Suggestion("\$item:", "\$item: — match items only", kind = Kind.STRING),
-                    Suggestion("\$fluid:", "\$fluid: — match fluids only", kind = Kind.STRING)
+                    Suggestion("\$item:", "\$item:, match items only", kind = Kind.STRING),
+                    Suggestion("\$fluid:", "\$fluid:, match fluids only", kind = Kind.STRING)
                 )
                 FuzzyMatch.filter(partial, sigils)
             }
             else -> {
                 // No prefix: fuzzy-match across sigils + item ids + fluid ids. Fluid entries
-                // are inserted as `$fluid:<id>` so accepting one commits to the fluid kind —
+                // are inserted as `$fluid:<id>` so accepting one commits to the fluid kind,
                 // bare `minecraft:water` would resolve to an item-side lookup first and mislead
                 // the user, so this forces explicit qualification on accept.
                 val idSuggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
@@ -1879,8 +1879,8 @@ class AutocompletePopup(
                     Suggestion("\$fluid:$it", "\$fluid:$it", kind = Kind.STRING)
                 }
                 val sigils = listOf(
-                    Suggestion("\$item:", "\$item: — match items only", kind = Kind.STRING),
-                    Suggestion("\$fluid:", "\$fluid: — match fluids only", kind = Kind.STRING)
+                    Suggestion("\$item:", "\$item:, match items only", kind = Kind.STRING),
+                    Suggestion("\$fluid:", "\$fluid:, match fluids only", kind = Kind.STRING)
                 )
                 FuzzyMatch.filter(partial, sigils + idSuggestions + fluidSuggestions).take(20)
             }
@@ -1892,21 +1892,21 @@ class AutocompletePopup(
         Suggestion("number", "number", kind = Kind.TYPE),
         Suggestion("boolean", "boolean", kind = Kind.TYPE),
         Suggestion("any", "any", kind = Kind.TYPE),
-        Suggestion("InputItems", "InputItems — handler input bag; access slot handles by name", kind = Kind.TYPE),
-        Suggestion("ItemsHandle", "ItemsHandle — item reference from find/craft", kind = Kind.TYPE),
-        Suggestion("CardHandle", "CardHandle — IO/Storage card from network:get", kind = Kind.TYPE),
-        Suggestion("RedstoneCard", "RedstoneCard — redstone card from network:get", kind = Kind.TYPE),
-        Suggestion("ObserverCard", "ObserverCard — observer card from network:get", kind = Kind.TYPE),
-        Suggestion("BreakerHandle", "BreakerHandle — Breaker device from network:get", kind = Kind.TYPE),
-        Suggestion("BreakBuilder", "BreakBuilder — returned by Breaker:mine() for drop routing", kind = Kind.TYPE),
-        Suggestion("PlacerHandle", "PlacerHandle — Placer device from network:get", kind = Kind.TYPE),
-        Suggestion("Channel", "Channel — dye-color group from network:channel", kind = Kind.TYPE),
-        Suggestion("HandleList", "HandleList — broadcast list from network:getAll / Channel:getAll", kind = Kind.TYPE),
-        Suggestion("Job", "Job — processing handler context from network:handle", kind = Kind.TYPE),
-        Suggestion("CraftBuilder", "CraftBuilder — from network:craft(), chain with :connect()", kind = Kind.TYPE),
-        Suggestion("NumberVariableHandle", "NumberVariableHandle — number variable from network:get", kind = Kind.TYPE),
-        Suggestion("StringVariableHandle", "StringVariableHandle — string variable from network:get", kind = Kind.TYPE),
-        Suggestion("BoolVariableHandle", "BoolVariableHandle — bool variable from network:get", kind = Kind.TYPE)
+        Suggestion("InputItems", "InputItems, handler input bag; access slot handles by name", kind = Kind.TYPE),
+        Suggestion("ItemsHandle", "ItemsHandle, item reference from find/craft", kind = Kind.TYPE),
+        Suggestion("CardHandle", "CardHandle, IO/Storage card from network:get", kind = Kind.TYPE),
+        Suggestion("RedstoneCard", "RedstoneCard, redstone card from network:get", kind = Kind.TYPE),
+        Suggestion("ObserverCard", "ObserverCard, observer card from network:get", kind = Kind.TYPE),
+        Suggestion("BreakerHandle", "BreakerHandle, Breaker device from network:get", kind = Kind.TYPE),
+        Suggestion("BreakBuilder", "BreakBuilder, returned by Breaker:mine() for drop routing", kind = Kind.TYPE),
+        Suggestion("PlacerHandle", "PlacerHandle, Placer device from network:get", kind = Kind.TYPE),
+        Suggestion("Channel", "Channel, dye-color group from network:channel", kind = Kind.TYPE),
+        Suggestion("HandleList", "HandleList, broadcast list from network:getAll / Channel:getAll", kind = Kind.TYPE),
+        Suggestion("Job", "Job, processing handler context from network:handle", kind = Kind.TYPE),
+        Suggestion("CraftBuilder", "CraftBuilder, from network:craft(), chain with :connect()", kind = Kind.TYPE),
+        Suggestion("NumberVariableHandle", "NumberVariableHandle, number variable from network:get", kind = Kind.TYPE),
+        Suggestion("StringVariableHandle", "StringVariableHandle, string variable from network:get", kind = Kind.TYPE),
+        Suggestion("BoolVariableHandle", "BoolVariableHandle, bool variable from network:get", kind = Kind.TYPE)
     )
 
     private fun suggestTypeAnnotation(partial: String): List<Suggestion> {
@@ -1918,7 +1918,7 @@ class AutocompletePopup(
 
     private fun suggestTag(partial: String): List<Suggestion> {
         customPrefix = partial
-        // Union item + fluid tags, deduped — `#c:water` is valid for both kinds and users
+        // Union item + fluid tags, deduped, `#c:water` is valid for both kinds and users
         // shouldn't need to know which registry owns it.
         val union = (itemTags + fluidTags).distinct()
         return fuzzyStrings(partial, union, Kind.TAG).take(20)
@@ -1981,12 +1981,12 @@ class AutocompletePopup(
         if (partial.isEmpty() && !forced) return emptyList()
 
         val apiFunctions = listOf(
-            suggest("scheduler", "scheduler — module", Kind.MODULE),
-            suggest("network", "network — module", Kind.MODULE),
-            suggest("importer", "importer — module", Kind.MODULE),
-            suggest("stocker", "stocker — module", Kind.MODULE),
+            suggest("scheduler", "scheduler, module", Kind.MODULE),
+            suggest("network", "network, module", Kind.MODULE),
+            suggest("importer", "importer, module", Kind.MODULE),
+            suggest("stocker", "stocker, module", Kind.MODULE),
             suggest("print(", "print(message: any)", Kind.FUNCTION),
-            suggest("error(", "error(message: string) — throw an error", Kind.FUNCTION),
+            suggest("error(", "error(message: string), throw an error", Kind.FUNCTION),
             suggest("clock(", "clock() → number", Kind.FUNCTION),
             suggest("string", "string library", Kind.MODULE),
             suggest("math", "math library", Kind.MODULE),
@@ -2011,7 +2011,7 @@ class AutocompletePopup(
         // `beforeCursor` slice.
         //
         // Functions stay global (scanned from fullText) because declaring a function later
-        // in the file doesn't affect whether the IDE should suggest it — common Lua
+        // in the file doesn't affect whether the IDE should suggest it, common Lua
         // convention puts helper definitions at the bottom, and blocking those from
         // autocomplete would be more annoying than useful.
         val userVars = (extractVariableNames(beforeCursor) + extractFunctionParams(beforeCursor)).distinct().map { name ->
@@ -2034,7 +2034,7 @@ class AutocompletePopup(
         // as a Lua-safe identifier (via the same naming the sidebar click handler
         // uses), and accepting one prepends `local NAME = network:get("alias")`
         // (or `:var(...)`) to the script. Skip aliases whose identifier is already
-        // declared as a local in the script — those will surface as plain user vars.
+        // declared as a local in the script, those will surface as plain user vars.
         val declared = (extractVariableNames(beforeCursor) + extractFunctionParams(beforeCursor)).toSet()
         val cardImports = cards
             .map { it.effectiveAlias to it.capability.type }
@@ -2044,7 +2044,7 @@ class AutocompletePopup(
                 if (ident in declared) return@mapNotNull null
                 Suggestion(
                     insertText = ident,
-                    displayText = "$ident — $alias ($type)",
+                    displayText = "$ident, $alias ($type)",
                     kind = Kind.VARIABLE,
                     autoImport = "local $ident = network:get(\"$alias\")"
                 )
@@ -2055,7 +2055,7 @@ class AutocompletePopup(
                 if (ident in declared) return@mapNotNull null
                 Suggestion(
                     insertText = ident,
-                    displayText = "$ident — $name (variable)",
+                    displayText = "$ident, $name (variable)",
                     kind = Kind.VARIABLE,
                     // Variables now ride the unified `network:get` accessor instead
                     // of the legacy `network:var` (which has been removed).
@@ -2096,9 +2096,9 @@ class AutocompletePopup(
                 val body = "route(\"\", function(item: ItemsHandle)\n    return true\nend)"
                 snippet("route(", "route(alias, fn(item) → boolean)", body, body.indexOf("\"\"") + 1)
             },
-            // (network:var was removed; variables resolve through `network:get(name)`.)
+            // (network:var was removed, variables resolve through `network:get(name)`.)
             suggest("handle(", "handle(cardName: string, fn: function(job, ...))", Kind.METHOD),
-            suggest("debug(", "debug() — print network topology", Kind.METHOD)
+            suggest("debug(", "debug(), print network topology", Kind.METHOD)
         )
         return fuzzy(partial, methods)
     }
@@ -2124,7 +2124,7 @@ class AutocompletePopup(
     // ========== Type-based methods and properties ==========
 
     private fun suggestMethodsForType(type: String, partial: String): List<Suggestion> {
-        // HandleList<T> — the parameterised wrapper. Always exposes the universal
+        // HandleList<T>, the parameterised wrapper. Always exposes the universal
         // `:list()` / `:count()` plus the broadcast (write-only) methods for T,
         // sourced from [HandleListMethods] so the registry stays the single point
         // of truth. Unknown T (mixed-type lists from `channel:getAll()` with no
@@ -2135,13 +2135,13 @@ class AutocompletePopup(
                 suggest("count(", "count() → number", Kind.METHOD),
             )
             // Map element type → registry key. Cards use capability type strings
-            // ("redstone", "io", …); variables use the typed handle name.
+            // ("redstone", "io", …), variables use the typed handle name.
             val capabilityType = when (elementType) {
                 "RedstoneCard" -> "redstone"
                 "ObserverCard" -> "observer"
                 "BreakerHandle" -> "breaker"
                 "PlacerHandle" -> "placer"
-                "CardHandle" -> "io"  // io and storage share methods; pick io
+                "CardHandle" -> "io"  // io and storage share methods, pick io
                 else -> null
             }
             val broadcastNames = when {
@@ -2156,7 +2156,7 @@ class AutocompletePopup(
             // lookup at hover time, so popup labels and tooltips stay in sync.
             for (name in broadcastNames) {
                 val sourceDoc = LuaApiDocs.get("${elementType}:${name}")
-                val display = sourceDoc?.signature ?: "$name(...) — broadcast to every member"
+                val display = sourceDoc?.signature ?: "$name(...), broadcast to every member"
                 methods.add(suggest("$name(", display, Kind.METHOD))
             }
             return fuzzy(partial, methods)
@@ -2243,7 +2243,7 @@ class AutocompletePopup(
                 suggest("matches(", "matches(filter: string) → boolean", Kind.METHOD)
             )
 
-            "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...) — wait for outputs", Kind.METHOD))
+            "Job" -> listOf(suggest("pull(", "pull(card: CardHandle, ...), wait for outputs", Kind.METHOD))
             "CraftBuilder" -> {
                 val connectBody = "connect(function(item: ItemsHandle)\n    \nend)"
                 listOf(
@@ -2253,7 +2253,7 @@ class AutocompletePopup(
                         connectBody,
                         connectBody.indexOf("\n    \n") + 5
                     ),
-                    suggest("store(", "store() — send result to network storage", Kind.METHOD)
+                    suggest("store(", "store(), send result to network storage", Kind.METHOD)
                 )
             }
 
@@ -2319,7 +2319,7 @@ class AutocompletePopup(
     private fun suggestPropertiesForType(type: String, partial: String): List<Suggestion> {
         val props = when (type) {
             // CardHandle and RedstoneCard share the same underlying Lua table (same
-            // `.name` binding from CardHandle.create); the two entries just exist so
+            // `.name` binding from CardHandle.create), the two entries just exist so
             // method autocomplete can show the appropriate method set per card kind.
             "CardHandle", "RedstoneCard", "ObserverCard" -> listOf(
                 suggest("name", "name: string (card's alias)", Kind.PROPERTY)
@@ -2342,7 +2342,7 @@ class AutocompletePopup(
             )
 
             "InputItems" -> {
-                // Fields are dynamic — derived from the enclosing `network:handle(...)`
+                // Fields are dynamic, derived from the enclosing `network:handle(...)`
                 // recipe. When the cursor is outside any handler body, offer no fields
                 // (the handler's items table isn't meaningful in that scope).
                 val api = enclosingHandlerApi ?: return emptyList()
@@ -2361,7 +2361,7 @@ class AutocompletePopup(
 
     /**
      * Resolve chained property access like `items.copperIngot.<partial>`. Only meaningful
-     * when the outer variable is typed `InputItems` — its fields are all ItemsHandle,
+     * when the outer variable is typed `InputItems`, its fields are all ItemsHandle,
      * so the partial completes ItemsHandle properties. Other table-like types aren't
      * supported yet (would need their own field-type map).
      */
@@ -2383,7 +2383,7 @@ class AutocompletePopup(
 
     /**
      * Resolve the type of `<outerVar>.<field>` for chain access. Only InputItems is
-     * currently supported — its fields are all ItemsHandle, pulled from the enclosing
+     * currently supported, its fields are all ItemsHandle, pulled from the enclosing
      * handler's recipe. Validates the field exists so typos don't silently succeed.
      * Returns null if unresolvable (unknown type, missing field, no handler context).
      */
@@ -2412,13 +2412,13 @@ class AutocompletePopup(
      * Implementation:
      * - Build a timeline of `function` opens and `end` closes over the whole beforeCursor.
      * - At each `function` open, look back ~200 chars for `network:handle\s*\(\s*"([^"]+)"\s*,\s*$`.
-     *   If it matches, record the id on the new scope; otherwise push null.
+     *   If it matches, record the id on the new scope, otherwise push null.
      * - At each `end` close, pop.
      * - After processing, walk the stack from innermost outward for the first non-null id.
      *
      * Multi-line `network:handle("<id>",\n    function(...)` is handled because `\s` in
      * the regex matches newlines. `function` tokens inside string literals or block
-     * comments are not filtered out — acceptable edge case for a best-effort heuristic.
+     * comments are not filtered out, acceptable edge case for a best-effort heuristic.
      */
     private fun findEnclosingHandlerApi(
         beforeCursor: String
@@ -2437,7 +2437,7 @@ class AutocompletePopup(
         for (event in events) {
             if (event.isFuncOpen) {
                 // Lookback must comfortably fit a full canonical recipe id (which can run
-                // hundreds of chars for recipes with many slots — 9 inputs + 3 outputs
+                // hundreds of chars for recipes with many slots, 9 inputs + 3 outputs
                 // with modded namespaces can hit ~600 chars). 4096 covers any realistic
                 // recipe and keeps regex cost bounded.
                 val lookbackStart = (event.pos - 4096).coerceAtLeast(0)
@@ -2455,7 +2455,7 @@ class AutocompletePopup(
 
     private val baseVariableMethods = listOf(
         "get(" to "get() → value",
-        "set(" to "set(value) — set variable value",
+        "set(" to "set(value), set variable value",
         "cas(" to "cas(expected, new) → boolean",
         "type(" to "type() → string"
     )
@@ -2539,7 +2539,7 @@ class AutocompletePopup(
     // ========== Handle snippet context ==========
 
     /**
-     * Special check for `network:handle("cardName", partial` — needs to suggest function snippet.
+     * Special check for `network:handle("cardName", partial`, needs to suggest function snippet.
      * Called from suggestNetworkMethods but also checked in MethodCall context.
      */
     private fun checkHandleSnippetContext(beforeCursor: String): List<Suggestion>? {
@@ -2547,7 +2547,7 @@ class AutocompletePopup(
         val handleFnMatch = Regex("""network:handle\(\s*"([^"]+)"\s*,\s*(\w*)$""").find(currentLine) ?: return null
         val partial = handleFnMatch.groupValues[2]
         customPrefix = partial
-        // Uniform handler signature — `job: Job, items: InputItems` regardless of recipe.
+        // Uniform handler signature, `job: Job, items: InputItems` regardless of recipe.
         // Per-slot field access happens via `items.<name>` inside the body, where the
         // editor resolves valid field names from the enclosing handle's recipe.
         val body = "function(job: Job, items: InputItems)\n    \nend"
@@ -2601,7 +2601,7 @@ class AutocompletePopup(
                 }
                 scopeStack.add(params)
             }
-            // Check for `end` — closes the most recent scope
+            // Check for `end`, closes the most recent scope
             for (match in endPattern.findAll(trimLine)) {
                 if (scopeStack.isNotEmpty()) scopeStack.removeLast()
             }
@@ -2690,7 +2690,7 @@ class AutocompletePopup(
      * function signature + empty body + `end)`. Cursor lands on the body line.
      *
      * Indentation is a static 4-space / 8-space scheme regardless of the caller's
-     * current line indent — good enough for most scripts; the player can tab-shift
+     * current line indent, good enough for most scripts, the player can tab-shift
      * the block if their indent convention differs.
      */
     private fun buildHandleFullSnippet(

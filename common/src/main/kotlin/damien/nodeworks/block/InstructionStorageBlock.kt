@@ -86,7 +86,7 @@ class InstructionStorageBlock(properties: Properties) : BaseEntityBlock(properti
         return super.playerWillDestroy(level, pos, state, player)
     }
 
-    // Comparator output — fraction of the 12 Instruction Set slots occupied, returned
+    // Comparator output, fraction of the 12 Instruction Set slots occupied, returned
     // as 0..15 via the vanilla helper. Empty → 0, any filled slot → at least 1, full → 15.
     override fun hasAnalogOutputSignal(state: BlockState): Boolean = true
 

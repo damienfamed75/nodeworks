@@ -39,8 +39,8 @@ class BlockedPairsData : SavedData {
             { BlockedPairsData() },
             CODEC,
             // DataFixTypes only matters when the on-disk format changes between versions.
-            // We store a LongArray; no migrations expected. Reusing a vanilla enum entry
-            // is a deliberate no-op — vanilla's data fixer won't touch our namespace.
+            // We store a LongArray, no migrations expected. Reusing a vanilla enum entry
+            // is a deliberate no-op, vanilla's data fixer won't touch our namespace.
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
         )
     }

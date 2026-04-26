@@ -13,8 +13,8 @@ import net.minecraft.world.item.ItemStack
 
 /**
  * Generic settings menu used by every card that doesn't already have its own GUI
- * (IO Card, Redstone Card, Observer Card). Currently exposes one knob — the
- * channel color — but the structure has room to grow if we add more per-card
+ * (IO Card, Redstone Card, Observer Card). Currently exposes one knob, the
+ * channel color, but the structure has room to grow if we add more per-card
  * settings later (per-card filter strings, etc).
  *
  * Persistence pattern is the same as [StorageCardMenu]: a single-entry

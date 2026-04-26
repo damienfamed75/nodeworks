@@ -291,7 +291,7 @@ class DiagnosticScreen(
             networkColor
         )
 
-        // Tab buttons in title bar — right-aligned
+        // Tab buttons in title bar, right-aligned
         val btnH = 14
         val btnY = topPos + 5
         var tabX = leftPos + imageWidth - 4
@@ -325,8 +325,8 @@ class DiagnosticScreen(
             }
         }
 
-        // Inspector panel — rendered last with higher Z to draw over topology blocks.
-        // 26.1: `flush()` is gone; `nextStratum()` is the replacement — it advances
+        // Inspector panel, rendered last with higher Z to draw over topology blocks.
+        // 26.1: `flush()` is gone, `nextStratum()` is the replacement, it advances
         // the Z stratum so later draws layer above what came before in this extract.
         if (activeTab == 0) {
             graphics.nextStratum()
@@ -431,7 +431,7 @@ class DiagnosticScreen(
                 val totalStackOffset = (group.blocks.size - 1) * stackOffset
 
                 // If the currently-selected block is inside this collapsed group, draw
-                // the same network-color glow halo we use for individual blocks — so the
+                // the same network-color glow halo we use for individual blocks, so the
                 // selection stays visible without needing to expand the group.
                 val groupContainsSelection = selectedBlock != null && selectedBlock in group.blocks
                 if (groupContainsSelection) {
@@ -472,7 +472,7 @@ class DiagnosticScreen(
 
                 graphics.pose().popMatrix()
 
-                // Hover on stacked group — clicking expands
+                // Hover on stacked group, clicking expands
                 if (mouseX >= sx - 8 && mouseX < sx + 8 + totalOffset &&
                     mouseY >= sy - 8 && mouseY < sy + 8 + totalOffset
                 ) {
@@ -538,7 +538,7 @@ class DiagnosticScreen(
             )
             graphics.pose().popMatrix()
             // The autocomplete dropdown needs to render even when no tree has been
-            //  picked yet — that's the normal state when the user first focuses the
+            //  picked yet, that's the normal state when the user first focuses the
             //  search bar. Previously we fell through to the early return below and
             //  the dropdown never drew despite click handlers working.
             renderCraftAutocomplete(graphics, mouseX, mouseY)
@@ -546,7 +546,7 @@ class DiagnosticScreen(
         }
 
         // Visual item graph with zoom/pan. Scissor starts at the RIGHT edge of the
-        // detail panel so tree items/icons can't render on top of it — item rendering
+        // detail panel so tree items/icons can't render on top of it, item rendering
         // uses its own Z stack that the panel's Z=100 re-draw doesn't outrank.
         graphics.enableScissor(detailX + detailW, graphTop, graphRight, graphBottom)
         graphics.pose().pushMatrix()
@@ -619,7 +619,7 @@ class DiagnosticScreen(
         graphics.pose().popMatrix()
 
         // Autocomplete dropdown last so it overlays both the detail panel and the
-        //  tree view — pre-migration the detail panel was drawn above it in the
+        //  tree view, pre-migration the detail panel was drawn above it in the
         //  submission order, which hid the dropdown on click.
         renderCraftAutocomplete(graphics, mouseX, mouseY)
     }
@@ -754,13 +754,13 @@ class DiagnosticScreen(
             }
         }
 
-        // Text: count x name — [icon]
+        // Text: count x name, [icon]
         val text = "${node.count}x ${node.itemName}"
         val textX = x + indent + 10
         graphics.drawString(font, text, textX, y, WHITE, false)
         val dashX = textX + font.width(text)
-        graphics.drawString(font, " — ", dashX, y, DIM, false)
-        val iconX = dashX + font.width(" — ")
+        graphics.drawString(font, ", ", dashX, y, DIM, false)
+        val iconX = dashX + font.width(", ")
         if (sourceItem != null) {
             graphics.pose().pushMatrix()
             graphics.pose().translate(iconX.toFloat(), (y - 1).toFloat())
@@ -1023,7 +1023,7 @@ class DiagnosticScreen(
                 // Time + position header
                 val headerColor =
                     if (isHovered && mouseY >= entryStart && mouseY < entryStart + lineH) 0xFFAABBCC.toInt() else DIM
-                graphics.drawString(font, "$ageStr — $posStr", splitX + 6, ey, headerColor, false)
+                graphics.drawString(font, "$ageStr, $posStr", splitX + 6, ey, headerColor, false)
                 ey += lineH
 
                 // Error message (may wrap)
@@ -1040,7 +1040,7 @@ class DiagnosticScreen(
                 if (isHovered && mouseY >= entryStart && mouseY < entryEnd) {
                     graphics.fill(splitX + 3, entryStart - 1, errorRight - 2, entryEnd, 0x15FFFFFF.toInt())
                     // Underline the position text to indicate clickability
-                    val posW = font.width("$ageStr — $posStr")
+                    val posW = font.width("$ageStr, $posStr")
                     graphics.fill(
                         splitX + 6,
                         entryStart + lineH - 2,
@@ -1120,7 +1120,7 @@ class DiagnosticScreen(
         rows.add(InspectorRow(RowType.PROPERTY, "Position: ${block.pos.x}, ${block.pos.y}, ${block.pos.z}", GRAY))
         rows.add(InspectorRow(RowType.PROPERTY, "Connections: ${block.connections.size}", GRAY))
 
-        // Handlers — Terminal only. Each handler gets its own HANDLER row that the
+        // Handlers, Terminal only. Each handler gets its own HANDLER row that the
         // render loop draws via RecipeHintRenderer (icon strip, same style as the
         // Scripting Terminal's inline recipe hints and the Jobs tab).
         if (block.type == "terminal") {
@@ -1153,7 +1153,7 @@ class DiagnosticScreen(
             }
         }
 
-        // Details — pull out the __error: prefix into its own dedicated section
+        // Details, pull out the __error: prefix into its own dedicated section
         // at the top so it's the first thing the player sees.
         val errorDetail = block.details.firstOrNull { it.startsWith("__error:") }
         if (errorDetail != null) {
@@ -1161,7 +1161,7 @@ class DiagnosticScreen(
             rows.add(InspectorRow(RowType.PROPERTY, errorDetail.removePrefix("__error:"), 0xFFFF8888.toInt()))
         }
         val visibleDetails = block.details.filter { !it.startsWith("__error:") }
-        // Variable live value — appended to Details (not a separate section) and read
+        // Variable live value, appended to Details (not a separate section) and read
         // from the client-side BE every frame. buildInspectorRows runs per render tick
         // and the client BE stays synced via standard chunk BE sync, so the value
         // live-updates without any extra plumbing.
@@ -1348,7 +1348,7 @@ class DiagnosticScreen(
 
                 RowType.HANDLER -> {
                     // Recipe icon strip for this Terminal handler. Inset matches PROPERTY
-                    // rows so the row aligns under the "Handlers" H2; width fills the body
+                    // rows so the row aligns under the "Handlers" H2, width fills the body
                     // minus the scrollbar gutter (6px track + 2px pad on each side).
                     val stripX = px + 6
                     val stripW = pw - 12
@@ -1400,7 +1400,7 @@ class DiagnosticScreen(
         graphics: GuiGraphicsExtractor, block: DiagnosticOpenData.NetworkBlock,
         sx: Int, sy: Int, halfBlock: Int, mouseX: Int, mouseY: Int
     ) {
-        // Selection glow — drawn BEFORE the block icon so the icon sits on top and
+        // Selection glow, drawn BEFORE the block icon so the icon sits on top and
         // the aura bleeds around its edges. Matches the Crafting Tree item halo via
         // the shared [GlowHighlight] helper.
         if (block == selectedBlock) {
@@ -1452,13 +1452,13 @@ class DiagnosticScreen(
         if (damien.nodeworks.render.NodeConnectionRenderer.pinnedBlock == block.pos) {
             val pinIconTex =
                 net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/icons.png")
-            // 26.1: `RenderSystem.setShaderColor` is gone; tint goes via the per-call
+            // 26.1: `RenderSystem.setShaderColor` is gone, tint goes via the per-call
             //  ARGB arg on the stretched-blit overload. 0xFF54CCFF = rgb(0.33, 0.8, 1.0).
             graphics.blit(pinIconTex, sx - 11, sy - 11, 6, 6, 80f, 0f, 16, 16, 256, 256, 0xFF54CCFF.toInt())
         }
 
         // Warning indicator (top-right corner of block) when the block has an
-        // undismissed error — currently only Crafting Cores emit this via the
+        // undismissed error, currently only Crafting Cores emit this via the
         // "__error:" detail prefix. renderItem draws at a higher Z than normal
         // blits, so we translate the pose up to sit on top of the block icon.
         if (block.details.any { it.startsWith("__error:") }) {
@@ -1523,7 +1523,7 @@ class DiagnosticScreen(
                         return true
                     }
 
-                    257, 258 -> { // ENTER or TAB — accept and request preview
+                    257, 258 -> { // ENTER or TAB, accept and request preview
                         val selected = craftAutocompleteSuggestions[craftAutocompleteSelected]
                         field.value = selected
                         craftAutocompleteSuggestions = emptyList()
@@ -1551,7 +1551,7 @@ class DiagnosticScreen(
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
-        // Double-click on craft field → select all; single-click → populate dropdown
+        // Double-click on craft field → select all, single-click → populate dropdown
         // with the current query (empty query shows every craftable item).
         val field = craftItemField
         if (field != null && field.visible && mx >= field.x && mx < field.x + field.width && my >= field.y && my < field.y + field.height) {
@@ -1631,7 +1631,7 @@ class DiagnosticScreen(
             }
         }
 
-        // Group expand/collapse — click on stacked icons or expanded rectangle to toggle
+        // Group expand/collapse, click on stacked icons or expanded rectangle to toggle
         if (activeTab == 0 && hoveredGroupIdx in stackGroups.indices) {
             val groupIdx = hoveredGroupIdx
             if (groupIdx in expandedGroups) expandedGroups.remove(groupIdx)
@@ -1678,7 +1678,7 @@ class DiagnosticScreen(
                         return true
                     }
                 }
-                // Click inside inspector panel — consume but don't deselect
+                // Click inside inspector panel, consume but don't deselect
                 if (mx >= px && mx < px + pw && my >= py && my < py + ph) {
                     return true
                 }
@@ -1692,7 +1692,7 @@ class DiagnosticScreen(
             return true
         }
 
-        // Click in content area — start drag (don't deselect inspector)
+        // Click in content area, start drag (don't deselect inspector)
         if (activeTab == 0 && mx >= contentLeft && mx < contentLeft + contentW &&
             my >= contentTop && my < contentTop + contentH
         ) {
@@ -1702,7 +1702,7 @@ class DiagnosticScreen(
             return true
         }
 
-        // Craft graph drag — bounds must mirror the render's actual tree area:
+        // Craft graph drag, bounds must mirror the render's actual tree area:
         //   treeAreaLeft  = detailX + detailW = (contentLeft + 6) + 180
         //   treeAreaRight = graphRight        = contentLeft + contentW - 4
         //   treeAreaTop   = graphTop          = contentTop + 22
@@ -1816,7 +1816,7 @@ class DiagnosticScreen(
             ) {
                 val oldZoom = craftGraphZoom
                 craftGraphZoom = (craftGraphZoom * (1f + scrollY.toFloat() * 0.15f)).coerceIn(0.3f, 4f)
-                // Zoom toward mouse — center must match graphCenterX/Y in the render path.
+                // Zoom toward mouse, center must match graphCenterX/Y in the render path.
                 val centerX = treeAreaLeft + (treeAreaRight - treeAreaLeft) / 2f
                 val centerY = treeAreaTop + (treeAreaBottom - treeAreaTop) / 2f
                 val mx = (mouseX - centerX - craftGraphPanX).toFloat()
@@ -1825,7 +1825,7 @@ class DiagnosticScreen(
                 craftGraphPanY -= my * (craftGraphZoom / oldZoom - 1f)
                 return true
             }
-            // Detail panel (left of the graph) — scroll the text tree.
+            // Detail panel (left of the graph), scroll the text tree.
             val detailLeft = contentLeft + 6
             val detailRight = detailLeft + 180
             if (mouseX >= detailLeft && mouseX < detailRight &&

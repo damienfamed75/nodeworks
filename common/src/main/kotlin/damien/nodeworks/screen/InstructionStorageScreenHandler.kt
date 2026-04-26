@@ -13,7 +13,7 @@ import net.minecraft.world.inventory.Slot
 import net.minecraft.world.item.ItemStack
 
 /**
- * Instruction Storage screen handler — fixed 2 columns × 6 rows = 12 instruction slots.
+ * Instruction Storage screen handler, fixed 2 columns × 6 rows = 12 instruction slots.
  * No upgrades. Slot positions match [InstructionStorageScreen]'s layout.
  */
 class InstructionStorageScreenHandler(
@@ -28,12 +28,12 @@ class InstructionStorageScreenHandler(
         const val COLS = 2
         const val ROWS = 6
 
-        // Card grid — 2 cols × 6 rows, horizontally centered in a 176-wide frame.
+        // Card grid, 2 cols × 6 rows, horizontally centered in a 176-wide frame.
         // Slot origin: (70, 28). Each slot is 18×18.
         const val GRID_X = 70
         const val GRID_Y = 28
 
-        // Player inventory — INV_X / INV_Y are the FRAME origin passed to drawPlayerInventory.
+        // Player inventory, INV_X / INV_Y are the FRAME origin passed to drawPlayerInventory.
         // Slot positions sit 1px inside to match the 1px border of NineSlice.SLOT.
         const val INV_X = 8
         const val INV_Y = 150

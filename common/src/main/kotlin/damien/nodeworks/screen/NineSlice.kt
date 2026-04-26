@@ -51,7 +51,7 @@ class NineSlice(
      * Draw this 9-slice tinted with an RGB color. Supports semi-transparent atlas pixels.
      *
      * MC 26.1 migration: the old RenderSystem.setShaderColor + enableBlend + blit +
-     * disableBlend dance is replaced by a single blit with an ARGB color argument —
+     * disableBlend dance is replaced by a single blit with an ARGB color argument,
      * the new pipeline handles blend state per-draw. We pack (A, R, G, B) into an
      * Int and let `blit(..., color)` do the rest.
      */
@@ -81,13 +81,13 @@ class NineSlice(
     }
 
     /**
-     * Draw this 9-slice with the bottom-inset row omitted — top corners, top
+     * Draw this 9-slice with the bottom-inset row omitted, top corners, top
      * edge, side edges, and center all render normally, but the bottom corners
      * (BL, BR) and bottom edge are skipped. The bottom `bottom` pixels of the
      * target rect are left transparent, so whatever is behind the frame (or
      * abuts it from below) shows through.
      *
-     * Use this when a frame needs to blend into another element below it —
+     * Use this when a frame needs to blend into another element below it,
      * e.g. a frame around a widget that protrudes from the top of another
      * panel, where the panel's own top border serves as the bottom of the
      * widget's frame.
@@ -305,7 +305,7 @@ class NineSlice(
          * The border is inset 1px on each side to cover the outer edge of the edge slots.
          */
         fun drawSlotGrid(graphics: GuiGraphicsExtractor, x: Int, y: Int, cols: Int, rows: Int) {
-            // Direct blit at native size — 1 blit per slot instead of 9
+            // Direct blit at native size, 1 blit per slot instead of 9
             for (r in 0 until rows) {
                 for (c in 0 until cols) {
                     graphics.blit(
@@ -328,7 +328,7 @@ class NineSlice(
             drawSlotGrid(graphics, x, y + 3 * 18 + gap, 9, 1)
         }
 
-        /** Visual text offset from top of the TOP_BAR — accounts for the top-heavy 9-slice. */
+        /** Visual text offset from top of the TOP_BAR, accounts for the top-heavy 9-slice. */
         const val TITLE_TEXT_Y = 7
 
         /**
@@ -359,10 +359,10 @@ class NineSlice(
         // Position   Size    Name                 Insets (L,R,T,B)  Description
         // ---------  ------  -------------------  ----------------  ---------------------------
         // (0,   0)   24x24   WINDOW_FRAME         3, 3, 3, 3        Main window background (#2B2B2B) with gradient border
-        // (24,  0)   24x24   WINDOW_RECESSED      3, 3, 3, 3        Recessed window panel — darker inset variant of WINDOW_FRAME
+        // (24,  0)   24x24   WINDOW_RECESSED      3, 3, 3, 3        Recessed window panel, darker inset variant of WINDOW_FRAME
         // (48,  0)   24x24   PORTABLE_FRAME       3, 3, 3, 3        Main window background for the Portable Inventory Terminal
         // (0,  24)   24x24   TOP_BAR              3, 3, 3, 3        Header bar (#3C3C3C) with border
-        // (24, 24)   24x24   TITLE_TRIM           3, 3, 3, 3        White trim overlay for title bar — tint with network color
+        // (24, 24)   24x24   TITLE_TRIM           3, 3, 3, 3        White trim overlay for title bar, tint with network color
         // (48, 24)   3x3     WINDOW_INNER_CORNER_TL                 Inner (concave) corner piece for the TL of a pocket
         // (51, 24)   3x3     WINDOW_INNER_CORNER_TR                 Inner (concave) corner piece for the TR of a pocket
         // (54, 24)   3x3     WINDOW_INNER_CORNER_BL                 Inner (concave) corner piece for the BL of a pocket
@@ -370,14 +370,14 @@ class NineSlice(
         // (0,  48)   24x16   TAB_ACTIVE           3, 3, 3, 2        Active tab (#2B2B2B) with blue accent top edge
         // (24, 48)   24x16   TAB_INACTIVE         3, 3, 3, 2        Inactive tab (#222222) with subtle border
         // (48, 48)   24x16   TAB_HOVER            3, 3, 3, 2        Hovered tab (#333333) between active/inactive
-        // (72, 48)   24x16   TAB_TRIM             3, 3, 3, 2        White trim overlay for active tab — tint with network color
+        // (72, 48)   24x16   TAB_TRIM             3, 3, 3, 2        White trim overlay for active tab, tint with network color
         // (0,  64)   24x16   BUTTON               3, 3, 3, 3        Raised button (#3C3C3C) with 3D borders
         // (24, 64)   24x16   BUTTON_HOVER         3, 3, 3, 3        Hovered button (#4A4A4A) brighter 3D borders
         // (48, 64)   24x16   BUTTON_ACTIVE        3, 3, 3, 3        Pressed button (#333333) inverted 3D borders
         // (0,  80)   24x24   PANEL_INSET          3, 3, 3, 3        Recessed content area (#1E1E1E) for editors/lists
         // (0, 104)   18x18   SLOT                 1, 1, 1, 1        Item slot (#1A1A1A) with inset border
         // (24,104)   24x16   INPUT_FIELD          3, 3, 3, 3        Text input (#1A1A1A) with highlighted border
-        // (24, 80)   24x24   CONTENT_BORDER       3, 3, 3, 3        Inset frame with transparent center — overlay on top of content
+        // (24, 80)   24x24   CONTENT_BORDER       3, 3, 3, 3        Inset frame with transparent center, overlay on top of content
         // (48, 80)   24x16   ROW                  1, 1, 1, 1        Default/odd row (#1E1E1E) with subtle border
         // (72, 80)   24x16   ROW_HIGHLIGHT        1, 1, 1, 1        Alternating/even row stripe (#252525) with subtle border
         // (72,104)   24x3    SEPARATOR            1, 1, 1, 1        Thin horizontal divider line (#3C3C3C)
@@ -393,10 +393,10 @@ class NineSlice(
         //                                                           Portable Inventory Terminal's Link Crystal slot.
         //                                                           The 18x18 slot area is centered inside (1px frame).
         // (26,152)   18x10   PORTABLE_TOP_BAR                       Non-9-sliced top-bar strip for the Portable
-        //                                                           Inventory Terminal. Tiles horizontally; fixed 10px tall.
+        //                                                           Inventory Terminal. Tiles horizontally, fixed 10px tall.
         // (44,152)   16x21   PORTABLE_TOP_BAR_LEFT_CAP              Non-9-sliced left-end cap for the Portable
         //                                                           Inventory Terminal's top bar. Top 16x16 is the
-        //                                                           cap corner; bottom 5px extends down the left
+        //                                                           cap corner, bottom 5px extends down the left
         //                                                           edge of the window like a pipe.
         //
         // Free space: (60+, 152–177), (0+, 178+)
@@ -416,7 +416,7 @@ class NineSlice(
          * 3x3 concave-corner pieces used to produce an inner-corner transition
          * between two WINDOW_FRAMEs that meet at a right angle (e.g. a widget
          * frame protruding from the edge of a larger panel). Each one is placed
-         * at the matching corner of the concave pocket — `TL` at the top-left
+         * at the matching corner of the concave pocket, `TL` at the top-left
          * of the pocket, `BR` at the bottom-right, etc. Draw on top of the
          * frames at native 3x3 size.
          */
@@ -450,13 +450,13 @@ class NineSlice(
         val SCROLLBAR_THUMB = NineSlice(GUI_ATLAS, 8, 128, 8, 16, 2, 2, 3, 3)
         val SCROLLBAR_THUMB_HOVER = NineSlice(GUI_ATLAS, 16, 128, 8, 16, 2, 2, 3, 3)
 
-        // Portable crystal slot decoration — 20x20, 18x18 slot centered inside a 1px frame.
+        // Portable crystal slot decoration, 20x20, 18x18 slot centered inside a 1px frame.
         val PORTABLE_CRYSTAL_SLOT_FRAME = NineSlice(GUI_ATLAS, 0, 152, 20, 20, 0, 0, 0, 0, tile = false)
 
-        // Portable top-bar strip — 18x10, tiles horizontally. Drawing taller than 10px stretches.
+        // Portable top-bar strip, 18x10, tiles horizontally. Drawing taller than 10px stretches.
         val PORTABLE_TOP_BAR = NineSlice(GUI_ATLAS, 26, 152, 18, 10, 0, 0, 0, 0)
 
-        // Portable top-bar left cap — 16x21. Top 16x16 is the corner; bottom 5px is the pipe tail.
+        // Portable top-bar left cap, 16x21. Top 16x16 is the corner, bottom 5px is the pipe tail.
         val PORTABLE_TOP_BAR_LEFT_CAP = NineSlice(GUI_ATLAS, 44, 152, 16, 21, 0, 0, 0, 0, tile = false)
     }
 }

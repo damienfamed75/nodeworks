@@ -2,7 +2,7 @@ plugins {
     id("net.neoforged.moddev")
 }
 
-// Use NeoForm for vanilla MC deobfuscation — no Loom, no lock conflicts
+// Use NeoForm for vanilla MC deobfuscation, no Loom, no lock conflicts
 neoForge {
     neoFormVersion = providers.gradleProperty("neoform_version").get()
 
@@ -27,6 +27,6 @@ dependencies {
     // Lua scripting engine (platform-agnostic)
     implementation("org.luaj:luaj-jse:3.0")
 
-    // JEI API (compile-only — optional integration)
+    // JEI API (compile-only, optional integration)
     compileOnly("mezz.jei:jei-${providers.gradleProperty("minecraft_version").get()}-common-api:${providers.gradleProperty("jei_version").get()}")
 }

@@ -17,7 +17,7 @@ import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.item.DyeColor
 
 /**
- * Breaker settings screen — name field + channel picker. Mirrors VariableScreen
+ * Breaker settings screen, name field + channel picker. Mirrors VariableScreen
  * at a smaller footprint since the device only needs two settings.
  */
 class BreakerScreen(
@@ -76,11 +76,11 @@ class BreakerScreen(
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
         NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor())
 
-        // Row 1 — Name field + Set button
+        // Row 1, Name field + Set button
         graphics.drawString(font, "Name", leftPos + PAD, rowY(0) + 7, 0xFFAAAAAA.toInt())
         drawSetButton(graphics, controlX + FIELD_W + 4, rowY(0) + 1, mouseX, mouseY)
 
-        // Row 2 — Channel label (the picker widget renders itself)
+        // Row 2, Channel label (the picker widget renders itself)
         graphics.drawString(font, "Channel", leftPos + PAD, rowY(1) + 7, 0xFFAAAAAA.toInt())
 
         val serverChannel = menu.channelId

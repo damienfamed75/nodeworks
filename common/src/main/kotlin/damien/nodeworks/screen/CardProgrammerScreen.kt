@@ -43,20 +43,20 @@ class CardProgrammerScreen(
         private const val PROG_Y = 2
         private const val PROG_H = 100
 
-        // Slot positions — black squares in bg at source (52, 18) / (106, 18)
+        // Slot positions, black squares in bg at source (52, 18) / (106, 18)
         private const val TEMPLATE_SLOT_X = 52
         private const val TEMPLATE_SLOT_Y = 18 + PROG_Y      // 20
         private const val INPUT_SLOT_X = 106
         private const val INPUT_SLOT_Y = 18 + PROG_Y         // 20
 
-        // Copy Name toggle — shifted right 3px to horizontally center the controls row in the frame
+        // Copy Name toggle, shifted right 3px to horizontally center the controls row in the frame
         private const val TOGGLE_X = 35
         private const val TOGGLE_Y = 76
         private const val TOGGLE_W = 48
         private const val TOGGLE_H = 16
         private const val TOGGLE_LABEL_Y = TOGGLE_Y - 10     // 66
 
-        // Increment row — counter 2 digits (max 99), shifted right 3px with the toggle.
+        // Increment row, counter 2 digits (max 99), shifted right 3px with the toggle.
         // Field must be wide enough that EditBox's inner width (width - 8 for bordered)
         // fits "99" in the default font (~11px). INC_FIELD_W=20 → 12px inner, comfortable.
         private const val INC_MINUS_X = 93
@@ -68,7 +68,7 @@ class CardProgrammerScreen(
         private const val INC_BTN_H = 14
         private const val INC_LABEL_Y = INC_BTN_Y - 10
 
-        // Window frame around the controls — extended an additional 2px on each side
+        // Window frame around the controls, extended an additional 2px on each side
         private const val CTRL_FRAME_X = 22
         private const val CTRL_FRAME_Y = 57
         private const val CTRL_FRAME_W = 132
@@ -80,7 +80,7 @@ class CardProgrammerScreen(
         private const val SCREW_T_Y = 63
         private const val SCREW_B_Y = 94
 
-        // Player inventory frame — extended down 14px for extra bottom space
+        // Player inventory frame, extended down 14px for extra bottom space
         private const val INV_PANEL_Y = 108
         private const val INV_PANEL_H = 96
         private const val H = INV_PANEL_Y + INV_PANEL_H      // 204
@@ -136,7 +136,7 @@ class CardProgrammerScreen(
         val scanCode = event.scan
         val modifiers = event.modifierBits
         if (counterField?.isFocused == true) {
-            if (keyCode == 256) { // Escape — unfocus, don't close screen
+            if (keyCode == 256) { // Escape, unfocus, don't close screen
                 counterField!!.isFocused = false
                 return true
             }
@@ -155,7 +155,7 @@ class CardProgrammerScreen(
         // Programmer image
         graphics.blit(BG_TEXTURE, leftPos, topPos + PROG_Y, 0f, 0f, W, PROG_H, W, PROG_H)
 
-        // Card slots intentionally have no visible frame — they sit on top of the
+        // Card slots intentionally have no visible frame, they sit on top of the
         // programmer background texture which already paints slot cutouts.
 
         if (!menu.hasTemplate()) {
@@ -168,7 +168,7 @@ class CardProgrammerScreen(
 
         // Window frame around the controls + decorative screws at each corner
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos + CTRL_FRAME_X, topPos + CTRL_FRAME_Y, CTRL_FRAME_W, CTRL_FRAME_H)
-        // Screws — drawSmall uses 4px inset, so offset by -4 to land at the target pixel
+        // Screws, drawSmall uses 4px inset, so offset by -4 to land at the target pixel
         Icons.SMALL_SCREW.drawSmall(graphics, leftPos + SCREW_L_X - 4, topPos + SCREW_T_Y - 4)
         Icons.SMALL_SCREW.drawSmall(graphics, leftPos + SCREW_R_X - 4, topPos + SCREW_T_Y - 4)
         Icons.SMALL_SCREW.drawSmall(graphics, leftPos + SCREW_L_X - 4, topPos + SCREW_B_Y - 4)
@@ -218,7 +218,7 @@ class CardProgrammerScreen(
             incTextColor
         )
 
-        // Counter field color — manual "gray out" when disabled
+        // Counter field color, manual "gray out" when disabled
         counterField?.setTextColor(if (incEnabled) 0xFFFFFFFF.toInt() else 0xFF555555.toInt())
         counterField?.setEditable(incEnabled)
 

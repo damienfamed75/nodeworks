@@ -96,7 +96,7 @@ object CraftTreeBuilder {
 
             // Recipes can yield >1 per craft (e.g. 1 ingot → 9 nuggets). Scale ingredient
             // demand by the number of crafts actually needed, and round the node's own
-            // count up to a full batch — you can't craft fractions, so a request for 1
+            // count up to a full batch, you can't craft fractions, so a request for 1
             // nugget via a 1→9 recipe actually produces (and delivers) 9.
             val perBatch = resolveRecipeOutputCount(recipe, level).coerceAtLeast(1)
             val batches = (count + perBatch - 1) / perBatch
@@ -141,14 +141,14 @@ object CraftTreeBuilder {
             return CraftTreeNode(itemId, itemName, actualCount, source, api.name, resolvedBy, availableFromStorage, children)
         }
 
-        // 3. Fall back to storage — but only for the portion that isn't already reserved
+        // 3. Fall back to storage, but only for the portion that isn't already reserved
         if (availableFromStorage >= count) {
             reserved[itemId] = reservedAmount + count
             visited.remove(itemId)
             return CraftTreeNode(itemId, itemName, count, "storage", "", "storage", availableFromStorage, emptyList())
         }
 
-        // 4. No recipe and no (unreserved) storage — genuinely missing
+        // 4. No recipe and no (unreserved) storage, genuinely missing
         visited.remove(itemId)
         return CraftTreeNode(itemId, itemName, count, "missing", "", "", availableFromStorage, emptyList())
     }
@@ -211,7 +211,7 @@ object CraftTreeBuilder {
     }
 
     /** Assemble the 9-slot pattern against the vanilla RecipeManager and return the per-craft
-     *  output count. Returns 1 if no matching recipe (safe default — planner will still fail
+     *  output count. Returns 1 if no matching recipe (safe default, planner will still fail
      *  downstream with a clearer error). */
     private fun resolveRecipeOutputCount(recipe: List<String>, level: ServerLevel): Int {
         val rm = level.recipeAccess() ?: return 1

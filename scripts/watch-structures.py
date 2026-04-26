@@ -98,7 +98,7 @@ class NbtHandler(FileSystemEventHandler):
 
 
 def main():
-    # Observer can't watch a non-existent directory; create the saves root pre-emptively.
+    # Observer can't watch a non-existent directory, create the saves root pre-emptively.
     SAVES_ROOT.mkdir(parents=True, exist_ok=True)
 
     print(f"Watching: {SAVES_ROOT} (recursive, filtered to */generated/nodeworks/structure/*.nbt)")

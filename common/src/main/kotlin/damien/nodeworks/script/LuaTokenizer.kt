@@ -5,7 +5,7 @@ package damien.nodeworks.script
  * editor, the overlay [damien.nodeworks.screen.widget.LuaSyntaxHighlighter] path, and the
  * guidebook `<LuaCode>` tag compiler.
  *
- * Extracted into the common module so all three surfaces tokenise identically — one set
+ * Extracted into the common module so all three surfaces tokenise identically, one set
  * of colours, one keyword list, one recovery rule for multi-line block comments. If Lua
  * syntax awareness needs to grow later (e.g. distinguishing `self.foo` from `Foo.bar`),
  * changes here propagate everywhere automatically.
@@ -17,7 +17,7 @@ object LuaTokenizer {
 
     /** Classification of a tokenised slice. Drives colouring AND is inspected by
      *  [LuaApiDocs.resolveAt] to decide whether a token is eligible for a hover docstring
-     *  (identifiers get docs; comments / strings / numbers don't). */
+     *  (identifiers get docs, comments / strings / numbers don't). */
     enum class TokenType {
         KEYWORD, STRING, COMMENT, NUMBER, FUNCTION, DEFAULT,
         BLOCK_COMMENT_START, BLOCK_COMMENT_END,
@@ -30,7 +30,7 @@ object LuaTokenizer {
     )
 
     // ==== Colour palette (argb ints, opaque) ====
-    // Same hues the in-game editor has shipped with — keep in sync with the editor's
+    // Same hues the in-game editor has shipped with, keep in sync with the editor's
     // expected palette so copying a page's <LuaCode> block into the terminal looks
     // identical.
 
@@ -49,14 +49,14 @@ object LuaTokenizer {
 
     /** Top-level globals the editor should highlight as function-coloured even when
      *  they're referenced without a trailing call-parenthesis. Extend via [LuaApiDocs]
-     *  entries whose key has no `:` or `.` — those automatically get included here. */
+     *  entries whose key has no `:` or `.`, those automatically get included here. */
     val BUILTINS: Set<String> = setOf(
         "scheduler", "print", "network", "clock", "require",
     )
 
     /**
      * Tokenise a single line of Lua source. [inBlockComment] is the state flag produced
-     * by the previous line's tokenisation — pass `false` for the first line, then feed
+     * by the previous line's tokenisation, pass `false` for the first line, then feed
      * the result of `endsInBlockComment(previous)` into each subsequent call.
      *
      * Output preserves the original text exactly (concatenating all token `text` fields
@@ -94,7 +94,7 @@ object LuaTokenizer {
                         return tokens
                     }
                 } else {
-                    // Line comment — rest of the line.
+                    // Line comment, rest of the line.
                     tokens.add(Token(line.substring(i), COMMENT_COLOR))
                     return tokens
                 }
@@ -150,10 +150,10 @@ object LuaTokenizer {
 
     /**
      * Clean up raw source text before it hits Minecraft's font renderer. Minecraft
-     * draws unprintable control characters as their Unicode replacement glyph — little
-     * boxes reading "CR" (carriage return) or "HT" (horizontal tab) — which is useless
+     * draws unprintable control characters as their Unicode replacement glyph, little
+     * boxes reading "CR" (carriage return) or "HT" (horizontal tab), which is useless
      * noise inside a code block. We collapse line endings to LF and expand tabs to two
-     * spaces. Safe to call repeatedly; already-normalized text is a fixed point.
+     * spaces. Safe to call repeatedly, already-normalized text is a fixed point.
      *
      * Used at the surface (guidebook's `<LuaCode src="…">` load, editor's `insertText`)
      * rather than inside [tokenize], because the tokenizer runs per-line and shouldn't

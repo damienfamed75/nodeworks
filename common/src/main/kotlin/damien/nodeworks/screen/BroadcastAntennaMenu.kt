@@ -21,14 +21,14 @@ class BroadcastAntennaMenu(
 ) : AbstractContainerMenu(ModScreenHandlers.BROADCAST_ANTENNA, syncId) {
 
     companion object {
-        // Slot item positions. The slot frame is NOT drawn — the background image
+        // Slot item positions. The slot frame is NOT drawn, the background image
         // (broadcast_antenna_bg.png) already depicts the slot visually.
         const val CHIP_SLOT_X = 80
         const val CHIP_SLOT_Y = 19
         const val UPGRADE_SLOT_X = 80
         const val UPGRADE_SLOT_Y = 77
 
-        // Player inventory layout — lower panel sits below the 120px-tall BG image.
+        // Player inventory layout, lower panel sits below the 120px-tall BG image.
         const val INV_SLOT_ORIGIN_X = 9
         const val INV_SLOT_ORIGIN_Y = 137
         const val HOTBAR_SLOT_Y = 195

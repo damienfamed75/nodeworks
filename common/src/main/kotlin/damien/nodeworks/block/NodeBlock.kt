@@ -88,7 +88,7 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
     override fun isSignalSource(state: BlockState): Boolean = true
 
     override fun getSignal(state: BlockState, level: BlockGetter, pos: BlockPos, direction: Direction): Int {
-        // `direction` is the side of the querying block — the node side is the opposite
+        // `direction` is the side of the querying block, the node side is the opposite
         val entity = level.getBlockEntity(pos) as? NodeBlockEntity ?: return 0
         return entity.getRedstoneOutput(direction.opposite)
     }

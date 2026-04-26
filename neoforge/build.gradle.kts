@@ -3,7 +3,7 @@ plugins {
 }
 
 base {
-    // Ships as `nodeworks-<version>.jar` — no `-neoforge` suffix since this is the only
+    // Ships as `nodeworks-<version>.jar`, no `-neoforge` suffix since this is the only
     // loader module producing a distributable jar. If Fabric ever re-enters the picture,
     // add a suffix then to disambiguate.
     archivesName = providers.gradleProperty("archives_base_name")
@@ -32,7 +32,7 @@ neoForge {
         register("server") {
             server()
         }
-        // `./gradlew :neoforge:runGuide` — same as runClient but also auto-opens the
+        // `./gradlew :neoforge:runGuide`, same as runClient but also auto-opens the
         // guidebook at launch so doc work doesn't need clicking through menus each run.
         register("guide") {
             client()
@@ -79,7 +79,7 @@ dependencies {
     implementation("org.luaj:luaj-jse:3.0")
     jarJar("org.luaj:luaj-jse:3.0")
 
-    // GuideME — in-game + web guidebook (see docs/authoring.md).
+    // GuideME, in-game + web guidebook (see docs/authoring.md).
     // jarJar-bundled so players don't need to install it separately.
     implementation("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
     jarJar("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")

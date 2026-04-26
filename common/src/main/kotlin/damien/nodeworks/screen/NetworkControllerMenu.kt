@@ -54,7 +54,7 @@ class NetworkControllerMenu(
                         3 -> entity.nodeGlowStyle = value
                         4 -> entity.handlerRetryLimit = value
                         // chunk-loading (slot 5) is write-through the dedicated payload path
-                        // so we can run the claim/unclaim side-effects; reject direct writes
+                        // so we can run the claim/unclaim side-effects, reject direct writes
                         // here to avoid bypassing that.
                         5 -> Unit
                     }

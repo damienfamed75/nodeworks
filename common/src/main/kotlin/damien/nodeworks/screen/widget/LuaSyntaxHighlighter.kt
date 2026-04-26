@@ -10,7 +10,7 @@ import net.minecraft.client.gui.components.MultilineTextField
 
 /**
  * Renders syntax-highlighted Lua text over a MultiLineEditBox. The editor's text colour
- * is set to transparent; this class draws coloured text at the same positions using the
+ * is set to transparent, this class draws coloured text at the same positions using the
  * shared [LuaTokenizer].
  *
  * The primary editor widget is now [ScriptEditor], which draws its own coloured text
@@ -101,12 +101,12 @@ object LuaSyntaxHighlighter {
             // Skip lines outside visible area (after tracking state)
             if (y + font.lineHeight < clipTop || y > clipBottom) continue
 
-            // Draw colored text — selected characters render in blue
+            // Draw colored text, selected characters render in blue
             var x = textLeft
             var charIdx = begin
             for (token in tokens) {
                 if (hasSelection && selStart < charIdx + token.text.length && selEnd > charIdx) {
-                    // Token overlaps selection — draw char by char
+                    // Token overlaps selection, draw char by char
                     for (ch in token.text) {
                         val color = if (hasSelection && charIdx >= selStart && charIdx < selEnd)
                             SELECTION_COLOR else token.color

@@ -25,8 +25,8 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
 /**
- * Breaker — destroys the block at its facing position over time, routes drops
- * into network storage by default. Diamond-pickaxe tier (encoded via the recipe);
+ * Breaker, destroys the block at its facing position over time, routes drops
+ * into network storage by default. Diamond-pickaxe tier (encoded via the recipe),
  * break duration uses the wooden-pickaxe formula so common blocks break in ~1s
  * but harder blocks like ancient debris are slow. See [BreakerBlockEntity] for
  * the server-side break-progress logic.
@@ -50,7 +50,7 @@ class BreakerBlock(properties: Properties) : BaseEntityBlock(properties) {
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState? {
-        // Face the side opposite where the player is looking from — same shoulder-mount
+        // Face the side opposite where the player is looking from, same shoulder-mount
         // shape as a piston/observer/dispenser. The "front" of the block points at
         // whatever the player was aiming at when placing.
         return defaultBlockState().setValue(FACING, context.nearestLookingDirection.opposite)
@@ -65,7 +65,7 @@ class BreakerBlock(properties: Properties) : BaseEntityBlock(properties) {
         blockEntityType: BlockEntityType<T>,
     ): BlockEntityTicker<T>? {
         // Server-side ticker drives the multi-tick break progress. Client doesn't
-        // need to tick — the destroy-progress overlay is server-pushed via
+        // need to tick, the destroy-progress overlay is server-pushed via
         // `level.destroyBlockProgress` and clients just render whatever stage they
         // were last told.
         if (level.isClientSide) return null

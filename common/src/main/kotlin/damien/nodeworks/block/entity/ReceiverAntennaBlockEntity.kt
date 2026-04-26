@@ -36,7 +36,7 @@ import java.util.UUID
 private const val BASE_RANGE = 128.0
 
 /**
- * Receiver Antenna — receives Processing Sets from a paired Broadcast Antenna.
+ * Receiver Antenna, receives Processing Sets from a paired Broadcast Antenna.
  * Connectable via laser to the consumer network.
  * Has 1 slot for an encoded Link Crystal that defines the pairing.
  */
@@ -51,12 +51,12 @@ class ReceiverAntennaBlockEntity(
 
     private val items = NonNullList.withSize(1, ItemStack.EMPTY)
 
-    // Pairing data — read from the Link Crystal in the slot
+    // Pairing data, read from the Link Crystal in the slot
     private var pairedPos: BlockPos? = null
     private var pairedDimension: ResourceKey<Level>? = null
     private var pairedFrequencyId: UUID? = null
     /** Broadcast kind the crystal was paired against. Receivers only consume
-     *  [BroadcastSourceKind.PROCESSING_STORAGE] crystals; any other kind produces a
+     *  [BroadcastSourceKind.PROCESSING_STORAGE] crystals, any other kind produces a
      *  "wrong source kind" status and the receiver stays dark. */
     private var pairedKind: BroadcastSourceKind? = null
 
@@ -65,13 +65,13 @@ class ReceiverAntennaBlockEntity(
     /** 0=not linked, 1=linked, 2=out of range, 3=broadcast not found, 4=freq mismatch,
      *  5=not loaded, 6=dimension mismatch (broadcast lacks Multi-Dimension upgrade),
      *  7=wrong source kind (crystal is paired to a Network Controller, not a Processing
-     *  Storage — Receiver Antennas only consume processing-set broadcasts). */
+     *  Storage, Receiver Antennas only consume processing-set broadcasts). */
     fun getConnectionStatus(level: ServerLevel): Int {
         val pos = pairedPos ?: return 0
         val dim = pairedDimension ?: return 0
         val freq = pairedFrequencyId ?: return 0
         val kind = pairedKind ?: return 0
-        // Type-check the crystal before we touch the target dimension — a wrong-kind
+        // Type-check the crystal before we touch the target dimension, a wrong-kind
         // crystal is invalid regardless of where the broadcast is.
         if (kind != BroadcastSourceKind.PROCESSING_STORAGE) return 7
         val targetLevel = level.server.getLevel(dim) ?: return 3
@@ -84,7 +84,7 @@ class ReceiverAntennaBlockEntity(
             // Cross-dimensional pairing is gated behind the Multi-Dimension upgrade.
             return if (broadcast.allowsCrossDimension) 1 else 6
         }
-        // Same dimension — distance must be within broadcast's effective range.
+        // Same dimension, distance must be within broadcast's effective range.
         val dx = pos.x - worldPosition.x.toDouble()
         val dy = pos.y - worldPosition.y.toDouble()
         val dz = pos.z - worldPosition.z.toDouble()
@@ -122,7 +122,7 @@ class ReceiverAntennaBlockEntity(
     }
 
     /** Read pairing data from the chip in the slot. All four pairing fields move
-     *  together — any transition through here leaves them either all-set-consistently
+     *  together, any transition through here leaves them either all-set-consistently
      *  or all-null, never a half-populated state. */
     private fun updatePairingFromChip() {
         val wasPaired = isPaired
@@ -170,7 +170,7 @@ class ReceiverAntennaBlockEntity(
 
     /** Flip the segment above's CONNECTED blockstate to match whether this receiver is
      *  currently fully linked to a Broadcast Antenna. Only status code 1 ("linked")
-     *  counts — out-of-range / not-loaded / frequency-mismatch / broadcast-not-found
+     *  counts, out-of-range / not-loaded / frequency-mismatch / broadcast-not-found
      *  all leave the horn dark. Drives the horn on/off multipart model. */
     fun updateSegmentConnectedState() {
         if (isRemoved) return
@@ -188,7 +188,7 @@ class ReceiverAntennaBlockEntity(
     }
 
     /** Called every tick by [damien.nodeworks.block.ReceiverAntennaBlock.getTicker]. We
-     *  only re-check every 20 ticks (1s) — the check walks to the paired broadcast and
+     *  only re-check every 20 ticks (1s), the check walks to the paired broadcast and
      *  compares UUIDs, which is cheap but not free. setBlock only fires when the desired
      *  state actually changes, so the work per tick is minimal. */
     fun serverTick(lvl: ServerLevel) {

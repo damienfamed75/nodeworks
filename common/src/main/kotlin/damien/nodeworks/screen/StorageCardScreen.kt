@@ -48,7 +48,7 @@ class StorageCardScreen(
         private const val INSET_W = W - 8
         private const val INSET_H = H - 24
 
-        // Stepper layout — [-] [entry] [+] with 2 px gaps, matching ProcessingSetScreen.
+        // Stepper layout, [-] [entry] [+] with 2 px gaps, matching ProcessingSetScreen.
         private const val STEPPER_BTN_SIZE = 14
         private const val STEPPER_GAP = 2
         private const val PRIORITY_FIELD_W = 26
@@ -104,7 +104,7 @@ class StorageCardScreen(
         lastSyncedPriority = menu.getPriority()
         addRenderableWidget(priorityField!!)
 
-        // Channel row — Channel: [swatch], horizontally centered like the priority row
+        // Channel row, Channel: [swatch], horizontally centered like the priority row
         // above. Picker click sends the dye ordinal as a clickMenuButton id offset by
         // 2000 so it never collides with the priority decrement/increment ids.
         val channelLabelW = font.width(CHANNEL_LABEL_TEXT)
@@ -171,10 +171,10 @@ class StorageCardScreen(
         // Recessed inset for priority area
         NineSlice.WINDOW_RECESSED.draw(graphics, leftPos + INSET_X, topPos + INSET_Y, INSET_W, INSET_H)
 
-        // "Priority:" label — leftmost element in the centered row.
+        // "Priority:" label, leftmost element in the centered row.
         graphics.drawString(font, LABEL_TEXT, leftPos + labelX, topPos + INSET_Y + 9, 0xFFAAAAAA.toInt())
 
-        // Stepper buttons — [-] left of the entry, [+] right of the entry.
+        // Stepper buttons, [-] left of the entry, [+] right of the entry.
         val stepY = topPos + INSET_Y + STEPPER_Y_OFFSET
         val mX = leftPos + minusX
         val pX = leftPos + plusX
@@ -244,7 +244,7 @@ class StorageCardScreen(
                 }
                 return true
             }
-            // Bug fix: `plusX` is the local x relative to leftPos — must add leftPos
+            // Bug fix: `plusX` is the local x relative to leftPos, must add leftPos
             //  to match the actual button draw position (cf. `pX` above).
             if (mx >= pX && mx < pX + btnW && my >= stepY && my < stepY + btnH) {
                 val step = if (hasShiftDownCompat()) 10 else 1

@@ -57,7 +57,7 @@ data class PortableNetworkColorTintSource(private val unit: Unit = Unit) : ItemT
         val pairing = LinkCrystalItem.getPairingData(crystal) ?: return DEFAULT_COLOR
         if (pairing.kind != BroadcastSourceKind.NETWORK_CONTROLLER) return DEFAULT_COLOR
 
-        // Try a fresh lookup first — picks up color changes immediately when the
+        // Try a fresh lookup first, picks up color changes immediately when the
         // player is in the right dimension with the antenna chunk loaded.
         val fresh = resolveFreshColor(pairing, level)
         if (fresh != null) {
@@ -67,7 +67,7 @@ data class PortableNetworkColorTintSource(private val unit: Unit = Unit) : ItemT
 
         // Fall back to the last color we saw for this antenna. Covers cross-dim,
         // antenna chunk unloaded, and transient "frame between join and BE sync"
-        // gaps — all states where the Portable is still logically linked.
+        // gaps, all states where the Portable is still logically linked.
         return cache[pairing.frequencyId] ?: DEFAULT_COLOR
     }
 
@@ -79,7 +79,7 @@ data class PortableNetworkColorTintSource(private val unit: Unit = Unit) : ItemT
         if (source.first != BroadcastSourceKind.NETWORK_CONTROLLER) return null
         val controller = level.getBlockEntity(source.second) as? Connectable ?: return null
         val networkId = controller.networkId ?: return null
-        // NetworkSettingsRegistry returns a packed RGB int; force alpha to 0xFF so the
+        // NetworkSettingsRegistry returns a packed RGB int, force alpha to 0xFF so the
         // tint is fully opaque (item-model tints are applied as ARGB to the texel).
         return 0xFF000000.toInt() or (NetworkSettingsRegistry.getColor(networkId) and 0xFFFFFF)
     }
@@ -87,11 +87,11 @@ data class PortableNetworkColorTintSource(private val unit: Unit = Unit) : ItemT
     override fun type(): MapCodec<out ItemTintSource> = MAP_CODEC
 
     companion object {
-        /** Neutral white — applies no visible hue shift to the emissive texture. */
+        /** Neutral white, applies no visible hue shift to the emissive texture. */
         const val DEFAULT_COLOR: Int = 0xFFFFFFFF.toInt()
 
         /** `frequencyId → ARGB` cache. Written by the render thread on every
-         *  successful fresh lookup; read by the same thread when a fresh lookup
+         *  successful fresh lookup, read by the same thread when a fresh lookup
          *  fails. `ConcurrentHashMap` guards against any future off-thread reads
          *  (item tooltip rendering, JEI previews) without requiring a rework. */
         private val cache = ConcurrentHashMap<UUID, Int>()

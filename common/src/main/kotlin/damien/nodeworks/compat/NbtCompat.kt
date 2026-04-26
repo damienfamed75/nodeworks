@@ -13,20 +13,20 @@ import net.minecraft.world.level.storage.ValueOutput
  * MC 26.1.2 changed most NBT getters to return `Optional<T>` instead of raw `T`,
  * and *also* shipped new `getXxxOr(key, default)` member methods on `CompoundTag`
  * and `ValueInput` for the "read with default" case. Use those directly when you
- * have a sensible default — they cover the vast majority of reads and need no
+ * have a sensible default, they cover the vast majority of reads and need no
  * help from us.
  *
  * The extensions below only fill the gap Mojang didn't cover: `OrNull` variants
  * for cases where the caller genuinely wants to distinguish "key absent" from
  * "key present with default-like value". If this gap gets filled in a future MC
- * update, delete this file — the call sites using these helpers will keep
+ * update, delete this file, the call sites using these helpers will keep
  * working against the vanilla replacements.
  *
  * When future MC versions change the NBT shape again, update only this file.
  *
  * Non-goal: wrapping the streaming `ValueInput` / `ValueOutput` API used inside
  * `saveAdditional` / `loadAdditional`. Those bodies should be rewritten directly
- * against the current Mojang API; adding a façade there hurts more than helps.
+ * against the current Mojang API, adding a façade there hurts more than helps.
  */
 
 // ---------- CompoundTag nullable reads ----------
@@ -90,7 +90,7 @@ fun ValueInput.getBlockPosList(name: String): List<BlockPos> {
 //
 // For cases that used `putLongArray` with semantics other than "list of BlockPos"
 // (e.g. encoded flag bitfields, frequency IDs split into high/low, etc.). Uses
-// Codec.LONG under the hood — one child per long, tagged.
+// Codec.LONG under the hood, one child per long, tagged.
 
 fun ValueOutput.putLongList(name: String, longs: LongArray) {
     if (longs.isEmpty()) return

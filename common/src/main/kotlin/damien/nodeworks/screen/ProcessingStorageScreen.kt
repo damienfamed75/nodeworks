@@ -30,7 +30,7 @@ class ProcessingStorageScreen(
         private const val HOTBAR_GAP = 4
     }
 
-    /** Cached network color — resolved via BFS once per open (can be expensive). */
+    /** Cached network color, resolved via BFS once per open (can be expensive). */
     private var cachedNetworkColor: Int? = null
 
     init {
@@ -62,7 +62,7 @@ class ProcessingStorageScreen(
         // Top bar tinted with network color (same call pattern as NetworkControllerScreen).
         NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor)
 
-        // Card grid — 2 cols × 4 rows.
+        // Card grid, 2 cols × 4 rows.
         for (row in 0 until ProcessingStorageScreenHandler.ROWS) {
             for (col in 0 until ProcessingStorageScreenHandler.COLS) {
                 val sx = leftPos + ProcessingStorageScreenHandler.GRID_X + col * 18

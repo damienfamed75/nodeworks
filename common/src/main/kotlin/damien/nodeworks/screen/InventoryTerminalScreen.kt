@@ -42,14 +42,14 @@ import net.minecraft.world.item.ItemStack
 
 /**
  * Client-side screen for the Inventory Terminal.
- * Uses VirtualSlotGrid — zero MC Slot objects. Fully dynamic layout.
+ * Uses VirtualSlotGrid, zero MC Slot objects. Fully dynamic layout.
  */
 class InventoryTerminalScreen(
     menu: InventoryTerminalMenu,
     playerInventory: Inventory,
     title: Component
 // TODO MC 26.1.2: ACS imageWidth/imageHeight are now final. Using a
-// fixed default derived from the pre-migration "small" layout; the dynamic
+// fixed default derived from the pre-migration "small" layout, the dynamic
 // per-layout resize assignments have been commented out in init() below
 // until we can restore mutability (AT or custom size fields).
 ) : AbstractContainerScreen<InventoryTerminalMenu>(menu, playerInventory, title, 230, 230) {
@@ -80,7 +80,7 @@ class InventoryTerminalScreen(
     private val SCROLLBAR_W = 8
 
     /** After clicking Craft, wait this many ms for a server error before assuming
-     *  success and closing the dialog. Generous enough for laggy connections;
+     *  success and closing the dialog. Generous enough for laggy connections,
      *  short enough that players don't notice. */
     private val CRAFT_CLOSE_DELAY_MS = 500L
     private val SIDE_BTN_W = 20
@@ -141,7 +141,7 @@ class InventoryTerminalScreen(
     // Craft error returned from the server (e.g. CPU buffer cannot fit the job)
     private var craftError: String? = null
 
-    /** Remembered details of the last craft attempt — used to re-open the dialog
+    /** Remembered details of the last craft attempt, used to re-open the dialog
      *  if the server sends a late error after the dialog has already auto-closed. */
     private var lastAttemptItemId: String? = null
     private var lastAttemptItemName: String = ""
@@ -174,7 +174,7 @@ class InventoryTerminalScreen(
     private lateinit var searchBox: EditBox
     private var cachedNetworkColor: Int? = null
     private var itemStackCache = HashMap<String, ItemStack>()
-    // Reused container for JEI hoveredSlot — avoids allocating new SimpleContainer every frame
+    // Reused container for JEI hoveredSlot, avoids allocating new SimpleContainer every frame
     private val hoverContainer = net.minecraft.world.SimpleContainer(1)
 
     // ========== Crystal slot (Handheld only) ==========
@@ -225,13 +225,13 @@ class InventoryTerminalScreen(
         networkGrid.stackProvider = { slot -> getItemStackForNetworkSlot(slot.index) }
         networkGrid.countFormatter = { slot -> getCountForNetworkSlot(slot.index) }
 
-        // Crafting area position — centered in window
+        // Crafting area position, centered in window
         val craftAreaH = if (craftingCollapsed) CRAFT_COLLAPSED_H else CRAFT_H
         val craftTotalW = 3 * 18 + 16 + 18 // 3x3 grid + arrow gap + output slot
         craftX = leftPos + (imageWidth - craftTotalW) / 2
         craftY = gridY + layout.rows * SLOT_SIZE + GRID_PAD
 
-        // Player inventory grids — centered in window
+        // Player inventory grids, centered in window
         val invTotalW = 9 * 18
         val invX = leftPos + (imageWidth - invTotalW) / 2
         val invY = craftY + craftAreaH + GRID_PAD
@@ -251,13 +251,13 @@ class InventoryTerminalScreen(
         // Crystal slot (Handheld-only). Sits at the top-right, anchored inside the
         // window's top-right corner. The decorative PORTABLE_CRYSTAL_SLOT_FRAME is
         // 20x20 and wraps the 18x18 interactive slot with a 1px border on all
-        // sides — (crystalSlotX, crystalSlotY) targets the interactive slot
+        // sides, (crystalSlotX, crystalSlotY) targets the interactive slot
         // itself, so the frame is drawn at (crystalSlotX - 1, crystalSlotY - 1).
         // The surrounding WINDOW_FRAME protrusion is positioned independently
         // in extractBackground, not tied to these coordinates.
         //
         // Real MC Slot behind this visual stays at (-999, -999) in
-        // menu.slots[CRYSTAL_SLOT]; we render/hit-test and dispatch clicks via
+        // menu.slots[CRYSTAL_SLOT], we render/hit-test and dispatch clicks via
         // slotClicked ourselves.
         if (menu.hasCrystalSlot) {
             crystalSlotX = leftPos + imageWidth - CRYSTAL_SLOT_SIZE - 6
@@ -413,11 +413,11 @@ class InventoryTerminalScreen(
         // these offsets.
         val frameYOffset = if (menu.hasCrystalSlot) 22 else 0
         val barYOffset = if (menu.hasCrystalSlot) 6 else 0
-        // Window frame (stretched for performance — large area)
+        // Window frame (stretched for performance, large area)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos + frameYOffset, imageWidth, imageHeight - frameYOffset)
 
         // Title bar. Portable uses its own 10px-tall horizontally-tiled strip with
-        // no title text — the crystal slot decoration sits on top of it, and the
+        // no title text, the crystal slot decoration sits on top of it, and the
         // network color is already conveyed by the emissive item layer + the
         // dimmed/messaged overlay when disconnected. Fixed terminals use the usual
         // 9-sliced TOP_BAR with network-color trim + centered title.
@@ -504,11 +504,11 @@ class InventoryTerminalScreen(
             }
         }
 
-        // Crafting collapse toggle — to the left of the crafting area
+        // Crafting collapse toggle, to the left of the crafting area
         val collapseIcon = if (craftingCollapsed) Icons.EXPAND_IDLE else Icons.COLLAPSE_IDLE
         collapseIcon.draw(graphics, craftX - 30, craftY + 1)
 
-        // Utility buttons are SlicedButton widgets — rendered automatically
+        // Utility buttons are SlicedButton widgets, rendered automatically
 
         // Player inventory (use direct slot blits for performance)
         val slotU = NineSlice.SLOT.u.toFloat()
@@ -528,7 +528,7 @@ class InventoryTerminalScreen(
         //      right edge itself (so the protrusion shares its right border
         //      with the main window frame). The bottom 3px are transparent so
         //      the protrusion blends into the main window frame below.
-        //      Position is independent of crystalSlotX/Y — the slot itself can
+        //      Position is independent of crystalSlotX/Y, the slot itself can
         //      shift inside the protrusion without dragging the frame along.
         //   2. WINDOW_INNER_CORNER_TL at the left junction where the
         //      protrusion's left side meets the main frame's top edge (Y =
@@ -537,7 +537,7 @@ class InventoryTerminalScreen(
         //      junction to bevel.
         //   3. PORTABLE_CRYSTAL_SLOT_FRAME (20x20) painted on top, with the
         //      18x18 interactive area centered inside its 1px border. Follows
-        //      crystalSlotX/Y — offset by -1 on both axes so the inner slot
+        //      crystalSlotX/Y, offset by -1 on both axes so the inner slot
         //      lines up with (crystalSlotX, crystalSlotY).
         if (menu.hasCrystalSlot) {
             val protrusionX = leftPos + imageWidth - 30
@@ -570,7 +570,7 @@ class InventoryTerminalScreen(
             }
         }
 
-        // Hide the craft dialogue field from normal rendering — we render it manually at higher Z
+        // Hide the craft dialogue field from normal rendering, we render it manually at higher Z
         val fieldWasVisible = craftDialogueField?.visible ?: false
         if (fieldWasVisible) craftDialogueField?.visible = false
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
@@ -619,7 +619,7 @@ class InventoryTerminalScreen(
                     Icons.CRAFTING_IN_PROGRESS.draw(graphics, sx + 17 - iconSize, pinnedY - 1, iconSize)
                     graphics.pose().popMatrix()
                 } else {
-                    // Items available — render normally with available count (0.5x scale)
+                    // Items available, render normally with available count (0.5x scale)
                     graphics.renderItem(stack, sx, pinnedY)
                     if (slot.availableCount > 1) {
                         val countStr = formatCount(slot.availableCount.toLong())
@@ -646,10 +646,10 @@ class InventoryTerminalScreen(
         val sepY = networkGrid.y + 18
         graphics.fill(networkGrid.x, sepY, networkGrid.x + layout.cols * 18, sepY + 1, 0xFF444444.toInt())
 
-        // Render network items (skip first row — reserved for pinned)
+        // Render network items (skip first row, reserved for pinned)
         networkGrid.renderItems(graphics, scrollOffset, repo.viewSize, 1)
 
-        // Second pass — draw fluid still-textures where the first pass skipped fluid cells
+        // Second pass, draw fluid still-textures where the first pass skipped fluid cells
         // (getItemStackForNetworkSlot returns EMPTY for fluids so they pass through the
         // item renderer without a sprite). Counts render alongside via the same scaled-
         // text block used for items.
@@ -687,7 +687,7 @@ class InventoryTerminalScreen(
                 val ix = slot.x + 1
                 val iy = slot.y + 1
                 if (entry.info.count == 0L) {
-                    // Ghost item — dim overlay
+                    // Ghost item, dim overlay
                     graphics.fill(ix, iy, ix + 16, iy + 16, 0x80000000.toInt())
                 }
                 if (altHeld) {
@@ -703,7 +703,7 @@ class InventoryTerminalScreen(
         Icons.endBatch()
 
         // Disconnect overlay (Handheld only). Paints over the network grid whenever
-        // the server reports the menu isn't driving a live network — blanks out the
+        // the server reports the menu isn't driving a live network, blanks out the
         // (empty) grid with a neutral veil so the empty state reads as
         // "disconnected" rather than "this network has no items," and surfaces the
         // reason so the player knows whether to move closer, swap crystals, etc.
@@ -754,7 +754,7 @@ class InventoryTerminalScreen(
                 }
             }
         } else if (menu.hasCrystalSlot && isCrystalSlotAt(mouseX, mouseY)) {
-            // Crystal slot — MC real slot, pointable directly.
+            // Crystal slot, MC real slot, pointable directly.
             hoveredSlot = menu.slots[InventoryTerminalMenu.CRYSTAL_SLOT]
         } else {
             // Check crafting grid
@@ -933,7 +933,7 @@ class InventoryTerminalScreen(
                 }
             }
 
-            // Crystal slot tooltip — item tooltip when occupied, hint when empty.
+            // Crystal slot tooltip, item tooltip when occupied, hint when empty.
             if (!craftTooltipShown && menu.hasCrystalSlot && isCrystalSlotAt(mouseX, mouseY)) {
                 val stack = menu.slots[InventoryTerminalMenu.CRYSTAL_SLOT].item
                 if (!stack.isEmpty) {
@@ -943,7 +943,7 @@ class InventoryTerminalScreen(
                 }
             }
 
-            // Side-button tooltips — "Feature: Current setting" form.
+            // Side-button tooltips, "Feature: Current setting" form.
             val sideTip = sideButtonTooltip(mouseX, mouseY)
             if (sideTip != null) {
                 graphics.renderTooltip(font, sideTip, mouseX, mouseY)
@@ -974,7 +974,7 @@ class InventoryTerminalScreen(
             }
             graphics.drawString(font, craftDialogueItemName, dx + 26, dy + 10, 0xFFFFFFFF.toInt())
 
-            // Keep the count field aligned with the (dynamic) dialog — when an error expands
+            // Keep the count field aligned with the (dynamic) dialog, when an error expands
             // the dialog height, `dy` shifts up to stay centered, so the field must follow.
             craftDialogueField?.let { field ->
                 field.x = dx + 24
@@ -1101,11 +1101,11 @@ class InventoryTerminalScreen(
                 craftDialogueField?.visible = false
                 return true
             }
-            // Click inside dialogue — consume
+            // Click inside dialogue, consume
             if (mx >= dx && mx < dx + dw && my >= dy && my < dy + dh) {
                 return super.mouseClicked(event, doubleClick)
             }
-            // Click outside — close
+            // Click outside, close
             craftDialogueItemId = null
             craftError = null
             craftDialogueField?.visible = false
@@ -1114,7 +1114,7 @@ class InventoryTerminalScreen(
 
         // Crystal slot click (Handheld only). Dispatches through the real MC Slot so
         // AbstractContainerMenu's mayPlace / max stack size checks apply and the
-        // result syncs to the server — the menu's onCrystalSlotChanged hook then
+        // result syncs to the server, the menu's onCrystalSlotChanged hook then
         // persists the crystal to the Portable and re-resolves the network.
         //
         // `setSkipNextRelease(true)` mirrors what vanilla's own mouseClicked does
@@ -1146,7 +1146,7 @@ class InventoryTerminalScreen(
             return true
         }
 
-        // Crafting utility buttons are SlicedButton widgets — click handled automatically
+        // Crafting utility buttons are SlicedButton widgets, click handled automatically
 
         // Double-click collect check
         val now = net.minecraft.util.Util.getMillis()
@@ -1174,7 +1174,7 @@ class InventoryTerminalScreen(
             val craftSlot = getCraftSlotAt(mx, my)
             if (craftSlot >= 0) {
                 val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
-                // Double-click collect — works with item on cursor (from first click)
+                // Double-click collect, works with item on cursor (from first click)
                 val collectItem = if (!menu.carried.isEmpty) menu.carried else menu.craftingContainer.getItem(craftSlot)
                 if (!collectItem.isEmpty) {
                     val craftItemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(collectItem.item)?.toString() ?: ""
@@ -1260,7 +1260,7 @@ class InventoryTerminalScreen(
                 craftError = null  // fresh dialog, no stale error
                 return true
             }
-            // Fluid entry — fill a bucket. Only legal when carried is empty (network supplies
+            // Fluid entry, fill a bucket. Only legal when carried is empty (network supplies
             // the empty bucket) or carried is an empty bucket (that bucket gets filled).
             // Filled-bucket items in storage are normal items and follow the item path below.
             if (entry != null && entry.isFluid && entry.info.count > 0) {
@@ -1301,7 +1301,7 @@ class InventoryTerminalScreen(
         if (playerSlot != null) {
             val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
             val invIndex = if (virtualIndex < 27) virtualIndex + 9 else virtualIndex - 27
-            // Double-click collect — works with item on cursor (from first click)
+            // Double-click collect, works with item on cursor (from first click)
             val collectItem = if (!menu.carried.isEmpty) menu.carried else (Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY)
             if (!collectItem.isEmpty) {
                 val playerItemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(collectItem.item)?.toString() ?: ""
@@ -1427,7 +1427,7 @@ class InventoryTerminalScreen(
         // Finish left-drag distribute
         if (slotDragButton == 0 && !slotDragShift && slotDragVisited.isNotEmpty() && !slotDragStack.isEmpty) {
             if (slotDragVisited.size == 1) {
-                // Single click — place all
+                // Single click, place all
                 val ref = slotDragVisited.first()
                 if (ref.slotType == 0) {
                     slotClicked(menu.slots[ref.index], ref.index, 0, net.minecraft.world.inventory.ContainerInput.PICKUP)
@@ -1438,7 +1438,7 @@ class InventoryTerminalScreen(
                     )
                 }
             } else {
-                // Multi-slot drag — send distribute packet to server
+                // Multi-slot drag, send distribute packet to server
                 val slotType = slotDragVisited.first().slotType
                 PlatformServices.clientNetworking.sendToServer(
                     damien.nodeworks.network.InvTerminalDistributePayload(
@@ -1619,7 +1619,7 @@ class InventoryTerminalScreen(
 
     private fun getItemStackForNetworkSlot(viewIndex: Int): ItemStack {
         val entry = repo.getViewEntry(viewIndex) ?: return ItemStack.EMPTY
-        // Fluids don't use the item-stack render path — they're drawn in a second pass
+        // Fluids don't use the item-stack render path, they're drawn in a second pass
         // (renderFluidOverlay) using the fluid's still texture. Returning EMPTY here
         // keeps the grid's item renderer from drawing anything in the fluid cell.
         if (entry.isFluid) return ItemStack.EMPTY
@@ -1630,7 +1630,7 @@ class InventoryTerminalScreen(
 
     private fun getCountForNetworkSlot(viewIndex: Int): String? {
         val entry = repo.getViewEntry(viewIndex) ?: return null
-        // Always show a count for fluids (in mB) — the bucket icon alone doesn't convey amount.
+        // Always show a count for fluids (in mB), the bucket icon alone doesn't convey amount.
         // Items keep the existing "hide on count ≤ 1" convention.
         if (!entry.isFluid && entry.info.count <= 1) return null
         return countStringCache.getOrPut(entry.info.count) { formatCount(entry.info.count) }

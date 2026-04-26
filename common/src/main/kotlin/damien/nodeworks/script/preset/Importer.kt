@@ -25,7 +25,7 @@ object Importer {
 
         t.set("from", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
-                // args.arg(1) is `self`; real args start at index 2.
+                // args.arg(1) is `self`, real args start at index 2.
                 val sources = CardRefs.fromVarargs(args, 2)
                 if (sources.isEmpty()) {
                     throw LuaError("importer:from requires at least one source")
@@ -44,7 +44,7 @@ enum class DistributionStrategy { FILL, ROUND_ROBIN }
 
 /** A concrete endpoint after wildcard expansion. Either the Network Storage pool
  *  (sentinel) or a specific Card on the network. Importer and Stocker both iterate
- *  over lists of these at tick time; wildcards like `"io_*"` fan out to multiple
+ *  over lists of these at tick time, wildcards like `"io_*"` fan out to multiple
  *  [Card] entries, and the global `network` becomes [Pool]. */
 internal sealed class ResolvedRef {
     data object Pool : ResolvedRef()
@@ -53,7 +53,7 @@ internal sealed class ResolvedRef {
 
 /** Expand a single [CardRef] into zero-or-more [ResolvedRef]s. Supports `*`
  *  wildcards in card aliases (e.g. `"io_*"` matches every card whose alias starts
- *  with `io_`). An alias that doesn't resolve to any card yields an empty list —
+ *  with `io_`). An alias that doesn't resolve to any card yields an empty list,
  *  the preset silently skips it and retries on the next snapshot change. */
 internal fun expandCardRef(snapshot: NetworkSnapshot, ref: CardRef): List<ResolvedRef> = when (ref) {
     is CardRef.Pool -> listOf(ResolvedRef.Pool)
@@ -89,7 +89,7 @@ private fun wildcardToRegex(alias: String): Regex {
  * selection like `"io_*"`), CardHandle objects, or the `network` global (meaning
  * "the whole Network Storage pool").
  *
- * Item-only in v1. Fluid filters (`$fluid:...`) won't move anything; add fluid
+ * Item-only in v1. Fluid filters (`$fluid:...`) won't move anything, add fluid
  * support in v1.1 by dispatching on filter kind.
  */
 class ImporterBuilder(
@@ -197,7 +197,7 @@ class ImporterBuilder(
         if (resolvedTargets.isEmpty()) return
         val stepL = roundRobinStep.toLong()
         // Cap one tick at exactly one full ring through the resolved targets so a
-        // huge source doesn't monopolise a tick — bulk flow still comes through
+        // huge source doesn't monopolise a tick, bulk flow still comes through
         // over subsequent ticks.
         var ringsRemaining = resolvedTargets.size
         while (ringsRemaining > 0) {
@@ -213,7 +213,7 @@ class ImporterBuilder(
             val moved = moveIntoTarget(snapshot, level, resolvedTargets[idx], filterPred, needed)
             rrServedToCurrent = (rrServedToCurrent.toLong() + moved).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             if (rrServedToCurrent.toLong() >= stepL) {
-                // Allotment filled — advance to the next target for the next round.
+                // Allotment filled, advance to the next target for the next round.
                 rrCursor = (rrCursor + 1) % resolvedTargets.size
                 rrServedToCurrent = 0
                 ringsRemaining--
@@ -269,7 +269,7 @@ class ImporterBuilder(
                 }
             }
             is ResolvedRef.Pool -> when (target) {
-                // Pool to Pool is a no-op — items would just shuffle between storage cards.
+                // Pool to Pool is a no-op, items would just shuffle between storage cards.
                 is ResolvedRef.Pool -> 0L
                 is ResolvedRef.Card -> movePoolToCard(snapshot, level, target.snapshot, filterPred, maxCount)
             }

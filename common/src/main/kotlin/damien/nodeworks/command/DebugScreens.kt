@@ -107,7 +107,7 @@ object DebugScreens {
                 )
             )
         )
-        // Debug screen — no live op state to mirror, leave node id sets empty.
+        // Debug screen, no live op state to mirror, leave node id sets empty.
         menu.activeNodeIds = emptySet()
         menu.completedNodeIds = emptySet()
 

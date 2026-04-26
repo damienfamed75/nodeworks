@@ -41,13 +41,13 @@ class CardProgrammerMenu(
 
         // Slot positions match the black 18x18 squares in card_programmer_bg.png (176x100, natural size).
 
-        // Slot 0: Template — left black square at source (52, 18) + programmer Y offset of 2
+        // Slot 0: Template, left black square at source (52, 18) + programmer Y offset of 2
         addSlot(TemplateSlot(templateContainer, 0, 53, 21))
 
-        // Slot 1: Input — right black square at source (106, 18) + programmer Y offset of 2
+        // Slot 1: Input, right black square at source (106, 18) + programmer Y offset of 2
         addSlot(InputSlot(SimpleContainer(1), 0, 107, 21))
 
-        // Player inventory (slots 2-37) — standard inventory frame below programmer
+        // Player inventory (slots 2-37), standard inventory frame below programmer
         for (row in 0 until 3) {
             for (col in 0 until 9) {
                 addSlot(Slot(playerInventory, col + row * 9 + 9, 9 + col * 18, 123 + row * 18))
@@ -148,10 +148,10 @@ class CardProgrammerMenu(
                 // Player inventory → template or process
                 if (stack.item is NodeCard) {
                     if (!hasTemplate()) {
-                        // No template — place as template
+                        // No template, place as template
                         if (!moveItemStackTo(stack, 0, 1, false)) return ItemStack.EMPTY
                     } else if (isValidInput(stack)) {
-                        // Has template — apply settings in-place
+                        // Has template, apply settings in-place
                         applyTemplate(stack)
                         slot.setChanged()
                         return ItemStack.EMPTY

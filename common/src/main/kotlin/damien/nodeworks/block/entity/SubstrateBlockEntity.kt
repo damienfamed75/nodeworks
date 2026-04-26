@@ -14,15 +14,15 @@ import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
 
 /**
- * Substrate — the positional puzzle piece of the CPU. Contributes two things:
+ * Substrate, the positional puzzle piece of the CPU. Contributes two things:
  *  1. A small unique-type slot bonus ([CpuRules.SUBSTRATE_TYPE_CONTRIBUTION]) regardless of
  *     placement, so adding one is never worthless.
  *  2. A throttle bonus for every face it shares with a Buffer or Co-Processor
- *     ([CpuRules.SUBSTRATE_BONUS_PER_FACE]). Substrate-to-Substrate faces do NOT count —
+ *     ([CpuRules.SUBSTRATE_BONUS_PER_FACE]). Substrate-to-Substrate faces do NOT count,
  *     the mechanic rewards sandwiching Substrate between heat-generating components, which
  *     forces the player to think about layout rather than block-quantity.
  *
- * No heat, no cooling — purely throttle scaling.
+ * No heat, no cooling, purely throttle scaling.
  */
 class SubstrateBlockEntity(
     pos: BlockPos,

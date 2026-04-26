@@ -25,12 +25,12 @@ import java.util.Optional
  *   renderItem        -> item
  *   renderFakeItem    -> fakeItem
  *   renderTooltip     -> setTooltipForNextFrame
- *   blit(...)         -> blit(RenderPipeline, ...) — explicit pipeline arg
+ *   blit(...)         -> blit(RenderPipeline, ...), explicit pipeline arg
  *
- * `pose()` also changed shape — it now returns `org.joml.Matrix3x2fStack`
+ * `pose()` also changed shape, it now returns `org.joml.Matrix3x2fStack`
  * instead of `PoseStack`, so the 3D `pushPose/popPose/translate(x,y,z)` idiom
  * is replaced by the 2D `pushMatrix/popMatrix/translate(x,y)`. Those have to
- * be migrated at the call site (no compat alias — the z-axis is simply gone
+ * be migrated at the call site (no compat alias, the z-axis is simply gone
  * in GUI rendering).
  *
  * Rather than scatter the new names across 30+ screens and BERs, the
@@ -126,9 +126,9 @@ fun GuiGraphicsExtractor.renderTooltip(font: Font, lines: List<FormattedCharSequ
 
 // ---------- Blit ----------
 //
-// Old API: `blit(texture, x, y, u, v, w, h[, tw, th])` — pipeline implicit.
+// Old API: `blit(texture, x, y, u, v, w, h[, tw, th])`, pipeline implicit.
 // New API: the pipeline is an explicit first argument. For standard GUI
-// textures that's `RenderPipelines.GUI_TEXTURED`; we default to that here.
+// textures that's `RenderPipelines.GUI_TEXTURED`, we default to that here.
 
 fun GuiGraphicsExtractor.blit(texture: Identifier, x: Int, y: Int, u: Float, v: Float, width: Int, height: Int, textureWidth: Int, textureHeight: Int) {
     this.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, u, v, width, height, textureWidth, textureHeight)
@@ -152,7 +152,7 @@ fun GuiGraphicsExtractor.blit(texture: Identifier, x: Int, y: Int, u: Int, v: In
  * a per-draw ARGB argument, so every monochrome icon that wants a colour overlay
  * passes its color here instead of wrapping the draw call in shader-color state.
  *
- * [argb] is packed 0xAARRGGBB — pass `0xFFFFFFFF.toInt()` for "no tint" (default).
+ * [argb] is packed 0xAARRGGBB, pass `0xFFFFFFFF.toInt()` for "no tint" (default).
  */
 fun GuiGraphicsExtractor.blit(
     texture: Identifier,
@@ -180,9 +180,9 @@ fun GuiGraphicsExtractor.blit(
 }
 
 /**
- * The old "stretched blit" form — destination size and source size specified
+ * The old "stretched blit" form, destination size and source size specified
  * independently so a source region can be rescaled. 1.21.1 arg order was
- * `(texture, x, y, drawW, drawH, u, v, srcW, srcH, texW, texH)`; 26.1 reshuffles
+ * `(texture, x, y, drawW, drawH, u, v, srcW, srcH, texW, texH)`, 26.1 reshuffles
  * to `(pipeline, texture, x, y, u, v, drawW, drawH, srcW, srcH, texW, texH)`.
  */
 fun GuiGraphicsExtractor.blit(
@@ -201,7 +201,7 @@ fun GuiGraphicsExtractor.blit(
 // 26.1 replaced the mouseClicked(x, y, button) / keyPressed(key, scan, mods) /
 // charTyped(ch, mods) overrides with event objects. The properties below restore
 // the old field names so override bodies can stay close to their pre-migration
-// shape — each override takes the new event parameter and reads these
+// shape, each override takes the new event parameter and reads these
 // properties locally.
 
 val MouseButtonEvent.mouseX: Double get() = this.x
@@ -217,7 +217,7 @@ val CharacterEvent.character: Char get() = this.codepoint.toChar()
 // ---------- Global modifier-key state ----------
 //
 // MC 26.1 removed `Screen.hasShiftDown()` / `hasAltDown()` / `hasControlDown()`
-// static helpers — they moved onto the input event types. For the many render
+// static helpers, they moved onto the input event types. For the many render
 // / click handlers that *aren't* inside a key-event callback but still need to
 // know "is shift held right now?", we poll the window's keyboard state via
 // InputConstants.

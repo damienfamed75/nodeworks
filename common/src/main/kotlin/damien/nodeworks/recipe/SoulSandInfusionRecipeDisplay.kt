@@ -13,14 +13,14 @@ import net.minecraft.world.item.crafting.display.SlotDisplay
  *
  * Implementing [RecipeDisplay] (and registering this implementation's [Type]
  * under [net.minecraft.core.registries.Registries.RECIPE_DISPLAY]) is what
- * makes the recipe visible to things that filter by result — in particular
+ * makes the recipe visible to things that filter by result, in particular
  * GuideME's `<RecipeFor id="...">` tag, whose compiler scans
  * `recipe.display()` and picks up any display whose `result()` item matches
  * the requested ID.
  *
  * Field names are suffixed with `Slot` to avoid Kotlin-level name collisions
  * with the [RecipeDisplay] interface's `result()` / `craftingStation()`
- * methods — a data-class property named `result` would clash with the
+ * methods, a data-class property named `result` would clash with the
  * overridden `result()` method when we reference it with `::` in codecs.
  */
 @JvmRecord

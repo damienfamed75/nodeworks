@@ -32,12 +32,12 @@ import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
 
 /**
- * Processing Set GUI — 9-sliced version. Uses [NineSlice.WINDOW_FRAME] for the outer
+ * Processing Set GUI, 9-sliced version. Uses [NineSlice.WINDOW_FRAME] for the outer
  * frame (no separate title bar), bare [NineSlice.SLOT] frames for the input grid and
  * output column (matching the Inventory Terminal's crafting-grid style), a unicode `→`
  * between them, and [NineSlice.INVENTORY_BORDER] around the player inventory + hotbar.
  *
- * Slot positions are owned by [ProcessingSetScreenHandler]; this screen only paints
+ * Slot positions are owned by [ProcessingSetScreenHandler], this screen only paints
  * the backgrounds underneath them. Widths/heights are picked to frame those slot
  * coordinates with consistent padding.
  */
@@ -71,7 +71,7 @@ class ProcessingSetScreen(
         private const val PANEL_LABEL_Y = 83
         private const val PANEL_CONTROL_Y = 95
         private const val TIMEOUT_STEP = 20
-        /** Upper cap for the per-set tick timeout. ~50s of game time — beyond that the
+        /** Upper cap for the per-set tick timeout. ~50s of game time, beyond that the
          *  recipe is almost certainly wedged and a higher cap just hides bugs. */
         private const val TIMEOUT_MAX = 999
         private const val STEPPER_BTN_SIZE = 14
@@ -108,7 +108,7 @@ class ProcessingSetScreen(
     private var timeoutBox: EditBox? = null
 
     init {
-        // Hide vanilla title / inventory labels; we draw our own.
+        // Hide vanilla title / inventory labels, we draw our own.
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -142,7 +142,7 @@ class ProcessingSetScreen(
         val x = leftPos
         val y = topPos
 
-        // Upper panel — single blit of the pre-composited static background.
+        // Upper panel, single blit of the pre-composited static background.
         graphics.blit(BG_TEXTURE, x, y, 0f, 0f, FRAME_W, BG_H, FRAME_W, BG_H)
 
         // Slot frames drawn at runtime over the black placeholder regions in the PNG.
@@ -159,7 +159,7 @@ class ProcessingSetScreen(
             NineSlice.SLOT.draw(graphics, sx - 1, sy - 1, 18, 18)
         }
 
-        // Text labels (can't be baked into the PNG — need MC's font renderer).
+        // Text labels (can't be baked into the PNG, need MC's font renderer).
         val timeoutLabel = "Timeout (ticks)"
         graphics.drawString(font, timeoutLabel,
             x + TIMEOUT_GROUP_CENTER_X - font.width(timeoutLabel) / 2,
@@ -169,9 +169,9 @@ class ProcessingSetScreen(
             x + PARALLEL_GROUP_CENTER_X - font.width(toggleLabel) / 2,
             y + PANEL_LABEL_Y, LABEL_COLOR)
 
-        // Buttons — drawn at runtime as 9-slice, swapping to BUTTON_HOVER on hover.
+        // Buttons, drawn at runtime as 9-slice, swapping to BUTTON_HOVER on hover.
         // Clear button is drawn 1px shorter on its bottom and right edges so the X icon
-        // appears visually centered — the BUTTON 9-slice's bottom+right shadows otherwise
+        // appears visually centered, the BUTTON 9-slice's bottom+right shadows otherwise
         // push the visual center up and left.
         val clearX = x + CLEAR_BTN_X
         val clearY = y + CLEAR_BTN_Y
@@ -184,7 +184,7 @@ class ProcessingSetScreen(
             clearY + (clearDrawH - 5) / 2,
             5, 5, WHITE)
 
-        // Stepper buttons — draw the 9-slice background first, then paint the +/- glyph
+        // Stepper buttons, draw the 9-slice background first, then paint the +/- glyph
         // on top. (Previously the text was drawn before the button and got painted over.)
         val minusHover = mouseX in (x + TIMEOUT_MINUS_X) until (x + TIMEOUT_MINUS_X + STEPPER_BTN_SIZE) &&
                          mouseY in (y + PANEL_CONTROL_Y) until (y + PANEL_CONTROL_Y + STEPPER_BTN_SIZE)
@@ -204,12 +204,12 @@ class ProcessingSetScreen(
             x + TIMEOUT_PLUS_X + (STEPPER_BTN_SIZE - font.width("+")) / 2,
             y + PANEL_CONTROL_Y + (STEPPER_BTN_SIZE - font.lineHeight) / 2 + 1, WHITE)
 
-        // Parallel toggle — dynamic state. Sits 1px above the stepper row so the
+        // Parallel toggle, dynamic state. Sits 1px above the stepper row so the
         // switch visually aligns with the entry field's text baseline.
         val toggleSlice = if (!menu.serial) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
         toggleSlice.draw(graphics, x + TOGGLE_X, y + PANEL_CONTROL_Y - 1, TOGGLE_W, TOGGLE_H)
 
-        // Player inventory — separate panel.
+        // Player inventory, separate panel.
         NineSlice.WINDOW_FRAME.draw(graphics, x, y + INV_PANEL_Y, FRAME_W, INV_PANEL_H)
         graphics.drawString(font, "Inventory", x + INV_X, y + INV_LABEL_Y, LABEL_COLOR)
         NineSlice.drawPlayerInventory(graphics, x + INV_X, y + INV_GRID_Y, HOTBAR_GAP)
@@ -218,7 +218,7 @@ class ProcessingSetScreen(
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
 
-        // Ghost overlay dim on occupied ghost slots — placed before the count badges so
+        // Ghost overlay dim on occupied ghost slots, placed before the count badges so
         // the badges overlay the dim too.
         for (i in 0 until ProcessingSetScreenHandler.TOTAL_GHOST_SLOTS) {
             val slot = menu.slots[i]
@@ -229,9 +229,9 @@ class ProcessingSetScreen(
             }
         }
 
-        // Count badges — simple text draw on top of the item cell. The old
+        // Count badges, simple text draw on top of the item cell. The old
         // depth-test-bypass via Font.SEE_THROUGH + bufferSource.flush() relied on
-        // APIs that are gone in 26.1; this simpler path draws on top of the
+        // APIs that are gone in 26.1, this simpler path draws on top of the
         // already-submitted item quads in the extract pipeline and looks correct
         // in practice because GuiGraphicsExtractor layers draws in submission order.
         val inputCounts = menu.inputCounts
@@ -251,15 +251,15 @@ class ProcessingSetScreen(
             }
         }
         // 26.1: tooltip rendering is handled automatically by ACS's
-        // extractRenderState pipeline — no explicit call needed.
+        // extractRenderState pipeline, no explicit call needed.
     }
 
-    /** Vanilla stack-count badge — right-aligned, white w/ shadow, at the bottom-right
+    /** Vanilla stack-count badge, right-aligned, white w/ shadow, at the bottom-right
      *  of a 16×16 item cell.
      *
      *  26.1: pre-migration used `Font.drawInBatch` with `Font.DisplayMode.SEE_THROUGH`
      *  so the badge depth-tested past the item icon quads. The new
-     *  GuiGraphicsExtractor pipeline draws each stratum in submission order; text
+     *  GuiGraphicsExtractor pipeline draws each stratum in submission order, text
      *  submissions land in a stratum above item submissions, so plain
      *  `graphics.text` reads correctly without the old depth trick. */
     private fun drawStackCountBadge(graphics: GuiGraphicsExtractor, sx: Int, sy: Int, count: Int) {
@@ -314,7 +314,7 @@ class ProcessingSetScreen(
             return true
         }
 
-        // Parallel toggle. Mirror the change to the server — without this packet, the
+        // Parallel toggle. Mirror the change to the server, without this packet, the
         // server-side menu's `serial` field stays at whatever isSerial(stack) returned
         // when the menu opened, so saveRecipe persists the wrong value on close.
         val tBtnX = leftPos + TOGGLE_X

@@ -14,10 +14,10 @@ import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
 
 /**
- * Buffer block (code name: CraftingStorage — kept for save-compat) — contributes
+ * Buffer block (code name: CraftingStorage, kept for save-compat), contributes
  * count capacity, unique-types capacity, and heat to an adjacent Crafting CPU.
  *
- * Values are fixed per block ([CpuRules.BUFFER_COUNT_CAPACITY] etc.); scaling comes
+ * Values are fixed per block ([CpuRules.BUFFER_COUNT_CAPACITY] etc.), scaling comes
  * from adding more Buffers. The puzzle is balancing the heat this generates against
  * Stabilizer cooling (which diminishes) and Substrate adjacency bonuses.
  */

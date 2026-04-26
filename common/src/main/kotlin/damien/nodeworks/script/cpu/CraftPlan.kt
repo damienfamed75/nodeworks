@@ -9,7 +9,7 @@ import net.minecraft.nbt.ListTag
  *
  * - [ops] is indexed-sorted by [Operation.id] for O(1) lookup.
  * - [rootItemId] / [rootCount] identify the user's original request (for display and resume).
- * - [terminalOpIds] are the ops whose completion means the whole craft is done — typically
+ * - [terminalOpIds] are the ops whose completion means the whole craft is done, typically
  *   the final Deliver op(s).
  */
 data class CraftPlan(
@@ -41,8 +41,8 @@ data class CraftPlan(
         var i = 0
         for (t in terminalOpIds) terms[i++] = t
         tag.putIntArray("terminals", terms)
-        // 26.1: CompoundTag.putUUID / getUUID / hasUUID are gone — use string form for
-        //  consistency with networkId across the codebase; simpler than pulling
+        // 26.1: CompoundTag.putUUID / getUUID / hasUUID are gone, use string form for
+        //  consistency with networkId across the codebase, simpler than pulling
         //  UUIDUtil.CODEC for one field.
         submitterUuid?.let { tag.putString("submitter", it.toString()) }
     }

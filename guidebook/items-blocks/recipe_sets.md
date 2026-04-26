@@ -36,7 +36,7 @@ A 3x3 crafting template. Anything that works in a vanilla crafting table works h
 ### Creating a recipe
 
 Right-click to open. Click a ghost slot with an item in hand to pin a ghost
-copy there (no inventory consumption); click an empty slot again to clear.
+copy there (no inventory consumption), click an empty slot again to clear.
 The result slot auto-fills whenever the pattern matches a known crafting
 recipe. **Clear All** resets the grid.
 
@@ -66,7 +66,7 @@ Right-click to open. The GUI has:
 
 - **Input grid**: (3×3) ghost slots for any inputs, in any position.
 - **Output column**: (3 slots) ghost slots for outputs.
-- **Timeout field**: 0–999 ticks (0 = no timeout). `+` and `-` buttons step by 20; shift-click steps by 100.
+- **Timeout field**: 0–999 ticks (0 = no timeout). `+` and `-` buttons step by 20, shift-click steps by 100.
 - **Serial toggle**: when on, the CPU won't run this recipe in parallel with
   itself.
 - **Clear All**: resets everything.

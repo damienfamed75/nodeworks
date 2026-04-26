@@ -8,9 +8,9 @@ import org.luaj.vm2.Varargs
  * A source or target reference accepted by preset builders (Importer / Stocker).
  *
  * Players can pass three different Lua values as a source or target:
- *   * A string — the card alias to resolve against the network snapshot.
+ *   * A string, the card alias to resolve against the network snapshot.
  *   * A CardHandle table returned from `network:get(...)`.
- *   * The `network` global itself — a sentinel meaning "the whole Network Storage pool."
+ *   * The `network` global itself, a sentinel meaning "the whole Network Storage pool."
  *
  * [CardRefs.fromLua] normalises all three into either a [Named] or [Pool] variant.
  * The name form always goes through name resolution at tick time (via the current

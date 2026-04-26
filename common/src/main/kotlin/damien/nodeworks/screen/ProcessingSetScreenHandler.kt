@@ -83,7 +83,7 @@ class ProcessingSetScreenHandler(
             val data = object : ContainerData {
                 private val values = IntArray(DATA_COUNT)
                 init {
-                    // Default all slot counts to 1 — empty slots also get 1 so edits
+                    // Default all slot counts to 1, empty slots also get 1 so edits
                     // don't start from 0 and force the user to re-enter everything.
                     for (i in 0 until INPUT_SLOTS) values[i] = 1
                     for (i in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + i] = 1
@@ -148,7 +148,7 @@ class ProcessingSetScreenHandler(
     }
 
     init {
-        // 9 input ghost slots — 3×3 grid, horizontally centered under the 180-wide frame
+        // 9 input ghost slots, 3×3 grid, horizontally centered under the 180-wide frame
         // (input block spans x=36..90, output column at x=128, gap 90..128 hosts the arrow).
         for (row in 0..2) {
             for (col in 0..2) {
@@ -160,7 +160,7 @@ class ProcessingSetScreenHandler(
             addSlot(GhostSlot(outputGrid, i, 128, 13 + i * 18))
         }
 
-        // Player inventory (3 rows) — starts at x=10 so the 9-slot block (width 160)
+        // Player inventory (3 rows), starts at x=10 so the 9-slot block (width 160)
         // is centered in the 180-wide frame (10 px padding on each side). y starts
         // at 140 to leave room for the crafting grid + recessed timeout/parallel panel.
         for (row in 0 until 3) {
@@ -308,7 +308,7 @@ class ProcessingSetScreenHandler(
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is ProcessingSet) {
-                    // Name is now derived from the recipe layout — the canonical ID is
+                    // Name is now derived from the recipe layout, the canonical ID is
                     // the unique handler key. Custom naming is gone. See
                     // docs/design/processing-set-handler-ux.md.
                     val canonical = ProcessingSet.canonicalId(inputs, outputs)

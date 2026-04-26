@@ -83,7 +83,7 @@ importer:from("mobFarm"):filter("#c:ores"):to("storage"):start()
 ## Distribution
 
 The importer has two ways of splitting items across targets. The default is
-fill; you opt into round robin explicitly.
+fill, you opt into round robin explicitly.
 
 ### Fill (default)
 
@@ -145,7 +145,7 @@ importer:from("farm_*"):to("storage"):start()
 
 ## Example: two-stage smelter array
 
-Ores feed in round robin to three furnaces; outputs collect into a central
+Ores feed in round robin to three furnaces, outputs collect into a central
 chest.
 
 <LuaCode>

@@ -13,7 +13,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 
 /**
- * Emissive overlay for the Breaker — two glow layers tinted by the network color.
+ * Emissive overlay for the Breaker, two glow layers tinted by the network color.
  * `breaker_side_emissive` covers the 4 faces perpendicular to FACING (the device
  * body's wrap-around sides), and `breaker_back_emissive` covers the face opposite
  * FACING (the back of the body, away from the mining face). Same Variable / Terminal

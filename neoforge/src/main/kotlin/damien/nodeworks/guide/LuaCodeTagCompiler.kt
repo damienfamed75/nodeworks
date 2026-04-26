@@ -35,7 +35,7 @@ import net.minecraft.network.chat.Component
  * JSX-like tag (everything inside `<LuaCode>` is treated as opaque HTML), so for real
  * pages we support two content modes:
  *
- * 1. **External `.lua` file** (preferred for non-trivial snippets — IDE highlights it
+ * 1. **External `.lua` file** (preferred for non-trivial snippets, IDE highlights it
  *    natively, the snippet can be run/tested independently, and it keeps markdown tidy):
  *
  *    ```
@@ -57,8 +57,8 @@ import net.minecraft.network.chat.Component
  *    ````
  *
  *    The fence gates the raw code from MDX parsing so `<` / `>` / `{` / `}` don't
- *    break anything. `lua` language tag is optional for us — we tokenize as Lua
- *    regardless — but IDE previews appreciate it.
+ *    break anything. `lua` language tag is optional for us, we tokenize as Lua
+ *    regardless, but IDE previews appreciate it.
  *
  * If both are provided, `src` wins. If neither is present we emit an error block.
  *
@@ -72,7 +72,7 @@ import net.minecraft.network.chat.Component
  *     the paragraph layout engine doesn't collapse runs of whitespace.
  *
  * Identifier tokens that resolve to a [LuaApiDocs] entry (either directly or via
- * qualified lookup — `network:get` when mousing over `get` after `network`, `.` or `:`)
+ * qualified lookup, `network:get` when mousing over `get` after `network`, `.` or `:`)
  * get their `LytFlowText` wrapped in a [LytTooltipSpan]. The hover tooltip surfaces the
  * same signature + description as the in-game editor's hover popup.
  *
@@ -102,7 +102,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
 
         // Custom container so we can fill with the editor's exact BG colour. LytBox's
         // built-in backgroundColor takes a SymbolicColor, which only offers a washed-out
-        // translucent BLOCKQUOTE_BACKGROUND or pure BLACK — neither matches the
+        // translucent BLOCKQUOTE_BACKGROUND or pure BLACK, neither matches the
         // #0D0D0D near-black the Scripting Terminal uses. Overriding `render` to fillRect
         // a [ConstantColor] lets both surfaces look identical.
         val container = DarkCodeBox(EDITOR_BG_COLOR)
@@ -117,13 +117,13 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
 
         for (tokens in tokensByLine) {
             val paragraph = LytParagraph()
-            // PRE on the paragraph's whitespace mode won't help — whitespace handling is
+            // PRE on the paragraph's whitespace mode won't help, whitespace handling is
             // a per-flow-content style. We set it on each LytFlowText below. The margin
             // tweak here gives consistent line spacing without paragraph-default gaps.
             paragraph.modifyStyle { it.whiteSpace(WhiteSpaceMode.PRE) }
 
             if (tokens.isEmpty()) {
-                // Blank line — still emit one space so the paragraph has a height.
+                // Blank line, still emit one space so the paragraph has a height.
                 val spacer = LytFlowText.of(" ")
                 spacer.modifyStyle { it.whiteSpace(WhiteSpaceMode.PRE) }
                 paragraph.append(spacer)
@@ -159,7 +159,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
     }
 
     /** Scan MDX children for the first fenced `MdAstCode` node and return its raw text.
-     *  Returns null if the tag has no fenced child (misuse — error block at callsite). */
+     *  Returns null if the tag has no fenced child (misuse, error block at callsite). */
     private fun findFencedCodeValue(el: MdxJsxElementFields): String? {
         for (child in el.children()) {
             if (child is MdAstCode) return LuaTokenizer.normalize(child.value)
@@ -170,7 +170,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
     /**
      * Load the file pointed to by the `src` attribute, resolved relative to the current
      * page (same rule `<ImportStructure src="…">` uses). Returns null when no attribute
-     * is present so the caller can fall through to the inline-fenced path; returns null
+     * is present so the caller can fall through to the inline-fenced path, returns null
      * AFTER emitting an error if the attribute is present but the path is bad or the
      * asset is missing.
      */
@@ -192,7 +192,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
             return null
         }
         // .lua files saved from a Windows-aware editor carry CRLF line endings and often
-        // leading-tab indentation; Minecraft's Font renders those as literal "CR" / "HT"
+        // leading-tab indentation, Minecraft's Font renders those as literal "CR" / "HT"
         // glyph boxes. Normalise to LF + soft tabs so the rendered block matches what
         // the author expects. The inline-fenced path already comes out clean from MDX
         // but we run it through the same normaliser for consistency and idempotence.
@@ -203,7 +203,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
      *  lines in grey.
      *
      *  We bypass `TextTooltip` here: that class wraps each input `Component` in a single
-     *  `ClientTextTooltip`, which renders as one unwrapped line regardless of width —
+     *  `ClientTextTooltip`, which renders as one unwrapped line regardless of width,
      *  long descriptions produce tooltips wider than the screen and clip off-edge when
      *  vanilla's flip-to-left can't find space. Using `Font.split` ahead of time gives
      *  us pre-wrapped `FormattedCharSequence`s, one per displayed line, which
@@ -229,7 +229,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
 
     companion object {
         /** Target width (in GUI pixels) for wrapping tooltip lines. Matches vanilla's
-         *  default tooltip width feel — roughly 30–40 characters per line depending on
+         *  default tooltip width feel, roughly 30–40 characters per line depending on
          *  glyph width. */
         private const val TOOLTIP_MAX_WIDTH_PX = 200
 
@@ -243,7 +243,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
 /**
  * [LytVBox] variant that fills its bounds with an explicit [ColorValue] before rendering
  * its children. Exists because [guideme.document.block.LytBox.setBackgroundColor] is
- * constrained to [guideme.color.SymbolicColor] values — fine for theme-aware surfaces,
+ * constrained to [guideme.color.SymbolicColor] values, fine for theme-aware surfaces,
  * not enough when you want a specific hex match to an in-game widget.
  */
 private class DarkCodeBox(private val backgroundColor: ColorValue) : LytVBox() {

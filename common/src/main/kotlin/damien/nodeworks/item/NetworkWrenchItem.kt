@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 class NetworkWrenchItem(properties: Properties) : Item(properties) {
 
-    @Suppress("DEPRECATION") // Item.appendHoverText — the non-deprecated path is data components, overkill for a static line.
+    @Suppress("DEPRECATION") // Item.appendHoverText, the non-deprecated path is data components, overkill for a static line.
     override fun appendHoverText(
         itemStack: net.minecraft.world.item.ItemStack,
         context: TooltipContext,
@@ -113,8 +113,8 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         }
 
         // Check for duplicate controllers before connecting. Walk the structural topology
-        // (ignoring LOS) rather than NetworkDiscovery so an LOS-blocked orphan — which still
-        // holds its connection to the old controller on-the-books — is correctly treated as
+        // (ignoring LOS) rather than NetworkDiscovery so an LOS-blocked orphan, which still
+        // holds its connection to the old controller on-the-books, is correctly treated as
         // belonging to that controller's network. Otherwise a player could wrench-bridge
         // two networks through a blocked orphan and see both light up once LOS is restored.
         val entityA = NodeConnectionHelper.getConnectable(level, selectedPos)

@@ -8,7 +8,7 @@ import net.minecraft.resources.Identifier
 
 /**
  * All custom packet payloads used by Nodeworks.
- * These are platform-agnostic data classes — registration and handling is in the platform module.
+ * These are platform-agnostic data classes, registration and handling is in the platform module.
  */
 
 data class RunScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
@@ -122,7 +122,7 @@ data class SetInstructionGridPayload(val containerId: Int, val items: List<Strin
 /**
  * C2S: Click on the inventory terminal grid.
  * action: 0 = extract stack (left click), 1 = insert carried item, 2 = extract half (right click)
- * kind: 0 = item (default), 1 = fluid — fluid clicks route to bucket-fill logic server-side.
+ * kind: 0 = item (default), 1 = fluid, fluid clicks route to bucket-fill logic server-side.
  */
 data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val action: Int, val kind: Byte = 0) : CustomPacketPayload {
     companion object {
@@ -204,7 +204,7 @@ data class InvTerminalCraftPayload(val containerId: Int, val itemId: String, val
 }
 
 /**
- * C2S: Double-click collect — gather matching items from crafting grid and player inventory onto cursor.
+ * C2S: Double-click collect, gather matching items from crafting grid and player inventory onto cursor.
  */
 data class InvTerminalCollectPayload(val containerId: Int, val itemId: String) : CustomPacketPayload {
     companion object {
@@ -257,7 +257,7 @@ data class VariableSettingsPayload(val pos: BlockPos, val key: String, val intVa
 }
 
 /** C2S: Update a device's settings (name, channel). Shared by Breaker, Placer, and any
- *  future scriptable connectable that just needs name + channel — keeps the payload
+ *  future scriptable connectable that just needs name + channel, keeps the payload
  *  registry from accumulating one packet per device type. The handler dispatches
  *  by reading the BlockEntity at [pos]. */
 data class DeviceSettingsPayload(val pos: BlockPos, val key: String, val intValue: Int, val strValue: String) : CustomPacketPayload {
@@ -274,7 +274,7 @@ data class DeviceSettingsPayload(val pos: BlockPos, val key: String, val intValu
 data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, val isError: Boolean) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<TerminalLogPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "terminal_log"))
-        // Terminal log lines are capped well under the codec limit; senders use
+        // Terminal log lines are capped well under the codec limit, senders use
         // [MAX_LOG_CHARS] to truncate so a large `print(…)` output never blows past the
         // network string length and disconnects the player. Leaves headroom in the codec
         // for the truncation marker the sender appends.
@@ -291,7 +291,7 @@ data class TerminalLogPayload(val terminalPos: BlockPos, val message: String, va
 /**
  * C2S: Update Processing Set data.
  * key: "input" (slotIndex=0-8, value=count), "output" (slotIndex=0-2, value=count),
- *      "timeout" (value=ticks), "serial" (value=0/1; 1 = serial / parallel toggle off).
+ *      "timeout" (value=ticks), "serial" (value=0/1, 1 = serial / parallel toggle off).
  */
 data class SetProcessingApiDataPayload(val containerId: Int, val key: String, val slotIndex: Int, val value: Int) : CustomPacketPayload {
     companion object {
@@ -394,7 +394,7 @@ data class CraftRequestErrorPayload(val containerId: Int, val message: String) :
  * resolved [PortableConnectionStatus][damien.nodeworks.screen.PortableConnectionStatus]
  * changes so the screen can draw an overlay (e.g. "Out of Range") over the grid
  * explaining why the network is unavailable. Uses the enum's ordinal for the wire
- * format — keep entry order stable on the enum.
+ * format, keep entry order stable on the enum.
  */
 data class PortableConnectionStatusPayload(val containerId: Int, val statusOrdinal: Int) : CustomPacketPayload {
     companion object {
@@ -407,7 +407,7 @@ data class PortableConnectionStatusPayload(val containerId: Int, val statusOrdin
     override fun type() = TYPE
 }
 
-/** C2S: Cancel a crafting job — return buffer contents to network storage. */
+/** C2S: Cancel a crafting job, return buffer contents to network storage. */
 data class CancelCraftPayload(val pos: BlockPos) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<CancelCraftPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "cancel_craft"))

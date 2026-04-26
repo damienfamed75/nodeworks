@@ -11,8 +11,8 @@ description = '''
 Scripting-driven automation mod with node networks and Lua terminals.
 '''
 
-# Mixin config — required by NeoForge 26.1 to actually apply the mixins.
-# Without this block the JSON is never scanned; the ServerLevelSetBlockMixin
+# Mixin config, required by NeoForge 26.1 to actually apply the mixins.
+# Without this block the JSON is never scanned, the ServerLevelSetBlockMixin
 # (which drives LOS-break disconnect on the server) silently no-ops, and
 # connectable blocks keep their cached networkId forever after an obstruction.
 [[mixins]]
@@ -31,7 +31,7 @@ versionRange = "[26.1.2,)"
 side = "BOTH"
 
 # GuideME drives the in-game guidebook (see docs/authoring.md). Client-only because
-# the rendering pipeline is client-side — a dedicated server never touches it.
+# the rendering pipeline is client-side, a dedicated server never touches it.
 [[dependencies.nodeworks]]
 modId = "guideme"
 type = "required"

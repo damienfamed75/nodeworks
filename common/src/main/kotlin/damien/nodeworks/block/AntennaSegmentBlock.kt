@@ -21,7 +21,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
 
 /**
  * Non-interactive upper block of the Broadcast Antenna multiblock. The [BroadcastAntennaBlock]
- * auto-places three [Part.MIDDLE] and one [Part.TOP] segments above it; breaking any part of
+ * auto-places three [Part.MIDDLE] and one [Part.TOP] segments above it, breaking any part of
  * the stack cascades to remove the rest. Right-click / wrench forwards to the bottom block.
  */
 class AntennaSegmentBlock(properties: Properties) : Block(properties) {
@@ -30,7 +30,7 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
         val PART: EnumProperty<Part> = EnumProperty.create("part", Part::class.java)
         val FACING = BlockStateProperties.HORIZONTAL_FACING
         /** True when the stack's base is reachable from a Network Controller. Only meaningful for
-         *  [Part.RECEIVER]; broadcast parts ignore it. Drives the horn on/off multipart model. */
+         *  [Part.RECEIVER], broadcast parts ignore it. Drives the horn on/off multipart model. */
         val CONNECTED: net.minecraft.world.level.block.state.properties.BooleanProperty =
             net.minecraft.world.level.block.state.properties.BooleanProperty.create("connected")
 
@@ -88,7 +88,7 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
     }
 
     private fun cascadeRemove(level: Level, pos: BlockPos) {
-        // Remove segments ABOVE the broken position first — the broken block is already
+        // Remove segments ABOVE the broken position first, the broken block is already
         // AIR so the base's upward scan would stop at the gap if we don't clear these now.
         var cursor = pos.above()
         while (level.getBlockState(cursor).block is AntennaSegmentBlock) {
@@ -101,7 +101,7 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
             level.setBlock(below, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
             below = below.below()
         }
-        // Destroy the base — drops antenna item + inventory via the base's onRemove.
+        // Destroy the base, drops antenna item + inventory via the base's onRemove.
         if (isAntennaBase(level.getBlockState(below).block)) {
             level.destroyBlock(below, true)
         }

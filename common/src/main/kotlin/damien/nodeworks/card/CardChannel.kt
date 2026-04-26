@@ -16,11 +16,11 @@ import net.minecraft.world.item.component.CustomData
  *
  * Storage layout: stored under the key `"channel"` inside [DataComponents.CUSTOM_DATA]
  * as the dye's [DyeColor.id]. Mirrors the pattern Storage Card priority already uses
- * — same component, different key, so the two coexist on a single card without
+ *, same component, different key, so the two coexist on a single card without
  * stomping each other's data.
  *
  * Read returns [DyeColor.WHITE] when the key is absent so callers don't have to
- * special-case unset channels — the visual indicator and the script API both treat
+ * special-case unset channels, the visual indicator and the script API both treat
  * white as "the default channel," not "no channel."
  */
 object CardChannel {

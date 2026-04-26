@@ -6,7 +6,7 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.level.Level
 
 /**
- * Redstone Card — reads and writes redstone signals on the adjacent block.
+ * Redstone Card, reads and writes redstone signals on the adjacent block.
  * Provides powered(), strength(), set(), and onChange() in the scripting API.
  */
 class RedstoneCard(properties: Properties) : NodeCard(properties) {

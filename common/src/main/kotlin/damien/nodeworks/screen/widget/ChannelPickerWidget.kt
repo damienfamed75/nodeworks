@@ -12,17 +12,17 @@ import net.minecraft.world.item.DyeColor
 
 /**
  * 16×16 channel-color swatch button. Displays the currently-selected dye color and
- * a thin border; clicking expands a 4×4 popup of all 16 dye swatches that the user
+ * a thin border, clicking expands a 4×4 popup of all 16 dye swatches that the user
  * can pick from.
  *
  * The popup is rendered via [renderOverlay] which the host screen must call AFTER
- * rendering its other widgets — otherwise the popup would draw under buttons /
+ * rendering its other widgets, otherwise the popup would draw under buttons /
  * labels rendered by the screen frame. Click handling for the popup goes through
- * [handleOverlayClick]; when the popup is expanded the host screen routes every
+ * [handleOverlayClick], when the popup is expanded the host screen routes every
  * click into that method first so the picker can claim the event before any
  * underlying widget sees it.
  *
- * Persistence is the host's responsibility — the [onChange] callback fires the
+ * Persistence is the host's responsibility, the [onChange] callback fires the
  * moment the user picks a colour and the host's menu syncs the new value to the
  * server. The widget itself only owns transient UI state ([currentColor],
  * [expanded]).
@@ -61,7 +61,7 @@ class ChannelPickerWidget(
         partialTick: Float,
     ) {
         // Slot frame, then a 14×14 fill of the current dye colour. Border looks the
-        // same as Storage Card's priority slot — keeps the GUI visually consistent.
+        // same as Storage Card's priority slot, keeps the GUI visually consistent.
         NineSlice.SLOT.draw(graphics, x, y, SWATCH, SWATCH)
         val rgb = currentColor.textureDiffuseColor or 0xFF000000.toInt()
         graphics.fill(x + 1, y + 1, x + SWATCH - 1, y + SWATCH - 1, rgb)
@@ -145,7 +145,7 @@ class ChannelPickerWidget(
 
     /** Host screens call this BEFORE forwarding clicks to other widgets while
      *  [expanded] is true. Returns true when the click was consumed (always true
-     *  while the popup is open — clicks outside the grid close it). */
+     *  while the popup is open, clicks outside the grid close it). */
     fun handleOverlayClick(mouseX: Double, mouseY: Double): Boolean {
         if (!expanded) return false
         val (px, py, pw, ph) = popupBounds().toList()
@@ -177,7 +177,7 @@ class ChannelPickerWidget(
             expanded = false
             return true
         }
-        // Click is on the swatch itself — let the normal widget click handler toggle
+        // Click is on the swatch itself, let the normal widget click handler toggle
         // the popup off.
         return false
     }

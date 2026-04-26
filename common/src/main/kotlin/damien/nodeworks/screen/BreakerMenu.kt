@@ -12,7 +12,7 @@ import net.minecraft.world.item.ItemStack
 
 /**
  * Settings menu for the Breaker device. Mirrors [VariableMenu] at a reduced
- * footprint — just channel id sync via [ContainerData] (the device name is
+ * footprint, just channel id sync via [ContainerData] (the device name is
  * one-shot via [BreakerOpenData] and round-trips through the settings payload
  * the same way Variable's name does, so it doesn't need a slot here).
  */

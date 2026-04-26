@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory
  *
  * Post-Phase-2: this class now PLANS a craft and submits it to a CPU's [CraftScheduler].
  * The scheduler drives the whole craft (pulling, processing, executing, delivering) via
- * [damien.nodeworks.script.cpu.CpuOpExecutor]. There is no recursion — [CraftPlanner]
+ * [damien.nodeworks.script.cpu.CpuOpExecutor]. There is no recursion, [CraftPlanner]
  * walks the [CraftTreeBuilder] result iteratively.
  *
  * Callers still use the `CraftResult + currentPendingJob` protocol:
@@ -108,7 +108,7 @@ object CraftingHelper {
     }
 
     // =====================================================================
-    // Craft entry point — plan + submit to a CPU's scheduler
+    // Craft entry point, plan + submit to a CPU's scheduler
     // =====================================================================
 
     /**
@@ -143,10 +143,10 @@ object CraftingHelper {
             return null
         }
 
-        // 1. Build the craft tree (iterative via CraftTreeBuilder; not recursive here).
+        // 1. Build the craft tree (iterative via CraftTreeBuilder, not recursive here).
         val tree = CraftTreeBuilder.buildCraftTree(identifier, count, level, snapshot)
 
-        // 2. Select a CPU — explicit [cpuPos] for legacy resume paths; otherwise find
+        // 2. Select a CPU, explicit [cpuPos] for legacy resume paths, otherwise find
         //    any CPU on the network that can fit the craft (feasibility-aware).
         val cpu: CraftingCoreBlockEntity = if (cpuPos != null) {
             val entity = level.getBlockEntity(cpuPos) as? CraftingCoreBlockEntity
@@ -203,13 +203,13 @@ object CraftingHelper {
     }
 
     // =====================================================================
-    // CPU selection — feasibility-aware across the entire network
+    // CPU selection, feasibility-aware across the entire network
     // =====================================================================
 
     /**
      * Iterate every CPU on the network, return the highest-capacity CPU that is:
      *   - formed (has at least one Buffer block)
-     *   - has at least one idle scheduler thread (can accept a new craft *right now* —
+     *   - has at least one idle scheduler thread (can accept a new craft *right now*,
      *     checked against live state, not the snapshot's stale `isBusy` flag)
      *   - feasible for the given craft tree (passes [CpuFeasibility.check])
      *
@@ -243,7 +243,7 @@ object CraftingHelper {
                 continue
             }
 
-            // Live check against the scheduler — snapshot's isBusy may be stale for
+            // Live check against the scheduler, snapshot's isBusy may be stale for
             // crafts submitted between snapshot build and this check.
             if (cpu.scheduler.isIdle) return cpu
             feasibleButBusy = true

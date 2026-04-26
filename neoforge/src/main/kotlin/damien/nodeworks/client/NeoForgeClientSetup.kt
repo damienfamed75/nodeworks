@@ -50,9 +50,9 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterItemTintSources)
         modBus.addListener(::onRegisterRenderPipelines)
 
-        // Register the in-game guide synchronously during mod construction — NOT inside
+        // Register the in-game guide synchronously during mod construction, NOT inside
         // FMLClientSetupEvent.enqueueWork. GuideME hooks the item-tooltip "Hold G" hint
-        // during its own mod-event-bus construction; any guide registered after that point
+        // during its own mod-event-bus construction, any guide registered after that point
         // has its ItemIndex wired but the tooltip binding never fires. Pattern mirrors
         // AE2's AppEngClient constructor call.
         damien.nodeworks.guide.NodeworksGuide.register()
@@ -62,7 +62,7 @@ object NeoForgeClientSetup {
         NodeworksKeyBindings.register(modBus)
 
         // Client-side recipe-sync cache. Vanilla 26.1 stopped syncing the
-        // full recipe set to clients; NeoForge keeps the old behavior alive
+        // full recipe set to clients, NeoForge keeps the old behavior alive
         // by firing RecipesReceivedEvent with the full RecipeMap on every
         // server update. We use it to keep the Soul Sand Infusion client
         // cache current (and clear it when the player disconnects). HIGHEST
@@ -81,7 +81,7 @@ object NeoForgeClientSetup {
         NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST) { event: net.neoforged.neoforge.client.event.ScreenEvent.KeyPressed.Pre ->
             val screen = event.screen
             if (screen is damien.nodeworks.screen.TerminalScreen && screen.isEditorFocused()) {
-                // 26.1: Screen#keyPressed(KeyEvent) — no longer the (keyCode, scanCode, modifiers) triple.
+                // 26.1: Screen#keyPressed(KeyEvent), no longer the (keyCode, scanCode, modifiers) triple.
                 //  The ScreenEvent still exposes getKeyEvent() for forwarding.
                 screen.keyPressed(event.keyEvent)
                 event.isCanceled = true
@@ -120,7 +120,7 @@ object NeoForgeClientSetup {
             // Reset the frame-scoped laser-beam dedup set at the start of each render
             // frame. ConnectionBeamRenderer.submit uses this set to ensure a beam between
             // two Connectables is drawn exactly once per frame regardless of which end's
-            // BER submits first — no lex-order dedup, no silent drops if one BER isn't
+            // BER submits first, no lex-order dedup, no silent drops if one BER isn't
             // wired or one endpoint is unloaded.
             NeoForge.EVENT_BUS.addListener { _: RenderFrameEvent.Pre ->
                 damien.nodeworks.render.ConnectionBeamRenderer.startFrame()
@@ -249,7 +249,7 @@ object NeoForgeClientSetup {
     ) {
         // 26.1 registers pipelines via this event so the shader program is compiled
         //  and the pipeline state locked in before any RenderType referencing it is
-        //  used. Register our through-walls block-atlas pipeline here — the
+        //  used. Register our through-walls block-atlas pipeline here, the
         //  PinHighlightRenderType.THROUGH_WALLS RenderType holds the matching
         //  RenderSetup built around it.
         event.registerPipeline(damien.nodeworks.render.PinHighlightRenderType.THROUGH_WALLS_PIPELINE)
@@ -282,7 +282,7 @@ class NeoForgeClientEventService : ClientEventService {
 
     private fun onRenderAfterTranslucent(event: RenderLevelStageEvent.AfterTranslucentBlocks) {
         val mc = Minecraft.getInstance()
-        // 26.1: Camera.position field is private; public `position()` method is now the accessor.
+        // 26.1: Camera.position field is private, public `position()` method is now the accessor.
         //  Kotlin can't auto-synthesise the property because the backing field is inaccessible.
         val cameraPos = mc.gameRenderer.mainCamera.position()
         val bufferSource = mc.renderBuffers().bufferSource()

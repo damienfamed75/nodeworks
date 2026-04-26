@@ -67,7 +67,7 @@ object VariableHandle {
             }
         })
 
-        // .name — readable identifier for the variable, matching how CardHandle
+        // .name, readable identifier for the variable, matching how CardHandle
         // exposes `.name`. Snapshotted at handle creation so `print(v.name)`
         // returns the name the script used when it looked the variable up,
         // even if the variable is later renamed in its GUI.

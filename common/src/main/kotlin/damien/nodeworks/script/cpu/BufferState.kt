@@ -6,9 +6,9 @@ import net.minecraft.nbt.Tag
 /**
  * The Crafting CPU's in-flight item buffer. Tracks both:
  *
- *   - **count**  — total items across every stored item type (Long-typed to remain
+ *   - **count**, total items across every stored item type (Long-typed to remain
  *                  safe against networks with billions of items)
- *   - **types**  — number of distinct item types currently stored (Int — bounded by
+ *   - **types**, number of distinct item types currently stored (Int, bounded by
  *                  [typesCapacity], which is a small number)
  *
  * Both limits apply independently. An item insertion fails if either limit would be
@@ -43,7 +43,7 @@ class BufferState {
     val types: Int get() = items.size
 
     // =====================================================================
-    // Capacity control — called by the Core during recalculateCapacity()
+    // Capacity control, called by the Core during recalculateCapacity()
     // =====================================================================
 
     fun setCapacities(countCap: Long, typesCap: Int) {
@@ -58,7 +58,7 @@ class BufferState {
     fun get(itemId: String): Long = items[itemId] ?: 0L
 
     /**
-     * Snapshot of current contents. Returned map is a copy; modifying it does not
+     * Snapshot of current contents. Returned map is a copy, modifying it does not
      * affect the buffer. Order is stable (LinkedHashMap-style insertion order).
      */
     fun contents(): Map<String, Long> = items.toMap()
@@ -81,7 +81,7 @@ class BufferState {
 
     /**
      * Insert [amount] of [itemId]. Returns true on success, false on failure.
-     * Failures are atomic — nothing is changed if any capacity is exceeded.
+     * Failures are atomic, nothing is changed if any capacity is exceeded.
      */
     fun insert(itemId: String, amount: Long): Boolean {
         if (amount <= 0) return true

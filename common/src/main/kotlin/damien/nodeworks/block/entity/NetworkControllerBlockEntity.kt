@@ -24,7 +24,7 @@ import damien.nodeworks.compat.putLongList
 import java.util.UUID
 
 /**
- * Block entity for the Network Controller — the heart of every network.
+ * Block entity for the Network Controller, the heart of every network.
  * Stores a UUID that defines the network's identity.
  * Generated on first placement, persists through world save/load.
  */
@@ -83,7 +83,7 @@ class NetworkControllerBlockEntity(
         }
 
     /** Whether this controller is force-loading the chunks of every block in its network.
-     *  Updated via [setChunkLoadingEnabled]; direct write by NBT load only (to avoid
+     *  Updated via [setChunkLoadingEnabled], direct write by NBT load only (to avoid
      *  triggering claim/unclaim before the level is known). */
     var chunkLoadingEnabled: Boolean = false
         private set
@@ -135,7 +135,7 @@ class NetworkControllerBlockEntity(
             NodeConnectionHelper.queueRevalidation(level, worldPosition)
             // Rebuild the in-memory chunk-load refcount for every chunk this controller
             // had claimed before the server shut down. Vanilla's forcedchunks.dat already
-            // restored the actual chunk-forced flags; this just gets the manager back in
+            // restored the actual chunk-forced flags, this just gets the manager back in
             // sync so disabling later correctly decrements.
             if (chunkLoadingEnabled && claimedChunks.isNotEmpty()) {
                 for (packed in claimedChunks) {
@@ -150,7 +150,7 @@ class NetworkControllerBlockEntity(
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val lvl = level
         if (lvl is ServerLevel) {
-            // Unclaim chunk-loading ONLY on actual block destruction — chunk unload runs
+            // Unclaim chunk-loading ONLY on actual block destruction, chunk unload runs
             // setRemoved too and we don't want to tear down our own force-loads there.
             if (blockDestroyed && chunkLoadingEnabled) {
                 releaseAllClaims(lvl)
@@ -168,15 +168,15 @@ class NetworkControllerBlockEntity(
     /** Toggle chunk-loading for this controller. Enabling walks the current network
      *  topology (full connection graph, ignoring LOS) and claims every visited block's
      *  chunk with [ChunkForceLoadManager]. Disabling releases every previously claimed
-     *  chunk — the manager's refcount ensures chunks still claimed by other enabled
+     *  chunk, the manager's refcount ensures chunks still claimed by other enabled
      *  controllers in the same dimension stay loaded.
      *
      *  Topology is snapshotted at enable-time. Extending the network afterwards does NOT
-     *  auto-claim the new blocks' chunks; re-toggle off/on to refresh. */
+     *  auto-claim the new blocks' chunks, re-toggle off/on to refresh. */
     fun setChunkLoadingEnabled(enabled: Boolean) {
         if (enabled == chunkLoadingEnabled) return
         val lvl = level as? ServerLevel ?: run {
-            // No level yet (BE construction path) — just store the flag; setLevel will
+            // No level yet (BE construction path), just store the flag, setLevel will
             // pick it up via the NBT-load path next time.
             chunkLoadingEnabled = enabled
             setChanged()
@@ -204,7 +204,7 @@ class NetworkControllerBlockEntity(
         claimedChunks.clear()
     }
 
-    /** BFS through the full topological connection graph (LOS-blocked pairs included —
+    /** BFS through the full topological connection graph (LOS-blocked pairs included,
      *  we want every physically-connected block's chunk loaded regardless of temporary
      *  obstructions) and return the set of packed ChunkPos longs. */
     private fun gatherTopologyChunks(lvl: ServerLevel): Set<Long> {

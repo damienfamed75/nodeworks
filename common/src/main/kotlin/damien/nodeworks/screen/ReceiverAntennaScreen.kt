@@ -68,7 +68,7 @@ class ReceiverAntennaScreen(
 
         graphics.drawString(font, "Insert encoded Link Crystal", leftPos + 8, topPos + 59, 0xFFAAAAAA.toInt())
 
-        // Crystal slot frame — same 20x20 decoration used by the Portable Inventory
+        // Crystal slot frame, same 20x20 decoration used by the Portable Inventory
         // Terminal. The inner 18x18 is offset by 1px so items rendered by the MC
         // Slot at (CHIP_X, CHIP_Y) line up with the frame's center.
         NineSlice.PORTABLE_CRYSTAL_SLOT_FRAME.draw(

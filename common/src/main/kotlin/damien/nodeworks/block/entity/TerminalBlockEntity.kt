@@ -57,7 +57,7 @@ class TerminalBlockEntity(
      *   - a permanently-powered terminal doesn't auto-start on chunk-load
      *   - the FIRST button press after the player joins the world is detected as a
      *     rising edge instead of being consumed as baseline capture
-     * -1 is a safety sentinel if [onLoad] somehow runs before the level is reachable;
+     * -1 is a safety sentinel if [onLoad] somehow runs before the level is reachable,
      * [TerminalBlock.neighborChanged] performs the same capture-without-trigger in
      * that case.
      */
@@ -95,7 +95,7 @@ class TerminalBlockEntity(
 
     /**
      * Finds the adjacent node this terminal connects through.
-     * Scanned on demand — not cached or persisted.
+     * Scanned on demand, not cached or persisted.
      */
     fun getConnectedNodePos(): BlockPos? {
         val currentLevel = level ?: return null

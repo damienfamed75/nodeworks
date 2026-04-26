@@ -33,7 +33,7 @@ import net.minecraft.sounds.SoundEvents
 import java.awt.Color
 
 /**
- * Color picker popup — dark themed to match the Network Controller GUI.
+ * Color picker popup, dark themed to match the Network Controller GUI.
  */
 class ColorPickerScreen(
     private val parentScreen: net.minecraft.client.gui.screens.Screen,
@@ -103,7 +103,7 @@ class ColorPickerScreen(
         }
         // 26.1: DynamicTexture requires a label arg (Supplier<String> or String)
         //  before the NativeImage/dims. The (label, width, height, zero) + setPixels
-        //  path only swaps the CPU-side NativeImage — it doesn't re-upload to the GPU
+        //  path only swaps the CPU-side NativeImage, it doesn't re-upload to the GPU
         //  texture, leaving the picker rendering as solid black. Use the
         //  (label, NativeImage) ctor instead, which uploads immediately.
         val id = Identifier.fromNamespaceAndPath("nodeworks", "dynamic/color_picker")

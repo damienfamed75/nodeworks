@@ -51,7 +51,7 @@ class BreakerBlockEntity(
         }
 
     /** Tick counter for the in-progress break (0 = idle). When this reaches
-     *  [breakDurationTicks] the block actually breaks; while `> 0`, the breaker
+     *  [breakDurationTicks] the block actually breaks, while `> 0`, the breaker
      *  pushes per-stage destroy-progress to the level so the vanilla crack overlay
      *  shows on the target. */
     var breakProgress: Int = 0
@@ -66,7 +66,7 @@ class BreakerBlockEntity(
     /** Optional Lua function set by `breaker:mine():connect(fn)`. When non-null
      *  the drops route to this handler instead of being inserted into network
      *  storage. Cleared after the break completes (or [cancel] runs). Note: stored
-     *  in memory only — the BlockEntity doesn't try to serialise the LuaFunction
+     *  in memory only, the BlockEntity doesn't try to serialise the LuaFunction
      *  across world reloads, so a server restart mid-break drops the handler and
      *  falls back to the default network-store routing on the next break.*/
     @Transient
@@ -83,7 +83,7 @@ class BreakerBlockEntity(
      *  across server restarts and distinct across breakers. */
     private val breakerId: Int get() = worldPosition.hashCode()
 
-    /** Position the breaker is targeting — one block away in the FACING direction
+    /** Position the breaker is targeting, one block away in the FACING direction
      *  declared on the BlockState. Lazily resolved each tick rather than cached
      *  because the FACING property is immutable per state but the state itself
      *  can rotate if a future feature ever rotates blocks. */
@@ -95,7 +95,7 @@ class BreakerBlockEntity(
     private var targetSnapshot: BlockState? = null
 
     /** Begin a break of the block at [targetPos]. No-op when already breaking, the
-     *  target is air / unbreakable, or above-tier (silent — the API contract says
+     *  target is air / unbreakable, or above-tier (silent, the API contract says
      *  diamond pickaxe equivalence is the cap). Returns true when a break actually
      *  started so [BreakerHandle.break] can return a live builder vs a no-op. */
     fun startBreak(level: ServerLevel, handler: LuaFunction? = null): Boolean {
@@ -130,7 +130,7 @@ class BreakerBlockEntity(
     fun serverTick(level: ServerLevel) {
         if (!isBreaking) return
 
-        // Detect target drift — if the block has changed underneath us (player
+        // Detect target drift, if the block has changed underneath us (player
         // swapped it, piston pushed something else into place), abort cleanly.
         val target = targetPos
         val current = level.getBlockState(target)
@@ -141,7 +141,7 @@ class BreakerBlockEntity(
 
         breakProgress++
         // Push the visible crack stage. `destroyBlockProgress` accepts 0..9 for
-        // the 10 break-stage textures vanilla ships; we map our tick counter
+        // the 10 break-stage textures vanilla ships, we map our tick counter
         // proportionally and cap at 9.
         val stage = ((breakProgress.toLong() * 10L) / breakDurationTicks.toLong()).toInt().coerceIn(0, 9)
         level.destroyBlockProgress(breakerId, target, stage)
@@ -174,7 +174,7 @@ class BreakerBlockEntity(
         level.setBlock(target, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
 
         // Route drops. The handler-or-default split lives here so the
-        // [pendingHandler] state stays internal — neither the BreakerHandle nor
+        // [pendingHandler] state stays internal, neither the BreakerHandle nor
         // the Lua side has to know how to "store to network."
         val handler = pendingHandler
         if (handler != null) {
@@ -249,7 +249,7 @@ class BreakerBlockEntity(
         channel = runCatching { DyeColor.byId(input.getIntOr("channel", 0)) }.getOrDefault(DyeColor.WHITE)
         breakProgress = input.getIntOr("breakProgress", 0)
         breakDurationTicks = input.getIntOr("breakDurationTicks", 0)
-        // pendingHandler intentionally not loaded — LuaFunction can't serialise.
+        // pendingHandler intentionally not loaded, LuaFunction can't serialise.
         // A break that was running mid-handler when the world saved resumes
         // routing to default (network storage) on next tick.
         pendingHandler = null
@@ -271,7 +271,7 @@ class BreakerBlockEntity(
          *  the breaker can mine anything a diamond pick could).
          *
          *  Returns null when the block is air, unbreakable (negative hardness), or
-         *  above-tier (no diamond drops). Callers treat null as a silent no-op —
+         *  above-tier (no diamond drops). Callers treat null as a silent no-op,
          *  matches the user's preference for failed breaks not to spam errors. */
         fun computeBreakDuration(level: net.minecraft.world.level.Level, pos: BlockPos, state: BlockState): Int? {
             if (state.isAir) return null

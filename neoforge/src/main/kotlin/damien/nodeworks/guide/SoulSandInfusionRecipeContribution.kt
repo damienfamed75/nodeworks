@@ -23,11 +23,11 @@ import net.minecraft.world.level.block.Blocks
  * wired into the mod's [NodeworksGuide] builder via `.extension(
  * RecipeTypeMappingSupplier.EXTENSION_POINT, ...)`. When GuideME compiles a
  * page and encounters a recipe reference, it dispatches through every
- * registered supplier's [collect] method; the first one whose [RecipeType]
+ * registered supplier's [collect] method, the first one whose [RecipeType]
  * matches is the one that gets its factory called.
  *
  * Layout choices:
- *   * Icon: the soul sand block — thematically identifies the recipe.
+ *   * Icon: the soul sand block, thematically identifies the recipe.
  *   * Title: the literal string "Soul Sand Infusion" (matches the JEI
  *     category title for recognizability across the two tools).
  *   * Body: hand-built via [LytStandardRecipeBox.Builder.customBody] so we
@@ -52,7 +52,7 @@ class SoulSandInfusionRecipeContribution : RecipeTypeMappingSupplier {
             }
 
             // Mirrors LytStandardRecipeBox's internal grid row: HBox gap=2,
-            // center-aligned, no wrap — but with the bucket sprite standing
+            // center-aligned, no wrap, but with the bucket sprite standing
             // in for the default arrow. 24×17 matches the vanilla arrow
             // footprint so the recipe box sizes the same as any other.
             val body = LytHBox().apply {

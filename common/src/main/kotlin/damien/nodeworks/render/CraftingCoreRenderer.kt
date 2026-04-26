@@ -12,7 +12,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 
 /**
- * Emissive overlay for the Crafting Core — all 6 faces, un-tinted white. Only renders
+ * Emissive overlay for the Crafting Core, all 6 faces, un-tinted white. Only renders
  * when `FORMED=true`. See [EmissiveCubeRenderer] for the shared pipeline.
  */
 open class CraftingCoreRenderer(context: BlockEntityRendererProvider.Context) :

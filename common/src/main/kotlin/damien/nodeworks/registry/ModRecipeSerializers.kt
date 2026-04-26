@@ -10,7 +10,7 @@ import net.minecraft.world.item.crafting.RecipeSerializer
 //
 // A RecipeSerializer in 26.1 is a record pairing a MapCodec (used to read
 // JSON recipe files) with a StreamCodec (used to sync recipes from server
-// to client). No subclassing — you construct an instance directly from the
+// to client). No subclassing, you construct an instance directly from the
 // recipe class's own codecs.
 //
 // Must register AFTER ModRecipeTypes since the serializer references a

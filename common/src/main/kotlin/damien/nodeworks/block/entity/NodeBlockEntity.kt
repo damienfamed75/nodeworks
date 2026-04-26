@@ -69,10 +69,10 @@ class NodeBlockEntity(
     private val connections: LinkedHashSet<BlockPos> = linkedSetOf()
 
     /** Count of legacy per-face monitors read from an older save. The monitor-on-node
-     *  system was removed in favour of the standalone [damien.nodeworks.block.MonitorBlock];
+     *  system was removed in favour of the standalone [damien.nodeworks.block.MonitorBlock],
      *  [loadAdditional] can't act on legacy data directly (no level yet), so we stash
      *  the count and drop one Monitor item per entry from [setLevel] when the level
-     *  is available. The drop loses the tracked-item setting — by design, since
+     *  is available. The drop loses the tracked-item setting, by design, since
      *  re-placing the Monitor is easy and we avoid trying to synthesize BlockItem NBT
      *  from a partial legacy record. */
     private var legacyMonitorDrops: Int = 0
@@ -133,7 +133,7 @@ class NodeBlockEntity(
     }
 
     /** Channel dye-colors for every card on this face, one per card present (no
-     *  deduplication — callers that want the distinct set can call .toSet()).
+     *  deduplication, callers that want the distinct set can call .toSet()).
      *  Used by [damien.nodeworks.render.NodeRenderer] to tint the per-face glow
      *  overlay: same-channel faces show that channel's hue, mixed-channel faces
      *  show the rainbow indicator. Returns empty when no cards are installed,
@@ -167,7 +167,7 @@ class NodeBlockEntity(
             }
             // Pull the channel here so [NetworkDiscovery.snapshotNode] doesn't need a
             // back-reference to the BlockEntity to read it. White is the default for
-            // pre-channel cards and any card the user hasn't dyed yet — the channel
+            // pre-channel cards and any card the user hasn't dyed yet, the channel
             // helper reads directly from CUSTOM_DATA so untouched stacks return WHITE.
             val channel = damien.nodeworks.card.CardChannel.get(stack)
             SideCapabilityInfo(capability ?: return@map null, info.alias, info.slotIndex, channel)
@@ -281,8 +281,8 @@ class NodeBlockEntity(
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         nodeTracker?.onNodeChanged(worldPosition, true)
 
-        // Legacy migration — prior builds stored monitors attached to node faces under
-        // a "monitors" ListTag. That system is gone; read the count here so setLevel
+        // Legacy migration, prior builds stored monitors attached to node faces under
+        // a "monitors" ListTag. That system is gone, read the count here so setLevel
         // can drop standalone Monitor items as a replacement. childrenListOrEmpty is
         // safe when the tag is absent, so new saves cost nothing.
         val legacy = input.childrenListOrEmpty("monitors")
@@ -298,7 +298,7 @@ class NodeBlockEntity(
             // recorded on this node. The drop happens once (`legacyMonitorDrops` is
             // zeroed afterward) and isn't re-written on save since saveAdditional
             // no longer emits the "monitors" key. Scheduled via enqueueTickTask so
-            // Containers.dropItemStack runs after the chunk finishes loading —
+            // Containers.dropItemStack runs after the chunk finishes loading,
             // spawning entities mid-load can upset the chunk tracker.
             if (legacyMonitorDrops > 0) {
                 val count = legacyMonitorDrops

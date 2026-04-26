@@ -30,7 +30,7 @@ import java.util.UUID
 /**
  * Block entity for Processing Storage. Holds up to 8 Processing Sets.
  * Connects to the network via laser (Connectable). Adjacent Processing Storage blocks
- * form a cluster — the connected one discovers API cards from the entire cluster.
+ * form a cluster, the connected one discovers API cards from the entire cluster.
  */
 class ProcessingStorageBlockEntity(
     pos: BlockPos,
@@ -66,7 +66,7 @@ class ProcessingStorageBlockEntity(
             val timeout = ProcessingSet.getTimeout(stack)
             val serial = ProcessingSet.isSerial(stack)
             if (outputs.isEmpty()) continue
-            // Always use the canonical recipe-derived id; the NBT-stored `name` field
+            // Always use the canonical recipe-derived id, the NBT-stored `name` field
             // is vestigial and may hold legacy pre-Phase-A values from older worlds.
             val name = ProcessingSet.canonicalId(inputs, outputs)
             result.add(ProcessingApiInfo(name, inputs, outputs, timeout, serial))
@@ -152,7 +152,7 @@ class ProcessingStorageBlockEntity(
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
             // Queue each cluster-adjacent sibling for revalidation next tick. By
             // the time the drain runs, this BE is fully gone, so the siblings'
-            // propagate BFS won't cross back through us — halves of a split
+            // propagate BFS won't cross back through us, halves of a split
             // cluster correctly re-derive their own networkId (or lose it).
             // Deferring via the revalidation queue (instead of propagating now)
             // avoids traversing this about-to-be-removed position as a cluster

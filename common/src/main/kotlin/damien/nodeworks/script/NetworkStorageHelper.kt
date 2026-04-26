@@ -59,7 +59,7 @@ object NetworkStorageHelper {
 
     /**
      * Count items + fluids matching [filter] across the network.
-     * A filter like `item:*` skips fluids; `fluid:*` skips items; bare filters sum both.
+     * A filter like `item:*` skips fluids, `fluid:*` skips items, bare filters sum both.
      */
     fun countResource(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Long {
         val (kindGate, _) = CardHandle.parseFilterKind(filter)
@@ -107,7 +107,7 @@ object NetworkStorageHelper {
      * **Sim-first, then commit.** We never touch the source until we've verified, via
      * non-mutating [PlatformServices.StorageService.simulateInsertItem] calls, that every
      * matching item type the filter picks has enough network-wide capacity. If the probe
-     * shows insufficient space for any single type, we return false with zero mutation —
+     * shows insufficient space for any single type, we return false with zero mutation,
      * no extract, no rollback, no chance to dupe or lose items on a partial commit.
      *
      * Once the probe passes, the commit runs through best-effort [insertItems] which honours
@@ -142,10 +142,10 @@ object NetworkStorageHelper {
         if (remainingDemand > 0L) return false
 
         // Capacity probe, per item type. Each type checks independently against the full
-        // network — a storage card's free slots are consumed by the first type we probe,
+        // network, a storage card's free slots are consumed by the first type we probe,
         // but subsequent probes aren't affected because probes don't mutate. In the rare
         // real-world case where capacity is tight enough that two types compete for the
-        // same slot, routing at commit time handles the allocation; worst-case we trip the
+        // same slot, routing at commit time handles the allocation, worst-case we trip the
         // shortfall guard below and return false without a bad partial state.
         val storageCards = getStorageCards(snapshot)
         for ((itemId, need) in demand) {
@@ -162,15 +162,15 @@ object NetworkStorageHelper {
             if (capacity < need) return false
         }
 
-        // Sim said it fits — commit. Under single-threaded server execution this should
-        // place `requested` exactly; if routing + sim disagree (shouldn't happen with
+        // Sim said it fits, commit. Under single-threaded server execution this should
+        // place `requested` exactly, if routing + sim disagree (shouldn't happen with
         // vanilla IItemHandler but defensive for modded storages), we treat the shortfall
         // as a hard failure and unwind by reverse-moving the committed items back to
         // source. This keeps the atomic contract even on pathological edge cases.
         val moved = insertItems(level, snapshot, source, filter, requested, routeTable, null, cache)
         if (moved == requested) return true
 
-        // Unexpected shortfall — unwind. Since source was just drained of at most `moved`
+        // Unexpected shortfall, unwind. Since source was just drained of at most `moved`
         // items of types we tracked in `demand`, it necessarily has slot capacity for them
         // back (fungibility within item type). Rollback runs per-type so cache.onExtracted
         // receives the correct (itemId, hasData) pairs.
@@ -223,7 +223,7 @@ object NetworkStorageHelper {
         }
         if (capacity < amount) return false
 
-        // Commit. Since sim passed, this should place all; unwind drain on divergence.
+        // Commit. Since sim passed, this should place all, unwind drain on divergence.
         var remaining = amount
         val committed = mutableListOf<Pair<FluidStorageHandle, Long>>()
         for (card in storageCards) {
@@ -249,7 +249,7 @@ object NetworkStorageHelper {
         return false
     }
 
-    /** Aggregate fluid totals across the whole network in a single pass — used in place
+    /** Aggregate fluid totals across the whole network in a single pass, used in place
      *  of per-fluid `countFluid` calls when the caller already needs the full list.
      *  Returns `(FluidInfo, sourceCard)` pairs with amounts summed across all storage cards. */
     fun findAllFluidInfoAcrossNetwork(
@@ -356,7 +356,7 @@ object NetworkStorageHelper {
         cache: NetworkInventoryCache? = null
     ): Long {
         if (routeTable == null && onInsertCallback == null) {
-            // No routing — fast path, use all storages
+            // No routing, fast path, use all storages
             return insertItemsDefault(level, snapshot, source, filter, maxCount, cache)
         }
         return insertItemsRouted(level, snapshot, source, filter, maxCount, routeTable, onInsertCallback, cache)
@@ -395,7 +395,7 @@ object NetworkStorageHelper {
             val toMove = minOf(remaining, count)
 
             // 1. Check routes first (precomputed, fast). A route may have multiple candidate
-            //    cards (wildcard pattern like `cobblestone_*`) — iterate them in order,
+            //    cards (wildcard pattern like `cobblestone_*`), iterate them in order,
             //    moving what fits before overflowing to open storages.
             val routeTargets = routeTable?.findRouteTargets(itemInfo) ?: emptyList()
             if (routeTargets.isNotEmpty()) {
@@ -429,7 +429,7 @@ object NetworkStorageHelper {
                 totalMoved += moved
                 remaining -= moved
                 if (moved < toMove) {
-                    // Callback target full — fall to open storages or all storages
+                    // Callback target full, fall to open storages or all storages
                     val fallbackMoved = if (routeTable != null) {
                         routeTable.insertDefault(source, itemId, toMove - moved)
                     } else {
@@ -442,7 +442,7 @@ object NetworkStorageHelper {
                 continue
             }
 
-            // 3. No route or callback match — use open storages (or all if no routes)
+            // 3. No route or callback match, use open storages (or all if no routes)
             val defaultMoved = if (routeTable != null) {
                 routeTable.insertDefault(source, itemId, toMove)
             } else {
