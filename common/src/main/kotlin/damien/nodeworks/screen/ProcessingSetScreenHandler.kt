@@ -51,6 +51,9 @@ class ProcessingSetScreenHandler(
         const val TOTAL_GHOST_SLOTS = INPUT_SLOTS + OUTPUT_SLOTS // 12
         const val DATA_TIMEOUT = INPUT_SLOTS + OUTPUT_SLOTS // index 12
         const val DATA_COUNT = DATA_TIMEOUT + 1 // 13
+        /** Server-side cap on per-set tick timeout. Mirrors [ProcessingSetScreen.TIMEOUT_MAX]
+         *  so a tampered client packet can't push the value past the design ceiling. */
+        const val TIMEOUT_MAX = 999
 
         fun createHandheld(syncId: Int, playerInventory: Inventory, hand: InteractionHand, stack: ItemStack): ProcessingSetScreenHandler {
             val inputs = ProcessingSet.getInputs(stack)
@@ -242,7 +245,7 @@ class ProcessingSetScreenHandler(
     }
 
     fun setTimeout(timeout: Int) {
-        data.set(DATA_TIMEOUT, maxOf(0, timeout))
+        data.set(DATA_TIMEOUT, timeout.coerceIn(0, TIMEOUT_MAX))
     }
 
     /** Set a ghost slot by item ID string (used by JEI ghost ingredient and recipe transfer). */

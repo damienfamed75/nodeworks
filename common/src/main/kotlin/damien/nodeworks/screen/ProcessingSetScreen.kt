@@ -71,6 +71,9 @@ class ProcessingSetScreen(
         private const val PANEL_LABEL_Y = 83
         private const val PANEL_CONTROL_Y = 95
         private const val TIMEOUT_STEP = 20
+        /** Upper cap for the per-set tick timeout. ~50s of game time — beyond that the
+         *  recipe is almost certainly wedged and a higher cap just hides bugs. */
+        private const val TIMEOUT_MAX = 999
         private const val STEPPER_BTN_SIZE = 14
         private const val TIMEOUT_ENTRY_W = 26
         private const val STEPPER_GAP = 2
@@ -122,10 +125,10 @@ class ProcessingSetScreen(
             leftPos + TIMEOUT_ENTRY_X, topPos + PANEL_CONTROL_Y + 1,
             TIMEOUT_ENTRY_W, STEPPER_BTN_SIZE - 2, Component.empty()
         ).also {
-            it.setMaxLength(6)
+            it.setMaxLength(TIMEOUT_MAX.toString().length)
             it.setValue(menu.timeout.toString())
             it.setResponder { value ->
-                val timeout = value.toIntOrNull() ?: 0
+                val timeout = (value.toIntOrNull() ?: 0).coerceIn(0, TIMEOUT_MAX)
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiDataPayload(menu.containerId, "timeout", 0, timeout)
                 )
@@ -306,7 +309,7 @@ class ProcessingSetScreen(
         val plusY = topPos + PANEL_CONTROL_Y
         if (mx in plusX until plusX + STEPPER_BTN_SIZE && my in plusY until plusY + STEPPER_BTN_SIZE) {
             val step = if (hasShiftDownCompat()) TIMEOUT_STEP * 5 else TIMEOUT_STEP
-            val next = ((timeoutBox?.value?.toIntOrNull() ?: menu.timeout) + step)
+            val next = ((timeoutBox?.value?.toIntOrNull() ?: menu.timeout) + step).coerceAtMost(TIMEOUT_MAX)
             timeoutBox?.value = next.toString()
             return true
         }
