@@ -1,9 +1,6 @@
 package damien.nodeworks.network
 
-import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
-import damien.nodeworks.block.TerminalBlock
-import damien.nodeworks.block.VariableBlock
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
@@ -172,11 +169,13 @@ object NodeConnectionHelper {
         return result.type == HitResult.Type.MISS
     }
 
-    /** Get a Connectable block entity at the given position. Returns null if chunk is not loaded. */
+    /** Get a Connectable block entity at the given position. Returns null if the
+     *  chunk isn't loaded or the block entity at [pos] doesn't implement
+     *  [Connectable]. The interface cast is the single source of truth for
+     *  "is this a network device?" — adding a new device type just means
+     *  implementing [Connectable], no allowlist to update. */
     fun getConnectable(level: Level, pos: BlockPos): Connectable? {
         if (!level.isLoaded(pos)) return null
-        val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is damien.nodeworks.block.CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ProcessingStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock && block !is damien.nodeworks.block.InventoryTerminalBlock && block !is damien.nodeworks.block.MonitorBlock && block !is damien.nodeworks.block.BreakerBlock && block !is damien.nodeworks.block.PlacerBlock) return null
         return level.getBlockEntity(pos) as? Connectable
     }
 

@@ -1,12 +1,6 @@
 package damien.nodeworks.item
 
-import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
-import damien.nodeworks.block.TerminalBlock
-import damien.nodeworks.block.CraftingCoreBlock
-import damien.nodeworks.block.VariableBlock
-import damien.nodeworks.block.entity.NetworkControllerBlockEntity
-import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NodeConnectionHelper
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
@@ -30,8 +24,12 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         tooltipFlag: net.minecraft.world.item.TooltipFlag
     ) {
         builder.accept(Component.literal("Connects Nodes").withStyle(net.minecraft.ChatFormatting.GRAY))
-        builder.accept(Component.literal("Shift + right-click: select node").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
-        builder.accept(Component.literal("Right-click: connect to selected").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
+        builder.accept(
+            Component.literal("Shift + right-click: select node").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)
+        )
+        builder.accept(
+            Component.literal("Right-click: connect to selected").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)
+        )
     }
 
     private data class Selection(val pos: BlockPos, val dimension: ResourceKey<Level>)
@@ -53,11 +51,10 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         val pos = context.clickedPos
         val player = context.player ?: return InteractionResult.PASS
 
-        // Must click a connectable block (node, instruction crafter, or network controller)
-        val block = level.getBlockState(pos).block
-        if (block !is NodeBlock && block !is NetworkControllerBlock && block !is VariableBlock && block !is TerminalBlock && block !is CraftingCoreBlock && block !is damien.nodeworks.block.InstructionStorageBlock && block !is damien.nodeworks.block.ProcessingStorageBlock && block !is damien.nodeworks.block.ReceiverAntennaBlock && block !is damien.nodeworks.block.InventoryTerminalBlock && block !is damien.nodeworks.block.MonitorBlock && block !is damien.nodeworks.block.BreakerBlock && block !is damien.nodeworks.block.PlacerBlock) return InteractionResult.PASS
-
-        val isNode = block is NodeBlock
+        if (NodeConnectionHelper.getConnectable(level, pos) == null) {
+            return InteractionResult.PASS
+        }
+        val isNode = level.getBlockState(pos).block is NodeBlock
 
         // Client side: track selection for highlight rendering (nodes only)
         if (level.isClientSide) {
