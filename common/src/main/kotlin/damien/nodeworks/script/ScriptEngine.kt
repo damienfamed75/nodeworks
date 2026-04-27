@@ -816,6 +816,13 @@ class ScriptEngine(
         requested: Long,
         atomic: Boolean
     ): LuaValue {
+        // Buffer-backed handle (e.g. the one passed to a `:craft():connect(...)` callback):
+        // drain from the CPU buffer into network storage stack-by-stack instead of going
+        // through `sourceStorage()`, which is null for buffer-only handles.
+        val bufSrc = itemsHandle.bufferSource
+        if (bufSrc != null) {
+            return invokeItemsFromBuffer(snapshot, bufSrc, requested, atomic)
+        }
         val sourceStorage = itemsHandle.sourceStorage()
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
 
@@ -832,6 +839,64 @@ class ScriptEngine(
             )
             LuaValue.valueOf(moved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         }
+    }
+
+    /** Drain [requested] items from a CPU buffer into network storage. Atomic mode
+     *  refuses partial moves, returning everything to the buffer if the network
+     *  can't take the full amount. Best-effort moves what fits and pushes any
+     *  shortfall back. Mirrors [CardHandle]'s `moveFromBuffer` but the destination
+     *  is the network pool instead of a single card's adjacent storage. */
+    private fun invokeItemsFromBuffer(
+        snapshot: NetworkSnapshot,
+        bufSrc: damien.nodeworks.script.BufferSource,
+        requested: Long,
+        atomic: Boolean
+    ): LuaValue {
+        val id = net.minecraft.resources.Identifier.tryParse(bufSrc.itemId)
+            ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
+            ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+        val maxStack = item.getDefaultMaxStackSize().toLong()
+
+        if (atomic) {
+            val extracted = bufSrc.extract(requested)
+            if (extracted < requested) {
+                bufSrc.returnUnused(extracted)
+                return LuaValue.FALSE
+            }
+            var totalInserted = 0L
+            var remaining = extracted
+            while (remaining > 0L) {
+                val batch = minOf(remaining, maxStack).toInt()
+                val stack = net.minecraft.world.item.ItemStack(item, batch)
+                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache).toLong()
+                totalInserted += inserted
+                remaining -= inserted
+                if (inserted == 0L) break
+            }
+            if (totalInserted < extracted) {
+                bufSrc.returnUnused(extracted - totalInserted)
+                return LuaValue.FALSE
+            }
+            return LuaValue.TRUE
+        }
+
+        var totalMoved = 0L
+        var remaining = requested
+        while (remaining > 0L) {
+            val batch = minOf(remaining, maxStack)
+            val extracted = bufSrc.extract(batch)
+            if (extracted == 0L) break
+            val stack = net.minecraft.world.item.ItemStack(item, extracted.toInt())
+            val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache).toLong()
+            totalMoved += inserted
+            if (inserted < extracted) {
+                bufSrc.returnUnused(extracted - inserted)
+                break
+            }
+            remaining -= inserted
+        }
+        return LuaValue.valueOf(totalMoved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
     }
 
     private fun injectApi(g: Globals) {
@@ -1099,7 +1164,18 @@ class ScriptEngine(
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
 
                 CraftingHelper.currentPendingJob = null
-                val result = CraftingHelper.craft(identifier, count, level, snapshot, cache = inventoryCache, processingHandlers = processingHandlers.takeIf { it.isNotEmpty() }, callerScheduler = scheduler, traceLog = { msg -> logCallback(msg, false) })
+                // omitDeliver = true: the CPU plan stops at the root output, leaving
+                // the freshly-produced items in the buffer. The runtime then either
+                // hands them to a `:connect(fn)` callback or runs the auto-store path
+                // (which uses [releaseCraftResult] and drops any overflow in-world).
+                val result = CraftingHelper.craft(
+                    identifier, count, level, snapshot,
+                    cache = inventoryCache,
+                    processingHandlers = processingHandlers.takeIf { it.isNotEmpty() },
+                    callerScheduler = scheduler,
+                    traceLog = { msg -> logCallback(msg, false) },
+                    omitDeliver = true,
+                )
 
                 // Check for async pending job (processing handler or async assembly)
                 val pending = CraftingHelper.currentPendingJob
@@ -1126,31 +1202,83 @@ class ScriptEngine(
                         level = level, snapshot = snapshot, cache = inventoryCache)
                 }
 
-                // Helper: release CPU buffer → storage and create ItemsHandle that points
-                // at the resulting items in the storage cards. Returns null when there's
-                // nothing to release (plan-failure path).
-                fun releaseAndCreateHandle(): LuaTable? {
-                    val cr = craftResult ?: return null
+                // Auto-store path: release CPU buffer → storage. Used when no `:connect`
+                // handler was registered. Items routed via the standard storage-card
+                // priority + route table, with the existing in-world drop fallback when
+                // storage is full (handled by `releaseCraftResult`'s downstream path).
+                fun autoStoreToNetwork() {
+                    val cr = craftResult ?: return
                     CraftingHelper.releaseCraftResult(cr)
-                    val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
-                    val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
-                        storageCards.firstNotNullOfOrNull { card ->
-                            val storage = NetworkStorageHelper.getStorage(level, card)
-                            if (storage != null) {
-                                val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
-                                    CardHandle.matchesFilter(it, cr.outputItemId)
-                                }
-                                if (has > 0) storage else null
-                            } else null
+                }
+
+                /** Build the buffer-backed [ItemsHandle] passed to a `:connect` callback.
+                 *  Items remain in the CPU buffer until the callback drains them via
+                 *  `card:insert` / `network:insert`. After the callback returns, anything
+                 *  still in the buffer is dropped in-world (see [dropRemainingBuffer]). */
+                fun createBufferHandle(cr: CraftingHelper.CraftResult): LuaValue {
+                    val cpu = cr.cpu ?: return LuaValue.NIL
+                    val id = net.minecraft.resources.Identifier.tryParse(cr.outputItemId)
+                    val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
+                    val maxStack = item?.getDefaultMaxStackSize() ?: 64
+                    return ItemsHandle.toLuaTable(
+                        ItemsHandle(
+                            itemId = cr.outputItemId,
+                            itemName = cr.outputName,
+                            count = cr.count,
+                            maxStackSize = maxStack,
+                            hasData = false,
+                            filter = cr.outputItemId,
+                            sourceStorage = { null },
+                            level = level,
+                            bufferSource = damien.nodeworks.script.BufferSource(cpu, cr.outputItemId, cr.count.toLong()),
+                        )
+                    )
+                }
+
+                /** Post-callback cleanup: anything the user's handler didn't drain from
+                 *  the CPU buffer is dropped at the CPU's position and an error is
+                 *  surfaced through [CraftingCoreBlockEntity.lastFailureReason] (the same
+                 *  channel storage-full Deliver-op failures already use, so the CPU's
+                 *  GUI shows the red banner and the script terminal sees the message
+                 *  via the standard CPU error path). The contract is "you took the
+                 *  handle, you're responsible for moving the items." Failing to do so
+                 *  isn't silent. */
+                fun dropRemainingBuffer(cr: CraftingHelper.CraftResult) {
+                    val cpu = cr.cpu ?: return
+                    val remaining = cpu.getBufferCount(cr.outputItemId)
+                    if (remaining <= 0L) {
+                        if (cpu.isCrafting) {
+                            cpu.clearAllCraftState()
+                            cpu.setCrafting(false)
+                        }
+                        return
+                    }
+                    val id = net.minecraft.resources.Identifier.tryParse(cr.outputItemId)
+                    val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
+                    if (item != null) {
+                        val maxStack = item.getDefaultMaxStackSize().toLong()
+                        var stillRemaining = remaining
+                        while (stillRemaining > 0L) {
+                            val batch = minOf(stillRemaining, maxStack).toInt()
+                            val stack = net.minecraft.world.item.ItemStack(item, batch)
+                            net.minecraft.world.Containers.dropItemStack(
+                                level,
+                                cpu.blockPos.x + 0.5,
+                                cpu.blockPos.y + 1.0,
+                                cpu.blockPos.z + 0.5,
+                                stack
+                            )
+                            cpu.removeFromBuffer(cr.outputItemId, batch.toLong())
+                            stillRemaining -= batch.toLong()
                         }
                     }
-                    return ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
-                        itemId = cr.outputItemId,
-                        itemName = cr.outputName,
-                        count = cr.count,
-                        sourceStorage = sourceStorage,
-                        level = level
-                    ))
+                    val displayName = cr.outputName.ifEmpty { cr.outputItemId }
+                    cpu.lastFailureReason =
+                        "Craft callback didn't move all items, dropped $remaining × $displayName at the CPU"
+                    if (cpu.isCrafting) {
+                        cpu.clearAllCraftState()
+                        cpu.setCrafting(false)
+                    }
                 }
 
                 // Mutable resolution state. The handler is registered (or not) by the
@@ -1169,30 +1297,44 @@ class ScriptEngine(
                 fun resolve(success: Boolean) {
                     if (resolved) return
                     resolved = true
-                    if (success) {
-                        val handle = releaseAndCreateHandle()
-                        // releaseAndCreateHandle already routed the items into storage.
-                        // If a custom handler is registered, hand the handle off so the
-                        // script can re-route. Otherwise auto-store is what we want and
-                        // we're done.
-                        if (handler != null) fireHandler(handle ?: LuaValue.NIL)
+                    val cr = craftResult
+                    if (success && cr != null) {
+                        if (handler != null) {
+                            // Hand the handler a buffer-backed view of the result. Items
+                            // stay in the CPU buffer until the handler drains them. Anything
+                            // left over after the call returns is dropped in-world.
+                            fireHandler(createBufferHandle(cr))
+                            dropRemainingBuffer(cr)
+                        } else {
+                            // Default: route into network storage. Storage-full overflow
+                            // is handled downstream of releaseCraftResult.
+                            autoStoreToNetwork()
+                        }
                     } else {
-                        // Failure: items (if any) are released back to storage so they
-                        // aren't stranded in the CPU buffer. Custom handler is invoked
-                        // with `nil` so scripts can branch on outcome.
-                        craftResult?.let { CraftingHelper.releaseCraftResult(it) }
+                        // Failure path: any partial buffer is released to storage so the
+                        // items aren't stranded, then the handler (if any) is invoked
+                        // with nil so scripts can branch on outcome.
+                        cr?.let { CraftingHelper.releaseCraftResult(it) }
                         if (handler != null) fireHandler(LuaValue.NIL)
                     }
                 }
 
-                // Schedule the resolution. Sync paths (plan-failure, instant success)
-                // defer one tick so the script's `:connect(fn)` chain has a chance to
-                // run first. Async paths hook into the pending job's existing
-                // completion callback instead.
-                if (pending == null) {
-                    scheduler.runOnce(0) { resolve(success = !planFailed) }
-                } else {
-                    pending.onCompleteCallback = { success -> resolve(success) }
+                // Schedule the resolution. The `:connect(fn)` chain runs synchronously
+                // immediately after `network:craft` returns, so we defer the resolve by
+                // one tick to give it a chance to register before we fire.
+                //
+                //   * No pending (plan failure): runOnce(0), resolve with !planFailed.
+                //   * Pending already complete (instant sync craft): runOnce(0), pick
+                //     up the recorded success flag from the pending job.
+                //   * Pending in-flight: hook the completion callback. Resolution
+                //     happens whenever the scheduler finishes the plan.
+                when {
+                    pending == null -> scheduler.runOnce(0) { resolve(success = !planFailed) }
+                    pending.isComplete -> {
+                        val capturedSuccess = pending.success
+                        scheduler.runOnce(0) { resolve(capturedSuccess) }
+                    }
+                    else -> pending.onCompleteCallback = { success -> resolve(success) }
                 }
 
                 // The builder. Only `:connect(fn)` is exposed, the previous `:store()`

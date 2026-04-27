@@ -20,7 +20,13 @@ data class CraftPlan(
     /** UUID of the player who submitted this craft. Null for programmatic/resume submissions.
      *  Used by [damien.nodeworks.script.cpu.CpuOpExecutor.onPlanFailed] to chat-notify the
      *  submitter when the plan fails. */
-    val submitterUuid: java.util.UUID? = null
+    val submitterUuid: java.util.UUID? = null,
+    /** When true, the planner left out the trailing Deliver op so the produced items stay
+     *  in the CPU buffer at completion. The executor must skip its post-completion buffer
+     *  flush so the items survive long enough for the caller (e.g. `network:craft`'s
+     *  `:connect(fn)` callback) to claim them via a buffer-backed [ItemsHandle]. The
+     *  caller is then on the hook for routing or dropping leftovers. */
+    val omitDeliver: Boolean = false,
 ) {
     /** O(1) lookup by op id. Built once. */
     private val byId: Map<Int, Operation> = ops.associateBy { it.id }
@@ -45,6 +51,7 @@ data class CraftPlan(
         //  consistency with networkId across the codebase, simpler than pulling
         //  UUIDUtil.CODEC for one field.
         submitterUuid?.let { tag.putString("submitter", it.toString()) }
+        if (omitDeliver) tag.putBoolean("omitDeliver", true)
     }
 
     companion object {
@@ -60,7 +67,8 @@ data class CraftPlan(
             val submitter = tag.getStringOr("submitter", "").takeIf { it.isNotEmpty() }?.let {
                 try { java.util.UUID.fromString(it) } catch (_: Exception) { null }
             }
-            return CraftPlan(rootItemId, rootCount, ops, terms, submitter)
+            val omitDeliver = tag.getBooleanOr("omitDeliver", false)
+            return CraftPlan(rootItemId, rootCount, ops, terms, submitter, omitDeliver)
         }
     }
 }

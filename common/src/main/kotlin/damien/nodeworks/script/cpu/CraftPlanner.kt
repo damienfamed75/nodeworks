@@ -27,8 +27,15 @@ object CraftPlanner {
      *
      * [snapshot] is needed to look up the 3×3 Instruction Set recipe pattern for
      * craft_template nodes, the tree only carries the template name.
+     *
+     * When [omitDeliver] is true, the trailing [Operation.Deliver] is left out and
+     * the root output op becomes the plan's terminal op. The caller is then on the
+     * hook for routing the items still sitting in the CPU buffer (auto-store, hand
+     * off to a script callback, etc.). Used by `network:craft` so its `:connect(fn)`
+     * handler receives a live reference to items still in the buffer rather than
+     * items that were already pushed into network storage.
      */
-    fun plan(tree: CraftTreeNode, snapshot: NetworkSnapshot): PlanResult {
+    fun plan(tree: CraftTreeNode, snapshot: NetworkSnapshot, omitDeliver: Boolean = false): PlanResult {
         val ops = mutableListOf<Operation>()
         var nextId = 0
         fun newId(): Int = nextId++
@@ -127,24 +134,34 @@ object CraftPlanner {
         val rootOpId = outputOpOf[IdentityKey(tree)]
             ?: return PlanResult(null, true, "Planner produced no root op.")
 
-        val deliverId = newId()
-        val deliverOp = Operation.Deliver(
-            id = deliverId,
-            dependsOn = listOf(rootOpId),
-            itemId = tree.itemId,
-            amount = tree.count.toLong(),
-            toReservedSlot = true
-        )
-        // Deliver finishing means the root tree node is fully complete.
-        deliverOp.outputNodeId = tree.nodeId
-        ops += deliverOp
+        // With [omitDeliver], the plan stops at the root output op. The CPU buffer
+        // holds the produced items at completion and the caller (e.g. network:craft)
+        // handles routing.
+        val terminalOpId: Int
+        if (omitDeliver) {
+            terminalOpId = rootOpId
+        } else {
+            val deliverId = newId()
+            val deliverOp = Operation.Deliver(
+                id = deliverId,
+                dependsOn = listOf(rootOpId),
+                itemId = tree.itemId,
+                amount = tree.count.toLong(),
+                toReservedSlot = true
+            )
+            // Deliver finishing means the root tree node is fully complete.
+            deliverOp.outputNodeId = tree.nodeId
+            ops += deliverOp
+            terminalOpId = deliverId
+        }
 
         return PlanResult(
             plan = CraftPlan(
                 rootItemId = tree.itemId,
                 rootCount = tree.count.toLong(),
                 ops = ops,
-                terminalOpIds = setOf(deliverId)
+                terminalOpIds = setOf(terminalOpId),
+                omitDeliver = omitDeliver,
             ),
             unresolvable = false,
             message = null

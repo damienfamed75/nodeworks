@@ -70,6 +70,35 @@ as `nil`:
 In every failure case the runtime also releases any partial CPU buffer back
 into Network Storage so items aren't stranded.
 
+### You're responsible for moving the items
+
+The handle the callback receives is a **live reference to the items still
+sitting in the Crafting CPU's buffer**. Calling `card:insert(items)` /
+`network:insert(items)` drains them out of the buffer into the destination.
+
+Anything still in the buffer when the callback returns is **dropped at the
+CPU's position** and a terminal error is logged. The contract is "you took
+the handle, you're responsible for moving the items," failing to drain it
+isn't silent.
+
+<LuaCode>
+```lua
+local chest = network:get("ore_chest")
+network:craft("minecraft:iron_ingot", 8):connect(function(items: ItemsHandle?)
+  if not items then return end
+  if not chest:insert(items) then
+    -- chest full: fall back to network storage instead of dropping
+    network:insert(items)
+  end
+end)
+```
+</LuaCode>
+
+This is intentionally different from auto-store, which always routes through
+the network's storage cards (and only drops in-world if every storage card
+refuses). With `:connect`, the callback decides where the items go, and the
+runtime trusts you to actually move them.
+
 > **Note:** Errors thrown inside the callback are logged to the terminal but
 > don't take down the rest of your script.
 

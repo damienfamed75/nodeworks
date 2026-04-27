@@ -1340,20 +1340,34 @@ class AutocompletePopup(
         // Allow container types like `from: { CardHandle }` in the capture by matching
         // the content between `(` and `)` greedily over non-`)` chars, the post-split
         // phase handles both scalar `x: Type` and brace-delimited `x: { T }` forms.
-        val funcPattern = Regex("""\bfunction\s*\w*\s*\(([^)]*)\)""")
-        val endPattern = Regex("""\bend\b""")
+        //
+        // Block-opener tracking mirrors [extractFunctionParams]: function adds a real
+        // scope, if/for/while/repeat add empty dummy scopes so their closing `end` /
+        // `until` pops itself instead of accidentally popping a surrounding function's
+        // params. Without this, an inner `if not items then ... end` block would
+        // silently strip `items` from the symbol table after the cursor passes its end.
+        val tokenPattern = Regex(
+            """\bfunction\s*\w*\s*\(([^)]*)\)|\bif\b|\bfor\b|\bwhile\b|\brepeat\b|\bend\b|\buntil\b"""
+        )
         val scopeStack = mutableListOf<List<Pair<String, String>>>()
         for (line in beforeCursor.lines()) {
-            for (match in funcPattern.findAll(line.trim())) {
-                val paramTypes = mutableListOf<Pair<String, String>>()
-                for (param in splitParamList(match.groupValues[1])) {
-                    val (name, type) = splitParamAnnotation(param) ?: continue
-                    paramTypes.add(name to type)
+            for (match in tokenPattern.findAll(line.trim())) {
+                val text = match.value
+                when {
+                    text.startsWith("function") -> {
+                        val paramTypes = mutableListOf<Pair<String, String>>()
+                        for (param in splitParamList(match.groupValues[1])) {
+                            val (name, type) = splitParamAnnotation(param) ?: continue
+                            paramTypes.add(name to type)
+                        }
+                        scopeStack.add(paramTypes)
+                    }
+                    text == "if" || text == "for" || text == "while" || text == "repeat" ->
+                        scopeStack.add(emptyList())
+                    text == "end" || text == "until" -> {
+                        if (scopeStack.isNotEmpty()) scopeStack.removeLast()
+                    }
                 }
-                scopeStack.add(paramTypes)
-            }
-            for (match in endPattern.findAll(line.trim())) {
-                if (scopeStack.isNotEmpty()) scopeStack.removeLast()
             }
         }
         // Add params from currently open scopes to [symbols] AND to [containerVars] when
@@ -2389,7 +2403,12 @@ class AutocompletePopup(
         return fuzzy(partial, out)
     }
 
-    private fun suggestMethodsForType(type: String, partial: String): List<Suggestion> {
+    private fun suggestMethodsForType(typeWithMaybeNullable: String, partial: String): List<Suggestion> {
+        // Strip the `?` nullable suffix before keying into the registry. The registry
+        // stores types by their non-nullable name (`ItemsHandle`, not `ItemsHandle?`),
+        // so `local x: ItemsHandle?` still gets method completions. Nil-safety check
+        // is handled separately by the diagnostics layer (v1.1).
+        val type = typeWithMaybeNullable.trimEnd('?')
         // Registry-first: types migrated to the new spec system get their methods
         // from there so signatures, parameter types, and snippet templates stay in
         // sync with hover tooltips and the guidebook. Falls through to the legacy
@@ -2436,7 +2455,9 @@ class AutocompletePopup(
         return emptyList()
     }
 
-    private fun suggestPropertiesForType(type: String, partial: String): List<Suggestion> {
+    private fun suggestPropertiesForType(typeWithMaybeNullable: String, partial: String): List<Suggestion> {
+        // Strip nullable suffix, mirrors [suggestMethodsForType].
+        val type = typeWithMaybeNullable.trimEnd('?')
         // Registry-first dispatch, mirrors [suggestMethodsForType].
         suggestionsFromRegistryProperties(type, partial)?.let { return it }
 
@@ -2648,29 +2669,37 @@ class AutocompletePopup(
 
     /** Extract function parameters that are in scope at the cursor position. */
     private fun extractFunctionParams(beforeCursor: String): List<String> {
-        // Find which function bodies the cursor is inside by tracking function/end nesting
-        // We scan beforeCursor and track open function scopes
-        val scopeStack = mutableListOf<List<String>>() // stack of param lists
-        val funcPattern = Regex("""\bfunction\s*\w*\s*\(([^)]*)\)""")
-        val endPattern = Regex("""\bend\b""")
+        // Track all block-opening keywords. `function` adds a param-bearing scope, the
+        // others (if / for / while / repeat) push empty dummy scopes so their closing
+        // `end` (or `until`) doesn't pop a surrounding function's params off the stack.
+        // Without this, inner `if x then ... end` blocks would silently strip the params
+        // from completion as soon as the cursor passes the inner `end`.
+        val scopeStack = mutableListOf<List<String>>()
+        val tokenPattern = Regex(
+            """\bfunction\s*\w*\s*\(([^)]*)\)|\bif\b|\bfor\b|\bwhile\b|\brepeat\b|\bend\b|\buntil\b"""
+        )
 
-        // Simple approach: scan line by line, track function opens and end closes
         for (line in beforeCursor.lines()) {
             val trimLine = line.trim()
-            // Check for function definition (could be multiple per line but rare)
-            for (match in funcPattern.findAll(trimLine)) {
-                val params = mutableListOf<String>()
-                for (param in match.groupValues[1].split(",")) {
-                    val name = param.trim().split(":")[0].trim().split("\\s+".toRegex())[0]
-                    if (name.isNotEmpty() && name.all { it.isLetterOrDigit() || it == '_' }) {
-                        params.add(name)
+            for (match in tokenPattern.findAll(trimLine)) {
+                val text = match.value
+                when {
+                    text.startsWith("function") -> {
+                        val params = mutableListOf<String>()
+                        for (param in match.groupValues[1].split(",")) {
+                            val name = param.trim().split(":")[0].trim().split("\\s+".toRegex())[0]
+                            if (name.isNotEmpty() && name.all { it.isLetterOrDigit() || it == '_' }) {
+                                params.add(name)
+                            }
+                        }
+                        scopeStack.add(params)
+                    }
+                    text == "if" || text == "for" || text == "while" || text == "repeat" ->
+                        scopeStack.add(emptyList())
+                    text == "end" || text == "until" -> {
+                        if (scopeStack.isNotEmpty()) scopeStack.removeLast()
                     }
                 }
-                scopeStack.add(params)
-            }
-            // Check for `end`, closes the most recent scope
-            for (match in endPattern.findAll(trimLine)) {
-                if (scopeStack.isNotEmpty()) scopeStack.removeLast()
             }
         }
 

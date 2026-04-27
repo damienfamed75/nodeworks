@@ -699,12 +699,25 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // they stop trying to pour items into this (now-idle) CPU's buffer. Their next
         // tryExtract will see stale jobGeneration and route pulled items to network storage.
         cpu.invalidateInFlightPolls()
-        // Any trailing buffer contents (shouldn't happen if Deliver ran) are flushed.
-        flushBufferToStorage()
+        // For omit-deliver plans (network:craft), the produced items are SUPPOSED to
+        // still be in the buffer at this point so the script's `:connect(fn)` callback
+        // can claim them via a buffer-backed handle. Skipping the flush here is what
+        // makes that contract work, the completion listener (run below) takes
+        // ownership of the buffer instead.
+        if (!plan.omitDeliver) {
+            flushBufferToStorage()
+        }
         // A successful craft clears any lingering failure message from a previous failed run.
         if (cpu.lastFailureReason.isNotEmpty()) cpu.lastFailureReason = ""
-        cpu.clearAllCraftState()
-        cpu.setCrafting(false)
+        // omit-deliver: don't clear craft state yet, the runtime's `dropRemainingBuffer`
+        // does it after the user's callback runs. Clearing here would also wipe
+        // `originalCraftId` and `craftTreeSnapshot` which the script-side completion
+        // path doesn't currently rely on, but keeping them consistent across the two
+        // exit paths means future code can treat "in-buffer items" as "craft still alive".
+        if (!plan.omitDeliver) {
+            cpu.clearAllCraftState()
+            cpu.setCrafting(false)
+        }
         completionListeners.remove(plan)?.invoke(true)
     }
 
