@@ -135,8 +135,8 @@ val NetworkApi: ApiSurface = api(Network) {
     method("craft") {
         param("itemId", Craftable, description = "Item the network can plan a recipe for.")
         param("count", Number.optional(), description = "Optional count, defaults to 1.")
-        returns(CraftBuilder.optional())
-        description = "Queues a craft for the given item. Returns a CraftBuilder, or nil if the craft can't be planned."
+        returns(CraftBuilder)
+        description = "Queues a craft for the given item. Returns a CraftBuilder. The default behavior is to store the result into Network Storage, chain `:connect(fn)` to override."
         guidebookRef = "nodeworks:lua-api/network.md#craft"
     }
 
@@ -240,18 +240,12 @@ val HandleListApi: ApiSurface = api(HandleList) {
 val CraftBuilderApi: ApiSurface = api(CraftBuilder) {
     callback("connect") {
         fn {
-            param("items", ItemsHandle)
+            param("items", ItemsHandle.optional())
             returns(Void)
         }
         returns(Void)
-        description = "Callback fired when the craft completes. Receives the output ItemsHandle."
-        guidebookRef = "nodeworks:lua-api/network.md#craft"
-    }
-
-    method("store") {
-        returns(Void)
-        description = "Sends the craft result into network storage using the normal routing rules."
-        guidebookRef = "nodeworks:lua-api/network.md#craft"
+        description = "Callback fired when the craft resolves. Receives the output ItemsHandle on success, or `nil` if the craft failed (plan failed, async timed out)."
+        guidebookRef = "nodeworks:lua-api/craft-builder.md#connect"
     }
 }
 

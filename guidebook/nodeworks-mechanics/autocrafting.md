@@ -54,18 +54,20 @@ A script can queue a craft with `network:craft` and decide where the result goes
 
 <LuaCode>
 ```lua
--- drop the result into Network Storage when it's ready
-network:craft("minecraft:door"):store()
+-- the result auto-stores into Network Storage when it's ready
+network:craft("minecraft:door")
 ```
 </LuaCode>
 
-Or run custom code the moment the craft completes
+Or chain `:connect(fn)` to run custom code the moment the craft completes
 
 <LuaCode>
 ```lua
 local furnace = network:get("someFurnaceCard")
-network:craft("minecraft:charcoal"):connect(function(item)
-  furnace:insert(item)
+network:craft("minecraft:charcoal"):connect(function(item: ItemsHandle?)
+  if item then
+    furnace:insert(item)
+  end
 end)
 ```
 </LuaCode>

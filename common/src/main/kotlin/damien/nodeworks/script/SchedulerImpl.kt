@@ -133,6 +133,16 @@ class SchedulerImpl(
         return addTaskInternal(callback, interval = intervalTicks, repeating = true)
     }
 
+    /** Schedule a one-shot Kotlin callback to run after [delayTicks] ticks. Pass `0`
+     *  to fire on the next scheduler tick, useful for "defer this until the current
+     *  Lua statement chain has finished evaluating," which is what `network:craft`'s
+     *  default-to-store-after-connect-window relies on. Returns the task id for
+     *  [cancelTaskById] in case the caller wants to abort before it fires. */
+    fun runOnce(delayTicks: Int, callback: () -> Unit): Int {
+        require(delayTicks >= 0) { "delayTicks must be >= 0" }
+        return addTaskInternal(callback, interval = 1, repeating = false, firstRunDelay = delayTicks)
+    }
+
     /** Cancel a scheduled task previously added via [addTick] / [addSecond] / [addRepeating].
      *  Returns true if a task with this id was present. */
     fun cancelTaskById(id: Int): Boolean {

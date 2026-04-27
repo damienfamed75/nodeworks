@@ -108,6 +108,40 @@ local count = red:get("counter") -- variable on the red channel
 
 ---
 
+## channels
+
+Returns a list of every dye-color channel currently in use on the network,
+any color that has at least one card, variable, breaker, or placer assigned
+to it. Order is by `DyeColor` id ascending, so iteration is stable. Useful
+for discovering channels at runtime instead of hard-coding the list.
+
+> **Note:** `white` is the default channel for new members, so it shows up
+> here in almost any non-empty network.
+
+<LuaCode>
+```lua
+for _, color in network:channels() do
+  print(color, "is in use")
+end
+-- "white" is in use
+-- "red" is in use
+-- "blue" is in use
+```
+</LuaCode>
+
+A common pattern: drive the same handler over every active channel without
+caring which colors the player chose.
+
+<LuaCode>
+```lua
+for _, color in network:channels() do
+  network:channel(color):getAll("redstone"):set(false)
+end
+```
+</LuaCode>
+
+---
+
 ## find
 
 Scans all [Network Storage](../nodeworks-mechanics/network-storage.md) for
@@ -226,26 +260,29 @@ print(moved .. " items were moved") -- can be 0 to items.count
 
 (also see [Auto-Crafting](../nodeworks-mechanics/autocrafting.md))
 
-Queues a craft for the given item. Returns a [CraftBuilder](./craft-builder.md) or nil.
-
-You can either `store` the crafted item into [Network Storage](../nodeworks-mechanics/network-storage.md)
-as soon as it finishes
+Queues a craft for the given item. Returns a [CraftBuilder](./craft-builder.md).
+By default the finished items are auto-stored into
+[Network Storage](../nodeworks-mechanics/network-storage.md) once the craft
+completes, no chain needed:
 
 <LuaCode>
 ```lua
-local builder = network:craft("minecraft:door")
-builder:store() -- put crafted item into network storage
+-- fire-and-forget: bread lands in storage when ready
+network:craft("minecraft:bread", 4)
 ```
 </LuaCode>
 
-Or you can connect a handler to put it somewhere custom
+Chain `:connect(fn)` to receive the result yourself. The callback gets an
+[ItemsHandle?](items-handle.md), non-nil on success, `nil` on failure (plan
+failed, async timeout, no CPU). Calling `:connect` overrides the auto-store.
 
 <LuaCode>
 ```lua
-local furnace = network:get("someFurnaceCard")
-local builder = network:craft("minecraft:charcoal")
-builder:connect(function(item: ItemsHandle)
-  furnace:insert(item)
+local furnace = network:get("furnace")
+network:craft("minecraft:charcoal"):connect(function(item: ItemsHandle?)
+  if item then
+    furnace:insert(item)
+  end
 end)
 ```
 </LuaCode>

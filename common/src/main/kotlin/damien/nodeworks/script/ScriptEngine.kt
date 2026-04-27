@@ -953,14 +953,17 @@ class ScriptEngine(
         })
 
         // network:channels() → { string } of every channel currently in use on the
-        // network (cards + variables). Order is by DyeColor.id ascending so iteration
-        // is stable across calls. White is included only when at least one card or
-        // variable is actually set to it (which by default is most of them).
+        // network. Walks cards, variables, breakers, and placers, all four kinds of
+        // member carry a channel and `network:channel(color):getAll(...)` scopes
+        // against any of them, so the in-use set has to mirror the same union.
+        // Order is by DyeColor.id ascending so iteration is stable across calls.
         networkTable.set("channels", object : OneArgFunction() {
             override fun call(selfArg: LuaValue): LuaValue {
-                val cardChannels = snapshot.allCards().map { it.channel }
-                val varChannels = snapshot.variables.map { it.channel }
-                val seen = (cardChannels + varChannels).toSortedSet(compareBy { it.id })
+                val seen = sortedSetOf<net.minecraft.world.item.DyeColor>(compareBy { it.id })
+                snapshot.allCards().forEach { seen.add(it.channel) }
+                snapshot.variables.forEach { seen.add(it.channel) }
+                snapshot.breakers.forEach { seen.add(it.channel) }
+                snapshot.placers.forEach { seen.add(it.channel) }
                 val result = LuaTable()
                 for ((i, color) in seen.withIndex()) {
                     result.set(i + 1, LuaValue.valueOf(color.name.lowercase()))
@@ -1082,7 +1085,14 @@ class ScriptEngine(
         // network:tryInsert(itemsHandle, count?) → number (best-effort count moved).
         networkTable.set("tryInsert", buildNetworkInsertFn(snapshot, atomic = false))
 
-        // network:craft(identifier, count?) → CraftBuilder with :connect(fn) and :store()
+        // network:craft(identifier, count?) → CraftBuilder.
+        //
+        // The builder always returns non-nil so scripts don't have to nil-check the
+        // call site. The default behavior is "auto-store the result into Network
+        // Storage on completion." Calling `:connect(fn)` overrides that: the
+        // callback fires with an ItemsHandle on success, or `nil` on any failure
+        // (plan failed, async timed out, no Crafting CPU). Without `:connect`, plan
+        // failures still log to the terminal so the player sees what went wrong.
         networkTable.set("craft", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val identifier = args.checkjstring(2)
@@ -1095,14 +1105,19 @@ class ScriptEngine(
                 val pending = CraftingHelper.currentPendingJob
                 CraftingHelper.currentPendingJob = null
 
-                if (result == null && pending == null) {
+                val planFailed = result == null && pending == null
+                if (planFailed) {
+                    // Surface the reason now so the player sees it even if their script
+                    // never registers a `:connect` callback. The builder still resolves
+                    // to a "failed" outcome on the next tick so any registered callback
+                    // is invoked uniformly.
                     CraftingHelper.lastFailReason?.let { logCallback(it, true) }
-                    return LuaValue.NIL
                 }
 
-                // For async: result is null but pending is set. Build a CraftResult placeholder.
-                val craftResult = result ?: run {
-                    // Async, we don't know the exact output yet. Use the identifier.
+                // For async: result is null but pending is set. Build a CraftResult placeholder
+                // so the per-completion buffer release has somewhere to point. Plan failures
+                // skip this entirely, there's nothing to release.
+                val craftResult: CraftingHelper.CraftResult? = if (planFailed) null else result ?: run {
                     val id = net.minecraft.resources.Identifier.tryParse(identifier)
                     val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
                     val name = if (item != null) net.minecraft.world.item.ItemStack(item).hoverName.string else identifier
@@ -1111,71 +1126,81 @@ class ScriptEngine(
                         level = level, snapshot = snapshot, cache = inventoryCache)
                 }
 
-                // Helper: release CPU buffer → storage and create ItemsHandle
-                fun releaseAndCreateHandle(): LuaTable {
-                    CraftingHelper.releaseCraftResult(craftResult)
+                // Helper: release CPU buffer → storage and create ItemsHandle that points
+                // at the resulting items in the storage cards. Returns null when there's
+                // nothing to release (plan-failure path).
+                fun releaseAndCreateHandle(): LuaTable? {
+                    val cr = craftResult ?: return null
+                    CraftingHelper.releaseCraftResult(cr)
                     val storageCards = NetworkStorageHelper.getStorageCards(snapshot)
                     val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
                         storageCards.firstNotNullOfOrNull { card ->
                             val storage = NetworkStorageHelper.getStorage(level, card)
                             if (storage != null) {
                                 val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
-                                    CardHandle.matchesFilter(it, craftResult.outputItemId)
+                                    CardHandle.matchesFilter(it, cr.outputItemId)
                                 }
                                 if (has > 0) storage else null
                             } else null
                         }
                     }
                     return ItemsHandle.toLuaTable(ItemsHandle.forCraftResult(
-                        itemId = craftResult.outputItemId,
-                        itemName = craftResult.outputName,
-                        count = craftResult.count,
+                        itemId = cr.outputItemId,
+                        itemName = cr.outputName,
+                        count = cr.count,
                         sourceStorage = sourceStorage,
                         level = level
                     ))
                 }
 
-                // Build the CraftBuilder table
-                val builder = LuaTable()
+                // Mutable resolution state. The handler is registered (or not) by the
+                // user's `:connect(fn)` call. The `resolved` guard prevents double-fire
+                // when an async pending job's onCompleteCallback races against any
+                // future cleanup paths.
+                var handler: LuaFunction? = null
+                var resolved = false
 
-                // :connect(fn), release to storage, call fn with ItemsHandle
+                fun fireHandler(handle: LuaValue) {
+                    val fn = handler ?: return
+                    try { fn.call(handle) }
+                    catch (e: LuaError) { logCallback("craft callback error: ${e.message}", true) }
+                }
+
+                fun resolve(success: Boolean) {
+                    if (resolved) return
+                    resolved = true
+                    if (success) {
+                        val handle = releaseAndCreateHandle()
+                        // releaseAndCreateHandle already routed the items into storage.
+                        // If a custom handler is registered, hand the handle off so the
+                        // script can re-route. Otherwise auto-store is what we want and
+                        // we're done.
+                        if (handler != null) fireHandler(handle ?: LuaValue.NIL)
+                    } else {
+                        // Failure: items (if any) are released back to storage so they
+                        // aren't stranded in the CPU buffer. Custom handler is invoked
+                        // with `nil` so scripts can branch on outcome.
+                        craftResult?.let { CraftingHelper.releaseCraftResult(it) }
+                        if (handler != null) fireHandler(LuaValue.NIL)
+                    }
+                }
+
+                // Schedule the resolution. Sync paths (plan-failure, instant success)
+                // defer one tick so the script's `:connect(fn)` chain has a chance to
+                // run first. Async paths hook into the pending job's existing
+                // completion callback instead.
+                if (pending == null) {
+                    scheduler.runOnce(0) { resolve(success = !planFailed) }
+                } else {
+                    pending.onCompleteCallback = { success -> resolve(success) }
+                }
+
+                // The builder. Only `:connect(fn)` is exposed, the previous `:store()`
+                // method went away because auto-store is now the unconfigured default.
+                val builder = LuaTable()
                 builder.set("connect", object : TwoArgFunction() {
                     override fun call(selfArg: LuaValue, callbackArg: LuaValue): LuaValue {
-                        val callback = callbackArg.checkfunction()
-
-                        if (pending == null || pending.isComplete) {
-                            // Instant, release and call now
-                            val handle = releaseAndCreateHandle()
-                            try { callback.call(handle) }
-                            catch (e: LuaError) { logCallback("craft callback error: ${e.message}", true) }
-                        } else {
-                            // Async, wait for pending job, then release and call
-                            pending.onCompleteCallback = { success ->
-                                if (success) {
-                                    val handle = releaseAndCreateHandle()
-                                    try { callback.call(handle) }
-                                    catch (e: LuaError) { logCallback("craft callback error: ${e.message}", true) }
-                                } else {
-                                    logCallback("Craft timed out for '$identifier'", true)
-                                    // Clean up CPU buffer
-                                    CraftingHelper.releaseCraftResult(craftResult)
-                                }
-                            }
-                        }
-                        return LuaValue.NIL
-                    }
-                })
-
-                // :store(), release to storage, no callback
-                builder.set("store", object : OneArgFunction() {
-                    override fun call(selfArg: LuaValue): LuaValue {
-                        if (pending == null || pending.isComplete) {
-                            CraftingHelper.releaseCraftResult(craftResult)
-                        } else {
-                            pending.onCompleteCallback = { _ ->
-                                CraftingHelper.releaseCraftResult(craftResult)
-                            }
-                        }
+                        handler = callbackArg.checkfunction()
                         return LuaValue.NIL
                     }
                 })
