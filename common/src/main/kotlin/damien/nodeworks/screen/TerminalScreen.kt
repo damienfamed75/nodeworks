@@ -1630,6 +1630,15 @@ class TerminalScreen(
                         autocomplete.moveDown(); return true
                     }
 
+                    // Page Up / Page Down dismiss the popup and let the editor
+                    // jump the viewport. Holding either key while typing is the
+                    // usual "I'm done with this suggestion list, get out of my
+                    // way" signal — same dismissal we'd get from Escape.
+                    InputConstants.KEY_PAGEUP, InputConstants.KEY_PAGEDOWN -> {
+                        autocomplete.hide()
+                        // Fall through so the editor handles the page-jump itself.
+                    }
+
                     InputConstants.KEY_RETURN, InputConstants.KEY_TAB -> {
                         val textBeforeAccept = editor.value
                         val cursorAtAccept = editor.getCursorPosition()
