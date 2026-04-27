@@ -330,6 +330,11 @@ class CardHandle private constructor(
         // something meaningful even for un-renamed cards.
         table.set("name", LuaValue.valueOf(card.effectiveAlias))
 
+        // .kind, the capability-type string. Same set as `network:getAll(kind)`'s
+        // argument so scripts can filter a `network:cards("name_*")` result, e.g.
+        // `for _, c in cards do if c.kind == "io" then ... end end`.
+        table.set("kind", LuaValue.valueOf(card.capability.type))
+
         // :face(name) -> new CardHandle with specific access face
         table.set("face", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {

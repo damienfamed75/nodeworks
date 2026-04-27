@@ -38,6 +38,7 @@ object BreakerHandle {
                 ?: throw LuaError("Breaker '$alias' has been removed")
 
         table.set("name", LuaValue.valueOf(alias))
+        table.set("kind", LuaValue.valueOf("breaker"))
 
         // :mine() → BreakBuilder
         // Named "mine" (not "break") because `break` is a reserved Lua keyword,

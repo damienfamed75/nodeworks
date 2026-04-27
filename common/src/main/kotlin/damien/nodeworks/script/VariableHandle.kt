@@ -72,6 +72,7 @@ object VariableHandle {
         // returns the name the script used when it looked the variable up,
         // even if the variable is later renamed in its GUI.
         table.set("name", LuaValue.valueOf(snapshot.name))
+        table.set("kind", LuaValue.valueOf("variable"))
 
         // --- Number methods ---
 

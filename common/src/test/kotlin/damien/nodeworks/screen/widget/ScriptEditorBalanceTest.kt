@@ -1,4 +1,4 @@
-package damien.nodeworks.screen.widget
+﻿package damien.nodeworks.screen.widget
 
 import damien.nodeworks.script.LuaBlockBalance
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -16,7 +16,7 @@ class ScriptEditorBalanceTest {
 
     @Test
     fun shouldInsertAutoEndForBareIfThen() {
-        // Cursor at end of "if true then" with nothing else — block is unclosed,
+        // Cursor at end of "if true then" with nothing else, block is unclosed,
         // auto-end should fire.
         val text = "if true then"
         val curLine = "if true then"
@@ -43,7 +43,7 @@ class ScriptEditorBalanceTest {
     fun shouldNotFireWhenInnerBlockIsClosedEvenIfOuterFunctionIsNot() {
         // Inner `if/end` is closed; the outer `function` has no matching end.
         // The cursor-relative walk only cares about whether THIS opener has a
-        // closer ahead of it — the outer function's missing end is irrelevant
+        // closer ahead of it, the outer function's missing end is irrelevant
         // to the decision at the inner `if`.
         val text = "function foo()\n    if true then\n    end"
         val curLine = "    if true then"
@@ -78,7 +78,7 @@ class ScriptEditorBalanceTest {
     @Test
     fun shouldNotInsertAutoEndMidLine() {
         // Cursor in the middle of `if true then` (e.g. between `true` and `then`)
-        // shouldn't fire — we only auto-end when "completing" the opener at EOL.
+        // shouldn't fire, we only auto-end when "completing" the opener at EOL.
         val curLine = "if true then"
         assertFalse(LuaBlockBalance.shouldInsertAutoEnd(curLine, 7, curLine, cursorPos = 7))
     }

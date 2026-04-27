@@ -80,6 +80,17 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
 
+        fun getCopyChannel(stack: ItemStack): Boolean {
+            val data = stack.get(DataComponents.CUSTOM_DATA) ?: return true
+            return data.copyTag().getBooleanOr("copy_channel", true)
+        }
+
+        fun setCopyChannel(stack: ItemStack, value: Boolean) {
+            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
+            tag.putBoolean("copy_channel", value)
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+        }
+
         fun getTemplateCardColor(stack: ItemStack): Int {
             val template = getTemplate(stack)
             if (template.isEmpty) return -1

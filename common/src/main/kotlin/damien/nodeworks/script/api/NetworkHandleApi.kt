@@ -18,16 +18,19 @@ import damien.nodeworks.script.api.LuaType.Primitive.String
 val NetworkHandle: LuaType.Named = LuaTypes.type(
     name = "NetworkHandle",
     description = "Abstract base for any handle returned by `network:get(name)`. " +
-        "Carries the shared `.name` property; subtypes (cards, devices, variables) " +
-        "add their type-specific methods on top.",
+            "Carries the shared `.name` property; subtypes (cards, devices, variables) " +
+            "add their type-specific methods on top.",
     guidebookRef = "nodeworks:lua-api/network-handle.md",
 )
 
 val NetworkHandleApi: ApiSurface = api(NetworkHandle) {
     property("name", String) {
-        description = "The string passed to `network:get(name)` to retrieve this handle. " +
-            "For cards and devices it's the alias set in the device GUI, for variables " +
-            "it's the declared variable name."
+        description = "The declared variable alias"
         guidebookRef = "nodeworks:lua-api/network-handle.md#name"
+    }
+
+    property("kind", NetworkAccessorType) {
+        description = "Kind of handle this is"
+        guidebookRef = "nodeworks:lua-api/network-handle.md#kind"
     }
 }

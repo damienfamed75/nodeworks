@@ -242,8 +242,13 @@ class ScriptEditor(
     }
 
 
-    fun setCharacterLimit(limit: Int) { characterLimit = limit }
-    fun setValueListener(listener: (String) -> Unit) { valueListener = listener }
+    fun setCharacterLimit(limit: Int) {
+        characterLimit = limit
+    }
+
+    fun setValueListener(listener: (String) -> Unit) {
+        valueListener = listener
+    }
 
     fun getCursorPosition(): Int = cursor
 
@@ -535,7 +540,12 @@ class ScriptEditor(
 
     // --- Rendering ---
 
-    override fun extractWidgetRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractWidgetRenderState(
+        graphics: GuiGraphicsExtractor,
+        mouseX: Int,
+        mouseY: Int,
+        partialTick: Float
+    ) {
         lastMouseX = mouseX
         lastMouseY = mouseY
 
@@ -656,7 +666,7 @@ class ScriptEditor(
         val color = when (diag.severity) {
             Severity.ERROR -> 0xFFFF4444.toInt()
             Severity.WARNING -> 0xFFFFCC00.toInt()
-            Severity.HINT -> 0xFF4488FF.toInt()
+            Severity.HINT -> 0xFF4494FF.toInt()
         }
         val (startLine, startCol) = cursorToLineCol(diag.range.start)
         val (endLine, endCol) = cursorToLineCol(diag.range.end)
@@ -875,21 +885,25 @@ class ScriptEditor(
             263 -> { // LEFT
                 if (shift) startSelection()
                 if (ctrl) moveCursorWordLeft()
-                else if (shift) { if (cursor > 0) cursor-- }
-                else moveCursorLeft()
+                else if (shift) {
+                    if (cursor > 0) cursor--
+                } else moveCursorLeft()
                 if (!shift) clearSelection()
                 ensureCursorVisible()
                 return true
             }
+
             262 -> { // RIGHT
                 if (shift) startSelection()
                 if (ctrl) moveCursorWordRight()
-                else if (shift) { if (cursor < totalTextLength()) cursor++ }
-                else moveCursorRight()
+                else if (shift) {
+                    if (cursor < totalTextLength()) cursor++
+                } else moveCursorRight()
                 if (!shift) clearSelection()
                 ensureCursorVisible()
                 return true
             }
+
             265 -> { // UP
                 if (shift) startSelection()
                 if (line > 0) cursor = lineColToCursor(line - 1, col)
@@ -897,6 +911,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             264 -> { // DOWN
                 if (shift) startSelection()
                 if (line < lines.size - 1) cursor = lineColToCursor(line + 1, col)
@@ -905,6 +920,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             268 -> { // HOME
                 if (shift) startSelection()
                 cursor = lineColToCursor(line, 0)
@@ -912,6 +928,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             269 -> { // END
                 if (shift) startSelection()
                 cursor = lineColToCursor(line, lines[line].length)
@@ -919,6 +936,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             266 -> { // PAGE UP
                 if (shift) startSelection()
                 val targetLine = maxOf(0, line - visibleLines)
@@ -927,6 +945,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             267 -> { // PAGE DOWN
                 if (shift) startSelection()
                 val targetLine = minOf(lines.size - 1, line + visibleLines)
@@ -938,7 +957,9 @@ class ScriptEditor(
 
             // Editing keys
             259 -> { // BACKSPACE
-                if (hasSelection) { deleteSelection(); return true }
+                if (hasSelection) {
+                    deleteSelection(); return true
+                }
                 if (cursor > 0) {
                     if (ctrl) {
                         deleteWordLeft()
@@ -951,8 +972,11 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             261 -> { // DELETE
-                if (hasSelection) { deleteSelection(); return true }
+                if (hasSelection) {
+                    deleteSelection(); return true
+                }
                 if (ctrl) {
                     deleteWordRight()
                     onTextChanged()
@@ -965,11 +989,13 @@ class ScriptEditor(
                 }
                 return true
             }
+
             257, 335 -> { // ENTER / NUMPAD ENTER
                 if (hasSelection) deleteSelection()
                 handleEnter()
                 return true
             }
+
             258 -> { // TAB
                 if (hasSelection) deleteSelection()
                 insertText("    ")
@@ -982,15 +1008,18 @@ class ScriptEditor(
                 cursor = totalTextLength()
                 return true
             }
+
             67 -> if (ctrl) { // Ctrl+C, copy
                 copySelection()
                 return true
             }
+
             88 -> if (ctrl) { // Ctrl+X, cut
                 copySelection()
                 deleteSelection()
                 return true
             }
+
             86 -> if (ctrl) { // Ctrl+V, paste
                 val clipboard = Minecraft.getInstance().keyboardHandler.clipboard ?: ""
                 if (clipboard.isNotEmpty()) {
@@ -1088,7 +1117,7 @@ class ScriptEditor(
         val prefix = curLine.substring(0, col.coerceAtMost(curLine.length))
 
         // Job 3: cursor at start-of-content (or earlier) on a line that already has
-        // leading whitespace — just split the line, no indent added at the cursor.
+        // leading whitespace. Just split the line, no indent added at the cursor.
         if (prefix.trimStart().isEmpty()) {
             insertText("\n")
             return
@@ -1171,15 +1200,21 @@ class ScriptEditor(
         if (selectStart < 0) selectStart = cursor
     }
 
-    private fun clearSelection() { selectStart = -1 }
+    private fun clearSelection() {
+        selectStart = -1
+    }
 
     private fun moveCursorLeft() {
-        if (hasSelection && selectStart >= 0) { cursor = selectionStart; return }
+        if (hasSelection && selectStart >= 0) {
+            cursor = selectionStart; return
+        }
         if (cursor > 0) cursor--
     }
 
     private fun moveCursorRight() {
-        if (hasSelection && selectStart >= 0) { cursor = selectionEnd; return }
+        if (hasSelection && selectStart >= 0) {
+            cursor = selectionEnd; return
+        }
         if (cursor < totalTextLength()) cursor++
     }
 
@@ -1222,6 +1257,7 @@ class ScriptEditor(
                 while (p > 0 && text[p - 1].isWordChar()) p--
                 p
             }
+
             else -> maxOf(0, p)
         }
     }
@@ -1238,6 +1274,7 @@ class ScriptEditor(
                 while (p < text.length && text[p].isWordChar()) p++
                 p
             }
+
             else -> minOf(text.length, p + 1)
         }
     }

@@ -24,8 +24,15 @@ class CardProgrammerMenu(
 ) : AbstractContainerMenu(ModScreenHandlers.CARD_PROGRAMMER, syncId) {
 
     private val templateContainer = SimpleContainer(1)
-    /** [0] = counter, [1] = copyName (1 = on, 0 = off) */
-    val counterData: ContainerData = SimpleContainerData(2)
+
+    /** Synced toggle / counter state. Slots:
+     *    [0] = counter (legacy stepper value, retained while a future widget
+     *          decides what to do with the slot below the new toggle)
+     *    [1] = copyName  (1 = on, 0 = off)
+     *    [2] = copyChannel (1 = on, 0 = off) when on, [applyTemplate] writes
+     *          the template's [CardChannel] onto each programmed card so a row
+     *          of cards starts on the same channel without manual dyeing. */
+    val counterData: ContainerData = SimpleContainerData(3)
 
     init {
         // Load template + counter from programmer item (server side only)
@@ -35,8 +42,11 @@ class CardProgrammerMenu(
             if (!template.isEmpty) templateContainer.setItem(0, template.copy())
             counterData.set(0, CardProgrammerItem.getCounter(programmerStack))
             counterData.set(1, if (CardProgrammerItem.getCopyName(programmerStack)) 1 else 0)
+            counterData.set(2, if (CardProgrammerItem.getCopyChannel(programmerStack)) 1 else 0)
         } else {
-            counterData.set(1, 1) // default on for client dummy
+            // Defaults for the client dummy menu (when there's no item to read).
+            counterData.set(1, 1)
+            counterData.set(2, 1)
         }
 
         // Slot positions match the black 18x18 squares in card_programmer_bg.png (176x100, natural size).
@@ -62,10 +72,19 @@ class CardProgrammerMenu(
     }
 
     fun getCounter(): Int = counterData.get(0)
-    fun setCounter(value: Int) { counterData.set(0, value.coerceAtLeast(0)) }
+    fun setCounter(value: Int) {
+        counterData.set(0, value.coerceAtLeast(0))
+    }
 
     fun getCopyName(): Boolean = counterData.get(1) != 0
-    fun setCopyName(value: Boolean) { counterData.set(1, if (value) 1 else 0) }
+    fun setCopyName(value: Boolean) {
+        counterData.set(1, if (value) 1 else 0)
+    }
+
+    fun getCopyChannel(): Boolean = counterData.get(2) != 0
+    fun setCopyChannel(value: Boolean) {
+        counterData.set(2, if (value) 1 else 0)
+    }
 
     fun hasTemplate(): Boolean = !templateContainer.getItem(0).isEmpty
     fun getTemplate(): ItemStack = templateContainer.getItem(0)
@@ -85,24 +104,31 @@ class CardProgrammerMenu(
             StorageCard.setPriority(stack, StorageCard.getPriority(template))
         }
 
-        // Copy name with counter suffix (only if copy-name is enabled)
+        // Copy the template's name verbatim when the toggle is on.
         if (getCopyName()) {
             val templateName = template.get(DataComponents.CUSTOM_NAME)
-            val counter = getCounter()
             if (templateName != null) {
-                val baseName = templateName.string
-                stack.set(DataComponents.CUSTOM_NAME, Component.literal("${baseName}_${counter}"))
+                stack.set(DataComponents.CUSTOM_NAME, Component.literal(templateName.string))
             }
-            setCounter(counter + 1)
+        }
+
+        // Copy the template's channel when the toggle is on. Lets a row of
+        // cards inherit the template's channel without having to dye each one
+        // by hand.
+        if (getCopyChannel()) {
+            damien.nodeworks.card.CardChannel.set(
+                stack, damien.nodeworks.card.CardChannel.get(template),
+            )
         }
     }
 
-    /** Handle counter +/- buttons, copy-name toggle, and direct counter set via clickMenuButton. */
+    /** Handle counter +/- buttons, toggle flips, and direct counter set via clickMenuButton. */
     override fun clickMenuButton(player: Player, id: Int): Boolean {
         when {
             id == 0 -> setCounter(getCounter() - 1)
             id == 1 -> setCounter(getCounter() + 1)
             id == 2 -> setCopyName(!getCopyName())
+            id == 3 -> setCopyChannel(!getCopyChannel())
             id in 100..10099 -> setCounter(id - 100) // direct value set (0-9999)
         }
         return true
@@ -140,10 +166,12 @@ class CardProgrammerMenu(
                 // Template → player inventory
                 if (!moveItemStackTo(stack, 2, slots.size, true)) return ItemStack.EMPTY
             }
+
             slotIndex == 1 -> {
                 // Input → player inventory (shouldn't normally have items)
                 if (!moveItemStackTo(stack, 2, slots.size, true)) return ItemStack.EMPTY
             }
+
             slotIndex >= 2 -> {
                 // Player inventory → template or process
                 if (stack.item is NodeCard) {
@@ -181,6 +209,7 @@ class CardProgrammerMenu(
         CardProgrammerItem.setTemplate(programmerStack, templateContainer.getItem(0))
         CardProgrammerItem.setCounter(programmerStack, getCounter())
         CardProgrammerItem.setCopyName(programmerStack, getCopyName())
+        CardProgrammerItem.setCopyChannel(programmerStack, getCopyChannel())
     }
 
     override fun stillValid(player: Player): Boolean {
@@ -199,7 +228,8 @@ class CardProgrammerMenu(
         }
     }
 
-    private inner class TemplateSlot(container: SimpleContainer, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
+    private inner class TemplateSlot(container: SimpleContainer, index: Int, x: Int, y: Int) :
+        Slot(container, index, x, y) {
         override fun mayPlace(stack: ItemStack): Boolean = stack.item is NodeCard
 
         override fun setChanged() {
@@ -224,13 +254,15 @@ class CardProgrammerMenu(
         CardProgrammerItem.setTemplate(programmerStack, templateContainer.getItem(0))
     }
 
-    private inner class InputSlot(container: SimpleContainer, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
+    private inner class InputSlot(container: SimpleContainer, index: Int, x: Int, y: Int) :
+        Slot(container, index, x, y) {
         override fun mayPlace(stack: ItemStack): Boolean = isValidInput(stack)
     }
 
     companion object {
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: CardProgrammerOpenData): CardProgrammerMenu {
-            val hand = if (data.handOrdinal < InteractionHand.entries.size) InteractionHand.entries[data.handOrdinal] else null
+            val hand =
+                if (data.handOrdinal < InteractionHand.entries.size) InteractionHand.entries[data.handOrdinal] else null
             return CardProgrammerMenu(syncId, playerInventory, hand)
         }
     }

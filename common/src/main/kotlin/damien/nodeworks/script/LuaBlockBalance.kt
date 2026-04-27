@@ -13,7 +13,7 @@ object LuaBlockBalance {
      *
      *  Walking forward from the cursor (rather than counting global balance)
      *  is what makes this safe inside otherwise-balanced code that lives
-     *  inside an unclosed surrounding block — the outer block's missing
+     *  inside an unclosed surrounding block. The outer block's missing
      *  closer doesn't cause us to spuriously add a closer for the inner
      *  opener. */
     fun shouldInsertAutoEnd(
@@ -44,7 +44,7 @@ object LuaBlockBalance {
 
     /** Walk forward from [cursorPos] in [fullText], starting at depth 1 for the
      *  block the cursor's line just opened. Returns true when we encounter a
-     *  matching closer (`end` / `until`) before exhausting the text — meaning
+     *  matching closer (`end` / `until`) before exhausting the text, meaning
      *  this opener already has its `end` later in the script and the editor
      *  shouldn't auto-insert another one.
      *

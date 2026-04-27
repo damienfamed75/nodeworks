@@ -40,6 +40,7 @@ object PlacerHandle {
 
         // .name, same convention as VariableHandle / CardHandle
         table.set("name", LuaValue.valueOf(alias))
+        table.set("kind", LuaValue.valueOf("placer"))
 
         // :place(idOrItemsHandle) → boolean
         // String form pulls from network storage, ItemsHandle form pulls from the

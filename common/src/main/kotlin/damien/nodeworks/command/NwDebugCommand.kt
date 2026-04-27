@@ -8,9 +8,9 @@ import net.minecraft.commands.Commands
 /**
  * Debug commands for inspecting Nodeworks runtime state.
  *
- *   * `/nwdebug craftingcore` — open the Crafting Core debug GUI with fake data.
- *   * `/nwdebug inventoryterminal` — open the Inventory Terminal debug GUI with fake data.
- *   * `/nwdebug poll` — toggle per-tick polling logs, see [damien.nodeworks.script.PollDebugger].
+ *   * `/nwdebug craftingcore` open the Crafting Core debug GUI with fake data.
+ *   * `/nwdebug inventoryterminal` open the Inventory Terminal debug GUI with fake data.
+ *   * `/nwdebug poll` toggle per-tick polling logs, see [damien.nodeworks.script.PollDebugger].
  *     Run once to start streaming, run again to stop.
  */
 object NwDebugCommand {
@@ -25,7 +25,10 @@ object NwDebugCommand {
         )
     }
 
-    private fun sendDebugPayload(ctx: CommandContext<CommandSourceStack>, payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload): Int {
+    private fun sendDebugPayload(
+        ctx: CommandContext<CommandSourceStack>,
+        payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload
+    ): Int {
         val player = ctx.source.playerOrException as net.minecraft.server.level.ServerPlayer
         player.connection.send(net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(payload))
         return 1

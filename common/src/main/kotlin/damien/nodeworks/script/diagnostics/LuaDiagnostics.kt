@@ -1,4 +1,4 @@
-package damien.nodeworks.script.diagnostics
+﻿package damien.nodeworks.script.diagnostics
 
 import damien.nodeworks.script.LuaTokenizer
 import damien.nodeworks.script.api.LuaApiRegistry
@@ -16,23 +16,28 @@ import damien.nodeworks.script.api.LuaType
  * already severity-aware, so the change is a one-line edit.
  *
  * Rules currently implemented:
- *   * `unknown-identifier` — bare identifier references that don't resolve to a
+ *   * `unknown-identifier`, bare identifier references that don't resolve to a
  *     keyword, registered global, Lua stdlib member, or a name declared earlier
  *     in the script.
- *   * `unknown-method` — `:method` after a typed receiver where the type
+ *   * `unknown-method`, `:method` after a typed receiver where the type
  *     doesn't declare that method.
- *   * `unknown-property` — `.field` after a typed receiver where the type
+ *   * `unknown-property`, `.field` after a typed receiver where the type
  *     doesn't declare that field.
- *   * `nullable-misuse` — using a `T?` value through `:method` / `.field`
+ *   * `nullable-misuse`, using a `T?` value through `:method` / `.field`
  *     without first narrowing it via `if x [then]` / `if x ~= nil [then]` /
  *     `assert(x)`. Detects nullables from explicit `local x: T?` annotations,
  *     `function f(x: T?)` parameters, and locals inferred from registry method
  *     calls that return `Optional` (e.g. `local items = network:find(...)`).
- *   * `nullable-arg` — passing a `T?` value as an argument to a method whose
+ *   * `nullable-arg`, passing a `T?` value as an argument to a method whose
  *     corresponding parameter is declared non-nullable. Catches the bug shape
  *     `io_1:insert(items)` where `items: ItemsHandle?` but `:insert` expects
  *     a non-nullable `ItemsHandle`. Same nullable detection + narrowing logic
  *     as `nullable-misuse`.
+ *   * `ambiguous-card-name`, `network:get("name")` where the active network
+ *     has multiple cards / breakers / placers literally named `"name"`. The
+ *     runtime returns the first match, but the player probably wants either a
+ *     specific suffixed alias (`name_1`, `name_2`) or `:find("name_*")` for
+ *     all of them. Soft hint, not an error.
  */
 object LuaDiagnostics {
 
@@ -44,6 +49,7 @@ object LuaDiagnostics {
         "unknown-property" to Severity.ERROR,
         "nullable-misuse" to Severity.WARNING,
         "nullable-arg" to Severity.WARNING,
+        "ambiguous-card-name" to Severity.HINT,
     )
 
     /** Returns the names that are nullable AT [offset] in [text]. A name counts as
@@ -53,7 +59,7 @@ object LuaDiagnostics {
      *  then`, `if name ~= nil then`, `assert(name)`, `if not name then return end`).
      *
      *  Lets the editor's hover tooltip and autocomplete suggestion rendering
-     *  surface nullability the same way the diagnostic analyzer sees it — so
+     *  surface nullability the same way the diagnostic analyzer sees it, so
      *  hovering `all` after `local all = io_1:find(...)` shows `all: ItemsHandle?`,
      *  but inside `if all then ...` it shows `all: ItemsHandle`.
      */
@@ -81,11 +87,18 @@ object LuaDiagnostics {
      * to resolve `local foo = require("foo")` cross-script lookups so callers like
      * `foo.bar(items)` can flag against the imported module's declared param
      * types. Pass an empty map (the default) to disable cross-script analysis.
+     *
+     * [ambiguousNetworkNames] is the set of literal names on the active network
+     * that are shared by ≥2 cards / breakers / placers. The `ambiguous-card-name`
+     * rule flags `network:get("<name>")` calls whose argument is in this set.
+     * Pass an empty set (the default) to disable the check, e.g. when running
+     * the analyzer outside a terminal where there's no live network attached.
      */
     fun analyze(
         text: String,
         symbols: Map<String, String> = emptyMap(),
         otherScripts: Map<String, String> = emptyMap(),
+        ambiguousNetworkNames: Set<String> = emptySet(),
     ): List<Diagnostic> {
         if (text.isBlank()) return emptyList()
 
@@ -116,7 +129,76 @@ object LuaDiagnostics {
         // The chain-on-nullable rule is independent of the script's declared nullables,
         // it fires whenever a chain step's return type is `T?`. Always run it.
         out += checkNullableChainAccess(text, symbols, nullableVars, declarationNameRanges)
+
+        if (ambiguousNetworkNames.isNotEmpty()) {
+            out += checkAmbiguousNetworkGet(text, ambiguousNetworkNames)
+        }
         return out
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Rule: ambiguous-card-name
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Flag bare-name calls into duplicated entity names on the active network.
+     *  Two flavours:
+     *
+     *  * `:get("name")`, singular lookup. Runtime returns first match. Hint
+     *    suggests an explicit suffixed alias or a `:find("name_*")` glob.
+     *  * `:route("name", ...)` / `:from("name")` / `:to("name")`, collection
+     *    operation that almost certainly meant "every duplicate". Hint
+     *    suggests the glob form `name_*` so all matching cards participate.
+     *
+     *  The runtime path still works either way; this rule is purely a UX nudge
+     *  toward an unambiguous spelling. */
+    private fun checkAmbiguousNetworkGet(
+        text: String,
+        ambiguousNames: Set<String>,
+    ): List<Diagnostic> {
+        val diagnostics = mutableListOf<Diagnostic>()
+        val stripped = stripComments(text)
+
+        // `<receiver>:get("<name>")`, singular lookup. Both `network:get` and
+        // `Channel:get` flow through the same bare-name resolution.
+        val getPattern = Regex(""":get\s*\(\s*(['"])([^'"]+)\1""")
+        for (m in getPattern.findAll(stripped)) {
+            val name = m.groupValues[2]
+            if (name !in ambiguousNames) continue
+            val nameRange = m.groups[2]!!.range
+            diagnostics.add(
+                Diagnostic(
+                    severity = severityFor("ambiguous-card-name"),
+                    range = TextRange(nameRange.first, nameRange.last + 1),
+                    code = "ambiguous-card-name",
+                    message = "Multiple entities on this network are named '$name'. " +
+                            "Use a suffixed alias like `${name}_1` for a specific card, or " +
+                            "`network:cards(\"${name}_*\")` for all of them.",
+                ),
+            )
+        }
+
+        // Collection-receiver methods: `:route(...)`, `:from(...)`, `:to(...)`.
+        // First string arg is a card alias that's expected to glob to multiple
+        // cards in the duplicate-name case. Hint suggests the glob.
+        val collectionPattern = Regex(""":(route|from|to)\s*\(\s*(['"])([^'"]+)\2""")
+        for (m in collectionPattern.findAll(stripped)) {
+            val method = m.groupValues[1]
+            val name = m.groupValues[3]
+            if (name !in ambiguousNames) continue
+            val nameRange = m.groups[3]!!.range
+            diagnostics.add(
+                Diagnostic(
+                    severity = severityFor("ambiguous-card-name"),
+                    range = TextRange(nameRange.first, nameRange.last + 1),
+                    code = "ambiguous-card-name",
+                    message = "Multiple cards on this network are named '$name'. " +
+                            ":$method on a bare name only targets the first match. Use " +
+                            "`${name}_*` to apply to all of them, or a suffixed alias like " +
+                            "`${name}_1` for a specific one.",
+                ),
+            )
+        }
+        return diagnostics
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -148,7 +230,7 @@ object LuaDiagnostics {
                 // DEFAULT and FUNCTION tokens are candidate identifier references.
                 // The tokenizer classifies any identifier followed by `(` as FUNCTION,
                 // including user-defined functions that don't exist (typos), so we
-                // can't skip FUNCTION-coloured tokens — we still need to check whether
+                // can't skip FUNCTION-coloured tokens, we still need to check whether
                 // the name is actually declared. KEYWORDs, STRINGs, COMMENTs, NUMBERs
                 // are always non-references and are always skipped.
                 if (token.type != LuaTokenizer.TokenType.DEFAULT &&
@@ -298,7 +380,7 @@ object LuaDiagnostics {
                         range = tokenRange,
                         code = "nullable-misuse",
                         message = "'${token.text}' may be nil here. Narrow it first with " +
-                            "`if ${token.text} then ... end` or `assert(${token.text})`.",
+                                "`if ${token.text} then ... end` or `assert(${token.text})`.",
                     ),
                 )
             }
@@ -378,6 +460,7 @@ object LuaDiagnostics {
 
             // Determine call shape from the separator before the name.
             data class ResolvedCall(val params: List<LuaType.Param>, val description: String)
+
             val resolved: ResolvedCall = when (prevText) {
                 ":" -> {
                     // Method call. Receiver expression ends at the `:` token.
@@ -387,6 +470,7 @@ object LuaDiagnostics {
                         .firstOrNull { it.displayName == callName } ?: continue
                     ResolvedCall(doc.params, "$recvType:$callName")
                 }
+
                 "." -> {
                     // `expr.method(...)`. We use this path for table-method calls
                     // declared as `function foo.bar(...)` (either in this script or
@@ -400,6 +484,7 @@ object LuaDiagnostics {
                     val func = userFunctions[key] ?: continue
                     ResolvedCall(func, key)
                 }
+
                 else -> {
                     // Bare function call. Look up user-defined functions; built-in
                     // globals are skipped (they take `Any` so wouldn't flag anyway).
@@ -439,8 +524,8 @@ object LuaDiagnostics {
                         range = TextRange(nameStart, nameEnd),
                         code = "nullable-arg",
                         message = "'$argName' may be nil here. " +
-                            "${resolved.description} expects ${param.type.display} for '${param.name}'. " +
-                            "Narrow with `if $argName then ... end` or `assert($argName)` first.",
+                                "${resolved.description} expects ${param.type.display} for '${param.name}'. " +
+                                "Narrow with `if $argName then ... end` or `assert($argName)` first.",
                     ),
                 )
             }
@@ -497,7 +582,7 @@ object LuaDiagnostics {
             if (isIdentifierLike(prevTok.text)) {
                 val beforeBareIdx = prevNonBlankIdx(flat, prevIdx)
                 if (beforeBareIdx == null || (flat[beforeBareIdx].text != ")" &&
-                        flat[beforeBareIdx].text != "." && flat[beforeBareIdx].text != "]")
+                            flat[beforeBareIdx].text != "." && flat[beforeBareIdx].text != "]")
                 ) continue
             }
 
@@ -518,7 +603,7 @@ object LuaDiagnostics {
                     range = TextRange(memberTok.start, memberTok.start + memberTok.text.length),
                     code = "nullable-misuse",
                     message = "Receiver is ${recvType.display}, may be nil. " +
-                        "Capture the result into a local and narrow before calling $accessKind.",
+                            "Capture the result into a local and narrow before calling $accessKind.",
                 ),
             )
         }
@@ -538,7 +623,7 @@ object LuaDiagnostics {
      *  and newlines so positions computed against the masked text remain valid in
      *  the original. Lets the regex-based collectors below ignore declarations
      *  that the player has commented out. Detection is by [LuaTokenizer.COMMENT_COLOR]
-     *  rather than `TokenType.COMMENT` — the tokenizer assigns the colour but
+     *  rather than `TokenType.COMMENT`, the tokenizer assigns the colour but
      *  leaves the type as DEFAULT for line comments and the body of block
      *  comments, only the explicit BLOCK_COMMENT_START/END markers carry a
      *  comment-specific TokenType. */
@@ -554,8 +639,8 @@ object LuaDiagnostics {
             var localOff = 0
             for (t in toks) {
                 val isComment = t.color == LuaTokenizer.COMMENT_COLOR ||
-                    t.type == LuaTokenizer.TokenType.BLOCK_COMMENT_START ||
-                    t.type == LuaTokenizer.TokenType.BLOCK_COMMENT_END
+                        t.type == LuaTokenizer.TokenType.BLOCK_COMMENT_START ||
+                        t.type == LuaTokenizer.TokenType.BLOCK_COMMENT_END
                 if (isComment) {
                     for (k in 0 until t.text.length) {
                         val pos = lineStart + localOff + k
@@ -624,7 +709,7 @@ object LuaDiagnostics {
 
         val ch = text[i - 1]
 
-        // Call `expr(args)` — peel the `(args)` and recurse on the call name.
+        // Call `expr(args)`, peel the `(args)` and recurse on the call name.
         if (ch == ')') {
             val openIdx = findMatchingOpenBefore(text, i - 1) ?: return null
             var nameEnd = openIdx
@@ -642,7 +727,7 @@ object LuaDiagnostics {
                 val sepCh = text[sepEnd - 1]
                 if (sepCh == ':') {
                     // Receiver lookup unwraps to the Named base, so `T?:m()` resolves
-                    // to T's m() — same as Lua's runtime "use through nil-check"
+                    // to T's m(), same as Lua's runtime "use through nil-check"
                     // would expose. The Optional wrapping is preserved on the return
                     // type itself when the registry declares `m` as `T?`.
                     val recvName = resolveReceiverTypeName(text, sepEnd - 1, symbols)
@@ -663,7 +748,7 @@ object LuaDiagnostics {
         // Indexed access. v1 doesn't resolve element types from chains.
         if (ch == ']') return null
 
-        // Identifier — bare ref or `expr.field`.
+        // Identifier, bare ref or `expr.field`.
         if (!ch.isLetterOrDigit() && ch != '_') return null
         var nameStart = i
         while (nameStart > 0 &&
@@ -784,7 +869,7 @@ object LuaDiagnostics {
             val localName = m.groupValues[1]
             val moduleName = m.groupValues[2]
             val rawModuleText = otherScripts[moduleName] ?: continue
-            // Strip the imported module's comments too — a fully-commented-out
+            // Strip the imported module's comments too, a fully-commented-out
             // module body should produce no exports, even if the comments contain
             // `function foo.bar(...)` shaped text.
             val moduleText = stripComments(rawModuleText)
@@ -990,7 +1075,7 @@ object LuaDiagnostics {
     /** True when the newline at [newlineIdx] is part of a multi-line statement, i.e.
      *  the next non-whitespace char is a chain-continuation `:` / `.` OR the previous
      *  non-whitespace char is a binary-operator / comma / open paren waiting on
-     *  another operand. Reads tokens character-by-character — strings and comments
+     *  another operand. Reads tokens character-by-character, strings and comments
      *  aren't pre-stripped, but line-comment-on-prior-line is rare enough in chain
      *  RHSs that we don't bother special-casing it. */
     private fun isLineContinuation(text: String, newlineIdx: Int): Boolean {
@@ -1009,15 +1094,15 @@ object LuaDiagnostics {
      *  when an access offset is NOT inside any of these regions.
      *
      *  Patterns recognised:
-     *    * `if NAME then ... end` — body narrows NAME
-     *    * `if NAME ~= nil then ... end` — body narrows NAME
-     *    * `if nil ~= NAME then ... end` — same, reversed
-     *    * `if not NAME then <terminate> end` — narrows NAME from after the `end`
+     *    * `if NAME then ... end`, body narrows NAME
+     *    * `if NAME ~= nil then ... end`, body narrows NAME
+     *    * `if nil ~= NAME then ... end`, same, reversed
+     *    * `if not NAME then <terminate> end`, narrows NAME from after the `end`
      *      onward. Terminating statements: `return`, `error(...)`, `break`.
      *    * `if NAME == nil then <terminate> end` (and the reversed `nil == NAME`)
-     *    * `assert(NAME [, msg])` — narrows NAME from the call site to end-of-script
+     *    * `assert(NAME [, msg])`, narrows NAME from the call site to end-of-script
      *
-     *  These are all approximations — the "narrows to end-of-script" cases should
+     *  These are all approximations, the "narrows to end-of-script" cases should
      *  really stop at the enclosing function boundary, and conditional `return`s
      *  inside the guard body would weaken the narrowing. For v1 we accept those as
      *  false negatives (under-flagging) since false positives annoy users more than
@@ -1033,7 +1118,7 @@ object LuaDiagnostics {
 
         // Truthy / explicit nil-check branches: body is narrowed up to the next
         // branch boundary (`elseif`, `else`, or matching `end`). Both `if NAME
-        // then` and `elseif NAME then` start a narrowing branch — the elseif form
+        // then` and `elseif NAME then` start a narrowing branch, the elseif form
         // appears in chained checks like:
         //
         //     if a then ...
@@ -1087,7 +1172,7 @@ object LuaDiagnostics {
     }
 
     /** Find the offset of the next branch boundary inside the current `if`/`elseif`
-     *  body — that's the next `elseif`, `else`, or matching `end` at the same
+     *  body, that's the next `elseif`, `else`, or matching `end` at the same
      *  block depth. Used by [findNarrowingRegions] so a branch's narrowing doesn't
      *  spill into a sibling `else`/`elseif` where the variable could be the
      *  opposite truthiness. Skips deeper nested `if`/`for`/`while`/`repeat`/
@@ -1244,14 +1329,14 @@ object LuaDiagnostics {
             .findAll(text)
             .forEach { names.add(it.groupValues[1]) }
 
-        // function <obj>.<name>(...) — the .name half is the declared method
+        // function <obj>.<name>(...), the .name half is the declared method
         // name, but we want the obj name in declared too so a downstream
         // reference to <obj> doesn't squiggle.
         Regex("""\bfunction\s+([\w_]+)\s*\.""")
             .findAll(text)
             .forEach { names.add(it.groupValues[1]) }
 
-        // Function parameters: `function name(a, b: T, c)` — extract the name list.
+        // Function parameters: `function name(a, b: T, c)`, extract the name list.
         // Also covers anonymous `function(a, b)` lambdas, table-method declarations
         // (`function foo.bar(a)`), and colon-method declarations (`function foo:bar(a)`).
         // The `[\w_.:]*` between `function` and `(` allows the qualified name to slip
@@ -1354,6 +1439,7 @@ object LuaDiagnostics {
             "byte", "char", "find", "format", "gmatch", "gsub", "len",
             "lower", "match", "rep", "reverse", "sub", "upper",
         )
+
         "math" -> setOf(
             "abs", "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh",
             "deg", "exp", "floor", "fmod", "frexp", "huge", "ldexp", "log",
@@ -1361,9 +1447,11 @@ object LuaDiagnostics {
             "pow", "rad", "random", "randomseed", "sin", "sinh", "sqrt",
             "tan", "tanh", "tointeger", "type", "ult",
         )
+
         "table" -> setOf(
             "concat", "insert", "move", "pack", "remove", "sort", "unpack",
         )
+
         else -> emptySet()
     }
 }

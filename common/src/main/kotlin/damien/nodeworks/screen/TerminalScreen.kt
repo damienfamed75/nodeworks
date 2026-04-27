@@ -107,6 +107,11 @@ class TerminalScreen(
      *  [placerAliases] fields stay because AutocompletePopup just needs the names. */
     private val breakerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
     private val placerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
+
+    /** Literal names that appear ≥2 times across cards / breakers / placers on
+     *  this network. Drives the script editor's `ambiguous-card-name` HINT for
+     *  `network:get("name")` calls whose argument is a duplicated literal. */
+    private val ambiguousNetworkNames: Set<String>
     private val localApiNames: List<String>
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
     private val craftableOutputs: List<String>
@@ -444,6 +449,29 @@ class TerminalScreen(
 
     private var currentLayout = TerminalLayout.entries.getOrElse(menu.getLayoutIndex()) { TerminalLayout.SMALL }
 
+    /** Mutable holder used while routing breakers / placers through the shared
+     *  [damien.nodeworks.network.assignAliasSuffixes] pass. The helper writes
+     *  the resolved suffix into [assignedAlias]; [effectiveAlias] then picks
+     *  the suffix when present (duplicate or unnamed) or falls back to the
+     *  bare literal (singleton named entity). */
+    private class BreakerAliasHolder(
+        val literalName: String?,
+        val channel: net.minecraft.world.item.DyeColor,
+    ) {
+        var assignedAlias: String? = null
+        val effectiveAlias: String
+            get() = assignedAlias ?: literalName ?: "breaker"
+    }
+
+    private class PlacerAliasHolder(
+        val literalName: String?,
+        val channel: net.minecraft.world.item.DyeColor,
+    ) {
+        var assignedAlias: String? = null
+        val effectiveAlias: String
+            get() = assignedAlias ?: literalName ?: "placer"
+    }
+
     init {
         damien.nodeworks.compat.AcsCompat.setImageSize(this, currentLayout.w, currentLayout.h)
 
@@ -568,39 +596,45 @@ class TerminalScreen(
             scannedProcessable.addAll(api.outputItemIds)
         }
 
-        // Assign auto-aliases to unnamed cards. Routes through the shared
-        // [autoAliasPrefix] so client-side and server-side discovery always
-        // produce the same names, without it the sidebar drifted from
-        // `network:get(...)` lookups when type-specific overrides were added.
-        val counters = mutableMapOf<String, Int>()
+        // Assign auto-aliases. Routes through the shared
+        // [damien.nodeworks.network.assignAliasSuffixes] so the client-side
+        // scan agrees with [NetworkDiscovery.assignAutoAliases] on every
+        // disambiguated `_N`. Sidebar listings, autocomplete, hover tooltips
+        // and `network:get(...)` lookups all see identical names.
+        // Cards / breakers / placers share the base namespace, matching the
+        // cross-type lookup rule: a card named `miner` and a breaker named
+        // `miner` are duplicates and both get suffixed.
+        val breakerAliasHolders = scannedBreakers.map { (name, channel) ->
+            BreakerAliasHolder(name.takeIf { it.isNotEmpty() }, channel)
+        }
+        val placerAliasHolders = scannedPlacers.map { (name, channel) ->
+            PlacerAliasHolder(name.takeIf { it.isNotEmpty() }, channel)
+        }
+        val slots = mutableListOf<damien.nodeworks.network.AliasSlot>()
         for (card in scannedCards) {
-            if (card.alias == null) {
-                val type = card.capability.type
-                val count = counters.getOrDefault(type, 0) + 1
-                counters[type] = count
-                card.autoAlias = "${damien.nodeworks.network.autoAliasPrefix(type)}_$count"
-            }
+            slots.add(damien.nodeworks.network.AliasSlot(
+                literalName = card.alias,
+                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix(card.capability.type),
+                setAutoAlias = { card.autoAlias = it },
+            ))
         }
-        // Devices: same counter namespace as cards so the alias prefix uniquely
-        // identifies the type. Reify the (deviceName, channel) tuples into final
-        // (alias, channel) pairs, empty deviceName falls back to `breaker_N` /
-        // `placer_N`. The channel rides along so the sidebar pip renders correctly.
-        val scannedBreakerEntries = scannedBreakers.map { (name, channel) ->
-            val alias = if (name.isNotEmpty()) name else {
-                val count = counters.getOrDefault("breaker", 0) + 1
-                counters["breaker"] = count
-                "${damien.nodeworks.network.autoAliasPrefix("breaker")}_$count"
-            }
-            alias to channel
+        for (h in breakerAliasHolders) {
+            slots.add(damien.nodeworks.network.AliasSlot(
+                literalName = h.literalName,
+                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("breaker"),
+                setAutoAlias = { h.assignedAlias = it },
+            ))
         }
-        val scannedPlacerEntries = scannedPlacers.map { (name, channel) ->
-            val alias = if (name.isNotEmpty()) name else {
-                val count = counters.getOrDefault("placer", 0) + 1
-                counters["placer"] = count
-                "${damien.nodeworks.network.autoAliasPrefix("placer")}_$count"
-            }
-            alias to channel
+        for (h in placerAliasHolders) {
+            slots.add(damien.nodeworks.network.AliasSlot(
+                literalName = h.literalName,
+                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("placer"),
+                setAutoAlias = { h.assignedAlias = it },
+            ))
         }
+        damien.nodeworks.network.assignAliasSuffixes(slots)
+        val scannedBreakerEntries = breakerAliasHolders.map { it.effectiveAlias to it.channel }
+        val scannedPlacerEntries = placerAliasHolders.map { it.effectiveAlias to it.channel }
         val scannedBreakerAliases = scannedBreakerEntries.map { it.first }
         val scannedPlacerAliases = scannedPlacerEntries.map { it.first }
 
@@ -643,6 +677,21 @@ class TerminalScreen(
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
+
+        // Literal names that appear ≥2 times across the network's named cards,
+        // breakers and placers. Cards expose their literal name via
+        // `CardSnapshot.alias`; for breakers / placers we use the raw
+        // `deviceName` collected during the scan (empty deviceName falls
+        // through to the auto-suffixed alias path and isn't an ambiguous
+        // literal). The `ambiguous-card-name` diagnostic reads this set.
+        val nameCounts = mutableMapOf<String, Int>()
+        for (c in scannedCards) c.alias?.takeIf { it.isNotEmpty() }
+            ?.let { nameCounts.merge(it, 1, Int::plus) }
+        for ((name, _) in scannedBreakers) if (name.isNotEmpty())
+            nameCounts.merge(name, 1, Int::plus)
+        for ((name, _) in scannedPlacers) if (name.isNotEmpty())
+            nameCounts.merge(name, 1, Int::plus)
+        ambiguousNetworkNames = nameCounts.filterValues { it >= 2 }.keys
     }
 
     override fun init() {
@@ -706,11 +755,13 @@ class TerminalScreen(
                 // Pass sibling scripts so cross-script `local foo = require("foo")`
                 // lookups can resolve `foo.bar(...)` against the imported module's
                 // declared param types. The active tab's text is excluded since it's
-                // already in `text` — including it would trigger a useless self-import
+                // already in `text`, including it would trigger a useless self-import
                 // path if a player ever typed `require("<active tab name>")`.
                 val others = scripts.filterKeys { it != activeTab }
                 cachedDiagnostics =
-                    damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(text, symbols, others)
+                    damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(
+                        text, symbols, others, ambiguousNetworkNames,
+                    )
             }
             cachedDiagnostics
         }
@@ -1633,7 +1684,7 @@ class TerminalScreen(
                     // Page Up / Page Down dismiss the popup and let the editor
                     // jump the viewport. Holding either key while typing is the
                     // usual "I'm done with this suggestion list, get out of my
-                    // way" signal — same dismissal we'd get from Escape.
+                    // way" signal, same dismissal we'd get from Escape.
                     InputConstants.KEY_PAGEUP, InputConstants.KEY_PAGEDOWN -> {
                         autocomplete.hide()
                         // Fall through so the editor handles the page-jump itself.

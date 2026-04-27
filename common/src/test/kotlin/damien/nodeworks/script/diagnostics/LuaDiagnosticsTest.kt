@@ -1,4 +1,4 @@
-package damien.nodeworks.script.diagnostics
+﻿package damien.nodeworks.script.diagnostics
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -212,6 +212,102 @@ class LuaDiagnosticsTest {
     @Test
     fun emptyScriptProducesNoDiagnostics() {
         assertEquals(emptyList<Diagnostic>(), LuaDiagnostics.analyze(""))
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // ambiguous-card-name: `network:get("name")` on a duplicated literal
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun ambiguousNetworkGetFlagsAsHint() {
+        val script = "network:get('cobblestone')"
+        val diag = LuaDiagnostics.analyze(
+            script,
+            ambiguousNetworkNames = setOf("cobblestone"),
+        ).firstOrNull { it.code == "ambiguous-card-name" }
+        assertNotNull(diag, "expected ambiguous-card-name HINT")
+        assertEquals(Severity.HINT, diag!!.severity)
+        assertEquals("cobblestone", script.substring(diag.range.start, diag.range.end))
+    }
+
+    @Test
+    fun ambiguousFlagAlsoFiresOnChannelGet() {
+        // `Channel:get` resolves through the same bare-name namespace as
+        // `Network:get`, so the rule fires there too.
+        val script = "network:channel('white'):get('cobblestone')"
+        val diags = LuaDiagnostics.analyze(
+            script,
+            ambiguousNetworkNames = setOf("cobblestone"),
+        ).filter { it.code == "ambiguous-card-name" }
+        assertEquals(1, diags.size)
+    }
+
+    @Test
+    fun nonAmbiguousNameIsClean() {
+        val script = "network:get('cobblestone')"
+        val diags = LuaDiagnostics.analyze(
+            script,
+            ambiguousNetworkNames = setOf("dirt"),
+        ).filter { it.code == "ambiguous-card-name" }
+        assertTrue(diags.isEmpty())
+    }
+
+    @Test
+    fun ambiguousFlagNotFiredOnFindEachOrGetAll() {
+        // `:findEach` / `:getAll` are collection lookups, they take a filter or
+        // type, not a literal alias, so even a script that happens to pass an
+        // ambiguous name as their string arg shouldn't trigger this rule.
+        val script = """
+            network:findEach('cobblestone')
+            network:getAll('cobblestone')
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(
+            script,
+            ambiguousNetworkNames = setOf("cobblestone"),
+        ).filter { it.code == "ambiguous-card-name" }
+        assertTrue(diags.isEmpty(), "got $diags")
+    }
+
+    @Test
+    fun ambiguousFlagSkipsCommentedCalls() {
+        val script = "-- network:get('cobblestone')"
+        val diags = LuaDiagnostics.analyze(
+            script,
+            ambiguousNetworkNames = setOf("cobblestone"),
+        ).filter { it.code == "ambiguous-card-name" }
+        assertTrue(diags.isEmpty())
+    }
+
+    @Test
+    fun ambiguousFlagFiresOnRouteWithGlobHint() {
+        val script = "network:route('cobblestone', function(items) end)"
+        val diag = LuaDiagnostics.analyze(
+            script,
+            ambiguousNetworkNames = setOf("cobblestone"),
+        ).firstOrNull { it.code == "ambiguous-card-name" }
+        assertNotNull(diag, "expected hint on :route(ambiguous)")
+        assertEquals("cobblestone", script.substring(diag!!.range.start, diag.range.end))
+        assertTrue(diag.message.contains("cobblestone_*"), "should suggest glob, got '${diag.message}'")
+    }
+
+    @Test
+    fun ambiguousFlagFiresOnImporterFromAndTo() {
+        val script = "importer:from('cobblestone'):to('iron')"
+        val diags = LuaDiagnostics.analyze(
+            script,
+            ambiguousNetworkNames = setOf("cobblestone", "iron"),
+        ).filter { it.code == "ambiguous-card-name" }
+        assertEquals(2, diags.size, "expected hints on both :from and :to, got $diags")
+    }
+
+    @Test
+    fun ambiguousFlagFiresOnStockerFromAndTo() {
+        val script = "stocker:from('cobblestone'):to('iron')"
+        val diags = LuaDiagnostics.analyze(
+            script,
+            ambiguousNetworkNames = setOf("cobblestone", "iron"),
+        ).filter { it.code == "ambiguous-card-name" }
+        assertEquals(2, diags.size)
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -575,7 +671,7 @@ class LuaDiagnosticsTest {
         // `network:onInsert` (callback wrapper) declares no inputs that are non-null in
         // a way we'd flag. Use a synthetic case: pretend a method takes `T?`. We mimic
         // by checking that passing a nullable as the second arg of `:cas` (which is
-        // typed `Any`) does NOT warn — because Any tolerates nil at the spec level.
+        // typed `Any`) does NOT warn, because Any tolerates nil at the spec level.
         val script = """
             local v: NumberVariableHandle? = network:get('counter')
             v:cas(1, 2)
@@ -639,7 +735,7 @@ class LuaDiagnosticsTest {
     fun chainAccessOnNullableCallResultFlags() {
         // network:channel("white") → Channel (non-null)
         // Channel:getFirst("io") → CardHandle?
-        // :face("top") on a CardHandle? receiver — the analyzer should flag `face`.
+        // :face("top") on a CardHandle? receiver, the analyzer should flag `face`.
         val script = "network:channel('white'):getFirst('io'):face('top')"
         val diag = LuaDiagnostics.analyze(script).firstOrNull { it.code == "nullable-misuse" }
         assertNotNull(diag, "expected nullable-misuse on chained access, got ${LuaDiagnostics.analyze(script)}")
@@ -656,7 +752,7 @@ class LuaDiagnosticsTest {
 
     @Test
     fun chainAccessOnPropertyOfNullableFlags() {
-        // Reading `.name` on the result of getFirst should flag too — same issue,
+        // Reading `.name` on the result of getFirst should flag too, same issue,
         // different separator.
         val script = "network:channel('white'):getFirst('io').name"
         val diag = LuaDiagnostics.analyze(script).firstOrNull { it.code == "nullable-misuse" }
@@ -679,7 +775,7 @@ class LuaDiagnosticsTest {
 
     @Test
     fun functionTableMethodParamIsInScope() {
-        // `function foo.bar(a: ItemsHandle)` — the param `a` should be recognised
+        // `function foo.bar(a: ItemsHandle)`, the param `a` should be recognised
         // as declared inside the function body. Prior to the fix it was flagged
         // as an unknown identifier because the param regex stopped at the `.`.
         val script = """
@@ -741,7 +837,7 @@ class LuaDiagnosticsTest {
     @Test
     fun nullableArgImportedTableMethodWithDifferentLocalNameStillResolves() {
         // The local name in main.lua doesn't have to match the module's name.
-        // `local m = require("foo")` — calls go through `m.bar`, which we re-key
+        // `local m = require("foo")`, calls go through `m.bar`, which we re-key
         // from the module's `function foo.bar` declaration.
         val fooScript = """
             local foo = {}
@@ -762,7 +858,7 @@ class LuaDiagnosticsTest {
 
     @Test
     fun nullableArgImportedFromFullyCommentedModuleSkipsHarvest() {
-        // The whole foo module is commented out — there's no real `foo.bar` to call.
+        // The whole foo module is commented out, there's no real `foo.bar` to call.
         // The analyzer should harvest nothing from it and the call site `foo.bar(...)`
         // doesn't have a known param spec, so we don't flag (we'd skip silently for
         // unknown methods anyway). The point of the test is that we don't INVENT a
@@ -874,7 +970,7 @@ class LuaDiagnosticsTest {
 
     @Test
     fun nullableArgCleanForUntypedFunctionParam() {
-        // `function f(x)` with no annotation — un-typed params accept anything,
+        // `function f(x)` with no annotation, un-typed params accept anything,
         // including nil, so we don't warn.
         val script = """
             local function maybeUse(x)
@@ -888,7 +984,7 @@ class LuaDiagnosticsTest {
 
     @Test
     fun nullableArgFlaggedOnMultiArgPositional() {
-        // Insert is `:insert(items, count?)` — first arg is non-nullable ItemsHandle,
+        // Insert is `:insert(items, count?)`, first arg is non-nullable ItemsHandle,
         // a bare nullable in arg-1 position should still flag with the second arg
         // present and unrelated.
         val script = """

@@ -210,7 +210,13 @@ class AutocompletePopup(
             val cursorPos =
                 if (suggestion.snippetCursor >= 0) suggestion.snippetCursor else suggestion.snippetText.length
             val consume = if (suggestion.consumesAutoclose) countAutocloseChars(textAfterCursor) else 0
-            return AcceptResult(deleteCount, suggestion.snippetText, cursorPos, consume, autoImportLine = suggestion.autoImport)
+            return AcceptResult(
+                deleteCount,
+                suggestion.snippetText,
+                cursorPos,
+                consume,
+                autoImportLine = suggestion.autoImport
+            )
         }
         // Auto-close parentheses: `func(` → `func()` with cursor between
         val text = suggestion.insertText
@@ -639,7 +645,9 @@ class AutocompletePopup(
             when (param[i]) {
                 '{' -> depth++
                 '}' -> depth--
-                ':' -> if (depth == 0) { colonIdx = i; break }
+                ':' -> if (depth == 0) {
+                    colonIdx = i; break
+                }
             }
         }
         if (colonIdx < 0) return null
@@ -669,7 +677,8 @@ class AutocompletePopup(
         if (funcParamScalarMatch != null) return CursorContext.TypeAnnotation(funcParamScalarMatch.groupValues[1])
 
         // Pattern 2b: `function(param: { partial` (container param)
-        val funcParamContainerMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
+        val funcParamContainerMatch =
+            Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
         if (funcParamContainerMatch != null) return CursorContext.TypeAnnotation(funcParamContainerMatch.groupValues[1])
 
         // Pattern 3a: `function(...): partial` (scalar return)
@@ -677,7 +686,8 @@ class AutocompletePopup(
         if (returnScalarMatch != null) return CursorContext.TypeAnnotation(returnScalarMatch.groupValues[1])
 
         // Pattern 3b: `function(...): { partial` (container return)
-        val returnContainerMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
+        val returnContainerMatch =
+            Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
         if (returnContainerMatch != null) return CursorContext.TypeAnnotation(returnContainerMatch.groupValues[1])
 
         return null
@@ -1263,7 +1273,8 @@ class AutocompletePopup(
         // container (`{ CardHandle }`, `{ [string]: V }`). The alternation covers both,
         // without it a function declared `function f(): { T }` would hover without
         // its return-type annotation.
-        val pattern = Regex("""\bfunction\s+([\w.]*${Regex.escape(funcName)})\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
+        val pattern =
+            Regex("""\bfunction\s+([\w.]*${Regex.escape(funcName)})\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
         for (text in allTexts) {
             val match = pattern.find(text) ?: continue
             val name = match.groupValues[1]
@@ -1362,8 +1373,10 @@ class AutocompletePopup(
                         }
                         scopeStack.add(paramTypes)
                     }
+
                     text == "if" || text == "for" || text == "while" || text == "repeat" ->
                         scopeStack.add(emptyList())
+
                     text == "end" || text == "until" -> {
                         if (scopeStack.isNotEmpty()) scopeStack.removeLast()
                     }
@@ -1715,6 +1728,7 @@ class AutocompletePopup(
                     ctx.chainExpr?.let { it.contains(":ensure(") || it.contains(":craft(") } == true
                 ) raw.filter { !it.insertText.startsWith("filter(") } else raw
             }
+
             is CursorContext.ResolvedPropertyAccess -> suggestPropertiesForType(ctx.resolvedType, ctx.partial)
             is CursorContext.ChainedPropertyAccess -> suggestChainedPropertyAccess(ctx, symbols)
             is CursorContext.ChainedMethodCall -> suggestChainedMethodCall(ctx, symbols)
@@ -1722,10 +1736,12 @@ class AutocompletePopup(
                 val element = elementTypeOf(symbols[ctx.receiver]) ?: return emptyList()
                 suggestPropertiesForType(element, ctx.partial)
             }
+
             is CursorContext.IndexedMethodCall -> {
                 val element = elementTypeOf(symbols[ctx.receiver]) ?: return emptyList()
                 suggestMethodsForType(element, ctx.partial)
             }
+
             is CursorContext.ResolvedExports -> fuzzy(ctx.partial, ctx.exports)
             is CursorContext.MethodCall -> suggestMethodCall(ctx, symbols, fullText)
             is CursorContext.PropertyAccess -> suggestPropertyAccess(ctx, symbols, fullText)
@@ -1821,8 +1837,8 @@ class AutocompletePopup(
         if (ctx.funcExpr.isEmpty()) return null
 
         // Two shapes resolve to a (receiverType, methodName) pair:
-        //   `receiver:method` — direct call, receiver is a module global or a typed local
-        //   `:method`         — chained call where the receiver is the chain expression in
+        //   `receiver:method`   direct call, receiver is a module global or a typed local
+        //   `:method`           chained call where the receiver is the chain expression in
         //                       precedingText, e.g. `importer:from(...):to("|"` collapses
         //                       to funcExpr=":to" with the chain on the left.
         val (receiverType, methodName) = if (ctx.funcExpr.startsWith(":")) {
@@ -1936,7 +1952,8 @@ class AutocompletePopup(
         val moduleName = requirePattern.find(fullText)?.groupValues?.get(1) ?: return null
 
         val moduleText = scripts()[moduleName] ?: return null
-        val funcPattern = Regex("""\bfunction\s+\w+\.${Regex.escape(funcName)}\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
+        val funcPattern =
+            Regex("""\bfunction\s+\w+\.${Regex.escape(funcName)}\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
         val match = funcPattern.find(moduleText) ?: return null
         val params = match.groupValues[1].trim().split(",").joinToString(", ") { it.trim() }
         val returnType = match.groupValues[2].ifEmpty { null }
@@ -2016,12 +2033,15 @@ class AutocompletePopup(
         return when (unwrapped) {
             is damien.nodeworks.script.api.LuaType.StringEnum ->
                 fuzzyStrings(partial, unwrapped.values)
+
             is damien.nodeworks.script.api.LuaType.StringDomain ->
                 suggestionsForDomain(unwrapped.sourceKey, partial)
+
             is damien.nodeworks.script.api.LuaType.Union ->
                 unwrapped.parts
                     .flatMap { suggestionsForType(it, partial) ?: emptyList() }
                     .distinctBy { it.insertText }
+
             else -> null
         }
     }
@@ -2043,23 +2063,28 @@ class AutocompletePopup(
                 labels.map { (alias, type) -> suggest(alias, "$alias ($type)", Kind.STRING) },
             )
         }
+
         "card-alias-pattern" -> suggestCardAliasesWithWildcards(partial, cards)
         "storage-card-alias" -> suggestCardAliasesWithWildcards(
             partial,
             cards.filter { it.capability.type == "storage" }
         )
+
         "inventory-card-alias" -> suggestCardAliasesWithWildcards(
             partial,
             cards.filter { it.capability.type == "io" || it.capability.type == "storage" }
         )
+
         "breaker-alias" -> FuzzyMatch.filter(
             partial,
             breakerAliases.map { suggest(it, "$it (breaker)", Kind.STRING) },
         )
+
         "placer-alias" -> FuzzyMatch.filter(
             partial,
             placerAliases.map { suggest(it, "$it (placer)", Kind.STRING) },
         )
+
         "variable-name" -> {
             val typeLabels = arrayOf("number", "string", "bool")
             FuzzyMatch.filter(
@@ -2070,6 +2095,7 @@ class AutocompletePopup(
                 },
             )
         }
+
         "filter" -> suggestResourceFilter(partial)
         else -> emptyList()
     }
@@ -2111,8 +2137,8 @@ class AutocompletePopup(
         for ((prefix, members) in suffixGroups) {
             val stem = "${prefix}_"
             val disambiguating = partial.startsWith(stem) &&
-                partial.length > stem.length &&
-                partial[stem.length].isDigit()
+                    partial.length > stem.length &&
+                    partial[stem.length].isDigit()
             if (!disambiguating) hiddenAliases.addAll(members)
         }
 
@@ -2120,7 +2146,7 @@ class AutocompletePopup(
         for ((prefix, members) in suffixGroups) {
             val wildcard = "${prefix}_*"
             val preview = members.sorted().take(3).joinToString(", ") +
-                if (members.size > 3) ", …" else ""
+                    if (members.size > 3) ", …" else ""
             out += suggest(wildcard, "$wildcard (${members.size} cards: $preview)", Kind.STRING)
         }
         for (alias in aliases) {
@@ -2149,11 +2175,18 @@ class AutocompletePopup(
                 val hits = FuzzyMatch.filter(inner, itemIds.map { Suggestion(it, it, kind = Kind.STRING) })
                 hits.map { s -> s.copy(insertText = "\$item:${s.insertText}", displayText = "\$item:${s.displayText}") }
             }
+
             partial.startsWith("\$fluid:") -> {
                 val inner = partial.removePrefix("\$fluid:")
                 val hits = FuzzyMatch.filter(inner, fluidIds.map { Suggestion(it, it, kind = Kind.STRING) })
-                hits.map { s -> s.copy(insertText = "\$fluid:${s.insertText}", displayText = "\$fluid:${s.displayText}") }
+                hits.map { s ->
+                    s.copy(
+                        insertText = "\$fluid:${s.insertText}",
+                        displayText = "\$fluid:${s.displayText}"
+                    )
+                }
             }
+
             partial.startsWith("\$") -> {
                 val sigils = listOf(
                     Suggestion("\$item:", "\$item:  match items only", kind = Kind.STRING),
@@ -2161,6 +2194,7 @@ class AutocompletePopup(
                 )
                 FuzzyMatch.filter(partial, sigils)
             }
+
             else -> {
                 // No prefix: fuzzy-match across sigils + item ids + fluid ids. Fluid entries
                 // are inserted as `$fluid:<id>` so accepting one commits to the fluid kind,
@@ -2203,11 +2237,23 @@ class AutocompletePopup(
             Suggestion("BreakBuilder", "BreakBuilder  returned by Breaker:mine() for drop routing", kind = Kind.TYPE),
             Suggestion("PlacerHandle", "PlacerHandle  Placer device from network:get", kind = Kind.TYPE),
             Suggestion("Channel", "Channel  dye-color group from network:channel", kind = Kind.TYPE),
-            Suggestion("HandleList", "HandleList  broadcast list from network:getAll / Channel:getAll", kind = Kind.TYPE),
+            Suggestion(
+                "HandleList",
+                "HandleList  broadcast list from network:getAll / Channel:getAll",
+                kind = Kind.TYPE
+            ),
             Suggestion("Job", "Job  processing handler context from network:handle", kind = Kind.TYPE),
             Suggestion("CraftBuilder", "CraftBuilder  from network:craft(), chain with :connect()", kind = Kind.TYPE),
-            Suggestion("NumberVariableHandle", "NumberVariableHandle  number variable from network:get", kind = Kind.TYPE),
-            Suggestion("StringVariableHandle", "StringVariableHandle  string variable from network:get", kind = Kind.TYPE),
+            Suggestion(
+                "NumberVariableHandle",
+                "NumberVariableHandle  number variable from network:get",
+                kind = Kind.TYPE
+            ),
+            Suggestion(
+                "StringVariableHandle",
+                "StringVariableHandle  string variable from network:get",
+                kind = Kind.TYPE
+            ),
             Suggestion("BoolVariableHandle", "BoolVariableHandle  bool variable from network:get", kind = Kind.TYPE),
         ).filter { it.insertText !in registryNames }
         primitives + fromRegistry + legacy
@@ -2307,7 +2353,7 @@ class AutocompletePopup(
         val moduleSuggestions = registryGlobals
             .filter {
                 it.category == damien.nodeworks.script.api.ApiCategory.MODULE &&
-                    it.displayName.firstOrNull()?.isLowerCase() == true
+                        it.displayName.firstOrNull()?.isLowerCase() == true
             }
             .map { suggest(it.displayName, it.signature, Kind.MODULE) }
         val globalFunctionSuggestions = registryGlobals
@@ -2337,13 +2383,14 @@ class AutocompletePopup(
         // continue to work unchanged.
         val nullableHere = damien.nodeworks.script.diagnostics.LuaDiagnostics
             .nullablesAtOffset(fullText, beforeCursor.length, symbols)
-        val userVars = (extractVariableNames(beforeCursor) + extractFunctionParams(beforeCursor)).distinct().map { name ->
-            val type = symbols[name]
-            if (type != null) {
-                val displayType = if (name in nullableHere) "$type?" else type
-                suggest(name, "$name: $displayType", Kind.VARIABLE)
-            } else suggest(name, kind = Kind.VARIABLE)
-        }
+        val userVars =
+            (extractVariableNames(beforeCursor) + extractFunctionParams(beforeCursor)).distinct().map { name ->
+                val type = symbols[name]
+                if (type != null) {
+                    val displayType = if (name in nullableHere) "$type?" else type
+                    suggest(name, "$name: $displayType", Kind.VARIABLE)
+                } else suggest(name, kind = Kind.VARIABLE)
+            }
         val userFuncs = extractFunctions(fullText).map { f ->
             val retStr = if (f.returnType != null) " → ${f.returnType}" else ""
             suggest("${f.name}(", "${f.name}(${f.params})$retStr", Kind.FUNCTION)
@@ -2459,6 +2506,7 @@ class AutocompletePopup(
             val broadcastNames = when {
                 capabilityType != null ->
                     damien.nodeworks.script.HandleListMethods.methodsForCapabilityType(capabilityType)
+
                 else ->
                     damien.nodeworks.script.HandleListMethods.methodsForHandleType(elementType)
             }
@@ -2715,8 +2763,10 @@ class AutocompletePopup(
                         }
                         scopeStack.add(params)
                     }
+
                     text == "if" || text == "for" || text == "while" || text == "repeat" ->
                         scopeStack.add(emptyList())
+
                     text == "end" || text == "until" -> {
                         if (scopeStack.isNotEmpty()) scopeStack.removeLast()
                     }

@@ -18,7 +18,7 @@ val ItemsHandle: LuaType.Named = LuaTypes.type(
 )
 
 val ItemsHandleApi: ApiSurface = api(ItemsHandle) {
-    property("id", String) {
+    property("id", ResourceId) {
         description = "Resource id, `minecraft:diamond` for items or `minecraft:water` for fluids."
         guidebookRef = "nodeworks:lua-api/items-handle.md#id"
     }

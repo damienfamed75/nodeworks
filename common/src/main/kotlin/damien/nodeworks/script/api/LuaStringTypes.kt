@@ -56,6 +56,17 @@ val BlockId: LuaType.StringDomain = LuaType.StringDomain(
     sourceKey = "block-id",
 )
 
+/** Either an [ItemId] or a [FluidId]. Returned by surfaces that can carry either
+ *  resource kind, so the script can pass the same string back into something
+ *  like `network:find(id)` without having to know in advance whether it's an
+ *  item or a fluid. The completion dispatcher walks both [LuaType.Union] parts
+ *  so the autocomplete shows the merged list. */
+val ResourceId: LuaType.Union = LuaType.Union(
+    name = "ResourceId",
+    parts = listOf(ItemId, FluidId),
+    description = "An item id (`minecraft:diamond`) or a fluid id (`minecraft:water`).",
+)
+
 /** Tag registry id. Tags can be referenced with or without the leading `#`,
  *  the source includes both forms. */
 val TagId: LuaType.StringDomain = LuaType.StringDomain(
@@ -185,6 +196,7 @@ internal val ALL_STRING_TYPES: List<LuaType> = listOf(
     Craftable,
     FluidId,
     BlockId,
+    ResourceId,
     TagId,
     CardAlias,
     CardAliasPattern,
