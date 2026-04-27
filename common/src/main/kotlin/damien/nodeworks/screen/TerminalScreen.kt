@@ -78,6 +78,13 @@ class TerminalScreen(
 
     private lateinit var autocomplete: AutocompletePopup
 
+    /** Cached output of the last [damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze]
+     *  call, keyed by [cachedDiagnosticsText]. Re-running the analyzer on every frame would
+     *  be wasteful for a script of any size, so the editor's diagnosticsProvider only
+     *  re-runs it when the text changes. */
+    private var cachedDiagnostics: List<damien.nodeworks.script.diagnostics.Diagnostic> = emptyList()
+    private var cachedDiagnosticsText: String = ""
+
     // All scanned client-side from block entities in the loaded world
     private val cards: List<CardSnapshot>
     private val itemTags: List<String>
@@ -686,6 +693,22 @@ class TerminalScreen(
         rebuildWithText = null
         editor.setCharacterLimit(32767)
 
+        // Wire diagnostics. We cache the analyzer's output keyed on the editor's full
+        // text so the analyzer doesn't run on every render frame, only when the script
+        // actually changes. The symbol table comes from the autocomplete's inference
+        // (same source the hover-doc resolver uses) so typed-receiver checks for things
+        // like `card:fnid()` resolve `card`'s type the same way completion would.
+        editor.diagnosticsProvider = {
+            val text = editor.value
+            if (text != cachedDiagnosticsText) {
+                cachedDiagnosticsText = text
+                val symbols = autocomplete.getSymbolTable(text, text)
+                cachedDiagnostics =
+                    damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(text, symbols)
+            }
+            cachedDiagnostics
+        }
+
         lastSavedText = editor.value
         editor.setValueListener { newText ->
             // Push undo state when text changes (but not during undo/redo itself)
@@ -1277,6 +1300,26 @@ class TerminalScreen(
         data class Line(val text: String, val color: Int)
         val accum = mutableListOf<Line>()
 
+        // Diagnostic header. When the mouse is over a flagged span we surface the
+        // analyzer's message coloured per severity, on top of (not instead of) the
+        // regular doc/word tooltip. So a hover on a typo'd `prit` shows
+        // "Unknown identifier 'prit'" followed by no doc, while a hover on
+        // `card:fnid()` (where `card` is typed) shows the unknown-method message
+        // above the receiver's doc.
+        val diagnostic = editor.diagnosticAt(mouseX, mouseY)
+        if (diagnostic != null) {
+            val diagColor = when (diagnostic.severity) {
+                damien.nodeworks.script.diagnostics.Severity.ERROR -> 0xFFFF6666.toInt()
+                damien.nodeworks.script.diagnostics.Severity.WARNING -> 0xFFFFCC44.toInt()
+                damien.nodeworks.script.diagnostics.Severity.HINT -> 0xFF66AAFF.toInt()
+            }
+            for (part in font.splitter.splitLines(
+                diagnostic.message, TOOLTIP_MAX_WIDTH_PX, net.minecraft.network.chat.Style.EMPTY,
+            )) {
+                accum.add(Line(part.string, diagColor))
+            }
+        }
+
         // Prefer LuaApiDocs, type-aware, covers modules/methods/types via the shared
         // resolver (which already hops module → Type via `LuaApiDocs.moduleTypes` and
         // typed-local via the autocomplete symbol table).
@@ -1315,9 +1358,14 @@ class TerminalScreen(
                     )
                     symbols[word]?.let { "$word: $it" }
                 }
-                ?: return
-            accum.add(Line(fallback, COLOR_PLAIN))
-        } else {
+            if (fallback != null) {
+                accum.add(Line(fallback, COLOR_PLAIN))
+            } else if (accum.isEmpty()) {
+                // Nothing to show: no doc, no fallback, no diagnostic.
+                return
+            }
+        } else if (accum.isEmpty()) {
+            // No doc, no word under cursor, no diagnostic.
             return
         }
 

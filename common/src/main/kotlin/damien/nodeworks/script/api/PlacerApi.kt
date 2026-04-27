@@ -16,7 +16,7 @@ val PlacerHandle: LuaType.Named = LuaTypes.type(
     guidebookRef = "nodeworks:lua-api/placer-handle.md",
 )
 
-val PlacerHandleApi: ApiSurface = api(PlacerHandle) {
+val PlacerHandleApi: ApiSurface = api(PlacerHandle, parent = NetworkHandle) {
     method("place") {
         param("item", ItemId, description = "Item id of a block to place. Runtime also accepts an ItemsHandle value.")
         returns(Boolean)

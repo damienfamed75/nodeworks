@@ -19,7 +19,36 @@ object LuaApiSpecValidator {
         v += checkTypeReferences()
         v += checkKeyShapes()
         v += checkUnionParts()
+        v += checkParentChains()
         return v
+    }
+
+    /** Every [ApiSurface.parent] must point at a registered TYPE, and the chain must
+     *  not loop. Catches typos in the inheritance wiring at seal time, same way
+     *  [checkTypeReferences] catches them in method/property type refs. */
+    private fun checkParentChains(): List<Violation> {
+        val out = mutableListOf<Violation>()
+        val knownTypeNames = LuaApiRegistry.knownTypes().map { it.name }.toSet()
+        for (surface in LuaApiRegistry.allSurfaces().values) {
+            val parent = surface.parent ?: continue
+            if (parent.name !in knownTypeNames) {
+                out += Violation.UnknownParent(surface.type.name, parent.name)
+            }
+        }
+        // Cycle detection: walk each chain, stop on revisit.
+        for (surface in LuaApiRegistry.allSurfaces().values) {
+            if (surface.parent == null) continue
+            val seen = mutableSetOf(surface.type.name)
+            var cur: String? = surface.parent.name
+            while (cur != null) {
+                if (!seen.add(cur)) {
+                    out += Violation.CyclicParent(surface.type.name, cur)
+                    break
+                }
+                cur = LuaApiRegistry.allSurfaces()[cur]?.parent?.name
+            }
+        }
+        return out
     }
 
     /** Two TYPE entries declaring the same capability string would silently shadow
@@ -118,6 +147,14 @@ object LuaApiSpecValidator {
 
         data class NonStringUnionPart(val unionName: String, val partDisplay: String) : Violation() {
             override fun toString() = "Union `$unionName` includes non-string part `$partDisplay`"
+        }
+
+        data class UnknownParent(val typeName: String, val parentRef: String) : Violation() {
+            override fun toString() = "Type `$typeName` declares parent `$parentRef` which is not a registered type"
+        }
+
+        data class CyclicParent(val typeName: String, val loopAt: String) : Violation() {
+            override fun toString() = "Type `$typeName`'s parent chain loops at `$loopAt`"
         }
     }
 }

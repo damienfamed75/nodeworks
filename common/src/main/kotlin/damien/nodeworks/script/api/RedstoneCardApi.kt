@@ -3,12 +3,12 @@ package damien.nodeworks.script.api
 import damien.nodeworks.script.api.LuaType.Primitive.Any
 import damien.nodeworks.script.api.LuaType.Primitive.Boolean
 import damien.nodeworks.script.api.LuaType.Primitive.Number
-import damien.nodeworks.script.api.LuaType.Primitive.String
 
 /**
  * Spec for the `RedstoneCard` Lua type. Returned by `network:get` for a card with a
- * redstone capability. Runtime impl in [damien.nodeworks.script.CardHandle], the
- * methods are bound after the base CardHandle methods are stripped.
+ * redstone capability. Inherits `.name` from [NetworkHandle]. Runtime impl in
+ * [damien.nodeworks.script.CardHandle], the methods are bound after the base
+ * CardHandle methods are stripped.
  */
 
 val RedstoneCard: LuaType.Named = LuaTypes.type(
@@ -18,12 +18,7 @@ val RedstoneCard: LuaType.Named = LuaTypes.type(
     guidebookRef = "nodeworks:lua-api/card-handle.md",
 )
 
-val RedstoneCardApi: ApiSurface = api(RedstoneCard) {
-    property("name", String) {
-        description = "The card's alias as set in the Card Programmer."
-        guidebookRef = "nodeworks:lua-api/card-handle.md#properties"
-    }
-
+val RedstoneCardApi: ApiSurface = api(RedstoneCard, parent = NetworkHandle) {
     method("powered") {
         returns(Boolean)
         description = "True if the incoming redstone signal is greater than 0."

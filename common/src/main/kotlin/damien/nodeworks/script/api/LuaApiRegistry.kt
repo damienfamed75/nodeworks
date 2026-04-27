@@ -123,24 +123,56 @@ object LuaApiRegistry {
         return globalDocs
     }
 
-    /** Methods declared on a type or module. Empty list if the receiver isn't
-     *  registered, callers should treat that as "unknown receiver", not an error. */
+    /** Methods declared on a type or module, including any inherited from
+     *  [ApiSurface.parent]. Own methods come first, then inherited ones, with later
+     *  duplicates suppressed so a subtype can override a base method by re-declaring
+     *  it under the same name. Empty list if the receiver isn't registered, callers
+     *  should treat that as "unknown receiver", not an error. */
     fun methodsOf(typeName: String): List<ApiDoc> {
         LuaApiBootstrap.ensureInitialized()
-        return surfacesByType[typeName]?.methods ?: emptyList()
+        return mergeWithParent(typeName) { it.methods }
     }
 
-    /** Properties declared on a type. */
+    /** Properties declared on a type, including any inherited from [ApiSurface.parent]. */
     fun propertiesOf(typeName: String): List<ApiDoc> {
         LuaApiBootstrap.ensureInitialized()
-        return surfacesByType[typeName]?.properties ?: emptyList()
+        return mergeWithParent(typeName) { it.properties }
     }
 
     /** Resolve the return type of a method on a type, for the autocomplete chain
-     *  resolver. Returns null if the method isn't registered. */
+     *  resolver. Walks the parent chain so a method defined on the base type is
+     *  resolvable from a chained call on the subtype. Returns null if the method
+     *  isn't registered anywhere up the chain. */
     fun methodReturnType(typeName: String, methodName: String): LuaType? {
         LuaApiBootstrap.ensureInitialized()
-        return docsByKey["$typeName:$methodName"]?.returnType
+        var t: String? = typeName
+        val seen = mutableSetOf<String>()
+        while (t != null && seen.add(t)) {
+            docsByKey["$t:$methodName"]?.returnType?.let { return it }
+            t = surfacesByType[t]?.parent?.name
+        }
+        return null
+    }
+
+    /** Walk the [ApiSurface.parent] chain starting at [typeName], collecting whatever
+     *  [select] returns from each surface. Own entries appear first so subtypes can
+     *  shadow base entries by name; duplicates are dropped on the way. */
+    private fun mergeWithParent(
+        typeName: String,
+        select: (ApiSurface) -> List<ApiDoc>,
+    ): List<ApiDoc> {
+        val out = mutableListOf<ApiDoc>()
+        val seenNames = mutableSetOf<String>()
+        val seenSurfaces = mutableSetOf<String>()
+        var t: String? = typeName
+        while (t != null && seenSurfaces.add(t)) {
+            val surface = surfacesByType[t] ?: break
+            for (doc in select(surface)) {
+                if (seenNames.add(doc.displayName)) out.add(doc)
+            }
+            t = surface.parent?.name
+        }
+        return out
     }
 
     /** Look up a doc by its qualified key (`Network:find`, `ItemsHandle.id`, `print`). */
@@ -192,6 +224,13 @@ object LuaApiRegistry {
     fun allStringTypes(): Map<String, LuaType> {
         LuaApiBootstrap.ensureInitialized()
         return stringTypes
+    }
+
+    /** Snapshot of every registered surface, keyed by its type name. Exposed for the
+     *  validator's parent-chain walk. */
+    fun allSurfaces(): Map<String, ApiSurface> {
+        LuaApiBootstrap.ensureInitialized()
+        return surfacesByType
     }
 }
 

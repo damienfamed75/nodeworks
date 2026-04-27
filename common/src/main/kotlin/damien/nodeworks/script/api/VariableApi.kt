@@ -10,11 +10,13 @@ import damien.nodeworks.script.api.LuaType.Primitive.String
  * for a variable name. Runtime impl in [damien.nodeworks.script.VariableHandle], the
  * variant types share the base methods plus their type-specific helpers.
  *
- * The variants are declared as separate [LuaType.Named] entries (not as inheritance)
- * because Lua is duck-typed, the autocomplete picks the variant when the symbol
- * table has inferred a typed handle (NumberVariableHandle / StringVariableHandle /
- * BoolVariableHandle from the variable's declared type), and falls back to the
- * generic VariableHandle otherwise.
+ * Each variant declares `parent = VariableHandle` so [LuaApiRegistry.methodsOf] /
+ * `propertiesOf` walks up to merge in the base surface's `:get`/`:set`/`:cas`/...
+ * core. The autocomplete picks the variant when the symbol table has inferred a
+ * typed handle (NumberVariableHandle / StringVariableHandle / BoolVariableHandle
+ * from the variable's declared type), and falls back to the generic VariableHandle
+ * otherwise. Lua is duck-typed at runtime, so this isn't real inheritance, just a
+ * registry-level surface merge.
  */
 
 val VariableHandle: LuaType.Named = LuaTypes.type(
@@ -41,12 +43,7 @@ val BoolVariableHandle: LuaType.Named = LuaTypes.type(
     guidebookRef = "nodeworks:lua-api/variable-handle.md",
 )
 
-val VariableHandleApi: ApiSurface = api(VariableHandle) {
-    property("name", String) {
-        description = "The variable's declared name."
-        guidebookRef = "nodeworks:lua-api/variable-handle.md#properties"
-    }
-
+val VariableHandleApi: ApiSurface = api(VariableHandle, parent = NetworkHandle) {
     method("get") {
         returns(Any)
         description = "Returns the variable's current value."
@@ -87,7 +84,7 @@ val VariableHandleApi: ApiSurface = api(VariableHandle) {
     }
 }
 
-val NumberVariableHandleApi: ApiSurface = api(NumberVariableHandle) {
+val NumberVariableHandleApi: ApiSurface = api(NumberVariableHandle, parent = VariableHandle) {
     method("increment") {
         param("by", Number.optional(), description = "Amount to add. Defaults to 1.")
         returns(LuaType.Primitive.Void)
@@ -117,7 +114,7 @@ val NumberVariableHandleApi: ApiSurface = api(NumberVariableHandle) {
     }
 }
 
-val StringVariableHandleApi: ApiSurface = api(StringVariableHandle) {
+val StringVariableHandleApi: ApiSurface = api(StringVariableHandle, parent = VariableHandle) {
     method("append") {
         param("str", String)
         returns(LuaType.Primitive.Void)
@@ -138,7 +135,7 @@ val StringVariableHandleApi: ApiSurface = api(StringVariableHandle) {
     }
 }
 
-val BoolVariableHandleApi: ApiSurface = api(BoolVariableHandle) {
+val BoolVariableHandleApi: ApiSurface = api(BoolVariableHandle, parent = VariableHandle) {
     method("toggle") {
         returns(LuaType.Primitive.Void)
         description = "Flips the boolean value."

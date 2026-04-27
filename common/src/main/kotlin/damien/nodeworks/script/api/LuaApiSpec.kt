@@ -40,11 +40,19 @@ data class ApiDoc(
 
 /** A complete API surface: one TYPE or MODULE plus all its methods and properties.
  *  The registry stores these as the unit of registration so consumers can iterate
- *  "all methods on Network" without scanning a flat key map. */
+ *  "all methods on Network" without scanning a flat key map.
+ *
+ *  [parent] declares a base TYPE this surface inherits methods and properties from.
+ *  When set, [LuaApiRegistry.methodsOf] / `propertiesOf` walk the parent chain so
+ *  consumers see the merged surface (own + inherited). Used for the typed
+ *  `VariableHandle` variants (`NumberVariableHandle`, etc.) which add type-specific
+ *  helpers on top of the shared `:get`/`:set`/`:cas`/... core. Lua is duck-typed at
+ *  runtime, so this isn't real inheritance, just a registry-level surface merge. */
 data class ApiSurface(
     val type: LuaType.Named,
     val methods: List<ApiDoc>,
     val properties: List<ApiDoc>,
+    val parent: LuaType.Named? = null,
 ) {
     /** Top-level [Doc] entry for the surface itself. Used so the surface name resolves
      *  to a tooltip and the guidebook gets a per-type page. */
@@ -78,11 +86,18 @@ data class ApiSurface(
 
 /** Entry point for declaring an API surface. The receiver type is passed as a
  *  [LuaType.Named] so all references to it elsewhere in the spec come from the same
- *  Kotlin object, no chance of a typo'd "Network" string sneaking through. */
-fun api(receiver: LuaType.Named, init: ApiSurfaceBuilder.() -> Unit): ApiSurface {
+ *  Kotlin object, no chance of a typo'd "Network" string sneaking through.
+ *
+ *  [parent] optionally declares a base type to inherit methods/properties from. See
+ *  [ApiSurface.parent] for the semantics. */
+fun api(
+    receiver: LuaType.Named,
+    parent: LuaType.Named? = null,
+    init: ApiSurfaceBuilder.() -> Unit,
+): ApiSurface {
     val builder = ApiSurfaceBuilder(receiver)
     builder.init()
-    return builder.build()
+    return builder.build().copy(parent = parent)
 }
 
 /** Top-level [LuaType.Function] builder for callback-shaped parameters. Reads as

@@ -15,7 +15,7 @@ val ObserverCard: LuaType.Named = LuaTypes.type(
     guidebookRef = "nodeworks:lua-api/card-handle.md#observer-card",
 )
 
-val ObserverCardApi: ApiSurface = api(ObserverCard) {
+val ObserverCardApi: ApiSurface = api(ObserverCard, parent = NetworkHandle) {
     method("block") {
         returns(BlockId)
         description = "Block id at the watched position, e.g. `\"minecraft:diamond_ore\"`."

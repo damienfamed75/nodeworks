@@ -23,6 +23,8 @@ import damien.nodeworks.script.LuaApiDocs
 import damien.nodeworks.script.LuaTokenizer
 import damien.nodeworks.script.LuaTokenizer.Token
 import damien.nodeworks.script.LuaTokenizer.TokenType
+import damien.nodeworks.script.diagnostics.Diagnostic
+import damien.nodeworks.script.diagnostics.Severity
 import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
@@ -117,6 +119,18 @@ class ScriptEditor(
      *  hover-tooltip lookup so we don't re-tokenise every frame, and don't have to redo
      *  the multi-line block-comment state tracking the render loop already does. */
     private val renderedLineTokens = HashMap<Int, List<Token>>()
+
+    /** Diagnostics to underline in the editor (red/yellow/blue squiggles per [Severity]).
+     *  Polled once per frame in [extractWidgetRenderState]; the host wires this to a cached
+     *  [damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze] call so the analyzer
+     *  doesn't run on every render frame. Default returns nothing so out-of-terminal usages
+     *  of this widget render no squiggles. */
+    var diagnosticsProvider: () -> List<Diagnostic> = { emptyList() }
+
+    /** Snapshot of [diagnosticsProvider]'s output captured at frame start, kept stable
+     *  through the rest of the frame so the squiggle pass and the hover lookup
+     *  ([diagnosticAt]) agree on what's flagged. */
+    private var renderedDiagnostics: List<Diagnostic> = emptyList()
 
     /** Last mouse position passed into [extractWidgetRenderState]. Needed by the G-key
      *  handler so it can resolve the hovered token at the moment of the press, KeyEvent
@@ -533,6 +547,10 @@ class ScriptEditor(
         // for rendering, so no re-tokenisation.
         populateTokenCache()
 
+        // Snapshot diagnostics once per frame so the squiggle pass (below) and the
+        // hover lookup ([diagnosticAt]) work off the same list.
+        renderedDiagnostics = diagnosticsProvider()
+
         advanceHoldProgress(mouseX, mouseY)
 
         // Background
@@ -605,6 +623,13 @@ class ScriptEditor(
             }
         }
 
+        // Diagnostic squiggles. Drawn after the line text so the wave sits over the
+        // glyph descenders, before the cursor so the cursor's vertical bar still
+        // renders on top of any underline that lands at the same column.
+        for (diag in renderedDiagnostics) {
+            drawDiagnosticSquiggle(graphics, diag)
+        }
+
         // Cursor
         if (isFocused) {
             val elapsed = System.currentTimeMillis() - cursorBlinkTime
@@ -621,6 +646,66 @@ class ScriptEditor(
         // tooltip backed by [resolveDocAt] and [getHoldProgressFraction]. Keeping it
         // outside the editor widget lets the screen position the popup above its own
         // chrome and control z-order against the autocomplete popup etc.
+    }
+
+    /** Draw a horizontally-tiling sawtooth underline beneath [diag]'s range, coloured
+     *  per [Severity]. Uses the white SQUIGGLE atlas region tinted to the severity colour
+     *  so the wave shape lives in the texture (and can be redesigned by editing the atlas
+     *  rather than this code). Multi-line diagnostics get a separate run per line. */
+    private fun drawDiagnosticSquiggle(graphics: GuiGraphicsExtractor, diag: Diagnostic) {
+        val color = when (diag.severity) {
+            Severity.ERROR -> 0xFFFF4444.toInt()
+            Severity.WARNING -> 0xFFFFCC00.toInt()
+            Severity.HINT -> 0xFF4488FF.toInt()
+        }
+        val (startLine, startCol) = cursorToLineCol(diag.range.start)
+        val (endLine, endCol) = cursorToLineCol(diag.range.end)
+        for (lineIdx in startLine..endLine) {
+            if (lineIdx < 0 || lineIdx >= lines.size) continue
+            val line = lines[lineIdx]
+            val sCol = if (lineIdx == startLine) startCol else 0
+            val eCol = if (lineIdx == endLine) endCol else line.length
+            if (sCol >= eCol) continue
+            val lineY = textTop + yTopOfLine(lineIdx) - scrollY
+            // Cull lines fully outside the editor's visible band.
+            if (lineY + lineHeight < y || lineY > y + height) continue
+            val sx = textLeft + xOfCol(lineIdx, sCol) - scrollX
+            val ex = textLeft + xOfCol(lineIdx, eCol) - scrollX
+            // Underline sits at the bottom 2 rows of the line; SQUIGGLE is 4x2 in the atlas
+            // and tiles horizontally to fill (ex - sx) pixels.
+            val baseY = lineY + lineHeight - 2
+            damien.nodeworks.screen.NineSlice.SQUIGGLE.drawTinted(
+                graphics, sx, baseY, ex - sx, 2, color,
+            )
+        }
+    }
+
+    /** Diagnostic whose range covers the character offset at (mouseX, mouseY), or null
+     *  if the mouse isn't over any flagged span. Higher-severity diagnostics win when
+     *  multiple overlap so an error doesn't get hidden behind a hint. */
+    fun diagnosticAt(mouseX: Int, mouseY: Int): Diagnostic? {
+        if (renderedDiagnostics.isEmpty()) return null
+        if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return null
+        val relY = mouseY - textTop + scrollY
+        if (relY < 0) return null
+        val lineIdx = lineAtContentY(relY)
+        if (lineIdx < 0 || lineIdx >= lines.size) return null
+        val lineTop = yTopOfLine(lineIdx)
+        if (relY < lineTop || relY >= lineTop + lineHeight) return null
+        val relX = (mouseX - textLeft + scrollX)
+        val col = colAtX(lineIdx, relX)
+        val absoluteOffset = lineColToCursor(lineIdx, col)
+        // Severity priority: ERROR > WARNING > HINT, so a typo squiggle wins over a hint
+        // when their ranges overlap (e.g. a future nullable warning on the same token).
+        return renderedDiagnostics
+            .filter { absoluteOffset in it.range }
+            .minByOrNull {
+                when (it.severity) {
+                    Severity.ERROR -> 0
+                    Severity.WARNING -> 1
+                    Severity.HINT -> 2
+                }
+            }
     }
 
     /**

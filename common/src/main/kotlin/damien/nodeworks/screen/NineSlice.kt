@@ -398,8 +398,10 @@ class NineSlice(
         //                                                           Inventory Terminal's top bar. Top 16x16 is the
         //                                                           cap corner, bottom 5px extends down the left
         //                                                           edge of the window like a pipe.
+        // (60,152)   4x2     SQUIGGLE             0, 0, 0, 0        White sawtooth, tiled horizontally for
+        //                                                           diagnostic underlines (recolor via drawTinted).
         //
-        // Free space: (60+, 152–177), (0+, 178+)
+        // Free space: (64+, 152–177), (0+, 178+)
         // =====================================================================
 
         // ---- Pre-built slices ----
@@ -458,5 +460,8 @@ class NineSlice(
 
         // Portable top-bar left cap, 16x21. Top 16x16 is the corner, bottom 5px is the pipe tail.
         val PORTABLE_TOP_BAR_LEFT_CAP = NineSlice(GUI_ATLAS, 44, 152, 16, 21, 0, 0, 0, 0, tile = false)
+
+        // 4x2 squiggles for script terminal diagnostics.
+        val SQUIGGLE = NineSlice(GUI_ATLAS, 60, 152, 4, 2, 0, 0, 0, 0)
     }
 }

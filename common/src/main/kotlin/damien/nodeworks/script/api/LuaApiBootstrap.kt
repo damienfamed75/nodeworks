@@ -44,6 +44,10 @@ object LuaApiBootstrap {
         for (stringType in ALL_STRING_TYPES) {
             LuaApiRegistry.registerStringType(stringType)
         }
+        // NetworkHandle is the abstract base every `network:get(...)` return type
+        // inherits from. Register first so subtypes can resolve `parent = NetworkHandle`
+        // when the validator walks the chain.
+        LuaApiRegistry.register(NetworkHandleApi)
         LuaApiRegistry.register(SchedulerApi)
         LuaApiRegistry.register(ItemsHandleApi)
         LuaApiRegistry.register(CardHandleApi)

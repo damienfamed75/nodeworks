@@ -1496,6 +1496,15 @@ class AutocompletePopup(
         }
         runForLoopPass()
 
+        // Numeric for-loop bindings: `for i = 1, 5 do` / `for i=1, 10, 2 do`. The
+        // counter is always a number regardless of the bound expressions, so we don't
+        // need to resolve the RHS at all. putIfAbsent so an explicit annotation on a
+        // surrounding scope isn't overridden.
+        Regex("""\bfor\s+(\w+)\s*=""").findAll(fullText).forEach {
+            val name = it.groupValues[1]
+            if (name != "_") symbols.putIfAbsent(name, "number")
+        }
+
         // General inference: local x = expr
         // (`containerVars` was initialized above and may already carry explicit-annotation
         // entries, RHS-inferred container types are merged in below without overwriting

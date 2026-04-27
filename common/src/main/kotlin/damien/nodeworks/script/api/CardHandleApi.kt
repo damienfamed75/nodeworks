@@ -2,13 +2,12 @@ package damien.nodeworks.script.api
 
 import damien.nodeworks.script.api.LuaType.Primitive.Boolean
 import damien.nodeworks.script.api.LuaType.Primitive.Number
-import damien.nodeworks.script.api.LuaType.Primitive.String
 
 /**
  * Spec for the `CardHandle` Lua type. This is the generic IO/Storage card handle.
  * Specialised cards (RedstoneCard, ObserverCard, Breaker/Placer) live in their own
- * spec files and reuse the `name` property declared here. Runtime impl in
- * [damien.nodeworks.script.CardHandle].
+ * spec files. The shared `.name` property is inherited from [NetworkHandle], not
+ * redeclared here. Runtime impl in [damien.nodeworks.script.CardHandle].
  */
 
 val CardHandle: LuaType.Named = LuaTypes.type(
@@ -17,12 +16,7 @@ val CardHandle: LuaType.Named = LuaTypes.type(
     guidebookRef = "nodeworks:lua-api/card-handle.md",
 )
 
-val CardHandleApi: ApiSurface = api(CardHandle) {
-    property("name", String) {
-        description = "The card's alias as set in the Card Programmer."
-        guidebookRef = "nodeworks:lua-api/card-handle.md#properties"
-    }
-
+val CardHandleApi: ApiSurface = api(CardHandle, parent = NetworkHandle) {
     method("face") {
         param("name", FaceName, description = "Face name to pin the handle to.")
         returns(CardHandle)
