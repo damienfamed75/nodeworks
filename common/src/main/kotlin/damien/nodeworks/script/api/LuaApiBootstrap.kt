@@ -18,13 +18,25 @@ object LuaApiBootstrap {
     @Volatile
     private var initialized = false
 
+    /** Re-entrancy guard. The validator (run from [LuaApiRegistry.seal]) reads the
+     *  registry, and registry query helpers call [ensureInitialized] so any consumer
+     *  triggers init on first access. Without this flag the validator's reads would
+     *  recurse back into [register] mid-init. */
+    @Volatile
+    private var initializing = false
+
     fun ensureInitialized() {
         if (initialized) return
         synchronized(this) {
-            if (initialized) return
-            register()
-            LuaApiRegistry.seal()
-            initialized = true
+            if (initialized || initializing) return
+            initializing = true
+            try {
+                register()
+                LuaApiRegistry.seal()
+                initialized = true
+            } finally {
+                initializing = false
+            }
         }
     }
 

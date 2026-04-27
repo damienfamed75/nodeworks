@@ -45,10 +45,17 @@ enum class DistributionStrategy { FILL, ROUND_ROBIN }
 /** A concrete endpoint after wildcard expansion. Either the Network Storage pool
  *  (sentinel) or a specific Card on the network. Importer and Stocker both iterate
  *  over lists of these at tick time, wildcards like `"io_*"` fan out to multiple
- *  [Card] entries, and the global `network` becomes [Pool]. */
+ *  [Card] entries, and the global `network` becomes [Pool].
+ *
+ *  [faceOverride] (Card only) replaces the card's stored access face when reading
+ *  or writing the card's adjacent storage. Carried in from a face-overridden
+ *  CardHandle or HandleList. */
 internal sealed class ResolvedRef {
     data object Pool : ResolvedRef()
-    data class Card(val snapshot: CardSnapshot) : ResolvedRef()
+    data class Card(
+        val snapshot: CardSnapshot,
+        val faceOverride: net.minecraft.core.Direction? = null,
+    ) : ResolvedRef()
 }
 
 /** Expand a single [CardRef] into zero-or-more [ResolvedRef]s. Supports `*`
@@ -60,20 +67,22 @@ internal fun expandCardRef(snapshot: NetworkSnapshot, ref: CardRef): List<Resolv
     is CardRef.Named -> {
         if (!ref.alias.contains('*')) {
             val card = snapshot.findByAlias(ref.alias)
-            if (card != null) listOf(ResolvedRef.Card(card)) else emptyList()
+            if (card != null) listOf(ResolvedRef.Card(card, ref.faceOverride)) else emptyList()
         } else {
             val regex = wildcardToRegex(ref.alias)
             snapshot.allCards()
                 .filter { regex.matchEntire(it.effectiveAlias) != null }
                 .distinctBy { it.effectiveAlias }
-                .map { ResolvedRef.Card(it) }
+                .map { ResolvedRef.Card(it, ref.faceOverride) }
         }
     }
 }
 
 /** Convert a glob-style alias (just `*` as wildcard) to a Regex. Every other
- *  character is literal so card aliases with punctuation don't get misinterpreted. */
-private fun wildcardToRegex(alias: String): Regex {
+ *  character is literal so card aliases with punctuation don't get misinterpreted.
+ *  Internal so [damien.nodeworks.script.ScriptEngine.networkCards] can reuse the
+ *  same matcher when materialising `network:cards(pattern)` lookups. */
+internal fun wildcardToRegex(alias: String): Regex {
     val pattern = alias.split("*").joinToString(".*") { Regex.escape(it) }
     return Regex(pattern)
 }
@@ -256,10 +265,10 @@ class ImporterBuilder(
         if (maxCount <= 0L) return 0L
         return when (source) {
             is ResolvedRef.Card -> {
-                val srcStorage = CardStorage.forCard(level, source.snapshot) ?: return 0L
+                val srcStorage = CardStorage.forCard(level, source.snapshot, source.faceOverride) ?: return 0L
                 when (target) {
                     is ResolvedRef.Card -> {
-                        val dest = CardStorage.forCard(level, target.snapshot) ?: return 0L
+                        val dest = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
                         PlatformServices.storage.moveItems(srcStorage, dest, filterPred, maxCount)
                     }
                     is ResolvedRef.Pool -> NetworkStorageHelper.insertItems(
@@ -271,7 +280,7 @@ class ImporterBuilder(
             is ResolvedRef.Pool -> when (target) {
                 // Pool to Pool is a no-op, items would just shuffle between storage cards.
                 is ResolvedRef.Pool -> 0L
-                is ResolvedRef.Card -> movePoolToCard(snapshot, level, target.snapshot, filterPred, maxCount)
+                is ResolvedRef.Card -> movePoolToCard(snapshot, level, target, filterPred, maxCount)
             }
         }
     }
@@ -281,11 +290,11 @@ class ImporterBuilder(
     private fun movePoolToCard(
         snapshot: NetworkSnapshot,
         level: net.minecraft.server.level.ServerLevel,
-        targetCard: CardSnapshot,
+        target: ResolvedRef.Card,
         filterPred: (String) -> Boolean,
         maxCount: Long,
     ): Long {
-        val destStorage = CardStorage.forCard(level, targetCard) ?: return 0L
+        val destStorage = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
         var remaining = maxCount
         var totalMoved = 0L
         for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {

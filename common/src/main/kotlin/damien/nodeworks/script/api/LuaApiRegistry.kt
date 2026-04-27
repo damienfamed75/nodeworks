@@ -99,63 +99,100 @@ object LuaApiRegistry {
         sealed = false
     }
 
-    // Query helpers, read-only after registration.
+    // Query helpers, read-only after registration. Each one calls
+    // [LuaApiBootstrap.ensureInitialized] so the first consumer to touch the registry
+    // triggers spec registration. The bootstrap's `initializing` re-entrancy guard
+    // ensures the validator's own reads during [seal] don't recurse.
 
     /** All registered TYPE entries (excluding MODULE). Drives the `local x: <Type>`
      *  autocomplete and the diagnostics analyzer's "is this a known type" check. */
-    fun knownTypes(): List<LuaType.Named> =
-        typesByName.values.filter { it.kind == LuaType.Named.Kind.TYPE }
+    fun knownTypes(): List<LuaType.Named> {
+        LuaApiBootstrap.ensureInitialized()
+        return typesByName.values.filter { it.kind == LuaType.Named.Kind.TYPE }
+    }
 
     /** All registered MODULE globals (network, scheduler, etc.). */
-    fun knownModules(): List<LuaType.Named> =
-        typesByName.values.filter { it.kind == LuaType.Named.Kind.MODULE }
+    fun knownModules(): List<LuaType.Named> {
+        LuaApiBootstrap.ensureInitialized()
+        return typesByName.values.filter { it.kind == LuaType.Named.Kind.MODULE }
+    }
 
     /** All registered globals (top-level functions, keywords). */
-    fun globals(): Map<String, ApiDoc> = globalDocs
+    fun globals(): Map<String, ApiDoc> {
+        LuaApiBootstrap.ensureInitialized()
+        return globalDocs
+    }
 
     /** Methods declared on a type or module. Empty list if the receiver isn't
      *  registered, callers should treat that as "unknown receiver", not an error. */
-    fun methodsOf(typeName: String): List<ApiDoc> = surfacesByType[typeName]?.methods ?: emptyList()
+    fun methodsOf(typeName: String): List<ApiDoc> {
+        LuaApiBootstrap.ensureInitialized()
+        return surfacesByType[typeName]?.methods ?: emptyList()
+    }
 
     /** Properties declared on a type. */
-    fun propertiesOf(typeName: String): List<ApiDoc> = surfacesByType[typeName]?.properties ?: emptyList()
+    fun propertiesOf(typeName: String): List<ApiDoc> {
+        LuaApiBootstrap.ensureInitialized()
+        return surfacesByType[typeName]?.properties ?: emptyList()
+    }
 
     /** Resolve the return type of a method on a type, for the autocomplete chain
      *  resolver. Returns null if the method isn't registered. */
-    fun methodReturnType(typeName: String, methodName: String): LuaType? =
-        docsByKey["$typeName:$methodName"]?.returnType
+    fun methodReturnType(typeName: String, methodName: String): LuaType? {
+        LuaApiBootstrap.ensureInitialized()
+        return docsByKey["$typeName:$methodName"]?.returnType
+    }
 
     /** Look up a doc by its qualified key (`Network:find`, `ItemsHandle.id`, `print`). */
-    fun docFor(key: String): ApiDoc? = docsByKey[key]
+    fun docFor(key: String): ApiDoc? {
+        LuaApiBootstrap.ensureInitialized()
+        return docsByKey[key]
+    }
 
     /** Resolve a Lua-side capability string (`"redstone"`) to its registered TYPE
      *  (`RedstoneCard`). Used by the autocomplete to figure out what type
      *  `network:get("redstone-card")` returns. */
-    fun typeForCapabilityType(capabilityString: String): LuaType.Named? =
-        typesByName.values.firstOrNull { it.capabilityType == capabilityString }
+    fun typeForCapabilityType(capabilityString: String): LuaType.Named? {
+        LuaApiBootstrap.ensureInitialized()
+        return typesByName.values.firstOrNull { it.capabilityType == capabilityString }
+    }
 
     /** Inverse of [typeForCapabilityType]. Used by handle-list broadcast logic that
      *  wants to know "what capability does CardHandle map to?". */
-    fun capabilityTypeFor(typeName: String): String? = typesByName[typeName]?.capabilityType
+    fun capabilityTypeFor(typeName: String): String? {
+        LuaApiBootstrap.ensureInitialized()
+        return typesByName[typeName]?.capabilityType
+    }
 
     /** True if the given module name resolves to a registered MODULE. Used by the
      *  symbol table to know whether `network:foo` should look up `Network:foo` docs. */
-    fun moduleType(globalName: String): LuaType.Named? =
-        typesByName.values.firstOrNull { it.moduleGlobal == globalName }
+    fun moduleType(globalName: String): LuaType.Named? {
+        LuaApiBootstrap.ensureInitialized()
+        return typesByName.values.firstOrNull { it.moduleGlobal == globalName }
+    }
 
     /** Snapshot of every registered doc, keyed by its qualified key. The legacy
      *  [damien.nodeworks.script.LuaApiDocs.resolveAt] consumers can read from this
      *  during the migration window before they're cut over to direct registry queries. */
-    fun allDocs(): Map<String, ApiDoc> = docsByKey
+    fun allDocs(): Map<String, ApiDoc> {
+        LuaApiBootstrap.ensureInitialized()
+        return docsByKey
+    }
 
     /** Look up a registered string subtype by name. Returns null when the name isn't
      *  a registered [LuaType.StringEnum] / [LuaType.StringDomain] / [LuaType.Union]. */
-    fun stringTypeOf(name: String): LuaType? = stringTypes[name]
+    fun stringTypeOf(name: String): LuaType? {
+        LuaApiBootstrap.ensureInitialized()
+        return stringTypes[name]
+    }
 
     /** Snapshot of every registered string subtype. The validator iterates these to
      *  check that all referenced names resolve and that [LuaType.StringDomain] keys
      *  point at known sources. */
-    fun allStringTypes(): Map<String, LuaType> = stringTypes
+    fun allStringTypes(): Map<String, LuaType> {
+        LuaApiBootstrap.ensureInitialized()
+        return stringTypes
+    }
 }
 
 /**

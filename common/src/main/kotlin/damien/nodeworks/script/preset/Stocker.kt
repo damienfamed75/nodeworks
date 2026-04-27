@@ -1,6 +1,5 @@
 package damien.nodeworks.script.preset
 
-import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.ItemStorageHandle
 import damien.nodeworks.platform.PlatformServices
@@ -112,7 +111,10 @@ class StockerBuilder(
     // chest_*" has ambiguous semantics that a power user can express with multiple
     // stockers if they really want it.
     private var resolvedSources: List<ResolvedRef> = emptyList()
-    private var resolvedTarget: CardSnapshot? = null
+    // Target stays single (no wildcard expansion). Stored as a [ResolvedRef.Card] so
+    // the face override (if any) carried in by a face-overridden CardHandle survives
+    // through to the storage lookup, same as on the source side.
+    private var resolvedTarget: ResolvedRef.Card? = null
 
     override val presetName = "stocker"
 
@@ -153,7 +155,9 @@ class StockerBuilder(
     override fun onSnapshotChanged(snapshot: NetworkSnapshot) {
         resolvedSources = sources.flatMap { expandCardRef(snapshot, it) }
         resolvedTarget = when (val t = target) {
-            is CardRef.Named -> snapshot.findByAlias(t.alias) // no wildcard expansion on target
+            is CardRef.Named -> snapshot.findByAlias(t.alias)?.let {
+                ResolvedRef.Card(it, t.faceOverride)
+            }
             else -> null
         }
     }
@@ -168,7 +172,7 @@ class StockerBuilder(
         val current = when (targetRef) {
             is CardRef.Pool -> NetworkStorageHelper.countItems(level, snapshot, filter).toInt()
             is CardRef.Named -> {
-                val storage = resolvedTarget?.let { CardStorage.forCard(level, it) } ?: return
+                val storage = resolvedTarget?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) } ?: return
                 PlatformServices.storage.countItems(storage, filterPred)
                     .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             }
@@ -215,7 +219,7 @@ class StockerBuilder(
             if (need <= 0) break
             when (source) {
                 is ResolvedRef.Card -> {
-                    val srcStorage = CardStorage.forCard(level, source.snapshot) ?: continue
+                    val srcStorage = CardStorage.forCard(level, source.snapshot, source.faceOverride) ?: continue
                     need -= moveFromStorageToTarget(snapshot, level, srcStorage, targetRef, filterPred, need.toLong())
                         .toInt().coerceAtLeast(0)
                 }
@@ -237,7 +241,7 @@ class StockerBuilder(
         maxCount: Long,
     ): Long = when (targetRef) {
         is CardRef.Named -> {
-            val destStorage = resolvedTarget?.let { CardStorage.forCard(level, it) }
+            val destStorage = resolvedTarget?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) }
             if (destStorage == null) 0L
             else PlatformServices.storage.moveItems(source, destStorage, filterPred, maxCount)
         }
@@ -255,7 +259,7 @@ class StockerBuilder(
         maxCount: Long,
     ): Long {
         if (targetRef is CardRef.Pool) return 0L
-        val destStorage = resolvedTarget?.let { CardStorage.forCard(level, it) } ?: return 0L
+        val destStorage = resolvedTarget?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) } ?: return 0L
         var remaining = maxCount
         var totalMoved = 0L
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {

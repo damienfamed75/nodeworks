@@ -450,7 +450,7 @@ class AutocompletePopup(
         }
 
         // Check if we're inside a string argument: scan back for unclosed "
-        val inString = findStringArgContext(line)
+        val inString = findStringArgContext(line, beforeCursor)
         if (inString != null) return inString
 
         // Check for type annotation: `local x: partial` or `function(...param: partial`
@@ -479,7 +479,7 @@ class AutocompletePopup(
     }
 
     /** Check if cursor is inside a string argument like `network:get("partial` */
-    private fun findStringArgContext(line: String): CursorContext.StringArg? {
+    private fun findStringArgContext(line: String, beforeCursor: String): CursorContext.StringArg? {
         // Find the last unmatched ", we're inside a string if quote count is odd
         var quoteCount = 0
         var lastQuoteIdx = -1
@@ -512,7 +512,20 @@ class AutocompletePopup(
             // module-aware dispatch path with their full receiver-and-name.
             val funcMatch = Regex("""([\w.:]+)\s*$""").find(funcExpr)
             if (funcMatch != null) {
-                return CursorContext.StringArg(funcMatch.groupValues[1], partial, argIndex, beforeQuote)
+                val matchedFuncExpr = funcMatch.groupValues[1]
+                // Multi-line chain: when the matched funcExpr starts with `:` the call's
+                // receiver expression lives on prior lines (e.g. `importer\n :from("`).
+                // Walk back through continuation lines to recover the chain root and
+                // flatten into a single-line precedingText so the registry's chain
+                // resolver works unchanged.
+                val effectivePrecedingText = if (matchedFuncExpr.startsWith(":")) {
+                    val priorText = beforeCursor.substring(0, beforeCursor.length - line.length).trimEnd()
+                    val chainRoot = if (priorText.isNotEmpty()) collectChainExpression(priorText) else null
+                    if (chainRoot != null) chainRoot + beforeQuote.trimStart() else beforeQuote
+                } else {
+                    beforeQuote
+                }
+                return CursorContext.StringArg(matchedFuncExpr, partial, argIndex, effectivePrecedingText)
             }
         }
 
@@ -1796,7 +1809,14 @@ class AutocompletePopup(
             val callIdx = ctx.precedingText.lastIndexOf(callMarker)
             if (callIdx < 0) return null
             val chainExpr = ctx.precedingText.substring(0, callIdx).trimEnd()
-            val type = resolveExpressionType(chainExpr) ?: return null
+            // Chain ending in `)` resolves through the call-return-type path. A bare
+            // identifier (multi-line chain whose root is just `importer` or a typed
+            // local like `myImp`) falls through to module/symbol lookup so the first
+            // call after a line break still autocompletes.
+            val type = resolveExpressionType(chainExpr)
+                ?: damien.nodeworks.script.api.LuaApiRegistry.moduleType(chainExpr)?.name
+                ?: symbols[chainExpr]
+                ?: return null
             type to method
         } else {
             val colon = ctx.funcExpr.indexOf(':')
@@ -2000,6 +2020,7 @@ class AutocompletePopup(
                 labels.map { (alias, type) -> suggest(alias, "$alias ($type)", Kind.STRING) },
             )
         }
+        "card-alias-pattern" -> suggestCardAliasesWithWildcards(partial, cards)
         "storage-card-alias" -> suggestCardAliasesWithWildcards(
             partial,
             cards.filter { it.capability.type == "storage" }

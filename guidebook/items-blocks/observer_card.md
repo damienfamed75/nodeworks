@@ -41,6 +41,12 @@ The card reads the block in front of *that face*.
 See the [ObserverCard Scripting API](../lua-api/card-handle.md#observer-card)
 for the methods it exposes.
 
+## Channel
+
+The Observer Card has a channel picker in its GUI. See
+[Choosing a Channel](../lua-api/channel.md#choosing-a-channel) for how channels
+scope which scripts can address this card.
+
 ## Recipe
 
 <RecipeFor id="observer_card" />

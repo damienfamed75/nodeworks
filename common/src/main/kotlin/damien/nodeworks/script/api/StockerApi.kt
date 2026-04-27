@@ -30,7 +30,7 @@ val StockerApi: ApiSurface = api(Stocker) {
         param(
             "sources",
             InventoryCardAlias,
-            description = "Source card alias (IO or Storage). Variadic at runtime, also accepts CardHandle values or `network` for the pool.",
+            description = "Source card alias (IO or Storage). Variadic at runtime, also accepts CardHandle values, `network` for the pool, or a HandleList (e.g. `network:cards(\"chest_*\")`).",
         )
         returns(StockerBuilder)
         description = "Pull from cards or the pool to maintain a level. Never crafts."
@@ -57,7 +57,7 @@ val StockerBuilderApi: ApiSurface = api(StockerBuilder) {
         param(
             "target",
             InventoryCardAlias,
-            description = "Destination card alias (IO or Storage). Also accepts a CardHandle or `network` for the pool.",
+            description = "Destination card alias (IO or Storage). Also accepts a CardHandle (with optional `:face(...)` override) or `network` for the pool.",
         )
         returns(StockerBuilder)
         description = "Sets the destination."

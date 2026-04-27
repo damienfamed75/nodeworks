@@ -464,6 +464,14 @@ class CardHandle private constructor(
         // the user-facing `name` field.
         table.set("_cardRefName", LuaValue.valueOf(card.effectiveAlias))
 
+        // Internal: when this handle was produced by `:face(name)`, expose the
+        // override Direction.ordinal so preset builders carry the override into
+        // their tick-time storage lookups. Absent when the user kept the card's
+        // stored access face.
+        if (accessFace != null) {
+            table.set("_cardRefFace", LuaValue.valueOf(accessFace.ordinal))
+        }
+
         // Internal: target coordinates for job persistence (resume after restart)
         val cap = card.capability
         val resolvedFace = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP

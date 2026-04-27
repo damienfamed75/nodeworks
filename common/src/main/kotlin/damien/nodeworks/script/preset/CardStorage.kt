@@ -19,14 +19,15 @@ import net.minecraft.server.level.ServerLevel
  * so we can't use it for Named card refs that might point to an IO Card.
  */
 internal object CardStorage {
-    fun forCard(level: ServerLevel, card: CardSnapshot): ItemStorageHandle? {
+    fun forCard(level: ServerLevel, card: CardSnapshot, faceOverride: Direction? = null): ItemStorageHandle? {
         val cap = card.capability
-        val face: Direction = when (cap) {
+        val face: Direction = faceOverride ?: when (cap) {
             is IOSideCapability -> cap.defaultFace
             is StorageSideCapability -> cap.defaultFace
             is RedstoneSideCapability -> return null // redstone cards aren't storages
             else -> Direction.UP
         }
+        if (cap is RedstoneSideCapability) return null
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, face)
     }
 }

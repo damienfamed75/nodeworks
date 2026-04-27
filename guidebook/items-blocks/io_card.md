@@ -43,6 +43,12 @@ Unlike a <ItemLink id="storage_card" />, an IO card's block is **not** part of
 `network:find` across the whole network won't see its contents, and the
 <ItemLink id="inventory_terminal" /> or <ItemLink id="portable_inventory_terminal" /> won't list them.
 
+## Channel
+
+The IO Card has a channel picker in its GUI. See
+[Choosing a Channel](../lua-api/channel.md#choosing-a-channel) for how channels
+scope which scripts and presets can address this card.
+
 ## Scripting
 
 See the [CardHandle reference](../lua-api/card-handle.md#inventory-cards) for the full set of

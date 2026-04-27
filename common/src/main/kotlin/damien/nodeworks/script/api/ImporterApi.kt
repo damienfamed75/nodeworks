@@ -29,7 +29,7 @@ val ImporterApi: ApiSurface = api(Importer) {
         param(
             "sources",
             InventoryCardAlias,
-            description = "Source card alias (IO or Storage). Variadic at runtime, also accepts CardHandle values or `network` for the pool.",
+            description = "Source card alias (IO or Storage). Variadic at runtime, also accepts CardHandle values, `network` for the pool, or a HandleList (e.g. `network:cards(\"io_*\"):face(\"bottom\")`).",
         )
         returns(ImporterBuilder)
         description = "Starts an importer chain from one or more sources."
@@ -42,7 +42,7 @@ val ImporterBuilderApi: ApiSurface = api(ImporterBuilder) {
         param(
             "targets",
             InventoryCardAlias,
-            description = "Destination card alias (IO or Storage). Variadic at runtime, also accepts CardHandle values or `network` for the pool.",
+            description = "Destination card alias (IO or Storage). Variadic at runtime, also accepts CardHandle values, `network` for the pool, or a HandleList.",
         )
         returns(ImporterBuilder)
         description = "Sets the destinations."

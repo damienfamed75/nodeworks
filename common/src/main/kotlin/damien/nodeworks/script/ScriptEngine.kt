@@ -612,6 +612,12 @@ class ScriptEngine(
     ): LuaTable {
         val list = LuaTable()
 
+        // Marker so preset builders can detect a HandleList in their varargs and
+        // expand its members inline (CardRefs.fromVarargs reads this). Distinct
+        // from `_isNetworkPool`, those are the two table-shaped sentinel values
+        // the preset builders recognise.
+        list.set("_isHandleList", LuaValue.TRUE)
+
         // :list(), return a Lua array of every member. Built lazily on call so we
         // can hand back a fresh table each time (callers iterating the result with
         // ipairs shouldn't accidentally mutate the HandleList's underlying state).
@@ -628,6 +634,31 @@ class ScriptEngine(
         list.set("count", object : OneArgFunction() {
             override fun call(selfArg: LuaValue): LuaValue =
                 LuaValue.valueOf(memberTables.size)
+        })
+
+        // :face(name), return a NEW HandleList where every CardHandle member has
+        // been re-built with the given access face. Useful for routing through
+        // preset builders, `importer:from(network:cards("io_*"):face("bottom"))`
+        // pulls from the bottom face of every matched card without the script
+        // having to iterate manually. Members that aren't CardHandles (variables,
+        // breakers, placers) pass through untouched, their handle types ignore
+        // face. Same broadcast set as the source list since face-overriding a
+        // card doesn't change its capability.
+        list.set("face", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
+                val name = nameArg.checkjstring()
+                val faceFn = LuaValue.valueOf("face")
+                val rebuilt = memberTables.map { m ->
+                    val fn = m.get(faceFn)
+                    if (fn.isfunction()) {
+                        // member:face(name) → fresh CardHandle table with override.
+                        fn.call(m, nameArg)
+                    } else {
+                        m
+                    }
+                }
+                return createHandleListTable(rebuilt, broadcastMethodNames)
+            }
         })
 
         // Broadcast wrappers, one per registered method name. Each wrapper looks
@@ -873,6 +904,39 @@ class ScriptEngine(
                     members,
                     HandleListMethods.methodsForCapabilityType(type),
                 )
+            }
+        })
+
+        // network:cards(pattern) → HandleList<CardHandle> of every card whose alias
+        // matches the glob-style pattern (`*` is the only wildcard char). Different
+        // from `network:getAll(type)`: this matches by alias, that matches by
+        // capability type. Common case: face-overriding a wildcard set,
+        // `network:cards("io_*"):face("bottom")` returns a HandleList where every
+        // member is a face-overridden CardHandle, ready to feed into the importer.
+        //
+        // The HandleList is a snapshot taken at call time. New cards added later
+        // won't show up in it, re-call `network:cards` to refresh. For tick-time
+        // re-resolution, use the bare-string wildcard form on importer/stocker
+        // (`importer:from("io_*")`).
+        networkTable.set("cards", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, patternArg: LuaValue): LuaValue {
+                val pattern = patternArg.checkjstring()
+                val regex = damien.nodeworks.script.preset.wildcardToRegex(pattern)
+                val matched = snapshot.allCards()
+                    .filter { regex.matchEntire(it.effectiveAlias) != null }
+                    .distinctBy { it.effectiveAlias }
+                val members = matched.map { createCardTable(it, it.effectiveAlias) as LuaValue }
+                // Install broadcast methods only when every match shares one
+                // capability type (common case: `io_*` returns all IO cards).
+                // Mixed types fall back to no broadcasts so we don't dispatch a
+                // method that some members don't support.
+                val capTypes = matched.map { it.capability.type }.toSet()
+                val broadcasts = if (capTypes.size == 1) {
+                    HandleListMethods.methodsForCapabilityType(capTypes.first())
+                } else {
+                    emptySet()
+                }
+                return createHandleListTable(members, broadcasts)
             }
         })
 

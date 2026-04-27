@@ -26,7 +26,7 @@ val Network: LuaType.Named = LuaTypes.module(
 val Channel: LuaType.Named = LuaTypes.type(
     name = "Channel",
     description = "A dye-color-scoped view of the network's cards and devices.",
-    guidebookRef = "nodeworks:lua-api/network.md#channel",
+    guidebookRef = "nodeworks:lua-api/channel.md",
 )
 
 val HandleList: LuaType.Named = LuaTypes.type(
@@ -62,6 +62,18 @@ val NetworkApi: ApiSurface = api(Network) {
         description =
             "HandleList of every card or device matching this type. Broadcasts write methods across all members."
         guidebookRef = "nodeworks:lua-api/network.md#getAll"
+    }
+
+    method("cards") {
+        param(
+            "pattern",
+            CardAliasPattern,
+            description = "Alias or `<prefix>_*` glob pattern. `\"io_*\"` matches every card whose alias starts with `io_`.",
+        )
+        returns(HandleList)
+        description =
+            "Snapshot HandleList of every card whose alias matches `pattern`. Pair with `:face(name)` to override the access face on every member."
+        guidebookRef = "nodeworks:lua-api/network.md#cards"
     }
 
     method("channel") {
@@ -185,21 +197,21 @@ val ChannelApi: ApiSurface = api(Channel) {
         param("type", NetworkAccessorType, description = "Capability or device type to filter by.")
         returns(CardHandle.optional())
         description = "First card or device of this type on the channel, or nil if none match."
-        guidebookRef = "nodeworks:lua-api/network.md#channel-getfirst"
+        guidebookRef = "nodeworks:lua-api/channel.md#getFirst"
     }
 
     method("getAll") {
         param("type", NetworkAccessorType.optional(), description = "Capability or device type. Omit for every member.")
         returns(HandleList)
         description = "HandleList of every card or device on this channel matching the type."
-        guidebookRef = "nodeworks:lua-api/network.md#channel-getall"
+        guidebookRef = "nodeworks:lua-api/channel.md#getAll"
     }
 
     method("get") {
         param("alias", NetworkName, description = "Bare name of any card, variable, or device on this channel.")
         returns(CardHandle)
         description = "Alias lookup scoped to this channel. Errors if no match exists."
-        guidebookRef = "nodeworks:lua-api/network.md#channel-get"
+        guidebookRef = "nodeworks:lua-api/channel.md#get"
     }
 }
 
@@ -214,6 +226,14 @@ val HandleListApi: ApiSurface = api(HandleList) {
         returns(Number)
         description = "Number of members in the list."
         guidebookRef = "nodeworks:lua-api/handle-list.md#count"
+    }
+
+    method("face") {
+        param("name", FaceName, description = "Face the override should target.")
+        returns(HandleList)
+        description =
+            "Returns a new HandleList with each card member's access face overridden. Members that aren't cards (variables, breakers, placers) pass through unchanged."
+        guidebookRef = "nodeworks:lua-api/handle-list.md#face"
     }
 }
 

@@ -65,7 +65,6 @@ many observers takes one line. To iterate per-member, call `:list()`.
 ```lua
 -- Broadcast: turn every redstone card on at once
 network:getAll("redstone"):set(true)
-
 -- Iterate per-member when you need the value of a read method
 local storages = network:getAll("storage")
 for _, storage in storages:list() do
@@ -73,6 +72,37 @@ for _, storage in storages:list() do
 end
 -- "storage_0"
 -- "storage_1"
+```
+</LuaCode>
+
+---
+
+## cards
+
+Returns a [HandleList](handle-list.md) of the matching globbed card names. Useful
+for when you want to interact with multiple cards at the same time with the same
+naming convention.
+
+<LuaCode>
+```lua
+local allPistonCards = network:cards("piston_*")
+allPistonCards:set(true) -- turn on all pistons
+```
+</LuaCode>
+
+---
+
+## channel
+
+Scopes lookups to a single dye-color channel. Returns a [`Channel`](./channel.md) handle whose
+`:get`, `:getAll`, and `:getFirst` only see cards, variables, and devices set to
+that color, the same channel filter applies. Errors on unknown color names.
+
+<LuaCode>
+```lua
+local red = network:channel("red")
+red:getAll("redstone"):set(true) -- only the red-channel pistons
+local count = red:get("counter") -- variable on the red channel
 ```
 </LuaCode>
 

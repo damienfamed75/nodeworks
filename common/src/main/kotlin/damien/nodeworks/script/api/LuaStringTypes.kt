@@ -73,6 +73,16 @@ val CardAlias: LuaType.StringDomain = LuaType.StringDomain(
     sourceKey = "card-alias",
 )
 
+/** Card alias OR a `<prefix>_*` wildcard pattern matching multiple cards. Used by
+ *  `network:cards(pattern)` which accepts both. The completion source surfaces
+ *  every card on the network plus a wildcard suggestion per `<prefix>_<digit>`
+ *  group, mirroring the importer/stocker source completion UX. */
+val CardAliasPattern: LuaType.StringDomain = LuaType.StringDomain(
+    name = "CardAliasPattern",
+    description = "A card alias or `<prefix>_*` glob pattern matching multiple cards on this network.",
+    sourceKey = "card-alias-pattern",
+)
+
 /** Alias of a Storage card specifically. Distinct from [CardAlias] because
  *  routing rules (`network:route`) only apply to storage cards, suggesting other
  *  card kinds there is misleading. The source also surfaces `<prefix>_*` wildcard
@@ -177,6 +187,7 @@ internal val ALL_STRING_TYPES: List<LuaType> = listOf(
     BlockId,
     TagId,
     CardAlias,
+    CardAliasPattern,
     StorageCardAlias,
     InventoryCardAlias,
     BreakerAlias,

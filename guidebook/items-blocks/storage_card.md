@@ -29,6 +29,12 @@ A higher value means that card will be used first when storing items into the Ne
 across multiple cards at once. Useful when you've got a row of chests that
 should all share the same priority or a shared name.
 
+## Channel
+
+The Storage Card's GUI also has a channel picker. See
+[Choosing a Channel](../lua-api/channel.md#choosing-a-channel) for how channels
+scope which scripts, routing rules, and presets see this card.
+
 ## Installation and scripting
 
 Installed the same way an <ItemLink id="io_card" /> is. Slot into a face of
