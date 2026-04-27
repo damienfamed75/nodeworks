@@ -2,6 +2,7 @@ package damien.nodeworks.script.diagnostics
 
 import damien.nodeworks.script.LuaTokenizer
 import damien.nodeworks.script.api.LuaApiRegistry
+import damien.nodeworks.script.api.LuaType
 
 /**
  * Editor diagnostics analyzer for Nodeworks' Lua dialect (vanilla Lua + type
@@ -22,10 +23,16 @@ import damien.nodeworks.script.api.LuaApiRegistry
  *     doesn't declare that method.
  *   * `unknown-property` — `.field` after a typed receiver where the type
  *     doesn't declare that field.
- *
- * Future:
  *   * `nullable-misuse` — using a `T?` value through `:method` / `.field`
- *     without first narrowing it via `if x` / `if x ~= nil` / `assert(x)`.
+ *     without first narrowing it via `if x [then]` / `if x ~= nil [then]` /
+ *     `assert(x)`. Detects nullables from explicit `local x: T?` annotations,
+ *     `function f(x: T?)` parameters, and locals inferred from registry method
+ *     calls that return `Optional` (e.g. `local items = network:find(...)`).
+ *   * `nullable-arg` — passing a `T?` value as an argument to a method whose
+ *     corresponding parameter is declared non-nullable. Catches the bug shape
+ *     `io_1:insert(items)` where `items: ItemsHandle?` but `:insert` expects
+ *     a non-nullable `ItemsHandle`. Same nullable detection + narrowing logic
+ *     as `nullable-misuse`.
  */
 object LuaDiagnostics {
 
@@ -35,17 +42,50 @@ object LuaDiagnostics {
         "unknown-identifier" to Severity.ERROR,
         "unknown-method" to Severity.ERROR,
         "unknown-property" to Severity.ERROR,
+        "nullable-misuse" to Severity.WARNING,
+        "nullable-arg" to Severity.WARNING,
     )
+
+    /** Returns the names that are nullable AT [offset] in [text]. A name counts as
+     *  nullable when (1) the analyzer would put it in `nullableVars` (explicit
+     *  `T?` annotation, function-param `T?`, or RHS that resolves to `Optional`),
+     *  AND (2) the offset isn't inside a narrowing region for that name (`if name
+     *  then`, `if name ~= nil then`, `assert(name)`, `if not name then return end`).
+     *
+     *  Lets the editor's hover tooltip and autocomplete suggestion rendering
+     *  surface nullability the same way the diagnostic analyzer sees it — so
+     *  hovering `all` after `local all = io_1:find(...)` shows `all: ItemsHandle?`,
+     *  but inside `if all then ...` it shows `all: ItemsHandle`.
+     */
+    fun nullablesAtOffset(
+        text: String,
+        offset: Int,
+        symbols: Map<String, String> = emptyMap(),
+    ): Set<String> {
+        if (text.isBlank()) return emptySet()
+        val nullableVars = findNullableVars(text, symbols)
+        if (nullableVars.isEmpty()) return emptySet()
+        return nullableVars.filterTo(mutableSetOf()) { name ->
+            val regions = findNarrowingRegions(text, name)
+            regions.none { offset in it }
+        }
+    }
 
     /**
      * Run every rule against [text] and return the union of diagnostics they
      * produce. [symbols] maps a local variable name to the type the autocomplete
      * inferred for it (e.g. `"card" to "CardHandle"`); used by the typed-receiver
      * rules to look up methods/properties. Pass an empty map to skip those.
+     *
+     * [otherScripts] is the rest of the workspace's scripts keyed by name, used
+     * to resolve `local foo = require("foo")` cross-script lookups so callers like
+     * `foo.bar(items)` can flag against the imported module's declared param
+     * types. Pass an empty map (the default) to disable cross-script analysis.
      */
     fun analyze(
         text: String,
         symbols: Map<String, String> = emptyMap(),
+        otherScripts: Map<String, String> = emptyMap(),
     ): List<Diagnostic> {
         if (text.isBlank()) return emptyList()
 
@@ -57,6 +97,25 @@ object LuaDiagnostics {
 
         val out = mutableListOf<Diagnostic>()
         out += checkUnknownIdentifiers(text, declared, typeAnnotationRanges, symbols)
+
+        // Nullable rules share the same per-script detection cost (finding nullable
+        // names, building narrowing regions, locating declaration sites). Compute
+        // once, feed all the nullable rules.
+        val nullableVars = findNullableVars(text, symbols)
+        val declarationNameRanges = collectDeclarationNameRanges(text)
+        if (nullableVars.isNotEmpty()) {
+            val narrowingByVar = nullableVars.associateWith { findNarrowingRegions(text, it) }
+            out += checkNullableMisuse(
+                text, typeAnnotationRanges, nullableVars, narrowingByVar, declarationNameRanges,
+            )
+            out += checkNullableArgs(
+                text, symbols, nullableVars, narrowingByVar, declarationNameRanges,
+                otherScripts,
+            )
+        }
+        // The chain-on-nullable rule is independent of the script's declared nullables,
+        // it fires whenever a chain step's return type is `T?`. Always run it.
+        out += checkNullableChainAccess(text, symbols, nullableVars, declarationNameRanges)
         return out
     }
 
@@ -191,6 +250,913 @@ object LuaDiagnostics {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // Rule: nullable-misuse
+    // ──────────────────────────────────────────────────────────────────────
+
+    private fun checkNullableMisuse(
+        text: String,
+        typeAnnotationRanges: List<TextRange>,
+        nullableVars: Set<String>,
+        narrowingByVar: Map<String, List<TextRange>>,
+        declarationNameRanges: List<TextRange>,
+    ): List<Diagnostic> {
+        val diagnostics = mutableListOf<Diagnostic>()
+        val lines = text.split('\n')
+        val tokenLines = LuaTokenizer.tokenizeLines(text)
+        var lineStart = 0
+        for ((lineIdx, line) in lines.withIndex()) {
+            val tokens = tokenLines[lineIdx]
+            var localOffset = 0
+            for ((tokIdx, token) in tokens.withIndex()) {
+                val tokenStart = lineStart + localOffset
+                val tokenEnd = tokenStart + token.text.length
+                localOffset += token.text.length
+
+                if (token.type != LuaTokenizer.TokenType.DEFAULT &&
+                    token.type != LuaTokenizer.TokenType.FUNCTION
+                ) continue
+                if (token.text !in nullableVars) continue
+
+                val tokenRange = TextRange(tokenStart, tokenEnd)
+                if (typeAnnotationRanges.any { it.encloses(tokenRange) }) continue
+                if (declarationNameRanges.any { it.encloses(tokenRange) }) continue
+
+                // We only flag MEMBER ACCESS, the `name` token must be followed
+                // (after blank tokens) by `:` or `.`. A bare reference of a nullable
+                // is fine, it's only the dereference that crashes on nil.
+                var nextIdx = tokIdx + 1
+                while (nextIdx < tokens.size && tokens[nextIdx].text.isBlank()) nextIdx++
+                val next = tokens.getOrNull(nextIdx) ?: continue
+                if (next.text != ":" && next.text != ".") continue
+
+                val regions = narrowingByVar[token.text] ?: emptyList()
+                if (regions.any { tokenStart in it }) continue
+
+                diagnostics.add(
+                    Diagnostic(
+                        severity = severityFor("nullable-misuse"),
+                        range = tokenRange,
+                        code = "nullable-misuse",
+                        message = "'${token.text}' may be nil here. Narrow it first with " +
+                            "`if ${token.text} then ... end` or `assert(${token.text})`.",
+                    ),
+                )
+            }
+            lineStart += line.length + 1
+        }
+        return diagnostics
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Rule: nullable-arg
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Flag `<call>(NAME, ...)` sites where NAME is a known nullable, the call site
+     *  isn't inside a narrowing region, and the corresponding parameter is declared
+     *  non-nullable. Three call shapes are supported:
+     *
+     *  * `obj:method(NAME)` where `obj` is a bare ident (module global or a symbol-
+     *    table local). The receiver type comes from
+     *    [LuaApiRegistry.moduleType] (for module globals like `network`, `scheduler`,
+     *    `importer`, `stocker`) or from [symbols] (for typed locals the autocomplete
+     *    inferred). Anything we can't resolve (untyped local, typo) is skipped
+     *    silently rather than guessed.
+     *
+     *  * Chained `obj:m1():m2(NAME)` and longer chains. The receiver of the final
+     *    call is resolved by walking back through [resolveExprTypeBefore] which
+     *    recursively peels `expr(:m | .f)*` shapes off, looking up each step's
+     *    return / property type in the registry.
+     *
+     *  * Bare `userFunc(NAME)` calls into user-defined functions declared earlier
+     *    in the same script with `local function f(x: T)` / `function f(x: T)`.
+     *    Param annotations are pulled from those declarations by
+     *    [collectUserFunctions].
+     *
+     *  Limitations (intentional, fine for v1):
+     *    * Only bare-name arguments. `io_1:insert(items or fallback)` doesn't flag,
+     *      complex arg expressions aren't worth parsing here.
+     *    * `function obj.m(...)` / `function obj:m(...)` user-defined methods aren't
+     *      tracked. Callers of those would attempt the typed-receiver path and skip
+     *      because the method isn't in the registry.
+     */
+    private fun checkNullableArgs(
+        text: String,
+        symbols: Map<String, String>,
+        nullableVars: Set<String>,
+        narrowingByVar: Map<String, List<TextRange>>,
+        declarationNameRanges: List<TextRange>,
+        otherScripts: Map<String, String>,
+    ): List<Diagnostic> {
+        val diagnostics = mutableListOf<Diagnostic>()
+        // Two sources of user-function specs: this script (named + table-method
+        // declarations) and any modules pulled in via `local x = require("y")`.
+        // Merged into one map keyed by either bare name (`doThing`) or qualified
+        // name (`foo.bar`) so the call-site walk can look up either shape.
+        val userFunctions = collectUserFunctions(text) + collectImportedFunctions(text, otherScripts)
+        val flat = flattenTokens(text)
+
+        for ((idx, t) in flat.withIndex()) {
+            // A call site is `<callName> ( ... )`. Anchor on the `(` so we can find
+            // the call name (token just before, after blanks) and the receiver
+            // (whatever's before the name's separator).
+            if (t.text != "(") continue
+            val nameIdx = prevNonBlankIdx(flat, idx) ?: continue
+            val nameTok = flat[nameIdx]
+            if (!isIdentifierLike(nameTok.text)) continue
+            if (nameTok.text in LuaTokenizer.KEYWORDS) continue
+            if (nameTok.type == LuaTokenizer.TokenType.STRING ||
+                nameTok.type == LuaTokenizer.TokenType.COMMENT
+            ) continue
+
+            // Skip declaration sites: `function NAME(`, `local function NAME(`.
+            // The token before the name (if any) is `function` in declarations.
+            val prevIdx = prevNonBlankIdx(flat, nameIdx)
+            val prevText = prevIdx?.let { flat[it].text }
+            if (prevText == "function") continue
+
+            val callName = nameTok.text
+
+            // Determine call shape from the separator before the name.
+            data class ResolvedCall(val params: List<LuaType.Param>, val description: String)
+            val resolved: ResolvedCall = when (prevText) {
+                ":" -> {
+                    // Method call. Receiver expression ends at the `:` token.
+                    val recvType = resolveExprTypeBefore(text, flat[prevIdx!!].start, symbols)
+                        ?: continue
+                    val doc = LuaApiRegistry.methodsOf(recvType)
+                        .firstOrNull { it.displayName == callName } ?: continue
+                    ResolvedCall(doc.params, "$recvType:$callName")
+                }
+                "." -> {
+                    // `expr.method(...)`. We use this path for table-method calls
+                    // declared as `function foo.bar(...)` (either in this script or
+                    // imported via `require`). The receiver must be a bare ident so
+                    // we can build the qualified key `foo.bar` to look up the spec.
+                    val recvIdx = prevNonBlankIdx(flat, prevIdx!!) ?: continue
+                    val recvTok = flat[recvIdx]
+                    if (!isIdentifierLike(recvTok.text)) continue
+                    if (recvTok.text in LuaTokenizer.KEYWORDS) continue
+                    val key = "${recvTok.text}.$callName"
+                    val func = userFunctions[key] ?: continue
+                    ResolvedCall(func, key)
+                }
+                else -> {
+                    // Bare function call. Look up user-defined functions; built-in
+                    // globals are skipped (they take `Any` so wouldn't flag anyway).
+                    val func = userFunctions[callName] ?: continue
+                    ResolvedCall(func, callName)
+                }
+            }
+
+            val openParenIdx = t.start
+            val closeParenIdx = findMatchingClose(text, openParenIdx) ?: continue
+            val argRanges = splitTopLevelArgs(text, openParenIdx + 1, closeParenIdx)
+
+            for ((argIdx, argRange) in argRanges.withIndex()) {
+                val rawArg = text.substring(argRange.start, argRange.end)
+                val leadingWs = rawArg.length - rawArg.trimStart().length
+                val argName = rawArg.trim()
+                if (argName !in nullableVars) continue
+
+                val nameStart = argRange.start + leadingWs
+                val nameEnd = nameStart + argName.length
+
+                val regions = narrowingByVar[argName] ?: emptyList()
+                if (regions.any { nameStart in it }) continue
+
+                val param = resolved.params.getOrNull(argIdx) ?: continue
+                // Skip when the param's declared type tolerates nil. Optional<T>
+                // explicitly does, and primitives like `any` accept anything (they
+                // are the "we don't care" type). Only registered Named types
+                // (CardHandle, ItemsHandle, ...) are taken as a strict non-null
+                // contract worth warning about.
+                if (param.type is LuaType.Optional) continue
+                if (LuaType.unwrap(param.type) !is LuaType.Named) continue
+
+                diagnostics.add(
+                    Diagnostic(
+                        severity = severityFor("nullable-arg"),
+                        range = TextRange(nameStart, nameEnd),
+                        code = "nullable-arg",
+                        message = "'$argName' may be nil here. " +
+                            "${resolved.description} expects ${param.type.display} for '${param.name}'. " +
+                            "Narrow with `if $argName then ... end` or `assert($argName)` first.",
+                    ),
+                )
+            }
+        }
+        return diagnostics
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Rule: nullable chain access (reuses the `nullable-misuse` code so the
+    // squiggle colour and dial-up/down knob match)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Flag `expr:method` / `expr.field` access where `expr`'s declared type is
+     *  [LuaType.Optional]. Catches the bug shape:
+     *
+     *      network:channel("c"):getFirst("io"):face("top")
+     *      --                                  ^^^^ may be nil
+     *
+     *  `getFirst` returns `CardHandle?`, so chaining `:face` on it can hit nil.
+     *  This rule covers chained call results (the case where `expr` is itself a
+     *  call) and chained property accesses; the bare-name case (`x:method()`
+     *  where `x` is a known nullable variable) stays the responsibility of
+     *  [checkNullableMisuse] to avoid double-flagging.
+     *
+     *  Narrowing isn't applied here: a chain step's nullable result has no name
+     *  to check against. The fix is to capture the result into a local and
+     *  narrow that, which switches us back to the bare-name path.
+     */
+    private fun checkNullableChainAccess(
+        text: String,
+        symbols: Map<String, String>,
+        nullableVars: Set<String>,
+        declarationNameRanges: List<TextRange>,
+    ): List<Diagnostic> {
+        val diagnostics = mutableListOf<Diagnostic>()
+        val flat = flattenTokens(text)
+
+        for ((idx, sepTok) in flat.withIndex()) {
+            if (sepTok.text != ":" && sepTok.text != ".") continue
+
+            // Skip type-annotation positions: `local x: T?`'s `:` looks like a
+            // separator but is part of a declaration, not a member access.
+            val sepRange = TextRange(sepTok.start, sepTok.start + 1)
+            if (declarationNameRanges.any { it.start <= sepRange.start && sepRange.end <= it.end + 1 }) continue
+
+            // Skip when the receiver is a bare identifier already in nullableVars,
+            // [checkNullableMisuse] handles those (and includes narrowing).
+            val prevIdx = prevNonBlankIdx(flat, idx) ?: continue
+            val prevTok = flat[prevIdx]
+            if (isIdentifierLike(prevTok.text) && prevTok.text in nullableVars) continue
+            // Likewise skip when the receiver is just a bare ident with no prior
+            // chain ([checkNullableMisuse] either covers it or the type isn't
+            // nullable, no work for us either way).
+            if (isIdentifierLike(prevTok.text)) {
+                val beforeBareIdx = prevNonBlankIdx(flat, prevIdx)
+                if (beforeBareIdx == null || (flat[beforeBareIdx].text != ")" &&
+                        flat[beforeBareIdx].text != "." && flat[beforeBareIdx].text != "]")
+                ) continue
+            }
+
+            val recvType = resolveExprReturnType(text, sepTok.start, symbols) ?: continue
+            if (recvType !is LuaType.Optional) continue
+
+            // Underline the member name (token after the separator). That's where
+            // the dereference happens, so it's the most actionable location.
+            val memberIdx = nextNonBlankIdx(flat, idx) ?: continue
+            val memberTok = flat[memberIdx]
+            if (!isIdentifierLike(memberTok.text)) continue
+            if (memberTok.text in LuaTokenizer.KEYWORDS) continue
+
+            val accessKind = if (sepTok.text == ":") "method ':${memberTok.text}'" else "field '.${memberTok.text}'"
+            diagnostics.add(
+                Diagnostic(
+                    severity = severityFor("nullable-misuse"),
+                    range = TextRange(memberTok.start, memberTok.start + memberTok.text.length),
+                    code = "nullable-misuse",
+                    message = "Receiver is ${recvType.display}, may be nil. " +
+                        "Capture the result into a local and narrow before calling $accessKind.",
+                ),
+            )
+        }
+        return diagnostics
+    }
+
+    private fun nextNonBlankIdx(tokens: List<FlatToken>, fromIdx: Int): Int? {
+        var i = fromIdx + 1
+        while (i < tokens.size) {
+            if (!tokens[i].text.isBlank()) return i
+            i++
+        }
+        return null
+    }
+
+    /** Replace every comment character in [text] with a space, preserving offsets
+     *  and newlines so positions computed against the masked text remain valid in
+     *  the original. Lets the regex-based collectors below ignore declarations
+     *  that the player has commented out. Detection is by [LuaTokenizer.COMMENT_COLOR]
+     *  rather than `TokenType.COMMENT` — the tokenizer assigns the colour but
+     *  leaves the type as DEFAULT for line comments and the body of block
+     *  comments, only the explicit BLOCK_COMMENT_START/END markers carry a
+     *  comment-specific TokenType. */
+    private fun stripComments(text: String): String {
+        if (text.isEmpty()) return text
+        val out = CharArray(text.length)
+        text.toCharArray(out, 0, 0, text.length)
+        val tokenLines = LuaTokenizer.tokenizeLines(text)
+        val lines = text.split('\n')
+        var lineStart = 0
+        for ((lineIdx, line) in lines.withIndex()) {
+            val toks = tokenLines.getOrNull(lineIdx) ?: emptyList()
+            var localOff = 0
+            for (t in toks) {
+                val isComment = t.color == LuaTokenizer.COMMENT_COLOR ||
+                    t.type == LuaTokenizer.TokenType.BLOCK_COMMENT_START ||
+                    t.type == LuaTokenizer.TokenType.BLOCK_COMMENT_END
+                if (isComment) {
+                    for (k in 0 until t.text.length) {
+                        val pos = lineStart + localOff + k
+                        if (pos < out.size && out[pos] != '\n') out[pos] = ' '
+                    }
+                }
+                localOff += t.text.length
+            }
+            lineStart += line.length + 1
+        }
+        return String(out)
+    }
+
+    /** A single token with its absolute character offset in the source. Flat tokens
+     *  let the call-site walk look forward and backward in a uniform stream rather
+     *  than juggling per-line indices and offsets. */
+    private data class FlatToken(
+        val text: String,
+        val type: LuaTokenizer.TokenType,
+        val start: Int,
+    )
+
+    private fun flattenTokens(text: String): List<FlatToken> {
+        val out = mutableListOf<FlatToken>()
+        val tokenLines = LuaTokenizer.tokenizeLines(text)
+        val lines = text.split('\n')
+        var lineStart = 0
+        for ((lineIdx, line) in lines.withIndex()) {
+            val toks = tokenLines.getOrNull(lineIdx) ?: emptyList()
+            var localOff = 0
+            for (tok in toks) {
+                out.add(FlatToken(tok.text, tok.type, lineStart + localOff))
+                localOff += tok.text.length
+            }
+            lineStart += line.length + 1
+        }
+        return out
+    }
+
+    private fun prevNonBlankIdx(tokens: List<FlatToken>, fromIdx: Int): Int? {
+        var i = fromIdx - 1
+        while (i >= 0) {
+            if (!tokens[i].text.isBlank()) return i
+            i--
+        }
+        return null
+    }
+
+    /** Resolve the FULL type produced by the Lua expression ending just before
+     *  [endOffset] in [text]. Returns the LuaType including [LuaType.Optional]
+     *  wrappers, so callers that care about nullability can detect it.
+     *  Walks back through `expr(:method | .field)*` shapes recursively, and
+     *  returns null if the type can't be determined.
+     *
+     *  Limitations: indexed access (`expr[i]`) and user-defined function returns
+     *  aren't resolved. Both bail to null so the rest of the chain skips silently.
+     */
+    private fun resolveExprReturnType(
+        text: String,
+        endOffset: Int,
+        symbols: Map<String, String>,
+    ): LuaType? {
+        var i = endOffset
+        while (i > 0 && text[i - 1].isWhitespace()) i--
+        if (i == 0) return null
+
+        val ch = text[i - 1]
+
+        // Call `expr(args)` — peel the `(args)` and recurse on the call name.
+        if (ch == ')') {
+            val openIdx = findMatchingOpenBefore(text, i - 1) ?: return null
+            var nameEnd = openIdx
+            while (nameEnd > 0 && text[nameEnd - 1].isWhitespace()) nameEnd--
+            var nameStart = nameEnd
+            while (nameStart > 0 &&
+                (text[nameStart - 1].isLetterOrDigit() || text[nameStart - 1] == '_')
+            ) nameStart--
+            if (nameStart == nameEnd) return null
+            val callName = text.substring(nameStart, nameEnd)
+
+            var sepEnd = nameStart
+            while (sepEnd > 0 && text[sepEnd - 1].isWhitespace()) sepEnd--
+            if (sepEnd > 0) {
+                val sepCh = text[sepEnd - 1]
+                if (sepCh == ':') {
+                    // Receiver lookup unwraps to the Named base, so `T?:m()` resolves
+                    // to T's m() — same as Lua's runtime "use through nil-check"
+                    // would expose. The Optional wrapping is preserved on the return
+                    // type itself when the registry declares `m` as `T?`.
+                    val recvName = resolveReceiverTypeName(text, sepEnd - 1, symbols)
+                        ?: return null
+                    return LuaApiRegistry.methodReturnType(recvName, callName)
+                }
+                if (sepCh == '.') {
+                    val recvName = resolveReceiverTypeName(text, sepEnd - 1, symbols)
+                        ?: return null
+                    return LuaApiRegistry.propertiesOf(recvName)
+                        .firstOrNull { it.displayName == callName }?.returnType
+                }
+            }
+            // Bare function call: user-function returns aren't tracked here yet.
+            return null
+        }
+
+        // Indexed access. v1 doesn't resolve element types from chains.
+        if (ch == ']') return null
+
+        // Identifier — bare ref or `expr.field`.
+        if (!ch.isLetterOrDigit() && ch != '_') return null
+        var nameStart = i
+        while (nameStart > 0 &&
+            (text[nameStart - 1].isLetterOrDigit() || text[nameStart - 1] == '_')
+        ) nameStart--
+        val name = text.substring(nameStart, i)
+
+        var sepEnd = nameStart
+        while (sepEnd > 0 && text[sepEnd - 1].isWhitespace()) sepEnd--
+        if (sepEnd > 0 && text[sepEnd - 1] == '.') {
+            val recvName = resolveReceiverTypeName(text, sepEnd - 1, symbols)
+                ?: return null
+            return LuaApiRegistry.propertiesOf(recvName)
+                .firstOrNull { it.displayName == name }?.returnType
+        }
+
+        // Bare ident: module global or symbol-table local.
+        val moduleType = LuaApiRegistry.moduleType(name)
+        if (moduleType != null) return moduleType
+        val symType = symbols[name] ?: return null
+        val nullable = symType.endsWith("?")
+        val baseName = symType.trimEnd('?')
+        val baseType: LuaType = LuaApiRegistry.knownTypes()
+            .firstOrNull { it.name == baseName }
+            ?: LuaApiRegistry.knownModules().firstOrNull { it.name == baseName }
+            ?: return null
+        return if (nullable) baseType.optional() else baseType
+    }
+
+    /** Convenience wrapper around [resolveExprReturnType] that returns the
+     *  unwrapped [LuaType.Named]'s name (so `T?` → `T`, `{ T }` → `T`). Used
+     *  whenever a caller wants to look up methods/properties on the receiver
+     *  type, where the Optional wrapper is irrelevant. */
+    private fun resolveExprTypeBefore(
+        text: String,
+        endOffset: Int,
+        symbols: Map<String, String>,
+    ): String? = resolveReceiverTypeName(text, endOffset, symbols)
+
+    /** Same as [resolveExprTypeBefore] but explicit: walk back, get the LuaType,
+     *  unwrap to the Named base. Both methods exist so call sites can pick the
+     *  one that documents intent ("I want a receiver type to look methods on"
+     *  vs "I want the unwrapped name"). */
+    private fun resolveReceiverTypeName(
+        text: String,
+        endOffset: Int,
+        symbols: Map<String, String>,
+    ): String? {
+        val rt = resolveExprReturnType(text, endOffset, symbols) ?: return null
+        return (LuaType.unwrap(rt) as? LuaType.Named)?.name
+    }
+
+    /** Find the `(` that matches a `)` at [closeIdx], walking backward and
+     *  counting nested parens. Returns null if the paren is unbalanced (which
+     *  means the receiver expression is malformed and we can't resolve it). */
+    private fun findMatchingOpenBefore(text: String, closeIdx: Int): Int? {
+        if (closeIdx >= text.length || text[closeIdx] != ')') return null
+        var depth = 0
+        var i = closeIdx
+        while (i >= 0) {
+            when (text[i]) {
+                ')' -> depth++
+                '(' -> {
+                    depth--
+                    if (depth == 0) return i
+                }
+            }
+            i--
+        }
+        return null
+    }
+
+    /** Collect user-defined function signatures so the bare-call path and the
+     *  `obj.method` path of [checkNullableArgs] can look up param types.
+     *
+     *  Recognises:
+     *    * `local function NAME(params)` and `function NAME(params)`, keyed by NAME.
+     *    * `function obj.NAME(params)` table-method declarations, keyed by `obj.NAME`.
+     *
+     *  Skips `function obj:NAME(...)` colon-method declarations. Their first param
+     *  is an implicit `self` and matching arg-positions to params would need extra
+     *  bookkeeping that v1 doesn't justify. Anonymous functions don't get an entry.
+     */
+    private fun collectUserFunctions(rawText: String): Map<String, List<LuaType.Param>> {
+        val text = stripComments(rawText)
+        val out = mutableMapOf<String, List<LuaType.Param>>()
+        val pattern = Regex("""\b(?:local\s+)?function\s+(\w+(?:\.\w+)?)\s*\(([^)]*)\)""")
+        for (match in pattern.findAll(text)) {
+            val name = match.groupValues[1]
+            val raw = match.groupValues[2]
+            out[name] = parseUserParams(raw)
+        }
+        return out
+    }
+
+    /** Cross-script equivalent of [collectUserFunctions]. For each
+     *  `local NAME = require("MODULE")` in [text], find MODULE's text in
+     *  [otherScripts] and harvest its `function <export>.METHOD(...)` declarations,
+     *  re-keying them as `NAME.METHOD` so the calling script's `NAME.METHOD(args)`
+     *  call sites look the spec up cleanly.
+     *
+     *  The module's "export prefix" is taken from the LAST `return IDENT` line in
+     *  the module's text. Modules following the standard idiom
+     *  (`local M = {}; ...; return M`) match cleanly; modules that return a
+     *  literal table or compute the export differently fall through silently.
+     */
+    private fun collectImportedFunctions(
+        rawText: String,
+        otherScripts: Map<String, String>,
+    ): Map<String, List<LuaType.Param>> {
+        if (otherScripts.isEmpty()) return emptyMap()
+        val text = stripComments(rawText)
+        val out = mutableMapOf<String, List<LuaType.Param>>()
+        val requirePattern = Regex(
+            """\blocal\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)"""
+        )
+        for (m in requirePattern.findAll(text)) {
+            val localName = m.groupValues[1]
+            val moduleName = m.groupValues[2]
+            val rawModuleText = otherScripts[moduleName] ?: continue
+            // Strip the imported module's comments too — a fully-commented-out
+            // module body should produce no exports, even if the comments contain
+            // `function foo.bar(...)` shaped text.
+            val moduleText = stripComments(rawModuleText)
+            val exportPrefix = findModuleExportPrefix(moduleText) ?: continue
+            val funcPattern = Regex(
+                """\bfunction\s+${Regex.escape(exportPrefix)}\.(\w+)\s*\(([^)]*)\)"""
+            )
+            for (fm in funcPattern.findAll(moduleText)) {
+                val methodName = fm.groupValues[1]
+                val rawParams = fm.groupValues[2]
+                out["$localName.$methodName"] = parseUserParams(rawParams)
+            }
+        }
+        return out
+    }
+
+    /** Find the identifier in the LAST `return IDENT` line of [moduleText].
+     *  Heuristic: any `return IDENT` line at the start (after leading whitespace)
+     *  of a line counts; we take the textually last one as the module's export.
+     *  Returns null when the module has no such return, in which case the
+     *  cross-script lookup falls through to no harvested functions. Caller is
+     *  expected to have stripped comments already so a commented-out
+     *  `-- return foo` doesn't get mistaken for the real export. */
+    private fun findModuleExportPrefix(moduleText: String): String? {
+        val pattern = Regex("""^\s*return\s+(\w+)\s*$""", RegexOption.MULTILINE)
+        return pattern.findAll(moduleText).lastOrNull()?.groupValues?.get(1)
+    }
+
+    /** Parse a comma-separated parameter list with optional `: Type` / `: Type?`
+     *  annotations into [LuaType.Param]s. Untyped params get [LuaType.Primitive.Any]
+     *  so they don't trigger the nullable-arg check (any-typed params accept
+     *  anything, including nil, which is the safe default for un-annotated user
+     *  code). Nullable annotations unwrap to [LuaType.Optional] so the caller's
+     *  `is LuaType.Optional` check works the same as for registry-declared params.
+     */
+    private fun parseUserParams(raw: String): List<LuaType.Param> {
+        val out = mutableListOf<LuaType.Param>()
+        for (chunk in raw.split(',')) {
+            val piece = chunk.trim()
+            if (piece.isEmpty()) continue
+            val colonIdx = piece.indexOf(':')
+            if (colonIdx == -1) {
+                out.add(LuaType.Param(piece, LuaType.Primitive.Any))
+                continue
+            }
+            val pname = piece.substring(0, colonIdx).trim()
+            val ptypeRaw = piece.substring(colonIdx + 1).trim()
+            val nullable = ptypeRaw.endsWith("?")
+            val ptypeName = ptypeRaw.trimEnd('?')
+            // Look up the named type in the registry. If it's not registered (could
+            // be a future / private type), fall back to Any so we don't false-flag.
+            val baseType: LuaType = LuaApiRegistry.knownTypes()
+                .firstOrNull { it.name == ptypeName }
+                ?: LuaApiRegistry.knownModules().firstOrNull { it.name == ptypeName }
+                ?: when (ptypeName) {
+                    "number" -> LuaType.Primitive.Number
+                    "string" -> LuaType.Primitive.String
+                    "boolean" -> LuaType.Primitive.Boolean
+                    else -> LuaType.Primitive.Any
+                }
+            val finalType = if (nullable) baseType.optional() else baseType
+            out.add(LuaType.Param(pname, finalType))
+        }
+        return out
+    }
+
+    /** Walk forward from [openParenIdx] (which points at a `(`) and return the
+     *  offset of the matching `)`. Counts nested `(`/`)` so a method call with
+     *  parenthesised args resolves correctly. Returns null when the file ends
+     *  before the close. Quick string/comment skips are not implemented here, the
+     *  callers all match `:method(` patterns whose contents are real Lua code in
+     *  practice. */
+    private fun findMatchingClose(text: String, openParenIdx: Int): Int? {
+        var depth = 0
+        var i = openParenIdx
+        while (i < text.length) {
+            when (text[i]) {
+                '(' -> depth++
+                ')' -> {
+                    depth--
+                    if (depth == 0) return i
+                }
+            }
+            i++
+        }
+        return null
+    }
+
+    /** Split the half-open range `[start, end)` of [text] into top-level
+     *  comma-separated argument ranges. Tracks nesting of `()`, `[]`, and `{}`
+     *  so commas inside nested expressions don't split the arg list. Returns
+     *  [TextRange]s in the original [text]'s offset space, for the diagnostic to
+     *  point at the right characters. */
+    private fun splitTopLevelArgs(text: String, start: Int, end: Int): List<TextRange> {
+        if (start >= end) return emptyList()
+        val out = mutableListOf<TextRange>()
+        var depth = 0
+        var argStart = start
+        var i = start
+        while (i < end) {
+            when (text[i]) {
+                '(', '[', '{' -> depth++
+                ')', ']', '}' -> depth--
+                ',' -> if (depth == 0) {
+                    out.add(TextRange(argStart, i))
+                    argStart = i + 1
+                }
+            }
+            i++
+        }
+        out.add(TextRange(argStart, end))
+        return out
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Shared helpers
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** Ranges covering the NAME side of a type-annotated declaration: `local NAME:`,
+     *  `(NAME:`, `, NAME:`. Skipped by [checkNullableMisuse] so the analyzer doesn't
+     *  treat the colon in a type annotation as a method-access separator. */
+    private fun collectDeclarationNameRanges(rawText: String): List<TextRange> {
+        val text = stripComments(rawText)
+        val ranges = mutableListOf<TextRange>()
+        Regex("""\blocal\s+(\w+)\s*:""").findAll(text).forEach {
+            val r = it.groups[1]!!.range
+            ranges.add(TextRange(r.first, r.last + 1))
+        }
+        Regex("""[(,]\s*(\w+)\s*:""").findAll(text).forEach {
+            val r = it.groups[1]!!.range
+            ranges.add(TextRange(r.first, r.last + 1))
+        }
+        return ranges
+    }
+
+    /** Names of variables this script declares as nullable. Three sources:
+     *
+     *  1. Explicit annotations: `local x: T?` and `function f(x: T?)`.
+     *  2. Inferred from a `local x = expr` whose RHS resolves to `T?`. The resolver
+     *     walks `expr(:method | .field)*` chains so receivers can be module globals
+     *     (`network:find(...)`), typed locals (`io_1:find(...)`), or longer chains
+     *     (`network:channel("c"):getFirst("io")` → `CardHandle?`).
+     *  3. Receiver type for typed locals comes from [symbols], the same map the
+     *     autocomplete builds; nothing is inferred here that the autocomplete didn't
+     *     already infer at hover time.
+     */
+    private fun findNullableVars(rawText: String, symbols: Map<String, String>): Set<String> {
+        val text = stripComments(rawText)
+        val out = mutableSetOf<String>()
+
+        // Explicit `local x: T?` (and the rare comma-separated `local x: T?, y: U?`).
+        Regex("""\blocal\s+(\w+)\s*:\s*\w+\?""").findAll(text).forEach {
+            out.add(it.groupValues[1])
+        }
+        // Function param annotations: `function f(x: T?, ...)`.
+        Regex("""[(,]\s*(\w+)\s*:\s*\w+\?""").findAll(text).forEach {
+            out.add(it.groupValues[1])
+        }
+
+        // Inferred from RHS expression. Walk every `local NAME =` and resolve the
+        // RHS via [resolveExprReturnType]. If it returns Optional, the local is
+        // nullable. Skip when an explicit annotation already covers the name, so a
+        // user override (`local items: ItemsHandle = ...`) silences the warning
+        // intentionally even when the runtime call would actually return `T?`.
+        for (m in Regex("""\blocal\s+(\w+)\s*=""").findAll(text)) {
+            val name = m.groupValues[1]
+            if (name in out) continue
+            val rhsStart = m.range.last + 1
+            val rhsEnd = findStatementEnd(text, rhsStart)
+            val rt = resolveExprReturnType(text, rhsEnd, symbols) ?: continue
+            if (rt is LuaType.Optional) out.add(name)
+        }
+
+        return out
+    }
+
+    /** Find the end of the statement starting at [fromOffset]. Walks forward to the
+     *  first newline at depth 0 (paren/bracket/brace count) that isn't a chain or
+     *  operator continuation. Lets multi-line chains like:
+     *
+     *      local x = network
+     *          :channel("c")
+     *          :getFirst("io")
+     *
+     *  resolve as a single expression even when each chain step lives on its own
+     *  line and the `\n` between them is at depth 0. The continuation is recognised
+     *  by either a leading `:` / `.` on the next line, or a trailing operator /
+     *  comma / open-paren on the current line. */
+    private fun findStatementEnd(text: String, fromOffset: Int): Int {
+        var depth = 0
+        var i = fromOffset
+        while (i < text.length) {
+            when (text[i]) {
+                '(', '[', '{' -> depth++
+                ')', ']', '}' -> depth--
+                '\n' -> if (depth == 0 && !isLineContinuation(text, i)) return i
+            }
+            i++
+        }
+        return text.length
+    }
+
+    /** True when the newline at [newlineIdx] is part of a multi-line statement, i.e.
+     *  the next non-whitespace char is a chain-continuation `:` / `.` OR the previous
+     *  non-whitespace char is a binary-operator / comma / open paren waiting on
+     *  another operand. Reads tokens character-by-character — strings and comments
+     *  aren't pre-stripped, but line-comment-on-prior-line is rare enough in chain
+     *  RHSs that we don't bother special-casing it. */
+    private fun isLineContinuation(text: String, newlineIdx: Int): Boolean {
+        var j = newlineIdx + 1
+        while (j < text.length && (text[j] == ' ' || text[j] == '\t')) j++
+        if (j < text.length && (text[j] == ':' || text[j] == '.')) return true
+
+        var k = newlineIdx - 1
+        while (k >= 0 && (text[k] == ' ' || text[k] == '\t')) k--
+        if (k >= 0 && text[k] in "+-*/%,(") return true
+
+        return false
+    }
+
+    /** Regions of [text] where [name] is proven non-nil. The check fires a diagnostic
+     *  when an access offset is NOT inside any of these regions.
+     *
+     *  Patterns recognised:
+     *    * `if NAME then ... end` — body narrows NAME
+     *    * `if NAME ~= nil then ... end` — body narrows NAME
+     *    * `if nil ~= NAME then ... end` — same, reversed
+     *    * `if not NAME then <terminate> end` — narrows NAME from after the `end`
+     *      onward. Terminating statements: `return`, `error(...)`, `break`.
+     *    * `if NAME == nil then <terminate> end` (and the reversed `nil == NAME`)
+     *    * `assert(NAME [, msg])` — narrows NAME from the call site to end-of-script
+     *
+     *  These are all approximations — the "narrows to end-of-script" cases should
+     *  really stop at the enclosing function boundary, and conditional `return`s
+     *  inside the guard body would weaken the narrowing. For v1 we accept those as
+     *  false negatives (under-flagging) since false positives annoy users more than
+     *  missed warnings.
+     *
+     *  Other narrowing forms (`x = x or default`, ternary-style
+     *  `local y = x and x:m() or nil`) are accepted by Lua but not yet decoded here.
+     */
+    private fun findNarrowingRegions(rawText: String, name: String): List<TextRange> {
+        val text = stripComments(rawText)
+        val regions = mutableListOf<TextRange>()
+        val n = Regex.escape(name)
+
+        // Truthy / explicit nil-check branches: body is narrowed up to the next
+        // branch boundary (`elseif`, `else`, or matching `end`). Both `if NAME
+        // then` and `elseif NAME then` start a narrowing branch — the elseif form
+        // appears in chained checks like:
+        //
+        //     if a then ...
+        //     elseif b then b:m()  -- `b` narrowed in this branch
+        //     else ...
+        //     end
+        val truthyBranchHeads = listOf(
+            Regex("""\bif\s+$n\s+then\b"""),
+            Regex("""\bif\s+$n\s*~=\s*nil\s+then\b"""),
+            Regex("""\bif\s+nil\s*~=\s*$n\s+then\b"""),
+            Regex("""\belseif\s+$n\s+then\b"""),
+            Regex("""\belseif\s+$n\s*~=\s*nil\s+then\b"""),
+            Regex("""\belseif\s+nil\s*~=\s*$n\s+then\b"""),
+        )
+        for (pat in truthyBranchHeads) {
+            for (m in pat.findAll(text)) {
+                val thenEnd = m.range.last + 1
+                val endOffset = findBranchBoundary(text, thenEnd) ?: continue
+                regions.add(TextRange(thenEnd, endOffset))
+            }
+        }
+
+        // Early-return guards: `if not NAME then return end` and friends. The body must
+        // terminate control flow (return / break / error), in which case everything
+        // AFTER the closing `end` is narrowed.
+        val nilGuardPatterns = listOf(
+            Regex("""\bif\s+not\s+$n\s+then\b"""),
+            Regex("""\bif\s+$n\s*==\s*nil\s+then\b"""),
+            Regex("""\bif\s+nil\s*==\s*$n\s+then\b"""),
+        )
+        val terminatorPattern = Regex("""\b(return|break)\b|\berror\s*\(""")
+        for (pat in nilGuardPatterns) {
+            for (m in pat.findAll(text)) {
+                val thenEnd = m.range.last + 1
+                val endOffset = findMatchingEnd(text, thenEnd) ?: continue
+                val body = text.substring(thenEnd, endOffset)
+                // Require the body to contain SOMETHING that terminates control flow.
+                // Misses partial-flow cases (`if cond then return end` nested inside)
+                // but catches the canonical idiom and avoids over-narrowing on
+                // bodies that just print a warning.
+                if (!terminatorPattern.containsMatchIn(body)) continue
+                regions.add(TextRange(endOffset, text.length))
+            }
+        }
+
+        for (m in Regex("""\bassert\s*\(\s*$n\s*[,)]""").findAll(text)) {
+            regions.add(TextRange(m.range.last + 1, text.length))
+        }
+
+        return regions
+    }
+
+    /** Find the offset of the next branch boundary inside the current `if`/`elseif`
+     *  body — that's the next `elseif`, `else`, or matching `end` at the same
+     *  block depth. Used by [findNarrowingRegions] so a branch's narrowing doesn't
+     *  spill into a sibling `else`/`elseif` where the variable could be the
+     *  opposite truthiness. Skips deeper nested `if`/`for`/`while`/`repeat`/
+     *  `function` blocks to keep the depth count honest.
+     */
+    private fun findBranchBoundary(text: String, fromOffset: Int): Int? {
+        if (fromOffset >= text.length) return null
+        val slice = text.substring(fromOffset)
+        val tokenLines = LuaTokenizer.tokenizeLines(slice)
+        val sliceLines = slice.split('\n')
+        var depth = 1
+        var lineStart = 0
+        for ((lineIdx, line) in sliceLines.withIndex()) {
+            val toks = tokenLines.getOrNull(lineIdx) ?: emptyList()
+            var localOff = 0
+            for (t in toks) {
+                val tokenAbs = fromOffset + lineStart + localOff
+                localOff += t.text.length
+                if (t.type != LuaTokenizer.TokenType.KEYWORD) continue
+                when (t.text) {
+                    "if", "for", "while", "repeat", "function" -> depth++
+                    "end", "until" -> {
+                        depth--
+                        if (depth == 0) return tokenAbs
+                    }
+                    // `elseif` / `else` close the current branch when we're
+                    // directly inside the `if` they belong to (depth == 1, since
+                    // `if` itself bumped the depth at construction time).
+                    "elseif", "else" -> if (depth == 1) return tokenAbs
+                }
+            }
+            lineStart += line.length + 1
+        }
+        return null
+    }
+
+    /** Find the offset of the keyword that closes the block opened just before
+     *  [fromOffset]. Tracks nested `if/for/while/repeat/function` openers so we don't
+     *  mis-pair when the body contains nested blocks. Returns null if no matching
+     *  closer is found, in which case the caller treats the narrowing as
+     *  inconclusive and skips it. */
+    private fun findMatchingEnd(text: String, fromOffset: Int): Int? {
+        if (fromOffset >= text.length) return null
+        val slice = text.substring(fromOffset)
+        val tokenLines = LuaTokenizer.tokenizeLines(slice)
+        val sliceLines = slice.split('\n')
+        var depth = 1
+        var lineStart = 0
+        for ((lineIdx, line) in sliceLines.withIndex()) {
+            val toks = tokenLines.getOrNull(lineIdx) ?: emptyList()
+            var localOff = 0
+            for (t in toks) {
+                val tokenAbs = fromOffset + lineStart + localOff
+                localOff += t.text.length
+                if (t.type != LuaTokenizer.TokenType.KEYWORD) continue
+                when (t.text) {
+                    "if", "for", "while", "repeat", "function" -> depth++
+                    "end", "until" -> {
+                        depth--
+                        if (depth == 0) return tokenAbs
+                    }
+                }
+            }
+            lineStart += line.length + 1
+        }
+        return null
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────────────
 
@@ -249,8 +1215,13 @@ object LuaDiagnostics {
 
     /** All names declared in [text] regardless of scope. False positives (using
      *  a local outside its block) are accepted to keep the analyzer simple, the
-     *  runtime would fail those at execution time anyway. */
-    private fun collectDeclaredNames(text: String): Set<String> {
+     *  runtime would fail those at execution time anyway.
+     *
+     *  Comments are stripped before the regex passes so a commented-out
+     *  declaration (`-- local foo = 5`) doesn't sneak `foo` into the declared set
+     *  and silence a real unknown-identifier diagnostic on a downstream `print(foo)`. */
+    private fun collectDeclaredNames(rawText: String): Set<String> {
+        val text = stripComments(rawText)
         val names = mutableSetOf<String>()
 
         // local <name> [, <name>, ...] = ...
@@ -281,8 +1252,11 @@ object LuaDiagnostics {
             .forEach { names.add(it.groupValues[1]) }
 
         // Function parameters: `function name(a, b: T, c)` — extract the name list.
-        // Also covers anonymous `function(a, b)` lambdas.
-        Regex("""\bfunction\b\s*[\w_]*\s*\(([^)]*)\)""")
+        // Also covers anonymous `function(a, b)` lambdas, table-method declarations
+        // (`function foo.bar(a)`), and colon-method declarations (`function foo:bar(a)`).
+        // The `[\w_.:]*` between `function` and `(` allows the qualified name to slip
+        // through without re-entering the params regex.
+        Regex("""\bfunction\b\s*[\w_.:]*\s*\(([^)]*)\)""")
             .findAll(text)
             .forEach { match ->
                 val params = match.groupValues[1]
@@ -321,7 +1295,8 @@ object LuaDiagnostics {
      *  position-specific (each only matches in places type annotations can
      *  appear in this dialect) so they don't false-match `obj:method(` style
      *  member accesses, which look colon-separated but aren't annotations. */
-    private fun collectTypeAnnotationRanges(text: String): List<TextRange> {
+    private fun collectTypeAnnotationRanges(rawText: String): List<TextRange> {
+        val text = stripComments(rawText)
         val ranges = mutableListOf<TextRange>()
         // Each pattern captures the type token in group 1. Type tokens can be
         // a bare name (`Type`), a nullable (`Type?`), or a brace-form container

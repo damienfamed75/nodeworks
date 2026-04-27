@@ -967,7 +967,7 @@ class ScriptEditor(
             }
             257, 335 -> { // ENTER / NUMPAD ENTER
                 if (hasSelection) deleteSelection()
-                insertText("\n" + autoIndentOnNewline())
+                handleEnter()
                 return true
             }
             258 -> { // TAB
@@ -1069,28 +1069,50 @@ class ScriptEditor(
         ensureCursorVisible()
     }
 
-    /** Build the indent string that should be inserted after a newline at the current
-     *  cursor position. Preserves the current line's leading whitespace (so blank
-     *  continuations land at the same column) and adds one extra level (two spaces)
-     *  when the current line ends with a Lua block opener like `then`, `do`, `else`,
-     *  or a trailing `function(...)` / `( ... )` with nothing else on the line.
+    /** Three-job ENTER handler:
      *
-     *  Called from the ENTER key handler, inserted right after the `\n` so the cursor
-     *  ends up in the same column as the code on the line above (or one level deeper). */
-    private fun autoIndentOnNewline(): String {
-        val (curLine, _) = cursorToLineCol(cursor)
-        val lineText = lines.getOrNull(curLine) ?: return ""
-        val baseIndent = lineText.takeWhile { it == ' ' }
-        // Consider only the text up to the cursor on the current line, trailing content
-        // that the Enter will push to the next line shouldn't influence indentation.
-        val (_, col) = cursorToLineCol(cursor)
-        val prefix = lineText.substring(0, col.coerceAtMost(lineText.length)).trimEnd()
-        // 4-space indent matches the Tab key insertion and the block-indent commands
-        // at [damien.nodeworks.screen.TerminalScreen.indentSelection], keeping all
-        // three in sync means a `for ... do` + Enter lands at the same column as
-        // pressing Tab once at the start of the line.
-        val extra = if (shouldIndentDeeper(prefix)) "    " else ""
-        return baseIndent + extra
+     *   1. Auto-indent: a newline after `if x then`, `for ... do`, `function f()`,
+     *      etc. lands the cursor one indent level deeper.
+     *   2. Auto-`end`: when the new line opens a block whose matching closer
+     *      doesn't already exist further down the script, also drop in an `end`
+     *      on the line below the cursor. The "already exists" check is
+     *      cursor-relative ([LuaBlockBalance.shouldInsertAutoEnd]) so we don't
+     *      spawn phantom `end`s inside well-formed blocks.
+     *   3. Bare-newline at column 0: don't add the previous line's indent in
+     *      front of the cursor. The line being pushed down already has its own
+     *      leading whitespace and adding more produces visual double-indent.
+     */
+    private fun handleEnter() {
+        val (curLineIdx, col) = cursorToLineCol(cursor)
+        val curLine = lines.getOrNull(curLineIdx) ?: ""
+        val prefix = curLine.substring(0, col.coerceAtMost(curLine.length))
+
+        // Job 3: cursor at start-of-content (or earlier) on a line that already has
+        // leading whitespace — just split the line, no indent added at the cursor.
+        if (prefix.trimStart().isEmpty()) {
+            insertText("\n")
+            return
+        }
+
+        val baseIndent = curLine.takeWhile { it == ' ' }
+        val deeperIndent = if (shouldIndentDeeper(prefix.trimEnd())) "    " else ""
+        val newIndent = baseIndent + deeperIndent
+
+        // Job 2: drop in a matching `end` for an unclosed block opener.
+        if (damien.nodeworks.script.LuaBlockBalance.shouldInsertAutoEnd(curLine, col, value, cursor)) {
+            val insertion = "\n$newIndent\n${baseIndent}end"
+            insertText(insertion)
+            // [insertText] advances the cursor past the whole insertion. Pull it
+            // back to the indented body line so the player lands ready to type
+            // with the matching `end` sitting just below.
+            val backDistance = ("\n${baseIndent}end").length
+            cursor -= backDistance
+            ensureCursorVisible()
+            return
+        }
+
+        // Job 1: plain auto-indent.
+        insertText("\n$newIndent")
     }
 
     /** Whether a line ending in [trimmed] should push the next line one indent deeper.
@@ -1107,8 +1129,10 @@ class ScriptEditor(
         // again after finishing it).
         val openers = Regex("""(^|\W)(function|do|then|else|repeat)\s*$""")
         if (openers.containsMatchIn(code)) return true
-        // A line ending in `function(...)`, user is starting an anonymous function body.
-        if (Regex("""\bfunction\s*\([^)]*\)\s*$""").containsMatchIn(code)) return true
+        // A line ending in `function(...)` / `function name(...)` / `function obj.m(...)`,
+        // user is starting either an anonymous or named function body. The optional
+        // `[\w_.:]*` matches the qualified name (or empty for anonymous).
+        if (Regex("""\bfunction\s*[\w_.:]*\s*\([^)]*\)\s*$""").containsMatchIn(code)) return true
         // A line ending in an unclosed `(`, chained API calls often do this
         // (`network:handle("name",` + Enter + new function body).
         val opens = code.count { it == '(' }

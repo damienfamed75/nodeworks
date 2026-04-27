@@ -1,9 +1,6 @@
 <p align="center">
-  <img src="./docs/images/broadcast_antenna.png" alt="Broadcast Antenna" />
+  <img src="./docs/images/nodeworks_error.png" alt="Nodeworks" />
 </p>
-<h1><p align="center">
-Nodeworks
-</p></h1>
 
 ---
 

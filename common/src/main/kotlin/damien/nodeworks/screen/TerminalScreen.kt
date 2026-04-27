@@ -703,8 +703,14 @@ class TerminalScreen(
             if (text != cachedDiagnosticsText) {
                 cachedDiagnosticsText = text
                 val symbols = autocomplete.getSymbolTable(text, text)
+                // Pass sibling scripts so cross-script `local foo = require("foo")`
+                // lookups can resolve `foo.bar(...)` against the imported module's
+                // declared param types. The active tab's text is excluded since it's
+                // already in `text` — including it would trigger a useless self-import
+                // path if a player ever typed `require("<active tab name>")`.
+                val others = scripts.filterKeys { it != activeTab }
                 cachedDiagnostics =
-                    damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(text, symbols)
+                    damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(text, symbols, others)
             }
             cachedDiagnostics
         }
@@ -1356,7 +1362,16 @@ class TerminalScreen(
                         editor.value,
                         editor.value.substring(0, clamped),
                     )
-                    symbols[word]?.let { "$word: $it" }
+                    val baseType = symbols[word] ?: return@run null
+                    // Surface nullability the same way the diagnostic analyzer sees
+                    // it: a name flagged as nullable here that isn't inside a
+                    // narrowing region renders as `T?`. Inside `if word then ... end`
+                    // the narrowing region covers `clamped`, so the `?` drops off
+                    // and the hover shows the unwrapped type.
+                    val nullableHere = damien.nodeworks.script.diagnostics.LuaDiagnostics
+                        .nullablesAtOffset(editor.value, clamped, symbols)
+                    val display = if (word in nullableHere) "$baseType?" else baseType
+                    "$word: $display"
                 }
             if (fallback != null) {
                 accum.add(Line(fallback, COLOR_PLAIN))
@@ -1722,46 +1737,6 @@ class TerminalScreen(
                     if (pair == "()" || pair == "[]" || pair == "{}" || pair == "\"\"") {
                         val newText = bText.substring(0, bCursor - 1) + bText.substring(bCursor + 1)
                         editor.setValueKeepScroll(newText, bCursor - 1)
-                        autocomplete.update(
-                            editor.value,
-                            editor.getCursorPosition(),
-                            editorX,
-                            editorY,
-                            editorScrollY = editor.scrollY
-                        )
-                        return true
-                    }
-                }
-            }
-
-            // Auto-insert `end` when pressing Enter after block-opening statements
-            if (keyCode == InputConstants.KEY_RETURN) {
-                val text = editor.value
-                val cursor = editor.getCursorPosition()
-                val beforeCursor = text.substring(0, cursor)
-                val currentLine = beforeCursor.substringAfterLast('\n').trimEnd()
-
-                // Check if the line opens a block that needs `end`
-                val needsEnd = currentLine.matches(Regex("""^\s*(local\s+)?function\s.*""")) ||
-                        currentLine.matches(Regex("""^\s*if\s+.+\s+then\s*$""")) ||
-                        currentLine.matches(Regex("""^\s*for\s+.+\s+do\s*$""")) ||
-                        currentLine.matches(Regex("""^\s*while\s+.+\s+do\s*$"""))
-
-                if (needsEnd) {
-                    // Count block openers vs `end` keywords line-by-line
-                    var depth = 0
-                    for (line in text.lines()) {
-                        val trimmed = line.trim()
-                        if (trimmed.startsWith("--")) continue // skip comments
-                        if (Regex("""\bfunction[\s(]|if\s.+\sthen|for\s.+\sdo|while\s.+\sdo""").containsMatchIn(trimmed)) depth++
-                        if (Regex("""\bend\b""").containsMatchIn(trimmed)) depth--
-                    }
-
-                    if (depth > 0) {
-                        val indent = currentLine.takeWhile { it == ' ' }
-                        val newText = text.substring(0, cursor) + "\n$indent    \n${indent}end" + text.substring(cursor)
-                        val newCursor = cursor + 1 + indent.length + 4
-                        editor.setValueKeepScroll(newText, newCursor)
                         autocomplete.update(
                             editor.value,
                             editor.getCursorPosition(),

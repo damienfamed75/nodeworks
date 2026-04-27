@@ -2328,9 +2328,21 @@ class AutocompletePopup(
         // in the file doesn't affect whether the IDE should suggest it, common Lua
         // convention puts helper definitions at the bottom, and blocking those from
         // autocomplete would be more annoying than useful.
+        // Surface nullability the same way the diagnostic analyzer sees it: a
+        // variable known to be `T?` shows up as `name: T?` in the suggestion list,
+        // but inside an `if name then ... end` (or `assert(name)`, `if not name
+        // then return end`, etc.) the narrowing region drops the `?` so the
+        // suggestion shows the unwrapped type. Recomputed here rather than cached
+        // in [symbols] so all the existing call sites that strip `?` themselves
+        // continue to work unchanged.
+        val nullableHere = damien.nodeworks.script.diagnostics.LuaDiagnostics
+            .nullablesAtOffset(fullText, beforeCursor.length, symbols)
         val userVars = (extractVariableNames(beforeCursor) + extractFunctionParams(beforeCursor)).distinct().map { name ->
             val type = symbols[name]
-            if (type != null) suggest(name, "$name: $type", Kind.VARIABLE) else suggest(name, kind = Kind.VARIABLE)
+            if (type != null) {
+                val displayType = if (name in nullableHere) "$type?" else type
+                suggest(name, "$name: $displayType", Kind.VARIABLE)
+            } else suggest(name, kind = Kind.VARIABLE)
         }
         val userFuncs = extractFunctions(fullText).map { f ->
             val retStr = if (f.returnType != null) " → ${f.returnType}" else ""
