@@ -29,8 +29,15 @@ jobs:
           distribution: 'microsoft'
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: build
+      - name: build (compiles + runs tests)
         run: ./gradlew build
+      - name: upload test reports
+        # Run regardless of build result, a failed test still produces a useful report.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestReports
+          path: common/build/reports/tests/test/
       - name: capture build artifacts
         uses: actions/upload-artifact@v4
         with:

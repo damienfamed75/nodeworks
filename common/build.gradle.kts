@@ -29,4 +29,21 @@ dependencies {
 
     // JEI API (compile-only, optional integration)
     compileOnly("mezz.jei:jei-${providers.gradleProperty("minecraft_version").get()}-common-api:${providers.gradleProperty("jei_version").get()}")
+
+    // JUnit 5 for pure-logic unit tests. Tests that don't need a Minecraft world
+    // (parsers, registries, algorithms like the polling round-robin) live in
+    // src/test/kotlin and run via `./gradlew test`. Tests that need a real
+    // server should be migrated to NeoForge GameTests later.
+    val junitVersion = providers.gradleProperty("junit_version").get()
+    testImplementation("org.junit.jupiter:junit-jupiter-api:$junitVersion")
+    testImplementation("org.junit.jupiter:junit-jupiter-params:$junitVersion")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:$junitVersion")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.named<Test>("test") {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
 }
