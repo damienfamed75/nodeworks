@@ -41,6 +41,13 @@ class ProcessingSetScreenHandler(
     var cardName: String = ""
     var serial: Boolean = false
 
+    /** Set true the first time a user action mutates configurable state.
+     *  [removed] skips the save (and the >1-stack split-copy side effect)
+     *  when this stays false, so opening a stack of unprogrammed Processing
+     *  Sets and closing the GUI without clicks doesn't write an empty
+     *  handler to a split-off copy. */
+    private var dirty: Boolean = false
+
     val inputCounts: IntArray get() = IntArray(INPUT_SLOTS) { data.get(it) }
     val outputCounts: IntArray get() = IntArray(OUTPUT_SLOTS) { data.get(INPUT_SLOTS + it) }
     val timeout: Int get() = data.get(DATA_TIMEOUT)
@@ -212,6 +219,7 @@ class ProcessingSetScreenHandler(
                     }
                 }
             }
+            dirty = true
             return
         }
         super.clicked(slotId, button, clickType, player)
@@ -225,6 +233,7 @@ class ProcessingSetScreenHandler(
             for (i in 0 until INPUT_SLOTS) {
                 if (inputGrid.getItem(i).isEmpty) {
                     inputGrid.setItem(i, ItemStack(stack.item, 1))
+                    dirty = true
                     break
                 }
             }
@@ -235,17 +244,20 @@ class ProcessingSetScreenHandler(
     fun setInputCount(slotIndex: Int, count: Int) {
         if (slotIndex in 0 until INPUT_SLOTS) {
             data.set(slotIndex, maxOf(1, count))
+            dirty = true
         }
     }
 
     fun setOutputCount(slotIndex: Int, count: Int) {
         if (slotIndex in 0 until OUTPUT_SLOTS) {
             data.set(INPUT_SLOTS + slotIndex, maxOf(1, count))
+            dirty = true
         }
     }
 
     fun setTimeout(timeout: Int) {
         data.set(DATA_TIMEOUT, timeout.coerceIn(0, TIMEOUT_MAX))
+        dirty = true
     }
 
     /** Set a ghost slot by item ID string (used by JEI ghost ingredient and recipe transfer). */
@@ -255,6 +267,7 @@ class ProcessingSetScreenHandler(
                 slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, ItemStack.EMPTY)
                 slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, ItemStack.EMPTY)
             }
+            dirty = true
             return
         }
         val id = Identifier.tryParse(itemId) ?: return
@@ -263,6 +276,7 @@ class ProcessingSetScreenHandler(
             slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, ItemStack(item, 1))
             slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, ItemStack(item, 1))
         }
+        dirty = true
     }
 
     /** Set the entire input grid from a list of item IDs (used by JEI recipe transfer). */
@@ -273,9 +287,17 @@ class ProcessingSetScreenHandler(
         broadcastChanges()
     }
 
+    /** Mark the recipe as edited from outside the slot/click path (e.g. UI controls
+     *  that toggle `serial` or `cardName`). Without this, toggling serial mode and
+     *  closing the GUI wouldn't persist the change. */
+    fun markDirty() {
+        dirty = true
+    }
+
     override fun removed(player: Player) {
         super.removed(player)
         if (player.level().isClientSide) return
+        if (!dirty) return
         saveRecipe(player)
     }
 

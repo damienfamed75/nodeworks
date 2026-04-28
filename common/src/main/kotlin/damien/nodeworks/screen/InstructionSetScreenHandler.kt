@@ -30,6 +30,14 @@ class InstructionSetScreenHandler(
 
     private val resultContainer = SimpleContainer(1)
 
+    /** Snapshot of the recipe grid at open time, captured so [removed] can skip
+     *  saving when the user closes without making any changes. Without this,
+     *  opening a stack of >1 unprogrammed Instruction Sets and closing the GUI
+     *  splits a copy off the stack and writes an empty recipe to it (same path
+     *  the >1-stack save uses), leaving the player with a "programmed-empty"
+     *  card alongside the original stack. */
+    private val initialRecipe: List<String> = readRecipe()
+
     sealed class SaveMode {
         data class Handheld(val hand: InteractionHand) : SaveMode()
         data class InNode(val nodePos: BlockPos, val sideOrdinal: Int, val slotIndex: Int) : SaveMode()
@@ -167,14 +175,20 @@ class InstructionSetScreenHandler(
     override fun removed(player: Player) {
         super.removed(player)
         if (player.level().isClientSide) return
-        saveRecipe(player)
+        // Skip the save (and the >1-stack split-copy side effect) when the user
+        // closes without changing the grid. See [initialRecipe] for the bug
+        // this guards against.
+        val recipe = readRecipe()
+        if (recipe == initialRecipe) return
+        saveRecipe(player, recipe)
     }
 
-    private fun saveRecipe(player: Player) {
-        val recipe = (0 until 9).map { i ->
-            val stack = recipeGrid.getItem(i)
-            if (stack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: ""
-        }
+    private fun readRecipe(): List<String> = (0 until 9).map { i ->
+        val stack = recipeGrid.getItem(i)
+        if (stack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: ""
+    }
+
+    private fun saveRecipe(player: Player, recipe: List<String>) {
         val resultStack = resultContainer.getItem(0)
         val output = if (resultStack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(resultStack.item)?.toString() ?: ""
 
