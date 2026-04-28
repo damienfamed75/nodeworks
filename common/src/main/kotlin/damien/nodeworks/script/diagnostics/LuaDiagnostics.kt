@@ -50,6 +50,8 @@ object LuaDiagnostics {
         "nullable-misuse" to Severity.WARNING,
         "nullable-arg" to Severity.WARNING,
         "ambiguous-card-name" to Severity.HINT,
+        "handler-no-pull" to Severity.HINT,
+        "handler-unused-input" to Severity.HINT,
     )
 
     // -----------------------------------------------------------------------
@@ -143,6 +145,7 @@ object LuaDiagnostics {
         symbols: Map<String, String> = emptyMap(),
         otherScripts: Map<String, String> = emptyMap(),
         ambiguousNetworkNames: Set<String> = emptySet(),
+        processingApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
     ): List<Diagnostic> {
         if (text.isBlank()) return emptyList()
 
@@ -176,6 +179,20 @@ object LuaDiagnostics {
 
         if (ambiguousNetworkNames.isNotEmpty()) {
             out += checkAmbiguousNetworkGet(text, ambiguousNetworkNames)
+        }
+
+        // Handler-shape hints. Both rules share the same handler-span scan, so
+        // build it once. Skip the work entirely when the script has no
+        // `network:handle(` call to begin with, the substring check is O(n) and
+        // common-case scripts (non-handler logic) avoid the regex pass.
+        if (text.contains("network:handle")) {
+            val handlerSpans = findHandlerSpans(text)
+            if (handlerSpans.isNotEmpty()) {
+                out += checkHandlersWithoutPull(text, handlerSpans)
+                if (processingApis.isNotEmpty()) {
+                    out += checkHandlersWithUnusedInputs(text, handlerSpans, processingApis)
+                }
+            }
         }
         return out
     }
@@ -1496,4 +1513,158 @@ object LuaDiagnostics {
 
         else -> emptySet()
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Rules: handler-no-pull, handler-unused-input
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** One `network:handle("name", function(...) … end)` block found in the
+     *  script. [bodyStart] / [bodyEnd] bracket the function body (between the
+     *  `function(...)` closing paren and the matching `end`). Both rules read
+     *  the same span data so we compute it once per analyze pass. */
+    private data class HandlerSpan(
+        val name: String,
+        /** Range covering the whole `network:handle("...", function(...))`
+         *  signature (everything up to but not including the body), used to
+         *  anchor handler-shape diagnostics. Underlining the full header
+         *  reads more clearly than highlighting just the name string when the
+         *  hint is "this whole handler is missing something". */
+        val headerRange: TextRange,
+        /** Inclusive start of the body (first char after `function(...)`'s `)`). */
+        val bodyStart: Int,
+        /** Exclusive end of the body (position of the matching `end` keyword). */
+        val bodyEnd: Int,
+    )
+
+    private val HANDLER_OPEN: Regex =
+        Regex("""network:handle\s*\(\s*"([^"]+)"\s*,\s*function\s*\(([^)]*)\)""")
+
+    /** Find every `network:handle("name", function(...) … end)` block and the
+     *  body span of each. Body extents are computed by walking comment-stripped
+     *  text and balancing `function`/`end` keywords starting at depth=1, the
+     *  first `end` that brings depth back to 0 closes the handler. Nested
+     *  user-defined `function … end` blocks inside the body don't confuse the
+     *  walk because they push/pop together. */
+    private fun findHandlerSpans(text: String): List<HandlerSpan> {
+        // Strip comments first so a commented-out `network:handle(...)` doesn't
+        // produce a phantom span and a commented `end` doesn't close the body
+        // early. stripComments preserves offsets so the matched ranges remain
+        // valid against the original text.
+        val stripped = stripComments(text)
+        val out = mutableListOf<HandlerSpan>()
+        for (open in HANDLER_OPEN.findAll(stripped)) {
+            val name = open.groupValues[1]
+            // bodyStart is one past the `)` that closes the function signature.
+            val bodyStart = open.range.last + 1
+            val bodyEnd = findMatchingHandlerEnd(stripped, bodyStart) ?: continue
+            out += HandlerSpan(
+                name = name,
+                headerRange = TextRange(open.range.first, bodyStart),
+                bodyStart = bodyStart,
+                bodyEnd = bodyEnd,
+            )
+        }
+        return out
+    }
+
+    private val FUNCTION_OR_END_KW: Regex = Regex("""\b(function|end)\b""")
+
+    /** Walk forward from [from] balancing `function`/`end` keywords starting at
+     *  depth=1, return the offset of the `end` that returns depth to 0, or null
+     *  when the body never closes (file ends mid-handler, common while typing). */
+    private fun findMatchingHandlerEnd(text: String, from: Int): Int? {
+        var depth = 1
+        for (m in FUNCTION_OR_END_KW.findAll(text, startIndex = from)) {
+            if (m.value == "function") {
+                depth++
+            } else {
+                depth--
+                if (depth == 0) return m.range.first
+            }
+        }
+        return null
+    }
+
+    /** HINT when a handler body never calls `:pull(`. Without a `job:pull(...)`
+     *  the executor's async wait never resolves, the craft hangs until the
+     *  Processing-Set timeout fires. The check is a substring on the body of
+     *  the comment-stripped text, `pull` is a Job-only method so the literal
+     *  `:pull(` is unambiguous. */
+    private fun checkHandlersWithoutPull(
+        rawText: String,
+        spans: List<HandlerSpan>,
+    ): List<Diagnostic> {
+        if (spans.isEmpty()) return emptyList()
+        val stripped = stripComments(rawText)
+        val out = mutableListOf<Diagnostic>()
+        for (span in spans) {
+            val body = stripped.substring(span.bodyStart, span.bodyEnd)
+            if (body.contains(":pull(")) continue
+            out += Diagnostic(
+                severity = severityFor("handler-no-pull"),
+                range = span.headerRange,
+                code = "handler-no-pull",
+                message = "Handler '${span.name}' never calls job:pull. The crafting CPU " +
+                        "will wait for outputs that never arrive and time out the craft.",
+            )
+        }
+        return out
+    }
+
+    /** HINT when a handler body never references one of its declared input
+     *  fields. Looks at each handler's matching [ProcessingApiInfo] (by name),
+     *  derives the per-slot identifier names via [HandlerParamNames.build],
+     *  and emits one hint per input that the body doesn't mention. The literal
+     *  `\bname\b` substring is what we check, dynamic lookups via `items[name]`
+     *  or `for k,v in items` will trigger false positives, accepting that as a
+     *  hint-tier risk. */
+    private fun checkHandlersWithUnusedInputs(
+        rawText: String,
+        spans: List<HandlerSpan>,
+        apis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>,
+    ): List<Diagnostic> {
+        if (spans.isEmpty() || apis.isEmpty()) return emptyList()
+        val stripped = stripComments(rawText)
+        val byName = apis.associateBy { it.name }
+        val out = mutableListOf<Diagnostic>()
+        for (span in spans) {
+            val api = byName[span.name] ?: continue
+            if (api.inputs.isEmpty()) continue
+            val expected =
+                damien.nodeworks.card.HandlerParamNames.build(api.inputs)
+            if (expected.isEmpty()) continue
+            val body = stripped.substring(span.bodyStart, span.bodyEnd)
+            // Bail when the body references `items` opaquely (table / loop /
+            // index access). Once any of those shapes is in scope we can't tell
+            // statically whether each slot is used.
+            if (HANDLER_INDIRECT_ITEMS_USE.containsMatchIn(body)) continue
+            val missing = expected.filterNot { name ->
+                Regex("""\b${Regex.escape(name)}\b""").containsMatchIn(body)
+            }
+            if (missing.isEmpty()) continue
+            out += Diagnostic(
+                severity = severityFor("handler-unused-input"),
+                range = span.headerRange,
+                code = "handler-unused-input",
+                message = "Handler '${span.name}' never references " +
+                        "${if (missing.size == 1) "input" else "inputs"} " +
+                        missing.joinToString(", ") { "'$it'" } +
+                        ". Pass them through items.<name> in the body or the craft " +
+                        "will leave them stuck in the CPU buffer.",
+            )
+        }
+        return out
+    }
+
+    /** Patterns that imply the handler accesses `items` opaquely, in which
+     *  case the literal-name substring check would produce false positives.
+     *  Bracket access, iteration, and full-reassignment all suppress the
+     *  unused-input hint. The reassignment branch uses a negative lookahead
+     *  so `local x = items.copperIngot` (a field access, not an alias) does
+     *  *not* trigger suppression. */
+    private val HANDLER_INDIRECT_ITEMS_USE: Regex = Regex(
+        """\bitems\s*\[""" +
+            """|\bfor\s+\w+(?:\s*,\s*\w+)?\s+in\s+items\b""" +
+            """|\blocal\s+\w+\s*=\s*items(?![.\[\w])"""
+    )
 }

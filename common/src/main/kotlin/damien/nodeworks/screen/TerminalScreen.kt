@@ -761,6 +761,7 @@ class TerminalScreen(
                 cachedDiagnostics =
                     damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(
                         text, symbols, others, ambiguousNetworkNames,
+                        processingApis = localApis,
                     )
             }
             cachedDiagnostics

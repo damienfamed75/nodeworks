@@ -1,6 +1,8 @@
 ﻿package damien.nodeworks.script.diagnostics
 
+import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -1012,5 +1014,179 @@ class LuaDiagnosticsTest {
             diags.none { it.code == "nullable-misuse" },
             "bare references should not be flagged, got $diags",
         )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Handler-shape hints: handler-no-pull, handler-unused-input
+    // ──────────────────────────────────────────────────────────────────────
+
+    private fun api(
+        name: String,
+        inputs: List<Pair<String, Int>> = emptyList(),
+        outputs: List<Pair<String, Int>> = emptyList(),
+    ) = ProcessingStorageBlockEntity.ProcessingApiInfo(
+        name = name, inputs = inputs, outputs = outputs, timeout = 0,
+    )
+
+    @Test
+    fun handlerWithoutPullEmitsHint() {
+        val script = """
+            network:handle("smelt_iron", function(items, job)
+                local x = items.copperOre
+                -- never calls job:pull, the craft will hang
+            end)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(script)
+        val hint = requireNotNull(diags.singleOrNull { it.code == "handler-no-pull" }) {
+            "expected handler-no-pull, got $diags"
+        }
+        assertEquals(Severity.HINT, hint.severity)
+        assertTrue(hint.message.contains("smelt_iron"))
+    }
+
+    @Test
+    fun handlerWithJobPullIsClean() {
+        val script = """
+            network:handle("smelt_iron", function(items, job)
+                local out = job:pull(function(s) return s.item == "minecraft:iron_ingot" end)
+            end)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(script)
+        assertTrue(diags.none { it.code == "handler-no-pull" }, "got $diags")
+    }
+
+    @Test
+    fun handlerWithCommentedOutPullStillFlagged() {
+        // Comment-stripping should mean a `:pull(` hidden inside a comment
+        // doesn't count toward the live :pull check.
+        val script = """
+            network:handle("smelt_iron", function(items, job)
+                -- TODO: job:pull(function(s) return true end)
+                items.copperOre.shapeless()
+            end)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(script)
+        assertTrue(
+            diags.any { it.code == "handler-no-pull" },
+            "expected hint despite commented :pull, got $diags",
+        )
+    }
+
+    @Test
+    fun nestedFunctionEndsDontProematurelyCloseHandlerBody() {
+        // The inner `function … end` block must not be mistaken for the
+        // handler's closing end. Here :pull lives *after* an inner block.
+        val script = """
+            network:handle("smelt_iron", function(items, job)
+                local helper = function() return 1 end
+                local out = job:pull(function(s) return s.item == "minecraft:iron_ingot" end)
+            end)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(script)
+        assertTrue(diags.none { it.code == "handler-no-pull" }, "got $diags")
+    }
+
+    @Test
+    fun handlerNoPullSkippedForScriptsWithoutHandleCall() {
+        // Cheap-out path: scripts that never call network:handle shouldn't
+        // even run the handler-span scan.
+        val script = """
+            local cobble = network:get("cobblestone")
+            cobble:set(true)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(script)
+        assertTrue(diags.none { it.code == "handler-no-pull" }, "got $diags")
+    }
+
+    @Test
+    fun handlerUnusedInputEmitsHint() {
+        val script = """
+            network:handle("alloy", function(items, job)
+                local x = items.copperIngot
+                job:pull(function(s) return s.item == "minecraft:steel_ingot" end)
+                -- ironIngot is declared as an input but never referenced
+            end)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(
+            script,
+            processingApis = listOf(api(
+                name = "alloy",
+                inputs = listOf(
+                    "minecraft:copper_ingot" to 1,
+                    "minecraft:iron_ingot" to 1,
+                ),
+            )),
+        )
+        val hint = requireNotNull(diags.singleOrNull { it.code == "handler-unused-input" }) {
+            "expected handler-unused-input, got $diags"
+        }
+        assertEquals(Severity.HINT, hint.severity)
+        assertTrue(hint.message.contains("ironIngot"), "message=${hint.message}")
+        assertFalse(hint.message.contains("copperIngot"))
+    }
+
+    @Test
+    fun handlerWithAllInputsReferencedIsClean() {
+        val script = """
+            network:handle("alloy", function(items, job)
+                local a = items.copperIngot
+                local b = items.ironIngot
+                job:pull(function(s) return s.item == "minecraft:steel_ingot" end)
+            end)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(
+            script,
+            processingApis = listOf(api(
+                name = "alloy",
+                inputs = listOf(
+                    "minecraft:copper_ingot" to 1,
+                    "minecraft:iron_ingot" to 1,
+                ),
+            )),
+        )
+        assertTrue(diags.none { it.code == "handler-unused-input" }, "got $diags")
+    }
+
+    @Test
+    fun handlerUsingItemsBracketAccessSuppressesUnusedInputHint() {
+        // Dynamic field access via `items["name"]` can't be statically verified,
+        // so we don't fire the hint when the body uses bracket access at all.
+        val script = """
+            network:handle("alloy", function(items, job)
+                for k, v in pairs({"copperIngot", "ironIngot"}) do
+                    print(items[v])
+                end
+                job:pull(function(s) return s.item == "minecraft:steel_ingot" end)
+            end)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(
+            script,
+            processingApis = listOf(api(
+                name = "alloy",
+                inputs = listOf(
+                    "minecraft:copper_ingot" to 1,
+                    "minecraft:iron_ingot" to 1,
+                ),
+            )),
+        )
+        assertTrue(diags.none { it.code == "handler-unused-input" }, "got $diags")
+    }
+
+    @Test
+    fun handlerIteratingItemsSuppressesUnusedInputHint() {
+        val script = """
+            network:handle("alloy", function(items, job)
+                for k, v in items do print(v) end
+                job:pull(function(s) return s.item == "minecraft:steel_ingot" end)
+            end)
+        """.trimIndent()
+        val diags = LuaDiagnostics.analyze(
+            script,
+            processingApis = listOf(api(
+                name = "alloy",
+                inputs = listOf("minecraft:copper_ingot" to 1, "minecraft:iron_ingot" to 1),
+            )),
+        )
+        assertTrue(diags.none { it.code == "handler-unused-input" }, "got $diags")
     }
 }
