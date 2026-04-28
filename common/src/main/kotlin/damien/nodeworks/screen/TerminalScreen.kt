@@ -92,16 +92,19 @@ class TerminalScreen(
     private val itemIds: List<String>
     private val fluidIds: List<String>
     private val variables: List<Pair<String, Int>>
+
     /** Variable name → channel color, parallel to [variables]. Kept as a separate
      *  map (instead of widening the [variables] tuple) so AutocompletePopup's
      *  existing (name, typeOrd) consumer doesn't need a signature change. */
     private val variableChannels: Map<String, net.minecraft.world.item.DyeColor>
+
     /** Effective aliases of every Breaker on the network, auto-alias `breaker_N`
      *  unless the player set a name in the device GUI. Passed to AutocompletePopup
      *  so `network:get("|"` can suggest breakers and `local x = network:get("...")`
      *  can narrow `x` to BreakerHandle. */
     private val breakerAliases: List<String>
     private val placerAliases: List<String>
+
     /** (alias, channel) per Breaker / Placer for the sidebar render, keeps the pip
      *  rendering consistent with cards/variables. The alias-only [breakerAliases] /
      *  [placerAliases] fields stay because AutocompletePopup just needs the names. */
@@ -341,9 +344,11 @@ class TerminalScreen(
         fun origLineStart(idx: Int): Int {
             var p = 0; for (i in 0 until idx) p += origLines[i].length + 1; return p
         }
+
         fun newLineStart(idx: Int): Int {
             var p = 0; for (i in 0 until idx) p += lines[i].length + 1; return p
         }
+
         // Translate an original-text position to a new-text position with column
         // awareness: on an unindented line, a cursor/sel-end inside the removed
         // whitespace clamps to col 0 rather than rolling back into the previous line.
@@ -511,7 +516,14 @@ class TerminalScreen(
                             for (dir in net.minecraft.core.Direction.entries) {
                                 val caps = entity.getSideCapabilities(dir)
                                 for (info in caps) {
-                                    scannedCards.add(CardSnapshot(info.capability, info.alias, info.slotIndex, info.channel))
+                                    scannedCards.add(
+                                        CardSnapshot(
+                                            info.capability,
+                                            info.alias,
+                                            info.slotIndex,
+                                            info.channel
+                                        )
+                                    )
                                 }
                             }
                         }
@@ -522,9 +534,11 @@ class TerminalScreen(
                                 scannedVarChannels[entity.variableName] = entity.channel
                             }
                         }
+
                         is damien.nodeworks.block.entity.BreakerBlockEntity -> {
                             scannedBreakers.add(entity.deviceName to entity.channel)
                         }
+
                         is damien.nodeworks.block.entity.PlacerBlockEntity -> {
                             scannedPlacers.add(entity.deviceName to entity.channel)
                         }
@@ -555,7 +569,8 @@ class TerminalScreen(
                                     // empty anyway, but being explicit here keeps the intent visible.
                                     if (chipData != null
                                         && chipData.kind == damien.nodeworks.item.BroadcastSourceKind.PROCESSING_STORAGE
-                                        && clientLevel.isLoaded(chipData.pos)) {
+                                        && clientLevel.isLoaded(chipData.pos)
+                                    ) {
                                         val broadcast = clientLevel.getBlockEntity(chipData.pos)
                                         if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {
                                             // Mirror the local ProcessingStorage case: in addition to the
@@ -612,25 +627,31 @@ class TerminalScreen(
         }
         val slots = mutableListOf<damien.nodeworks.network.AliasSlot>()
         for (card in scannedCards) {
-            slots.add(damien.nodeworks.network.AliasSlot(
-                literalName = card.alias,
-                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix(card.capability.type),
-                setAutoAlias = { card.autoAlias = it },
-            ))
+            slots.add(
+                damien.nodeworks.network.AliasSlot(
+                    literalName = card.alias,
+                    baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix(card.capability.type),
+                    setAutoAlias = { card.autoAlias = it },
+                )
+            )
         }
         for (h in breakerAliasHolders) {
-            slots.add(damien.nodeworks.network.AliasSlot(
-                literalName = h.literalName,
-                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("breaker"),
-                setAutoAlias = { h.assignedAlias = it },
-            ))
+            slots.add(
+                damien.nodeworks.network.AliasSlot(
+                    literalName = h.literalName,
+                    baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("breaker"),
+                    setAutoAlias = { h.assignedAlias = it },
+                )
+            )
         }
         for (h in placerAliasHolders) {
-            slots.add(damien.nodeworks.network.AliasSlot(
-                literalName = h.literalName,
-                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("placer"),
-                setAutoAlias = { h.assignedAlias = it },
-            ))
+            slots.add(
+                damien.nodeworks.network.AliasSlot(
+                    literalName = h.literalName,
+                    baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("placer"),
+                    setAutoAlias = { h.assignedAlias = it },
+                )
+            )
         }
         damien.nodeworks.network.assignAliasSuffixes(slots)
         val scannedBreakerEntries = breakerAliasHolders.map { it.effectiveAlias to it.channel }
@@ -912,7 +933,8 @@ class TerminalScreen(
         val mcInst = net.minecraft.client.Minecraft.getInstance()
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getTerminalPos())
         val networkColor = if (reachable) {
-            val termEntity = mcInst.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
+            val termEntity =
+                mcInst.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
             if (termEntity?.networkId != null) {
                 damien.nodeworks.network.NetworkSettingsRegistry.getColor(termEntity.networkId)
             } else {
@@ -950,7 +972,8 @@ class TerminalScreen(
 
             val tabTop = tabBarY + 1
             val tabH = tabBarHeight - 1
-            val tabHovered = !isActive && mouseX >= tabX && mouseX < tabX + tabWidth && mouseY >= tabTop && mouseY < tabTop + tabH
+            val tabHovered =
+                !isActive && mouseX >= tabX && mouseX < tabX + tabWidth && mouseY >= tabTop && mouseY < tabTop + tabH
             val tabSlice = when {
                 isActive -> NineSlice.TAB_ACTIVE
                 tabHovered -> NineSlice.TAB_HOVER
@@ -1125,7 +1148,8 @@ class TerminalScreen(
             cardScrollOffset = cardScrollOffset.coerceIn(0, maxCardScroll)
             val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
             NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, cardListTop, scrollbarW, scrollbarHeight)
-            val thumbSlice = if (draggingSidebarScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
+            val thumbSlice =
+                if (draggingSidebarScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
             thumbSlice.draw(graphics, sbX, thumbY, scrollbarW, thumbHeight)
         }
 
@@ -1187,7 +1211,8 @@ class TerminalScreen(
         val toggleBtnX = logX + 3
         val toggleBtnY = logY + 2
         val toggleBtnSize = 10
-        val toggleHovered = mouseX >= logX && mouseX < logX + logW && mouseY >= logY && mouseY < logY + logCollapsedHeight
+        val toggleHovered =
+            mouseX >= logX && mouseX < logX + logW && mouseY >= logY && mouseY < logY + logCollapsedHeight
         if (logCollapsed) {
             val expandIcon = when {
                 pressedButton == "toggle" -> Icons.EXPAND_PRESSED
@@ -1368,6 +1393,7 @@ class TerminalScreen(
         // One accumulated list of lines. Each line has its own colour so signatures
         // render yellow and descriptions render gray within the same 9-sliced panel.
         data class Line(val text: String, val color: Int)
+
         val accum = mutableListOf<Line>()
 
         // Diagnostic header. When the mouse is over a flagged span we surface the
@@ -1407,7 +1433,11 @@ class TerminalScreen(
             // returns the Lambda class name, not the character stream.
             for (rawLine in doc.description.split('\n')) {
                 if (rawLine.isEmpty()) continue
-                for (part in font.splitter.splitLines(rawLine, TOOLTIP_MAX_WIDTH_PX, net.minecraft.network.chat.Style.EMPTY)) {
+                for (part in font.splitter.splitLines(
+                    rawLine,
+                    TOOLTIP_MAX_WIDTH_PX,
+                    net.minecraft.network.chat.Style.EMPTY
+                )) {
                     accum.add(Line(part.string, COLOR_DESCRIPTION))
                 }
             }
@@ -1472,9 +1502,9 @@ class TerminalScreen(
      *  advances, same visual language GuideME uses on item tooltips. */
     /** Hover doc for tokens the [LuaApiDocs.resolveAt] path missed. Three shapes:
      *
-     *  1. Bare type-name literal (`Job`, `InputItems`) — registry lookup.
-     *  2. User-defined function — signature only.
-     *  3. Typed local / param — symbol-table lookup with nullability narrowing.
+     *  1. Bare type-name literal (`Job`, `InputItems`): registry lookup.
+     *  2. User-defined function: signature only.
+     *  3. Typed local / param: symbol-table lookup with nullability narrowing.
      *
      *  Lifted out of [renderTypeTooltip] so [resolveDocAtIncludingFallback] can
      *  call it from the Hold-G path too, keeping the [G] tooltip indicator and
@@ -1497,8 +1527,10 @@ class TerminalScreen(
                     category = when (apiDoc.category) {
                         damien.nodeworks.script.api.ApiCategory.TYPE ->
                             damien.nodeworks.script.LuaApiDocs.Category.TYPE
+
                         damien.nodeworks.script.api.ApiCategory.MODULE ->
                             damien.nodeworks.script.LuaApiDocs.Category.MODULE
+
                         else -> damien.nodeworks.script.LuaApiDocs.Category.TYPE
                     },
                     guidebookRef = apiDoc.guidebookRef,
@@ -1800,9 +1832,9 @@ class TerminalScreen(
                                     indentSnippetLines(result.insertText, result.cursorOffset, lineLeading)
                                 else result.insertText to result.cursorOffset
                             val newText = importPrefix +
-                                text.substring(0, deleteStart) +
-                                insertText +
-                                text.substring(deleteEnd)
+                                    text.substring(0, deleteStart) +
+                                    insertText +
+                                    text.substring(deleteEnd)
                             editor.setValueKeepScroll(newText, importPrefix.length + deleteStart + cursorOffset)
                             suppressAutocomplete = false
                             // Only re-trigger autocomplete when the accepted result lands the
@@ -2039,6 +2071,7 @@ class TerminalScreen(
                     // accessor, same generated line shape for any click-to-import.
                     "card", "var", "breaker", "placer" ->
                         "local $ident = network:get(\"${entry.name}\")"
+
                     else -> null
                 }
                 if (line != null) {
