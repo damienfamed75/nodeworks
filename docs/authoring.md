@@ -1,7 +1,7 @@
 # Authoring the Guidebook
 
-This page covers the **Nodeworks-specific** setup for adding or editing pages in the in-game +
-web guidebook. For the page format itself, frontmatter schema, the full tag reference
+This page covers the **Nodeworks-specific** setup for adding or editing pages in the in-game
+guidebook. For the page format itself, frontmatter schema, the full tag reference
 (`<GameScene>`, `<ImportStructure>`, `<Block>`, `<Recipe>`, annotations, etc.), and anything
 about GuideME's authoring model, see the upstream docs at
 <https://guideme.appliedenergistics.org/>.

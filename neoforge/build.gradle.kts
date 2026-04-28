@@ -42,29 +42,6 @@ neoForge {
             )
             systemProperty("guideme.showOnStartup", "nodeworks:guide")
         }
-        // `./gradlew :neoforge:runGuideExport` boots a headless client, asks GuideME
-        // to render every page (incl. `<GameScene>` 3D structures) to static HTML,
-        // then exits. Output lands in `<repo>/build/guide/` and is what the
-        // `publish-guide.yml` workflow uploads to GitHub Pages on `main` pushes.
-        //
-        // System properties come from `guideme.internal.siteexport.SiteExportOnStartup`:
-        //   * `guideme.exportOnStartupAndExit`: comma-separated guide IDs to export.
-        //   * `guideme.exportDestination.<ns>.<path>`: output dir for that guide.
-        // We also re-feed the live `guidebook/` source dir so the export reflects
-        // uncommitted edits when run locally, same hot-reload property the dev `guide`
-        // run uses.
-        register("guideExport") {
-            client()
-            systemProperty(
-                "guideme.nodeworks.guide.sources",
-                rootProject.file("guidebook").absolutePath
-            )
-            systemProperty("guideme.exportOnStartupAndExit", "nodeworks:guide")
-            systemProperty(
-                "guideme.exportDestination.nodeworks.guide",
-                rootProject.layout.buildDirectory.dir("guide").get().asFile.absolutePath
-            )
-        }
     }
 
     mods {
@@ -91,19 +68,6 @@ repositories {
     }
 }
 
-// Optional dependency only the `runGuideExport` task needs at runtime, the
-// FFmpeg/JavaCPP natives that back GuideME's `OffScreenRenderer.captureAsWebp`
-// (used to encode `<GameScene>` snapshots into the static site). Kept in its
-// own configuration so it doesn't bloat the production jar or normal dev runs,
-// but wired into NeoForge's `additionalRuntimeClasspath` so the headless
-// `runGuideExport` Minecraft launch can resolve it. Mirrors AE2's setup.
-val guideExportOnly: Configuration by configurations.creating
-configurations.compileClasspath.get().extendsFrom(guideExportOnly)
-configurations.runtimeClasspath.get().extendsFrom(guideExportOnly)
-configurations.named("additionalRuntimeClasspath") {
-    extendsFrom(guideExportOnly)
-}
-
 dependencies {
     // Common module
     implementation(project(":common"))
@@ -115,15 +79,10 @@ dependencies {
     implementation("org.luaj:luaj-jse:3.0")
     jarJar("org.luaj:luaj-jse:3.0")
 
-    // GuideME, in-game + web guidebook (see docs/authoring.md).
+    // GuideME, in-game guidebook (see docs/authoring.md).
     // jarJar-bundled so players don't need to install it separately.
     implementation("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
     jarJar("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
-
-    // FFmpeg/JavaCPP, used only by `runGuideExport` for WebP encoding of
-    // `<GameScene>` snapshots. Pulled via the `guideExportOnly` configuration
-    // above so it doesn't end up in the shipped jar.
-    guideExportOnly("org.bytedeco:ffmpeg-platform:${providers.gradleProperty("ffmpeg_version").get()}")
 
     // Dev-only testing mods (not bundled in release)
     runtimeOnly("mezz.jei:jei-${providers.gradleProperty("minecraft_version").get()}-neoforge:${providers.gradleProperty("jei_version").get()}")
