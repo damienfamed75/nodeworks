@@ -121,15 +121,47 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
             )
             return
         }
-        tooltip.accept(
-            Component.literal("Linked to network at (${pairing.pos.x}, ${pairing.pos.y}, ${pairing.pos.z})")
-                .withStyle(ChatFormatting.GRAY)
-        )
+        // If the controller's BE happens to be loaded on the client (player is
+        // in render range, same dimension), prefer its custom network name.
+        // Out of range or cross-dimension we fall back to the position line so
+        // the tooltip still tells the player something useful.
+        val networkName = resolveNetworkName(pairing)
+        if (networkName != null) {
+            tooltip.accept(
+                Component.literal("Linked to \"$networkName\"")
+                    .withStyle(ChatFormatting.GRAY)
+            )
+        } else {
+            tooltip.accept(
+                Component.literal("Linked to network at (${pairing.pos.x}, ${pairing.pos.y}, ${pairing.pos.z})")
+                    .withStyle(ChatFormatting.GRAY)
+            )
+        }
         val dimId = pairing.dimension.identifier().path
         tooltip.accept(
             Component.literal("Dimension: $dimId")
                 .withStyle(ChatFormatting.DARK_GRAY)
         )
+    }
+
+    /** Read the live network name off the paired antenna's adjacent controller,
+     *  or null when neither BE is loaded on the client (out of range or
+     *  different dimension), no controller is adjacent, or the controller
+     *  hasn't been given a custom name. The crystal stores the *antenna's*
+     *  position, not the controller's, so we have to scan the antenna's six
+     *  neighbours the same way [BroadcastAntennaBlockEntity.detectSource]
+     *  does at encoding time. */
+    private fun resolveNetworkName(pairing: LinkCrystalItem.Companion.PairingData): String? {
+        val level = net.minecraft.client.Minecraft.getInstance().level ?: return null
+        if (level.dimension() != pairing.dimension) return null
+        for (dir in net.minecraft.core.Direction.entries) {
+            val neighbor = pairing.pos.relative(dir)
+            val be = level.getBlockEntity(neighbor)
+                as? damien.nodeworks.block.entity.NetworkControllerBlockEntity
+                ?: continue
+            return be.networkName.takeIf { it.isNotEmpty() }
+        }
+        return null
     }
 
     companion object {

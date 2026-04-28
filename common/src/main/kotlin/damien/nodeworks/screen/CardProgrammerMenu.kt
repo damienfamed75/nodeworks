@@ -136,8 +136,8 @@ class CardProgrammerMenu(
 
     override fun clicked(slotIndex: Int, button: Int, clickType: ContainerInput, player: Player) {
         super.clicked(slotIndex, button, clickType, player)
-        // Anything that ends up in the input slot — direct PICKUP, drag-spread
-        // (QUICK_CRAFT), hotbar SWAP, the various shift-click paths — should
+        // Anything that ends up in the input slot, direct PICKUP, drag-spread
+        // (QUICK_CRAFT), hotbar SWAP, the various shift-click paths, should
         // immediately get the template applied and bounce back into the player's
         // inventory. The slot's mayPlace already filtered for valid cards, so
         // whatever's there is safe to programme. Doing this in one place after

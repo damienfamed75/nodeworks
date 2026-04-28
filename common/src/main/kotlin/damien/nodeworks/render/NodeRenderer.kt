@@ -402,7 +402,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
      *  Layout: the single-colour strip uses the full 0..1 UV range so the
      *  texture's natural alpha falloff at the U/V edges paints a smaller
      *  emissive bar inside the strip's geometry. The multi-segment path
-     *  can't reuse that — proportional UV slicing gives the middle segment
+     *  can't reuse that, proportional UV slicing gives the middle segment
      *  of a 3-way split the bright plateau while the outer two get the
      *  faded edges, so the middle reads as much wider. Instead we keep the
      *  "emissive smaller than the lip" look by shrinking the *geometry* on
@@ -449,8 +449,8 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             val rgb = rgbs[i]
             if (along01) {
                 // Original (un-inset) corners.
-                // q0 = lerp(v0,v1,t0), q1 = lerp(v0,v1,t1) — depth-1 edge
-                // q2 = lerp(v3,v2,t1), q3 = lerp(v3,v2,t0) — depth-0 edge
+                // q0 = lerp(v0,v1,t0), q1 = lerp(v0,v1,t1), depth-1 edge
+                // q2 = lerp(v3,v2,t1), q3 = lerp(v3,v2,t0), depth-0 edge
                 // Depth-opposite pairs: (q0, q3) at long t0, (q1, q2) at long t1.
                 val q0x = x0 + d01x * t0; val q0y = y0 + d01y * t0; val q0z = z0 + d01z * t0
                 val q1x = x0 + d01x * t1; val q1y = y0 + d01y * t1; val q1z = z0 + d01z * t1
@@ -470,8 +470,8 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
                 )
             } else {
                 // Original (un-inset) corners.
-                // q0 = lerp(v0,v3,t0), q3 = lerp(v0,v3,t1) — depth-0 edge
-                // q1 = lerp(v1,v2,t0), q2 = lerp(v1,v2,t1) — depth-1 edge
+                // q0 = lerp(v0,v3,t0), q3 = lerp(v0,v3,t1), depth-0 edge
+                // q1 = lerp(v1,v2,t0), q2 = lerp(v1,v2,t1), depth-1 edge
                 // Depth-opposite pairs: (q0, q1) at long t0, (q3, q2) at long t1.
                 val q0x = x0 + d03x * t0; val q0y = y0 + d03y * t0; val q0z = z0 + d03z * t0
                 val q3x = x0 + d03x * t1; val q3y = y0 + d03y * t1; val q3z = z0 + d03z * t1
