@@ -101,13 +101,44 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         get() = if (cpu.isFormed) cpu.throttle.coerceAtLeast(CpuRules.THROTTLE_FLOOR)
                 else DEFAULT_THROTTLE
 
+    /** Snapshot cached for the duration of one [CraftScheduler.tick]. Every op in the
+     *  tick (and the post-loop completion / failure handlers) shares one discovery walk
+     *  instead of redoing the BFS per call. The cache is null between ticks and outside
+     *  the tick lifecycle (e.g. when [onPlanFailed] fires from [CraftScheduler.cancelAll]),
+     *  in which case [snapshotForTick] falls back to a one-off discovery. */
+    private var cachedSnapshot: damien.nodeworks.network.NetworkSnapshot? = null
+    private var insideTick = false
+
+    override fun onTickStart() {
+        insideTick = true
+        // Discovery is deferred to the first [snapshotForTick] call, idle ticks (state
+        // != RUNNING and no completion handlers fire) pay nothing.
+    }
+
+    override fun onTickEnd() {
+        cachedSnapshot = null
+        insideTick = false
+    }
+
+    /** Resolve the network snapshot for the current tick. Inside a tick the result is
+     *  cached, every later call in the same tick reuses it. Outside the tick lifecycle
+     *  (e.g. [onPlanFailed] from [CraftScheduler.cancelAll], which runs synchronously
+     *  outside [tick]), we discover live each call so callers stay correct. */
+    private fun snapshotForTick(lvl: ServerLevel): damien.nodeworks.network.NetworkSnapshot {
+        if (insideTick) {
+            cachedSnapshot?.let { return it }
+            val fresh = NetworkDiscovery.discoverNetwork(lvl, cpu.blockPos)
+            cachedSnapshot = fresh
+            return fresh
+        }
+        return NetworkDiscovery.discoverNetwork(lvl, cpu.blockPos)
+    }
+
     override fun execute(op: Operation): CraftScheduler.OpResult {
         val lvl = cpu.level as? ServerLevel
             ?: return CraftScheduler.OpResult.Failed("No server level")
 
-        // Rebuild snapshot each execute, cheap enough at our network scales, and always
-        // reflects the latest storage state (other crafts may have moved items concurrently).
-        val snapshot = NetworkDiscovery.discoverNetwork(lvl, cpu.blockPos)
+        val snapshot = snapshotForTick(lvl)
 
         return try {
             when (op) {
@@ -756,7 +787,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
 
     private fun flushBufferToStorage() {
         val lvl = cpu.level as? ServerLevel ?: return
-        val snap = NetworkDiscovery.discoverNetwork(lvl, cpu.blockPos)
+        val snap = snapshotForTick(lvl)
         val leftovers = cpu.clearBuffer()
         for ((itemId, count) in leftovers) {
             tryReturnToStorage(itemId, count, lvl, snap)

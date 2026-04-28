@@ -23,10 +23,22 @@ object CraftPlanner {
     data class PlanResult(val plan: CraftPlan?, val unresolvable: Boolean, val message: String?)
 
     /**
+     * Convenience overload that pulls Instruction Set recipe patterns out of a
+     * [NetworkSnapshot]. Live callers in production go through this entry point.
+     */
+    fun plan(tree: CraftTreeNode, snapshot: NetworkSnapshot, omitDeliver: Boolean = false): PlanResult =
+        plan(tree, omitDeliver) { itemId ->
+            snapshot.findInstructionSet(itemId)?.instructionSet?.recipe
+        }
+
+    /**
      * Plan a craft tree.
      *
-     * [snapshot] is needed to look up the 3×3 Instruction Set recipe pattern for
-     * craft_template nodes, the tree only carries the template name.
+     * [recipeLookup] resolves the 9-slot Instruction Set recipe pattern for a
+     * craft_template node's output item id. Returning null means "no recipe known
+     * for this item," which surfaces as an unresolvable plan. The hook is here
+     * (rather than baking [NetworkSnapshot] in) so the planner stays unit-testable
+     * without spinning up a Level or BlockEntity.
      *
      * When [omitDeliver] is true, the trailing [Operation.Deliver] is left out and
      * the root output op becomes the plan's terminal op. The caller is then on the
@@ -35,7 +47,11 @@ object CraftPlanner {
      * handler receives a live reference to items still in the buffer rather than
      * items that were already pushed into network storage.
      */
-    fun plan(tree: CraftTreeNode, snapshot: NetworkSnapshot, omitDeliver: Boolean = false): PlanResult {
+    fun plan(
+        tree: CraftTreeNode,
+        omitDeliver: Boolean = false,
+        recipeLookup: (String) -> List<String>?,
+    ): PlanResult {
         val ops = mutableListOf<Operation>()
         var nextId = 0
         fun newId(): Int = nextId++
@@ -106,7 +122,7 @@ object CraftPlanner {
                     // Resolve the recipe pattern by looking up the Instruction Set that
                     // produces this item. Tree only carries the template name, here we
                     // fetch the actual 9-slot pattern so the Execute op is self-contained.
-                    val recipe = resolveRecipePattern(node.itemId, snapshot)
+                    val recipe = recipeLookup(node.itemId)
                         ?: return PlanResult(
                             null, true,
                             "Could not resolve recipe pattern for ${node.itemId}"
@@ -166,11 +182,6 @@ object CraftPlanner {
             unresolvable = false,
             message = null
         )
-    }
-
-    private fun resolveRecipePattern(itemId: String, snapshot: NetworkSnapshot): List<String>? {
-        val match = snapshot.findInstructionSet(itemId) ?: return null
-        return match.instructionSet.recipe
     }
 
     private fun aggregateByItem(children: List<CraftTreeNode>): List<Pair<String, Long>> {
