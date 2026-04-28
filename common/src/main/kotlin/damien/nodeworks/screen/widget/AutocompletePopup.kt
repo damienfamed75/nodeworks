@@ -2010,8 +2010,16 @@ class AutocompletePopup(
         ) {
             val fnType = nextParam.type as damien.nodeworks.script.api.LuaType.Function
             val fnParamList = fnType.params.joinToString(", ") { "${it.name}: ${it.type.display}" }
+            // Predicate-shaped callbacks (`… → boolean`) pre-fill `return true` so
+            // the body shows the expected return type without forcing the user to
+            // also annotate `: boolean` on the function header (which would balloon
+            // the line width with longer card-name first-args). Non-boolean
+            // callbacks land in an empty body where the user types whatever.
+            val returnsBoolean = fnType.returnType ===
+                damien.nodeworks.script.api.LuaType.Primitive.Boolean
+            val bodyPrefix = if (returnsBoolean) "return true" else ""
             return baseSuggestions.map { s ->
-                val before = "${s.insertText}\", function($fnParamList)\n    "
+                val before = "${s.insertText}\", function($fnParamList)\n    $bodyPrefix"
                 val after = "\nend)"
                 Suggestion(
                     insertText = s.insertText,
