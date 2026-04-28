@@ -4,7 +4,7 @@
 
 ---
 
-![Discord](https://img.shields.io/discord/1498774330367148032?style=social&logo=discord&label=Nodeworks&link=https%3A%2F%2Fdiscord.gg%2FSzBju8gC3k)
+[![Discord](https://img.shields.io/discord/1498774330367148032?style=social&logo=discord&label=Nodeworks&link=https%3A%2F%2Fdiscord.gg%2FSzBju8gC3k)](https://discord.gg/SzBju8gC3k)
 
 Nodeworks is a mod that lets you create programmable logistics and automation networks.
 
