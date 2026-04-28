@@ -114,7 +114,7 @@ class LuaApiDocsHoverTest {
         // returns a Doc with description + guidebookRef.
         val handlerLine =
             "network:handle(\"minecraft:raw_copper@1>>minecraft:copper_ingot@1\", " +
-                "function(job: Job, items: InputItems)"
+                    "function(job: Job, items: InputItems)"
         val tokens = tokenize(handlerLine)
         // Editor's symbolTableProvider would have populated this from the
         // function-param annotations during buildSymbolTable. Mirror that here.
@@ -132,11 +132,11 @@ class LuaApiDocsHoverTest {
             val resolved = requireNotNull(doc) { "expected hover doc for '$target'" }
             assertTrue(
                 resolved.description.isNotBlank(),
-                "'$target' description was blank — typeDoc lookup probably failed",
+                "'$target' description was blank: typeDoc lookup probably failed",
             )
             assertNotNull(
                 resolved.guidebookRef,
-                "'$target' guidebookRef was null — typeDoc lookup probably failed",
+                "'$target' guidebookRef was null: typeDoc lookup probably failed",
             )
         }
     }
