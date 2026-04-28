@@ -116,6 +116,7 @@ object NeoForgeClientSetup {
             //  using `minecraft:condition` / `minecraft:select` dispatch types.
 
             NodeConnectionRenderer.register()
+            damien.nodeworks.render.CardPlacementPreviewRenderer.init()
 
             // Reset the frame-scoped laser-beam dedup set at the start of each render
             // frame. ConnectionBeamRenderer.submit uses this set to ensure a beam between
