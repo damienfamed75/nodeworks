@@ -45,9 +45,9 @@ placer:place("minecraft:cobblestone")
 </LuaCode>
 
 Returns `false` (and places nothing) when:
-- the network has no matching item available, or
-- the target position is non-air and not replaceable (see [isBlocked](#isblocked)), or
-- the item isn't a placeable block (e.g. `minecraft:diamond`, `minecraft:stick`).
+- the network has no matching item available
+- the target position is non-air
+- the item isn't a placeable block (e.g. `minecraft:diamond`, `minecraft:stick`)
 
 <LuaCode>
 ```lua

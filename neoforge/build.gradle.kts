@@ -91,6 +91,19 @@ repositories {
     }
 }
 
+// Optional dependency only the `runGuideExport` task needs at runtime, the
+// FFmpeg/JavaCPP natives that back GuideME's `OffScreenRenderer.captureAsWebp`
+// (used to encode `<GameScene>` snapshots into the static site). Kept in its
+// own configuration so it doesn't bloat the production jar or normal dev runs,
+// but wired into NeoForge's `additionalRuntimeClasspath` so the headless
+// `runGuideExport` Minecraft launch can resolve it. Mirrors AE2's setup.
+val guideExportOnly: Configuration by configurations.creating
+configurations.compileClasspath.get().extendsFrom(guideExportOnly)
+configurations.runtimeClasspath.get().extendsFrom(guideExportOnly)
+configurations.named("additionalRuntimeClasspath") {
+    extendsFrom(guideExportOnly)
+}
+
 dependencies {
     // Common module
     implementation(project(":common"))
@@ -106,6 +119,11 @@ dependencies {
     // jarJar-bundled so players don't need to install it separately.
     implementation("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
     jarJar("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
+
+    // FFmpeg/JavaCPP, used only by `runGuideExport` for WebP encoding of
+    // `<GameScene>` snapshots. Pulled via the `guideExportOnly` configuration
+    // above so it doesn't end up in the shipped jar.
+    guideExportOnly("org.bytedeco:ffmpeg-platform:${providers.gradleProperty("ffmpeg_version").get()}")
 
     // Dev-only testing mods (not bundled in release)
     runtimeOnly("mezz.jei:jei-${providers.gradleProperty("minecraft_version").get()}-neoforge:${providers.gradleProperty("jei_version").get()}")
