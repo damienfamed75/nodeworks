@@ -23,7 +23,9 @@ class TerminalScreenHandler(
      *  side autocomplete folds these into its scanned list so `network:craft("...")`
      *  can suggest remote recipes the client otherwise couldn't see. */
     private val remoteApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
-) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.TERMINAL, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = terminalPos
 
     companion object {
         const val DATA_SLOTS = 1 // slot 0 = running (0 or 1)

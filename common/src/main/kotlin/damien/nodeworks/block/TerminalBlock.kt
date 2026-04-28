@@ -84,6 +84,26 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val serverPlayer = player as ServerPlayer
         val serverLevel = level as ServerLevel
 
+        // 1.0 scoping decision: only one player can edit a terminal at a time.
+        // Skips the headache of real-time collaborative editing (OT/CRDT, cursor
+        // sync, edit-conflict resolution) for the typical multi-player flow,
+        // which is "co-debug a script" rather than "two devs writing different
+        // halves at the same time." If anyone already has this terminal's
+        // [TerminalScreenHandler] open, refuse and tell the second player who's
+        // in there. The break-event listener in `Nodeworks.onBlockBreak`
+        // handles the cleanup case if the occupant logs off and gets evicted.
+        val occupant = serverLevel.players().firstOrNull { other ->
+            val menu = other.containerMenu
+            menu is damien.nodeworks.screen.TerminalScreenHandler &&
+                menu.blockBackingPos == terminal.blockPos
+        }
+        if (occupant != null) {
+            player.sendSystemMessage(
+                Component.translatable("message.nodeworks.terminal_in_use", occupant.name.string)
+            )
+            return InteractionResult.SUCCESS
+        }
+
         // Walk the server-side network and pull any cross-dim remote Processing APIs
         // (reached via Receiver Antennas paired to a remote Broadcast Antenna). The
         // client can't read these itself because the broadcast BE lives in another

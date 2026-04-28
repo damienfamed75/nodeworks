@@ -20,11 +20,14 @@ import net.minecraft.core.registries.Registries
 import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
+import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.common.Mod
+import net.neoforged.fml.loading.FMLEnvironment
 import net.neoforged.neoforge.common.NeoForge
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension
 import net.neoforged.neoforge.event.entity.player.PlayerEvent
+import net.neoforged.neoforge.event.level.block.BreakBlockEvent
 import net.neoforged.neoforge.event.tick.ServerTickEvent
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent
 import net.neoforged.neoforge.registries.RegisterEvent
@@ -60,9 +63,19 @@ class Nodeworks(modBus: IEventBus) {
         NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
         NeoForge.EVENT_BUS.addListener(::onRegisterCommands)
         NeoForge.EVENT_BUS.addListener(::onDatapackSync)
+        NeoForge.EVENT_BUS.addListener(::onBlockBreak)
 
-        // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber)
-        damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
+        // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber). Gated
+        // on `Dist.CLIENT` because [NeoForgeClientSetup.register] eagerly calls
+        // [NodeworksGuide.register], which loads `guideme.Guide` types. GuideME is
+        // declared `side = "CLIENT"` in neoforge.mods.toml so it's absent on a
+        // dedicated server, calling this unconditionally would NoClassDefFoundError
+        // during mod construction. JVM class loading is lazy enough that the
+        // reference to NeoForgeClientSetup itself doesn't trigger loading until the
+        // call resolves at runtime, so the gate is sufficient.
+        if (FMLEnvironment.getDist() == Dist.CLIENT) {
+            damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
+        }
 
         logger.info("Nodeworks initialized")
     }
@@ -421,7 +434,10 @@ class Nodeworks(modBus: IEventBus) {
                         "input" -> menu.setInputCount(payload.slotIndex, payload.value)
                         "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
                         "timeout" -> menu.setTimeout(payload.value)
-                        "serial" -> menu.serial = payload.value != 0
+                        "serial" -> {
+                            menu.serial = payload.value != 0
+                            menu.markDirty()
+                        }
                     }
                 }
             }
@@ -433,6 +449,7 @@ class Nodeworks(modBus: IEventBus) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
                     menu.cardName = payload.name.take(32)
+                    menu.markDirty()
                 }
             }
         }
@@ -645,6 +662,33 @@ class Nodeworks(modBus: IEventBus) {
     // current across datapack reloads.
     private fun onDatapackSync(event: net.neoforged.neoforge.event.OnDatapackSyncEvent) {
         event.sendRecipes(damien.nodeworks.registry.ModRecipeTypes.SOUL_SAND_INFUSION)
+    }
+
+    /**
+     * Force-close any open menu that's bound to a block being broken so a second
+     * player mining the block while the first has its GUI open kicks the first
+     * out instead of leaving them interacting with a ghost menu. Mirrors how
+     * vanilla Chest does it (its `stillValid` checks the block survives), but
+     * we need it event-driven because most of our menus implement only a
+     * range-based `stillValid`, and `stillValid` isn't called every tick anyway.
+     *
+     * Iterates [ServerLevel.players()] each break, but the body is a cheap
+     * `containerMenu is BlockBackedMenu && pos == backingPos` check so the cost
+     * stays proportional to number of players, not menus.
+     */
+    private fun onBlockBreak(event: BreakBlockEvent) {
+        // BreakBlockEvent fires on both sides in 26.1.2.30+, so guard on
+        // ServerLevel to avoid running the close once per tick on each client
+        // alongside the server. Closing on the server is sufficient, the menu's
+        // server-side close packet drives the client's exit.
+        val level = event.level as? ServerLevel ?: return
+        val pos = event.pos
+        for (player in level.players()) {
+            val menu = player.containerMenu
+            if (menu is damien.nodeworks.screen.BlockBackedMenu && menu.blockBackingPos == pos) {
+                player.closeContainer()
+            }
+        }
     }
 }
 

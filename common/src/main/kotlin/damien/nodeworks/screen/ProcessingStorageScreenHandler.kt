@@ -21,7 +21,9 @@ class ProcessingStorageScreenHandler(
     playerInventory: Inventory,
     private val storageInventory: Container,
     val storagePos: BlockPos
-) : AbstractContainerMenu(ModScreenHandlers.PROCESSING_STORAGE, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.PROCESSING_STORAGE, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = storagePos
 
     companion object {
         const val API_SLOT_COUNT = 8

@@ -20,7 +20,9 @@ class NodeSideScreenHandler(
     initialSide: Direction,
     private val nodePos: BlockPos,
     private val access: ContainerLevelAccess
-) : AbstractContainerMenu(ModScreenHandlers.NODE_SIDE, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.NODE_SIDE, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = nodePos
 
     companion object {
         /** Extra vertical offset for the tab row between title bar and card grid. */

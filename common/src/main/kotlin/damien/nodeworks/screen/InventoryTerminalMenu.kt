@@ -35,7 +35,12 @@ class InventoryTerminalMenu(
      *  network. False for the fixed terminal, which has no crystal. Stored as a
      *  `val` (not private) so the client Screen can decide whether to draw the slot. */
     val hasCrystalSlot: Boolean = false,
-) : AbstractContainerMenu(ModScreenHandlers.INVENTORY_TERMINAL, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.INVENTORY_TERMINAL, syncId), BlockBackedMenu {
+
+    /** Null when the terminal is the Handheld variant (item-backed, not block-
+     *  backed). The break-event listener filters nulls out, so a held Handheld
+     *  Terminal isn't kicked when an unrelated block is mined. */
+    override val blockBackingPos: BlockPos? get() = terminalPos
 
     /** Abstracts where this menu's network lives (fixed block vs. Handheld). Null
      *  when the Handheld's crystal is absent, blank, wrong-kind, or unreachable,

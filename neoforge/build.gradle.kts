@@ -32,6 +32,23 @@ neoForge {
         register("server") {
             server()
         }
+        // `./gradlew :neoforge:runClient2` is the second client launched alongside
+        // `:runClient` for testing multiplayer flows against `:runServer`. Two
+        // tweaks vs the default client:
+        //   * `gameDirectory` points at a separate folder so saves, configs, and
+        //     LWJGL's window-state lock don't fight with the first client.
+        //   * `--username Dev2` overrides the default offline name, otherwise both
+        //     clients connect as "Dev" and the server kicks the second one with
+        //     "You logged in from another location".
+        register("client2") {
+            client()
+            systemProperty(
+                "guideme.nodeworks.guide.sources",
+                rootProject.file("guidebook").absolutePath
+            )
+            gameDirectory = layout.projectDirectory.dir("run/client2").asFile
+            programArguments.addAll("--username", "Dev2")
+        }
         // `./gradlew :neoforge:runGuide`, same as runClient but also auto-opens the
         // guidebook at launch so doc work doesn't need clicking through menus each run.
         register("guide") {

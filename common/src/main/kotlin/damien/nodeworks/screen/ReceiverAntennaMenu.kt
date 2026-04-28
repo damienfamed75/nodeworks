@@ -20,7 +20,9 @@ class ReceiverAntennaMenu(
     private val antennaInventory: Container,
     val antennaPos: BlockPos,
     private val data: ContainerData = SimpleContainerData(1)
-) : AbstractContainerMenu(ModScreenHandlers.RECEIVER_ANTENNA, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.RECEIVER_ANTENNA, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = antennaPos
 
     /** 0=not linked, 1=linked, 2=out of range, 3=broadcast not found, 4=freq mismatch, 5=not loaded */
     val statusCode: Int get() = data.get(0)
