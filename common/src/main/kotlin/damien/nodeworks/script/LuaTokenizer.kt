@@ -171,8 +171,12 @@ object LuaTokenizer {
      * one token list per line. Convenience wrapper for the guidebook tag and any other
      * non-editor caller that doesn't maintain its own cross-line state.
      */
-    fun tokenizeLines(source: String): List<List<Token>> {
-        val lines = source.split('\n')
+    fun tokenizeLines(source: String): List<List<Token>> = tokenizeLines(source.split('\n'))
+
+    /** Tokenize when the caller has already split the source. Lets LuaDiagnostics
+     *  share one split between its line walk and the tokenizer instead of doing
+     *  the same split twice for every analyze pass. */
+    fun tokenizeLines(lines: List<String>): List<List<Token>> {
         val result = ArrayList<List<Token>>(lines.size)
         var inBlock = false
         for (line in lines) {

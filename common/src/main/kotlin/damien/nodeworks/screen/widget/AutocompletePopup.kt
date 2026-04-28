@@ -334,6 +334,98 @@ class AutocompletePopup(
          *  Anchored start-to-end so a mid-alias digit-suffix like `chest2_part1` doesn't
          *  accidentally get split. */
         private val CARD_SUFFIX_REGEX = Regex("^(.+)_\\d+$")
+
+        // -------------------------------------------------------------------
+        // Lifted regex constants. update() runs per keystroke, every inline
+        // `Regex("""...""")` was recompiling its pattern every call. Hoisting
+        // the static patterns to companion-object vals compiles each one once
+        // for the lifetime of the JVM. Patterns that interpolate a runtime
+        // string (variable name, escaped local, etc.) stay inline since there
+        // isn't a stable cache key.
+        // -------------------------------------------------------------------
+
+        // Trailing-token patterns used by cursor-context detection.
+        private val LOCAL_DECL_TRAILING: Regex = Regex("""\blocal\s+\w*$""")
+        private val TRAILING_WORD: Regex = Regex("""(\w+)$""")
+        private val TRAILING_WORD_WS: Regex = Regex("""(\w+)\s*$""")
+        private val TRAILING_BARE_IDENT: Regex = Regex("""\b(\w+)$""")
+        private val TRAILING_FUNC_EXPR: Regex = Regex("""([\w.:]+)\s*$""")
+        private val COLON_PARTIAL: Regex = Regex(""":(\w*)$""")
+        private val DOT_PARTIAL: Regex = Regex("""\.(\w*)$""")
+
+        /** Variant of [DOT_PARTIAL] requiring a non-empty field, used by
+         *  comparison-operand resolution where the field has to already be
+         *  typed for the `==` to follow. */
+        private val TRAILING_DOT_FIELD: Regex = Regex("""\.(\w+)$""")
+        private val BARE_IDENT: Regex = Regex("""^\w+$""")
+        private val WHITESPACE_SPLIT: Regex = Regex("""\s+""")
+        private val DOTTED_RHS: Regex = Regex(""".+\.\w+$""")
+
+        // Block-comment counting in [insideMultilineBlock].
+        private val BLOCK_COMMENT_OPEN: Regex = Regex("""--\[\[""")
+        private val BLOCK_COMMENT_CLOSE: Regex = Regex("""]]""")
+
+        // Type-annotation contexts: `local x: T`, `function(p: T)`, `function(): T`,
+        // each in scalar and `{ … }` container forms.
+        private val TYPE_ANN_LOCAL_SCALAR: Regex = Regex("""\blocal\s+\w+\s*:\s*(\w*)$""")
+        private val TYPE_ANN_LOCAL_CONTAINER: Regex =
+            Regex("""\blocal\s+\w+\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""")
+        private val TYPE_ANN_PARAM_SCALAR: Regex =
+            Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*(\w*)$""")
+        private val TYPE_ANN_PARAM_CONTAINER: Regex =
+            Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""")
+        private val TYPE_ANN_RETURN_SCALAR: Regex =
+            Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*(\w*)$""")
+        private val TYPE_ANN_RETURN_CONTAINER: Regex =
+            Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""")
+
+        // Chain shapes recognised by colon and dot contexts.
+        private val CRAFT_CHAIN_MULTILINE: Regex =
+            Regex("""network:craft\([^)]*\)\s*\n\s*:(\w*)$""")
+        private val CHAIN_DOT_PAIR: Regex = Regex("""(\w+)\.(\w+)$""")
+        private val HANDLELIST_PARAM: Regex = Regex("""^HandleList<(\w+)>$""")
+
+        // Module / handler / function discovery patterns.
+        private val HANDLE_REGISTRATION: Regex = Regex("""network:handle\s*\(\s*"([^"]+)"""")
+        private val ANNOTATED_FUNCTION: Regex =
+            Regex("""\bfunction\s+[\w.]*?(\w+)\s*\([^)]*\)\s*:\s*([^\n]+)""")
+        private val REQUIRE_CALL: Regex = Regex("""require\(\s*"(\w+)"\s*\)$""")
+        private val LOCAL_EMPTY_TABLE: Regex = Regex("""\blocal\s+(\w+)\s*=\s*\{\s*\}""")
+
+        // buildSymbolTable patterns (one keystroke ⇒ each runs across the whole script).
+        private val LOCAL_CHANNEL_BIND: Regex =
+            Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(""")
+        private val LOCAL_TYPED_SCALAR: Regex =
+            Regex("""\blocal\s+(\w+)\s*:\s*(\w+)\??\s*(?:=|\n|$)""")
+        private val LOCAL_TYPED_CONTAINER: Regex =
+            Regex("""\blocal\s+(\w+)\s*:\s*(\{[^}]*})""")
+        private val LOCAL_NETWORK_GET: Regex =
+            Regex("""\blocal\s+(\w+)\s*=\s*network:get\s*\(\s*"([\w]+)"\s*\)""")
+        private val LOCAL_NETWORK_CHANNEL: Regex =
+            Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(\s*"(\w+)"\s*\)(?!\s*:)""")
+        private val FOR_IN_DO: Regex =
+            Regex("""\bfor\s+(\w+)(?:\s*,\s*(\w+))?\s+in\s+(.+?)\s+do\b""")
+        private val FOR_NUMERIC: Regex = Regex("""\bfor\s+(\w+)\s*=""")
+        private val LOCAL_RHS_ASSIGN: Regex = Regex("""\blocal\s+(\w+)\s*=\s*(.+)""")
+        private val TRAILING_METHOD_CALL: Regex = Regex("""(\w+)\s*\(""")
+        private val LEADING_FUNCTION_CALL: Regex = Regex("""^(\w+)\s*\(""")
+        private val ASSIGN_LOCAL_TYPE_SCALAR_EOL: Regex =
+            Regex("""\blocal\s+\w+\s*:\s*(\w+)\??$""")
+        private val ASSIGN_LOCAL_ARRAY_ELEM: Regex =
+            Regex("""\blocal\s+\w+\s*:\s*\{\s*(\w+)\s*\}\s*=\s*\{[^}]*$""")
+
+        // Variable-name extraction in extractVariableNames / extractFunctionParams.
+        private val EXTRACT_LOCAL_NAMES: Regex = Regex("""\blocal\s+(\w+(?:\s*,\s*\w+)*)""")
+        private val EXTRACT_FOR_IN_NAMES: Regex = Regex("""\bfor\s+(\w+(?:\s*,\s*\w+)?)\s+in\b""")
+        private val FUNC_HEADER_TYPED: Regex =
+            Regex("""\bfunction\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
+
+        // Snippet-balance / cursor-position helpers.
+        private val FUNCTION_OPEN_KEYWORD: Regex = Regex("""\bfunction\s*\w*\s*\(""")
+        private val END_KEYWORD: Regex = Regex("""\bend\b""")
+        private val HANDLE_LOOKBACK: Regex = Regex("""network:handle\s*\(\s*"([^"]+)"\s*,\s*$""")
+        private val HANDLE_FN_PARTIAL: Regex =
+            Regex("""network:handle\(\s*"([^"]+)"\s*,\s*(\w*)$""")
     }
 
     // ========== Helpers ==========
@@ -473,10 +565,10 @@ class AutocompletePopup(
         if (dotCtx != null) return dotCtx
 
         // Don't autocomplete after `local `, user is naming a new variable
-        if (Regex("""\blocal\s+\w*$""").containsMatchIn(line)) return CursorContext.None
+        if (LOCAL_DECL_TRAILING.containsMatchIn(line)) return CursorContext.None
 
         // Fall back to word completion
-        val wordMatch = Regex("""(\w+)$""").find(line)
+        val wordMatch = TRAILING_WORD.find(line)
         if (wordMatch != null) {
             return CursorContext.Word(wordMatch.groupValues[1])
         }
@@ -516,7 +608,7 @@ class AutocompletePopup(
             // Extract the function name/expression (e.g., "network:get", "network:craft",
             // ":face", "test.Filter"). Includes `.` so module-qualified calls reach the
             // module-aware dispatch path with their full receiver-and-name.
-            val funcMatch = Regex("""([\w.:]+)\s*$""").find(funcExpr)
+            val funcMatch = TRAILING_FUNC_EXPR.find(funcExpr)
             if (funcMatch != null) {
                 val matchedFuncExpr = funcMatch.groupValues[1]
                 // Multi-line chain: when the matched funcExpr starts with `:` the call's
@@ -603,8 +695,8 @@ class AutocompletePopup(
         }
 
         // Block-comment: count `--[[` openings minus `]]` closings in the text-so-far.
-        val blockOpens = Regex("""--\[\[""").findAll(beforeCursor).count()
-        val blockCloses = Regex("""]]""").findAll(beforeCursor).count()
+        val blockOpens = BLOCK_COMMENT_OPEN.findAll(beforeCursor).count()
+        val blockCloses = BLOCK_COMMENT_CLOSE.findAll(beforeCursor).count()
         return blockOpens > blockCloses
     }
 
@@ -651,7 +743,7 @@ class AutocompletePopup(
             }
         }
         if (colonIdx < 0) return null
-        val name = param.substring(0, colonIdx).trim().split("\\s+".toRegex()).firstOrNull()?.takeIf { it.isNotEmpty() }
+        val name = param.substring(0, colonIdx).trim().split(WHITESPACE_SPLIT).firstOrNull()?.takeIf { it.isNotEmpty() }
             ?: return null
         val type = param.substring(colonIdx + 1).trim().removeSuffix("?").trim()
         if (type.isEmpty()) return null
@@ -665,29 +757,29 @@ class AutocompletePopup(
      *  users care about most when annotating. */
     private fun findTypeAnnotationContext(line: String): CursorContext.TypeAnnotation? {
         // Pattern 1a: `local varName: partial` (scalar)
-        val localScalarMatch = Regex("""\blocal\s+\w+\s*:\s*(\w*)$""").find(line)
+        val localScalarMatch = TYPE_ANN_LOCAL_SCALAR.find(line)
         if (localScalarMatch != null) return CursorContext.TypeAnnotation(localScalarMatch.groupValues[1])
 
         // Pattern 1b: `local varName: { partial` or `local varName: { [string]: partial` (container)
-        val localContainerMatch = Regex("""\blocal\s+\w+\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
+        val localContainerMatch = TYPE_ANN_LOCAL_CONTAINER.find(line)
         if (localContainerMatch != null) return CursorContext.TypeAnnotation(localContainerMatch.groupValues[1])
 
         // Pattern 2a: `function(param: partial` (scalar param)
-        val funcParamScalarMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*(\w*)$""").find(line)
+        val funcParamScalarMatch = TYPE_ANN_PARAM_SCALAR.find(line)
         if (funcParamScalarMatch != null) return CursorContext.TypeAnnotation(funcParamScalarMatch.groupValues[1])
 
         // Pattern 2b: `function(param: { partial` (container param)
         val funcParamContainerMatch =
-            Regex("""\bfunction\s*[\w.]*\s*\([^)]*\w+\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
+            TYPE_ANN_PARAM_CONTAINER.find(line)
         if (funcParamContainerMatch != null) return CursorContext.TypeAnnotation(funcParamContainerMatch.groupValues[1])
 
         // Pattern 3a: `function(...): partial` (scalar return)
-        val returnScalarMatch = Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*(\w*)$""").find(line)
+        val returnScalarMatch = TYPE_ANN_RETURN_SCALAR.find(line)
         if (returnScalarMatch != null) return CursorContext.TypeAnnotation(returnScalarMatch.groupValues[1])
 
         // Pattern 3b: `function(...): { partial` (container return)
         val returnContainerMatch =
-            Regex("""\bfunction\s*[\w.]*\s*\([^)]*\)\s*:\s*\{(?:[^}]*?[:=]\s*)?\s*(\w*)$""").find(line)
+            TYPE_ANN_RETURN_CONTAINER.find(line)
         if (returnContainerMatch != null) return CursorContext.TypeAnnotation(returnContainerMatch.groupValues[1])
 
         return null
@@ -695,7 +787,7 @@ class AutocompletePopup(
 
     /** Find `receiver:partial` context, handling nested expressions and method chains. */
     private fun findColonContext(line: String, beforeCursor: String): CursorContext? {
-        val colonMatch = Regex(""":(\w*)$""").find(line) ?: return null
+        val colonMatch = COLON_PARTIAL.find(line) ?: return null
         val partial = colonMatch.groupValues[1]
         val beforeColon = line.substring(0, colonMatch.range.first)
         var trimBefore = beforeColon.trimEnd()
@@ -729,7 +821,7 @@ class AutocompletePopup(
         if (trimBefore.isEmpty()) return null
 
         // CraftBuilder chain on next line: `network:craft(...)\n  :partial`
-        val craftChainMultiline = Regex("""network:craft\([^)]*\)\s*\n\s*:(\w*)$""").find(beforeCursor.trimEnd())
+        val craftChainMultiline = CRAFT_CHAIN_MULTILINE.find(beforeCursor.trimEnd())
         if (craftChainMultiline != null) {
             return CursorContext.ResolvedMethodCall("CraftBuilder", partial)
         }
@@ -750,7 +842,7 @@ class AutocompletePopup(
         if (trimBefore.endsWith("]")) {
             val beforeBracket = stripIndexBrackets(trimBefore)
             if (beforeBracket != null) {
-                val bareVar = Regex("""(\w+)$""").matchEntire(beforeBracket.trimEnd())
+                val bareVar = TRAILING_WORD.matchEntire(beforeBracket.trimEnd())
                 if (bareVar != null) {
                     return CursorContext.IndexedMethodCall(bareVar.groupValues[1], partial)
                 }
@@ -768,7 +860,7 @@ class AutocompletePopup(
         // The outerVar's type is in the symbol table, but buildSymbolTable runs in
         // computeSuggestions, we detect the shape here and defer resolution via a
         // dedicated ChainedMethodCall context.
-        val chainMatch = Regex("""(\w+)\.(\w+)$""").find(trimBefore)
+        val chainMatch = CHAIN_DOT_PAIR.find(trimBefore)
         if (chainMatch != null) {
             return CursorContext.ChainedMethodCall(
                 outerVar = chainMatch.groupValues[1],
@@ -778,7 +870,7 @@ class AutocompletePopup(
         }
 
         // Simple `word:partial`
-        val receiverMatch = Regex("""(\w+)$""").find(trimBefore)
+        val receiverMatch = TRAILING_WORD.find(trimBefore)
         if (receiverMatch != null) {
             return CursorContext.MethodCall(receiverMatch.groupValues[1], partial)
         }
@@ -879,7 +971,7 @@ class AutocompletePopup(
         if (!trimmed.endsWith(")")) return null
         val paren = findMatchingParenBackward(trimmed) ?: return null
         val beforeParen = paren.first.trimEnd()
-        val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
+        val methodName = TRAILING_WORD.find(beforeParen)?.groupValues?.get(1) ?: return null
         val receiverType = extractReceiverType(beforeParen, methodName)
 
         // Network:getAll("type") and Channel:getAll("type") narrowing, both return a
@@ -977,7 +1069,7 @@ class AutocompletePopup(
         // recognition. Anything between the identifier and start-of-expression is
         // assignment / declaration / parenthesis context that doesn't change which
         // value the chain's `:method` is being called on.
-        val trailingMatch = Regex("""(\w+)\s*$""").find(receiverExpr)
+        val trailingMatch = TRAILING_WORD_WS.find(receiverExpr)
         if (trailingMatch != null) {
             val name = trailingMatch.groupValues[1]
             LuaApiDocs.moduleTypeFor(name)?.let { return it }
@@ -990,8 +1082,10 @@ class AutocompletePopup(
             // HandleList<T> local, return the parameterised wrapper so chained
             // `:list()` can unwrap it via [handleListElement].
             handleListLocals[name]?.let { return it }
-            // Other user-variable types (CardHandle locals, etc.) are still
-            // resolved at higher levels where the symbol table is available.
+            // Generic typed locals: consult [symbolsInScope]. Lets
+            // `local x = input:find("*")` resolve when `input` is a
+            // function-param or earlier-bound local of a known type.
+            symbolsInScope[name]?.takeIf { it.isNotBlank() }?.let { return it.trimEnd('?') }
         }
         return null
     }
@@ -1022,7 +1116,7 @@ class AutocompletePopup(
         val parenResult = findMatchingParenBackward(trimmed) ?: return null
         val beforeParen = parenResult.first.trimEnd()
 
-        val methodMatch = Regex("""(\w+)$""").find(beforeParen) ?: return null
+        val methodMatch = TRAILING_WORD.find(beforeParen) ?: return null
         val methodName = methodMatch.groupValues[1]
 
         if (forChaining && methodName in nonChainableMethods) return null
@@ -1110,7 +1204,7 @@ class AutocompletePopup(
      *  the input isn't a parameterised handle-list. */
     private fun handleListElement(type: String?): String? {
         if (type == null) return null
-        val match = Regex("""^HandleList<(\w+)>$""").matchEntire(type) ?: return null
+        val match = HANDLELIST_PARAM.matchEntire(type) ?: return null
         return match.groupValues[1]
     }
 
@@ -1135,6 +1229,15 @@ class AutocompletePopup(
      *  already-registered handler API names). */
     private var cachedFullText: String = ""
 
+    /** Symbol table snapshot exposed to chain-resolution helpers
+     *  ([extractReceiverType], [resolveExpressionType]) that don't take it as
+     *  an argument. Populated by [buildSymbolTable] after the typed-annotation
+     *  + function-param passes so RHS inference of `local x = receiver:method()`
+     *  can resolve the receiver's type even when it's a plain locally-typed
+     *  variable (not a Channel / HandleList tracked by their dedicated sets).
+     *  Cleared after the symbol-table build so later passes see an empty map. */
+    private var symbolsInScope: Map<String, String> = emptyMap()
+
     /** Processing API whose handler body contains the cursor, or null if the cursor is
      *  not inside a `network:handle("...", function(...) ... end)` callback. Computed
      *  once per [computeSuggestions] call so field suggestions for `items.<tab>` can
@@ -1144,7 +1247,7 @@ class AutocompletePopup(
 
     /** Pull the set of API names already registered via `network:handle("X", ...)` in [text]. */
     private fun handledApiNames(text: String): Set<String> {
-        val pattern = Regex("""network:handle\s*\(\s*"([^"]+)"""")
+        val pattern = HANDLE_REGISTRATION
         return pattern.findAll(text).map { it.groupValues[1] }.toSet()
     }
 
@@ -1170,28 +1273,60 @@ class AutocompletePopup(
         return LuaApiDocs.parseReturnType("() → $retType")
     }
 
+    /** Per-script cache for parsed function annotations. computeSuggestions runs
+     *  every keystroke, the active script genuinely changes per call, but the
+     *  *other* workspace scripts the user can `require()` typically don't.
+     *  Keying on the script's text means a script we've seen before reuses its
+     *  parse without rerunning the regex over the whole file, while a real edit
+     *  to that script invalidates the entry on the next access. The active
+     *  script (`fullText`) is parsed inline since it changes per keystroke. */
+    private val workspaceFunctionCache: HashMap<String, Pair<String, Map<String, String>>> =
+        HashMap()
+
     /** Scan every in-scope script for `function name(...): ReturnType` annotations,
      *  returning the raw ReturnType string (unparsed so container notations survive). */
     private fun allUserFunctions(fullText: String): Map<String, String> {
         val map = mutableMapOf<String, String>()
-        val allTexts = mutableListOf(fullText)
-        for ((_, scriptText) in scripts()) {
-            allTexts.add(scriptText)
-        }
         // Return type can be a bare identifier or a brace-delimited container, capture
         // everything after the `:` up to the first newline so `{ CardHandle }` parses.
-        val funcPattern = Regex("""\bfunction\s+[\w.]*?(\w+)\s*\([^)]*\)\s*:\s*([^\n]+)""")
-        for (text in allTexts) {
-            for (match in funcPattern.findAll(text)) {
-                map.putIfAbsent(match.groupValues[1], match.groupValues[2].trim())
+        parseAnnotatedFunctionsInto(fullText, map)
+        for ((scriptName, scriptText) in scripts()) {
+            for ((fn, retType) in parsedWorkspaceFunctions(scriptName, scriptText)) {
+                map.putIfAbsent(fn, retType)
             }
         }
         return map
     }
 
+    /** Cached parse of one workspace script's `function … : Type` annotations.
+     *  Returns the cached entry when the text matches the previously-seen value,
+     *  otherwise reparses and updates the cache. The lookup performs one O(n)
+     *  string compare per cached script per keystroke, which is still much
+     *  cheaper than rerunning [ANNOTATED_FUNCTION] across the whole file. */
+    private fun parsedWorkspaceFunctions(
+        scriptName: String,
+        scriptText: String,
+    ): Map<String, String> {
+        val cached = workspaceFunctionCache[scriptName]
+        if (cached != null && cached.first == scriptText) return cached.second
+        val parsed = mutableMapOf<String, String>()
+        parseAnnotatedFunctionsInto(scriptText, parsed)
+        workspaceFunctionCache[scriptName] = scriptText to parsed
+        return parsed
+    }
+
+    private fun parseAnnotatedFunctionsInto(
+        text: String,
+        target: MutableMap<String, String>,
+    ) {
+        for (match in ANNOTATED_FUNCTION.findAll(text)) {
+            target.putIfAbsent(match.groupValues[1], match.groupValues[2].trim())
+        }
+    }
+
     /** Find `receiver.partial` context, including after method chains. */
     private fun findDotContext(line: String): CursorContext? {
-        val dotMatch = Regex("""\.(\w*)$""").find(line) ?: return null
+        val dotMatch = DOT_PARTIAL.find(line) ?: return null
         val partial = dotMatch.groupValues[1]
         val beforeDot = line.substring(0, dotMatch.range.first).trimEnd()
         if (beforeDot.isEmpty()) return null
@@ -1199,13 +1334,13 @@ class AutocompletePopup(
         // If `)` before `.`, check for require("module"). or resolve chain type
         if (beforeDot.endsWith(")")) {
             // require("module").partial → suggest module exports
-            val requireMatch = Regex("""require\(\s*"(\w+)"\s*\)$""").find(beforeDot)
+            val requireMatch = REQUIRE_CALL.find(beforeDot)
             if (requireMatch != null) {
                 val moduleName = requireMatch.groupValues[1]
                 val moduleText = scripts()[moduleName]
                 if (moduleText != null) {
                     // Find table vars in the module and extract their members
-                    val tableVarPattern = Regex("""\blocal\s+(\w+)\s*=\s*\{\s*\}""")
+                    val tableVarPattern = LOCAL_EMPTY_TABLE
                     val tableVars = tableVarPattern.findAll(moduleText).map { it.groupValues[1] }.toSet()
                     val exports = mutableListOf<Suggestion>()
                     for (tv in tableVars) {
@@ -1229,7 +1364,7 @@ class AutocompletePopup(
         if (beforeDot.endsWith("]")) {
             val beforeBracket = stripIndexBrackets(beforeDot)
             if (beforeBracket != null) {
-                val bareVar = Regex("""(\w+)$""").matchEntire(beforeBracket.trimEnd())
+                val bareVar = TRAILING_WORD.matchEntire(beforeBracket.trimEnd())
                 if (bareVar != null) {
                     return CursorContext.IndexedPropertyAccess(bareVar.groupValues[1], partial)
                 }
@@ -1245,7 +1380,7 @@ class AutocompletePopup(
         // Chain access: `<outerVar>.<field>.<partial>` (e.g. `items.copperIngot.count`).
         // Symbol lookup happens later in computeSuggestions where the symbol table is
         // already built, we only parse the shape here.
-        val chainMatch = Regex("""(\w+)\.(\w+)$""").find(beforeDot)
+        val chainMatch = CHAIN_DOT_PAIR.find(beforeDot)
         if (chainMatch != null) {
             return CursorContext.ChainedPropertyAccess(
                 outerVar = chainMatch.groupValues[1],
@@ -1255,7 +1390,7 @@ class AutocompletePopup(
         }
 
         // Simple `word.partial`
-        val receiverMatch = Regex("""(\w+)$""").find(beforeDot) ?: return null
+        val receiverMatch = TRAILING_WORD.find(beforeDot) ?: return null
         return CursorContext.PropertyAccess(receiverMatch.groupValues[1], partial)
     }
 
@@ -1300,7 +1435,7 @@ class AutocompletePopup(
         // `ch` is a bare ident (the receiver-type extractor can't see [symbols]).
         // Cheap to scan once up front rather than re-deriving inside every resolver
         // invocation.
-        channelLocals = Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(""")
+        channelLocals = LOCAL_CHANNEL_BIND
             .findAll(fullText)
             .map { it.groupValues[1] }
             .toSet()
@@ -1331,14 +1466,14 @@ class AutocompletePopup(
         }
 
         // 1a. Explicit scalar type annotations: local x: Type = ...
-        Regex("""\blocal\s+(\w+)\s*:\s*(\w+)\??\s*(?:=|\n|$)""").findAll(fullText).forEach {
+        LOCAL_TYPED_SCALAR.findAll(fullText).forEach {
             symbols[it.groupValues[1]] = it.groupValues[2]
         }
 
         // 1b. Explicit container type annotations: local xs: { T } = ... or local xs: { [K]: V } = ...
         // Uses [LuaApiDocs.parseReturnType]'s brace grammar so user annotations and doc
         // signatures share one parser, keeps the two surfaces from drifting.
-        Regex("""\blocal\s+(\w+)\s*:\s*(\{[^}]*})""").findAll(fullText).forEach { match ->
+        LOCAL_TYPED_CONTAINER.findAll(fullText).forEach { match ->
             val varName = match.groupValues[1]
             val annotation = match.groupValues[2]
             val rt = LuaApiDocs.parseReturnType("() → $annotation")
@@ -1405,7 +1540,7 @@ class AutocompletePopup(
         // `findVariable`). Falls through to plain `CardHandle` only when neither
         // surface knows the name, which is also what the user sees as a runtime
         // "Not found" error.
-        Regex("""\blocal\s+(\w+)\s*=\s*network:get\s*\(\s*"([\w]+)"\s*\)""").findAll(fullText).forEach {
+        LOCAL_NETWORK_GET.findAll(fullText).forEach {
             val varName = it.groupValues[1]
             val alias = it.groupValues[2]
             if (varName !in symbols) {
@@ -1457,7 +1592,7 @@ class AutocompletePopup(
         // method list rather than CardHandle's. Negative lookahead `(?!\s*:)` keeps
         // the bare-channel form from competing with the chained-first / chained-all
         // patterns above when both could match the same source line.
-        Regex("""\blocal\s+(\w+)\s*=\s*network:channel\s*\(\s*"(\w+)"\s*\)(?!\s*:)""")
+        LOCAL_NETWORK_CHANNEL
             .findAll(fullText).forEach {
                 val varName = it.groupValues[1]
                 symbols.putIfAbsent(varName, "Channel")
@@ -1486,7 +1621,7 @@ class AutocompletePopup(
         //   `local xs = fn(); for _, x in xs do end`      needs the local pass
         //     resolved BEFORE the for-loop to type `x`
         // putIfAbsent makes the second run cheap and idempotent.
-        val forPattern = Regex("""\bfor\s+(\w+)(?:\s*,\s*(\w+))?\s+in\s+(.+?)\s+do\b""")
+        val forPattern = FOR_IN_DO
         val runForLoopPass = {
             for (match in forPattern.findAll(fullText)) {
                 val keyName = match.groupValues[1]
@@ -1513,16 +1648,23 @@ class AutocompletePopup(
         // counter is always a number regardless of the bound expressions, so we don't
         // need to resolve the RHS at all. putIfAbsent so an explicit annotation on a
         // surrounding scope isn't overridden.
-        Regex("""\bfor\s+(\w+)\s*=""").findAll(fullText).forEach {
+        FOR_NUMERIC.findAll(fullText).forEach {
             val name = it.groupValues[1]
             if (name != "_") symbols.putIfAbsent(name, "number")
         }
+
+        // Expose the in-progress scalar map so receiver-type resolution called
+        // from the RHS pass below can fall back to it for plain typed locals
+        // (e.g. `input:find(...)` where `input` is a function-param of a
+        // declared type). Cleared after the build so later passes don't pick
+        // up stale state.
+        symbolsInScope = symbols
 
         // General inference: local x = expr
         // (`containerVars` was initialized above and may already carry explicit-annotation
         // entries, RHS-inferred container types are merged in below without overwriting
         // the explicit user annotation, which is always authoritative.)
-        Regex("""\blocal\s+(\w+)\s*=\s*(.+)""").findAll(fullText).forEach { match ->
+        LOCAL_RHS_ASSIGN.findAll(fullText).forEach { match ->
             val varName = match.groupValues[1]
             if (varName !in symbols) {
                 val rhs = match.groupValues[2].trim()
@@ -1543,7 +1685,7 @@ class AutocompletePopup(
                     // doesn't pollute the symbol table.
                     val elementType = resolveIndexedElementType(rhs, symbols)
                     if (elementType != null) symbols[varName] = elementType
-                } else if (Regex(""".+\.\w+$""").containsMatchIn(rhs)) {
+                } else if (DOTTED_RHS.containsMatchIn(rhs)) {
                     // Property access at end like `chain.id` or `chain[0].id`. Resolve
                     // the prefix's type, then look up the field's declared type on it.
                     // Routes through both the migrated registry and the legacy entries
@@ -1573,7 +1715,7 @@ class AutocompletePopup(
                         // (e.g. `Channel:all("redstone")` → `{ RedstoneCard }`) flows
                         // through the same path as plain methodReturnType lookups.
                         val rt = resolveExpressionReturnType(rhs) ?: run {
-                            val methodName = Regex("""(\w+)\s*\(""").findAll(rhs).lastOrNull()?.groupValues?.get(1)
+                            val methodName = TRAILING_METHOD_CALL.findAll(rhs).lastOrNull()?.groupValues?.get(1)
                             methodName?.let {
                                 LuaApiDocs.methodReturnType(it) ?: userFunctionReturnType(it, fullText)
                             }
@@ -1582,7 +1724,7 @@ class AutocompletePopup(
                             containerVars.putIfAbsent(varName, rt.type to rt.container)
                         } else {
                             // Try user-defined function return type: local x = funcName(...)
-                            val funcCallMatch = Regex("""^(\w+)\s*\(""").find(rhs)
+                            val funcCallMatch = LEADING_FUNCTION_CALL.find(rhs)
                             if (funcCallMatch != null) {
                                 val funcName = funcCallMatch.groupValues[1]
                                 val retType = funcReturnTypes[funcName]
@@ -1616,6 +1758,7 @@ class AutocompletePopup(
             }
         }
 
+        symbolsInScope = symbols
         return symbols
     }
 
@@ -1649,7 +1792,7 @@ class AutocompletePopup(
         }
 
         // Bare identifier: look up the container var table built during `local` inference.
-        if (Regex("""^\w+$""").matches(unwrapped)) {
+        if (BARE_IDENT.matches(unwrapped)) {
             val entry = containerVars[unwrapped] ?: return null
             val (elementType, container) = entry
             return elementType to (forcedWrapper ?: container)
@@ -1659,7 +1802,7 @@ class AutocompletePopup(
         if (!unwrapped.endsWith(")")) return null
         val paren = findMatchingParenBackward(unwrapped) ?: return null
         val beforeParen = paren.first.trimEnd()
-        val methodName = Regex("""(\w+)$""").find(beforeParen)?.groupValues?.get(1) ?: return null
+        val methodName = TRAILING_WORD.find(beforeParen)?.groupValues?.get(1) ?: return null
 
         // Arg-aware narrowing for `network:getAll("type")` and `Channel:getAll("type")`.
         // Both return `HandleList<T>` whose `:list()` is what for-loops iterate, we
@@ -1679,7 +1822,7 @@ class AutocompletePopup(
         // `network:getAll("redstone"):list()`.
         if (methodName == "list") {
             val beforeColon = beforeParen.substringBeforeLast(':', "").trimEnd()
-            val bareReceiver = Regex("""(\w+)$""").matchEntire(beforeColon)?.groupValues?.get(1)
+            val bareReceiver = TRAILING_WORD.matchEntire(beforeColon)?.groupValues?.get(1)
             val wrapperType = bareReceiver?.let { handleListLocals[it] }
                 ?: resolveExpressionType(beforeColon)
             handleListElement(wrapperType)?.let {
@@ -1787,6 +1930,12 @@ class AutocompletePopup(
         // arg whose declared type is the local's annotation.
         trySuggestViaTypedAssignment(ctx, symbols)?.let { return it }
 
+        // String literal on the right-hand side of `==` / `~=` against a value
+        // whose type is a registered string subtype. e.g. `if myTag == "|"`
+        // where `myTag: TagId` should suggest tags, or `if all.id == "|"` where
+        // `all.id` is `ResourceId` should suggest item + fluid ids.
+        trySuggestViaComparison(ctx, symbols)?.let { return it }
+
         return when {
             ctx.funcExpr.endsWith("network:handle") -> {
                 // Full-block snippet: accepting a suggestion inserts the whole handle()
@@ -1891,8 +2040,16 @@ class AutocompletePopup(
         ) {
             val fnType = nextParam.type as damien.nodeworks.script.api.LuaType.Function
             val fnParamList = fnType.params.joinToString(", ") { "${it.name}: ${it.type.display}" }
+            // Predicate-shaped callbacks (`… → boolean`) pre-fill `return true` so
+            // the body shows the expected return type without forcing the user to
+            // also annotate `: boolean` on the function header (which would balloon
+            // the line width with longer card-name first-args). Non-boolean
+            // callbacks land in an empty body where the user types whatever.
+            val returnsBoolean = fnType.returnType ===
+                    damien.nodeworks.script.api.LuaType.Primitive.Boolean
+            val bodyPrefix = if (returnsBoolean) "return true" else ""
             return baseSuggestions.map { s ->
-                val before = "${s.insertText}\", function($fnParamList)\n    "
+                val before = "${s.insertText}\", function($fnParamList)\n    $bodyPrefix"
                 val after = "\nend)"
                 Suggestion(
                     insertText = s.insertText,
@@ -1982,6 +2139,97 @@ class AutocompletePopup(
         return suggestionsForType(resolved, ctx.partial)
     }
 
+    /** Resolve a `<expr> == "|"` / `<expr> ~= "|"` comparison to the LHS's
+     *  declared type and dispatch via [suggestionsForType]. Two LHS shapes
+     *  are recognised:
+     *
+     *  1. Bare local: `if myTag == "|"` resolves `myTag` against the symbol
+     *     table populated by [buildSymbolTable].
+     *  2. Property access: `if items.id == "|"` resolves `items` against the
+     *     symbol table, then [lookupPropertyType] to find `id`'s type.
+     *
+     *  Returns null when neither shape matches or the resolved type isn't a
+     *  registered string subtype, the caller falls through. */
+    private fun trySuggestViaComparison(
+        ctx: CursorContext.StringArg,
+        symbols: Map<String, String>,
+    ): List<Suggestion>? {
+        val text = ctx.precedingText
+        if (text.isBlank()) return null
+
+        val typeName = parseComparisonOperandType(text, symbols) ?: return null
+        val resolved = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName) ?: return null
+        return suggestionsForType(resolved, ctx.partial)
+    }
+
+    /** Operator on the right-hand side of which we expect a string literal
+     *  whose value should match the operator's left operand. Anchored to end
+     *  of input (the cursor is right after the operator + opening quote). */
+    private val COMPARISON_OPERATOR_TAIL: Regex = Regex("""(==|~=)\s*$""")
+
+    private fun parseComparisonOperandType(
+        precedingText: String,
+        symbols: Map<String, String>,
+    ): String? {
+        val trimmed = precedingText.trimEnd()
+        val opMatch = COMPARISON_OPERATOR_TAIL.find(trimmed) ?: return null
+        val beforeOp = trimmed.substring(0, opMatch.range.first).trimEnd()
+        if (beforeOp.isEmpty()) return null
+
+        // Property access wins ahead of bare ident. Splits at the LAST dot, the
+        // receiver expression can be anything resolvable: a bare local
+        // (`items.id`), an indexed call result (`io_1:findEach("*")[0].id`), or
+        // a chained call (`network:getAll("io"):first().id`). [resolveOperandReceiverType]
+        // handles all three.
+        val dotField = TRAILING_DOT_FIELD.find(beforeOp)
+        if (dotField != null && dotField.range.last == beforeOp.lastIndex) {
+            val field = dotField.groupValues[1]
+            val receiverExpr = beforeOp.substring(0, dotField.range.first).trimEnd()
+            val receiverType = resolveOperandReceiverType(receiverExpr, symbols) ?: return null
+            return lookupPropertyType(receiverType, field)?.trimEnd('?')
+        }
+
+        val bareMatch = TRAILING_BARE_IDENT.find(beforeOp)
+        if (bareMatch != null && bareMatch.range.last == beforeOp.lastIndex) {
+            return symbols[bareMatch.groupValues[1]]?.trimEnd('?')
+        }
+        return null
+    }
+
+    /** Resolve the type of the receiver expression on the LHS of a property
+     *  access in a comparison. Three shapes covered, in order of decreasing
+     *  cheapness:
+     *
+     *  1. Bare local: symbol-table hit on the trailing identifier.
+     *  2. Indexed access (`<expr>[N]`): element-type lookup via
+     *     [resolveIndexedElementType].
+     *  3. Call chain (`…)`): scalar return type via [resolveExpressionType].
+     *
+     *  [expr] may carry a leading keyword (`if fromInput`) or assignment
+     *  context (`local x = input`) before the actual receiver. Each branch
+     *  isolates the trailing receiver shape rather than requiring the whole
+     *  string to be a clean expression. Returns null when none of the shapes
+     *  match, so the caller falls through to other dispatch paths. */
+    private fun resolveOperandReceiverType(
+        expr: String,
+        symbols: Map<String, String>,
+    ): String? {
+        val trimmed = expr.trimEnd()
+        if (trimmed.isEmpty()) return null
+        if (trimmed.endsWith("]")) {
+            return resolveIndexedElementType(trimmed, symbols)
+        }
+        if (trimmed.endsWith(")")) {
+            return resolveExpressionType(trimmed)
+        }
+        // Bare-ident path: pull just the trailing word so leading keywords
+        // (`if`, `while`, `return`) or assignment prefixes (`local x = `)
+        // don't block the symbol-table lookup.
+        val tail = TRAILING_BARE_IDENT.find(trimmed) ?: return null
+        if (tail.range.last != trimmed.lastIndex) return null
+        return symbols[tail.groupValues[1]]?.trimEnd('?')
+    }
+
     /** Match `local <name>: <Type> =`, `local <name>: { <Type> } = { ..., "|"`,
      *  or `<name> =` against the symbol table. Returned name has the trailing `=`
      *  stripped and any `?` (nullable) trimmed, matching the format
@@ -1992,14 +2240,14 @@ class AutocompletePopup(
      *  container `{ T }`), which the caller then dispatches to T's source. */
     private fun parseTypedAssignmentType(precedingText: String, symbols: Map<String, String>): String? {
         val trimmed = precedingText.trimEnd().removeSuffix("=").trimEnd()
-        val localMatch = Regex("""\blocal\s+\w+\s*:\s*(\w+)\??$""").find(trimmed)
+        val localMatch = ASSIGN_LOCAL_TYPE_SCALAR_EOL.find(trimmed)
         if (localMatch != null) return localMatch.groupValues[1]
 
-        val arrayElement = Regex("""\blocal\s+\w+\s*:\s*\{\s*(\w+)\s*\}\s*=\s*\{[^}]*$""")
+        val arrayElement = ASSIGN_LOCAL_ARRAY_ELEM
             .find(precedingText)
         if (arrayElement != null) return arrayElement.groupValues[1]
 
-        val reassignMatch = Regex("""\b(\w+)$""").find(trimmed)
+        val reassignMatch = TRAILING_BARE_IDENT.find(trimmed)
         if (reassignMatch != null) {
             val name = reassignMatch.groupValues[1]
             return symbols[name]?.trimEnd('?')
@@ -2462,7 +2710,7 @@ class AutocompletePopup(
             }
 
         val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs +
-            cardImports + variableImports + breakerImports + placerImports)
+                cardImports + variableImports + breakerImports + placerImports)
             .distinctBy { it.insertText }
         val matches = FuzzyMatch.filter(partial, all).filter { it.insertText != partial }
         return matches
@@ -2621,6 +2869,16 @@ class AutocompletePopup(
         }
     }
 
+    /** Public hover-side accessor: returns the list of valid `items.<field>`
+     *  names at the given character offset, or null when [textBeforeOffset] is
+     *  not inside a `network:handle("name", function(...) … end)` body or the
+     *  named API isn't loaded. Mirrors the dispatch used by the autocomplete's
+     *  property-suggestion path so hover and completion stay in sync. */
+    fun inputItemsFieldsAt(textBeforeOffset: String): List<String>? {
+        val api = findEnclosingHandlerApi(textBeforeOffset) ?: return null
+        return damien.nodeworks.card.HandlerParamNames.build(api.inputs)
+    }
+
     /**
      * Walk [beforeCursor] to find the innermost open `network:handle("<id>", function(...)`
      * whose body contains the cursor. Returns the matching [ProcessingApiInfo] from
@@ -2643,14 +2901,14 @@ class AutocompletePopup(
         data class Event(val pos: Int, val isFuncOpen: Boolean)
 
         val events = mutableListOf<Event>()
-        val funcPattern = Regex("""\bfunction\s*\w*\s*\(""")
-        val endPattern = Regex("""\bend\b""")
+        val funcPattern = FUNCTION_OPEN_KEYWORD
+        val endPattern = END_KEYWORD
         for (m in funcPattern.findAll(beforeCursor)) events.add(Event(m.range.first, true))
         for (m in endPattern.findAll(beforeCursor)) events.add(Event(m.range.first, false))
         events.sortBy { it.pos }
 
         val scopeStack = mutableListOf<String?>()
-        val handleLookback = Regex("""network:handle\s*\(\s*"([^"]+)"\s*,\s*$""")
+        val handleLookback = HANDLE_LOOKBACK
         for (event in events) {
             if (event.isFuncOpen) {
                 // Lookback must comfortably fit a full canonical recipe id (which can run
@@ -2727,7 +2985,7 @@ class AutocompletePopup(
      */
     private fun checkHandleSnippetContext(beforeCursor: String): List<Suggestion>? {
         val currentLine = beforeCursor.substringAfterLast('\n')
-        val handleFnMatch = Regex("""network:handle\(\s*"([^"]+)"\s*,\s*(\w*)$""").find(currentLine) ?: return null
+        val handleFnMatch = HANDLE_FN_PARTIAL.find(currentLine) ?: return null
         val partial = handleFnMatch.groupValues[2]
         customPrefix = partial
         // Uniform handler signature, `job: Job, items: InputItems` regardless of recipe.
@@ -2743,19 +3001,19 @@ class AutocompletePopup(
     private fun extractVariableNames(text: String): List<String> {
         val names = mutableListOf<String>()
         // `local` declarations
-        Regex("""\blocal\s+(\w+(?:\s*,\s*\w+)*)""").findAll(text).forEach { match ->
+        EXTRACT_LOCAL_NAMES.findAll(text).forEach { match ->
             for (part in match.groupValues[1].split(',')) names.add(part.trim())
         }
         // For-loop bindings: generic `for k [, v] in …` and numeric `for i = …, …`.
         // Leading `_` is ignored because `_` is the conventional throwaway binding and
         // suggesting it back to the user adds noise.
-        Regex("""\bfor\s+(\w+(?:\s*,\s*\w+)?)\s+in\b""").findAll(text).forEach { match ->
+        EXTRACT_FOR_IN_NAMES.findAll(text).forEach { match ->
             for (part in match.groupValues[1].split(',')) {
                 val name = part.trim()
                 if (name.isNotEmpty() && name != "_") names.add(name)
             }
         }
-        Regex("""\bfor\s+(\w+)\s*=""").findAll(text).forEach { match ->
+        FOR_NUMERIC.findAll(text).forEach { match ->
             val name = match.groupValues[1]
             if (name != "_") names.add(name)
         }
@@ -2782,7 +3040,7 @@ class AutocompletePopup(
                     text.startsWith("function") -> {
                         val params = mutableListOf<String>()
                         for (param in match.groupValues[1].split(",")) {
-                            val name = param.trim().split(":")[0].trim().split("\\s+".toRegex())[0]
+                            val name = param.trim().split(":")[0].trim().split(WHITESPACE_SPLIT)[0]
                             if (name.isNotEmpty() && name.all { it.isLetterOrDigit() || it == '_' }) {
                                 params.add(name)
                             }
@@ -2810,7 +3068,7 @@ class AutocompletePopup(
         val result = mutableListOf<FunctionInfo>()
         // Match: function name(params): ReturnType  or  local function name(params): ReturnType.
         // Return type can be scalar (`T`, `T?`) or container (`{ T }`, `{ [K]: V }`).
-        val pattern = Regex("""\bfunction\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
+        val pattern = FUNC_HEADER_TYPED
         for (match in pattern.findAll(text)) {
             val name = match.groupValues[1]
             val rawParams = match.groupValues[2].trim()
@@ -2859,7 +3117,7 @@ class AutocompletePopup(
             val moduleName = requireMatch.groupValues[1]
             val moduleText = scripts()[moduleName] ?: return emptyList()
             // In required modules, scan all table vars for exports
-            val tableVarPattern = Regex("""\blocal\s+(\w+)\s*=\s*\{\s*\}""")
+            val tableVarPattern = LOCAL_EMPTY_TABLE
             val tableVars = tableVarPattern.findAll(moduleText).map { it.groupValues[1] }.toSet()
             val results = mutableListOf<Suggestion>()
             for (tv in tableVars) {

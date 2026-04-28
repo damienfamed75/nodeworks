@@ -92,16 +92,19 @@ class TerminalScreen(
     private val itemIds: List<String>
     private val fluidIds: List<String>
     private val variables: List<Pair<String, Int>>
+
     /** Variable name → channel color, parallel to [variables]. Kept as a separate
      *  map (instead of widening the [variables] tuple) so AutocompletePopup's
      *  existing (name, typeOrd) consumer doesn't need a signature change. */
     private val variableChannels: Map<String, net.minecraft.world.item.DyeColor>
+
     /** Effective aliases of every Breaker on the network, auto-alias `breaker_N`
      *  unless the player set a name in the device GUI. Passed to AutocompletePopup
      *  so `network:get("|"` can suggest breakers and `local x = network:get("...")`
      *  can narrow `x` to BreakerHandle. */
     private val breakerAliases: List<String>
     private val placerAliases: List<String>
+
     /** (alias, channel) per Breaker / Placer for the sidebar render, keeps the pip
      *  rendering consistent with cards/variables. The alias-only [breakerAliases] /
      *  [placerAliases] fields stay because AutocompletePopup just needs the names. */
@@ -341,9 +344,11 @@ class TerminalScreen(
         fun origLineStart(idx: Int): Int {
             var p = 0; for (i in 0 until idx) p += origLines[i].length + 1; return p
         }
+
         fun newLineStart(idx: Int): Int {
             var p = 0; for (i in 0 until idx) p += lines[i].length + 1; return p
         }
+
         // Translate an original-text position to a new-text position with column
         // awareness: on an unindented line, a cursor/sel-end inside the removed
         // whitespace clamps to col 0 rather than rolling back into the previous line.
@@ -511,7 +516,14 @@ class TerminalScreen(
                             for (dir in net.minecraft.core.Direction.entries) {
                                 val caps = entity.getSideCapabilities(dir)
                                 for (info in caps) {
-                                    scannedCards.add(CardSnapshot(info.capability, info.alias, info.slotIndex, info.channel))
+                                    scannedCards.add(
+                                        CardSnapshot(
+                                            info.capability,
+                                            info.alias,
+                                            info.slotIndex,
+                                            info.channel
+                                        )
+                                    )
                                 }
                             }
                         }
@@ -522,9 +534,11 @@ class TerminalScreen(
                                 scannedVarChannels[entity.variableName] = entity.channel
                             }
                         }
+
                         is damien.nodeworks.block.entity.BreakerBlockEntity -> {
                             scannedBreakers.add(entity.deviceName to entity.channel)
                         }
+
                         is damien.nodeworks.block.entity.PlacerBlockEntity -> {
                             scannedPlacers.add(entity.deviceName to entity.channel)
                         }
@@ -555,7 +569,8 @@ class TerminalScreen(
                                     // empty anyway, but being explicit here keeps the intent visible.
                                     if (chipData != null
                                         && chipData.kind == damien.nodeworks.item.BroadcastSourceKind.PROCESSING_STORAGE
-                                        && clientLevel.isLoaded(chipData.pos)) {
+                                        && clientLevel.isLoaded(chipData.pos)
+                                    ) {
                                         val broadcast = clientLevel.getBlockEntity(chipData.pos)
                                         if (broadcast is damien.nodeworks.block.entity.BroadcastAntennaBlockEntity) {
                                             // Mirror the local ProcessingStorage case: in addition to the
@@ -612,25 +627,31 @@ class TerminalScreen(
         }
         val slots = mutableListOf<damien.nodeworks.network.AliasSlot>()
         for (card in scannedCards) {
-            slots.add(damien.nodeworks.network.AliasSlot(
-                literalName = card.alias,
-                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix(card.capability.type),
-                setAutoAlias = { card.autoAlias = it },
-            ))
+            slots.add(
+                damien.nodeworks.network.AliasSlot(
+                    literalName = card.alias,
+                    baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix(card.capability.type),
+                    setAutoAlias = { card.autoAlias = it },
+                )
+            )
         }
         for (h in breakerAliasHolders) {
-            slots.add(damien.nodeworks.network.AliasSlot(
-                literalName = h.literalName,
-                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("breaker"),
-                setAutoAlias = { h.assignedAlias = it },
-            ))
+            slots.add(
+                damien.nodeworks.network.AliasSlot(
+                    literalName = h.literalName,
+                    baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("breaker"),
+                    setAutoAlias = { h.assignedAlias = it },
+                )
+            )
         }
         for (h in placerAliasHolders) {
-            slots.add(damien.nodeworks.network.AliasSlot(
-                literalName = h.literalName,
-                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("placer"),
-                setAutoAlias = { h.assignedAlias = it },
-            ))
+            slots.add(
+                damien.nodeworks.network.AliasSlot(
+                    literalName = h.literalName,
+                    baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("placer"),
+                    setAutoAlias = { h.assignedAlias = it },
+                )
+            )
         }
         damien.nodeworks.network.assignAliasSuffixes(slots)
         val scannedBreakerEntries = breakerAliasHolders.map { it.effectiveAlias to it.channel }
@@ -723,10 +744,22 @@ class TerminalScreen(
                 editor.value.substring(0, clamped),
             )
         }
+        // Hover-side InputItems field resolution. Mirrors the autocomplete
+        // dispatch so hovering `items.copperOre` inside a handler block
+        // synthesises an `ItemsHandle` Doc using the live recipe's slot names.
+        editor.inputItemsFieldsProvider = { scopeAnchor ->
+            val clamped = scopeAnchor.coerceIn(0, editor.value.length)
+            autocomplete.inputItemsFieldsAt(editor.value.substring(0, clamped))
+        }
         // G-on-hover → open the guidebook at the doc's anchor. Delegates to the platform
         // service so :common doesn't import GuideME (neoforge-only dep), see
         // PlatformServices.guidebook.
         editor.openGuidebookRef = { ref -> damien.nodeworks.platform.PlatformServices.guidebook.open(ref) }
+        // Bridge the editor's hover/Hold-G path to the local fallback that knows
+        // about user-defined functions, type-name literals, and typed locals
+        // with nullability narrowing. Same Doc the tooltip renders, so [G]
+        // shown in the tooltip matches what G actually opens.
+        editor.extraDocResolver = { word, mx, my -> buildFallbackDoc(word, mx, my) }
         // Key binding is registered loader-side as a `KeyMapping` (rebindable in the
         // controls menu). The editor polls the held state each frame via this callback
         //, see PlatformServices.openDocsKeyHeld for the loader impl.
@@ -761,6 +794,7 @@ class TerminalScreen(
                 cachedDiagnostics =
                     damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(
                         text, symbols, others, ambiguousNetworkNames,
+                        processingApis = localApis,
                     )
             }
             cachedDiagnostics
@@ -899,7 +933,8 @@ class TerminalScreen(
         val mcInst = net.minecraft.client.Minecraft.getInstance()
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getTerminalPos())
         val networkColor = if (reachable) {
-            val termEntity = mcInst.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
+            val termEntity =
+                mcInst.level?.getBlockEntity(menu.getTerminalPos()) as? damien.nodeworks.network.Connectable
             if (termEntity?.networkId != null) {
                 damien.nodeworks.network.NetworkSettingsRegistry.getColor(termEntity.networkId)
             } else {
@@ -937,7 +972,8 @@ class TerminalScreen(
 
             val tabTop = tabBarY + 1
             val tabH = tabBarHeight - 1
-            val tabHovered = !isActive && mouseX >= tabX && mouseX < tabX + tabWidth && mouseY >= tabTop && mouseY < tabTop + tabH
+            val tabHovered =
+                !isActive && mouseX >= tabX && mouseX < tabX + tabWidth && mouseY >= tabTop && mouseY < tabTop + tabH
             val tabSlice = when {
                 isActive -> NineSlice.TAB_ACTIVE
                 tabHovered -> NineSlice.TAB_HOVER
@@ -1112,7 +1148,8 @@ class TerminalScreen(
             cardScrollOffset = cardScrollOffset.coerceIn(0, maxCardScroll)
             val thumbY = cardListTop + (scrollbarHeight - thumbHeight) * cardScrollOffset / maxCardScroll
             NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, cardListTop, scrollbarW, scrollbarHeight)
-            val thumbSlice = if (draggingSidebarScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
+            val thumbSlice =
+                if (draggingSidebarScrollbar) NineSlice.SCROLLBAR_THUMB_HOVER else NineSlice.SCROLLBAR_THUMB
             thumbSlice.draw(graphics, sbX, thumbY, scrollbarW, thumbHeight)
         }
 
@@ -1174,7 +1211,8 @@ class TerminalScreen(
         val toggleBtnX = logX + 3
         val toggleBtnY = logY + 2
         val toggleBtnSize = 10
-        val toggleHovered = mouseX >= logX && mouseX < logX + logW && mouseY >= logY && mouseY < logY + logCollapsedHeight
+        val toggleHovered =
+            mouseX >= logX && mouseX < logX + logW && mouseY >= logY && mouseY < logY + logCollapsedHeight
         if (logCollapsed) {
             val expandIcon = when {
                 pressedButton == "toggle" -> Icons.EXPAND_PRESSED
@@ -1355,6 +1393,7 @@ class TerminalScreen(
         // One accumulated list of lines. Each line has its own colour so signatures
         // render yellow and descriptions render gray within the same 9-sliced panel.
         data class Line(val text: String, val color: Int)
+
         val accum = mutableListOf<Line>()
 
         // Diagnostic header. When the mouse is over a flagged span we surface the
@@ -1377,11 +1416,14 @@ class TerminalScreen(
             }
         }
 
-        // Prefer LuaApiDocs, type-aware, covers modules/methods/types via the shared
-        // resolver (which already hops module → Type via `LuaApiDocs.moduleTypes` and
-        // typed-local via the autocomplete symbol table).
+        // [resolveDocAt] consults [buildFallbackDoc] internally via the editor's
+        // `extraDocResolver` callback, so the same Doc is shared between this
+        // tooltip and the editor's Hold-G handler. Without that wiring, the
+        // tooltip would show a `[G]` indicator (rendered from doc.guidebookRef)
+        // for types that only the fallback resolves, but pressing G would do
+        // nothing because the Hold-G code path consulted only the resolver.
         val doc = editor.resolveDocAt(mouseX, mouseY)
-        val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble())
+
         if (doc != null) {
             doc.signature?.let { accum.add(Line(it, COLOR_SIGNATURE)) }
             // Hard-wrap at [TOOLTIP_MAX_WIDTH_PX] so long descriptions don't run past
@@ -1390,45 +1432,14 @@ class TerminalScreen(
             // `FormattedCharSequence` path earlier was wrong, `.toString()` on those
             // returns the Lambda class name, not the character stream.
             for (rawLine in doc.description.split('\n')) {
-                for (part in font.splitter.splitLines(rawLine, TOOLTIP_MAX_WIDTH_PX, net.minecraft.network.chat.Style.EMPTY)) {
+                if (rawLine.isEmpty()) continue
+                for (part in font.splitter.splitLines(
+                    rawLine,
+                    TOOLTIP_MAX_WIDTH_PX,
+                    net.minecraft.network.chat.Style.EMPTY
+                )) {
                     accum.add(Line(part.string, COLOR_DESCRIPTION))
                 }
-            }
-        } else if (word != null) {
-            // Fallback path for tokens the registry doesn't cover, user-defined
-            // functions and locals whose types come from the autocomplete symbol
-            // table.
-            //
-            // The symbol-table lookup uses the HOVER position as its scope anchor, not
-            // the cursor. Otherwise hovering a function parameter (e.g. `from` in
-            // `function getThings(from: { CardHandle })`) wouldn't resolve while the
-            // cursor sits outside the function body, the param's scope would be closed
-            // at cursor time but is still open at the hover line.
-            val fallback = autocomplete.getFunctionSignature(word, editor.value)
-                ?: run {
-                    val hoverAnchor = editor.getHoverScopeAnchor(mouseX, mouseY)
-                        ?: editor.getCursorPosition()
-                    val clamped = hoverAnchor.coerceIn(0, editor.value.length)
-                    val symbols = autocomplete.getSymbolTable(
-                        editor.value,
-                        editor.value.substring(0, clamped),
-                    )
-                    val baseType = symbols[word] ?: return@run null
-                    // Surface nullability the same way the diagnostic analyzer sees
-                    // it: a name flagged as nullable here that isn't inside a
-                    // narrowing region renders as `T?`. Inside `if word then ... end`
-                    // the narrowing region covers `clamped`, so the `?` drops off
-                    // and the hover shows the unwrapped type.
-                    val nullableHere = damien.nodeworks.script.diagnostics.LuaDiagnostics
-                        .nullablesAtOffset(editor.value, clamped, symbols)
-                    val display = if (word in nullableHere) "$baseType?" else baseType
-                    "$word: $display"
-                }
-            if (fallback != null) {
-                accum.add(Line(fallback, COLOR_PLAIN))
-            } else if (accum.isEmpty()) {
-                // Nothing to show: no doc, no fallback, no diagnostic.
-                return
             }
         } else if (accum.isEmpty()) {
             // No doc, no word under cursor, no diagnostic.
@@ -1489,6 +1500,98 @@ class TerminalScreen(
      *  progress it's plain text in dark gray, while the player is holding, the text is
      *  replaced by a bar of `|` characters that fills left-to-right as progress
      *  advances, same visual language GuideME uses on item tooltips. */
+    /** Hover doc for tokens the [LuaApiDocs.resolveAt] path missed. Three shapes:
+     *
+     *  1. Bare type-name literal (`Job`, `InputItems`): registry lookup.
+     *  2. User-defined function: signature only.
+     *  3. Typed local / param: symbol-table lookup with nullability narrowing.
+     *
+     *  Lifted out of [renderTypeTooltip] so [resolveDocAtIncludingFallback] can
+     *  call it from the Hold-G path too, keeping the [G] tooltip indicator and
+     *  the actual G-key action consistent. */
+    private fun buildFallbackDoc(
+        word: String,
+        mouseX: Int,
+        mouseY: Int,
+    ): damien.nodeworks.script.LuaApiDocs.Doc? {
+        // Bare type-name literal lookup. Hits when the resolver's chain walker
+        // returned null for a top-level type token, e.g. `Job` / `InputItems`
+        // in `function(job: Job, items: InputItems)`.
+        damien.nodeworks.script.api.LuaApiRegistry.allDocs()[word]?.let { apiDoc ->
+            if (apiDoc.category == damien.nodeworks.script.api.ApiCategory.TYPE ||
+                apiDoc.category == damien.nodeworks.script.api.ApiCategory.MODULE
+            ) {
+                return damien.nodeworks.script.LuaApiDocs.Doc(
+                    signature = apiDoc.signature,
+                    description = apiDoc.description,
+                    category = when (apiDoc.category) {
+                        damien.nodeworks.script.api.ApiCategory.TYPE ->
+                            damien.nodeworks.script.LuaApiDocs.Category.TYPE
+
+                        damien.nodeworks.script.api.ApiCategory.MODULE ->
+                            damien.nodeworks.script.LuaApiDocs.Category.MODULE
+
+                        else -> damien.nodeworks.script.LuaApiDocs.Category.TYPE
+                    },
+                    guidebookRef = apiDoc.guidebookRef,
+                )
+            }
+        }
+
+        // User-defined function `function name(...): T` lookup. Returns the
+        // signature string when found.
+        autocomplete.getFunctionSignature(word, editor.value)?.let { sig ->
+            return damien.nodeworks.script.LuaApiDocs.Doc(
+                signature = sig,
+                description = "",
+                category = damien.nodeworks.script.LuaApiDocs.Category.FUNCTION,
+                guidebookRef = null,
+            )
+        }
+
+        // Typed local / param fallback. The symbol-table lookup uses the HOVER
+        // position as its scope anchor, not the cursor. Otherwise hovering a
+        // function parameter (e.g. `from` in `function getThings(from: { CardHandle })`)
+        // wouldn't resolve while the cursor sits outside the function body, the
+        // param's scope would be closed at cursor time but is still open at the
+        // hover line.
+        val hoverAnchor = editor.getHoverScopeAnchor(mouseX, mouseY)
+            ?: editor.getCursorPosition()
+        val clamped = hoverAnchor.coerceIn(0, editor.value.length)
+        val symbols = autocomplete.getSymbolTable(
+            editor.value,
+            editor.value.substring(0, clamped),
+        )
+        val baseType = symbols[word] ?: return null
+        // Surface nullability the same way the diagnostic analyzer sees it: a
+        // name flagged as nullable here that isn't inside a narrowing region
+        // renders as `T?`. Inside `if word then ... end` the narrowing region
+        // covers `clamped`, so the `?` drops off and the hover shows the
+        // unwrapped type.
+        val nullableHere = damien.nodeworks.script.diagnostics.LuaDiagnostics
+            .nullablesAtOffset(editor.value, clamped, symbols)
+        val displayType = if (word in nullableHere) "$baseType?" else baseType
+        // Promote to a rich Doc when the type is registered, the description /
+        // guidebookRef come straight off the registered ApiDoc so [G] navigation
+        // works the same as a direct hover on the type literal would.
+        val unwrapped = baseType.trimEnd('?')
+        val typeDoc = damien.nodeworks.script.LuaApiDocs.get(unwrapped)
+            ?: damien.nodeworks.script.api.LuaApiRegistry.allDocs()[unwrapped]?.let { apiDoc ->
+                damien.nodeworks.script.LuaApiDocs.Doc(
+                    signature = apiDoc.signature,
+                    description = apiDoc.description,
+                    category = damien.nodeworks.script.LuaApiDocs.Category.TYPE,
+                    guidebookRef = apiDoc.guidebookRef,
+                )
+            }
+        return damien.nodeworks.script.LuaApiDocs.Doc(
+            signature = "$word: $displayType",
+            description = typeDoc?.description ?: "",
+            category = typeDoc?.category ?: damien.nodeworks.script.LuaApiDocs.Category.TYPE,
+            guidebookRef = typeDoc?.guidebookRef,
+        )
+    }
+
     private fun renderHoldGProgressFooter(
         graphics: GuiGraphicsExtractor,
         x: Int,
@@ -1729,9 +1832,9 @@ class TerminalScreen(
                                     indentSnippetLines(result.insertText, result.cursorOffset, lineLeading)
                                 else result.insertText to result.cursorOffset
                             val newText = importPrefix +
-                                text.substring(0, deleteStart) +
-                                insertText +
-                                text.substring(deleteEnd)
+                                    text.substring(0, deleteStart) +
+                                    insertText +
+                                    text.substring(deleteEnd)
                             editor.setValueKeepScroll(newText, importPrefix.length + deleteStart + cursorOffset)
                             suppressAutocomplete = false
                             // Only re-trigger autocomplete when the accepted result lands the
@@ -1968,6 +2071,7 @@ class TerminalScreen(
                     // accessor, same generated line shape for any click-to-import.
                     "card", "var", "breaker", "placer" ->
                         "local $ident = network:get(\"${entry.name}\")"
+
                     else -> null
                 }
                 if (line != null) {

@@ -4,7 +4,6 @@ import damien.nodeworks.script.api.ApiCategory
 import damien.nodeworks.script.api.ApiDoc
 import damien.nodeworks.script.api.LuaApiBootstrap
 import damien.nodeworks.script.api.LuaApiRegistry
-import damien.nodeworks.script.api.LuaType
 
 /**
  * Single source of truth for Lua symbol documentation, consumed by both the in-game
@@ -364,6 +363,7 @@ object LuaApiDocs {
         tokens: List<LuaTokenizer.Token>,
         index: Int,
         variableTypes: Map<String, String> = emptyMap(),
+        inputItemsFields: List<String>? = null,
     ): Doc? {
         val tok = tokens.getOrNull(index) ?: return null
         val eligible = tok.type == LuaTokenizer.TokenType.DEFAULT ||
@@ -407,6 +407,17 @@ object LuaApiDocs {
                             }
                             variableTypes[owner.text]?.let { ownerType ->
                                 lookupTypedMethod(ownerType, sep.text, tok.text)?.let { return it }
+                                // Dynamic InputItems fields, the per-recipe slot names
+                                // can't be statically registered so they fall through
+                                // [lookupTypedMethod]. Synthesise an ItemsHandle Doc
+                                // when the caller supplied the live field set.
+                                if (ownerType.trimEnd('?') == "InputItems" &&
+                                    sep.text == "." &&
+                                    inputItemsFields != null &&
+                                    tok.text in inputItemsFields
+                                ) {
+                                    return synthesizeInputItemsFieldDoc(tok.text)
+                                }
                             }
                         }
                     }
@@ -419,7 +430,8 @@ object LuaApiDocs {
         // type doc (which would hide that the token is a *variable*) while still
         // surfacing the type's explanation so the user understands what operations apply.
         variableTypes[tok.text]?.let { selfType ->
-            val typeDoc = entries[selfType]
+            val unwrapped = selfType.trimEnd('?')
+            val typeDoc = entries[unwrapped]
             return Doc(
                 signature = "${tok.text}: $selfType",
                 description = typeDoc?.description ?: "",
@@ -428,5 +440,19 @@ object LuaApiDocs {
             )
         }
         return null
+    }
+
+    /** Build a hover Doc for a per-slot `items.<field>` access inside a
+     *  handler. Each slot is statically typed `ItemsHandle`, so the doc just
+     *  carries that signature plus the ItemsHandle entry's description /
+     *  guidebookRef so hovering teaches the player what they can call on it. */
+    private fun synthesizeInputItemsFieldDoc(fieldName: String): Doc {
+        val itemsHandleDoc = entries["ItemsHandle"]
+        return Doc(
+            signature = "$fieldName: ItemsHandle",
+            description = itemsHandleDoc?.description ?: "",
+            category = Category.PROPERTY,
+            guidebookRef = itemsHandleDoc?.guidebookRef,
+        )
     }
 }

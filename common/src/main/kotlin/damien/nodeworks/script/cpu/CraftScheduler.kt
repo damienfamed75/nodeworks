@@ -44,6 +44,16 @@ class CraftScheduler(
         /** Execute a single op. The scheduler only consults the return value. */
         fun execute(op: Operation): OpResult
 
+        /** Fired once per [CraftScheduler.tick] before any [execute] call. Implementations
+         *  use this to set up per-tick state, e.g. snapshot caching that lets every op in
+         *  the same tick share one network-discovery walk instead of redoing it per op.
+         *  Default no-op so existing executors don't need to opt in. */
+        fun onTickStart() {}
+
+        /** Fired once per [CraftScheduler.tick] after all execute, completion, and failure
+         *  handlers ran. Pair with [onTickStart] to bound per-tick caches. */
+        fun onTickEnd() {}
+
         /** Called when a plan reaches the DONE state (all terminal ops completed). */
         fun onPlanCompleted(plan: CraftPlan) {}
 
@@ -108,6 +118,15 @@ class CraftScheduler(
         val throttle = executor.currentThrottle
         var opsThisTick = 0
 
+        // [OpExecutor.onTickStart]/[onTickEnd] bracket the entire tick body so any
+        // per-tick caches (e.g. the snapshot CpuOpExecutor reuses across ops) are
+        // valid through the execute loop AND the post-loop completion / failure
+        // handlers, which can themselves trigger snapshot-dependent work like
+        // flushing the buffer back to network storage. The hook pair runs every
+        // tick regardless of state, the default impls are no-ops so this stays
+        // free for executors that don't care.
+        executor.onTickStart()
+        try {
         if (state == State.RUNNING) {
             scheduleNewlyReadyOps(currentTick, throttle)
 
@@ -171,6 +190,9 @@ class CraftScheduler(
                 if (backlog.isNotEmpty()) assignPlan(backlog.removeFirst(), currentTick)
             }
             else -> { /* still running or idle */ }
+        }
+        } finally {
+            executor.onTickEnd()
         }
     }
 

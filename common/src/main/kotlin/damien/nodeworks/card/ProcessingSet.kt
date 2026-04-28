@@ -210,38 +210,19 @@ class ProcessingSet(properties: Properties) : Item(properties) {
 
         /**
          * Convert an item id into a camelCase Lua identifier:
-         * `minecraft:copper_ingot` → `copperIngot`. Used for handler parameter names.
+         * `minecraft:copper_ingot` → `copperIngot`. Delegates to
+         * [HandlerParamNames] so unit-testable surfaces (LuaDiagnostics) can
+         * reuse the rule without loading [ProcessingSet]'s MC dependencies.
          */
-        fun itemIdToParamName(itemId: String): String {
-            val shortId = itemId.substringAfter(':')
-            val parts = shortId.split('_')
-            return parts.mapIndexed { i, part ->
-                if (i == 0) part else part.replaceFirstChar { it.uppercase() }
-            }.joinToString("")
-        }
+        fun itemIdToParamName(itemId: String): String =
+            HandlerParamNames.itemIdToParamName(itemId)
 
         /**
-         * Build per-slot handler parameter names in grid order. Duplicate entries get a
-         * numeric suffix on 2nd+ occurrence so the field list in the handler's `items`
-         * table is a stable, lossless mapping from slot index to identifier.
-         *
-         * Example: `[copper, gold, copper]` → `[copperIngot, goldIngot, copperIngot2]`.
-         *
-         * Used by both the CPU runtime (to key the `items` LuaTable passed to handlers)
-         * and the script editor autocomplete (to suggest valid `items.` field names).
-         * Keeping the rule in one place guarantees they stay in sync.
+         * Build per-slot handler parameter names in grid order. See
+         * [HandlerParamNames.build] for the rule details.
          */
-        fun buildHandlerParamNames(inputs: List<Pair<String, Int>>): List<String> {
-            val result = mutableListOf<String>()
-            val occurrence = mutableMapOf<String, Int>()
-            for ((itemId, _) in inputs) {
-                val base = itemIdToParamName(itemId)
-                val n = (occurrence[base] ?: 0) + 1
-                occurrence[base] = n
-                result.add(if (n == 1) base else "$base$n")
-            }
-            return result
-        }
+        fun buildHandlerParamNames(inputs: List<Pair<String, Int>>): List<String> =
+            HandlerParamNames.build(inputs)
 
         /**
          * Save the processing recipe to the card stack. [inputPositions] maps each

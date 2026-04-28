@@ -50,7 +50,53 @@ object LuaDiagnostics {
         "nullable-misuse" to Severity.WARNING,
         "nullable-arg" to Severity.WARNING,
         "ambiguous-card-name" to Severity.HINT,
+        "handler-no-pull" to Severity.HINT,
+        "handler-unused-input" to Severity.HINT,
     )
+
+    // -----------------------------------------------------------------------
+    // Lifted regex constants. analyze() runs per keystroke. Every inline
+    // `Regex("""...""")` was recompiling per call, hoisting the static ones
+    // here compiles each pattern once for the lifetime of the JVM. Patterns
+    // that interpolate a runtime string (variable name in narrowing checks,
+    // module export prefix) stay inline since there isn't a stable cache key.
+    // -----------------------------------------------------------------------
+    private val GET_CALL: Regex = Regex(""":get\s*\(\s*(['"])([^'"]+)\1""")
+    private val ROUTE_FROM_TO_CALL: Regex =
+        Regex(""":(route|from|to)\s*\(\s*(['"])([^'"]+)\2""")
+    private val FUNCTION_DEF: Regex =
+        Regex("""\b(?:local\s+)?function\s+(\w+(?:\.\w+)?)\s*\(([^)]*)\)""")
+    private val REQUIRE_LOCAL: Regex =
+        Regex("""\blocal\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)""")
+    private val MODULE_RETURN: Regex =
+        Regex("""^\s*return\s+(\w+)\s*$""", RegexOption.MULTILINE)
+
+    // findNullableVars passes
+    private val LOCAL_TYPE_DECL: Regex = Regex("""\blocal\s+(\w+)\s*:""")
+    private val PARAM_TYPE_DECL: Regex = Regex("""[(,]\s*(\w+)\s*:""")
+    private val LOCAL_TYPE_NULLABLE: Regex = Regex("""\blocal\s+(\w+)\s*:\s*\w+\?""")
+    private val PARAM_TYPE_NULLABLE: Regex = Regex("""[(,]\s*(\w+)\s*:\s*\w+\?""")
+    private val LOCAL_BIND_LHS: Regex = Regex("""\blocal\s+(\w+)\s*=""")
+
+    // collectDeclaredNames patterns (run across the whole script).
+    private val DECL_LOCAL_NAMES: Regex =
+        Regex("""\blocal\s+([\w_]+(?:\s*[,:]\s*(?:[\w_]+|\{[^}]*\}))*)""")
+    private val DECL_FUNCTION_BARE: Regex =
+        Regex("""\b(?:local\s+)?function\s+([\w_]+)""")
+    private val DECL_FUNCTION_QUALIFIED: Regex =
+        Regex("""\bfunction\s+([\w_]+)\s*\.""")
+    private val DECL_FUNCTION_PARAMS: Regex =
+        Regex("""\bfunction\b\s*[\w_.:]*\s*\(([^)]*)\)""")
+    private val DECL_FOR_NUMERIC: Regex =
+        Regex("""\bfor\s+([\w_]+(?:\s*,\s*[\w_]+)*)\s*=""")
+    private val DECL_FOR_IN: Regex =
+        Regex("""\bfor\s+([\w_]+(?:\s*,\s*[\w_]+)*)\s+in\b""")
+
+    // Type-annotation extraction.
+    private val ANN_LOCAL_TYPE_BODY: Regex =
+        Regex("""\blocal\s+\w+\s*:\s*(\w[\w_]*\??|\{[^}]*})""")
+    private val ANN_PARAM_TYPE_BODY: Regex =
+        Regex("""[(,]\s*\w+\s*:\s*(\w[\w_]*\??|\{[^}]*})""")
 
     /** Returns the names that are nullable AT [offset] in [text]. A name counts as
      *  nullable when (1) the analyzer would put it in `nullableVars` (explicit
@@ -99,6 +145,7 @@ object LuaDiagnostics {
         symbols: Map<String, String> = emptyMap(),
         otherScripts: Map<String, String> = emptyMap(),
         ambiguousNetworkNames: Set<String> = emptySet(),
+        processingApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
     ): List<Diagnostic> {
         if (text.isBlank()) return emptyList()
 
@@ -133,6 +180,20 @@ object LuaDiagnostics {
         if (ambiguousNetworkNames.isNotEmpty()) {
             out += checkAmbiguousNetworkGet(text, ambiguousNetworkNames)
         }
+
+        // Handler-shape hints. Both rules share the same handler-span scan, so
+        // build it once. Skip the work entirely when the script has no
+        // `network:handle(` call to begin with, the substring check is O(n) and
+        // common-case scripts (non-handler logic) avoid the regex pass.
+        if (text.contains("network:handle")) {
+            val handlerSpans = findHandlerSpans(text)
+            if (handlerSpans.isNotEmpty()) {
+                out += checkHandlersWithoutPull(text, handlerSpans)
+                if (processingApis.isNotEmpty()) {
+                    out += checkHandlersWithUnusedInputs(text, handlerSpans, processingApis)
+                }
+            }
+        }
         return out
     }
 
@@ -160,7 +221,7 @@ object LuaDiagnostics {
 
         // `<receiver>:get("<name>")`, singular lookup. Both `network:get` and
         // `Channel:get` flow through the same bare-name resolution.
-        val getPattern = Regex(""":get\s*\(\s*(['"])([^'"]+)\1""")
+        val getPattern = GET_CALL
         for (m in getPattern.findAll(stripped)) {
             val name = m.groupValues[2]
             if (name !in ambiguousNames) continue
@@ -180,7 +241,7 @@ object LuaDiagnostics {
         // Collection-receiver methods: `:route(...)`, `:from(...)`, `:to(...)`.
         // First string arg is a card alias that's expected to glob to multiple
         // cards in the duplicate-name case. Hint suggests the glob.
-        val collectionPattern = Regex(""":(route|from|to)\s*\(\s*(['"])([^'"]+)\2""")
+        val collectionPattern = ROUTE_FROM_TO_CALL
         for (m in collectionPattern.findAll(stripped)) {
             val method = m.groupValues[1]
             val name = m.groupValues[3]
@@ -215,9 +276,11 @@ object LuaDiagnostics {
         val knownGlobals = collectKnownGlobals()
         val knownStdlibMembers = STDLIB_MEMBERS
 
-        // Walk the token stream with running global offsets.
+        // Walk the token stream with running global offsets. One split feeds
+        // both the line iteration and the tokenizer, halving the per-pass
+        // tokenisation cost.
         val lines = text.split('\n')
-        val tokenLines = LuaTokenizer.tokenizeLines(text)
+        val tokenLines = LuaTokenizer.tokenizeLines(lines)
         var lineStart = 0
         for ((lineIdx, line) in lines.withIndex()) {
             val tokens = tokenLines[lineIdx]
@@ -344,7 +407,7 @@ object LuaDiagnostics {
     ): List<Diagnostic> {
         val diagnostics = mutableListOf<Diagnostic>()
         val lines = text.split('\n')
-        val tokenLines = LuaTokenizer.tokenizeLines(text)
+        val tokenLines = LuaTokenizer.tokenizeLines(lines)
         var lineStart = 0
         for ((lineIdx, line) in lines.withIndex()) {
             val tokens = tokenLines[lineIdx]
@@ -631,8 +694,8 @@ object LuaDiagnostics {
         if (text.isEmpty()) return text
         val out = CharArray(text.length)
         text.toCharArray(out, 0, 0, text.length)
-        val tokenLines = LuaTokenizer.tokenizeLines(text)
         val lines = text.split('\n')
+        val tokenLines = LuaTokenizer.tokenizeLines(lines)
         var lineStart = 0
         for ((lineIdx, line) in lines.withIndex()) {
             val toks = tokenLines.getOrNull(lineIdx) ?: emptyList()
@@ -665,8 +728,8 @@ object LuaDiagnostics {
 
     private fun flattenTokens(text: String): List<FlatToken> {
         val out = mutableListOf<FlatToken>()
-        val tokenLines = LuaTokenizer.tokenizeLines(text)
         val lines = text.split('\n')
+        val tokenLines = LuaTokenizer.tokenizeLines(lines)
         var lineStart = 0
         for ((lineIdx, line) in lines.withIndex()) {
             val toks = tokenLines.getOrNull(lineIdx) ?: emptyList()
@@ -835,7 +898,7 @@ object LuaDiagnostics {
     private fun collectUserFunctions(rawText: String): Map<String, List<LuaType.Param>> {
         val text = stripComments(rawText)
         val out = mutableMapOf<String, List<LuaType.Param>>()
-        val pattern = Regex("""\b(?:local\s+)?function\s+(\w+(?:\.\w+)?)\s*\(([^)]*)\)""")
+        val pattern = FUNCTION_DEF
         for (match in pattern.findAll(text)) {
             val name = match.groupValues[1]
             val raw = match.groupValues[2]
@@ -862,10 +925,7 @@ object LuaDiagnostics {
         if (otherScripts.isEmpty()) return emptyMap()
         val text = stripComments(rawText)
         val out = mutableMapOf<String, List<LuaType.Param>>()
-        val requirePattern = Regex(
-            """\blocal\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)"""
-        )
-        for (m in requirePattern.findAll(text)) {
+        for (m in REQUIRE_LOCAL.findAll(text)) {
             val localName = m.groupValues[1]
             val moduleName = m.groupValues[2]
             val rawModuleText = otherScripts[moduleName] ?: continue
@@ -894,8 +954,7 @@ object LuaDiagnostics {
      *  expected to have stripped comments already so a commented-out
      *  `-- return foo` doesn't get mistaken for the real export. */
     private fun findModuleExportPrefix(moduleText: String): String? {
-        val pattern = Regex("""^\s*return\s+(\w+)\s*$""", RegexOption.MULTILINE)
-        return pattern.findAll(moduleText).lastOrNull()?.groupValues?.get(1)
+        return MODULE_RETURN.findAll(moduleText).lastOrNull()?.groupValues?.get(1)
     }
 
     /** Parse a comma-separated parameter list with optional `: Type` / `: Type?`
@@ -994,11 +1053,11 @@ object LuaDiagnostics {
     private fun collectDeclarationNameRanges(rawText: String): List<TextRange> {
         val text = stripComments(rawText)
         val ranges = mutableListOf<TextRange>()
-        Regex("""\blocal\s+(\w+)\s*:""").findAll(text).forEach {
+        LOCAL_TYPE_DECL.findAll(text).forEach {
             val r = it.groups[1]!!.range
             ranges.add(TextRange(r.first, r.last + 1))
         }
-        Regex("""[(,]\s*(\w+)\s*:""").findAll(text).forEach {
+        PARAM_TYPE_DECL.findAll(text).forEach {
             val r = it.groups[1]!!.range
             ranges.add(TextRange(r.first, r.last + 1))
         }
@@ -1021,11 +1080,11 @@ object LuaDiagnostics {
         val out = mutableSetOf<String>()
 
         // Explicit `local x: T?` (and the rare comma-separated `local x: T?, y: U?`).
-        Regex("""\blocal\s+(\w+)\s*:\s*\w+\?""").findAll(text).forEach {
+        LOCAL_TYPE_NULLABLE.findAll(text).forEach {
             out.add(it.groupValues[1])
         }
         // Function param annotations: `function f(x: T?, ...)`.
-        Regex("""[(,]\s*(\w+)\s*:\s*\w+\?""").findAll(text).forEach {
+        PARAM_TYPE_NULLABLE.findAll(text).forEach {
             out.add(it.groupValues[1])
         }
 
@@ -1034,7 +1093,7 @@ object LuaDiagnostics {
         // nullable. Skip when an explicit annotation already covers the name, so a
         // user override (`local items: ItemsHandle = ...`) silences the warning
         // intentionally even when the runtime call would actually return `T?`.
-        for (m in Regex("""\blocal\s+(\w+)\s*=""").findAll(text)) {
+        for (m in LOCAL_BIND_LHS.findAll(text)) {
             val name = m.groupValues[1]
             if (name in out) continue
             val rhsStart = m.range.last + 1
@@ -1311,7 +1370,7 @@ object LuaDiagnostics {
 
         // local <name> [, <name>, ...] = ...
         // local <name>: <Type> = ...
-        Regex("""\blocal\s+([\w_]+(?:\s*[,:]\s*(?:[\w_]+|\{[^}]*\}))*)""")
+        DECL_LOCAL_NAMES
             .findAll(text)
             .forEach { match ->
                 val raw = match.groupValues[1]
@@ -1325,14 +1384,14 @@ object LuaDiagnostics {
             }
 
         // function <name>(...) and local function <name>(...)
-        Regex("""\b(?:local\s+)?function\s+([\w_]+)""")
+        DECL_FUNCTION_BARE
             .findAll(text)
             .forEach { names.add(it.groupValues[1]) }
 
         // function <obj>.<name>(...), the .name half is the declared method
         // name, but we want the obj name in declared too so a downstream
         // reference to <obj> doesn't squiggle.
-        Regex("""\bfunction\s+([\w_]+)\s*\.""")
+        DECL_FUNCTION_QUALIFIED
             .findAll(text)
             .forEach { names.add(it.groupValues[1]) }
 
@@ -1341,7 +1400,7 @@ object LuaDiagnostics {
         // (`function foo.bar(a)`), and colon-method declarations (`function foo:bar(a)`).
         // The `[\w_.:]*` between `function` and `(` allows the qualified name to slip
         // through without re-entering the params regex.
-        Regex("""\bfunction\b\s*[\w_.:]*\s*\(([^)]*)\)""")
+        DECL_FUNCTION_PARAMS
             .findAll(text)
             .forEach { match ->
                 val params = match.groupValues[1]
@@ -1355,7 +1414,7 @@ object LuaDiagnostics {
         // The numeric form (`for i=1, 5 do`) has no required whitespace before `=`,
         // so we use `\s*` there. The generic form (`for x in xs`) needs at least one
         // space before `in` to keep us from chopping `for inner = 1, 5 do` at "in".
-        Regex("""\bfor\s+([\w_]+(?:\s*,\s*[\w_]+)*)\s*=""")
+        DECL_FOR_NUMERIC
             .findAll(text)
             .forEach { match ->
                 for (chunk in match.groupValues[1].split(',')) {
@@ -1363,7 +1422,7 @@ object LuaDiagnostics {
                     if (isIdentifierLike(name)) names.add(name)
                 }
             }
-        Regex("""\bfor\s+([\w_]+(?:\s*,\s*[\w_]+)*)\s+in\b""")
+        DECL_FOR_IN
             .findAll(text)
             .forEach { match ->
                 for (chunk in match.groupValues[1].split(',')) {
@@ -1388,9 +1447,9 @@ object LuaDiagnostics {
         // (`{ T }`, `{ [K]: V }`).
         val patterns = listOf(
             // local <name>: Type
-            Regex("""\blocal\s+\w+\s*:\s*(\w[\w_]*\??|\{[^}]*})"""),
+            ANN_LOCAL_TYPE_BODY,
             // function param: `(name: Type` or `, name: Type`
-            Regex("""[(,]\s*\w+\s*:\s*(\w[\w_]*\??|\{[^}]*})"""),
+            ANN_PARAM_TYPE_BODY,
             // return type annotation: `): Type`
             Regex("""\)\s*:\s*(\w[\w_]*\??|\{[^}]*})"""),
         )
@@ -1454,4 +1513,158 @@ object LuaDiagnostics {
 
         else -> emptySet()
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Rules: handler-no-pull, handler-unused-input
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** One `network:handle("name", function(...) … end)` block found in the
+     *  script. [bodyStart] / [bodyEnd] bracket the function body (between the
+     *  `function(...)` closing paren and the matching `end`). Both rules read
+     *  the same span data so we compute it once per analyze pass. */
+    private data class HandlerSpan(
+        val name: String,
+        /** Range covering the whole `network:handle("...", function(...))`
+         *  signature (everything up to but not including the body), used to
+         *  anchor handler-shape diagnostics. Underlining the full header
+         *  reads more clearly than highlighting just the name string when the
+         *  hint is "this whole handler is missing something". */
+        val headerRange: TextRange,
+        /** Inclusive start of the body (first char after `function(...)`'s `)`). */
+        val bodyStart: Int,
+        /** Exclusive end of the body (position of the matching `end` keyword). */
+        val bodyEnd: Int,
+    )
+
+    private val HANDLER_OPEN: Regex =
+        Regex("""network:handle\s*\(\s*"([^"]+)"\s*,\s*function\s*\(([^)]*)\)""")
+
+    /** Find every `network:handle("name", function(...) … end)` block and the
+     *  body span of each. Body extents are computed by walking comment-stripped
+     *  text and balancing `function`/`end` keywords starting at depth=1, the
+     *  first `end` that brings depth back to 0 closes the handler. Nested
+     *  user-defined `function … end` blocks inside the body don't confuse the
+     *  walk because they push/pop together. */
+    private fun findHandlerSpans(text: String): List<HandlerSpan> {
+        // Strip comments first so a commented-out `network:handle(...)` doesn't
+        // produce a phantom span and a commented `end` doesn't close the body
+        // early. stripComments preserves offsets so the matched ranges remain
+        // valid against the original text.
+        val stripped = stripComments(text)
+        val out = mutableListOf<HandlerSpan>()
+        for (open in HANDLER_OPEN.findAll(stripped)) {
+            val name = open.groupValues[1]
+            // bodyStart is one past the `)` that closes the function signature.
+            val bodyStart = open.range.last + 1
+            val bodyEnd = findMatchingHandlerEnd(stripped, bodyStart) ?: continue
+            out += HandlerSpan(
+                name = name,
+                headerRange = TextRange(open.range.first, bodyStart),
+                bodyStart = bodyStart,
+                bodyEnd = bodyEnd,
+            )
+        }
+        return out
+    }
+
+    private val FUNCTION_OR_END_KW: Regex = Regex("""\b(function|end)\b""")
+
+    /** Walk forward from [from] balancing `function`/`end` keywords starting at
+     *  depth=1, return the offset of the `end` that returns depth to 0, or null
+     *  when the body never closes (file ends mid-handler, common while typing). */
+    private fun findMatchingHandlerEnd(text: String, from: Int): Int? {
+        var depth = 1
+        for (m in FUNCTION_OR_END_KW.findAll(text, startIndex = from)) {
+            if (m.value == "function") {
+                depth++
+            } else {
+                depth--
+                if (depth == 0) return m.range.first
+            }
+        }
+        return null
+    }
+
+    /** HINT when a handler body never calls `:pull(`. Without a `job:pull(...)`
+     *  the executor's async wait never resolves, the craft hangs until the
+     *  Processing-Set timeout fires. The check is a substring on the body of
+     *  the comment-stripped text, `pull` is a Job-only method so the literal
+     *  `:pull(` is unambiguous. */
+    private fun checkHandlersWithoutPull(
+        rawText: String,
+        spans: List<HandlerSpan>,
+    ): List<Diagnostic> {
+        if (spans.isEmpty()) return emptyList()
+        val stripped = stripComments(rawText)
+        val out = mutableListOf<Diagnostic>()
+        for (span in spans) {
+            val body = stripped.substring(span.bodyStart, span.bodyEnd)
+            if (body.contains(":pull(")) continue
+            out += Diagnostic(
+                severity = severityFor("handler-no-pull"),
+                range = span.headerRange,
+                code = "handler-no-pull",
+                message = "Handler '${span.name}' never calls job:pull. The crafting CPU " +
+                        "will wait for outputs that never arrive and time out the craft.",
+            )
+        }
+        return out
+    }
+
+    /** HINT when a handler body never references one of its declared input
+     *  fields. Looks at each handler's matching [ProcessingApiInfo] (by name),
+     *  derives the per-slot identifier names via [HandlerParamNames.build],
+     *  and emits one hint per input that the body doesn't mention. The literal
+     *  `\bname\b` substring is what we check, dynamic lookups via `items[name]`
+     *  or `for k,v in items` will trigger false positives, accepting that as a
+     *  hint-tier risk. */
+    private fun checkHandlersWithUnusedInputs(
+        rawText: String,
+        spans: List<HandlerSpan>,
+        apis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>,
+    ): List<Diagnostic> {
+        if (spans.isEmpty() || apis.isEmpty()) return emptyList()
+        val stripped = stripComments(rawText)
+        val byName = apis.associateBy { it.name }
+        val out = mutableListOf<Diagnostic>()
+        for (span in spans) {
+            val api = byName[span.name] ?: continue
+            if (api.inputs.isEmpty()) continue
+            val expected =
+                damien.nodeworks.card.HandlerParamNames.build(api.inputs)
+            if (expected.isEmpty()) continue
+            val body = stripped.substring(span.bodyStart, span.bodyEnd)
+            // Bail when the body references `items` opaquely (table / loop /
+            // index access). Once any of those shapes is in scope we can't tell
+            // statically whether each slot is used.
+            if (HANDLER_INDIRECT_ITEMS_USE.containsMatchIn(body)) continue
+            val missing = expected.filterNot { name ->
+                Regex("""\b${Regex.escape(name)}\b""").containsMatchIn(body)
+            }
+            if (missing.isEmpty()) continue
+            out += Diagnostic(
+                severity = severityFor("handler-unused-input"),
+                range = span.headerRange,
+                code = "handler-unused-input",
+                message = "Handler '${span.name}' never references " +
+                        "${if (missing.size == 1) "input" else "inputs"} " +
+                        missing.joinToString(", ") { "'$it'" } +
+                        ". Pass them through items.<name> in the body or the craft " +
+                        "will leave them stuck in the CPU buffer.",
+            )
+        }
+        return out
+    }
+
+    /** Patterns that imply the handler accesses `items` opaquely, in which
+     *  case the literal-name substring check would produce false positives.
+     *  Bracket access, iteration, and full-reassignment all suppress the
+     *  unused-input hint. The reassignment branch uses a negative lookahead
+     *  so `local x = items.copperIngot` (a field access, not an alias) does
+     *  *not* trigger suppression. */
+    private val HANDLER_INDIRECT_ITEMS_USE: Regex = Regex(
+        """\bitems\s*\[""" +
+            """|\bfor\s+\w+(?:\s*,\s*\w+)?\s+in\s+items\b""" +
+            """|\blocal\s+\w+\s*=\s*items(?![.\[\w])"""
+    )
 }

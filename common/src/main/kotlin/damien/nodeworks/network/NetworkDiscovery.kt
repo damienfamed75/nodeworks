@@ -265,23 +265,54 @@ data class NetworkSnapshot(
     /** The network's UUID, or null if no controller. */
     val networkId: UUID? get() = controller?.networkId
 
+    /** All cards on this network, flattened across every node and every side.
+     *  Lazy because the snapshot is shared across many lookups (especially
+     *  inside [damien.nodeworks.script.cpu.CpuOpExecutor]'s per-tick cache),
+     *  doing the [flatMap] once and reusing the list keeps craft hot loops O(N)
+     *  in cards rather than O(N × ops). */
+    private val flattenedCards: List<CardSnapshot> by lazy {
+        nodes.flatMap { node -> node.sides.values.flatten() }
+    }
+
+    /** Alias → card lookup, populated on first read. The literal [CardSnapshot.alias]
+     *  wins, [effectiveAlias] entries only fill in keys the literal didn't claim,
+     *  which mirrors the documented "first match" / "auto-suffixed fallback" rule
+     *  the original linear scans implemented. */
+    private val cardByAlias: Map<String, CardSnapshot> by lazy {
+        val all = flattenedCards
+        val map = HashMap<String, CardSnapshot>(all.size * 2)
+        for (c in all) c.alias?.let { map.putIfAbsent(it, c) }
+        for (c in all) map.putIfAbsent(c.effectiveAlias, c)
+        map
+    }
+
+    private val breakerByAlias: Map<String, BreakerSnapshot> by lazy {
+        val map = HashMap<String, BreakerSnapshot>(breakers.size * 2)
+        for (b in breakers) b.name?.let { map.putIfAbsent(it, b) }
+        for (b in breakers) map.putIfAbsent(b.effectiveAlias, b)
+        map
+    }
+
+    private val placerByAlias: Map<String, PlacerSnapshot> by lazy {
+        val map = HashMap<String, PlacerSnapshot>(placers.size * 2)
+        for (p in placers) p.name?.let { map.putIfAbsent(it, p) }
+        for (p in placers) map.putIfAbsent(p.effectiveAlias, p)
+        map
+    }
+
     /** Find a variable by name. */
     fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
 
-    /** Find a Breaker by alias. Literal-name match wins first (so a player who
-     *  named two breakers `miner` gets the first via `network:get("miner")`,
-     *  matching the documented "first match" rule), then falls through to the
+    /** Find a Breaker by alias. Literal name wins (so a player who named two
+     *  breakers `miner` gets the first via `network:get("miner")`, matching
+     *  the documented "first match" rule), then falls through to the
      *  auto-suffixed [effectiveAlias] lookup so `network:get("miner_2")`
      *  reaches the second one. */
-    fun findBreaker(alias: String): BreakerSnapshot? =
-        breakers.firstOrNull { it.name == alias }
-            ?: breakers.firstOrNull { it.effectiveAlias == alias }
+    fun findBreaker(alias: String): BreakerSnapshot? = breakerByAlias[alias]
 
     /** Find a Placer by alias. Same literal-first / auto-suffixed-fallback rule
      *  as [findBreaker]. */
-    fun findPlacer(alias: String): PlacerSnapshot? =
-        placers.firstOrNull { it.name == alias }
-            ?: placers.firstOrNull { it.effectiveAlias == alias }
+    fun findPlacer(alias: String): PlacerSnapshot? = placerByAlias[alias]
 
     /** Find an available (not busy) Crafting CPU with enough buffer capacity. */
     fun findAvailableCpu(requiredCapacity: Long = 0L): CpuSnapshot? =
@@ -292,16 +323,10 @@ data class NetworkSnapshot(
      *  player named `cobblestone` even when several share the name), then the
      *  auto-suffixed [effectiveAlias] resolves the disambiguated forms
      *  (`cobblestone_2`). */
-    fun findByAlias(alias: String): CardSnapshot? {
-        val all = nodes.flatMap { node -> node.sides.values.flatten() }
-        return all.firstOrNull { it.alias == alias }
-            ?: all.firstOrNull { it.effectiveAlias == alias }
-    }
+    fun findByAlias(alias: String): CardSnapshot? = cardByAlias[alias]
 
     /** All cards across the entire network. */
-    fun allCards(): List<CardSnapshot> {
-        return nodes.flatMap { node -> node.sides.values.flatten() }
-    }
+    fun allCards(): List<CardSnapshot> = flattenedCards
 
     /** Find an Instruction Set by alias or output item ID across all crafters. */
     fun findInstructionSet(identifier: String): InstructionSetMatch? {

@@ -38,13 +38,13 @@ val HandleList: LuaType.Named = LuaTypes.type(
 val CraftBuilder: LuaType.Named = LuaTypes.type(
     name = "CraftBuilder",
     description = "Returned by `network:craft`. Configures how the craft result is delivered once it completes.",
-    guidebookRef = "nodeworks:lua-api/network.md#craft",
+    guidebookRef = "nodeworks:lua-api/craft-builder.md",
 )
 
 val InputItems: LuaType.Named = LuaTypes.type(
     name = "InputItems",
     description = "Per-recipe bag of `ItemsHandle` fields, the second argument to a `network:handle` callback.",
-    guidebookRef = "nodeworks:lua-api/network.md#handle",
+    guidebookRef = "nodeworks:lua-api/input-items.md",
 )
 
 val NetworkApi: ApiSurface = api(Network) {
@@ -136,7 +136,8 @@ val NetworkApi: ApiSurface = api(Network) {
         param("itemId", Craftable, description = "Item the network can plan a recipe for.")
         param("count", Number.optional(), description = "Optional count, defaults to 1.")
         returns(CraftBuilder)
-        description = "Queues a craft for the given item. Returns a CraftBuilder. The default behavior is to store the result into Network Storage, chain `:connect(fn)` to override."
+        description =
+            "Queues a craft for the given item. Returns a CraftBuilder. The default behavior is to store the result into Network Storage, chain `:connect(fn)` to override."
         guidebookRef = "nodeworks:lua-api/network.md#craft"
     }
 
@@ -244,7 +245,8 @@ val CraftBuilderApi: ApiSurface = api(CraftBuilder) {
             returns(Void)
         }
         returns(Void)
-        description = "Callback fired when the craft resolves. Receives the output ItemsHandle on success, or `nil` if the craft failed (plan failed, async timed out)."
+        description =
+            "Callback fired when the craft resolves. Receives the output ItemsHandle on success, or `nil` if the craft failed (plan failed, async timed out)."
         guidebookRef = "nodeworks:lua-api/craft-builder.md#connect"
     }
 }
