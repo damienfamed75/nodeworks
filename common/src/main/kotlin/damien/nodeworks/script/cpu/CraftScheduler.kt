@@ -7,17 +7,17 @@ import net.minecraft.nbt.ListTag
  * Per-CPU craft driver. Holds at most one active [CraftPlan] plus a backlog of
  * submitted-but-not-yet-running plans, and executes ready ops every server tick.
  *
- * **Threading model (Phase 3, Option A — shared ready queue):**
+ * **Threading model (Phase 3, Option A, shared ready queue):**
  * The scheduler does NOT assign ops to named threads. Instead, [threadCount]
  * acts as a parallelism budget: per tick we start up to [threadCount] ready ops,
  * minus any currently-[inProgress] async ops (which still hold a slot). Any
- * available execution slot can pick up any ready op — co-processors don't
+ * available execution slot can pick up any ready op, co-processors don't
  * "own" branches. This is strictly more parallelism-friendly than per-thread
  * plan assignment, and keeps the state machine centralized here.
  *
  * [threadCount] is updated externally whenever the CPU's multiblock is
  * recalculated ([damien.nodeworks.block.entity.CraftingCoreBlockEntity.recalculateCapacity]).
- * Growing is immediate; shrinking takes effect on the next tick — in-flight async
+ * Growing is immediate, shrinking takes effect on the next tick, in-flight async
  * ops always finish, so removing a Co-Processor mid-craft never strands state.
  *
  * All scheduler state lives on the server thread (driven by [BlockEntityTicker]).
@@ -31,7 +31,7 @@ class CraftScheduler(
     sealed class OpResult {
         /** Op fully finished. Scheduler marks it completed and chains downstream. */
         object Completed : OpResult()
-        /** Async op still running. Scheduler leaves it pending; re-invokes next tick. */
+        /** Async op still running. Scheduler leaves it pending, re-invokes next tick. */
         object InProgress : OpResult()
         /** Op failed. Scheduler aborts the plan with [reason]. */
         data class Failed(val reason: String) : OpResult()
@@ -84,7 +84,7 @@ class CraftScheduler(
         }
     }
 
-    /** Cancel everything — active plan and backlog. Caller releases reserved items via onPlanFailed. */
+    /** Cancel everything, active plan and backlog. Caller releases reserved items via onPlanFailed. */
     fun cancelAll(reason: String) {
         val active = plan
         if (active != null && state == State.RUNNING) {
@@ -115,7 +115,7 @@ class CraftScheduler(
             // available (cost-0 chaining) AND there's slot budget AND we haven't hit
             // the per-tick cap (which exists to protect TPS against pathological crafts).
             var progress = true
-            // threadCount caps parallelism PER ROUND — up to N ops can start together.
+            // threadCount caps parallelism PER ROUND, up to N ops can start together.
             // Chained cost-0 downstream ops become ready mid-round and picked up next round,
             // so a long linear chain still finishes in one tick at high throttle.
             while (progress && opsThisTick < CpuRules.OPS_PER_TICK_CAP && state == State.RUNNING) {
@@ -124,7 +124,7 @@ class CraftScheduler(
                 // Prefer distinct processing APIs when multiple Process ops are ready, so
                 // a co-processor running alongside the core doesn't double up on the same
                 // machine. E.g. if (iron, iron, copper) are all ready with threadCount=2,
-                // pick (iron, copper) not (iron, iron) — the two same-type handlers would
+                // pick (iron, copper) not (iron, iron), the two same-type handlers would
                 // just collide on the single furnace anyway and waste retry budget.
                 val ready = pickDispatchableOps(readyOps(currentTick), threadCount)
                 if (ready.isEmpty()) break
@@ -142,7 +142,7 @@ class CraftScheduler(
                         }
                         is OpResult.InProgress -> {
                             op.inProgress = true
-                            // Op stays in readyOps for future ticks; slot was spent here.
+                            // Op stays in readyOps for future ticks, slot was spent here.
                         }
                         is OpResult.Failed -> {
                             val p = plan
@@ -158,7 +158,7 @@ class CraftScheduler(
         }
 
         // Finalize: return to IDLE and pull in backlog. onPlanFailed already fired in-line
-        // during a Failed op result; onPlanCompleted fires here for the success path.
+        // during a Failed op result, onPlanCompleted fires here for the success path.
         when (state) {
             State.DONE -> {
                 val finished = plan
@@ -207,7 +207,7 @@ class CraftScheduler(
     }
 
     /** Ops whose dependencies are met and whose readyAt ≤ currentTick.
-     *  Already-in-progress async ops are INCLUDED — they're re-dispatched each tick so
+     *  Already-in-progress async ops are INCLUDED, they're re-dispatched each tick so
      *  their `execute` call can poll the async state. Each dispatch counts as one op
      *  against the parallelism budget (threadCount). */
     private fun readyOps(currentTick: Long): List<Operation> {
@@ -226,10 +226,10 @@ class CraftScheduler(
     /**
      * Pick ops to dispatch this round.
      *
-     * Sync ops (Pull / Execute / Deliver) always go — they're cheap buffer/storage work and
-     * there's no reason to rate-limit them; doing so causes the "grabs copper first, then
+     * Sync ops (Pull / Execute / Deliver) always go, they're cheap buffer/storage work and
+     * there's no reason to rate-limit them, doing so causes the "grabs copper first, then
      * waits for copper to cook before grabbing iron" phenomenon players see. Async ops
-     * (Process — holds a slot across ticks while a machine cooks) consume the [limit] budget
+     * (Process, holds a slot across ticks while a machine cooks) consume the [limit] budget
      * and prefer distinct processing APIs so a co-processor doesn't pile up on the same
      * machine as the core.
      */
@@ -304,9 +304,9 @@ class CraftScheduler(
     }
 
     fun loadFromNBT(tag: CompoundTag) {
-        // 26.1: getList returns Optional<ListTag>; getIntArray returns Optional<int[]>;
+        // 26.1: getList returns Optional<ListTag>, getIntArray returns Optional<int[]>,
         //  getString/getInt/etc. return Optional<T>. The *Or variants cover defaults.
-        //  Backward-compat: old format wrote per-thread state under "threads" — if that's
+        //  Backward-compat: old format wrote per-thread state under "threads", if that's
         //  still on disk, take the first thread's plan+completed as our scheduler state.
         val legacyThreads = tag.getList("threads").orElse(null)
         if (legacyThreads != null && legacyThreads.size > 0) {

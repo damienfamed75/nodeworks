@@ -7,6 +7,7 @@ import damien.nodeworks.compat.drawString
 import damien.nodeworks.compat.keyCode
 import damien.nodeworks.compat.mouseX
 import damien.nodeworks.compat.mouseY
+import damien.nodeworks.screen.widget.ChannelPickerWidget
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -14,11 +15,12 @@ import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
+import net.minecraft.world.item.DyeColor
 
 /**
- * Variable block configuration screen — rebuilt on the shared 9-slice toolkit
+ * Variable block configuration screen, rebuilt on the shared 9-slice toolkit
  * (WINDOW_FRAME + TOP_BAR + BUTTON + INPUT_FIELD + TOGGLE_ACTIVE/INACTIVE). Three
- * fixed rows: Name / Type / Value. Not scrollable — everything fits at once.
+ * fixed rows: Name / Type / Value. Not scrollable, everything fits at once.
  */
 class VariableScreen(
     menu: VariableMenu,
@@ -28,7 +30,10 @@ class VariableScreen(
 
     companion object {
         private const val IMAGE_W = 220
-        private const val IMAGE_H = 102
+        // IMAGE_H grew by one ROW_H to host the channel picker as a fourth row
+        // alongside Name / Type / Value. The whole frame stays vertically centered
+        // because [init] recomputes leftPos/topPos against width/height.
+        private const val IMAGE_H = 124
 
         private const val TOP_BAR_H = 20
         private const val PAD = 6           // horizontal/vertical inner padding
@@ -54,13 +59,17 @@ class VariableScreen(
 
     private lateinit var nameField: EditBox
     private lateinit var valueField: EditBox
+    private var picker: ChannelPickerWidget? = null
+    /** Tracks last seen server channel so external mutations push down without
+     *  clobbering an in-flight pick (mirrors lastSyncedPriority in StorageCardScreen). */
+    private var lastSyncedChannel: Int = -1
 
     // Which Set button flashed a checkmark most recently, and when.
     private var checkmarkId: String? = null
     private var checkmarkTime: Long = 0
 
     init {
-        // We draw our own title inside the 9-slice TOP_BAR; hide the default labels.
+        // We draw our own title inside the 9-slice TOP_BAR, hide the default labels.
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -78,7 +87,7 @@ class VariableScreen(
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
 
-        // Plain bordered MC EditBox — matches the other Nodeworks input fields
+        // Plain bordered MC EditBox, matches the other Nodeworks input fields
         // (Processing Set timeout, Storage Card priority, Card Programmer counter).
         // 26.1: text color alpha byte must be non-zero or GuiGraphicsExtractor.text drops the draw.
         nameField = EditBox(font, controlX, rowY(0) + 3, FIELD_W, FIELD_H - 4, Component.literal("Name"))
@@ -94,6 +103,17 @@ class VariableScreen(
         valueField.setTextColor(0xFFFFFFFF.toInt())
         valueField.value = menu.initialValue
         addRenderableWidget(valueField)
+
+        // Row 4, Channel picker. Same column origin (controlX) as the fields above
+        // so labels and controls line up. Sends the dye ordinal via the existing
+        // VariableSettingsPayload pipeline (key="channel"), reusing the server
+        // handler that already mutates entity.channel for us.
+        val initialChannel = runCatching { DyeColor.byId(menu.channelId) }.getOrDefault(DyeColor.WHITE)
+        lastSyncedChannel = initialChannel.id
+        picker = ChannelPickerWidget(controlX, rowY(3) + 3, initialChannel) { color ->
+            sendUpdate("channel", color.id, "")
+        }
+        addRenderableWidget(picker!!)
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -103,19 +123,19 @@ class VariableScreen(
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
         NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor())
 
-        // Row 1 — Name field + Set
+        // Row 1, Name field + Set
         drawLabel(graphics, "Name", 0)
         val nameFieldY = rowY(0) + 1
         drawSetButton(graphics, controlX + FIELD_W + 4, nameFieldY, mouseX, mouseY, "name")
 
-        // Row 2 — Type selector (Number / String / Bool)
+        // Row 2, Type selector (Number / String / Bool)
         drawLabel(graphics, "Type", 1)
         val typeY = rowY(1) + 1
         for (i in 0 until 3) {
             drawTypeButton(graphics, controlX + i * (TYPE_BTN_W + TYPE_BTN_GAP), typeY, i, mouseX, mouseY)
         }
 
-        // Row 3 — Value field + Set, or Bool toggle
+        // Row 3, Value field + Set, or Bool toggle
         drawLabel(graphics, "Value", 2)
         val valueY = rowY(2) + 1
         if (menu.variableType == VariableType.BOOL.ordinal) {
@@ -125,6 +145,23 @@ class VariableScreen(
             valueField.visible = true
             drawSetButton(graphics, controlX + FIELD_W + 4, valueY, mouseX, mouseY, "value")
         }
+
+        // Row 4, Channel label (the picker widget renders itself).
+        drawLabel(graphics, "Channel", 3)
+
+        // Sync widget to server value when the popup isn't being interacted with so
+        // an external mutation doesn't snap the swatch back mid-pick.
+        val serverChannel = menu.channelId
+        if (serverChannel != lastSyncedChannel && picker?.expanded != true) {
+            picker?.setColor(runCatching { DyeColor.byId(serverChannel) }.getOrDefault(DyeColor.WHITE))
+            lastSyncedChannel = serverChannel
+        }
+    }
+
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
+        // Render popup overlay above all other widgets so it isn't clipped.
+        picker?.renderOverlay(graphics, mouseX, mouseY)
     }
 
     /** Network color for the title-bar trim. Client-side BFS through connected nodes,
@@ -173,7 +210,7 @@ class VariableScreen(
 
     private fun drawBoolToggle(graphics: GuiGraphicsExtractor, bx: Int, by: Int, mouseX: Int, mouseY: Int) {
         // TOGGLE_ACTIVE / TOGGLE_INACTIVE already encode the on/off state visually
-        // (slider position + color) — no extra TRUE/FALSE label needed.
+        // (slider position + color), no extra TRUE/FALSE label needed.
         val slice = if (menu.boolValue) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
         slice.draw(graphics, bx, by, TOGGLE_W, TOGGLE_H)
     }
@@ -189,10 +226,15 @@ class VariableScreen(
     }
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        // Channel popup gets first crack at the click while open, otherwise its grid
+        // cells fall through to the buttons sitting below in the layout.
+        if (picker?.expanded == true) {
+            if (picker!!.handleOverlayClick(event.mouseX, event.mouseY)) return true
+        }
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
 
-        // Row 1: Name Set — drops focus on the name field after committing.
+        // Row 1: Name Set, drops focus on the name field after committing.
         val nameSetX = controlX + FIELD_W + 4
         val nameSetY = rowY(0) + 1
         if (mx in nameSetX until nameSetX + SET_BTN_W && my in nameSetY until nameSetY + SET_BTN_H) {
@@ -238,10 +280,10 @@ class VariableScreen(
 
         // Let MC's widget chain handle EditBox focus (super finds the widget whose bounds
         // contain the click via ContainerEventHandler.getChildAt). If super handles it,
-        // it already changed focus — we're done.
+        // it already changed focus, we're done.
         if (super.mouseClicked(event, doubleClick)) return true
 
-        // Click landed in empty space (no button, no field) — drop focus on whichever
+        // Click landed in empty space (no button, no field), drop focus on whichever
         // field was focused so the caret disappears, matching VSCode/IntelliJ behavior.
         clearFieldFocus()
         return false

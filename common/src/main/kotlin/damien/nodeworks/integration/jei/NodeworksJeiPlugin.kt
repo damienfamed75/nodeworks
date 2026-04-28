@@ -4,7 +4,6 @@ import damien.nodeworks.network.SetInstructionGridPayload
 import damien.nodeworks.network.SetProcessingApiDataPayload
 import damien.nodeworks.network.SetProcessingApiSlotPayload
 import damien.nodeworks.platform.PlatformServices
-import damien.nodeworks.registry.ModItems
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.screen.ProcessingSetScreen
@@ -18,6 +17,7 @@ import mezz.jei.api.ingredients.ITypedIngredient
 import mezz.jei.api.recipe.RecipeIngredientRole
 import mezz.jei.api.recipe.transfer.IRecipeTransferError
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandler
+import mezz.jei.api.ingredients.subtypes.ISubtypeInterpreter
 import mezz.jei.api.recipe.transfer.IUniversalRecipeTransferHandler
 import mezz.jei.api.recipe.types.IRecipeType
 import mezz.jei.api.registration.IGuiHandlerRegistration
@@ -25,6 +25,7 @@ import mezz.jei.api.registration.IRecipeCatalystRegistration
 import mezz.jei.api.registration.IRecipeCategoryRegistration
 import mezz.jei.api.registration.IRecipeRegistration
 import mezz.jei.api.registration.IRecipeTransferRegistration
+import mezz.jei.api.registration.ISubtypeRegistration
 import net.minecraft.client.renderer.Rect2i
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
@@ -56,6 +57,28 @@ class NodeworksJeiPlugin : IModPlugin {
     override fun getPluginUid(): Identifier =
         Identifier.fromNamespaceAndPath("nodeworks", "jei_plugin")
 
+    override fun registerItemSubtypes(registration: ISubtypeRegistration) {
+        // Cards / sets write CUSTOM_DATA when their settings GUI closes (channel
+        // colour, storage priority, recipe contents, etc.). JEI 29.5 treats any
+        // components-modified ItemStack as a distinct "subtype" by default,
+        // which makes the modified stack an unknown ingredient and drops the
+        // JEI mod-name tooltip line. Returning null from the interpreter tells
+        // JEI all variants of these items collapse to the same base ingredient,
+        // which keeps the "Nodeworks" mod tag on the tooltip after a GUI cycle.
+        val collapseSubtypes = ISubtypeInterpreter<ItemStack> { _, _ -> null }
+        val items = listOf(
+            damien.nodeworks.registry.ModItems.IO_CARD,
+            damien.nodeworks.registry.ModItems.STORAGE_CARD,
+            damien.nodeworks.registry.ModItems.REDSTONE_CARD,
+            damien.nodeworks.registry.ModItems.OBSERVER_CARD,
+            damien.nodeworks.registry.ModItems.INSTRUCTION_SET,
+            damien.nodeworks.registry.ModItems.PROCESSING_SET,
+        )
+        for (item in items) {
+            registration.registerSubtypeInterpreter(item, collapseSubtypes)
+        }
+    }
+
     override fun registerRecipeTransferHandlers(registration: IRecipeTransferRegistration) {
         registration.addRecipeTransferHandler(InstructionSetTransferHandler(), RecipeTypes.CRAFTING)
         // Universal handler so the Processing Set's [+] works for any recipe category
@@ -79,16 +102,20 @@ class NodeworksJeiPlugin : IModPlugin {
     }
 
     override fun registerRecipes(registration: IRecipeRegistration) {
-        registration.addRecipes(
-            MilkySoulBallRecipeCategory.RECIPE_TYPE,
-            listOf(
-                MilkySoulBallRecipe(
-                    ItemStack(Items.MILK_BUCKET),
-                    ItemStack(Items.SOUL_SAND),
-                    ItemStack(ModItems.MILKY_SOUL_BALL, 4)
-                )
-            )
-        )
+        // Read the Soul Sand Infusion recipe set from our client-side cache.
+        // Vanilla 26.1 doesn't sync the full recipe list to clients, see
+        // `SoulSandInfusionClientCache` and the `RecipesReceivedEvent` hook
+        // in `NeoForgeClientSetup` for how the cache stays current. The cache
+        // is populated BEFORE JEI's reload callback runs (HIGHEST priority on
+        // our listener), so by the time this method executes it has whatever
+        // recipes the server just synced, including any data-pack additions
+        // without code changes.
+        val recipes = damien.nodeworks.recipe.SoulSandInfusionClientCache.recipes()
+            .map { holder ->
+                val recipe = holder.value()
+                MilkySoulBallRecipe(recipe.heldIngredient, recipe.result.create())
+            }
+        registration.addRecipes(MilkySoulBallRecipeCategory.RECIPE_TYPE, recipes)
     }
 
     override fun registerRecipeCatalysts(registration: IRecipeCatalystRegistration) {
@@ -209,7 +236,7 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(container.containerId, index, itemId)
                 )
-                // Always reset the count — stale counts from previous recipes otherwise
+                // Always reset the count, stale counts from previous recipes otherwise
                 //  linger when the item changes.
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiDataPayload(container.containerId, "input", index, count)
@@ -239,7 +266,7 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
      * empty, not an ItemStack, or carries non-default data components (potion
      * contents, enchantments, stew effects). Skipping those avoids placing
      * misleading "Uncraftable Potion" / blank-enchanted placeholders into the grid
-     * — the Processing Set only keeps `itemId:count`, so anything component-
+     *, the Processing Set only keeps `itemId:count`, so anything component-
      * dependent can't round-trip.
      *
      * Count is clamped to at least 1 to preserve the set's invariant.

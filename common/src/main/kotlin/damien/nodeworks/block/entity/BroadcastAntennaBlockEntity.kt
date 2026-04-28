@@ -26,16 +26,16 @@ import damien.nodeworks.compat.getStringOrNull
 import java.util.UUID
 
 /**
- * Broadcast Antenna — broadcasts either Processing Sets from an adjacent
+ * Broadcast Antenna, broadcasts either Processing Sets from an adjacent
  * [ProcessingStorageBlockEntity] or the identity of an adjacent
  * [NetworkControllerBlockEntity], depending on what's next to it. The antenna itself is
- * NOT Connectable — it doesn't ride the laser network; it sits next to a network member
+ * NOT Connectable, it doesn't ride the laser network, it sits next to a network member
  * and exposes a handle via the Link Crystal slot.
  *
  * Two broadcast kinds are distinguished via [BroadcastSourceKind]:
- *   * [BroadcastSourceKind.PROCESSING_STORAGE] — exposes the adjacent storage's
+ *   * [BroadcastSourceKind.PROCESSING_STORAGE], exposes the adjacent storage's
  *     Processing Sets. Consumed by Receiver Antennas (original behaviour).
- *   * [BroadcastSourceKind.NETWORK_CONTROLLER] — exposes the adjacent controller's
+ *   * [BroadcastSourceKind.NETWORK_CONTROLLER], exposes the adjacent controller's
  *     network identity. Consumed by the Handheld Inventory Terminal to open a
  *     remote view of that network.
  *
@@ -81,14 +81,14 @@ class BroadcastAntennaBlockEntity(
      *
      * Checked in priority order: [NetworkControllerBlockEntity] first (broader scope),
      * then [ProcessingStorageBlockEntity] (legacy / processing-focused). Unloaded
-     * neighbours are skipped — we can't inspect their BE type, and returning a stale
+     * neighbours are skipped, we can't inspect their BE type, and returning a stale
      * answer here would cause crystals to encode with the wrong kind.
      */
     fun detectSource(): Pair<BroadcastSourceKind, BlockPos>? {
         val lvl = level ?: return null
         // First pass: Controller wins because it's the more general source. A player who
         // deliberately wants the processing-set broadcast can still get it by siting the
-        // antenna away from the Controller — the Controller grabs priority only when both
+        // antenna away from the Controller, the Controller grabs priority only when both
         // blocks happen to be adjacent to the same antenna.
         for (dir in Direction.entries) {
             val neighbor = worldPosition.relative(dir)

@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory
  *
  * Post-Phase-2: this class now PLANS a craft and submits it to a CPU's [CraftScheduler].
  * The scheduler drives the whole craft (pulling, processing, executing, delivering) via
- * [damien.nodeworks.script.cpu.CpuOpExecutor]. There is no recursion — [CraftPlanner]
+ * [damien.nodeworks.script.cpu.CpuOpExecutor]. There is no recursion, [CraftPlanner]
  * walks the [CraftTreeBuilder] result iteratively.
  *
  * Callers still use the `CraftResult + currentPendingJob` protocol:
@@ -49,15 +49,22 @@ object CraftingHelper {
     )
 
     /**
-     * Kept for backward compatibility. Under the scheduler model the executor already
-     * flushes the buffer and releases the CPU on plan completion, so this is now
-     * typically a no-op for scheduler-submitted crafts.
+     * Flush whatever's in the CPU buffer to network storage, dropping any overflow
+     * in-world at the CPU's position so items aren't silently destroyed when storage
+     * is full. Used both as the auto-store path for `network:craft` (with the new
+     * [craft]-with-`omitDeliver` flow) and as a defensive cleanup for legacy callers
+     * whose plans already ran a Deliver op (those find an empty buffer and skip).
+     *
+     * Drops surface through the CPU's own [CraftingCoreBlockEntity.lastFailureReason]
+     * so the CPU GUI shows the red error banner, the same channel `Deliver` op
+     * failures already use. The submitter (if known) gets a chat notification too,
+     * matching the standard plan-failure flow.
      */
-    fun releaseCraftResult(result: CraftResult) {
+    fun releaseCraftResult(result: CraftResult, submitterUuid: java.util.UUID? = null) {
         val cpu = result.cpu ?: return
         val level = result.level ?: return
         val snapshot = result.snapshot ?: return
-        // If something's still in the buffer (shouldn't be, but defensive), flush it.
+        val droppedTotals = mutableMapOf<String, Long>()
         if (cpu.bufferUsed > 0L) {
             val leftovers = cpu.clearBuffer()
             for ((itemId, count) in leftovers) {
@@ -68,12 +75,43 @@ object CraftingHelper {
                     val batchSize = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
                     val stack = ItemStack(item, batchSize)
                     val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, result.cache)
-                    remaining -= inserted.toLong()
-                    if (inserted == 0) {
-                        logger.warn("releaseCraftResult: storage refused {} x{} (dropped)", itemId, remaining)
-                        break
+                    if (inserted < batchSize) {
+                        // Storage refused (full or partially full), drop the shortfall
+                        // in-world at the CPU so items survive instead of being lost.
+                        val dropCount = batchSize - inserted
+                        val dropStack = ItemStack(item, dropCount)
+                        net.minecraft.world.Containers.dropItemStack(
+                            level,
+                            cpu.blockPos.x + 0.5,
+                            cpu.blockPos.y + 1.0,
+                            cpu.blockPos.z + 0.5,
+                            dropStack
+                        )
+                        droppedTotals.merge(itemId, dropCount.toLong(), Long::plus)
+                        logger.warn(
+                            "releaseCraftResult: storage refused {} x{}, dropped at CPU {}",
+                            itemId, dropCount, cpu.blockPos
+                        )
                     }
+                    remaining -= batchSize.toLong()
                 }
+            }
+        }
+        if (droppedTotals.isNotEmpty()) {
+            val summary = droppedTotals.entries.joinToString(", ") { (id, count) ->
+                "$count × ${id.substringAfter(':').replace('_', ' ')}"
+            }
+            cpu.lastFailureReason = "Network storage full, dropped $summary at the CPU"
+            // Mirror the chat-notify path used by Deliver-op failures (see
+            // [damien.nodeworks.script.cpu.CpuOpExecutor.onPlanFailed]) so the player
+            // who submitted the craft sees the error even if their CPU GUI is closed.
+            if (submitterUuid != null) {
+                val player = level.server.playerList.getPlayer(submitterUuid)
+                player?.sendSystemMessage(
+                    net.minecraft.network.chat.Component.literal(
+                        "[Crafting CPU] ${cpu.lastFailureReason}"
+                    ).withStyle(net.minecraft.ChatFormatting.RED)
+                )
             }
         }
         if (cpu.isCrafting) {
@@ -108,7 +146,7 @@ object CraftingHelper {
     }
 
     // =====================================================================
-    // Craft entry point — plan + submit to a CPU's scheduler
+    // Craft entry point, plan + submit to a CPU's scheduler
     // =====================================================================
 
     /**
@@ -133,7 +171,8 @@ object CraftingHelper {
         processingHandlers: Map<String, LuaFunction>? = null,
         callerScheduler: SchedulerImpl? = null,
         traceLog: ((String) -> Unit)? = null,
-        submitterUuid: java.util.UUID? = null
+        submitterUuid: java.util.UUID? = null,
+        omitDeliver: Boolean = false
     ): CraftResult? {
         lastFailReason = null
         currentPendingJob = null
@@ -143,10 +182,10 @@ object CraftingHelper {
             return null
         }
 
-        // 1. Build the craft tree (iterative via CraftTreeBuilder; not recursive here).
+        // 1. Build the craft tree (iterative via CraftTreeBuilder, not recursive here).
         val tree = CraftTreeBuilder.buildCraftTree(identifier, count, level, snapshot)
 
-        // 2. Select a CPU — explicit [cpuPos] for legacy resume paths; otherwise find
+        // 2. Select a CPU, explicit [cpuPos] for legacy resume paths, otherwise find
         //    any CPU on the network that can fit the craft (feasibility-aware).
         val cpu: CraftingCoreBlockEntity = if (cpuPos != null) {
             val entity = level.getBlockEntity(cpuPos) as? CraftingCoreBlockEntity
@@ -170,7 +209,7 @@ object CraftingHelper {
         }
 
         // 3. Plan the craft against the selected CPU.
-        val planResult = CraftPlanner.plan(tree, snapshot)
+        val planResult = CraftPlanner.plan(tree, snapshot, omitDeliver = omitDeliver)
         val plan = planResult.plan ?: run {
             lastFailReason = planResult.message ?: "Could not plan craft"
             return null
@@ -203,13 +242,13 @@ object CraftingHelper {
     }
 
     // =====================================================================
-    // CPU selection — feasibility-aware across the entire network
+    // CPU selection, feasibility-aware across the entire network
     // =====================================================================
 
     /**
      * Iterate every CPU on the network, return the highest-capacity CPU that is:
      *   - formed (has at least one Buffer block)
-     *   - has at least one idle scheduler thread (can accept a new craft *right now* —
+     *   - has at least one idle scheduler thread (can accept a new craft *right now*,
      *     checked against live state, not the snapshot's stale `isBusy` flag)
      *   - feasible for the given craft tree (passes [CpuFeasibility.check])
      *
@@ -243,7 +282,7 @@ object CraftingHelper {
                 continue
             }
 
-            // Live check against the scheduler — snapshot's isBusy may be stale for
+            // Live check against the scheduler, snapshot's isBusy may be stale for
             // crafts submitted between snapshot build and this check.
             if (cpu.scheduler.isIdle) return cpu
             feasibleButBusy = true

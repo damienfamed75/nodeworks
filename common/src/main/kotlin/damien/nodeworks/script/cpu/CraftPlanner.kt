@@ -4,7 +4,7 @@ import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode
 
 /**
- * Transforms a [CraftTreeNode] into a [CraftPlan] — an ordered list of [Operation]s with
+ * Transforms a [CraftTreeNode] into a [CraftPlan], an ordered list of [Operation]s with
  * explicit dependencies. Everything is iterative (no recursion) so deep craft trees
  * cannot blow the JVM stack.
  *
@@ -16,7 +16,7 @@ import damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode
  *   - root of the plan → [Operation.Deliver] (final flush to network storage / reserved slot)
  *
  * "missing" and "process_no_handler" nodes should have been rejected upstream by
- * [CpuFeasibility.check]; planning them now produces a failure result.
+ * [CpuFeasibility.check], planning them now produces a failure result.
  */
 object CraftPlanner {
 
@@ -26,9 +26,16 @@ object CraftPlanner {
      * Plan a craft tree.
      *
      * [snapshot] is needed to look up the 3×3 Instruction Set recipe pattern for
-     * craft_template nodes — the tree only carries the template name.
+     * craft_template nodes, the tree only carries the template name.
+     *
+     * When [omitDeliver] is true, the trailing [Operation.Deliver] is left out and
+     * the root output op becomes the plan's terminal op. The caller is then on the
+     * hook for routing the items still sitting in the CPU buffer (auto-store, hand
+     * off to a script callback, etc.). Used by `network:craft` so its `:connect(fn)`
+     * handler receives a live reference to items still in the buffer rather than
+     * items that were already pushed into network storage.
      */
-    fun plan(tree: CraftTreeNode, snapshot: NetworkSnapshot): PlanResult {
+    fun plan(tree: CraftTreeNode, snapshot: NetworkSnapshot, omitDeliver: Boolean = false): PlanResult {
         val ops = mutableListOf<Operation>()
         var nextId = 0
         fun newId(): Int = nextId++
@@ -76,7 +83,7 @@ object CraftPlanner {
                 "process_template" -> {
                     // One Process op per tree node. The executor iterates the handler N times
                     // internally (N = ceil(totalNeeded / api.outputs-per-batch)), so parallelism
-                    // comes from the tree having multiple distinct process_template nodes — not
+                    // comes from the tree having multiple distinct process_template nodes, not
                     // from splitting a single branch into competing ops. Same-item branches in
                     // different parts of the tree (e.g. two recipes each needing iron ingots)
                     // become two ops that co-processors can run concurrently.
@@ -97,7 +104,7 @@ object CraftPlanner {
                 "craft_template" -> {
                     val inputDeps = node.children.mapNotNull { outputOpOf[IdentityKey(it)] }
                     // Resolve the recipe pattern by looking up the Instruction Set that
-                    // produces this item. Tree only carries the template name; here we
+                    // produces this item. Tree only carries the template name, here we
                     // fetch the actual 9-slot pattern so the Execute op is self-contained.
                     val recipe = resolveRecipePattern(node.itemId, snapshot)
                         ?: return PlanResult(
@@ -119,7 +126,7 @@ object CraftPlanner {
                     outputOpOf[nodeKey] = executeId
                 }
                 else -> {
-                    // Unknown source — skip silently; feasibility check should have flagged.
+                    // Unknown source, skip silently, feasibility check should have flagged.
                 }
             }
         }
@@ -127,24 +134,34 @@ object CraftPlanner {
         val rootOpId = outputOpOf[IdentityKey(tree)]
             ?: return PlanResult(null, true, "Planner produced no root op.")
 
-        val deliverId = newId()
-        val deliverOp = Operation.Deliver(
-            id = deliverId,
-            dependsOn = listOf(rootOpId),
-            itemId = tree.itemId,
-            amount = tree.count.toLong(),
-            toReservedSlot = true
-        )
-        // Deliver finishing means the root tree node is fully complete.
-        deliverOp.outputNodeId = tree.nodeId
-        ops += deliverOp
+        // With [omitDeliver], the plan stops at the root output op. The CPU buffer
+        // holds the produced items at completion and the caller (e.g. network:craft)
+        // handles routing.
+        val terminalOpId: Int
+        if (omitDeliver) {
+            terminalOpId = rootOpId
+        } else {
+            val deliverId = newId()
+            val deliverOp = Operation.Deliver(
+                id = deliverId,
+                dependsOn = listOf(rootOpId),
+                itemId = tree.itemId,
+                amount = tree.count.toLong(),
+                toReservedSlot = true
+            )
+            // Deliver finishing means the root tree node is fully complete.
+            deliverOp.outputNodeId = tree.nodeId
+            ops += deliverOp
+            terminalOpId = deliverId
+        }
 
         return PlanResult(
             plan = CraftPlan(
                 rootItemId = tree.itemId,
                 rootCount = tree.count.toLong(),
                 ops = ops,
-                terminalOpIds = setOf(deliverId)
+                terminalOpIds = setOf(terminalOpId),
+                omitDeliver = omitDeliver,
             ),
             unresolvable = false,
             message = null

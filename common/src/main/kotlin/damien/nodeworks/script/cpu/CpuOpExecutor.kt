@@ -26,10 +26,10 @@ import org.slf4j.LoggerFactory
  *
  * Async state for in-progress [Operation.Process] ops is held in [processState] and
  * cleared on cancellation or plan completion. The scheduler re-invokes
- * [execute] each tick for in-progress ops — this class reports [OpResult.InProgress]
+ * [execute] each tick for in-progress ops, this class reports [OpResult.InProgress]
  * until the underlying pending job completes.
  *
- * Throttle is hardcoded to [DEFAULT_THROTTLE] for Phase 2 (produces op cost 0 — ops chain
+ * Throttle is hardcoded to [DEFAULT_THROTTLE] for Phase 2 (produces op cost 0, ops chain
  * within the same tick, preserving existing craft timing). Phase 4 replaces this with a
  * real computation from heat/cooling/substrate state.
  */
@@ -39,7 +39,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
 
     /** Per-op async state for Process ops currently waiting on their `job:pull` callbacks.
      *  [handler] and [luaArgs] are null/empty for resume-path entries that never invoke
-     *  the handler (items are already in the machine; we only poll). */
+     *  the handler (items are already in the machine, we only poll). */
     private data class ProcessState(
         val pending: CraftingHelper.PendingHandlerJob,
         val processingJob: damien.nodeworks.script.ProcessingJob,
@@ -68,7 +68,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val outputPerBatch: Long
     )
 
-    /** Cumulative handler retries per op — survives across [processState] entries being
+    /** Cumulative handler retries per op, survives across [processState] entries being
      *  added/removed each retry cycle so the cap is on TOTAL attempts for the op. */
     private val processRetries = mutableMapOf<Int, Int>()
 
@@ -85,7 +85,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             .findController(lvl, cpu.blockPos)?.handlerRetryLimit ?: 50
     }
 
-    /** Caller-supplied completion listeners. Not persisted — on world reload resumed
+    /** Caller-supplied completion listeners. Not persisted, on world reload resumed
      *  plans complete silently (the caller's session is gone anyway). */
     private val completionListeners = mutableMapOf<CraftPlan, (Boolean) -> Unit>()
 
@@ -105,7 +105,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val lvl = cpu.level as? ServerLevel
             ?: return CraftScheduler.OpResult.Failed("No server level")
 
-        // Rebuild snapshot each execute — cheap enough at our network scales, and always
+        // Rebuild snapshot each execute, cheap enough at our network scales, and always
         // reflects the latest storage state (other crafts may have moved items concurrently).
         val snapshot = NetworkDiscovery.discoverNetwork(lvl, cpu.blockPos)
 
@@ -123,7 +123,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     // =====================================================================
-    // Pull — network storage → buffer
+    // Pull, network storage → buffer
     // =====================================================================
 
     private fun executePull(
@@ -140,7 +140,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             )
             if (extracted > 0L) {
                 if (!cpu.addToBuffer(op.itemId, extracted)) {
-                    // Buffer refused — this shouldn't happen if feasibility passed,
+                    // Buffer refused, this shouldn't happen if feasibility passed,
                     // but if it does, put the extracted back and fail cleanly.
                     tryReturnToStorage(op.itemId, extracted, lvl, snapshot)
                     return CraftScheduler.OpResult.Failed(
@@ -160,7 +160,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     // =====================================================================
-    // Execute — vanilla-style 3x3 crafting inside the buffer
+    // Execute, vanilla-style 3x3 crafting inside the buffer
     // =====================================================================
 
     private fun executeExecute(
@@ -195,7 +195,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             ?: return CraftScheduler.OpResult.Failed("Could not resolve output item id")
 
         // Derive executions from desired output count and this recipe's per-batch output.
-        // Planner sets outputCount = requested total; we divide by expected.count (e.g. 9 for
+        // Planner sets outputCount = requested total, we divide by expected.count (e.g. 9 for
         // ingot→nuggets) so a craft of 9 nuggets via a 1→9 recipe runs the recipe once, not
         // nine times.
         val perBatch = expected.getCount().coerceAtLeast(1).toLong()
@@ -207,7 +207,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             for ((ing, needed) in ingredientCounts) {
                 val removed = cpu.removeFromBuffer(ing, needed.toLong())
                 if (removed < needed) {
-                    // Partial failure — put back what we already consumed this iteration, abort
+                    // Partial failure, put back what we already consumed this iteration, abort
                     cpu.addToBuffer(ing, removed)
                     return CraftScheduler.OpResult.Failed(
                         "Execute iteration underflow: $ing x$needed (had $removed)"
@@ -226,7 +226,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     // =====================================================================
-    // Deliver — buffer → network storage / reserved slot
+    // Deliver, buffer → network storage / reserved slot
     // =====================================================================
 
     private fun executeDeliver(
@@ -253,12 +253,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             val stack = ItemStack(item, batch)
             val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, null)
             if (inserted == 0) {
-                // Network storage refused — drop the batch on the ground so the finished
+                // Network storage refused, drop the batch on the ground so the finished
                 // items aren't destroyed, and track how many we had to drop. We still fail
                 // the op after the loop so the player gets a visible error (same flow as
                 // any other craft failure: onPlanFailed → cpu.lastFailureReason + chat).
                 // The CPU goes back to IDLE and can accept new crafts, so the failure is
-                // surfacing only — not locking the CPU.
+                // surfacing only, not locking the CPU.
                 logger.warn(
                     "Deliver: network storage refused {}, dropping {} in-world at {}",
                     op.itemId, batch, cpu.blockPos
@@ -276,14 +276,14 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         if (droppedCount > 0L) {
             val itemName = op.itemId.substringAfter(':').replace('_', ' ')
             return CraftScheduler.OpResult.Failed(
-                "Network storage full — dropped $droppedCount × $itemName on ground"
+                "Network storage full, dropped $droppedCount × $itemName on ground"
             )
         }
         return CraftScheduler.OpResult.Completed
     }
 
     // =====================================================================
-    // Process — invoke a processing-set Lua handler and await its pulls
+    // Process, invoke a processing-set Lua handler and await its pulls
     // =====================================================================
 
     private fun executeProcess(
@@ -302,7 +302,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     processBatchProgress.remove(op.id)
                     return CraftScheduler.OpResult.Failed("Processing handler failed: ${op.processingApiName}")
                 }
-                // One batch done. Advance progress; if more batches remain, start the next one.
+                // One batch done. Advance progress, if more batches remain, start the next one.
                 val progress = processBatchProgress[op.id]
                 if (progress != null) {
                     progress.batchesDone++
@@ -321,21 +321,21 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val outputItemId = op.outputs.firstOrNull()?.first
             ?: return CraftScheduler.OpResult.Failed("Process op has no outputs declared")
 
-        // RESUME PATH — checked FIRST and independently of handler resolution. On world
+        // RESUME PATH, checked FIRST and independently of handler resolution. On world
         // reload the terminal script may not have auto-started yet, so the handler isn't
         // registered. Resume doesn't need it: items are physically in machines, we just
         // poll the persisted target coords on the global ResumeScheduler (always ticking).
         cpu.opResumeInfo[op.id]?.let { return startResumePoll(op, it, lvl, outputItemId) }
 
-        // FRESH PATH — needs the handler resolved.
+        // FRESH PATH, needs the handler resolved.
         val apiMatch = snapshot.findProcessingApi(outputItemId)
             ?: return CraftScheduler.OpResult.Failed("No processing API for $outputItemId")
         val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
         val handlerEngine = PlatformServices.modState
             .findProcessingEngine(lvl, searchPositions, apiMatch.api.name, apiMatch.apiStorage.remoteDimension) as? ScriptEngine
         if (handlerEngine == null) {
-            // Handler not loaded yet — common right after world load, before terminal auto-run.
-            // Back off and retry; handler should appear once the terminal script is running.
+            // Handler not loaded yet, common right after world load, before terminal auto-run.
+            // Back off and retry, handler should appear once the terminal script is running.
             // Counts against the Controller's retry cap so a truly-missing handler still fails cleanly.
             return scheduleHandlerWaitRetry(op, "handler engine not yet available")
         }
@@ -398,13 +398,13 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val job = ProcessingJob(apiMatch.api, cpu, lvl, scheduler, pending, bulkOutputOverride, op.id)
         val jobTable = job.toLuaTable()
 
-        // Build the handler's single `items: InputItems` argument — a Lua table keyed by
+        // Build the handler's single `items: InputItems` argument, a Lua table keyed by
         // per-slot parameter name (camelCase with numeric suffix on duplicates). Each
         // value is a full ItemsHandle bound to a per-slot BufferSource so per-slot
         // atomic extraction works correctly when the same item appears in multiple slots.
         //
         // perBatchInputs is authoritative for slot ORDER (row-major) and COUNT per slot.
-        // apiMatch.api.inputs provides the same ordering — we use ProcessingSet's shared
+        // apiMatch.api.inputs provides the same ordering, we use ProcessingSet's shared
         // naming helper to keep the autocomplete editor's view in perfect sync with what
         // the runtime actually binds.
         val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(apiMatch.api.inputs)
@@ -451,7 +451,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         )
         // Aggregate per-slot inputs by item id for the conservation check. With the new
         // per-slot format, duplicate entries like [cu@1, au@1, cu@1] collapse to
-        // {cu: 2, au: 1} — the buffer-delta check only cares about totals per item.
+        // {cu: 2, au: 1}, the buffer-delta check only cares about totals per item.
         val perBatchInputMap = progress.perBatchInputs
             .groupBy { it.first }
             .mapValues { (_, pairs) -> pairs.sumOf { it.second } }
@@ -464,7 +464,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
      * The core safety guarantee: after this returns, the CPU buffer either
      *   (a) has the declared inputs fully consumed, or
      *   (b) has exactly as many of each input as it started with (handler made zero moves).
-     * The partial case is a contract violation — we fail the op loudly and the buffer flushes
+     * The partial case is a contract violation, we fail the op loudly and the buffer flushes
      * back to storage on onPlanFailed.
      *
      * For case (b), we cancel any `job:pull` calls the handler registered (they're now
@@ -500,7 +500,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return scheduleRetry(op, state, "handler returned false")
         }
 
-        // Conservation check — diff buffer vs pre-invocation
+        // Conservation check, diff buffer vs pre-invocation
         var allConsumed = true
         var anyConsumed = false
         var stranded: String? = null
@@ -519,10 +519,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
 
         if (stranded != null) {
-            // Partial consumption — contract violation. Fail loudly; onPlanFailed flushes.
+            // Partial consumption, contract violation. Fail loudly, onPlanFailed flushes.
             cancelInvocationPulls(state)
             return CraftScheduler.OpResult.Failed(
-                "Handler '$apiName' partially consumed input '$stranded' — " +
+                "Handler '$apiName' partially consumed input '$stranded', " +
                 "all inputs must move together (use :hasSpaceFor or restructure the handler)."
             )
         }
@@ -533,7 +533,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return scheduleRetry(op, state, "destination unavailable")
         }
 
-        // All inputs consumed. Handler must have registered at least one pull — otherwise
+        // All inputs consumed. Handler must have registered at least one pull, otherwise
         // the declared outputs have no path to the buffer.
         if (state.processingJob.invocationPulls.isEmpty() && !state.pending.isComplete) {
             return CraftScheduler.OpResult.Failed(
@@ -554,11 +554,11 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     /**
      * Resume an in-flight Process op after world reload. The handler's items survived the
      * reload as physical machine contents (e.g. raw iron in a furnace), so we don't re-invoke
-     * the handler — we just restart polling against the persisted target coordinates and let
+     * the handler, we just restart polling against the persisted target coordinates and let
      * the existing extract logic drain remaining outputs into the buffer.
      *
      * Polls run on the global [damien.nodeworks.script.ResumeScheduler.scheduler], independent
-     * of any terminal/script engine — the terminal's auto-run can lag CPU ticking on world load.
+     * of any terminal/script engine, the terminal's auto-run can lag CPU ticking on world load.
      */
     private fun startResumePoll(
         op: Operation.Process,
@@ -599,7 +599,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         resumeJob.startPoll(getters)
 
         // If startPoll completed synchronously (items already waiting in the machine when
-        // we ticked), don't bother stashing state — collapse straight to Completed/Failed.
+        // we ticked), don't bother stashing state, collapse straight to Completed/Failed.
         if (pending.isComplete) {
             return if (pending.success) {
                 processBatchProgress[op.id]?.let { it.batchesDone = it.totalBatches }
@@ -625,7 +625,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         state.processingJob.invocationPulls.clear()
     }
 
-    /** Back off and retry when the processing handler isn't yet registered — typical on
+    /** Back off and retry when the processing handler isn't yet registered, typical on
      *  world load before terminal auto-run finishes. Shares [processRetries] with the
      *  destination-full retry path so a truly-absent handler fails after the configured cap. */
     private fun scheduleHandlerWaitRetry(op: Operation.Process, reason: String): CraftScheduler.OpResult {
@@ -665,18 +665,18 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val now = if (lvl is ServerLevel) lvl.gameTime else 0L
         op.readyAt = now + RETRY_BACKOFF_TICKS
         // Explicitly remove processState so the next dispatch re-invokes the handler fresh
-        // rather than polling a never-completing pending. state is discarded here — the retry
+        // rather than polling a never-completing pending. state is discarded here, the retry
         // builds a fresh ProcessingJob + pending next time.
         processState.remove(op.id)
         // Also clear per-op resume info set by the handler's job:pull(). Without this, the
         // next dispatch would take the resume path (startResumePoll polls target coords)
-        // instead of re-invoking the handler — meaning a full machine never gets another
+        // instead of re-invoking the handler, meaning a full machine never gets another
         // insert attempt. Per-op resume is only meaningful when items actually reached the
-        // machine; on a failed-move retry, we're starting fresh.
+        // machine, on a failed-move retry, we're starting fresh.
         cpu.clearOpResume(op.id)
         // Keep the GUI showing "Crafting" through the backoff window. Without this the
         // Status line can drop to "Idle" between retries if something downstream of the
-        // handler invocation cleared the flag — defensive belt-and-suspenders.
+        // handler invocation cleared the flag, defensive belt-and-suspenders.
         val itemLabel = op.outputs.firstOrNull()?.first
             ?.substringAfter(':')?.replace('_', ' ') ?: cpu.currentCraftItem
         cpu.setCrafting(true, itemLabel)
@@ -699,12 +699,25 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // they stop trying to pour items into this (now-idle) CPU's buffer. Their next
         // tryExtract will see stale jobGeneration and route pulled items to network storage.
         cpu.invalidateInFlightPolls()
-        // Any trailing buffer contents (shouldn't happen if Deliver ran) are flushed.
-        flushBufferToStorage()
+        // For omit-deliver plans (network:craft), the produced items are SUPPOSED to
+        // still be in the buffer at this point so the script's `:connect(fn)` callback
+        // can claim them via a buffer-backed handle. Skipping the flush here is what
+        // makes that contract work, the completion listener (run below) takes
+        // ownership of the buffer instead.
+        if (!plan.omitDeliver) {
+            flushBufferToStorage()
+        }
         // A successful craft clears any lingering failure message from a previous failed run.
         if (cpu.lastFailureReason.isNotEmpty()) cpu.lastFailureReason = ""
-        cpu.clearAllCraftState()
-        cpu.setCrafting(false)
+        // omit-deliver: don't clear craft state yet, the runtime's `dropRemainingBuffer`
+        // does it after the user's callback runs. Clearing here would also wipe
+        // `originalCraftId` and `craftTreeSnapshot` which the script-side completion
+        // path doesn't currently rely on, but keeping them consistent across the two
+        // exit paths means future code can treat "in-buffer items" as "craft still alive".
+        if (!plan.omitDeliver) {
+            cpu.clearAllCraftState()
+            cpu.setCrafting(false)
+        }
         completionListeners.remove(plan)?.invoke(true)
     }
 
@@ -715,12 +728,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         processBatchProgress.keys.retainAll { it !in planOpIds }
         processRetries.keys.retainAll { it !in planOpIds }
 
-        // Same rationale as onPlanCompleted — kill any still-active resume polls so they
+        // Same rationale as onPlanCompleted, kill any still-active resume polls so they
         // don't keep dumping items into an idle CPU's buffer.
         cpu.invalidateInFlightPolls()
         flushBufferToStorage()
         // Store the reason on the CPU BE so the GUI can surface it. Cancellation by the
-        // player isn't really a failure to debug — skip those.
+        // player isn't really a failure to debug, skip those.
         if (!reason.startsWith("Cancelled")) {
             val itemName = plan.rootItemId.substringAfter(':').replace('_', ' ')
             cpu.lastFailureReason = "$itemName × ${plan.rootCount}: $reason"
@@ -764,7 +777,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             val stack = ItemStack(item, batch)
             val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, null)
             if (inserted == 0) {
-                // Drop as item entity — better than deleting
+                // Drop as item entity, better than deleting
                 net.minecraft.world.Containers.dropItemStack(
                     lvl,
                     cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, stack
@@ -777,11 +790,11 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     companion object {
-        /** Phase 2 placeholder throttle — produces op cost 0, so ops chain within a single
+        /** Phase 2 placeholder throttle, produces op cost 0, so ops chain within a single
          *  tick and existing craft timing is preserved. Phase 4 replaces this with a
          *  computation from heat/cooling/substrate state. */
         /** Fallback throttle when the CPU isn't formed (no buffer). High enough that
-         *  [CpuRules.opCost] rounds to 0 — crafts chain instantly through the scheduler. */
+         *  [CpuRules.opCost] rounds to 0, crafts chain instantly through the scheduler. */
         const val DEFAULT_THROTTLE: Float = 10.0f
     }
 }

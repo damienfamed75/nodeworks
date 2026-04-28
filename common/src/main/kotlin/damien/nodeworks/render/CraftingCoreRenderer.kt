@@ -4,9 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import net.minecraft.client.renderer.SubmitNodeCollector
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderType
 import net.minecraft.client.renderer.state.level.CameraRenderState
@@ -14,13 +12,13 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 
 /**
- * Emissive overlay for the Crafting Core — all 6 faces, un-tinted white. Only renders
+ * Emissive overlay for the Crafting Core, all 6 faces, un-tinted white. Only renders
  * when `FORMED=true`. See [EmissiveCubeRenderer] for the shared pipeline.
  */
-class CraftingCoreRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<CraftingCoreBlockEntity, CraftingCoreRenderer.CoreState> {
+open class CraftingCoreRenderer(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<CraftingCoreBlockEntity, CraftingCoreRenderer.CoreState>(context) {
 
-    class CoreState : BlockEntityRenderState() {
+    class CoreState : ConnectableRenderState() {
         var formed: Boolean = false
     }
 
@@ -31,22 +29,21 @@ class CraftingCoreRenderer(context: BlockEntityRendererProvider.Context) :
 
     override fun createRenderState(): CoreState = CoreState()
 
-    override fun extractRenderState(
+    override fun extractConnectable(
         blockEntity: CraftingCoreBlockEntity,
         state: CoreState,
         partialTicks: Float,
         cameraPosition: Vec3,
-        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
-        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
         state.formed = blockEntity.blockState.getValue(CraftingCoreBlock.FORMED)
     }
 
-    override fun submit(
+    override fun submitConnectable(
         state: CoreState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        camera: CameraRenderState
+        camera: CameraRenderState,
     ) {
         if (!state.formed) return
         EmissiveCubeRenderer.submit(

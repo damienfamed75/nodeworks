@@ -40,15 +40,25 @@ class TerminalScreen(
     playerInventory: Inventory,
     title: Component
 // TODO MC 26.1.2: ACS imageWidth/imageHeight are now final. Using a large
-// default that fits the "wide" layout; the layout-switch resize is commented
+// default that fits the "wide" layout, the layout-switch resize is commented
 // out in init() and switchLayout() below. Restore once mutability is available.
 ) : AbstractContainerScreen<TerminalScreenHandler>(menu, playerInventory, title, 500, 280) {
 
     companion object {
-        /** Client-side UI preferences — persisted across terminal opens, shared across all terminals */
+        /** Client-side UI preferences, persisted across terminal opens, shared across all terminals */
         var savedLogCollapsed = false
         var savedLogPanelHeight = 80
 
+        /** Max pixel width for the hover tooltip text block. Long descriptions wrap via
+         *  `font.split` at this limit so the panel stays readable. */
+        private const val TOOLTIP_MAX_WIDTH_PX = 200
+
+        // Tooltip line colours match [AutocompletePopup]'s name/hint pair so hover
+        // tooltips and completion suggestions read as one visual language, signature
+        // in the bright-name colour, description + fallback hints in the dim-hint one.
+        private const val COLOR_SIGNATURE = 0xFFCCCCCC.toInt()
+        private const val COLOR_DESCRIPTION = 0xFF888888.toInt()
+        private const val COLOR_PLAIN = 0xFFCCCCCC.toInt()
     }
 
     private lateinit var editor: ScriptEditor
@@ -68,6 +78,13 @@ class TerminalScreen(
 
     private lateinit var autocomplete: AutocompletePopup
 
+    /** Cached output of the last [damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze]
+     *  call, keyed by [cachedDiagnosticsText]. Re-running the analyzer on every frame would
+     *  be wasteful for a script of any size, so the editor's diagnosticsProvider only
+     *  re-runs it when the text changes. */
+    private var cachedDiagnostics: List<damien.nodeworks.script.diagnostics.Diagnostic> = emptyList()
+    private var cachedDiagnosticsText: String = ""
+
     // All scanned client-side from block entities in the loaded world
     private val cards: List<CardSnapshot>
     private val itemTags: List<String>
@@ -75,6 +92,26 @@ class TerminalScreen(
     private val itemIds: List<String>
     private val fluidIds: List<String>
     private val variables: List<Pair<String, Int>>
+    /** Variable name → channel color, parallel to [variables]. Kept as a separate
+     *  map (instead of widening the [variables] tuple) so AutocompletePopup's
+     *  existing (name, typeOrd) consumer doesn't need a signature change. */
+    private val variableChannels: Map<String, net.minecraft.world.item.DyeColor>
+    /** Effective aliases of every Breaker on the network, auto-alias `breaker_N`
+     *  unless the player set a name in the device GUI. Passed to AutocompletePopup
+     *  so `network:get("|"` can suggest breakers and `local x = network:get("...")`
+     *  can narrow `x` to BreakerHandle. */
+    private val breakerAliases: List<String>
+    private val placerAliases: List<String>
+    /** (alias, channel) per Breaker / Placer for the sidebar render, keeps the pip
+     *  rendering consistent with cards/variables. The alias-only [breakerAliases] /
+     *  [placerAliases] fields stay because AutocompletePopup just needs the names. */
+    private val breakerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
+    private val placerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
+
+    /** Literal names that appear ≥2 times across cards / breakers / placers on
+     *  this network. Drives the script editor's `ambiguous-card-name` HINT for
+     *  `network:get("name")` calls whose argument is a duplicated literal. */
+    private val ambiguousNetworkNames: Set<String>
     private val localApiNames: List<String>
     private val localApis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>
     private val craftableOutputs: List<String>
@@ -82,7 +119,7 @@ class TerminalScreen(
     private var cachedNetworkColor: Int? = null
     private var autoRun: Boolean = menu.isAutoRun()
 
-    // Multi-script state — scripts map keyed by name, activeTab tracks which is shown in editor
+    // Multi-script state, scripts map keyed by name, activeTab tracks which is shown in editor
     private val scripts: MutableMap<String, String> = menu.getScripts().toMutableMap()
     private var activeTab: String = "main"
 
@@ -209,14 +246,40 @@ class TerminalScreen(
     }
 
     /**
+     * Re-indent a multi-line autocomplete snippet so its body and closing line line up
+     * under the surrounding block. Snippet templates are authored as if they're
+     * inserted at column 0 (the inner empty line has 4 spaces, the closing `end)` has
+     * none), when the cursor is already nested inside a `for`/`function`/`if`, we glue
+     * [leading] onto every newline within the snippet so the inserted text continues
+     * the existing indent ladder. Cursor offset shifts forward by the count of inserted
+     * indent characters that fall before the original cursor position.
+     */
+    private fun indentSnippetLines(
+        snippet: String,
+        cursorOffset: Int,
+        leading: String,
+    ): Pair<String, Int> {
+        val out = StringBuilder(snippet.length + leading.length * 4)
+        var newCursor = cursorOffset
+        for ((i, ch) in snippet.withIndex()) {
+            out.append(ch)
+            if (ch == '\n') {
+                out.append(leading)
+                if (i < cursorOffset) newCursor += leading.length
+            }
+        }
+        return out.toString() to newCursor
+    }
+
+    /**
      * VSCode-style block indent / unindent of the currently-selected lines.
      *
      * @param shift  true = unindent (Shift+Tab), false = indent (Tab).
      * @param allLinesEvenIfNoMultiSel  when true, also operates on the cursor's line
-     *   even if there's no multi-line selection — used so Shift+Tab with no selection
+     *   even if there's no multi-line selection, used so Shift+Tab with no selection
      *   still unindents the current line.
      *
-     * Indent inserts 4 spaces at the start of every covered line; unindent strips up
+     * Indent inserts 4 spaces at the start of every covered line, unindent strips up
      * to 4 leading spaces (or one leading tab) from each. Selection is preserved to
      * cover the same logical lines after the transformation.
      */
@@ -235,7 +298,7 @@ class TerminalScreen(
         if (hadSelection) {
             startLine = text.substring(0, origSelStart).count { it == '\n' }
             // A selection that ends exactly at a line start (just after '\n') doesn't
-            // actually cover that trailing line — pull the endLine back by one so we
+            // actually cover that trailing line, pull the endLine back by one so we
             // don't indent a line the user didn't select. Matches VSCode.
             val endLineRaw = text.substring(0, origSelEnd).count { it == '\n' }
             endLine = if (origSelEnd > origSelStart && origSelEnd > 0 && text[origSelEnd - 1] == '\n')
@@ -255,7 +318,7 @@ class TerminalScreen(
         for (i in startLine..minOf(endLine, lines.lastIndex)) {
             val line = lines[i]
             if (shift) {
-                // Strip up to 4 leading spaces; a leading tab also counts as one unindent.
+                // Strip up to 4 leading spaces, a leading tab also counts as one unindent.
                 val stripped = when {
                     line.startsWith(indent) -> line.removePrefix(indent)
                     line.startsWith("\t") -> line.removePrefix("\t")
@@ -365,7 +428,17 @@ class TerminalScreen(
     }
 
     // Layout presets
-    private data class SidebarEntry(val name: String, val color: Int, val iconU: Int, val iconV: Int, val type: String)
+    private data class SidebarEntry(
+        val name: String,
+        val color: Int,
+        val iconU: Int,
+        val iconV: Int,
+        val type: String,
+        /** Channel color for the card/device, or null when not channel-aware. White
+         *  is treated as null so the default channel doesn't render a pip, only
+         *  explicitly-dyed cards/devices show one. */
+        val channel: net.minecraft.world.item.DyeColor? = null,
+    )
 
     enum class TerminalLayout(val w: Int, val h: Int, val icon: Icons) {
         SMALL(320, 220, Icons.LAYOUT_SMALL),
@@ -376,6 +449,29 @@ class TerminalScreen(
 
     private var currentLayout = TerminalLayout.entries.getOrElse(menu.getLayoutIndex()) { TerminalLayout.SMALL }
 
+    /** Mutable holder used while routing breakers / placers through the shared
+     *  [damien.nodeworks.network.assignAliasSuffixes] pass. The helper writes
+     *  the resolved suffix into [assignedAlias]; [effectiveAlias] then picks
+     *  the suffix when present (duplicate or unnamed) or falls back to the
+     *  bare literal (singleton named entity). */
+    private class BreakerAliasHolder(
+        val literalName: String?,
+        val channel: net.minecraft.world.item.DyeColor,
+    ) {
+        var assignedAlias: String? = null
+        val effectiveAlias: String
+            get() = assignedAlias ?: literalName ?: "breaker"
+    }
+
+    private class PlacerAliasHolder(
+        val literalName: String?,
+        val channel: net.minecraft.world.item.DyeColor,
+    ) {
+        var assignedAlias: String? = null
+        val effectiveAlias: String
+            get() = assignedAlias ?: literalName ?: "placer"
+    }
+
     init {
         damien.nodeworks.compat.AcsCompat.setImageSize(this, currentLayout.w, currentLayout.h)
 
@@ -383,6 +479,11 @@ class TerminalScreen(
         // Scan client-side block entities for all autocomplete data
         val scannedCards = mutableListOf<CardSnapshot>()
         val scannedVars = mutableListOf<Pair<String, Int>>()
+        val scannedVarChannels = mutableMapOf<String, net.minecraft.world.item.DyeColor>()
+        // (deviceName, channel) tuples, names get reified into auto-aliases
+        // (`breaker_N`) below, mirroring the server-side discovery pass.
+        val scannedBreakers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
+        val scannedPlacers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
         val scannedLocal = mutableListOf<String>()
         val scannedLocalApis =
             mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
@@ -410,7 +511,7 @@ class TerminalScreen(
                             for (dir in net.minecraft.core.Direction.entries) {
                                 val caps = entity.getSideCapabilities(dir)
                                 for (info in caps) {
-                                    scannedCards.add(CardSnapshot(info.capability, info.alias, info.slotIndex))
+                                    scannedCards.add(CardSnapshot(info.capability, info.alias, info.slotIndex, info.channel))
                                 }
                             }
                         }
@@ -418,7 +519,14 @@ class TerminalScreen(
                         is damien.nodeworks.block.entity.VariableBlockEntity -> {
                             if (entity.variableName.isNotEmpty()) {
                                 scannedVars.add(entity.variableName to entity.variableType.ordinal)
+                                scannedVarChannels[entity.variableName] = entity.channel
                             }
+                        }
+                        is damien.nodeworks.block.entity.BreakerBlockEntity -> {
+                            scannedBreakers.add(entity.deviceName to entity.channel)
+                        }
+                        is damien.nodeworks.block.entity.PlacerBlockEntity -> {
+                            scannedPlacers.add(entity.deviceName to entity.channel)
                         }
 
                         is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> {
@@ -443,7 +551,7 @@ class TerminalScreen(
                                     // Only Processing-Storage-kind crystals produce an API autocomplete
                                     // surface. A Network-Controller-kind crystal stuffed into a Receiver
                                     // Antenna is a type mismatch (see ReceiverAntennaBlockEntity's status
-                                    // 7) — walking the antenna for `getAvailableApis()` would return
+                                    // 7), walking the antenna for `getAvailableApis()` would return
                                     // empty anyway, but being explicit here keeps the intent visible.
                                     if (chipData != null
                                         && chipData.kind == damien.nodeworks.item.BroadcastSourceKind.PROCESSING_STORAGE
@@ -479,7 +587,7 @@ class TerminalScreen(
 
         // Remote cross-dim APIs pre-resolved by the server (via the Receiver Antenna's
         // paired Broadcast Antenna in another dimension). We can't read those BEs
-        // client-side, so the server shipped the API list in openData; fold it into
+        // client-side, so the server shipped the API list in openData, fold it into
         // the same lists a local ProcessingStorage would fill so autocomplete treats
         // them uniformly.
         for (api in menu.getRemoteApis()) {
@@ -488,19 +596,50 @@ class TerminalScreen(
             scannedProcessable.addAll(api.outputItemIds)
         }
 
-        // Assign auto-aliases to unnamed cards (same logic as NetworkDiscovery)
-        val counters = mutableMapOf<String, Int>()
-        for (card in scannedCards) {
-            if (card.alias == null) {
-                val type = card.capability.type
-                val count = counters.getOrDefault(type, 0) + 1
-                counters[type] = count
-                card.autoAlias = "${type}_$count"
-            }
+        // Assign auto-aliases. Routes through the shared
+        // [damien.nodeworks.network.assignAliasSuffixes] so the client-side
+        // scan agrees with [NetworkDiscovery.assignAutoAliases] on every
+        // disambiguated `_N`. Sidebar listings, autocomplete, hover tooltips
+        // and `network:get(...)` lookups all see identical names.
+        // Cards / breakers / placers share the base namespace, matching the
+        // cross-type lookup rule: a card named `miner` and a breaker named
+        // `miner` are duplicates and both get suffixed.
+        val breakerAliasHolders = scannedBreakers.map { (name, channel) ->
+            BreakerAliasHolder(name.takeIf { it.isNotEmpty() }, channel)
         }
+        val placerAliasHolders = scannedPlacers.map { (name, channel) ->
+            PlacerAliasHolder(name.takeIf { it.isNotEmpty() }, channel)
+        }
+        val slots = mutableListOf<damien.nodeworks.network.AliasSlot>()
+        for (card in scannedCards) {
+            slots.add(damien.nodeworks.network.AliasSlot(
+                literalName = card.alias,
+                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix(card.capability.type),
+                setAutoAlias = { card.autoAlias = it },
+            ))
+        }
+        for (h in breakerAliasHolders) {
+            slots.add(damien.nodeworks.network.AliasSlot(
+                literalName = h.literalName,
+                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("breaker"),
+                setAutoAlias = { h.assignedAlias = it },
+            ))
+        }
+        for (h in placerAliasHolders) {
+            slots.add(damien.nodeworks.network.AliasSlot(
+                literalName = h.literalName,
+                baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("placer"),
+                setAutoAlias = { h.assignedAlias = it },
+            ))
+        }
+        damien.nodeworks.network.assignAliasSuffixes(slots)
+        val scannedBreakerEntries = breakerAliasHolders.map { it.effectiveAlias to it.channel }
+        val scannedPlacerEntries = placerAliasHolders.map { it.effectiveAlias to it.channel }
+        val scannedBreakerAliases = scannedBreakerEntries.map { it.first }
+        val scannedPlacerAliases = scannedPlacerEntries.map { it.first }
 
-        // Item + fluid tag/id lists from the client registry — 26.1 replaces `getTagNames()`
-        // (Stream<TagKey>) with `getTags()` (Stream<HolderSet.Named<T>>); the
+        // Item + fluid tag/id lists from the client registry, 26.1 replaces `getTagNames()`
+        // (Stream<TagKey>) with `getTags()` (Stream<HolderSet.Named<T>>), the
         // tag key is exposed via key(), and its Identifier via the record
         // component `location`.
         val scannedTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTags()
@@ -515,7 +654,7 @@ class TerminalScreen(
             .map { it.toString() }
             .sorted()
             .toList()
-        // Filter out minecraft:empty and flowing variants — users almost always want source
+        // Filter out minecraft:empty and flowing variants, users almost always want source
         // fluids (minecraft:water, not minecraft:flowing_water) since that's what shows up
         // inside tanks.
         val scannedFluidIds = net.minecraft.core.registries.BuiltInRegistries.FLUID.keySet()
@@ -530,9 +669,29 @@ class TerminalScreen(
         itemIds = scannedItemIds
         fluidIds = scannedFluidIds
         variables = scannedVars
+        variableChannels = scannedVarChannels
+        breakerAliases = scannedBreakerAliases
+        placerAliases = scannedPlacerAliases
+        breakerEntries = scannedBreakerEntries
+        placerEntries = scannedPlacerEntries
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
+
+        // Literal names that appear ≥2 times across the network's named cards,
+        // breakers and placers. Cards expose their literal name via
+        // `CardSnapshot.alias`; for breakers / placers we use the raw
+        // `deviceName` collected during the scan (empty deviceName falls
+        // through to the auto-suffixed alias path and isn't an ambiguous
+        // literal). The `ambiguous-card-name` diagnostic reads this set.
+        val nameCounts = mutableMapOf<String, Int>()
+        for (c in scannedCards) c.alias?.takeIf { it.isNotEmpty() }
+            ?.let { nameCounts.merge(it, 1, Int::plus) }
+        for ((name, _) in scannedBreakers) if (name.isNotEmpty())
+            nameCounts.merge(name, 1, Int::plus)
+        for ((name, _) in scannedPlacers) if (name.isNotEmpty())
+            nameCounts.merge(name, 1, Int::plus)
+        ambiguousNetworkNames = nameCounts.filterValues { it >= 2 }.keys
     }
 
     override fun init() {
@@ -552,6 +711,27 @@ class TerminalScreen(
 
         editor = ScriptEditor(font, editorX, editorY, editorW, editorH)
 
+        // Feed the autocomplete's existing variable-type inference into the editor's
+        // hover-doc lookup. No parallel inference, same symbol table as completion, so
+        // e.g. `local cards = card, cards:setPowered(…)` hovers resolve via `Card:...`
+        // consistently in both places. The editor passes the character offset of the
+        // hovered token so scope walks anchor at the hover, not the cursor.
+        editor.symbolTableProvider = { scopeAnchor ->
+            val clamped = scopeAnchor.coerceIn(0, editor.value.length)
+            autocomplete.getSymbolTable(
+                editor.value,
+                editor.value.substring(0, clamped),
+            )
+        }
+        // G-on-hover → open the guidebook at the doc's anchor. Delegates to the platform
+        // service so :common doesn't import GuideME (neoforge-only dep), see
+        // PlatformServices.guidebook.
+        editor.openGuidebookRef = { ref -> damien.nodeworks.platform.PlatformServices.guidebook.open(ref) }
+        // Key binding is registered loader-side as a `KeyMapping` (rebindable in the
+        // controls menu). The editor polls the held state each frame via this callback
+        //, see PlatformServices.openDocsKeyHeld for the loader impl.
+        editor.isOpenDocsKeyHeld = { damien.nodeworks.platform.PlatformServices.openDocsKeyHeld() }
+
         // Hidden EditBox to signal to JEI and other mods that we have an active text input.
         // JEI checks if the focused element is an EditBox before stealing key events.
         val dummyInput = net.minecraft.client.gui.components.EditBox(font, -9999, -9999, 1, 1, Component.empty())
@@ -561,6 +741,30 @@ class TerminalScreen(
         editor.value = rebuildWithText ?: scripts[activeTab] ?: ""
         rebuildWithText = null
         editor.setCharacterLimit(32767)
+
+        // Wire diagnostics. We cache the analyzer's output keyed on the editor's full
+        // text so the analyzer doesn't run on every render frame, only when the script
+        // actually changes. The symbol table comes from the autocomplete's inference
+        // (same source the hover-doc resolver uses) so typed-receiver checks for things
+        // like `card:fnid()` resolve `card`'s type the same way completion would.
+        editor.diagnosticsProvider = {
+            val text = editor.value
+            if (text != cachedDiagnosticsText) {
+                cachedDiagnosticsText = text
+                val symbols = autocomplete.getSymbolTable(text, text)
+                // Pass sibling scripts so cross-script `local foo = require("foo")`
+                // lookups can resolve `foo.bar(...)` against the imported module's
+                // declared param types. The active tab's text is excluded since it's
+                // already in `text`, including it would trigger a useless self-import
+                // path if a player ever typed `require("<active tab name>")`.
+                val others = scripts.filterKeys { it != activeTab }
+                cachedDiagnostics =
+                    damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze(
+                        text, symbols, others, ambiguousNetworkNames,
+                    )
+            }
+            cachedDiagnostics
+        }
 
         lastSavedText = editor.value
         editor.setValueListener { newText ->
@@ -599,7 +803,7 @@ class TerminalScreen(
             val id = damien.nodeworks.screen.widget.RecipeHintRenderer.detectHandleId(line)
             if (id != null) {
                 // Flag handlers whose recipe id doesn't match any registered processing
-                // set on the network — visible cue that the handler will never fire.
+                // set on the network, visible cue that the handler will never fire.
                 val isValid = localApis.any { it.name == id }
                 damien.nodeworks.screen.widget.RecipeHintRenderer.render(
                     graphics, font, id, hintX, hintY, hintW, hintH, valid = isValid
@@ -624,25 +828,26 @@ class TerminalScreen(
         autocomplete =
             AutocompletePopup(
                 font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis,
-                itemIds, fluidIds, fluidTags
+                itemIds, fluidIds, fluidTags,
+                breakerAliases, placerAliases,
             ) { scripts }
         // Position popups directly under the cursor's text row. Using yBottomOfLine
         // (instead of yTopOfLine of the next line) deliberately excludes any decoration
-        // band above the following line — that band sits BETWEEN cursor and next line and
+        // band above the following line, that band sits BETWEEN cursor and next line and
         // shouldn't push the popup further down.
         // The +4 here is the editor's internal textTop padding (yBottomOfLine is content-
-        // relative; editorY in update() is the widget top, not the content top).
+        // relative, editorY in update() is the widget top, not the content top).
         autocomplete.lineBottomYResolver = { lineIdx ->
             editor.yBottomOfLine(lineIdx) + 4
         }
 
-        // Top bar buttons — right-aligned: [Layout] [Run] [Stop]
+        // Top bar buttons, right-aligned: [Layout] [Run] [Stop]
         val btnY = topPos + 5
         val stopX = leftPos + imageWidth - 44
         val runX = stopX - 44
         val layoutX = runX - 24
 
-        // Layout cycle button — shows current layout icon
+        // Layout cycle button, shows current layout icon
         addRenderableWidget(
             damien.nodeworks.screen.widget.SlicedButton.create(
                 layoutX, btnY, 20, buttonHeight, "", currentLayout.icon
@@ -659,7 +864,7 @@ class TerminalScreen(
                 rebind()
             })
 
-        // Run button — save current tab text first, then tell server to run
+        // Run button, save current tab text first, then tell server to run
         addRenderableWidget(
             damien.nodeworks.screen.widget.SlicedButton.createColored(
                 runX, btnY, 40, buttonHeight, "Run",
@@ -709,10 +914,10 @@ class TerminalScreen(
         // Main background
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
-        // Sidebar window frame — drawn early so sidebar content renders on top
+        // Sidebar window frame, drawn early so sidebar content renders on top
         // NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, cardPanelWidth + editorPadding - 3, imageHeight)
 
-        // Tab bar background — aligned with gutter/editor
+        // Tab bar background, aligned with gutter/editor
         val tabBarY = topPos + topBarHeight
         val tabBarStartX = leftPos + cardPanelWidth + editorPadding
         NineSlice.PANEL_INSET.draw(
@@ -775,20 +980,39 @@ class TerminalScreen(
         for (card in cards) {
             val type = card.capability.type
             val iconU = when (type) {
-                "io" -> 0; "storage" -> 16; "redstone" -> 32; else -> 0
+                "io" -> 0; "storage" -> 16; "redstone" -> 32; "observer" -> 64; else -> 0
             }
             val color = when (type) {
                 "io" -> 0xFF83E086.toInt()
                 "storage" -> 0xFFAA83E0.toInt()
                 "redstone" -> 0xFFF53B68.toInt()
+                "observer" -> 0xFFFFEB3B.toInt()
                 "energy" -> 0xFFFFD700.toInt()
                 "fluid" -> 0xFF55AAFF.toInt()
                 else -> 0xFFAAAAAA.toInt()
             }
-            entries.add(SidebarEntry(card.effectiveAlias, color, iconU, 16, "card"))
+            // Pass through the channel from the card snapshot. White renders as no pip
+            // (collapses to null) so default cards keep a clean row.
+            val ch = card.channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(card.effectiveAlias, color, iconU, 16, "card", ch))
         }
         for ((name, typeOrd) in variables) {
-            entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var"))
+            // Same white→null collapse rule as cards so the default channel
+            // doesn't render a stripe.
+            val ch = variableChannels[name]?.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var", ch))
+        }
+        // Devices: each gets its own iconU discriminator + name colour. Without
+        // this branch the connected breakers / placers exist on the network but
+        // never surface in the terminal sidebar, players can address them in
+        // scripts but can't see them.
+        for ((alias, channel) in breakerEntries) {
+            val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(alias, 0xFFC97847.toInt(), 80, 16, "breaker", ch))
+        }
+        for ((alias, channel) in placerEntries) {
+            val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(alias, 0xFF6BBCD0.toInt(), 96, 16, "placer", ch))
         }
 
         // Sidebar entries (scrollable)
@@ -817,13 +1041,31 @@ class TerminalScreen(
                     0 -> Icons.IO_CARD
                     16 -> Icons.STORAGE_CARD
                     32 -> Icons.REDSTONE_CARD
+                    64 -> Icons.OBSERVER_CARD
                     else -> Icons.IO_CARD
                 }
 
                 "var" -> Icons.VARIABLE
+                "breaker" -> Icons.BREAKER
+                "placer" -> Icons.PLACER
                 else -> Icons.IO_CARD
             }
-            icon.drawSmall(graphics, leftPos + 7, y + 1)
+            // Channel pip, 2×9 vertical stripe LEFT of the icon when the row is
+            // dyed off-white. Reads as "this row belongs to channel X" before your
+            // eye even reaches the icon, which matches how players already scan the
+            // sidebar (left-to-right). Always rendered in the same column regardless
+            // of whether a pip is visible, so icon positions stay stable.
+            entry.channel?.let { ch ->
+                val rgb = ch.textureDiffuseColor or 0xFF000000.toInt()
+                graphics.fill(leftPos + 5, y + 1, leftPos + 7, y + 10, rgb)
+            }
+
+            // Observer card art uses the full 16px width of its atlas cell, so the
+            // standard 8×8 small-render crops its outer columns. Draw a 10×8 slice
+            // (1px wider on each side) shifted left by 1px to keep it centred under
+            // the same anchor as the other 8-wide card icons.
+            if (entry.iconU == 64) icon.drawSmallWide(graphics, leftPos + 9, y + 1)
+            else icon.drawSmall(graphics, leftPos + 10, y + 1)
 
             // Track hover state for scroll timing
             if (hovered) {
@@ -833,8 +1075,10 @@ class TerminalScreen(
                 }
             }
 
-            // Name — scroll if hovered and text is too long
-            val nameX = leftPos + 18
+            // Name, scroll if hovered and text is too long. Anchor shifted right by
+            // 3 px to follow the icon, since the channel pip now lives at the row's
+            // left edge (cols 5-6).
+            val nameX = leftPos + 21
             val maxNameW = leftPos + 75 - nameX
             val nameW = font.width(entry.name)
             if (hovered && nameW > maxNameW) {
@@ -872,7 +1116,7 @@ class TerminalScreen(
             thumbSlice.draw(graphics, sbX, thumbY, scrollbarW, thumbHeight)
         }
 
-        // Auto-run toggle — centered on sidebar
+        // Auto-run toggle, centered on sidebar
         val sidebarW = cardPanelWidth + editorPadding - 3
         val toggleW = 56
         val toggleX = leftPos + (sidebarW - toggleW) / 2 + 3
@@ -918,7 +1162,7 @@ class TerminalScreen(
         // Separator / drag handle
         if (!logCollapsed) {
             val hovering = mouseX >= logX && mouseX <= logX + logW && mouseY >= logY - 4 && mouseY <= logY + 3
-            // Grip dots — centered on separator
+            // Grip dots, centered on separator
             val centerX = logX + logW / 2
             val dotColor = if (hovering || draggingLogPanel) 0xFF999999.toInt() else 0xFF666666.toInt()
             for (d in -3..3) {
@@ -1025,7 +1269,7 @@ class TerminalScreen(
             graphics.disableScissor()
         }
 
-        // Content border — overlays everything, extends 3px up into top bar
+        // Content border, overlays everything, extends 3px up into top bar
         // val contentLeft = leftPos + cardPanelWidth + editorPadding - 3
         // val contentTop = topPos + topBarHeight - 3
         // val contentRight = leftPos + imageWidth
@@ -1070,14 +1314,21 @@ class TerminalScreen(
         // Line number gutter
         renderLineNumbers(graphics)
 
-        // Hover type tooltip
+        // Hover tooltip, single 9-sliced panel backed by LuaApiDocs when available,
+        // falling back to the in-file methodSignatures table for symbols we haven't
+        // documented yet. Hidden while the autocomplete popup or new-tab prompt is up
+        // so popups don't stack. Active Hold-G takes precedence: we force-hide
+        // autocomplete below so the tooltip (with its progress bar) stays readable.
+        if (editor.isOpenDocsHoldActive() && autocomplete.visible) {
+            autocomplete.hide()
+        }
         if (!autocomplete.visible && !showNewTabInput) {
             renderTypeTooltip(graphics, mouseX, mouseY)
         }
 
         // Autocomplete popup renders on top of everything
         autocomplete.render(graphics, mouseX, mouseY)
-        // New tab name input overlay — render on top of everything
+        // New tab name input overlay, render on top of everything
         if (showNewTabInput) {
             val inputW = 120
             val inputH = 20
@@ -1096,112 +1347,166 @@ class TerminalScreen(
         // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
 
-    /** Known method signatures for tooltip display. */
-    private val methodSignatures = mapOf(
-        // Network methods
-        "get" to "network:get(alias: string) → CardHandle",
-        "getAll" to "network:getAll(type: string) → CardHandle[]",
-        "craft" to "network:craft(id: string, count?: number) → CraftBuilder",
-        "handle" to "network:handle(cardName: string, fn: function(job, ...))",
-        "route" to "network:route(alias: string, fn: function(item) → boolean)",
-        "shapeless" to "network:shapeless(item: string, count?: number, ...) → ItemsHandle?",
-        "debug" to "network:debug() — print network topology",
-        "var" to "network:var(name: string) → VariableHandle",
-        // Network item methods (also on CardHandle)
-        "find" to "find(filter: string) → ItemsHandle?",
-        "findEach" to "findEach(filter: string) → ItemsHandle[]",
-        "insert" to "insert(items: ItemsHandle, count?: number) → number",
-        "count" to "count(filter: string) → number",
-        "face" to "face(side: string) → CardHandle",
-        "slots" to "slots(...: number) → CardHandle",
-        // ItemsHandle methods
-        "hasTag" to "hasTag(tag: string) → boolean",
-        "matches" to "matches(filter: string) → boolean",
-        // Scheduler methods
-        "tick" to "scheduler:tick(fn: function) → number",
-        "second" to "scheduler:second(fn: function) → number",
-        "delay" to "scheduler:delay(ticks: number, fn: function) → number",
-        "cancel" to "scheduler:cancel(id: number)",
-        // CraftBuilder methods
-        "connect" to "connect(fn: function(item: ItemsHandle))",
-        "store" to "store() — send result to network storage",
-        // Job methods
-        "pull" to "job:pull(card: CardHandle, ...) — wait for outputs",
-        // RedstoneCard methods
-        "powered" to "powered() → boolean",
-        "strength" to "strength() → number (0-15)",
-        "set" to "set(boolean | number) — emit redstone signal",
-        "onChange" to "onChange(fn: function(strength: number))",
-        // Lua builtins
-        "print" to "print(...) — output to terminal",
-        "error" to "error(message: string) — throw an error",
-        "clock" to "clock() → number (server tick count)",
-        "tostring" to "tostring(value: any) → string",
-        "tonumber" to "tonumber(value: any) → number?",
-        "type" to "type(value: any) → string",
-        "pairs" to "pairs(t: table) → iterator",
-        "ipairs" to "ipairs(t: table) → iterator",
-        "require" to "require(module: string) → table"
-    )
-
     private fun renderTypeTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (mouseX < editorX || mouseX > editorX + editor.width ||
             mouseY < editorY || mouseY > editorY + editor.height
         ) return
 
-        val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble()) ?: return
+        // One accumulated list of lines. Each line has its own colour so signatures
+        // render yellow and descriptions render gray within the same 9-sliced panel.
+        data class Line(val text: String, val color: Int)
+        val accum = mutableListOf<Line>()
 
-        // Check built-in method signatures first
-        val methodSig = methodSignatures[word]
-
-        val tooltipText = if (methodSig != null) {
-            methodSig
-        } else {
-            // Check user-defined functions (current script + modules)
-            val funcSig = autocomplete.getFunctionSignature(word, editor.value)
-            if (funcSig != null) {
-                funcSig
-            } else {
-                // Check variable types
-                val type = when (word) {
-                    "network" -> "Network API"
-                    "scheduler" -> "Scheduler API"
-                    "true", "false" -> "boolean"
-                    "nil" -> "nil"
-                    else -> {
-                        val symbols = autocomplete.getSymbolTable(
-                            editor.value,
-                            editor.value.substring(0, editor.getCursorPosition())
-                        )
-                        symbols[word]
-                    }
-                }
-                if (type != null) "$word: $type" else return
+        // Diagnostic header. When the mouse is over a flagged span we surface the
+        // analyzer's message coloured per severity, on top of (not instead of) the
+        // regular doc/word tooltip. So a hover on a typo'd `prit` shows
+        // "Unknown identifier 'prit'" followed by no doc, while a hover on
+        // `card:fnid()` (where `card` is typed) shows the unknown-method message
+        // above the receiver's doc.
+        val diagnostic = editor.diagnosticAt(mouseX, mouseY)
+        if (diagnostic != null) {
+            val diagColor = when (diagnostic.severity) {
+                damien.nodeworks.script.diagnostics.Severity.ERROR -> 0xFFFF6666.toInt()
+                damien.nodeworks.script.diagnostics.Severity.WARNING -> 0xFFFFCC44.toInt()
+                damien.nodeworks.script.diagnostics.Severity.HINT -> 0xFF66AAFF.toInt()
+            }
+            for (part in font.splitter.splitLines(
+                diagnostic.message, TOOLTIP_MAX_WIDTH_PX, net.minecraft.network.chat.Style.EMPTY,
+            )) {
+                accum.add(Line(part.string, diagColor))
             }
         }
 
-        // Split into name (bright) and hint (dim) — find the first separator
-        val separatorIdx = tooltipText.indexOfFirst { it == '(' || it == ':' || it == '—' || it == '→' }
-        val namePart: String
-        val hintPart: String
-        if (separatorIdx > 0) {
-            namePart = tooltipText.substring(0, separatorIdx)
-            hintPart = tooltipText.substring(separatorIdx)
-        } else {
-            namePart = tooltipText
-            hintPart = ""
+        // Prefer LuaApiDocs, type-aware, covers modules/methods/types via the shared
+        // resolver (which already hops module → Type via `LuaApiDocs.moduleTypes` and
+        // typed-local via the autocomplete symbol table).
+        val doc = editor.resolveDocAt(mouseX, mouseY)
+        val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble())
+        if (doc != null) {
+            doc.signature?.let { accum.add(Line(it, COLOR_SIGNATURE)) }
+            // Hard-wrap at [TOOLTIP_MAX_WIDTH_PX] so long descriptions don't run past
+            // the screen. `StringSplitter.splitLines` returns `FormattedText` whose
+            // `getString()` gives us the displayable text, going through `font.split`'s
+            // `FormattedCharSequence` path earlier was wrong, `.toString()` on those
+            // returns the Lambda class name, not the character stream.
+            for (rawLine in doc.description.split('\n')) {
+                for (part in font.splitter.splitLines(rawLine, TOOLTIP_MAX_WIDTH_PX, net.minecraft.network.chat.Style.EMPTY)) {
+                    accum.add(Line(part.string, COLOR_DESCRIPTION))
+                }
+            }
+        } else if (word != null) {
+            // Fallback path for tokens the registry doesn't cover, user-defined
+            // functions and locals whose types come from the autocomplete symbol
+            // table.
+            //
+            // The symbol-table lookup uses the HOVER position as its scope anchor, not
+            // the cursor. Otherwise hovering a function parameter (e.g. `from` in
+            // `function getThings(from: { CardHandle })`) wouldn't resolve while the
+            // cursor sits outside the function body, the param's scope would be closed
+            // at cursor time but is still open at the hover line.
+            val fallback = autocomplete.getFunctionSignature(word, editor.value)
+                ?: run {
+                    val hoverAnchor = editor.getHoverScopeAnchor(mouseX, mouseY)
+                        ?: editor.getCursorPosition()
+                    val clamped = hoverAnchor.coerceIn(0, editor.value.length)
+                    val symbols = autocomplete.getSymbolTable(
+                        editor.value,
+                        editor.value.substring(0, clamped),
+                    )
+                    val baseType = symbols[word] ?: return@run null
+                    // Surface nullability the same way the diagnostic analyzer sees
+                    // it: a name flagged as nullable here that isn't inside a
+                    // narrowing region renders as `T?`. Inside `if word then ... end`
+                    // the narrowing region covers `clamped`, so the `?` drops off
+                    // and the hover shows the unwrapped type.
+                    val nullableHere = damien.nodeworks.script.diagnostics.LuaDiagnostics
+                        .nullablesAtOffset(editor.value, clamped, symbols)
+                    val display = if (word in nullableHere) "$baseType?" else baseType
+                    "$word: $display"
+                }
+            if (fallback != null) {
+                accum.add(Line(fallback, COLOR_PLAIN))
+            } else if (accum.isEmpty()) {
+                // Nothing to show: no doc, no fallback, no diagnostic.
+                return
+            }
+        } else if (accum.isEmpty()) {
+            // No doc, no word under cursor, no diagnostic.
+            return
         }
 
-        val tooltipW = font.width(tooltipText) + 6
-        val tooltipH = font.lineHeight + 4
-        val tx = mouseX + 8
-        val ty = mouseY - tooltipH - 2
+        // Hold-G progress footer, only when the current doc points at a guidebook
+        // anchor. Always add a blank spacer above it so the bar sits below text.
+        val showProgressFooter = doc?.guidebookRef != null
+        if (showProgressFooter) {
+            accum.add(Line("", 0))
+        }
+
+        // Compute panel size. Progress footer doesn't contribute width (pipe chars are
+        // narrow, sized against the text lines above).
+        val textWidth = accum.maxOf { font.width(it.text) }
+        val lineHeight = font.lineHeight
+        val progressLineHeight = if (showProgressFooter) lineHeight else 0
+        val tooltipW = textWidth + 6
+        val tooltipH = accum.size * lineHeight + progressLineHeight + 4
+
+        // Position the tooltip above-right of the cursor by default, mirroring vanilla's
+        // item-tooltip convention. When that would clip out of the screen we flip /
+        // clamp, same playbook vanilla uses internally in `GuiGraphics.renderTooltip`:
+        //   * Too far right → place to the left of the cursor instead.
+        //   * Too far up → place below the cursor instead.
+        //   * Still doesn't fit (tooltip wider/taller than screen) → clamp to the edge
+        //     so at least the tooltip text stays on-screen even if it overlaps the
+        //     cursor a bit.
+        val gameW = this.width
+        val gameH = this.height
+        var tx = mouseX + 8
+        var ty = mouseY - tooltipH - 2
+        if (tx + tooltipW > gameW) tx = mouseX - tooltipW - 8
+        if (ty < 0) ty = mouseY + 12
+        // Final clamp in case flipping still isn't enough (e.g. giant tooltip, corner
+        // cursor). Coerce so the panel stays fully visible.
+        tx = tx.coerceIn(0, (gameW - tooltipW).coerceAtLeast(0))
+        ty = ty.coerceIn(0, (gameH - tooltipH).coerceAtLeast(0))
 
         NineSlice.TOOLTIP.draw(graphics, tx - 1, ty - 1, tooltipW + 2, tooltipH + 2)
-        graphics.drawString(font, namePart, tx + 3, ty + 2, 0xFFCCCCCC.toInt())
-        if (hintPart.isNotEmpty()) {
-            graphics.drawString(font, hintPart, tx + 3 + font.width(namePart), ty + 2, 0xFF888888.toInt())
+        for ((i, line) in accum.withIndex()) {
+            graphics.drawString(font, line.text, tx + 3, ty + 2 + i * lineHeight, line.color)
         }
+
+        if (showProgressFooter) {
+            renderHoldGProgressFooter(
+                graphics,
+                tx + 3,
+                ty + 2 + accum.size * lineHeight,
+                tooltipW - 6,
+                editor.getHoldProgressFraction(),
+            )
+        }
+    }
+
+    /** Draws the "Hold G for docs" affordance at the bottom of the tooltip. At zero
+     *  progress it's plain text in dark gray, while the player is holding, the text is
+     *  replaced by a bar of `|` characters that fills left-to-right as progress
+     *  advances, same visual language GuideME uses on item tooltips. */
+    private fun renderHoldGProgressFooter(
+        graphics: GuiGraphicsExtractor,
+        x: Int,
+        y: Int,
+        width: Int,
+        fraction: Float,
+    ) {
+        if (fraction <= 0f) {
+            graphics.drawString(font, "Hold G for docs", x, y, 0xFF555555.toInt())
+            return
+        }
+        val charWidth = font.width("|")
+        val totalChars = (width / charWidth).coerceAtLeast(1)
+        val filled = (fraction * totalChars).toInt().coerceIn(0, totalChars)
+        val filledStr = "|".repeat(filled)
+        val emptyStr = "|".repeat(totalChars - filled)
+        graphics.drawString(font, filledStr, x, y, 0xFFAAAAAA.toInt())
+        graphics.drawString(font, emptyStr, x + filled * charWidth, y, 0xFF555555.toInt())
     }
 
     private fun renderLineNumbers(graphics: GuiGraphicsExtractor) {
@@ -1212,7 +1517,7 @@ class TerminalScreen(
         val gutterTop = editorY
         val gutterBottom = editorY + editor.height
 
-        // Gutter background — matches editor background, no separator
+        // Gutter background, matches editor background, no separator
         graphics.fill(gutterX, gutterTop, editorX, gutterBottom, 0xFF0D0D0D.toInt())
 
         // Border around gutter (top, bottom, left)
@@ -1243,7 +1548,7 @@ class TerminalScreen(
             if (y + lineHeight < gutterTop) continue
             if (y > gutterBottom) break
 
-            // Error line highlight — red tint across gutter and editor, fading out
+            // Error line highlight, red tint across gutter and editor, fading out
             if (highlightAlpha > 0 && line - 1 == errorHighlightLine) {
                 val color = (highlightAlpha shl 24) or 0xFF3333
                 graphics.fill(gutterX, y, editorX + editor.width, y + lineHeight, color)
@@ -1376,6 +1681,15 @@ class TerminalScreen(
                         autocomplete.moveDown(); return true
                     }
 
+                    // Page Up / Page Down dismiss the popup and let the editor
+                    // jump the viewport. Holding either key while typing is the
+                    // usual "I'm done with this suggestion list, get out of my
+                    // way" signal, same dismissal we'd get from Escape.
+                    InputConstants.KEY_PAGEUP, InputConstants.KEY_PAGEDOWN -> {
+                        autocomplete.hide()
+                        // Fall through so the editor handles the page-jump itself.
+                    }
+
                     InputConstants.KEY_RETURN, InputConstants.KEY_TAB -> {
                         val textBeforeAccept = editor.value
                         val cursorAtAccept = editor.getCursorPosition()
@@ -1391,25 +1705,61 @@ class TerminalScreen(
                             val cursorPos = cursorAtAccept
                             val deleteStart = cursorPos - result.deleteCount
                             val deleteEnd = (cursorPos + result.consumeAfter).coerceAtMost(text.length)
-                            val newText = text.substring(0, deleteStart) + result.insertText + text.substring(deleteEnd)
-                            editor.setValueKeepScroll(newText, deleteStart + result.cursorOffset)
+                            // Auto-import: if the suggestion carries a local-binding line
+                            // (card or variable), prepend it to the script before doing the
+                            // in-place replacement. Idempotent, if the exact line is
+                            // already in the script we skip the prepend so accepting the
+                            // same suggestion twice in a row doesn't produce duplicates.
+                            val importPrefix = result.autoImportLine?.let { line ->
+                                if (text.contains(line)) "" else "$line\n"
+                            } ?: ""
+                            // Snippet expansion preserves the surrounding indent. Multi-line
+                            // snippet bodies are authored with their *own* relative indent
+                            // (an empty body line + closing `end)` flush left), so when they
+                            // land deep inside an existing block we have to glue the line's
+                            // leading whitespace onto every internal newline. Without this
+                            // fix the inserted body and `end)` clip back to column 0,
+                            // forcing the user to manually re-indent every accept inside a
+                            // for / function / if block.
+                            val lineStart = text.lastIndexOf('\n', (deleteStart - 1).coerceAtLeast(0)) + 1
+                            val lineLeading = text.substring(lineStart, deleteStart)
+                                .takeWhile { it == ' ' || it == '\t' }
+                            val (insertText, cursorOffset) =
+                                if (lineLeading.isNotEmpty() && '\n' in result.insertText)
+                                    indentSnippetLines(result.insertText, result.cursorOffset, lineLeading)
+                                else result.insertText to result.cursorOffset
+                            val newText = importPrefix +
+                                text.substring(0, deleteStart) +
+                                insertText +
+                                text.substring(deleteEnd)
+                            editor.setValueKeepScroll(newText, importPrefix.length + deleteStart + cursorOffset)
                             suppressAutocomplete = false
-                            // Trigger autocomplete at new cursor position (e.g. inside quotes after snippet)
-                            autocomplete.update(
-                                editor.value,
-                                editor.getCursorPosition(),
-                                editorX,
-                                editorY,
-                                editorScrollY = editor.scrollY
-                            )
+                            // Only re-trigger autocomplete when the accepted result lands the
+                            // cursor *inside* the inserted text, e.g. a snippet with cursor in
+                            // empty quotes, or `func(` auto-closed to `func()` with the cursor
+                            // between the parens. Those are genuine "you might want another
+                            // completion right here" moments. A plain value completion (cursor
+                            // at end of insertion) should dismiss the popup and wait for the
+                            // next keystroke, matching VSCode's behaviour, otherwise accepting
+                            // `cobblestone` in `"$item:cobblestone|"` pops the list right back
+                            // up with `cobblestone_slab` etc. because the prefix still matches.
+                            if (cursorOffset < insertText.length) {
+                                autocomplete.update(
+                                    editor.value,
+                                    editor.getCursorPosition(),
+                                    editorX,
+                                    editorY,
+                                    editorScrollY = editor.scrollY
+                                )
+                            }
                             return true
                         }
                     }
                 }
             }
 
-            // Tab / Shift+Tab — VSCode-style block indent when the selection spans
-            // multiple lines; otherwise fall back to inserting 4 spaces at the cursor.
+            // Tab / Shift+Tab, VSCode-style block indent when the selection spans
+            // multiple lines, otherwise fall back to inserting 4 spaces at the cursor.
             if (keyCode == InputConstants.KEY_TAB && !autocomplete.visible) {
                 val shift = (modifiers and 1) != 0
                 val text = editor.value
@@ -1420,7 +1770,7 @@ class TerminalScreen(
 
                 if (shift) {
                     // Shift+Tab: always unindent. With no selection (or single-line sel),
-                    // unindent just the cursor's line; with multi-line selection, unindent
+                    // unindent just the cursor's line, with multi-line selection, unindent
                     // every covered line.
                     indentSelection(shift = true, allLinesEvenIfNoMultiSel = true)
                     return true
@@ -1429,7 +1779,7 @@ class TerminalScreen(
                     indentSelection(shift = false, allLinesEvenIfNoMultiSel = true)
                     return true
                 }
-                // Default: insert 4 spaces at cursor (replaces selection if any — same
+                // Default: insert 4 spaces at cursor (replaces selection if any, same
                 // as VSCode on single-line selections).
                 val spaceEvent = CharacterEvent(' '.code)
                 for (i in 0..3) {
@@ -1447,46 +1797,6 @@ class TerminalScreen(
                     if (pair == "()" || pair == "[]" || pair == "{}" || pair == "\"\"") {
                         val newText = bText.substring(0, bCursor - 1) + bText.substring(bCursor + 1)
                         editor.setValueKeepScroll(newText, bCursor - 1)
-                        autocomplete.update(
-                            editor.value,
-                            editor.getCursorPosition(),
-                            editorX,
-                            editorY,
-                            editorScrollY = editor.scrollY
-                        )
-                        return true
-                    }
-                }
-            }
-
-            // Auto-insert `end` when pressing Enter after block-opening statements
-            if (keyCode == InputConstants.KEY_RETURN) {
-                val text = editor.value
-                val cursor = editor.getCursorPosition()
-                val beforeCursor = text.substring(0, cursor)
-                val currentLine = beforeCursor.substringAfterLast('\n').trimEnd()
-
-                // Check if the line opens a block that needs `end`
-                val needsEnd = currentLine.matches(Regex("""^\s*(local\s+)?function\s.*""")) ||
-                        currentLine.matches(Regex("""^\s*if\s+.+\s+then\s*$""")) ||
-                        currentLine.matches(Regex("""^\s*for\s+.+\s+do\s*$""")) ||
-                        currentLine.matches(Regex("""^\s*while\s+.+\s+do\s*$"""))
-
-                if (needsEnd) {
-                    // Count block openers vs `end` keywords line-by-line
-                    var depth = 0
-                    for (line in text.lines()) {
-                        val trimmed = line.trim()
-                        if (trimmed.startsWith("--")) continue // skip comments
-                        if (Regex("""\bfunction[\s(]|if\s.+\sthen|for\s.+\sdo|while\s.+\sdo""").containsMatchIn(trimmed)) depth++
-                        if (Regex("""\bend\b""").containsMatchIn(trimmed)) depth--
-                    }
-
-                    if (depth > 0) {
-                        val indent = currentLine.takeWhile { it == ' ' }
-                        val newText = text.substring(0, cursor) + "\n$indent    \n${indent}end" + text.substring(cursor)
-                        val newCursor = cursor + 1 + indent.length + 4
-                        editor.setValueKeepScroll(newText, newCursor)
                         autocomplete.update(
                             editor.value,
                             editor.getCursorPosition(),
@@ -1542,7 +1852,7 @@ class TerminalScreen(
             // Capture cursor before any edits for undo
             lastSavedCursor = editor.getCursorPosition()
 
-            // Block the space from Ctrl+Space — keyPressed already fired the autocomplete
+            // Block the space from Ctrl+Space, keyPressed already fired the autocomplete
             // trigger. 26.1's CharacterEvent carries only the codepoint (no modifier bits),
             // so query the keyboard directly via GLFW to detect Ctrl.
             if (codePoint == ' ' && isControlHeld()) {
@@ -1611,7 +1921,7 @@ class TerminalScreen(
             return true
         }
 
-        // Handle new tab input dialog — intercept all clicks
+        // Handle new tab input dialog, intercept all clicks
         if (showNewTabInput) {
             val inputW = 120
             val inputH = 20
@@ -1635,14 +1945,29 @@ class TerminalScreen(
             return true
         }
 
-        // Check sidebar click — insert reference at top of file
+        // Check sidebar click, insert reference at top of file
         if (mx >= leftPos && mx < leftPos + 75 && my >= cardListTop && my < cardListBottom) {
             val clickedIndex = (my - cardListTop + cardScrollOffset) / cardLineHeight
             if (clickedIndex in sidebarEntries.indices) {
                 val entry = sidebarEntries[clickedIndex]
+                // Lua identifiers can't contain spaces or punctuation, so a
+                // card/variable named "iron ingots" or "iron-ingots" becomes
+                // "ironIngots" on the left side. The string argument keeps the
+                // original name verbatim, that's what the network looks up.
+                // The fallback kicks in if the name has NO identifier chars
+                // at all (e.g. "!@#$%"), so the inserted line still compiles.
+                val ident = when (entry.type) {
+                    "card" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "card")
+                    "var" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "var")
+                    "breaker" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "breaker")
+                    "placer" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "placer")
+                    else -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "x")
+                }
                 val line = when (entry.type) {
-                    "card" -> "local ${entry.name} = network:get(\"${entry.name}\")"
-                    "var" -> "local ${entry.name} = network:var(\"${entry.name}\")"
+                    // Cards, variables, and devices all ride the unified `network:get`
+                    // accessor, same generated line shape for any click-to-import.
+                    "card", "var", "breaker", "placer" ->
+                        "local $ident = network:get(\"${entry.name}\")"
                     else -> null
                 }
                 if (line != null) {
@@ -1909,6 +2234,21 @@ class TerminalScreen(
             )
         )
         super.onClose()
+    }
+
+    override fun removed() {
+        // Persist the live editor buffer before the screen is swapped out. This fires
+        // on ANY setScreen (unlike onClose, which only fires for true close-to-world).
+        // Critical for the Hold-G path: opening the guidebook replaces our screen with
+        // a GuideScreen, and when the player closes that guide (`returnToOnClose`
+        // brings them back here), `init()` rebuilds the editor widget from scratch and
+        // reads `rebuildWithText` / `scripts[activeTab]`, so if we don't save on the
+        // way out, whatever they had typed since the last manual save is lost.
+        if (::editor.isInitialized) {
+            rebuildWithText = editor.value
+            scripts[activeTab] = editor.value
+        }
+        super.removed()
     }
 
     private fun autoRunLabel(): Component {

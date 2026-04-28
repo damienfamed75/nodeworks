@@ -34,6 +34,7 @@ import net.minecraft.world.phys.Vec3
 import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent
+import net.neoforged.neoforge.client.event.RenderFrameEvent
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent
 import net.neoforged.neoforge.client.network.ClientPacketDistributor
 import net.neoforged.neoforge.common.NeoForge
@@ -49,13 +50,38 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterItemTintSources)
         modBus.addListener(::onRegisterRenderPipelines)
 
+        // Register the in-game guide synchronously during mod construction, NOT inside
+        // FMLClientSetupEvent.enqueueWork. GuideME hooks the item-tooltip "Hold G" hint
+        // during its own mod-event-bus construction, any guide registered after that point
+        // has its ItemIndex wired but the tooltip binding never fires. Pattern mirrors
+        // AE2's AppEngClient constructor call.
+        damien.nodeworks.guide.NodeworksGuide.register()
+
+        // Register user-rebindable keybinds on the mod bus. Vanilla picks these up and
+        // displays them in the controls menu.
+        NodeworksKeyBindings.register(modBus)
+
+        // Client-side recipe-sync cache. Vanilla 26.1 stopped syncing the
+        // full recipe set to clients, NeoForge keeps the old behavior alive
+        // by firing RecipesReceivedEvent with the full RecipeMap on every
+        // server update. We use it to keep the Soul Sand Infusion client
+        // cache current (and clear it when the player disconnects). HIGHEST
+        // priority so our cache is populated before JEI's own reload reads
+        // from it during registerRecipes.
+        NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST) { event: net.neoforged.neoforge.client.event.RecipesReceivedEvent ->
+            damien.nodeworks.recipe.SoulSandInfusionClientCache.refresh(event.recipeMap)
+        }
+        NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingOut ->
+            damien.nodeworks.recipe.SoulSandInfusionClientCache.clear()
+        }
+
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
         // We cancel the event to prevent JEI from seeing it, then manually forward to our screen.
         NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST) { event: net.neoforged.neoforge.client.event.ScreenEvent.KeyPressed.Pre ->
             val screen = event.screen
             if (screen is damien.nodeworks.screen.TerminalScreen && screen.isEditorFocused()) {
-                // 26.1: Screen#keyPressed(KeyEvent) — no longer the (keyCode, scanCode, modifiers) triple.
+                // 26.1: Screen#keyPressed(KeyEvent), no longer the (keyCode, scanCode, modifiers) triple.
                 //  The ScreenEvent still exposes getKeyEvent() for forwarding.
                 screen.keyPressed(event.keyEvent)
                 event.isCanceled = true
@@ -79,6 +105,8 @@ object NeoForgeClientSetup {
             PlatformServices.clientNetworking = NeoForgeClientNetworkingService()
             PlatformServices.clientEvents = NeoForgeClientEventService()
             PlatformServices.fluidRenderer = damien.nodeworks.platform.NeoForgeFluidSpriteRenderer()
+            PlatformServices.guidebook = damien.nodeworks.guide.NodeworksGuidebookService
+            PlatformServices.openDocsKeyHeld = NodeworksKeyBindings.openDocsKeyHeld()
 
             // 26.1: ItemProperties.register() is gone. Custom property codecs are
             //  registered on the mod event bus via
@@ -88,22 +116,34 @@ object NeoForgeClientSetup {
             //  using `minecraft:condition` / `minecraft:select` dispatch types.
 
             NodeConnectionRenderer.register()
+            damien.nodeworks.render.CardPlacementPreviewRenderer.init()
+
+            // Reset the frame-scoped laser-beam dedup set at the start of each render
+            // frame. ConnectionBeamRenderer.submit uses this set to ensure a beam between
+            // two Connectables is drawn exactly once per frame regardless of which end's
+            // BER submits first, no lex-order dedup, no silent drops if one BER isn't
+            // wired or one endpoint is unloaded.
+            NeoForge.EVENT_BUS.addListener { _: RenderFrameEvent.Pre ->
+                damien.nodeworks.render.ConnectionBeamRenderer.startFrame()
+            }
         }
     }
 
     private fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
-        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NodeRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.RECEIVER_ANTENNA, ::ReceiverAntennaRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_CORE, ::CraftingCoreRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NeoNodeRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::NeoMonitorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::NeoControllerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::NeoVariableRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::NeoTerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::NeoProcessingStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::NeoInstructionStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.RECEIVER_ANTENNA, ::NeoReceiverAntennaRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_CORE, ::NeoCraftingCoreRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_STORAGE, ::CraftingStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CO_PROCESSOR, ::CoProcessorRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::InventoryTerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::NeoInventoryTerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.BREAKER, ::NeoBreakerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PLACER, ::NeoPlacerRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
@@ -119,6 +159,10 @@ object NeoForgeClientSetup {
         event.register(
             net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "portable_inventory_terminal_linked"),
             damien.nodeworks.client.item.PortableInventoryTerminalLinkedProperty.MAP_CODEC
+        )
+        event.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "card_channel_set"),
+            damien.nodeworks.client.item.CardChannelSetProperty.MAP_CODEC
         )
     }
 
@@ -137,6 +181,10 @@ object NeoForgeClientSetup {
         event.register(
             net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "portable_network_color"),
             damien.nodeworks.client.item.PortableNetworkColorTintSource.MAP_CODEC
+        )
+        event.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "channel_color"),
+            damien.nodeworks.client.item.ChannelColorTintSource.MAP_CODEC
         )
     }
 
@@ -186,6 +234,15 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.STORAGE_CARD) { menu, inventory, title ->
             damien.nodeworks.screen.StorageCardScreen(menu, inventory, title)
         }
+        event.register(ModScreenHandlers.CARD_SETTINGS) { menu, inventory, title ->
+            damien.nodeworks.screen.CardSettingsScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.BREAKER) { menu, inventory, title ->
+            damien.nodeworks.screen.BreakerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.PLACER) { menu, inventory, title ->
+            damien.nodeworks.screen.PlacerScreen(menu, inventory, title)
+        }
     }
 
     private fun onRegisterRenderPipelines(
@@ -193,7 +250,7 @@ object NeoForgeClientSetup {
     ) {
         // 26.1 registers pipelines via this event so the shader program is compiled
         //  and the pipeline state locked in before any RenderType referencing it is
-        //  used. Register our through-walls block-atlas pipeline here — the
+        //  used. Register our through-walls block-atlas pipeline here, the
         //  PinHighlightRenderType.THROUGH_WALLS RenderType holds the matching
         //  RenderSetup built around it.
         event.registerPipeline(damien.nodeworks.render.PinHighlightRenderType.THROUGH_WALLS_PIPELINE)
@@ -226,7 +283,7 @@ class NeoForgeClientEventService : ClientEventService {
 
     private fun onRenderAfterTranslucent(event: RenderLevelStageEvent.AfterTranslucentBlocks) {
         val mc = Minecraft.getInstance()
-        // 26.1: Camera.position field is private; public `position()` method is now the accessor.
+        // 26.1: Camera.position field is private, public `position()` method is now the accessor.
         //  Kotlin can't auto-synthesise the property because the backing field is inaccessible.
         val cameraPos = mc.gameRenderer.mainCamera.position()
         val bufferSource = mc.renderBuffers().bufferSource()

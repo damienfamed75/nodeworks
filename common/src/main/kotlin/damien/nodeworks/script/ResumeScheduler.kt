@@ -4,7 +4,7 @@ import org.slf4j.LoggerFactory
 
 /**
  * Global server-side scheduler for resumed crafting jobs.
- * Independent of any script engine — CPUs register their own polls here
+ * Independent of any script engine, CPUs register their own polls here
  * when they load from NBT with pending operations.
  *
  * Ticked from the server tick event in both Fabric and NeoForge.

@@ -1,0 +1,156 @@
+{
+    DataVersion: 4790,
+    size: [4, 4, 1],
+    data: [
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:crafting_core{formed:true}",
+            nbt: {
+                isCrafting: 0b,
+                scheduler: {
+                    backlog: [],
+                    inProgress: [I; ],
+                    state: "IDLE",
+                    completed: [I; ]
+                },
+                isFormed: 1b,
+                components: {},
+                currentCraftItem: "",
+                networkId: "ef69587d-ef3a-4daf-84b5-ae2cb84323ec",
+                id: "nodeworks:crafting_core",
+                connections: [
+                    [I; 1, 0, 0]
+                ],
+                bufferState: {
+                    countCap: 768L,
+                    typesCap: 12,
+                    items: {}
+                }
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:crafting_core{formed:true}",
+            nbt: {
+                isCrafting: 0b,
+                scheduler: {
+                    backlog: [],
+                    inProgress: [I; ],
+                    state: "IDLE",
+                    completed: [I; ]
+                },
+                isFormed: 1b,
+                components: {},
+                currentCraftItem: "",
+                networkId: "ef69587d-ef3a-4daf-84b5-ae2cb84323ec",
+                id: "nodeworks:crafting_core",
+                connections: [
+                    [I; 3, 0, 0]
+                ],
+                bufferState: {
+                    countCap: 768L,
+                    typesCap: 12,
+                    items: {}
+                }
+            }
+        },
+        {
+            pos: [0, 1, 0],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        },
+        {
+            pos: [1, 1, 0],
+            state: "nodeworks:crafting_storage{formed:true,overheat_level:0}",
+            nbt: {
+                components: {},
+                id: "nodeworks:crafting_storage"
+            }
+        },
+        {
+            pos: [3, 1, 0],
+            state: "nodeworks:crafting_storage{formed:true,overheat_level:3}",
+            nbt: {
+                components: {},
+                id: "nodeworks:crafting_storage"
+            }
+        },
+        {
+            pos: [0, 2, 0],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        },
+        {
+            pos: [1, 2, 0],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        },
+        {
+            pos: [3, 2, 0],
+            state: "nodeworks:co_processor{formed:true,overheat_level:3}",
+            nbt: {
+                components: {},
+                id: "nodeworks:co_processor"
+            }
+        },
+        {
+            pos: [0, 3, 0],
+            state: "nodeworks:co_processor{formed:true,overheat_level:0}",
+            nbt: {
+                components: {},
+                id: "nodeworks:co_processor"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:stabilizer",
+        "nodeworks:crafting_core{formed:true}",
+        "nodeworks:crafting_storage{formed:true,overheat_level:0}",
+        "nodeworks:crafting_storage{formed:true,overheat_level:3}",
+        "nodeworks:co_processor{formed:true,overheat_level:3}",
+        "nodeworks:co_processor{formed:true,overheat_level:0}"
+    ]
+}

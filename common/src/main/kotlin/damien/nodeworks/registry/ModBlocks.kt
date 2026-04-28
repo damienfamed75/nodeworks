@@ -7,7 +7,9 @@ import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.AntennaSegmentBlock
+import damien.nodeworks.block.BreakerBlock
 import damien.nodeworks.block.BroadcastAntennaBlock
+import damien.nodeworks.block.PlacerBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CoProcessorBlock
 import damien.nodeworks.block.CraftingStorageBlock
@@ -86,6 +88,22 @@ object ModBlocks {
         ::CraftingCoreBlock,
         BlockBehaviour.Properties.of()
             .strength(4.0f, 8.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val BREAKER: Block = register(
+        "breaker",
+        ::BreakerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val PLACER: Block = register(
+        "placer",
+        ::PlacerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()
     )
 
@@ -201,7 +219,7 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
     )
 
-    /** Register a block only — no BlockItem. Used for internal multiblock parts that the
+    /** Register a block only, no BlockItem. Used for internal multiblock parts that the
      *  player should never hold (e.g. AntennaSegmentBlock). */
     private fun registerBlockOnly(
         id: String,
@@ -209,10 +227,10 @@ object ModBlocks {
         properties: BlockBehaviour.Properties
     ): Block {
         val identifier = Identifier.fromNamespaceAndPath("nodeworks", id)
-        // 26.1: Block.Properties must know its id before construction — the constructor
+        // 26.1: Block.Properties must know its id before construction, the constructor
         //  path walks Properties.effectiveDrops() which derefs the id to compute the
         //  default loot table key. Prior to 26.1 the id was set after the fact by
-        //  Registry.register; now it must be supplied up front.
+        //  Registry.register, now it must be supplied up front.
         val blockKey = ResourceKey.create(Registries.BLOCK, identifier)
         val block = factory(properties.setId(blockKey))
         Registry.register(BuiltInRegistries.BLOCK, identifier, block)

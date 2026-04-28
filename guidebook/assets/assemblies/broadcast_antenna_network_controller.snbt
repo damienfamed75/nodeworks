@@ -1,0 +1,54 @@
+{
+    DataVersion: 4790,
+    size: [1, 6, 1],
+    data: [
+        {
+            pos: [0, 2, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 3, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 4, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 5, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:top}"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "e483d486-6ec0-4283-a61e-1340ead4b8aa",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                networkColor: 10636280
+            }
+        },
+        {
+            pos: [0, 1, 0],
+            state: "nodeworks:broadcast_antenna",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "nodeworks:broadcast_antenna",
+                frequency: "e6cae4be-39d4-4377-b6e5-559bd7aa0264"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "nodeworks:antenna_segment{connected:false,facing:north,part:middle}",
+        "nodeworks:antenna_segment{connected:false,facing:north,part:top}",
+        "nodeworks:network_controller",
+        "nodeworks:broadcast_antenna"
+    ]
+}

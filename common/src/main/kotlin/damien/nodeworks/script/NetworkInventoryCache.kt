@@ -1,5 +1,6 @@
 package damien.nodeworks.script
 
+import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.FluidInfo
@@ -31,11 +32,11 @@ class NetworkInventoryCache(
         val info: FluidInfo
     )
 
-    // Double buffer for diff detection — items
+    // Double buffer for diff detection, items
     private var frontBuffer = LinkedHashMap<String, ItemInfo>()
     private var backBuffer = LinkedHashMap<String, ItemInfo>()
 
-    // Double buffer for diff detection — fluids
+    // Double buffer for diff detection, fluids
     private var fluidFrontBuffer = LinkedHashMap<String, FluidInfo>()
     private var fluidBackBuffer = LinkedHashMap<String, FluidInfo>()
 
@@ -44,19 +45,40 @@ class NetworkInventoryCache(
     private val fluidEntries = LinkedHashMap<String, FluidSerialEntry>()
     private var nextSerial = 1L
 
-    // Change tracking for delta sync (shared serial space — items + fluids)
+    // Change tracking for delta sync (shared serial space, items + fluids)
     private val changedSerials = mutableSetOf<Long>()
     private val removedSerials = mutableSetOf<Long>()
     private val changedFluidSerials = mutableSetOf<Long>()
 
-    // Adaptive tick rate
-    private var tickInterval = 5 // start fast
-    private var ticksUntilNext = 0
-    private var lastChangeDetected = false
+    // Round-robin polling state. The previous "poll all cards every N ticks" model
+    // is replaced with "spread one full poll across N ticks, polling 1/N of the
+    // cards per tick." Same effective rate, no per-tick burst when networks have
+    // many storage cards. The cycle state machine lives in [PollCycle], this class
+    // just wires its callbacks to the cache-specific buffer-swap, per-card poll,
+    // and apply-diff steps.
+    private val pollCycle = PollCycle<CardSnapshot>(MIN_SLICES, MAX_SLICES)
+
+    // Snapshot held between [snapshotCardsForCycle] and [finalizeAndDiff] so the
+    // craftable-phantom pass at cycle end can read the same network topology that
+    // the cycle's per-card scans saw.
+    private var cycleSnapshot: NetworkSnapshot? = null
+
+    // Keys whose count was updated mid-cycle by an immediate-delta hook
+    // ([onInserted] / [onExtracted] / [onFluidInserted] / [onFluidExtracted]).
+    // [applyDiff] skips these keys so a stale poll captured before the hook fired
+    // can't revert the entries map to the pre-hook count. Without this, a Terminal
+    // extract that happens mid-cycle would briefly flicker back to the pre-extract
+    // count when the cycle ends, since the polled `frontBuffer` value is older
+    // than the hook-updated `entries` value. Cleared after each [applyDiff].
+    private val dirtyKeys = mutableSetOf<String>()
+    private val dirtyFluidKeys = mutableSetOf<String>()
 
     companion object {
-        private const val MIN_TICK_INTERVAL = 5    // fastest: every 5 ticks (0.25s)
-        private const val MAX_TICK_INTERVAL = 60   // slowest: every 60 ticks (3s)
+        // Slices per cycle, controls how many ticks one full poll spans.
+        // MIN = active cycle (5 ticks per cycle, scan ~1/5 of cards each tick).
+        // MAX = idle cycle (60 ticks per cycle, scan ~1/60 of cards each tick).
+        private const val MIN_SLICES = 5
+        private const val MAX_SLICES = 60
 
         /** Global registry of caches. Keyed by UUID string when controller exists, or dim:pos as fallback. */
         private val caches = ConcurrentHashMap<String, NetworkInventoryCache>()
@@ -85,44 +107,68 @@ class NetworkInventoryCache(
     }
 
     init {
-        // Initial full scan
-        pollContainers()
-        applyDiff()
+        // Initial full scan, synchronous so consumers see populated state on first read.
+        // Bypasses the round-robin path (a multi-tick first scan would leave the cache
+        // empty for several ticks, which Inventory Terminal opens would briefly show
+        // as "empty network").
+        val cards = snapshotCardsForCycle()
+        for (card in cards) pollCard(card)
+        finalizeAndDiff()
     }
 
     /**
-     * Called every server tick. Manages adaptive tick rate and polls when due.
-     * Returns true if changes were detected.
+     * Called every server tick. Polls one slice of the storage cards and, when a
+     * full cycle has completed, applies the diff and adapts the cycle length.
+     * Returns true if changes were detected on this tick's diff (only fires on
+     * the cycle-end tick, intermediate slices return false).
+     *
+     * When the `/nwdebug poll` command has any listeners, also emits a chat line
+     * per tick describing which cards were just scanned. The bookkeeping is
+     * skipped entirely when nobody's listening, so production paths pay the cost
+     * of one [PollDebugger.hasListeners] check.
      */
     fun tick(): Boolean {
-        ticksUntilNext--
-        if (ticksUntilNext > 0) return false
+        val debug = PollDebugger.hasListeners()
+        val polledThisTick: MutableList<CardSnapshot>? = if (debug) mutableListOf() else null
+        // Snapshot the cycle position BEFORE pollCycle.tick advances it. After the
+        // call cycleTick is either incremented (intermediate tick) or reset to 0
+        // (cycle-end tick), so we need both the pre-tick value (the slice that was
+        // just polled) and the post-tick state (to detect cycle end).
+        val cycleTickBefore = pollCycle.cycleTick
+        val sliceCountBefore = pollCycle.sliceCount
 
-        // Poll all storage card containers
-        pollContainers()
-        val changed = applyDiff()
-
-        // Adaptive tick rate
-        if (changed) {
-            tickInterval = MIN_TICK_INTERVAL // speed up
-            lastChangeDetected = true
-        } else {
-            if (lastChangeDetected) {
-                // First idle tick after changes — stay fast for one more cycle
-                lastChangeDetected = false
+        val changed = pollCycle.tick(
+            beginCycle = ::snapshotCardsForCycle,
+            pollItem = if (polledThisTick != null) {
+                { card -> polledThisTick.add(card); pollCard(card) }
             } else {
-                // Slow down gradually
-                tickInterval = minOf(tickInterval + 5, MAX_TICK_INTERVAL)
-            }
-        }
-        ticksUntilNext = tickInterval
+                ::pollCard
+            },
+            endCycle = ::finalizeAndDiff,
+        )
 
+        if (debug) {
+            // pollCycle.cycleTick == 0 after the tick means the cycle just ended (it
+            // either incremented past sliceCount and reset, or sliceCount was 1 and
+            // the tick was a one-tick cycle).
+            val cycleEnded = pollCycle.cycleTick == 0
+            PollDebugger.emit(
+                level = level,
+                networkEntryNode = networkEntryNode,
+                tick = level.gameTime,
+                cycleTick = cycleTickBefore,
+                sliceCount = sliceCountBefore,
+                polled = polledThisTick ?: emptyList(),
+                cycleEnded = cycleEnded,
+                cycleChanged = changed,
+            )
+        }
         return changed
     }
 
-    /** Read all storage card containers into the front buffers (items + fluids). */
-    private fun pollContainers() {
-        // Swap buffers
+    /** Start a new poll cycle: swap buffers, capture the network snapshot for
+     *  the cycle, return the frozen card list to scan. */
+    private fun snapshotCardsForCycle(): List<CardSnapshot> {
         val tmp = backBuffer
         backBuffer = frontBuffer
         frontBuffer = tmp
@@ -133,84 +179,103 @@ class NetworkInventoryCache(
         fluidFrontBuffer = fluidTmp
         fluidFrontBuffer.clear()
 
-        // Discover network and read all storage
         val snapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
-        for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-            val storage = NetworkStorageHelper.getStorage(level, card)
-            if (storage != null) {
-                val items = PlatformServices.storage.findAllItemInfo(storage) { true }
-                for (info in items) {
-                    val key = cacheKey(info.itemId, info.hasData)
-                    val existing = frontBuffer[key]
-                    if (existing != null) {
-                        frontBuffer[key] = existing.copy(count = existing.count + info.count)
-                    } else {
-                        frontBuffer[key] = info
-                    }
-                }
-            }
-            // Storage cards are fluid-first (see NetworkStorageHelper.getStorage): getStorage
-            // returns null when the block exposes a fluid cap, and getFluidStorage handles
-            // the fluid side. The two branches are mutually exclusive for a given card.
-            val fluidStorage = NetworkStorageHelper.getFluidStorage(level, card)
-            if (fluidStorage != null) {
-                val fluids = PlatformServices.storage.findAllFluidInfo(fluidStorage) { true }
-                for (info in fluids) {
-                    val existing = fluidFrontBuffer[info.fluidId]
-                    if (existing != null) {
-                        fluidFrontBuffer[info.fluidId] = existing.copy(amount = existing.amount + info.amount)
-                    } else {
-                        fluidFrontBuffer[info.fluidId] = info
-                    }
-                }
-            }
-        }
+        cycleSnapshot = snapshot
+        return NetworkStorageHelper.getStorageCards(snapshot).toList()
+    }
 
-        // Add phantom craftable entries for recipe outputs not already in storage
-        for (crafter in snapshot.crafters) {
-            for (iset in crafter.instructionSets) {
-                val outputId = iset.outputItemId
-                if (outputId.isEmpty()) continue
-                val key = cacheKey(outputId, false)
+    /** Read one storage card's items and fluids into the front buffers. Called
+     *  once per card per cycle, distributed across the cycle's ticks. */
+    private fun pollCard(card: CardSnapshot) {
+        val storage = NetworkStorageHelper.getStorage(level, card)
+        if (storage != null) {
+            val items = PlatformServices.storage.findAllItemInfo(storage) { true }
+            for (info in items) {
+                val key = cacheKey(info.itemId, info.hasData)
                 val existing = frontBuffer[key]
                 if (existing != null) {
-                    // Already in storage — mark as craftable
-                    frontBuffer[key] = existing.copy(isCraftable = true)
+                    frontBuffer[key] = existing.copy(count = existing.count + info.count)
                 } else {
-                    // Not in storage — add phantom with count 0
-                    val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
-                    val name = Component.translatable(item.descriptionId).string
-                    frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
+                    frontBuffer[key] = info
                 }
             }
         }
-        for (api in snapshot.processingApis) {
-            for (procApi in api.apis) {
-                for (outputId in procApi.outputItemIds) {
-                    if (outputId.isEmpty()) continue
-                    val key = cacheKey(outputId, false)
-                    val existing = frontBuffer[key]
-                    if (existing != null) {
-                        frontBuffer[key] = existing.copy(isCraftable = true)
-                    } else {
-                        val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: continue
-                        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
-                        val name = Component.translatable(item.descriptionId).string
-                        frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
-                    }
+        // Storage cards are fluid-first (see NetworkStorageHelper.getStorage): getStorage
+        // returns null when the block exposes a fluid cap, and getFluidStorage handles
+        // the fluid side. The two branches are mutually exclusive for a given card.
+        val fluidStorage = NetworkStorageHelper.getFluidStorage(level, card)
+        if (fluidStorage != null) {
+            val fluids = PlatformServices.storage.findAllFluidInfo(fluidStorage) { true }
+            for (info in fluids) {
+                val existing = fluidFrontBuffer[info.fluidId]
+                if (existing != null) {
+                    fluidFrontBuffer[info.fluidId] = existing.copy(amount = existing.amount + info.amount)
+                } else {
+                    fluidFrontBuffer[info.fluidId] = info
                 }
             }
         }
     }
 
-    /** Compare front buffer against back buffer, update entries and change tracking. */
+    /** Finalise a poll cycle: apply craftable phantoms (per-cycle, not per-card)
+     *  and diff the front/back buffers. The slice-budget adaptation lives on
+     *  [pollCycle] now and runs after this returns. */
+    private fun finalizeAndDiff(): Boolean {
+        val snapshot = cycleSnapshot
+        if (snapshot != null) {
+            // Phantom craftable entries for recipe outputs not already in storage.
+            // Done at cycle end (not per-card) so the phantom logic only runs once.
+            for (crafter in snapshot.crafters) {
+                for (iset in crafter.instructionSets) {
+                    val outputId = iset.outputItemId
+                    if (outputId.isEmpty()) continue
+                    addCraftablePhantom(outputId)
+                }
+            }
+            for (api in snapshot.processingApis) {
+                for (procApi in api.apis) {
+                    for (outputId in procApi.outputItemIds) {
+                        if (outputId.isEmpty()) continue
+                        addCraftablePhantom(outputId)
+                    }
+                }
+            }
+        }
+        cycleSnapshot = null
+        return applyDiff()
+    }
+
+    /** Mark [outputId] as craftable in the front buffer, either by flipping the
+     *  flag on an existing entry or by adding a phantom 0-count entry. Shared
+     *  between Crafter and Processing-API phantom passes in [finalizeAndDiff]. */
+    private fun addCraftablePhantom(outputId: String) {
+        val key = cacheKey(outputId, false)
+        val existing = frontBuffer[key]
+        if (existing != null) {
+            frontBuffer[key] = existing.copy(isCraftable = true)
+        } else {
+            val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: return
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return
+            val name = Component.translatable(item.descriptionId).string
+            frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
+        }
+    }
+
+    /** Compare front buffer against back buffer, update entries and change tracking.
+     *
+     *  Keys present in [dirtyKeys] / [dirtyFluidKeys] are skipped: they were already
+     *  updated by an immediate-delta hook this cycle, so the polled `frontBuffer`
+     *  value is stale (the poll captured pre-hook state). The hook's value in
+     *  `entries` is the truth; trusting `front` here would briefly flicker the
+     *  count back to the pre-hook value until the next cycle re-polls the chest.
+     *  The dirty sets are cleared at the end of this method. */
     private fun applyDiff(): Boolean {
         var changed = false
 
-        // Detect removed items (in back but not in front)
+        // Detect removed items (in back but not in front).
         val backKeys = backBuffer.keys.toSet()
         for (key in backKeys) {
+            if (key in dirtyKeys) continue
             if (key !in frontBuffer) {
                 val entry = entries.remove(key)
                 if (entry != null) {
@@ -224,9 +289,10 @@ class NetworkInventoryCache(
         // Detect new and changed items. We compare count AND isCraftable: adding or
         //  removing a Processing Set / Instruction Set for an item that was already
         //  present in storage only flips the craftable flag, leaving count untouched
-        //  — the old count-only check missed that case, so adds/removes of recipes
+        //, the old count-only check missed that case, so adds/removes of recipes
         //  for in-stock items never reached the client.
         for ((key, info) in frontBuffer) {
+            if (key in dirtyKeys) continue
             val existing = entries[key]
             if (existing == null) {
                 // New item
@@ -243,9 +309,10 @@ class NetworkInventoryCache(
             }
         }
 
-        // Fluids — same diff pattern against fluidFrontBuffer / fluidBackBuffer.
+        // Fluids, same diff pattern against fluidFrontBuffer / fluidBackBuffer.
         val fluidBackKeys = fluidBackBuffer.keys.toSet()
         for (key in fluidBackKeys) {
+            if (key in dirtyFluidKeys) continue
             if (key !in fluidFrontBuffer) {
                 val entry = fluidEntries.remove(key)
                 if (entry != null) {
@@ -256,6 +323,7 @@ class NetworkInventoryCache(
             }
         }
         for ((key, info) in fluidFrontBuffer) {
+            if (key in dirtyFluidKeys) continue
             val existing = fluidEntries[key]
             if (existing == null) {
                 val serial = nextSerial++
@@ -268,6 +336,11 @@ class NetworkInventoryCache(
                 changed = true
             }
         }
+
+        // Clear dirty trackers after a successful diff so the next cycle starts
+        // fresh. Hooks that fire BEFORE the next applyDiff repopulate them.
+        dirtyKeys.clear()
+        dirtyFluidKeys.clear()
 
         return changed
     }
@@ -332,6 +405,9 @@ class NetworkInventoryCache(
     fun onInserted(itemId: String, hasData: Boolean, amount: Long) {
         if (amount <= 0) return
         val key = cacheKey(itemId, hasData)
+        // Mark dirty so the next applyDiff doesn't revert this update with a stale
+        // pre-insert poll value. See [applyDiff] and [dirtyKeys] for the full rationale.
+        dirtyKeys.add(key)
         val existing = entries[key]
         if (existing != null) {
             entries[key] = existing.copy(info = existing.info.copy(count = existing.info.count + amount))
@@ -353,17 +429,18 @@ class NetworkInventoryCache(
 
     /** Push an immediate fluid-insert delta so `hasChanges()` flips this tick.
      *  Without this, the menu's broadcastChanges gates on hasChanges() and would
-     *  skip syncing until the next poll (up to MAX_TICK_INTERVAL ticks later). */
+     *  skip syncing until the next poll (up to MAX_SLICES ticks later). */
     fun onFluidInserted(fluidId: String, amount: Long) {
         if (amount <= 0) return
+        dirtyFluidKeys.add(fluidId)
         val existing = fluidEntries[fluidId]
         if (existing != null) {
             fluidEntries[fluidId] = existing.copy(info = existing.info.copy(amount = existing.info.amount + amount))
             changedFluidSerials.add(existing.serial)
         } else {
-            // New fluid appeared via delta — we don't have the FluidType's localized name
+            // New fluid appeared via delta, we don't have the FluidType's localized name
             // reachable from the server side cheaply, so use the fluid id as a placeholder.
-            // The next full poll (within MAX_TICK_INTERVAL) overwrites this with the proper
+            // The next full poll (within MAX_SLICES) overwrites this with the proper
             // hover name sampled from a live FluidStack.
             val serial = nextSerial++
             fluidEntries[fluidId] = FluidSerialEntry(serial, FluidInfo(fluidId, fluidId, amount))
@@ -373,6 +450,7 @@ class NetworkInventoryCache(
 
     fun onFluidExtracted(fluidId: String, amount: Long) {
         if (amount <= 0) return
+        dirtyFluidKeys.add(fluidId)
         val existing = fluidEntries[fluidId] ?: return
         val newAmount = existing.info.amount - amount
         if (newAmount <= 0) {
@@ -388,6 +466,7 @@ class NetworkInventoryCache(
     fun onExtracted(itemId: String, hasData: Boolean, amount: Long) {
         if (amount <= 0) return
         val key = cacheKey(itemId, hasData)
+        dirtyKeys.add(key)
         val existing = entries[key] ?: return
         val newCount = existing.info.count - amount
         if (newCount <= 0) {

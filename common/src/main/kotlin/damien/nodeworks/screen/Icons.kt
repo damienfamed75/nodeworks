@@ -10,7 +10,7 @@ import net.minecraft.resources.Identifier
  * Each icon occupies a 16x16 cell on a 256x256 texture, addressed by column and row.
  *
  * 26.1: all the per-draw `RenderSystem.enableBlend / defaultBlendFunc / disableBlend`
- * sandwiches from pre-migration are gone — the GUI pipeline that `graphics.blit`
+ * sandwiches from pre-migration are gone, the GUI pipeline that `graphics.blit`
  * routes through sets those states internally. Same story for
  * `RenderSystem.setShaderColor`: tints are now per-draw ARGB arguments via the
  * tinted blit overload in compat/GuiCompat.kt. [beginBatch]/[endBatch] stay as a
@@ -35,6 +35,14 @@ class Icons private constructor(val col: Int, val row: Int) {
     /** Draw the center 8x8 of this icon (cropped 4px inset). */
     fun drawSmall(graphics: GuiGraphicsExtractor, x: Int, y: Int) {
         graphics.blit(ATLAS, x, y, (u + 4).toFloat(), (v + 4).toFloat(), 8, 8, 256, 256)
+    }
+
+    /** Draw a center 10x8 slice of this icon (3px horizontal inset, 4px vertical
+     *  inset). Use for cells whose artwork extends wider than 8px and would lose
+     *  edge columns under [drawSmall]'s 4px crop, typically when the small render
+     *  needs to preserve the leftmost / rightmost authored pixels. */
+    fun drawSmallWide(graphics: GuiGraphicsExtractor, x: Int, y: Int) {
+        graphics.blit(ATLAS, x, y, (u + 3).toFloat(), (v + 4).toFloat(), 10, 8, 256, 256)
     }
 
     /** Draw only the top-left [w] × [h] region of this cell, at its native size. Useful for
@@ -68,9 +76,9 @@ class Icons private constructor(val col: Int, val row: Int) {
 
     /** Draw this icon tinted and scaled to a custom size. */
     fun drawTinted(graphics: GuiGraphicsExtractor, x: Int, y: Int, size: Int, color: Int, alpha: Float = 1f) {
-        // No stretched-tinted overload in compat yet — use the non-stretched form with matching size.
+        // No stretched-tinted overload in compat yet, use the non-stretched form with matching size.
         // 26.1 GuiGraphicsExtractor.blit with tint requires the full `(pipeline, tex, x, y, u, v,
-        //  drawW, drawH, srcW, srcH, texW, texH, argb)` form; the stretched + tinted path isn't
+        //  drawW, drawH, srcW, srcH, texW, texH, argb)` form, the stretched + tinted path isn't
         //  needed yet so we render at native 16x16 into a size×size box by passing width=size,
         //  height=size and letting the shader stretch.
         graphics.blit(
@@ -90,10 +98,10 @@ class Icons private constructor(val col: Int, val row: Int) {
             return (a shl 24) or (color and 0xFFFFFF)
         }
 
-        /** Kept as public API — pre-migration callers wrapped multi-icon draws in
+        /** Kept as public API, pre-migration callers wrapped multi-icon draws in
          *  begin/end to batch the old `enableBlend`/`disableBlend` state changes. The
          *  26.1 GUI pipeline handles blend state per-draw internally, so these are
-         *  now no-ops; leaving them in keeps call-site code forward-compatible with
+         *  now no-ops, leaving them in keeps call-site code forward-compatible with
          *  future explicit batching. */
         fun beginBatch() {}
         fun endBatch() {}
@@ -109,7 +117,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         // Row 3:  SortAlpha    SortCountDesc SortCountAsc FilterStorage FilterRecipes FilterBoth AutoFocusOn AutoFocusOff CraftInProgress CraftComplete CraftPlus AutoPullOn AutoPullOff CraftGridClear CraftGridDistribute
         // =====================================================================
 
-        // Row 0 — General UI icons
+        // Row 0, General UI icons
         val CHECKMARK = Icons(0, 0)
         val X = Icons(1, 0)
         val ARROW_RIGHT = Icons(2, 0)
@@ -138,13 +146,13 @@ class Icons private constructor(val col: Int, val row: Int) {
         val WARNING = Icons(14, 1)
         val X_SMALL = Icons(15, 1)  // 5×5 in top-left corner of the cell
 
-        // Row 1 — Card type icons
+        // Row 1, Card type icons
         val IO_CARD = Icons(0, 1)
         val STORAGE_CARD = Icons(1, 1)
         val REDSTONE_CARD = Icons(2, 1)
         val VARIABLE = Icons(3, 1)
 
-        // Row 2 — Button state icons
+        // Row 2, Button state icons
         val COPY_IDLE = Icons(0, 2)
         val COPY_HOVER = Icons(1, 2)
         val COPY_PRESSED = Icons(2, 2)
@@ -162,7 +170,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         val ITEMS_ONLY = Icons(14, 2)
         val FLUIDS_ONLY = Icons(15, 2)
 
-        // Row 3 — Inventory Terminal icons
+        // Row 3, Inventory Terminal icons
         val SORT_ALPHA = Icons(0, 3)
         val SORT_COUNT_DESC = Icons(1, 3)
         val SORT_COUNT_ASC = Icons(2, 3)
@@ -179,5 +187,10 @@ class Icons private constructor(val col: Int, val row: Int) {
         val CRAFTING_GRID_CLEAR = Icons(13, 3)
         val CRAFTING_GRID_DISTRIBUTE = Icons(14, 3)
         val RESERVED_SLOT = Icons(15, 3)
+
+        // Row 4, More Card / Device Icons
+        val OBSERVER_CARD = Icons(0, 4)
+        val BREAKER = Icons(1, 4)
+        val PLACER = Icons(2, 4)
     }
 }

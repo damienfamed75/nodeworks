@@ -22,7 +22,7 @@ class CraftingCoreMenu(
 
     companion object {
         // ContainerData layout:
-        //   [0][1] = bufferUsed (hi, lo) — Long packed as two Ints
+        //   [0][1] = bufferUsed (hi, lo), Long packed as two Ints
         //   [2][3] = bufferCapacity (hi, lo)
         //   [4]    = bufferTypesUsed (small int)
         //   [5]    = bufferTypesCapacity
@@ -30,7 +30,7 @@ class CraftingCoreMenu(
         //   [7]    = isCrafting (0/1)
         //   [8]    = heatGenerated
         //   [9]    = heatCooled
-        //   [10]   = throttle × 100 (fixed-point; e.g. 125 = 1.25×)
+        //   [10]   = throttle × 100 (fixed-point, e.g. 125 = 1.25×)
         const val DATA_SLOTS = 11
         private const val IDX_USED_HI = 0
         private const val IDX_USED_LO = 1
@@ -44,7 +44,7 @@ class CraftingCoreMenu(
         private const val IDX_HEAT_COOL = 9
         private const val IDX_THROTTLE_X100 = 10
 
-        // Buffer sync runs slower (it's mostly inventory state, doesn't need to be smooth);
+        // Buffer sync runs slower (it's mostly inventory state, doesn't need to be smooth),
         // tree sync runs faster while the player has the GUI open so active-node highlights
         // and progression dots feel responsive (5 ticks ≈ 4 updates/sec).
         private const val BUFFER_SYNC_INTERVAL = 20
@@ -111,13 +111,13 @@ class CraftingCoreMenu(
     /** Client-side craft tree, populated by CraftingCpuTreePayload handler. */
     var craftTree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
 
-    /** Client-side active node IDs — currently being worked on, amber-highlighted. */
+    /** Client-side active node IDs, currently being worked on, amber-highlighted. */
     var activeNodeIds: Set<Int> = emptySet()
 
-    /** Client-side completed node IDs — green-highlighted (this branch is done). */
+    /** Client-side completed node IDs, green-highlighted (this branch is done). */
     var completedNodeIds: Set<Int> = emptySet()
 
-    /** Last-craft-failure reason for the footer bar. Initialized from openData; kept in
+    /** Last-craft-failure reason for the footer bar. Initialized from openData, kept in
      *  sync via [damien.nodeworks.network.CpuFailurePayload] pushes. */
     var lastFailureReason: String = initialFailureReason
 
@@ -150,7 +150,7 @@ class CraftingCoreMenu(
             treeSyncTimer = 0
             syncCraftTree(entity)
         }
-        // Failure-reason sync — sent any time the string changes. Not throttled; changes
+        // Failure-reason sync, sent any time the string changes. Not throttled, changes
         // only fire on plan boundaries (rare).
         val currentFailure = entity.lastFailureReason
         if (currentFailure != lastSentFailure) {

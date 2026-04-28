@@ -65,17 +65,17 @@ class InstructionSetScreenHandler(
     }
 
     init {
-        // 3x3 recipe grid — ghost slots (slots 0-8). Positions match InstructionSetScreen.
+        // 3x3 recipe grid, ghost slots (slots 0-8). Positions match InstructionSetScreen.
         for (row in 0..2) {
             for (col in 0..2) {
                 addSlot(GhostSlot(recipeGrid, row * 3 + col, 36 + col * 18, 13 + row * 18))
             }
         }
 
-        // Result slot (slot 9) — display only, vertically centered on the middle row.
+        // Result slot (slot 9), display only, vertically centered on the middle row.
         addSlot(ResultSlot(resultContainer, 0, 128, 31))
 
-        // Player inventory — matches ProcessingSetScreen layout (9 cols at x=9, inv y=95, hotbar y=153).
+        // Player inventory, matches ProcessingSetScreen layout (9 cols at x=9, inv y=95, hotbar y=153).
         // INV_GRID_Y = 80+14 = 94, so slot y = 95. Hotbar y = 95 + 54 + 4 = 153.
         for (row in 0 until 3) {
             for (col in 0 until 9) {
@@ -120,7 +120,7 @@ class InstructionSetScreenHandler(
     }
 
     override fun clickMenuButton(player: Player, id: Int): Boolean {
-        // ID 0 — triggered by the clear-all button in InstructionSetScreen. Wipes every
+        // ID 0, triggered by the clear-all button in InstructionSetScreen. Wipes every
         // ghost slot in the 3×3 recipe grid and recomputes the result.
         if (id == 0) {
             for (i in 0..8) recipeGrid.setItem(i, ItemStack.EMPTY)
@@ -182,7 +182,21 @@ class InstructionSetScreenHandler(
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is InstructionSet) {
-                    InstructionSet.setRecipe(stack, recipe, output)
+                    // InstructionSets stack to 64 with shared NBT, so writing the
+                    // recipe directly into the held stack would programme every
+                    // copy in it. Split off a single copy when the stack has more
+                    // than one, apply the recipe to that copy alone, and bounce
+                    // it into the player's inventory.
+                    if (stack.count > 1) {
+                        val configured = stack.copyWithCount(1)
+                        InstructionSet.setRecipe(configured, recipe, output)
+                        stack.shrink(1)
+                        if (!player.inventory.add(configured)) {
+                            player.drop(configured, false)
+                        }
+                    } else {
+                        InstructionSet.setRecipe(stack, recipe, output)
+                    }
                 }
             }
             is SaveMode.InNode -> {

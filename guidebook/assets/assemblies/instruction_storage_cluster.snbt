@@ -1,0 +1,721 @@
+{
+    DataVersion: 4790,
+    size: [5, 2, 1],
+    data: [
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:instruction_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 0b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 1b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 2b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 3b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 4b,
+                        id: "nodeworks:instruction_set"
+                    }
+                ],
+                networkId: "c65c5002-0673-403a-8249-ebdae4eead08",
+                id: "nodeworks:instruction_storage"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:instruction_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 0b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 1b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 2b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 3b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 4b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 5b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 6b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 7b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 8b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 9b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 10b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 11b,
+                        id: "nodeworks:instruction_set"
+                    }
+                ],
+                networkId: "c65c5002-0673-403a-8249-ebdae4eead08",
+                id: "nodeworks:instruction_storage"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:instruction_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 0b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 1b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 2b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 3b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 4b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 5b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 6b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 7b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 8b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 9b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 10b,
+                        id: "nodeworks:instruction_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:birch_fence",
+                                recipe: [
+                                    "",
+                                    "",
+                                    "",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks",
+                                    "minecraft:birch_planks",
+                                    "minecraft:stick",
+                                    "minecraft:birch_planks"
+                                ]
+                            }
+                        },
+                        count: 64,
+                        Slot: 11b,
+                        id: "nodeworks:instruction_set"
+                    }
+                ],
+                networkId: "c65c5002-0673-403a-8249-ebdae4eead08",
+                id: "nodeworks:instruction_storage",
+                connections: [
+                    [I; 3, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "c65c5002-0673-403a-8249-ebdae4eead08",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 4, 0, 0],
+                    [I; 2, 0, 0],
+                    [I; 4, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [4, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "c65c5002-0673-403a-8249-ebdae4eead08",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 3, 0, 0]
+                ],
+                networkColor: 5278186
+            }
+        },
+        {
+            pos: [4, 1, 0],
+            state: "nodeworks:inventory_terminal{facing:north}",
+            nbt: {
+                components: {},
+                layoutIndex: 0,
+                networkId: "c65c5002-0673-403a-8249-ebdae4eead08",
+                id: "nodeworks:inventory_terminal",
+                connections: [
+                    [I; 3, 0, 0]
+                ]
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:instruction_storage{facing:north}",
+        "nodeworks:node",
+        "nodeworks:network_controller",
+        "nodeworks:inventory_terminal{facing:north}"
+    ]
+}

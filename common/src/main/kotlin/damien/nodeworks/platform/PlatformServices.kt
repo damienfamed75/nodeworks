@@ -15,7 +15,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockState
 
 /**
- * Platform service locator — set by the loader-specific module at init time.
+ * Platform service locator, set by the loader-specific module at init time.
  */
 object PlatformServices {
     lateinit var storage: StorageService
@@ -26,15 +26,42 @@ object PlatformServices {
     lateinit var clientEvents: ClientEventService
 
     /** Set by the loader-specific client init. Falls back to a plain gray square if
-     *  the loader didn't register a renderer (e.g. dedicated server — never touched). */
+     *  the loader didn't register a renderer (e.g. dedicated server, never touched). */
     var fluidRenderer: FluidSpriteRenderer = FluidSpriteRenderer.Fallback
+
+    /** Opens a reference into the in-game guidebook. Refs look like
+     *  `namespace:path#fragment`, same shape `guideme.PageAnchor.parse` accepts.
+     *  Default is a no-op so loader-less contexts (unit tests) don't crash, neoforge
+     *  sets a GuideME-backed implementation at client init. */
+    var guidebook: GuidebookService = GuidebookService.Noop
+
+    /** Reports whether the "open docs on hover" key is currently held down, polled
+     *  via GLFW so it sees through focus routing (typing in a text field doesn't hide
+     *  the held state from us). Used by the Scripting Terminal's editor to drive the
+     *  Hold-G progress bar. Default always returns false so unconfigured loaders just
+     *  never show a hold-progress bar. */
+    var openDocsKeyHeld: () -> Boolean = { false }
+}
+
+/**
+ * Abstracts "open the guide at this ref" so code in `:common` can drive navigation
+ * without importing GuideME directly (it's a neoforge-only dep). The ref format is
+ * whatever the impl understands, for the GuideME-backed impl, `namespace:path` with an
+ * optional `#fragment`.
+ */
+interface GuidebookService {
+    fun open(ref: String)
+
+    companion object Noop : GuidebookService {
+        override fun open(ref: String) {}
+    }
 }
 
 /**
  * Draws a fluid's still texture at a given GUI position. Loader-specific because
  * 26.1 moved fluid client assets onto vanilla's `ModelManager.fluidStateModelSet`
  * (→ `FluidModel.stillMaterial().sprite()`), which the common module can reach via
- * Minecraft APIs but historically lived behind NeoForge's `IClientFluidTypeExtensions`;
+ * Minecraft APIs but historically lived behind NeoForge's `IClientFluidTypeExtensions`,
  * keeping the entry point behind a platform service leaves room for loader-specific
  * fallbacks and Fabric's eventual Transfer-API equivalent.
  */
@@ -43,7 +70,7 @@ interface FluidSpriteRenderer {
 
     companion object Fallback : FluidSpriteRenderer {
         override fun render(graphics: net.minecraft.client.gui.GuiGraphicsExtractor, fluidId: String, x: Int, y: Int, size: Int) {
-            // Gray placeholder — the NeoForge impl replaces this at client init.
+            // Gray placeholder, the NeoForge impl replaces this at client init.
             graphics.fill(x, y, x + size, y + size, 0xFF808080.toInt())
         }
     }
@@ -64,14 +91,14 @@ interface ClientEventService {
 }
 
 /**
- * Discriminator for the two resource domains a card can bridge — items vs. fluids.
+ * Discriminator for the two resource domains a card can bridge, items vs. fluids.
  * Counts are interpreted per-kind: 1-per-unit for items, 1-per-millibucket for fluids.
  */
 enum class ResourceKind { ITEM, FLUID }
 
 /**
  * Abstracts storage access (Fabric Transfer API vs NeoForge IItemHandler / IFluidHandler).
- * Both item and fluid capabilities are probed via the same service; callers choose by the
+ * Both item and fluid capabilities are probed via the same service, callers choose by the
  * resource kind of the query (filter prefix / handle kind).
  */
 interface StorageService {
@@ -111,7 +138,7 @@ interface StorageService {
     /**
      * Insert exactly [count] items of [item] into [dest] atomically.
      *
-     * Either inserts all [count] and returns true, or inserts nothing and returns false —
+     * Either inserts all [count] and returns true, or inserts nothing and returns false,
      * never leaves a partial state. Used by `:insert` to guarantee items can't be duped or
      * deleted on a half-successful move.
      *
@@ -120,6 +147,18 @@ interface StorageService {
      * batch). Cheap: O(destination slots) regardless of item count.
      */
     fun tryInsertAll(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, count: Long): Boolean
+
+    /**
+     * Non-mutating capacity probe: returns how many [item] could be inserted into [dest]
+     * right now, up to [maxCount]. Backs atomic network-wide inserts, we sum the
+     * per-card capacities before committing so a partially-full network never extracts
+     * from source unless the whole move will fit.
+     *
+     * Uses the platform's native simulate primitive (`IItemHandler.insertItem(simulate=true)`
+     * on NeoForge), so the returned number reflects slot-level constraints (stack limits,
+     * filter slots, etc.), not just free slot count × stack size.
+     */
+    fun simulateInsertItem(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, maxCount: Long): Long = 0L
 
     /**
      * Move up to [count] items matching [filter] from [source] to [dest] atomically.
@@ -161,6 +200,13 @@ interface StorageService {
     /** Atomically insert exactly [amount] mB of [fluidId] into [dest], or nothing. */
     fun tryInsertAllFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Boolean = false
 
+    /**
+     * Non-mutating fluid capacity probe. Returns how many mB of [fluidId] could be
+     * filled into [dest] right now, up to [maxAmount]. Backs atomic network-wide
+     * fluid inserts.
+     */
+    fun simulateInsertFluid(dest: FluidStorageHandle, fluidId: String, maxAmount: Long): Long = 0L
+
     /** Extract up to [maxAmount] mB matching [filter] from [storage]. Returns amount actually removed. */
     fun extractFluid(storage: FluidStorageHandle, filter: (String) -> Boolean, maxAmount: Long): Long = 0L
 }
@@ -184,10 +230,10 @@ data class FluidInfo(
     val amount: Long
 )
 
-/** Opaque handle to an item storage — platform-specific implementation. */
+/** Opaque handle to an item storage, platform-specific implementation. */
 interface ItemStorageHandle
 
-/** Opaque handle to a fluid storage — platform-specific implementation. */
+/** Opaque handle to a fluid storage, platform-specific implementation. */
 interface FluidStorageHandle
 
 /** Opaque handle to a slotted item storage. */
@@ -234,7 +280,7 @@ interface ModStateService {
     fun stopScript(level: ServerLevel, pos: BlockPos)
 
     /** Start the terminal's script immediately on the server tick. Used by the redstone-
-     *  pulse toggle on the Terminal block — no network round-trip, no open GUI required. */
+     *  pulse toggle on the Terminal block, no network round-trip, no open GUI required. */
     fun startScript(level: ServerLevel, pos: BlockPos)
 
     /** Register a terminal for auto-run on world startup. */
@@ -245,7 +291,7 @@ interface ModStateService {
      * scoped to the given terminal positions (i.e., only terminals on the same network).
      *
      * [overrideDimension] is used when the terminal positions live in a different
-     * dimension than the calling [level] — e.g. a cross-dimensional Receiver Antenna
+     * dimension than the calling [level], e.g. a cross-dimensional Receiver Antenna
      * where the provider network is in the Nether but the consumer terminal is in the
      * Overworld. Pass null when the positions are in the caller's own dimension.
      */

@@ -1,0 +1,191 @@
+{
+    DataVersion: 4790,
+    size: [6, 2, 2],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:redstone_lamp{lit:false}"
+        },
+        {
+            pos: [1, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [1, 0, 1],
+            state: "minecraft:redstone_lamp{lit:true}"
+        },
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [2, 0, 1],
+            state: "minecraft:redstone_lamp{lit:true}"
+        },
+        {
+            pos: [3, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [3, 0, 1],
+            state: "minecraft:redstone_lamp{lit:true}"
+        },
+        {
+            pos: [4, 0, 0],
+            state: "minecraft:stone"
+        },
+        {
+            pos: [4, 0, 1],
+            state: "minecraft:stone"
+        },
+        {
+            pos: [5, 0, 0],
+            state: "minecraft:stone"
+        },
+        {
+            pos: [5, 0, 1],
+            state: "minecraft:stone"
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:redstone_wire{east:side,north:none,power:0,south:none,west:side}"
+        },
+        {
+            pos: [0, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:redstone_wire{east:side,north:none,power:1,south:none,west:side}"
+        },
+        {
+            pos: [1, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:redstone_wire{east:side,north:none,power:2,south:none,west:side}"
+        },
+        {
+            pos: [2, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "minecraft:redstone_wire{east:side,north:none,power:3,south:none,west:side}"
+        },
+        {
+            pos: [3, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 43b,
+                        id: "nodeworks:redstone_card"
+                    }
+                ],
+                networkId: "5290d770-e446-4a61-9736-d13dc466dca8",
+                id: "nodeworks:node",
+                redstoneOutputs: [I; 0, 0, 0, 0, 3, 0],
+                connections: [
+                    [I; 4, 1, 1],
+                    [I; 5, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [4, 1, 1],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "5290d770-e446-4a61-9736-d13dc466dca8",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 4, 1, 0]
+                ],
+                networkColor: 9732850
+            }
+        },
+        {
+            pos: [5, 1, 0],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                autoRun: 0b,
+                layoutIndex: 0,
+                networkId: "5290d770-e446-4a61-9736-d13dc466dca8",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: "local redstone_1 = network:get(\"redstone_1\")
+redstone_1:set(3)"
+                    }
+                ],
+                connections: [
+                    [I; 4, 1, 0]
+                ]
+            }
+        }
+    ],
+    entities: [
+        {
+            nbt: {
+                Motion: [-1.6598329534444526e-150d, 0.0d, 2.5609814076907925e-150d],
+                Health: 5s,
+                Invulnerable: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                PortalCooldown: 0,
+                Rotation: [43.91342544555664f, 0.0f],
+                Item: {
+                    count: 1,
+                    id: "minecraft:redstone"
+                },
+                Pos: [-29.064485606922524d, 73.0d, 21.2356489919114d],
+                PickupDelay: 0s,
+                Fire: 0s,
+                id: "minecraft:item",
+                UUID: [I; -64014766, 1480475768, -1390228212, -1899210117],
+                Lifespan: 6000,
+                Age: 2563s
+            },
+            blockPos: [-1, 1, 1],
+            pos: [-0.06448560692252414d, 1.0d, 1.2356489919114004d]
+        }
+    ],
+    palette: [
+        "minecraft:sandstone",
+        "minecraft:redstone_lamp{lit:false}",
+        "minecraft:redstone_lamp{lit:true}",
+        "minecraft:stone",
+        "minecraft:redstone_wire{east:side,north:none,power:0,south:none,west:side}",
+        "minecraft:air",
+        "minecraft:redstone_wire{east:side,north:none,power:1,south:none,west:side}",
+        "minecraft:redstone_wire{east:side,north:none,power:2,south:none,west:side}",
+        "minecraft:redstone_wire{east:side,north:none,power:3,south:none,west:side}",
+        "nodeworks:node",
+        "nodeworks:network_controller",
+        "nodeworks:terminal{facing:north}"
+    ]
+}

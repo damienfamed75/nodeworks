@@ -14,7 +14,7 @@ import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
 
 /**
- * Co-Processor — adds one parallel craft thread and fixed heat to an adjacent CPU.
+ * Co-Processor, adds one parallel craft thread and fixed heat to an adjacent CPU.
  */
 class CoProcessorBlockEntity(
     pos: BlockPos,

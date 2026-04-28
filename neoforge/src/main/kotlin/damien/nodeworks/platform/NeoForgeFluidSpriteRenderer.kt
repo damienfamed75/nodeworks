@@ -14,7 +14,7 @@ import net.minecraft.resources.Identifier
  *
  * 26.1 moved fluid client assets onto `FluidModel` (stillMaterial / flowingMaterial /
  * tintSource) instead of the NeoForge `IClientFluidTypeExtensions.getStillTexture()`
- * hook that older versions exposed; the public accessor is
+ * hook that older versions exposed, the public accessor is
  * `ModelManager#getFluidStateModelSet()`.
  */
 class NeoForgeFluidSpriteRenderer : FluidSpriteRenderer {

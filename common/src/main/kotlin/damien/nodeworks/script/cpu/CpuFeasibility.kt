@@ -6,11 +6,11 @@ import damien.nodeworks.script.CraftTreeBuilder
 /**
  * Pre-flight analysis of a craft job against a CPU's buffer capacity.
  *
- * Walks the craft tree iteratively (no recursion — safe for deep trees) and computes
+ * Walks the craft tree iteratively (no recursion, safe for deep trees) and computes
  * conservative estimates for peak buffer demand. Rejects crafts that provably cannot fit
  * in the CPU's current buffer limits (count or types).
  *
- * Does NOT simulate scheduling. Catches obvious infeasibility only — future scheduler
+ * Does NOT simulate scheduling. Catches obvious infeasibility only, future scheduler
  * work may refine this with tighter bounds. Never over-rejects: if this returns ok,
  * the craft CAN fit (assuming items are available).
  */
@@ -51,7 +51,7 @@ object CpuFeasibility {
             for (child in node.children) stack.addLast(child)
         }
 
-        // Missing ingredients win over every other check — no point starting a craft that
+        // Missing ingredients win over every other check, no point starting a craft that
         // can't finish. Report the first few unresolvable items by name.
         if (missing.isNotEmpty()) {
             val summary = missing.take(3).joinToString(", ") { "${it.count}× ${it.itemName}" }

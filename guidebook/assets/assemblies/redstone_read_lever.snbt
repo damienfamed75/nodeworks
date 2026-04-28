@@ -1,0 +1,98 @@
+{
+    DataVersion: 4790,
+    size: [3, 1, 3],
+    data: [
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:stone"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:lever{face:wall,facing:north,powered:true}"
+        },
+        {
+            pos: [0, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 1],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:redstone_card"
+                    }
+                ],
+                networkId: "8140c718-9f98-4b26-829d-f917d04af85b",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 1, 0, 2],
+                    [I; 2, 0, 1]
+                ]
+            }
+        },
+        {
+            pos: [1, 0, 2],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "8140c718-9f98-4b26-829d-f917d04af85b",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 1, 0, 1]
+                ],
+                networkColor: 14710566
+            }
+        },
+        {
+            pos: [2, 0, 1],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                autoRun: 0b,
+                layoutIndex: 0,
+                networkId: "8140c718-9f98-4b26-829d-f917d04af85b",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: "local redstone_1 = network:get(\"redstone_1\")
+print(redstone_1:strength())"
+                    }
+                ],
+                connections: [
+                    [I; 1, 0, 1]
+                ]
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:stone",
+        "minecraft:lever{face:wall,facing:north,powered:true}",
+        "minecraft:air",
+        "nodeworks:node",
+        "nodeworks:network_controller",
+        "nodeworks:terminal{facing:north}"
+    ]
+}

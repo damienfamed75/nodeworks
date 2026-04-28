@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Each entry represents one craft request. The job is either pending (completedOps=0)
  * or complete (completedOps=1). Items go through the CPU buffer and are flushed to
- * network storage atomically when the whole job finishes — same as network:craft():store().
+ * network storage atomically when the whole job finishes, same as network:craft():store().
  */
 object CraftQueueManager {
 

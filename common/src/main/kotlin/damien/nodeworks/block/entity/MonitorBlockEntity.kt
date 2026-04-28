@@ -138,7 +138,7 @@ class MonitorBlockEntity(
     // `saveWithoutMetadata` delegates to `saveAdditional`, so the update packet
     // carries `networkId`, `connections`, `trackedItem`, and `count`. The client-side
     // BER and NodeConnectionRenderer both need networkId to tint the emissive face
-    // with the current network colour — without the full save they'd see
+    // with the current network colour, without the full save they'd see
     // networkId=null and the glow would stay grey.
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

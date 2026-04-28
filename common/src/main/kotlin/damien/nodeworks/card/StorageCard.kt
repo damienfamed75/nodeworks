@@ -19,7 +19,7 @@ import net.minecraft.world.level.Level
 import java.util.function.Consumer
 
 /**
- * Storage Card — registers an adjacent container as passive network storage.
+ * Storage Card, registers an adjacent container as passive network storage.
  * Items in storage-card inventories are discoverable by the entire network
  * and available for crafting via Recipe Cards.
  *
@@ -56,7 +56,15 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
 
         fun setPriority(stack: ItemStack, priority: Int) {
             val clamped = priority.coerceIn(0, 999)
-            val tag = CompoundTag()
+            // Skip the write when the value already matches so a clean GUI cycle
+            // doesn't dirty CUSTOM_DATA on a previously-pristine stack and drop
+            // the mod-name tooltip line.
+            if (getPriority(stack) == clamped) return
+            // Read-modify-write so we don't clobber sibling keys like the channel
+            // color set via [CardChannel.set]. Pre-channel this method always wrote
+            // a fresh single-key tag, which is fine when nothing else lives in
+            // CUSTOM_DATA, now we merge.
+            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
             tag.putInt("priority", clamped)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }

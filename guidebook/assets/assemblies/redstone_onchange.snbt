@@ -1,0 +1,155 @@
+{
+    DataVersion: 4790,
+    size: [5, 2, 2],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [1, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [1, 0, 1],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [2, 1, 1],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [2, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:redstone_wire{east:side,north:none,power:15,south:side,west:none}"
+        },
+        {
+            pos: [0, 1, 1],
+            state: "minecraft:redstone_wire{east:side,north:side,power:14,south:none,west:none}"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:repeater{delay:4,facing:east,locked:false,powered:true}"
+        },
+        {
+            pos: [1, 1, 1],
+            state: "minecraft:redstone_wire{east:side,north:none,power:13,south:none,west:side}"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:redstone_wall_torch{facing:north,lit:false}"
+        },
+        {
+            pos: [4, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 43b,
+                        id: "nodeworks:redstone_card"
+                    }
+                ],
+                networkId: "7de3cabb-d93d-41a5-96db-9c11c0b0b7d7",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 3, 1, 1],
+                    [I; 4, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [3, 1, 1],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "7de3cabb-d93d-41a5-96db-9c11c0b0b7d7",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 3, 1, 0]
+                ],
+                networkColor: 10417292
+            }
+        },
+        {
+            pos: [4, 1, 0],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                autoRun: 0b,
+                layoutIndex: 0,
+                networkId: "7de3cabb-d93d-41a5-96db-9c11c0b0b7d7",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: "local card = network:get(\"redstone_1\")
+
+local lastPowered = card:powered()
+card:onChange(function(strength: number)
+    local powered = strength > 0
+    if lastPowered == powered then
+        return
+    end
+    lastPowered = powered
+    print(\"state changed\")
+end)"
+                    }
+                ],
+                connections: [
+                    [I; 3, 1, 0]
+                ]
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:sandstone",
+        "minecraft:air",
+        "minecraft:redstone_wire{east:side,north:none,power:15,south:side,west:none}",
+        "minecraft:redstone_wire{east:side,north:side,power:14,south:none,west:none}",
+        "minecraft:repeater{delay:4,facing:east,locked:false,powered:true}",
+        "minecraft:redstone_wire{east:side,north:none,power:13,south:none,west:side}",
+        "minecraft:redstone_wall_torch{facing:north,lit:false}",
+        "nodeworks:node",
+        "nodeworks:network_controller",
+        "nodeworks:terminal{facing:north}"
+    ]
+}

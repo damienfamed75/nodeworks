@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.material.Fluids
 
 /**
- * Budding Celestine — grows Celestine buds on its faces, identical to BuddingAmethystBlock behavior.
+ * Budding Celestine, grows Celestine buds on its faces, identical to BuddingAmethystBlock behavior.
  */
 class BuddingCelestineBlock(properties: Properties) : AmethystBlock(properties) {
 

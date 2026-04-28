@@ -1,0 +1,105 @@
+{
+    DataVersion: 4790,
+    size: [4, 2, 1],
+    data: [
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:crafting_storage{formed:true,overheat_level:0}",
+            nbt: {
+                components: {},
+                id: "nodeworks:crafting_storage"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "b200860d-de54-4943-9eca-6550e8ca6868",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 3, 0, 0],
+                    [I; 1, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "b200860d-de54-4943-9eca-6550e8ca6868",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 2, 0, 0]
+                ],
+                networkColor: 2780660
+            }
+        },
+        {
+            pos: [0, 1, 0],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        },
+        {
+            pos: [1, 1, 0],
+            state: "nodeworks:crafting_core{formed:true}",
+            nbt: {
+                isCrafting: 0b,
+                scheduler: {
+                    backlog: [],
+                    inProgress: [I; ],
+                    state: "IDLE",
+                    completed: [I; ]
+                },
+                isFormed: 1b,
+                components: {},
+                currentCraftItem: "",
+                networkId: "b200860d-de54-4943-9eca-6550e8ca6868",
+                id: "nodeworks:crafting_core",
+                connections: [
+                    [I; 2, 0, 0]
+                ],
+                bufferState: {
+                    countCap: 768L,
+                    typesCap: 12,
+                    items: {}
+                }
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:stabilizer",
+        "nodeworks:crafting_storage{formed:true,overheat_level:0}",
+        "nodeworks:node",
+        "nodeworks:network_controller",
+        "nodeworks:crafting_core{formed:true}"
+    ]
+}

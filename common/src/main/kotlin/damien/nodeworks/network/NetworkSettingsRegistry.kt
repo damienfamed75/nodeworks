@@ -21,12 +21,12 @@ object NetworkSettingsRegistry {
 
     /**
      * Client-side hook fired whenever a network's settings change. Used to invalidate
-     * the BlockTintCache for Connectable blocks belonging to that network — without
+     * the BlockTintCache for Connectable blocks belonging to that network, without
      * it, the tint source returns the new colour but the cached per-chunk tint still
      * shows the old one until the chunk re-renders for some unrelated reason.
      *
      * The hook is `null` on the logical server since this registry is also populated
-     * from BE NBT load there; NeoForgeClientSetup wires it up at client init.
+     * from BE NBT load there, NeoForgeClientSetup wires it up at client init.
      */
     var onChanged: ((UUID) -> Unit)? = null
 

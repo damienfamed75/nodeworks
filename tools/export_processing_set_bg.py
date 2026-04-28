@@ -154,7 +154,7 @@ def main():
 
     # Clear-all button (non-hover)
     draw_nine_slice(canvas, GUI_ATLAS, BUTTON, CLEAR_BTN_X, CLEAR_BTN_Y, CLEAR_BTN_SIZE, CLEAR_BTN_SIZE)
-    # X_SMALL icon (5×5 in top-left of 16×16 cell) — col=15, row=1
+    # X_SMALL icon (5×5 in top-left of 16×16 cell), col=15, row=1
     x_off = CLEAR_BTN_X + (CLEAR_BTN_SIZE - 5) // 2
     y_off = CLEAR_BTN_Y + (CLEAR_BTN_SIZE - 5) // 2
     draw_icon_topleft(canvas, 15, 1, x_off, y_off, 5, 5)

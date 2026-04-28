@@ -16,11 +16,11 @@ import org.luaj.vm2.lib.*
 /**
  * Lua-side handle representing a reference to a single item type in a specific storage.
  * Created by CardHandle:find(), network:find(), network:craft(), network:shapeless().
- * Always represents one item type — use findEach() for multiple.
+ * Always represents one item type, use findEach() for multiple.
  */
 /**
  * Opaque source for items held in a CPU buffer rather than real block storage.
- * Used by processing handlers — items are extracted from here and inserted into destination.
+ * Used by processing handlers, items are extracted from here and inserted into destination.
  */
 class BufferSource(
     private val cpu: damien.nodeworks.block.entity.CraftingCoreBlockEntity,

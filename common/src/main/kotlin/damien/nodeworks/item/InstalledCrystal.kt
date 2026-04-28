@@ -10,7 +10,7 @@ import net.minecraft.world.item.ItemStack
  *
  * [ItemStack] inherits [equals]/[hashCode] from [Object] (reference equality), and
  * NeoForge's data-component validator rejects component value types that haven't
- * overridden both — without an override it can't reliably tell whether one stack has
+ * overridden both, without an override it can't reliably tell whether one stack has
  * changed relative to another. Wrapping the stack in a class that overrides
  * [equals] using [ItemStack.matches] (item + count + components) and [hashCode]
  * using [ItemStack.hashItemAndComponents] satisfies the validator and gives us the
@@ -20,7 +20,7 @@ import net.minecraft.world.item.ItemStack
  * the Portable item always writes a `.copy()` of whatever crystal the player
  * installed, and reads return the component's stored stack directly. Callers that
  * want a free-standing crystal to hand back to the player (e.g. on crystal slot
- * pickup) must copy it themselves — same contract as any other component-stored
+ * pickup) must copy it themselves, same contract as any other component-stored
  * [ItemStack] in vanilla (see `BundleContents` etc.).
  */
 class InstalledCrystal(val stack: ItemStack) {

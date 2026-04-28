@@ -30,7 +30,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
 
 /**
  * Base of the Broadcast Antenna 5-block-tall multiblock. Carries the block entity and
- * all gameplay logic; the four [AntennaSegmentBlock]s above it are purely decorative
+ * all gameplay logic, the four [AntennaSegmentBlock]s above it are purely decorative
  * and forward interactions back down.
  */
 class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties) {
@@ -103,7 +103,7 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
         super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }
 
-    // Comparator output — fill ratio of the 2 slots (chip + upgrade). Useful as a
+    // Comparator output, fill ratio of the 2 slots (chip + upgrade). Useful as a
     // "linked and upgraded" signal: 0 empty, ~7 chip only, ~15 both installed.
     override fun hasAnalogOutputSignal(state: BlockState): Boolean = true
 

@@ -21,14 +21,14 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
 /**
- * Full-block Monitor. Connectable, like Terminal — joins the node network so a
+ * Full-block Monitor. Connectable, like Terminal, joins the node network so a
  * right-click-assigned item can be counted across all reachable storage cards.
  *
  * Interactions:
  *   - Right-click with an item/block in hand → set that item as the tracked item.
- *     The held item is NOT consumed; the right-click only records the identity.
+ *     The held item is NOT consumed, the right-click only records the identity.
  *   - Right-click with an empty hand → clear the tracking.
- *   - Wrench / Diagnostic Tool → pass-through (wrench wires network connections;
+ *   - Wrench / Diagnostic Tool → pass-through (wrench wires network connections,
  *     diagnostic tool opens the inspector UI instead).
  */
 class MonitorBlock(properties: Properties) : BaseEntityBlock(properties) {
@@ -47,7 +47,7 @@ class MonitorBlock(properties: Properties) : BaseEntityBlock(properties) {
     }
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState {
-        // `horizontalDirection` is the direction the player is facing; the monitor's
+        // `horizontalDirection` is the direction the player is facing, the monitor's
         // front face should look AT the player → use .opposite, matching Terminal.
         return defaultBlockState().setValue(FACING, context.horizontalDirection.opposite)
     }
@@ -66,14 +66,14 @@ class MonitorBlock(properties: Properties) : BaseEntityBlock(properties) {
         player: Player,
         hitResult: BlockHitResult
     ): InteractionResult {
-        // Wrench + Diagnostic tool use their own item-use handlers; let them run.
+        // Wrench + Diagnostic tool use their own item-use handlers, let them run.
         val handItem = player.mainHandItem.item
         if (handItem is NetworkWrenchItem || handItem is DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val be = level.getBlockEntity(pos) as? MonitorBlockEntity ?: return InteractionResult.PASS
         if (player.mainHandItem.isEmpty) {
-            // Clear — `useWithoutItem` only fires when main hand is empty, so this is
+            // Clear, `useWithoutItem` only fires when main hand is empty, so this is
             // the only code path that ever clears the tracking.
             be.setTrackedItem(null)
         }
@@ -94,13 +94,13 @@ class MonitorBlock(properties: Properties) : BaseEntityBlock(properties) {
     ): InteractionResult {
         // Empty hand → fall through to `useWithoutItem` which clears tracking. MC
         // still routes empty-hand clicks through useItemOn with stack=ItemStack.EMPTY
-        // (item = minecraft:air); we'd otherwise record "minecraft:air" as the tracked
+        // (item = minecraft:air), we'd otherwise record "minecraft:air" as the tracked
         // target and never fire the clear path at all.
         if (stack.isEmpty) return InteractionResult.TRY_WITH_EMPTY_HAND
-        // Let the wrench and diagnostic tool keep their own useOn behavior — the
+        // Let the wrench and diagnostic tool keep their own useOn behavior, the
         // wrench hits MonitorBlock in its allow-list and handles connection toggling
         // there. TRY_WITH_EMPTY_HAND (not PASS) is the 26.1 "fall through" sentinel
-        // that lets the chain keep trying other handlers; PASS short-circuits the
+        // that lets the chain keep trying other handlers, PASS short-circuits the
         // interaction silently.
         if (stack.item is NetworkWrenchItem || stack.item is DiagnosticToolItem) {
             return InteractionResult.TRY_WITH_EMPTY_HAND

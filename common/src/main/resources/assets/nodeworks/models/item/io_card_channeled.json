@@ -1,0 +1,1 @@
+{"parent": "minecraft:item/generated", "textures": {"layer0": "nodeworks:item/io_card", "layer1": "nodeworks:item/channel_indicator"}}

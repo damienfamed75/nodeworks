@@ -11,15 +11,15 @@ import net.minecraft.nbt.ListTag
  *   - a unique [id] assigned by the planner (stable within a single [CraftPlan])
  *   - a list of [dependsOn] op IDs that must complete before this op becomes ready
  *   - a [readyAt] tick assigned by the scheduler when all dependencies complete
- *     (equal to `currentTick + opCost(throttle)`; can be 0 for chained ops)
+ *     (equal to `currentTick + opCost(throttle)`, can be 0 for chained ops)
  *
- * Ops are **data only** — the scheduler interprets them and calls into the Core's
+ * Ops are **data only**, the scheduler interprets them and calls into the Core's
  * [CraftScheduler.OpExecutor] to perform real work (item extraction, recipe execution, etc.).
  *
  * All counts are [Long] for billions-of-items robustness. Op types closely mirror the four
  * real phases of a craft:
  *   - [Pull]    network storage → buffer
- *   - [Process] invoke a processing-set handler (async); outputs end up in buffer
+ *   - [Process] invoke a processing-set handler (async), outputs end up in buffer
  *   - [Execute] run a vanilla-style crafting-table recipe (buffer → buffer)
  *   - [Deliver] buffer → network storage (or reserved slot)
  */
@@ -28,7 +28,7 @@ sealed class Operation {
     abstract val dependsOn: List<Int>
 
     /** Per-op base tick cost at throttle 1.0×. [CpuRules.opCost] scales this down as the
-     *  CPU gets better-cooled. Different op types have different base costs — see
+     *  CPU gets better-cooled. Different op types have different base costs, see
      *  [CpuRules] for the rationale. */
     abstract val baseCost: Int
 
@@ -45,7 +45,7 @@ sealed class Operation {
     var outputNodeId: Int = -1
 
     /** Extract [amount] of [itemId] from network storage into the CPU buffer.
-     *  Atomic reservation on the network happens immediately; scheduler gates consumption. */
+     *  Atomic reservation on the network happens immediately, scheduler gates consumption. */
     data class Pull(
         override val id: Int,
         override val dependsOn: List<Int>,
@@ -74,7 +74,7 @@ sealed class Operation {
         override val baseCost: Int get() = CpuRules.PROCESS_BASE_COST
     }
 
-    /** Run a vanilla-style 3x3 crafting recipe. Ingredients are consumed from the buffer;
+    /** Run a vanilla-style 3x3 crafting recipe. Ingredients are consumed from the buffer,
      *  the output lands back in the buffer. [executions] allows bulk crafting in one op. */
     data class Execute(
         override val id: Int,
@@ -142,7 +142,7 @@ sealed class Operation {
 
     companion object {
         // 26.1: CompoundTag.getInt/getLong/getString/getBoolean/getIntArray/getList now
-        //  return Optional<T>; *Or(name, default) accessors cover the "read with default"
+        //  return Optional<T>, *Or(name, default) accessors cover the "read with default"
         //  case. Reads still rely on the prior keys, so pre-migration NBT loads cleanly.
         fun loadFromNBT(tag: CompoundTag): Operation? {
             val id = tag.getIntOr("id", -1)

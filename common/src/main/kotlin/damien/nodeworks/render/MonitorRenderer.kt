@@ -4,15 +4,12 @@ import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.MonitorBlock
 import damien.nodeworks.block.entity.MonitorBlockEntity
 import net.minecraft.client.renderer.SubmitNodeCollector
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.item.ItemModelResolver
 import net.minecraft.client.renderer.item.ItemStackRenderState
 import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.client.renderer.texture.OverlayTexture
-import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
@@ -24,30 +21,29 @@ import org.joml.Quaternionf
 /**
  * Block Entity renderer for the standalone Monitor block.
  *
- *  1. Emissive front face — tinted with the network colour, same treatment as the
+ *  1. Emissive front face, tinted with the network colour, same treatment as the
  *     Terminal. Drawn via the shared [EmissiveCubeRenderer] so the pipeline matches
  *     every other emissive block in the mod. Only the facing direction's face is
  *     emitted.
  *
- *  2. Tracked item icon — a scaled-down 3D item render centered on the front face,
+ *  2. Tracked item icon, a scaled-down 3D item render centered on the front face,
  *     sticking out ~2 px. Resolved on the main thread via [ItemModelResolver] so the
  *     submit pass doesn't touch the registry.
  *
  *  The displayed count text is drawn by [NodeConnectionRenderer.renderMonitorText]
  *  (world-space, needs the bufferSource + pose stack context from the level render
- *  pass — easier to share that hook than to re-wire a font-in-BER path).
+ *  pass, easier to share that hook than to re-wire a font-in-BER path).
  */
-class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<MonitorBlockEntity, MonitorRenderer.MonitorState> {
+open class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<MonitorBlockEntity, MonitorRenderer.MonitorState>(context) {
 
     private val itemModelResolver: ItemModelResolver = context.itemModelResolver()
 
-    class MonitorState : BlockEntityRenderState() {
+    class MonitorState : ConnectableRenderState() {
         var facing: Direction = Direction.NORTH
         var color: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         val itemRS: ItemStackRenderState = ItemStackRenderState()
         var hasItem: Boolean = false
-        var pos: BlockPos = BlockPos.ZERO
     }
 
     companion object {
@@ -59,24 +55,15 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
 
     override fun createRenderState(): MonitorState = MonitorState()
 
-    override fun extractRenderState(
+    override fun extractConnectable(
         blockEntity: MonitorBlockEntity,
         state: MonitorState,
         partialTicks: Float,
         cameraPosition: Vec3,
-        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
-        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
-        state.pos = blockEntity.blockPos
         state.facing = blockEntity.blockState.getValue(MonitorBlock.FACING)
-
-        // Match Terminal's reachability gate — unreachable Monitors fall back to the
-        // grey default so the glow visibly dims when the network breaks.
-        state.color = if (!NodeConnectionRenderer.isReachable(blockEntity.blockPos)) {
-            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        } else {
-            NodeConnectionRenderer.findNetworkColor(blockEntity.level, blockEntity.blockPos)
-        }
+        state.color = resolveNetworkColor(blockEntity)
 
         // Resolve the item icon on the main thread. Submit pass reads the cached
         // ItemStackRenderState only.
@@ -102,13 +89,13 @@ class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
         }
     }
 
-    override fun submit(
+    override fun submitConnectable(
         state: MonitorState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        camera: CameraRenderState
+        camera: CameraRenderState,
     ) {
-        // Emissive front + back faces — both tinted with the network colour. Separate
+        // Emissive front + back faces, both tinted with the network colour. Separate
         // render types because each face has its own texture (the back design usually
         // differs from the front screen).
         val r = (state.color shr 16) and 0xFF

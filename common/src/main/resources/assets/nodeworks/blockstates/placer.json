@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "facing=up":    {"model": "nodeworks:block/placer", "x": 270},
+    "facing=down":  {"model": "nodeworks:block/placer", "x": 90},
+    "facing=north": {"model": "nodeworks:block/placer"},
+    "facing=south": {"model": "nodeworks:block/placer", "y": 180},
+    "facing=east":  {"model": "nodeworks:block/placer", "y": 90},
+    "facing=west":  {"model": "nodeworks:block/placer", "y": 270}
+  }
+}

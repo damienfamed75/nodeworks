@@ -43,7 +43,7 @@ object NeoForgeTerminalPackets {
      * Start (or restart) a terminal's script engine. Used by the packet handler when the
      * player clicks Run in the Terminal GUI, by the redstone-pulse toggle on the Terminal
      * block, and by the auto-run scheduler on chunk load. Returns true if the engine
-     * actually started — false if the terminal is missing, has no network entry, or the
+     * actually started, false if the terminal is missing, has no network entry, or the
      * script failed to compile.
      *
      * Any previously running engine for this position is stopped first, so this is safe
@@ -57,7 +57,15 @@ object NeoForgeTerminalPackets {
 
         val engine = ScriptEngine(level, nodePos) { message, isError ->
             if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
-            val logPayload = TerminalLogPayload(pos, message, isError)
+            // Cap script-originated print output so a single absurd log line can't blow past
+            // the network string length and disconnect the player. Truncation happens here
+            // (once, at the send site) rather than in the codec, so the original message is
+            // still available to NetworkErrorBuffer above for in-world diagnostic display.
+            val safeMessage = if (message.length > TerminalLogPayload.MAX_LOG_CHARS) {
+                message.take(TerminalLogPayload.MAX_LOG_CHARS) +
+                    "\n…(truncated, ${message.length - TerminalLogPayload.MAX_LOG_CHARS} more chars)"
+            } else message
+            val logPayload = TerminalLogPayload(pos, safeMessage, isError)
             for (p in level.players()) {
                 if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
                     PacketDistributor.sendToPlayer(p, logPayload)
@@ -69,7 +77,7 @@ object NeoForgeTerminalPackets {
                 }
             }
             // Terminal errors surface to the player via the TerminalLogPayload above and
-            // to the Diagnostic Tool's Jobs tab via NetworkErrorBuffer — they don't
+            // to the Diagnostic Tool's Jobs tab via NetworkErrorBuffer, they don't
             // belong in the server console.
         }
         activeEngines[gp] = engine
@@ -94,7 +102,7 @@ object NeoForgeTerminalPackets {
     }
 
     /** Find the first active engine on the given network that has a processing handler for the given card name.
-     *  [overrideDimension] lets callers search a different dimension than `level.dimension()` — required when
+     *  [overrideDimension] lets callers search a different dimension than `level.dimension()`, required when
      *  the terminal positions come from a cross-dimensional Receiver Antenna. */
     fun findEngineWithHandler(
         level: ServerLevel,
@@ -264,7 +272,7 @@ object NeoForgeTerminalPackets {
                 toRemove.add(gp)
             }
         }
-        // Only remove if the entry is still the same engine we were about to retire —
+        // Only remove if the entry is still the same engine we were about to retire,
         // a reentrant startEngine may have installed a fresh one at this key.
         for (gp in toRemove) {
             val engine = activeEngines[gp] ?: continue

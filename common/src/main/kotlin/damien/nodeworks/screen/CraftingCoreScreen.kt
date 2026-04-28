@@ -166,7 +166,7 @@ class CraftingCoreScreen(
         val iconY = barTop + (barH - iconSize) / 2
         Icons.WARNING.draw(graphics, innerLeft + 1, iconY, iconSize)
 
-        // X dismiss button on the right — 5×5 authored icon in a 9×9 hit area for comfort.
+        // X dismiss button on the right, 5×5 authored icon in a 9×9 hit area for comfort.
         val hit = 9
         val xX = innerRight - hit - 1
         val xY = barTop + (barH - hit) / 2
@@ -201,7 +201,7 @@ class CraftingCoreScreen(
             graphics.drawString(font, text, textLeft - off + loopW, textY, 0xFFFFCCCC.toInt(), false)
             graphics.disableScissor()
 
-            // Advance scroll. partialTick is sub-tick render progress; use it for smooth motion.
+            // Advance scroll. partialTick is sub-tick render progress, use it for smooth motion.
             if (failureScrollPauseTicks > 0) {
                 failureScrollPauseTicks--
             } else {
@@ -234,8 +234,8 @@ class CraftingCoreScreen(
         graphics.drawString(font, "Status:", contentLeft, contentTop, 0xFFAAAAAA.toInt())
         graphics.drawString(font, statusLabel, contentLeft + font.width("Status:") + 4, contentTop, statusColor)
 
-        // Efficiency line — throttle as percentage. Replaces the old heat/coolant bar since
-        // per-block emissives already show which blocks overheat; this is the one number
+        // Efficiency line, throttle as percentage. Replaces the old heat/coolant bar since
+        // per-block emissives already show which blocks overheat, this is the one number
         // the player can't see in the world.
         val effPct = (menu.throttle * 100f).toInt()
         val effColor = when {
@@ -274,17 +274,17 @@ class CraftingCoreScreen(
         graphics.drawString(font, countText, cx, cy, 0xFFFFFFFF.toInt(), true)
         graphics.pose().popMatrix()
 
-        // Types axis (dual-axis buffer) — rendered below the count bar
+        // Types axis (dual-axis buffer), rendered below the count bar
         val typesTop = barTop + barH + 4
         val typesText = "Types: ${menu.bufferTypesUsed} / ${menu.bufferTypesCapacity}"
         val typesColor = if (menu.bufferTypesUsed >= menu.bufferTypesCapacity) 0xFFFF5555.toInt() else 0xFFAAAAAA.toInt()
         graphics.drawString(font, typesText, contentLeft, typesTop, typesColor)
 
-        // Cancel button — positioned under the types line; heat bar removed.
+        // Cancel button, positioned under the types line, heat bar removed.
         cancelButton?.visible = menu.isCrafting || menu.bufferUsed > 0
         cancelButton?.y = typesTop + 12
 
-        // Buffer grid — label dropped since the fill bar above already says "Buffer:".
+        // Buffer grid, label dropped since the fill bar above already says "Buffer:".
         val gridTop = typesTop + 12 + 18
         val slotSize = 18
         val bufferCols = 6
@@ -368,14 +368,14 @@ class CraftingCoreScreen(
 
         graphics.disableScissor()
 
-        // Scrollbar thumb (always visible — grayed out when not scrollable)
+        // Scrollbar thumb (always visible, grayed out when not scrollable)
         if (maxScroll > 0) {
             val thumbH = maxOf(8, gridH * rows / totalRows)
             val thumbY = startY + (gridH - thumbH) * bufferScrollOffset / maxScroll
             NineSlice.SCROLLBAR_THUMB.draw(graphics, sbX, thumbY, scrollbarW, thumbH)
         } else {
             // Grayed thumb sized as if there's one extra row to scroll. Pre-migration
-            //  tinted the whole NineSlice via RenderSystem.setShaderColor(0.6,0.6,0.6,0.5);
+            //  tinted the whole NineSlice via RenderSystem.setShaderColor(0.6,0.6,0.6,0.5),
             //  NineSlice.draw doesn't accept a tint, so we overlay a semi-transparent
             //  dark rect to produce the same "grayed" feel.
             val fakeThumbH = maxOf(8, gridH * rows / (rows + 1))
@@ -453,7 +453,7 @@ class CraftingCoreScreen(
                 PlatformServices.clientNetworking.sendToServer(
                     damien.nodeworks.network.DismissCpuFailurePayload(menu.corePos)
                 )
-                // Optimistic local clear so the bar disappears immediately; server echoes "".
+                // Optimistic local clear so the bar disappears immediately, server echoes "".
                 menu.lastFailureReason = ""
                 return true
             }

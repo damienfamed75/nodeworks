@@ -26,7 +26,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
 
         // Normal case: clicked block is directly on the network (Node, Terminal, …).
         // Special case: clicked block is a CPU component (Buffer / Stabilizer /
-        // Substrate / Co-Processor) — those aren't Connectable themselves but they
+        // Substrate / Co-Processor), those aren't Connectable themselves but they
         // attach to a Crafting Core which IS Connectable. Walk the multiblock to find
         // that Core and use its position as the diagnostic entry point so the player
         // can click ANY piece of a CPU cluster to inspect the network.

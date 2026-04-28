@@ -51,6 +51,9 @@ class ProcessingSetScreenHandler(
         const val TOTAL_GHOST_SLOTS = INPUT_SLOTS + OUTPUT_SLOTS // 12
         const val DATA_TIMEOUT = INPUT_SLOTS + OUTPUT_SLOTS // index 12
         const val DATA_COUNT = DATA_TIMEOUT + 1 // 13
+        /** Server-side cap on per-set tick timeout. Mirrors [ProcessingSetScreen.TIMEOUT_MAX]
+         *  so a tampered client packet can't push the value past the design ceiling. */
+        const val TIMEOUT_MAX = 999
 
         fun createHandheld(syncId: Int, playerInventory: Inventory, hand: InteractionHand, stack: ItemStack): ProcessingSetScreenHandler {
             val inputs = ProcessingSet.getInputs(stack)
@@ -80,7 +83,7 @@ class ProcessingSetScreenHandler(
             val data = object : ContainerData {
                 private val values = IntArray(DATA_COUNT)
                 init {
-                    // Default all slot counts to 1 — empty slots also get 1 so edits
+                    // Default all slot counts to 1, empty slots also get 1 so edits
                     // don't start from 0 and force the user to re-enter everything.
                     for (i in 0 until INPUT_SLOTS) values[i] = 1
                     for (i in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + i] = 1
@@ -145,7 +148,7 @@ class ProcessingSetScreenHandler(
     }
 
     init {
-        // 9 input ghost slots — 3×3 grid, horizontally centered under the 180-wide frame
+        // 9 input ghost slots, 3×3 grid, horizontally centered under the 180-wide frame
         // (input block spans x=36..90, output column at x=128, gap 90..128 hosts the arrow).
         for (row in 0..2) {
             for (col in 0..2) {
@@ -157,7 +160,7 @@ class ProcessingSetScreenHandler(
             addSlot(GhostSlot(outputGrid, i, 128, 13 + i * 18))
         }
 
-        // Player inventory (3 rows) — starts at x=10 so the 9-slot block (width 160)
+        // Player inventory (3 rows), starts at x=10 so the 9-slot block (width 160)
         // is centered in the 180-wide frame (10 px padding on each side). y starts
         // at 140 to leave room for the crafting grid + recessed timeout/parallel panel.
         for (row in 0 until 3) {
@@ -242,7 +245,7 @@ class ProcessingSetScreenHandler(
     }
 
     fun setTimeout(timeout: Int) {
-        data.set(DATA_TIMEOUT, maxOf(0, timeout))
+        data.set(DATA_TIMEOUT, timeout.coerceIn(0, TIMEOUT_MAX))
     }
 
     /** Set a ghost slot by item ID string (used by JEI ghost ingredient and recipe transfer). */
@@ -305,15 +308,33 @@ class ProcessingSetScreenHandler(
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is ProcessingSet) {
-                    // Name is now derived from the recipe layout — the canonical ID is
+                    // Name is now derived from the recipe layout, the canonical ID is
                     // the unique handler key. Custom naming is gone. See
                     // docs/design/processing-set-handler-ux.md.
                     val canonical = ProcessingSet.canonicalId(inputs, outputs)
-                    ProcessingSet.setRecipe(
-                        stack, canonical, inputs, outputs, timeout, serial,
-                        inputPositions = inputSlots.toIntArray(),
-                        outputPositions = outputSlots.toIntArray()
-                    )
+                    // ProcessingSets stack to 64 with shared NBT, so writing the
+                    // recipe into the held stack would programme every copy.
+                    // Split off a single copy when the stack has more than one,
+                    // apply the recipe to that copy alone, and bounce it into the
+                    // player's inventory.
+                    if (stack.count > 1) {
+                        val configured = stack.copyWithCount(1)
+                        ProcessingSet.setRecipe(
+                            configured, canonical, inputs, outputs, timeout, serial,
+                            inputPositions = inputSlots.toIntArray(),
+                            outputPositions = outputSlots.toIntArray()
+                        )
+                        stack.shrink(1)
+                        if (!player.inventory.add(configured)) {
+                            player.drop(configured, false)
+                        }
+                    } else {
+                        ProcessingSet.setRecipe(
+                            stack, canonical, inputs, outputs, timeout, serial,
+                            inputPositions = inputSlots.toIntArray(),
+                            outputPositions = outputSlots.toIntArray()
+                        )
+                    }
                 }
             }
             is SaveMode.ClientDummy -> {}

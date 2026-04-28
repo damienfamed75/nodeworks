@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 
 /**
- * Stabilizer — place adjacent to a Crafting CPU component chain to contribute cooling.
+ * Stabilizer, place adjacent to a Crafting CPU component chain to contribute cooling.
  * Cooling math lives in [damien.nodeworks.script.cpu.CpuRules] and is applied by the
  * Core's recalculateCapacity whenever neighbors change.
  */

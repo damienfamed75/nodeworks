@@ -83,7 +83,7 @@ class NetworkControllerScreen(
     private var draggingScrollbar = false
 
     init {
-        // Hide default labels — we draw our own title in the top bar
+        // Hide default labels, we draw our own title in the top bar
         inventoryLabelY = -9999
         titleLabelY = -9999
     }
@@ -100,20 +100,20 @@ class NetworkControllerScreen(
 
         maxScroll = maxOf(0, properties.size * ROW_H - (listBottom - listTop))
 
-        // Name field — will be positioned dynamically in render
+        // Name field, will be positioned dynamically in render
         nameField = EditBox(font, listLeft + LABEL_W + 4, listTop, 100, 16, Component.literal("Name"))
         nameField.setMaxLength(32)
         nameField.value = menu.initialName
         nameField.setBordered(true)
         addRenderableWidget(nameField)
 
-        // Retry limit field — digits only, positioned dynamically between - / + buttons.
+        // Retry limit field, digits only, positioned dynamically between - / + buttons.
         retryField = EditBox(font, listLeft + LABEL_W + 4, listTop, 36, 16, Component.literal("Retries"))
         retryField.setMaxLength(3)
         retryField.value = menu.handlerRetryLimit.toString()
         retryField.setBordered(true)
         // 26.1: EditBox.setFilter was removed. Enforce digits-only via the post-change
-        //  responder instead — if the user types a non-digit it'll flash on screen for a
+        //  responder instead, if the user types a non-digit it'll flash on screen for a
         //  frame before snapping back. Server-side commit also rejects non-digits as a
         //  belt-and-braces guard.
         retryField.setResponder { text ->
@@ -313,7 +313,7 @@ class NetworkControllerScreen(
         val minusLabel = "-"
         graphics.drawString(font, minusLabel, bx + (btnW - font.width(minusLabel)) / 2, by + 4, 0xFFDDDDDD.toInt())
 
-        // EditBox position + visibility; sync value from menu when not focused.
+        // EditBox position + visibility, sync value from menu when not focused.
         val fieldX = bx + btnW + 4
         retryField.setX(fieldX)
         retryField.setY(by)
@@ -382,7 +382,7 @@ class NetworkControllerScreen(
         val modifiers = event.modifierBits
         if (this.nameField.isFocused) {
             if (keyCode == 256) return super.keyPressed(event) // ESC
-            if (keyCode == 257) { // ENTER — apply name
+            if (keyCode == 257) { // ENTER, apply name
                 sendNameUpdate(this.nameField.value)
                 this.nameField.isFocused = false
                 nameCheckmarkTime = net.minecraft.client.Minecraft.getInstance().level?.gameTime ?: 0
@@ -393,7 +393,7 @@ class NetworkControllerScreen(
         }
         if (this.retryField.isFocused) {
             if (keyCode == 256) return super.keyPressed(event) // ESC
-            if (keyCode == 257) { // ENTER — commit retries
+            if (keyCode == 257) { // ENTER, commit retries
                 commitRetryField()
                 this.retryField.isFocused = false
                 return true

@@ -27,7 +27,7 @@ import kotlin.math.abs
 import kotlin.math.floor
 
 /**
- * Network Controller — the required heart of every network.
+ * Network Controller, the required heart of every network.
  * Generates a UUID on placement that defines the network's identity.
  * Connects to the network via lasers. One per network.
  * Breaking this block takes the entire network offline.
@@ -51,9 +51,9 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
     }
 
     /** Randomize the network colour on fresh placement. Uses HSV with V clamped to
-     *  [0.85, 1.0] so every auto-pick reads as "bright" rather than muddy; hue is fully
+     *  [0.85, 1.0] so every auto-pick reads as "bright" rather than muddy, hue is fully
      *  random so neighbouring networks are easy to tell apart at a glance. Runs only
-     *  when the ItemStack has no saved BlockEntityData — items that carry a stored
+     *  when the ItemStack has no saved BlockEntityData, items that carry a stored
      *  colour (e.g. wrenched-and-replaced) keep their original. */
     override fun setPlacedBy(
         level: Level,
@@ -66,7 +66,7 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
         if (level.isClientSide) return
         // If the stack was carrying an existing BE snapshot (typical for shulker-style
         // block persistence) its networkColor has already been applied by the
-        // loadAdditional path — don't overwrite it.
+        // loadAdditional path, don't overwrite it.
         if (stack.has(net.minecraft.core.component.DataComponents.BLOCK_ENTITY_DATA)) return
         val entity = level.getBlockEntity(pos) as? NetworkControllerBlockEntity ?: return
         entity.networkColor = rollRandomBrightColor(level.random)

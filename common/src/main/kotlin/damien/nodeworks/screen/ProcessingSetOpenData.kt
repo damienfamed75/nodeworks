@@ -22,7 +22,7 @@ data class ProcessingSetOpenData(
 ) {
     companion object {
         // Canonical-id names can be long (9 inputs + 3 outputs × ~30 chars/slot + separators
-        // ≈ 400+ chars with modded namespaces). Use 1024 — well under FriendlyByteBuf's
+        // ≈ 400+ chars with modded namespaces). Use 1024, well under FriendlyByteBuf's
         // 32767 default cap, but big enough for any realistic recipe.
         private const val MAX_NAME_LEN = 1024
 

@@ -22,7 +22,7 @@ import net.minecraft.world.item.ItemStack
  * renders them as inline icon hints for the script editor.
  *
  * Used by [ScriptEditor] via its `decorationAboveLine` and `renderDecoration`
- * callbacks — so the hints visually sit between real code lines without being
+ * callbacks, so the hints visually sit between real code lines without being
  * stored in the text buffer.
  *
  * Hint layout (15 px tall):
@@ -31,7 +31,7 @@ import net.minecraft.world.item.ItemStack
 object RecipeHintRenderer {
 
     /** Vertical space required for one hint line. 16px fits a 14px item with 1px top/bottom
-     *  pad — ~10% smaller than the vanilla 18×16 slot proportions. */
+     *  pad, ~10% smaller than the vanilla 18×16 slot proportions. */
     const val HINT_HEIGHT: Int = 16
     /** Visible item icon size in pixels. `renderItem` always emits a 16×16 quad, so we
      *  scale it via pose.scale to render at this size. */
@@ -51,7 +51,7 @@ object RecipeHintRenderer {
 
     /**
      * Extract a canonical recipe id from a Lua source line, or null if the line
-     * doesn't contain a `network:handle("<id>"` call. Matches the first id per line;
+     * doesn't contain a `network:handle("<id>"` call. Matches the first id per line,
      * multiple handles on a single line aren't supported (and the editor's
      * auto-snippet always puts them on separate lines anyway).
      */
@@ -65,7 +65,7 @@ object RecipeHintRenderer {
 
     /**
      * Parse a canonical id into (inputs, outputs). Each list entry is (itemId, count).
-     * Returns null if the id is malformed — caller should skip the hint row in that case.
+     * Returns null if the id is malformed, caller should skip the hint row in that case.
      */
     fun parse(canonicalId: String): Pair<List<Pair<String, Int>>, List<Pair<String, Int>>>? {
         val parts = canonicalId.split(">>")
@@ -114,8 +114,8 @@ object RecipeHintRenderer {
         // Render the whole strip with depth WRITES disabled. Items, arrow, and count
         // badges still draw visually (depth TEST still runs, so they render at their
         // natural Z) but nothing updates the depth buffer. That lets the autocomplete
-        // popup and hover tooltips — which render AFTER this decoration in the screen's
-        // render loop — pass the depth test and draw on top regardless of the item's
+        // popup and hover tooltips, which render AFTER this decoration in the screen's
+        // render loop, pass the depth test and draw on top regardless of the item's
         // internal Z push.
         //
         // This avoids the Z-frustum clipping trap: translating the pose far enough back
@@ -124,10 +124,10 @@ object RecipeHintRenderer {
         // 26.1: `RenderSystem.depthMask(false)` is gone. The old code masked depth
         //  writes so item-icon quads wouldn't occlude subsequent draws. In the new
         //  RenderPipeline system each draw's pipeline declares its own depth state,
-        //  and the default GUI pipelines don't write depth — so skipping the mask
+        //  and the default GUI pipelines don't write depth, so skipping the mask
         //  is correct, not a stub.
         try {
-            // Background — neutral grey when valid, dark red when the handler doesn't
+            // Background, neutral grey when valid, dark red when the handler doesn't
             // match any known recipe so the row visually flags the problem.
             val bgColor = if (valid) 0x50505050 else 0x60601515
             graphics.fill(x, y, x + w, y + h, bgColor)
@@ -170,12 +170,12 @@ object RecipeHintRenderer {
                 Icons.endBatch()
             }
         } finally {
-            // (depthMask restore no-op — see TODO above)
+            // (depthMask restore no-op, see TODO above)
         }
     }
 
     /** Draw one (icon + ×count) pair. Returns the horizontal advance, or null if the
-     *  pair would overflow `right` — caller should finish with ellipsis. */
+     *  pair would overflow `right`, caller should finish with ellipsis. */
     private fun drawEntry(
         graphics: GuiGraphicsExtractor,
         font: Font,
@@ -188,7 +188,7 @@ object RecipeHintRenderer {
         val (itemId, count) = entry
         val id = Identifier.tryParse(itemId) ?: return 0
         val item = BuiltInRegistries.ITEM.getValue(id) ?: return 0
-        // Advance is ALWAYS ICON_SIZE — counts overlay the icon vanilla-style and never
+        // Advance is ALWAYS ICON_SIZE, counts overlay the icon vanilla-style and never
         // extend the entry's footprint. Ingredient spacing is therefore consistent
         // regardless of whether a given slot shows a count.
         if (cx + ICON_SIZE > right) return null
@@ -202,9 +202,9 @@ object RecipeHintRenderer {
         graphics.renderItem(stack, 0, 0)
         graphics.pose().popMatrix()
 
-        // Count badge — vanilla-style positioning, scaled for the smaller icon. Vanilla
-        // uses (cx + 17 - W, cy + 9) for a 16-wide cell; for our 14-wide cell that's
-        // (cx + 15 - W, cy + 7) — same proportions, scaled down ~10%.
+        // Count badge, vanilla-style positioning, scaled for the smaller icon. Vanilla
+        // uses (cx + 17 - W, cy + 9) for a 16-wide cell, for our 14-wide cell that's
+        // (cx + 15 - W, cy + 7), same proportions, scaled down ~10%.
         if (count > 1) {
             val countText = count.toString()
             graphics.drawString(
@@ -225,7 +225,7 @@ object RecipeHintRenderer {
 
     /**
      * Stack [handlers] as icon strips, one per row, starting at ([x], [y]) with width [w].
-     * Non-canonical ids (no `>>`) fall back to a plain gray text label — useful for
+     * Non-canonical ids (no `>>`) fall back to a plain gray text label, useful for
      * legacy or user-chosen handler names. Returns the total vertical advance so the
      * caller can continue laying out below. [rowGap] is the pixel gap between rows.
      */

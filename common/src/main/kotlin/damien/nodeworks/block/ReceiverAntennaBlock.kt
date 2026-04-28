@@ -30,7 +30,7 @@ import net.minecraft.world.phys.BlockHitResult
 /**
  * Base of the Receiver Antenna 2-block-tall multiblock. Full block (Connectable via
  * block entity). Auto-places one [AntennaSegmentBlock] with [AntennaSegmentBlock.Part.RECEIVER]
- * above it; breaking either cascades the whole stack.
+ * above it, breaking either cascades the whole stack.
  */
 class ReceiverAntennaBlock(properties: Properties) : BaseEntityBlock(properties) {
 
@@ -58,7 +58,7 @@ class ReceiverAntennaBlock(properties: Properties) : BaseEntityBlock(properties)
         state: BlockState,
         blockEntityType: net.minecraft.world.level.block.entity.BlockEntityType<T>
     ): net.minecraft.world.level.block.entity.BlockEntityTicker<T>? {
-        // Server-only — re-evaluates the "linked" status periodically so the horn flips
+        // Server-only, re-evaluates the "linked" status periodically so the horn flips
         // off if the paired broadcast is destroyed / out of range / frequency mismatches.
         if (level.isClientSide) return null
         return net.minecraft.world.level.block.entity.BlockEntityTicker { lvl, _, _, be ->
@@ -123,7 +123,7 @@ class ReceiverAntennaBlock(properties: Properties) : BaseEntityBlock(properties)
         return super.playerWillDestroy(level, pos, state, player)
     }
 
-    // Comparator output — binary signal (0 or 15) tracking whether the single
+    // Comparator output, binary signal (0 or 15) tracking whether the single
     // link-crystal slot is populated. Useful for "is this receiver linked" detection.
     override fun hasAnalogOutputSignal(state: BlockState): Boolean = true
 

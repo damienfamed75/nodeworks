@@ -36,6 +36,9 @@ object ModScreenHandlers {
     lateinit var DIAGNOSTIC: MenuType<DiagnosticMenu>
     lateinit var CARD_PROGRAMMER: MenuType<damien.nodeworks.screen.CardProgrammerMenu>
     lateinit var STORAGE_CARD: MenuType<damien.nodeworks.screen.StorageCardMenu>
+    lateinit var CARD_SETTINGS: MenuType<damien.nodeworks.screen.CardSettingsMenu>
+    lateinit var BREAKER: MenuType<damien.nodeworks.screen.BreakerMenu>
+    lateinit var PLACER: MenuType<damien.nodeworks.screen.PlacerMenu>
 
     fun initialize() {
         // Platform module must call registerAll() before this

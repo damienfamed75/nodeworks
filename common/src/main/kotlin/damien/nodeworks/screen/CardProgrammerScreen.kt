@@ -43,20 +43,20 @@ class CardProgrammerScreen(
         private const val PROG_Y = 2
         private const val PROG_H = 100
 
-        // Slot positions — black squares in bg at source (52, 18) / (106, 18)
+        // Slot positions, black squares in bg at source (52, 18) / (106, 18)
         private const val TEMPLATE_SLOT_X = 52
         private const val TEMPLATE_SLOT_Y = 18 + PROG_Y      // 20
         private const val INPUT_SLOT_X = 106
         private const val INPUT_SLOT_Y = 18 + PROG_Y         // 20
 
-        // Copy Name toggle — shifted right 3px to horizontally center the controls row in the frame
+        // Copy Name toggle, shifted right 3px to horizontally center the controls row in the frame
         private const val TOGGLE_X = 35
         private const val TOGGLE_Y = 76
         private const val TOGGLE_W = 48
         private const val TOGGLE_H = 16
         private const val TOGGLE_LABEL_Y = TOGGLE_Y - 10     // 66
 
-        // Increment row — counter 2 digits (max 99), shifted right 3px with the toggle.
+        // Increment row, counter 2 digits (max 99), shifted right 3px with the toggle.
         // Field must be wide enough that EditBox's inner width (width - 8 for bordered)
         // fits "99" in the default font (~11px). INC_FIELD_W=20 → 12px inner, comfortable.
         private const val INC_MINUS_X = 93
@@ -68,7 +68,17 @@ class CardProgrammerScreen(
         private const val INC_BTN_H = 14
         private const val INC_LABEL_Y = INC_BTN_Y - 10
 
-        // Window frame around the controls — extended an additional 2px on each side
+        // Copy Channel toggle. Symmetrical with the Copy Name toggle (same Y,
+        // W, H), centered in the column the legacy Increment stepper used to
+        // occupy. The INC_* constants above are the column anchor so the math
+        // stays explicit and any future widget that lands here lines up.
+        private const val TOGGLE2_W = TOGGLE_W
+        private const val TOGGLE2_H = TOGGLE_H
+        private const val TOGGLE2_Y = TOGGLE_Y
+        private const val TOGGLE2_X = ((INC_MINUS_X + INC_PLUS_X + INC_BTN_W) / 2) - TOGGLE2_W / 2
+        private const val TOGGLE2_LABEL_Y = TOGGLE2_Y - 10
+
+        // Window frame around the controls, extended an additional 2px on each side
         private const val CTRL_FRAME_X = 22
         private const val CTRL_FRAME_Y = 57
         private const val CTRL_FRAME_W = 132
@@ -80,7 +90,7 @@ class CardProgrammerScreen(
         private const val SCREW_T_Y = 63
         private const val SCREW_B_Y = 94
 
-        // Player inventory frame — extended down 14px for extra bottom space
+        // Player inventory frame, extended down 14px for extra bottom space
         private const val INV_PANEL_Y = 108
         private const val INV_PANEL_H = 96
         private const val H = INV_PANEL_Y + INV_PANEL_H      // 204
@@ -93,9 +103,6 @@ class CardProgrammerScreen(
         private val BG_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/gui/card_programmer_bg.png")
     }
 
-    private var counterField: EditBox? = null
-    private var lastSyncedCounter = -1
-
     init {
         inventoryLabelY = -9999
         titleLabelY = -9999
@@ -103,51 +110,6 @@ class CardProgrammerScreen(
 
     override fun init() {
         super.init()
-        counterField =
-            EditBox(font, leftPos + INC_FIELD_X, topPos + INC_BTN_Y + 1, INC_FIELD_W, 12, Component.literal("Counter"))
-        counterField!!.setMaxLength(2)
-        counterField!!.value = "${menu.getCounter()}"
-        counterField!!.setBordered(true)
-        // 26.1: GuiGraphicsExtractor.text skips rendering when ARGB.alpha(color)==0,
-        // so the top byte MUST be the alpha channel (0xFF), not left as 0.
-        counterField!!.setTextColor(0xFFFFFFFF.toInt())
-        lastSyncedCounter = menu.getCounter()
-        addRenderableWidget(counterField!!)
-    }
-
-    private fun commitCounterField() {
-        val v = counterField?.value?.toIntOrNull()?.coerceIn(0, 99) ?: 0
-        counterField?.value = "$v"
-        Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 100 + v)
-    }
-
-    override fun charTyped(event: CharacterEvent): Boolean {
-        val codePoint = event.character
-        val modifiers = 0
-        if (menu.getCopyName() && counterField?.isFocused == true) {
-            if (codePoint.isDigit()) return counterField?.charTyped(event) ?: false
-            return true // swallow non-digits
-        }
-        return super.charTyped(event)
-    }
-
-    override fun keyPressed(event: KeyEvent): Boolean {
-        val keyCode = event.keyCode
-        val scanCode = event.scan
-        val modifiers = event.modifierBits
-        if (counterField?.isFocused == true) {
-            if (keyCode == 256) { // Escape — unfocus, don't close screen
-                counterField!!.isFocused = false
-                return true
-            }
-            if (keyCode == 257 || keyCode == 335) { // Enter / KP_Enter
-                commitCounterField()
-                counterField!!.isFocused = false
-                return true
-            }
-            return counterField!!.keyPressed(event)
-        }
-        return super.keyPressed(event)
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -155,7 +117,7 @@ class CardProgrammerScreen(
         // Programmer image
         graphics.blit(BG_TEXTURE, leftPos, topPos + PROG_Y, 0f, 0f, W, PROG_H, W, PROG_H)
 
-        // Card slots intentionally have no visible frame — they sit on top of the
+        // Card slots intentionally have no visible frame, they sit on top of the
         // programmer background texture which already paints slot cutouts.
 
         if (!menu.hasTemplate()) {
@@ -168,7 +130,7 @@ class CardProgrammerScreen(
 
         // Window frame around the controls + decorative screws at each corner
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos + CTRL_FRAME_X, topPos + CTRL_FRAME_Y, CTRL_FRAME_W, CTRL_FRAME_H)
-        // Screws — drawSmall uses 4px inset, so offset by -4 to land at the target pixel
+        // Screws, drawSmall uses 4px inset, so offset by -4 to land at the target pixel
         Icons.SMALL_SCREW.drawSmall(graphics, leftPos + SCREW_L_X - 4, topPos + SCREW_T_Y - 4)
         Icons.SMALL_SCREW.drawSmall(graphics, leftPos + SCREW_R_X - 4, topPos + SCREW_T_Y - 4)
         Icons.SMALL_SCREW.drawSmall(graphics, leftPos + SCREW_L_X - 4, topPos + SCREW_B_Y - 4)
@@ -182,45 +144,19 @@ class CardProgrammerScreen(
         val toggleLabelX = TOGGLE_X + (TOGGLE_W - font.width(toggleLabel)) / 2
         graphics.drawString(font, toggleLabel, leftPos + toggleLabelX, topPos + TOGGLE_LABEL_Y, 0xFFAAAAAA.toInt())
 
-        // Increment row (grayed when copy-name off)
-        val incEnabled = menu.getCopyName()
-        val incLabelColor = if (incEnabled) 0xFFAAAAAA.toInt() else 0xFF555555.toInt()
-        val incTextColor = if (incEnabled) 0xFFFFFFFF.toInt() else 0xFF555555.toInt()
-        // Center "Increment" label above the minus+field+plus row
-        val incLabel = "Increment"
-        val incRowCenterX = (INC_MINUS_X + INC_PLUS_X + INC_BTN_W) / 2
-        val incLabelX = incRowCenterX - font.width(incLabel) / 2
-        graphics.drawString(font, incLabel, leftPos + incLabelX, topPos + INC_LABEL_Y, incLabelColor)
-
-        // [-] button (decrement)
-        val minusHover =
-            incEnabled && hovers(mouseX, mouseY, leftPos + INC_MINUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
-        val minusSlice = if (minusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
-        minusSlice.draw(graphics, leftPos + INC_MINUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
+        // Copy Channel toggle, mirrors Copy Name. When on, [applyTemplate] writes
+        // the template's CardChannel onto each programmed card so a row of
+        // freshly-programmed cards inherits the template's channel without
+        // having to dye each one.
+        val toggle2Slice = if (menu.getCopyChannel()) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
+        toggle2Slice.draw(graphics, leftPos + TOGGLE2_X, topPos + TOGGLE2_Y, TOGGLE2_W, TOGGLE2_H)
+        val copyChannelLabel = "Copy Chan."
+        val copyChannelLabelX = TOGGLE2_X + (TOGGLE2_W - font.width(copyChannelLabel)) / 2
         graphics.drawString(
-            font,
-            "-",
-            leftPos + INC_MINUS_X + (INC_BTN_W - font.width("-")) / 2,
-            topPos + INC_BTN_Y + 3,
-            incTextColor
+            font, copyChannelLabel,
+            leftPos + copyChannelLabelX, topPos + TOGGLE2_LABEL_Y,
+            0xFFAAAAAA.toInt(),
         )
-
-        // [+] button (increment)
-        val plusHover =
-            incEnabled && hovers(mouseX, mouseY, leftPos + INC_PLUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
-        val plusSlice = if (plusHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
-        plusSlice.draw(graphics, leftPos + INC_PLUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)
-        graphics.drawString(
-            font,
-            "+",
-            leftPos + INC_PLUS_X + (INC_BTN_W - font.width("+")) / 2,
-            topPos + INC_BTN_Y + 3,
-            incTextColor
-        )
-
-        // Counter field color — manual "gray out" when disabled
-        counterField?.setTextColor(if (incEnabled) 0xFFFFFFFF.toInt() else 0xFF555555.toInt())
-        counterField?.setEditable(incEnabled)
 
         // Player inventory frame
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos + INV_PANEL_Y, W, INV_PANEL_H)
@@ -232,12 +168,6 @@ class CardProgrammerScreen(
         mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        // Sync field if server counter changed and field is not focused
-        val sv = menu.getCounter()
-        if (sv != lastSyncedCounter && counterField?.isFocused != true) {
-            counterField?.value = "$sv"
-            lastSyncedCounter = sv
-        }
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         // 26.1: automatic tooltip via extractTooltip. renderTooltip(graphics, mouseX, mouseY)
     }
@@ -249,35 +179,15 @@ class CardProgrammerScreen(
         if (button == 0) {
             val mx = mouseX.toInt()
             val my = mouseY.toInt()
-
             if (hovers(mx, my, leftPos + TOGGLE_X, topPos + TOGGLE_Y, TOGGLE_W, TOGGLE_H)) {
                 Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 2)
                 return true
             }
-
-            if (menu.getCopyName()) {
-                if (hovers(mx, my, leftPos + INC_MINUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)) {
-                    Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 0)
-                    return true
-                }
-                if (hovers(mx, my, leftPos + INC_PLUS_X, topPos + INC_BTN_Y, INC_BTN_W, INC_BTN_H)) {
-                    Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 1)
-                    return true
-                }
-            }
-
-            // Clicking outside the counter field commits its value and unfocuses
-            val clickedField = hovers(mx, my, leftPos + INC_FIELD_X, topPos + INC_BTN_Y, INC_FIELD_W, INC_BTN_H + 2)
-            if (!clickedField && counterField?.isFocused == true) {
-                commitCounterField()
-                counterField?.isFocused = false
+            if (hovers(mx, my, leftPos + TOGGLE2_X, topPos + TOGGLE2_Y, TOGGLE2_W, TOGGLE2_H)) {
+                Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 3)
+                return true
             }
         }
         return super.mouseClicked(event, doubleClick)
-    }
-
-    override fun removed() {
-        commitCounterField()
-        super.removed()
     }
 }

@@ -21,13 +21,13 @@ import net.minecraft.world.item.ItemStack
  * a milk bucket on soul sand produces 4 Milky Soul Balls.
  *
  * 26.1 / JEI 29.5 notes:
- *   - `IRecipeCategory.getRecipeType()` now returns [IRecipeType]; `RecipeType`
+ *   - `IRecipeCategory.getRecipeType()` now returns [IRecipeType], `RecipeType`
  *     still implements it so nothing downstream changes.
- *   - `IRecipeCategory.getBackground()` was removed — JEI lays out the category
+ *   - `IRecipeCategory.getBackground()` was removed, JEI lays out the category
  *     using getWidth/getHeight and provides the border itself. The blank
  *     background drawable from pre-migration is dropped.
  *   - `IRecipeCategory.draw(...)` takes [GuiGraphicsExtractor] instead of
- *     `GuiGraphics`; same for [IDrawable.draw] (see the bucket-fill drawables
+ *     `GuiGraphics`, same for [IDrawable.draw] (see the bucket-fill drawables
  *     below).
  */
 class MilkySoulBallRecipeCategory(guiHelper: IGuiHelper) : IRecipeCategory<MilkySoulBallRecipe> {
@@ -43,11 +43,11 @@ class MilkySoulBallRecipeCategory(guiHelper: IGuiHelper) : IRecipeCategory<Milky
     }
 
     private val icon: IDrawable = guiHelper.createDrawableItemStack(ItemStack(ModItems.MILKY_SOUL_BALL))
-    // Empty bucket arrow — bottom half of the 24x34 atlas.
+    // Empty bucket arrow, bottom half of the 24x34 atlas.
     private val arrowBg: IDrawable = guiHelper.drawableBuilder(BUCKET_TEXTURE, 0, 17, 24, 17)
         .setTextureSize(24, 34)
         .build()
-    // Filled bucket arrow — top half; animated to fill left-to-right over 60 ticks.
+    // Filled bucket arrow, top half, animated to fill left-to-right over 60 ticks.
     private val arrowFill: IDrawableAnimated = guiHelper.drawableBuilder(BUCKET_TEXTURE, 0, 0, 24, 17)
         .setTextureSize(24, 34)
         .buildAnimated(60, IDrawableAnimated.StartDirection.LEFT, false)
@@ -63,11 +63,15 @@ class MilkySoulBallRecipeCategory(guiHelper: IGuiHelper) : IRecipeCategory<Milky
     override fun getHeight(): Int = H
 
     override fun setRecipe(builder: IRecipeLayoutBuilder, recipe: MilkySoulBallRecipe, focuses: IFocusGroup) {
-        // Milk bucket — top-left input
-        builder.addSlot(RecipeIngredientRole.INPUT, 1, 1).addItemStack(recipe.milk)
-        // Soul sand — bottom-left input
-        builder.addSlot(RecipeIngredientRole.INPUT, 1, 21).addItemStack(recipe.soulSand)
-        // 4× Milky Soul Ball — right output
+        // Held item, top-left. `addIngredients(Ingredient)` expands tag-based
+        // recipes into the full set of matching items so JEI rotates through
+        // them in the display.
+        builder.addSlot(RecipeIngredientRole.INPUT, 1, 1).addIngredients(recipe.held)
+        // Soul sand, bottom-left. Always the same for this recipe type, so
+        // hardcoded here instead of carried on each recipe.
+        builder.addSlot(RecipeIngredientRole.INPUT, 1, 21)
+            .addItemStack(ItemStack(net.minecraft.world.level.block.Blocks.SOUL_SAND))
+        // Result, right side.
         builder.addSlot(RecipeIngredientRole.OUTPUT, 99, 12).addItemStack(recipe.result)
     }
 

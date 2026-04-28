@@ -1,5 +1,5 @@
 {
-  "credit": "Nodeworks Terminal Template — Import into Blockbench, modify shapes, re-export",
+  "credit": "Nodeworks Terminal Template, Import into Blockbench, modify shapes, re-export",
   "parent": "minecraft:block/block",
   "render_type": "cutout",
   "textures": {
@@ -97,7 +97,7 @@
       }
     },
     {
-      "comment": "Screen face (front of monitor) — uses screen texture",
+      "comment": "Screen face (front of monitor), uses screen texture",
       "from": [2, 5, 4.9],
       "to": [14, 13, 4.9],
       "faces": {
@@ -108,7 +108,7 @@
       }
     },
     {
-      "comment": "Screen emissive glow overlay — tintindex 0 for network color",
+      "comment": "Screen emissive glow overlay, tintindex 0 for network color",
       "from": [1.99, 3.99, 4.8],
       "to": [14.01, 14.01, 4.8],
       "shade": false,

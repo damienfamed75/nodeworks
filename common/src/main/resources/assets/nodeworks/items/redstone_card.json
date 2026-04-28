@@ -1,6 +1,18 @@
 {
   "model": {
-    "type": "minecraft:model",
-    "model": "nodeworks:item/redstone_card"
+    "type": "minecraft:condition",
+    "property": "nodeworks:card_channel_set",
+    "on_true": {
+      "type": "minecraft:model",
+      "model": "nodeworks:item/redstone_card_channeled",
+      "tints": [
+        { "type": "minecraft:constant", "value": -1 },
+        { "type": "nodeworks:channel_color" }
+      ]
+    },
+    "on_false": {
+      "type": "minecraft:model",
+      "model": "nodeworks:item/redstone_card"
+    }
   }
 }

@@ -59,6 +59,7 @@ class Nodeworks(modBus: IEventBus) {
         NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
         NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
         NeoForge.EVENT_BUS.addListener(::onRegisterCommands)
+        NeoForge.EVENT_BUS.addListener(::onDatapackSync)
 
         // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber)
         damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
@@ -75,13 +76,23 @@ class Nodeworks(modBus: IEventBus) {
         // since NeoForge's RegisterEvent actually allows cross-registry registration.
         event.register(Registries.BLOCK) {
             ModBlocks.initialize()
-            // ModDataComponents MUST come before ModItems — items may reference
+            // ModDataComponents MUST come before ModItems, items may reference
             // component types as defaults, and referencing an unregistered component
             // crashes the item constructor with an Unregistered value.
             damien.nodeworks.registry.ModDataComponents.initialize()
             ModItems.initialize()
             ModBlockEntities.initialize()
             damien.nodeworks.registry.ModEntityTypes.initialize()
+            // Recipe types + serializers + display types. Ordering:
+            //   1. ModRecipeTypes, the RecipeType marker the recipe class references.
+            //   2. ModRecipeDisplayTypes, the display Type referenced by Recipe.display()
+            //      implementations. Must be registered before the serializer (below)
+            //      because constructing a Recipe eagerly may touch display Type.
+            //   3. ModRecipeSerializers, the MapCodec/StreamCodec pair that loads
+            //      our JSON and syncs over the network.
+            damien.nodeworks.registry.ModRecipeTypes.initialize()
+            damien.nodeworks.registry.ModRecipeDisplayTypes.initialize()
+            damien.nodeworks.registry.ModRecipeSerializers.initialize()
             damien.nodeworks.registry.ModCreativeTab.initialize()
         }
 
@@ -207,6 +218,30 @@ class Nodeworks(modBus: IEventBus) {
                     damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.CARD_SETTINGS = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "card_settings")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.CardSettingsOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.CardSettingsMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.BREAKER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "breaker")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.BreakerOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.BreakerMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.PLACER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "placer")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.PlacerOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.PlacerMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -232,7 +267,7 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
-        // SetStoragePriorityPayload removed — priority is now per-card via StorageCard GUI
+        // SetStoragePriorityPayload removed, priority is now per-card via StorageCard GUI
         registrar.playToServer(OpenInstructionSetPayload.TYPE, OpenInstructionSetPayload.CODEC, NeoForgeTerminalPackets::handleOpenInstructionSet)
         registrar.playToServer(SetInstructionGridPayload.TYPE, SetInstructionGridPayload.CODEC, NeoForgeTerminalPackets::handleSetInstructionGrid)
         registrar.playToServer(InvTerminalClickPayload.TYPE, InvTerminalClickPayload.CODEC) { payload, context ->
@@ -340,6 +375,39 @@ class Nodeworks(modBus: IEventBus) {
                     "type" -> entity.setType(damien.nodeworks.block.entity.VariableType.fromOrdinal(payload.intValue))
                     "value" -> entity.setValue(payload.strValue)
                     "toggle" -> entity.toggleValue()
+                    "channel" -> entity.channel = runCatching {
+                        net.minecraft.world.item.DyeColor.byId(payload.intValue)
+                    }.getOrDefault(net.minecraft.world.item.DyeColor.WHITE)
+                }
+            }
+        }
+
+        // DeviceSettingsPayload, shared (Breaker, Placer, future devices). Dispatch
+        // by reading the BlockEntity at [pos] and matching its concrete type. Same
+        // proximity check as VariableSettingsPayload so a remote client can't tweak
+        // settings on a device they're not standing near.
+        registrar.playToServer(damien.nodeworks.network.DeviceSettingsPayload.TYPE, damien.nodeworks.network.DeviceSettingsPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val level = player.level() as? ServerLevel ?: return@enqueueWork
+                if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos) ?: return@enqueueWork
+                val newColor: net.minecraft.world.item.DyeColor? = if (payload.key == "channel") {
+                    runCatching { net.minecraft.world.item.DyeColor.byId(payload.intValue) }.getOrNull()
+                } else null
+                when (entity) {
+                    is damien.nodeworks.block.entity.BreakerBlockEntity -> {
+                        when (payload.key) {
+                            "name" -> entity.deviceName = payload.strValue
+                            "channel" -> if (newColor != null) entity.channel = newColor
+                        }
+                    }
+                    is damien.nodeworks.block.entity.PlacerBlockEntity -> {
+                        when (payload.key) {
+                            "name" -> entity.deviceName = payload.strValue
+                            "channel" -> if (newColor != null) entity.channel = newColor
+                        }
+                    }
                 }
             }
         }
@@ -353,6 +421,7 @@ class Nodeworks(modBus: IEventBus) {
                         "input" -> menu.setInputCount(payload.slotIndex, payload.value)
                         "output" -> menu.setOutputCount(payload.slotIndex, payload.value)
                         "timeout" -> menu.setTimeout(payload.value)
+                        "serial" -> menu.serial = payload.value != 0
                     }
                 }
             }
@@ -544,10 +613,10 @@ class Nodeworks(modBus: IEventBus) {
 
     private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
         damien.nodeworks.script.ResumeScheduler.onServerStop()
-        // Drop cached SavedData handles — a restart in the same JVM (integrated server quit+rejoin)
+        // Drop cached SavedData handles, a restart in the same JVM (integrated server quit+rejoin)
         // must re-resolve them against the freshly loaded level.dataStorage.
         damien.nodeworks.network.NodeConnectionHelper.clearServerCaches()
-        // Wipe chunk-load refcounts — each controller's setLevel on the next run will
+        // Wipe chunk-load refcounts, each controller's setLevel on the next run will
         // re-claim, rebuilding the map from scratch against a fresh level.
         damien.nodeworks.network.ChunkForceLoadManager.clearAll()
     }
@@ -564,6 +633,18 @@ class Nodeworks(modBus: IEventBus) {
             event.cancellationResult = result
             event.isCanceled = true
         }
+    }
+
+    // Opts our recipe types into the server → client sync. Vanilla 26.1 only
+    // syncs a narrow set (smelting, stonecutter, etc.) for display purposes.
+    // Without this call the client's RecipeMap has our type key but no
+    // entries, so JEI + GuideME can't find the recipe even though gameplay
+    // (which goes through the server) works fine.
+    //
+    // Fires on every player join AND on `/reload`, so the client cache stays
+    // current across datapack reloads.
+    private fun onDatapackSync(event: net.neoforged.neoforge.event.OnDatapackSyncEvent) {
+        event.sendRecipes(damien.nodeworks.registry.ModRecipeTypes.SOUL_SAND_INFUSION)
     }
 }
 

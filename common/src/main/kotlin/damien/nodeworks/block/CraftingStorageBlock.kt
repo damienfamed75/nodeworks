@@ -20,7 +20,7 @@ import net.minecraft.world.level.block.state.properties.IntegerProperty
 import net.minecraft.world.phys.BlockHitResult
 
 /**
- * Crafting Storage — adds buffer capacity to an adjacent Crafting CPU.
+ * Crafting Storage, adds buffer capacity to an adjacent Crafting CPU.
  * Place adjacent to a Crafting Core (or other Crafting Storage blocks).
  * The tier is set by the crafting storage upgrade item used during placement.
  */
@@ -29,7 +29,7 @@ class CraftingStorageBlock(properties: Properties) : BaseEntityBlock(properties)
     companion object {
         val CODEC: MapCodec<CraftingStorageBlock> = simpleCodec(::CraftingStorageBlock)
 
-        /** Driven by the CPU Core's recalculateCapacity — mirrors the Core's formed state
+        /** Driven by the CPU Core's recalculateCapacity, mirrors the Core's formed state
          *  so the emissive variant lights up whenever this Buffer is part of an active CPU. */
         val FORMED: BooleanProperty = BooleanProperty.create("formed")
 
@@ -59,7 +59,7 @@ class CraftingStorageBlock(properties: Properties) : BaseEntityBlock(properties)
         level.getBlockEntity(pos) as? CraftingStorageBlockEntity ?: return
         val cores = CpuComponentBlockEntity.findConnectedCores(level, pos)
         if (cores.isEmpty()) {
-            // Orphaned — self-clear formed + overheat level since no Core can push the update.
+            // Orphaned, self-clear formed + overheat level since no Core can push the update.
             var next = state
             if (next.getValue(FORMED)) next = next.setValue(FORMED, false)
             if (next.getValue(OVERHEAT_LEVEL) != 0) next = next.setValue(OVERHEAT_LEVEL, 0)

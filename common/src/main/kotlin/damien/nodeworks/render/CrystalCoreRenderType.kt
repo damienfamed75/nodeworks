@@ -18,15 +18,15 @@ import net.minecraft.resources.Identifier
  *
  * Mirrors vanilla EYES verbatim (base snippet, shaders, defines, samplers, vertex
  * format, blend, cull=off) EXCEPT depth write is enabled. EYES itself sets
- * DepthStencilState(LESS_THAN_OR_EQUAL, false); we flip the boolean to true so the
+ * DepthStencilState(LESS_THAN_OR_EQUAL, false), we flip the boolean to true so the
  * core occupies the depth buffer. Without that, node-to-node laser beams from
- * [NodeConnectionRenderer] — which start at the controller centre and use their own
- * depth-write-off pipeline — pass right through the crystal and draw on top of it.
+ * [NodeConnectionRenderer], which start at the controller centre and use their own
+ * depth-write-off pipeline, pass right through the crystal and draw on top of it.
  *
  * Crucially the base snippet must be [RenderPipelines.MATRICES_FOG_SNIPPET] (same as
  * EYES), not `ENTITY_EMISSIVE_SNIPPET`. The latter inherits
  * MATRICES_FOG_LIGHT_DIR_SNIPPET which adds light-direction uniforms that the entity
- * shader reads even with NO_CARDINAL_LIGHTING set — resulting in subtle per-face
+ * shader reads even with NO_CARDINAL_LIGHTING set, resulting in subtle per-face
  * darkening. EYES skips the light-dir snippet to stay truly unshaded.
  *
  * A [LayeringTransform.VIEW_OFFSET_Z_LAYERING] nudges the geometry toward the camera

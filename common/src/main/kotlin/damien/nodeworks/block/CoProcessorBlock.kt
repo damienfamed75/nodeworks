@@ -18,7 +18,7 @@ import net.minecraft.world.level.block.state.properties.BooleanProperty
 import net.minecraft.world.level.block.state.properties.IntegerProperty
 
 /**
- * Co-Processor — place adjacent to a Crafting Core (or any CPU component) to add
+ * Co-Processor, place adjacent to a Crafting Core (or any CPU component) to add
  * one parallel craft thread. Notification walks the whole component chain so cores
  * several blocks away still recalculate.
  */
@@ -27,7 +27,7 @@ class CoProcessorBlock(properties: Properties) : BaseEntityBlock(properties) {
     companion object {
         val CODEC: MapCodec<CoProcessorBlock> = simpleCodec(::CoProcessorBlock)
 
-        /** Driven by the CPU Core's recalculateCapacity — mirrors the Core's formed state
+        /** Driven by the CPU Core's recalculateCapacity, mirrors the Core's formed state
          *  so the emissive variant lights up whenever the Co-Processor is contributing. */
         val FORMED: BooleanProperty = BooleanProperty.create("formed")
 
@@ -58,7 +58,7 @@ class CoProcessorBlock(properties: Properties) : BaseEntityBlock(properties) {
         level.getBlockEntity(pos) as? CoProcessorBlockEntity ?: return
         val cores = CpuComponentBlockEntity.findConnectedCores(level, pos)
         if (cores.isEmpty()) {
-            // Orphaned — no Core reachable. Self-clear formed AND overheat level since
+            // Orphaned, no Core reachable. Self-clear formed AND overheat level since
             // the Core's recalculate BFS can no longer reach us to push the update.
             var next = state
             if (next.getValue(FORMED)) next = next.setValue(FORMED, false)

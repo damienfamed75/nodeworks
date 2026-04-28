@@ -25,9 +25,9 @@ import net.minecraft.world.level.Level
 import java.util.function.Consumer
 
 /**
- * Instruction Set — stores a 3x3 crafting grid template.
+ * Instruction Set, stores a 3x3 crafting grid template.
  * Right-click while holding to open the recipe editor.
- * Not a NodeCard — cannot be placed in node slots.
+ * Not a NodeCard, cannot be placed in node slots.
  */
 class InstructionSet(properties: Properties) : Item(properties) {
 

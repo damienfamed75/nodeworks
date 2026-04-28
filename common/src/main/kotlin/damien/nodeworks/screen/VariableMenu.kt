@@ -19,12 +19,13 @@ class VariableMenu(
 ) : AbstractContainerMenu(ModScreenHandlers.VARIABLE, syncId) {
 
     companion object {
-        const val DATA_SLOTS = 2 // 0=variableType, 1=boolValue (0 or 1)
+        const val DATA_SLOTS = 3 // 0=variableType, 1=boolValue, 2=channelId
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: VariableOpenData): VariableMenu {
             val data = SimpleContainerData(DATA_SLOTS)
             data.set(0, openData.variableType)
             data.set(1, if (openData.variableValue == "true") 1 else 0)
+            data.set(2, openData.channelId)
             return VariableMenu(syncId, openData.pos, openData.variableName, openData.variableValue, data)
         }
 
@@ -37,6 +38,7 @@ class VariableMenu(
                 override fun get(index: Int): Int = when (index) {
                     0 -> entity.variableType.ordinal
                     1 -> if (entity.variableValue == "true") 1 else 0
+                    2 -> entity.channel.id
                     else -> 0
                 }
                 override fun set(index: Int, value: Int) {}
@@ -48,6 +50,7 @@ class VariableMenu(
 
     val variableType: Int get() = data.get(0)
     val boolValue: Boolean get() = data.get(1) != 0
+    val channelId: Int get() = data.get(2)
 
     init {
         addDataSlots(data)

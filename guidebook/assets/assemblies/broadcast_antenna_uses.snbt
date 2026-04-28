@@ -1,0 +1,464 @@
+{
+    DataVersion: 4790,
+    size: [4, 6, 1],
+    data: [
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 2, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [2, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 2, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 3, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [2, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 3, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 4, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [2, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 4, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [0, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 5, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:top}"
+        },
+        {
+            pos: [2, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 5, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:top}"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:processing_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 1b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 2b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 3b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 4b,
+                        id: "nodeworks:processing_set"
+                    }
+                ],
+                networkId: "58d56824-8dd7-4988-8834-3d3499cfc194",
+                id: "nodeworks:processing_storage"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:processing_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 64,
+                        Slot: 0b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 64,
+                        Slot: 1b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 64,
+                        Slot: 2b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 32,
+                        Slot: 3b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 16,
+                        Slot: 4b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 5b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 6b,
+                        id: "nodeworks:processing_set"
+                    },
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:cherry_wood"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: [
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log",
+                                    "minecraft:cherry_log"
+                                ],
+                                output_counts: [I; 3],
+                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
+                                input_slots: [I; 0, 1, 3, 4],
+                                input_counts: [I; 1, 1, 1, 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 7b,
+                        id: "nodeworks:processing_set"
+                    }
+                ],
+                networkId: "58d56824-8dd7-4988-8834-3d3499cfc194",
+                id: "nodeworks:processing_storage",
+                connections: [
+                    [I; 2, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "58d56824-8dd7-4988-8834-3d3499cfc194",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 3, 0, 0],
+                    [I; 1, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "58d56824-8dd7-4988-8834-3d3499cfc194",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 2, 0, 0]
+                ],
+                networkColor: 6408421
+            }
+        },
+        {
+            pos: [1, 1, 0],
+            state: "nodeworks:broadcast_antenna",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "nodeworks:broadcast_antenna",
+                frequency: "82bbacc0-9432-4185-91c9-49cca0bdd7d3"
+            }
+        },
+        {
+            pos: [3, 1, 0],
+            state: "nodeworks:broadcast_antenna",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "nodeworks:broadcast_antenna",
+                frequency: "a6d1505a-e737-40e3-9974-9414b84b03c8"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:antenna_segment{connected:false,facing:north,part:middle}",
+        "nodeworks:antenna_segment{connected:false,facing:north,part:top}",
+        "nodeworks:processing_storage{facing:north}",
+        "nodeworks:node",
+        "nodeworks:network_controller",
+        "nodeworks:broadcast_antenna"
+    ]
+}

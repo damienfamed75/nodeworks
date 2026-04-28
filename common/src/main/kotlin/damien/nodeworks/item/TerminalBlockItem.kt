@@ -31,7 +31,7 @@ class TerminalBlockItem(block: Block, properties: Properties) : BlockItem(block,
         super.appendHoverText(stack, context, display, builder, tooltipFlag)
         val typedEntityData = stack.get(DataComponents.BLOCK_ENTITY_DATA) ?: return
         // The Terminal's saveAdditional writes a "scripts" list with one child per
-        // script; we peek at the tag to count non-empty ones without instantiating a
+        // script, we peek at the tag to count non-empty ones without instantiating a
         // full BE. `copyTagWithoutId` is the non-deprecated read path in 26.1.
         val tag = typedEntityData.copyTagWithoutId()
         val scriptsList = tag.getList("scripts").orElse(null) ?: return

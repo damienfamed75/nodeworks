@@ -17,15 +17,15 @@ import java.util.UUID
  *
  * The menu was originally wired directly to `(ServerLevel, BlockPos)` where the position
  * was the fixed Inventory Terminal block. The Handheld Inventory Terminal breaks that
- * assumption — its "network" is reached remotely via a Link Crystal → Broadcast Antenna
- * → Network Controller chain — so the menu needs to be told *how* to find its network
+ * assumption, its "network" is reached remotely via a Link Crystal → Broadcast Antenna
+ * → Network Controller chain, so the menu needs to be told *how* to find its network
  * without caring whether the origin is a block-in-world or a held item.
  *
  * Two production implementations:
- *   * [NodeBackedSource] — fixed Inventory Terminal block. Network entry point is the
+ *   * [NodeBackedSource], fixed Inventory Terminal block. Network entry point is the
  *     terminal's own position (terminals are Connectables, so NetworkDiscovery walks
  *     out from there).
- *   * [CrystalBackedSource] — Handheld Inventory Terminal. Resolves its entry point at
+ *   * [CrystalBackedSource], Handheld Inventory Terminal. Resolves its entry point at
  *     construction time by following the Link Crystal's paired-antenna pointer to an
  *     adjacent Network Controller, and uses *that* Controller's position as the entry.
  *
@@ -34,7 +34,7 @@ import java.util.UUID
  * Menus call [isValid] every server tick. Returning false causes the menu to close
  * cleanly. This lets the Handheld close itself when the player drops the Portable, pulls
  * the Link Crystal out, leaves the broadcast's range, or the paired antenna is
- * destroyed — conditions that the fixed terminal can't hit and therefore can't model.
+ * destroyed, conditions that the fixed terminal can't hit and therefore can't model.
  */
 interface InventoryTerminalNetworkSource {
     /** Dimension containing the network this source points at. The menu operates in
@@ -43,18 +43,18 @@ interface InventoryTerminalNetworkSource {
     val dimension: ResourceKey<Level>
 
     /** Starting point for [damien.nodeworks.network.NetworkDiscovery.discoverNetwork].
-     *  Must be a Connectable on the target network — either the terminal block itself
+     *  Must be a Connectable on the target network, either the terminal block itself
      *  (node-backed) or the network's Controller (crystal-backed). */
     val entryPoint: BlockPos
 
     /** Per-tick validity check. Return false to have the menu close itself. Default is
-     *  always-valid; concrete sources override with loss-of-link detection. */
+     *  always-valid, concrete sources override with loss-of-link detection. */
     fun isValid(player: ServerPlayer): Boolean = true
 }
 
 /**
  * Source for the fixed <ItemLink id="inventory_terminal" /> block. The network entry
- * point is the terminal's own position — the terminal is a Connectable, so
+ * point is the terminal's own position, the terminal is a Connectable, so
  * NetworkDiscovery walks the laser graph from there. Validity is unconditional: the
  * player will leave the menu via the usual means (ESC, break the block) and we don't
  * need to second-guess that. The terminal's stillValid also doesn't need a distance
@@ -74,13 +74,13 @@ data class NodeBackedSource(
  *
  * After construction, [isValid] re-verifies every tick that:
  *   * The Portable itself is still in the player's possession (a [holderProvider]
- *     callback returns the current Portable stack the menu was opened with; if that
+ *     callback returns the current Portable stack the menu was opened with, if that
  *     returns empty the menu closes).
  *   * The crystal inside the Portable still has the same pairing (swapping crystals
  *     mid-session closes the menu rather than silently switching networks).
  *   * The target dimension + antenna position are still loaded and the antenna's
- *     frequency matches — mirrors the Receiver Antenna's validity semantics.
- *   * The antenna's current source is still a Network Controller — if a player moved
+ *     frequency matches, mirrors the Receiver Antenna's validity semantics.
+ *   * The antenna's current source is still a Network Controller, if a player moved
  *     the Controller, the crystal is implicitly invalidated.
  *   * The player is within the antenna's effective range for same-dimension pairings,
  *     or the antenna has the Multi-Dimension upgrade for cross-dimensional pairings.
@@ -106,7 +106,7 @@ class CrystalBackedSource private constructor(
         if (held.isEmpty) return false
 
         // The crystal inside the Portable has to match the one we opened with. Pulling
-        // the crystal out or swapping in a different one closes the menu — the player
+        // the crystal out or swapping in a different one closes the menu, the player
         // expects predictable "this is the network I opened" semantics, not a silent
         // re-pair mid-session.
         val crystal = PortableInventoryTerminalState.getInstalledCrystal(held) ?: return false
@@ -115,9 +115,9 @@ class CrystalBackedSource private constructor(
         if (pairing.frequencyId != frequencyId) return false
 
         // Target dimension still has to exist + be loaded. If the chunk with the
-        // antenna unloaded (nobody in range, no chunk loader), we lose the link — same
+        // antenna unloaded (nobody in range, no chunk loader), we lose the link, same
         // semantics as the Receiver Antenna's "Not Loaded" status.
-        // ServerPlayer.server is package-private in MC; reach the server via the
+        // ServerPlayer.server is package-private in MC, reach the server via the
         // player's current level (always a ServerLevel for ServerPlayer).
         val server = (player.level() as ServerLevel).server
         val targetLevel = server.getLevel(dimension) ?: return false
@@ -129,15 +129,15 @@ class CrystalBackedSource private constructor(
 
         // Antenna still sees a Controller next to it? If someone broke the Controller
         // mid-session the antenna's source effectively went away, so we close. We don't
-        // verify the Controller is the same one we cached at entryPoint — a Controller
+        // verify the Controller is the same one we cached at entryPoint, a Controller
         // swap would produce a different network UUID anyway, and the cached entry
-        // point won't find the old network; NetworkDiscovery will come back offline
+        // point won't find the old network, NetworkDiscovery will come back offline
         // and the menu will close via its own empty-snapshot handling.
         val source = antenna.detectSource() ?: return false
         if (source.first != BroadcastSourceKind.NETWORK_CONTROLLER) return false
 
-        // Range / dimension gate — same rules the Receiver uses. For cross-dim access
-        // we only require the Multi-Dimension upgrade; range doesn't apply.
+        // Range / dimension gate, same rules the Receiver uses. For cross-dim access
+        // we only require the Multi-Dimension upgrade, range doesn't apply.
         val sameDim = dimension == (player.level() as ServerLevel).dimension()
         if (!sameDim) {
             return antenna.allowsCrossDimension
@@ -146,7 +146,7 @@ class CrystalBackedSource private constructor(
         val dy = antennaPos.y + 0.5 - player.y
         val dz = antennaPos.z + 0.5 - player.z
         val range = antenna.effectiveRange
-        // Double.MAX_VALUE squared overflows; short-circuit for the "infinite" case.
+        // Double.MAX_VALUE squared overflows, short-circuit for the "infinite" case.
         if (range >= Double.MAX_VALUE / 2) return true
         return dx * dx + dy * dy + dz * dz <= range * range
     }
@@ -155,9 +155,9 @@ class CrystalBackedSource private constructor(
         /**
          * Resolve a Link Crystal into a usable source, or return null with a reason
          * recorded in [ResolutionFailure.reason]. The return type is a sealed union so
-         * callers can tell the player exactly why their Handheld isn't working —
+         * callers can tell the player exactly why their Handheld isn't working,
          * "crystal is blank," "paired controller isn't loaded," "you're out of range,"
-         * etc. — rather than falling back to a generic error.
+         * etc., rather than falling back to a generic error.
          */
         fun resolve(
             server: MinecraftServer,
@@ -224,14 +224,14 @@ class CrystalBackedSource private constructor(
 
 /**
  * Client-facing summary of the Handheld's connection state. Narrower than
- * [ResolutionFailure] — multiple underlying failure reasons collapse into a single
+ * [ResolutionFailure], multiple underlying failure reasons collapse into a single
  * "unreachable" bucket here, because the player's needed response is the same for
  * "antenna chunk unloaded" as for "antenna block missing": go back to where the
  * antenna is and it'll resolve.
  *
  * Synced from server to client via `PortableConnectionStatusPayload` so the screen
  * can draw a status overlay over the item grid when the Handheld is disconnected.
- * Ordering of entries is stable (the ordinal is the wire format) — add new entries
+ * Ordering of entries is stable (the ordinal is the wire format), add new entries
  * at the end.
  */
 enum class PortableConnectionStatus {
@@ -263,7 +263,7 @@ enum class PortableConnectionStatus {
 
     companion object {
         /** Lookup by ordinal for decoding the sync payload. Out-of-bounds defaults
-         *  to [CONNECTED] — the client will correct itself on the next valid sync. */
+         *  to [CONNECTED], the client will correct itself on the next valid sync. */
         fun fromOrdinal(ordinal: Int): PortableConnectionStatus =
             entries.getOrNull(ordinal) ?: CONNECTED
     }

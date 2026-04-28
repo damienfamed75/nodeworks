@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "nodeworks:blank_card",
+    "minecraft:yellow_dye",
+    "minecraft:observer"
+  ],
+  "result": {
+    "id": "nodeworks:observer_card",
+    "count": 1
+  }
+}

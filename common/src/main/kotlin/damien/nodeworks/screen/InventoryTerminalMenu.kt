@@ -22,7 +22,7 @@ import net.minecraft.world.item.crafting.RecipeType
 
 /**
  * Server-side menu for the Inventory Terminal.
- * Zero MC Slot objects — all interaction via custom packets.
+ * Zero MC Slot objects, all interaction via custom packets.
  * Full sync on open, delta updates while open.
  */
 class InventoryTerminalMenu(
@@ -38,7 +38,7 @@ class InventoryTerminalMenu(
 ) : AbstractContainerMenu(ModScreenHandlers.INVENTORY_TERMINAL, syncId) {
 
     /** Abstracts where this menu's network lives (fixed block vs. Handheld). Null
-     *  when the Handheld's crystal is absent, blank, wrong-kind, or unreachable —
+     *  when the Handheld's crystal is absent, blank, wrong-kind, or unreachable,
      *  in which case the grid renders empty and operations no-op. Also null on the
      *  client copy of the menu. */
     private var source: InventoryTerminalNetworkSource? = null
@@ -48,7 +48,7 @@ class InventoryTerminalMenu(
      * [hasCrystalSlot] is false (fixed terminal never has one). For Handhelds it's
      * a 1-slot container that's populated from the Portable's data component on menu
      * open and has its contents written back to the Portable whenever the slot
-     * changes — see [onCrystalSlotChanged]. Exposed so the Screen can render the
+     * changes, see [onCrystalSlotChanged]. Exposed so the Screen can render the
      * slot at a specific on-screen position.
      *
      * The anonymous [SimpleContainer] subclass overrides `setChanged` to dispatch
@@ -56,7 +56,7 @@ class InventoryTerminalMenu(
      * [TransientCraftingContainer]) has no listener API in 26.1, and relying on
      * [Slot.setChanged] alone misses the pickup path: `container.removeItem`
      * bumps `container.setChanged` without going through the slot. The override
-     * catches every mutation — placements, pickups, direct setItem calls — so the
+     * catches every mutation, placements, pickups, direct setItem calls, so the
      * menu never has a stale view of the crystal slot.
      */
     val crystalContainer: net.minecraft.world.SimpleContainer? =
@@ -71,7 +71,7 @@ class InventoryTerminalMenu(
      *  crystal slot. Invoked on every crystal-slot change so the Portable's
      *  component persists even through inventory moves (the Portable stack we
      *  captured at open-time may have been replaced by a copy during crafting or
-     *  merging; re-reading here always gets the live instance). Null for client
+     *  merging, re-reading here always gets the live instance). Null for client
      *  menus and for fixed terminals. */
     private var crystalHolderProvider: (() -> ItemStack)? = null
 
@@ -82,7 +82,7 @@ class InventoryTerminalMenu(
     private var tickCounter = 0
 
     /** Last reason [tryResolveSource] failed. Null means no attempt yet or the
-     *  last attempt succeeded. Server-side only — the client's view of the
+     *  last attempt succeeded. Server-side only, the client's view of the
      *  connection state is [connectionStatus], synced via payload. */
     private var lastFailure: ResolutionFailure? = null
 
@@ -112,7 +112,7 @@ class InventoryTerminalMenu(
     // 0-35: hidden player inventory slots (for sync)
     // 36-44: crafting input slots
     // 45: crafting output slot
-    // 46: link crystal slot (Handheld only — absent on fixed terminals)
+    // 46: link crystal slot (Handheld only, absent on fixed terminals)
 
     init {
         // Hidden MC Slots for inventory sync only (slots 0-35)
@@ -125,7 +125,7 @@ class InventoryTerminalMenu(
             addSlot(Slot(playerInventory, col, -999, -999))
         }
 
-        // Crafting input slots (slots 36-44) — positioned off-screen, screen renders them
+        // Crafting input slots (slots 36-44), positioned off-screen, screen renders them
         for (row in 0..2) {
             for (col in 0..2) {
                 addSlot(Slot(craftingContainer, col + row * 3, -999, -999))
@@ -135,11 +135,11 @@ class InventoryTerminalMenu(
         // Crafting output slot (slot 45)
         addSlot(ResultSlot(playerInventory.player, craftingContainer, resultContainer, 0, -999, -999))
 
-        // Link crystal slot (Handheld only). The slot lives at (-999, -999) — the
+        // Link crystal slot (Handheld only). The slot lives at (-999, -999), the
         // screen renders it at its real on-screen position and dispatches clicks
         // via `slotClicked` by index. A filter so non-crystal items bounce off.
         // The container→menu bridge is handled by [crystalContainer]'s `setChanged`
-        // override (see field docstring); nothing extra is needed here.
+        // override (see field docstring), nothing extra is needed here.
         if (hasCrystalSlot) {
             addSlot(object : Slot(crystalContainer!!, 0, -999, -999) {
                 override fun mayPlace(stack: ItemStack): Boolean =
@@ -158,7 +158,7 @@ class InventoryTerminalMenu(
     override fun slotsChanged(container: net.minecraft.world.Container) {
         if (suppressSlotsChanged) return
         if (container === craftingContainer) {
-            // slotsChanged fires server-side for a server menu; on the client copy
+            // slotsChanged fires server-side for a server menu, on the client copy
             // serverLevel is null and we have nothing to look up. Bail cleanly
             // rather than querying a Level's client-side RecipeAccess (which
             // doesn't expose getRecipeFor in 26.1).
@@ -167,7 +167,7 @@ class InventoryTerminalMenu(
                 val recipe = level.recipeAccess()
                     .getRecipeFor(RecipeType.CRAFTING, craftingContainer.asCraftInput(), level)
                 if (recipe.isPresent) {
-                    // assemble(input) in 26.1 — registryAccess folded into the recipe.
+                    // assemble(input) in 26.1, registryAccess folded into the recipe.
                     resultContainer.setItem(0, recipe.get().value().assemble(craftingContainer.asCraftInput()))
                 } else {
                     resultContainer.setItem(0, ItemStack.EMPTY)
@@ -183,12 +183,12 @@ class InventoryTerminalMenu(
     /**
      * Persist the current crystal-slot contents back to the Portable that opened this
      * menu, then attempt to (re)resolve the network source. Called every time the slot
-     * changes — pulling a crystal out, dropping one in, swapping, etc. The write
+     * changes, pulling a crystal out, dropping one in, swapping, etc. The write
      * happens against the live Portable stack (via [crystalHolderProvider], which
      * re-reads the player's hand every invocation).
      *
      * If the Portable has gone away since the menu was opened (player dropped it,
-     * switched it for something else), we silently skip the write — the next
+     * switched it for something else), we silently skip the write, the next
      * [stillValid] check will see the missing Portable and close the menu.
      *
      * The resolve call runs unconditionally (whether or not the write-back succeeded):
@@ -210,16 +210,16 @@ class InventoryTerminalMenu(
 
     /**
      * Bind this menu to a network source at open time. Two modes:
-     *   * Fixed terminal — [source] is non-null, [crystalHolderProvider] is null. Works
+     *   * Fixed terminal, [source] is non-null, [crystalHolderProvider] is null. Works
      *     exactly as before: discover the network, grab its inventory cache, done.
-     *   * Handheld — [crystalHolderProvider] is non-null (and [hasCrystalSlot] must be
-     *     true). [source] may be null; in that case the menu opens disconnected and
+     *   * Handheld, [crystalHolderProvider] is non-null (and [hasCrystalSlot] must be
+     *     true). [source] may be null, in that case the menu opens disconnected and
      *     attempts to resolve from whatever crystal the Portable currently has
      *     installed. Subsequent crystal-slot changes and periodic retries can
      *     promote a disconnected menu to a connected one (and vice versa).
      *
-     * In both modes, [level] is the initial ServerLevel — for fixed terminals it's
-     * already the network's level; for Handhelds it's the player's current level and
+     * In both modes, [level] is the initial ServerLevel, for fixed terminals it's
+     * already the network's level, for Handhelds it's the player's current level and
      * will be overwritten if resolve lands the menu on a different dimension's network.
      */
     fun createServer(
@@ -253,7 +253,7 @@ class InventoryTerminalMenu(
 
     /**
      * Attempt to resolve the Handheld's crystal slot into a live network source.
-     * Handheld-only — fixed terminals never call this (their source is pinned at open).
+     * Handheld-only, fixed terminals never call this (their source is pinned at open).
      *
      * Outcomes:
      *   * Empty slot or [CrystalBackedSource.Resolution.Failure] → [disconnect] so the
@@ -318,8 +318,8 @@ class InventoryTerminalMenu(
             ResolutionFailure.WRONG_KIND -> PortableConnectionStatus.WRONG_KIND
             ResolutionFailure.OUT_OF_RANGE -> PortableConnectionStatus.OUT_OF_RANGE
             ResolutionFailure.DIMENSION_MISMATCH -> PortableConnectionStatus.DIMENSION_MISMATCH
-            // Everything else — antenna unloaded, antenna gone, frequency changed,
-            // controller removed, dimension doesn't exist on the server — is the
+            // Everything else, antenna unloaded, antenna gone, frequency changed,
+            // controller removed, dimension doesn't exist on the server, is the
             // same "network side is unreachable" state from the player's POV.
             ResolutionFailure.DIMENSION_UNAVAILABLE,
             ResolutionFailure.ANTENNA_UNLOADED,
@@ -339,7 +339,7 @@ class InventoryTerminalMenu(
         serverLevel = level
         snapshot = NetworkDiscovery.discoverNetwork(level, newSource.entryPoint)
         cache = NetworkInventoryCache.getOrCreate(level, newSource.entryPoint)
-        // Abandon any in-flight chunked sync — the entry set is about to change
+        // Abandon any in-flight chunked sync, the entry set is about to change
         // wholesale, so the remaining chunks would be addressing the old network.
         fullSyncChunks = null
         fullSyncChunkIndex = 0
@@ -351,7 +351,7 @@ class InventoryTerminalMenu(
      * Grid operations noop (they all guard on snapshot/cache being non-null) and the
      * next broadcast sends an empty full-sync to clear the client's display.
      *
-     * No-op if already disconnected — avoids redundant empty syncs every tick while
+     * No-op if already disconnected, avoids redundant empty syncs every tick while
      * the player fiddles with an invalid crystal.
      */
     private fun disconnect() {
@@ -392,26 +392,26 @@ class InventoryTerminalMenu(
         const val CRAFT_INPUT_START = 36
         const val CRAFT_OUTPUT_SLOT = 45
         /** Link crystal slot index for Handheld menus. Absent (no slot) for fixed
-         *  terminals — only valid when `menu.hasCrystalSlot` is true. */
+         *  terminals, only valid when `menu.hasCrystalSlot` is true. */
         const val CRYSTAL_SLOT = 46
         private const val BUCKET_MB = 1000L
 
         /**
          * Server-side factory. Two shapes:
-         *   * Fixed terminal — pass a non-null [source] and the ServerLevel hosting
+         *   * Fixed terminal, pass a non-null [source] and the ServerLevel hosting
          *     that network (caller resolves it via `server.getLevel(source.dimension)`).
-         *   * Handheld — pass [hasCrystalSlot] = true and a [crystalHolderProvider],
+         *   * Handheld, pass [hasCrystalSlot] = true and a [crystalHolderProvider],
          *     and leave [source] null. The menu opens disconnected and resolves from
          *     whatever crystal the Portable currently has in its component slot. If
          *     no valid network can be resolved, the menu stays open but its grid
          *     renders empty until the player installs a working crystal.
          *
-         * [level] is always required. For fixed terminals it's the network's dimension;
+         * [level] is always required. For fixed terminals it's the network's dimension,
          * for Handhelds it's the player's current level, used as a starting point until
          * resolve lands on the real target (which may be a different dimension).
          *
          * [displayPos] is an optional hint forwarded to the client for server-round-trip
-         * packets like `SetLayoutPayload`. Fixed terminals pass their block position;
+         * packets like `SetLayoutPayload`. Fixed terminals pass their block position,
          * the Handheld passes null, in which case those packets aren't sent and the
          * related settings become client-only or get persisted elsewhere.
          */
@@ -431,7 +431,7 @@ class InventoryTerminalMenu(
 
         fun clientFactory(syncId: Int, inv: Inventory, data: InventoryTerminalOpenData): InventoryTerminalMenu {
             // hasCrystalSlot comes through on the open packet so the client's slot
-            // count matches the server's — AbstractContainerMenu syncs by slot index
+            // count matches the server's, AbstractContainerMenu syncs by slot index
             // and a mismatch there scrambles every inventory update mid-session.
             return InventoryTerminalMenu(syncId, inv, null, data.terminalPos, data.hasCrystalSlot)
         }
@@ -483,6 +483,26 @@ class InventoryTerminalMenu(
         if (autoPullPattern != null) {
             pendingAutoPull = true
         }
+    }
+
+    /**
+     * True when [invIndex] (a raw [playerInventory] index, 0–35) points at the
+     * exact Portable ItemStack this menu was opened against. Used to block
+     * interactions with the Portable's own slot for the duration of the menu:
+     * picking it up closes the menu or leaves the state inconsistent, and
+     * merging items onto it breaks the expected "this is my handheld" model.
+     *
+     * Always false when the menu isn't driving a Handheld (no
+     * [crystalHolderProvider]), so the fixed terminal's callers are unaffected.
+     * Identity comparison (`===`) ensures other Portables the player might
+     * own don't get locked, only the specific stack driving this menu.
+     */
+    private fun isHeldPortableInvSlot(invIndex: Int): Boolean {
+        val holder = crystalHolderProvider ?: return false
+        if (invIndex < 0 || invIndex >= playerInventory.containerSize) return false
+        val held = holder()
+        if (held.isEmpty) return false
+        return playerInventory.getItem(invIndex) === held
     }
 
     private fun snapshotCraftPattern(): List<String> {
@@ -605,7 +625,7 @@ class InventoryTerminalMenu(
             carried.item == net.minecraft.world.item.Items.BUCKET &&
             carried.count > 0
 
-        // Step 1 — source the empty bucket. Either the cursor stack or network storage.
+        // Step 1, source the empty bucket. Either the cursor stack or network storage.
         val bucketSource: BucketSource = when {
             carriedIsEmptyBucket -> BucketSource.CURSOR
             carried.isEmpty -> {
@@ -616,10 +636,10 @@ class InventoryTerminalMenu(
                 if (emptyAvailable < 1L) return
                 BucketSource.NETWORK
             }
-            else -> return // carried is something we can't consume — bail.
+            else -> return // carried is something we can't consume, bail.
         }
 
-        // Step 2 — pull 1000 mB from the network's fluid storage. If drain falls short,
+        // Step 2, pull 1000 mB from the network's fluid storage. If drain falls short,
         //  put back what we got and abort (no half-state).
         var drained = 0L
         for (card in NetworkStorageHelper.getStorageCards(snap)) {
@@ -634,12 +654,12 @@ class InventoryTerminalMenu(
             }
         }
         if (drained < BUCKET_MB) {
-            // Roll back partial drain — push back into any fluid storage that will accept it.
+            // Roll back partial drain, push back into any fluid storage that will accept it.
             if (drained > 0) NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, drained, c)
             return
         }
 
-        // Step 3 — commit the bucket source (consume the empty bucket for real).
+        // Step 3, commit the bucket source (consume the empty bucket for real).
         when (bucketSource) {
             BucketSource.CURSOR -> carried.shrink(1)
             BucketSource.NETWORK -> {
@@ -665,11 +685,11 @@ class InventoryTerminalMenu(
             }
         }
 
-        // Step 4 — deliver the filled bucket.
+        // Step 4, deliver the filled bucket.
         val filled = ItemStack(filledBucketItem)
         if (action == 3) {
             if (!playerInventory.add(filled)) {
-                // No room — drop as cursor item instead of leaking into the world.
+                // No room, drop as cursor item instead of leaking into the world.
                 if (carried.isEmpty) {
                     setCarried(filled)
                 } else {
@@ -687,7 +707,7 @@ class InventoryTerminalMenu(
                 carried.count + 1 <= carried.maxStackSize) {
                 carried.grow(1)
             } else {
-                // Can't stack onto carried — try to put into inventory, else rollback.
+                // Can't stack onto carried, try to put into inventory, else rollback.
                 if (!playerInventory.add(filled)) {
                     NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB)
                     if (bucketSource == BucketSource.CURSOR) carried.grow(1)
@@ -714,8 +734,15 @@ class InventoryTerminalMenu(
         // Virtual: 0-26 = main inventory (inv slots 9-35), 27-35 = hotbar (inv slots 0-8)
         val invIndex = if (slotIndex < 27) slotIndex + 9 else slotIndex - 27
 
+        // Block interaction with the Portable's own slot, the stack the
+        // Handheld was opened against. Picking it up mid-session would either
+        // close the menu immediately (stillValid sees empty hand) or leave a
+        // confusing half-state, just refuse the click entirely. Uses identity
+        // (`===`) so other Portables the player might own aren't affected.
+        if (isHeldPortableInvSlot(invIndex)) return
+
         when (action) {
-            0 -> { // Left click — swap with carried
+            0 -> { // Left click, swap with carried
                 val slotStack = playerInventory.getItem(invIndex)
                 val carried = carried
                 if (carried.isEmpty && !slotStack.isEmpty) {
@@ -738,7 +765,7 @@ class InventoryTerminalMenu(
                     }
                 }
             }
-            1 -> { // Right click — pick up half or place one
+            1 -> { // Right click, pick up half or place one
                 val slotStack = playerInventory.getItem(invIndex)
                 val carried = carried
                 if (carried.isEmpty && !slotStack.isEmpty) {
@@ -758,7 +785,7 @@ class InventoryTerminalMenu(
                     if (carried.isEmpty) setCarried(ItemStack.EMPTY)
                 }
             }
-            2 -> { // Shift-click — crystal → crystal slot (Handheld), else network
+            2 -> { // Shift-click, crystal → crystal slot (Handheld), else network
                 val slotStack = playerInventory.getItem(invIndex)
                 if (!slotStack.isEmpty) {
                     val cContainer = crystalContainer
@@ -914,7 +941,7 @@ class InventoryTerminalMenu(
         val pattern = autoPullPattern ?: return
         autoPullPattern = null
 
-        // Suppress slotsChanged during refill — intermediate states can match
+        // Suppress slotsChanged during refill, intermediate states can match
         // different recipes and corrupt lastCraftPattern
         suppressSlotsChanged = true
         try {
@@ -990,6 +1017,9 @@ class InventoryTerminalMenu(
                     // Player inventory (virtual index → real inv index)
                     if (slotIndex < 0 || slotIndex >= 36) continue
                     val invIndex = if (slotIndex < 27) slotIndex + 9 else slotIndex - 27
+                    // Skip the Portable's own slot (Handheld only), the drag
+                    // shouldn't merge items onto the stack driving this menu.
+                    if (isHeldPortableInvSlot(invIndex)) continue
                     val existing = playerInventory.getItem(invIndex)
                     if (existing.isEmpty) {
                         playerInventory.setItem(invIndex, carried.copyWithCount(amount))
@@ -1043,6 +1073,9 @@ class InventoryTerminalMenu(
         // Collect from player inventory
         for (i in 0 until playerInventory.containerSize) {
             if (result.count >= maxStack) break
+            // Skip the Portable's own slot (Handheld only), we don't want to
+            // vacuum the stack that's driving this menu into the cursor.
+            if (isHeldPortableInvSlot(i)) continue
             val stack = playerInventory.getItem(i)
             if (!stack.isEmpty && ItemStack.isSameItemSameComponents(result, stack)) {
                 val take = minOf(stack.count, maxStack - result.count)
@@ -1091,7 +1124,7 @@ class InventoryTerminalMenu(
             damien.nodeworks.script.CraftingHelper.currentPendingJob = null
 
             if (result == null && pending == null) {
-                // Total failure — no feasible CPU, missing recipe, etc.
+                // Total failure, no feasible CPU, missing recipe, etc.
                 CraftQueueManager.getQueue(player.uuid).remove(entry)
                 val reason = damien.nodeworks.script.CraftingHelper.lastFailReason
                 sendCraftError(player, reason ?: "Failed to start craft.")
@@ -1107,7 +1140,7 @@ class InventoryTerminalMenu(
                 entry.dirty = true
             }
 
-            // Build a CraftResult for the release — same as the scripting terminal
+            // Build a CraftResult for the release, same as the scripting terminal
             val craftResult = result ?: run {
                 val id = net.minecraft.resources.Identifier.tryParse(itemId)
                 val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
@@ -1120,7 +1153,7 @@ class InventoryTerminalMenu(
             }
 
             if (pending == null || pending.isComplete) {
-                // Synchronous — release immediately (flush buffer → network, free CPU)
+                // Synchronous, release immediately (flush buffer → network, free CPU)
                 damien.nodeworks.script.CraftingHelper.releaseCraftResult(craftResult)
                 if (pending == null || pending.success) {
                     entry.completedOps = 1
@@ -1129,13 +1162,13 @@ class InventoryTerminalMenu(
                 }
                 entry.dirty = true
             } else {
-                // Async — release when the pending job completes (same as :store())
+                // Async, release when the pending job completes (same as :store())
                 pending.onCompleteCallback = { success ->
                     damien.nodeworks.script.CraftingHelper.releaseCraftResult(craftResult)
                     if (success) {
                         entry.completedOps = 1
                     } else {
-                        // Cancelled or failed — drop the entry so nothing can be extracted
+                        // Cancelled or failed, drop the entry so nothing can be extracted
                         CraftQueueManager.getQueue(player.uuid).remove(entry)
                     }
                     entry.dirty = true
@@ -1161,15 +1194,15 @@ class InventoryTerminalMenu(
 
     /**
      * Per-tick validity. Two policies:
-     *   * Handheld (crystalHolderProvider is non-null) — menu stays open as long as
+     *   * Handheld (crystalHolderProvider is non-null), menu stays open as long as
      *     the Portable itself is still in the player's possession. Crystal removal,
-     *     range loss, antenna unloaded, etc. all just blank the grid; we only close
+     *     range loss, antenna unloaded, etc. all just blank the grid, we only close
      *     when the Portable stack itself is gone. This lets the player stand there
      *     with an unlinked Portable open and install a crystal without the menu
      *     snapping shut on them.
-     *   * Fixed terminal — delegate to the source's [isValid]. Terminals have always
+     *   * Fixed terminal, delegate to the source's [isValid]. Terminals have always
      *     returned `true` unconditionally there, so this is effectively a passthrough.
-     *   * Client-side copy (null source + null holder) — return true; validity is
+     *   * Client-side copy (null source + null holder), return true, validity is
      *     decided by the server echoing the close packet.
      */
     override fun stillValid(player: Player): Boolean {
@@ -1346,7 +1379,7 @@ class InventoryTerminalMenu(
             fullSyncChunkIndex = 0
             sendQueueSync(serverPlayer, queue)
             needsFullSync = false
-            // Don't return — fall through to send first chunk below
+            // Don't return, fall through to send first chunk below
         }
 
         // Send one chunk per tick during a full sync

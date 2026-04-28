@@ -63,7 +63,7 @@ object ShapelessCraftHelper {
             .orElse(null)
 
         if (recipeResult == null) {
-            // Try shuffling — for shaped recipes the position matters
+            // Try shuffling, for shaped recipes the position matters
             // Try placing items starting from top-left in order
             val result = tryAllPlacements(gridItems.filter { !it.isEmpty }, recipeManager, level)
             if (result == null) {

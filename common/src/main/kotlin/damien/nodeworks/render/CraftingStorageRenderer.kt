@@ -14,7 +14,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 
 /**
- * Emissive overlay for the Crafting Storage — all 6 faces, un-tinted white. Texture
+ * Emissive overlay for the Crafting Storage, all 6 faces, un-tinted white. Texture
  * picks between the formed base glow and the 3 overheating variants based on the
  * block's `overheat_level` state. Does nothing when `FORMED=false`.
  */
@@ -23,7 +23,7 @@ class CraftingStorageRenderer(context: BlockEntityRendererProvider.Context) :
 
     class StorageState : BlockEntityRenderState() {
         var formed: Boolean = false
-        /** 0 = normal (white emissive); 1..3 = overheating stages (warm → hot textures). */
+        /** 0 = normal (white emissive), 1..3 = overheating stages (warm → hot textures). */
         var overheatLevel: Int = 0
     }
 
@@ -61,7 +61,7 @@ class CraftingStorageRenderer(context: BlockEntityRendererProvider.Context) :
         camera: CameraRenderState
     ) {
         if (!state.formed) return
-        // blockstate matrix: overheat 0 → crafting_storage_on (white emissive);
+        // blockstate matrix: overheat 0 → crafting_storage_on (white emissive),
         // overheat 1/2/3 → overheating_0/1/2 emissive variants respectively.
         val rt = when (state.overheatLevel) {
             0 -> RT_NORMAL

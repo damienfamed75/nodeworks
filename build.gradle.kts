@@ -3,10 +3,10 @@ plugins {
     id("net.neoforged.moddev") apply false
 }
 
-// Single source of truth for the mod version — the repo-root VERSION file. The release
+// Single source of truth for the mod version, the repo-root VERSION file. The release
 // workflow bumps this based on the commit message (see .github/workflows/release.yml),
 // so nothing else needs to track the number. The file is stored with a leading `v`
-// (e.g. `v0.1.0`); we strip it here because jar filenames + mods.toml want plain semver.
+// (e.g. `v0.1.0`), we strip it here because jar filenames + mods.toml want plain semver.
 val modVersion: String = run {
     val versionFile = rootDir.resolve("VERSION")
     if (versionFile.exists()) {

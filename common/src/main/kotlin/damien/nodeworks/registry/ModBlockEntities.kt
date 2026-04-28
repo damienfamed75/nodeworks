@@ -14,6 +14,8 @@ import damien.nodeworks.block.entity.CoProcessorBlockEntity
 import damien.nodeworks.block.entity.CraftingStorageBlockEntity
 import damien.nodeworks.block.entity.StabilizerBlockEntity
 import damien.nodeworks.block.entity.SubstrateBlockEntity
+import damien.nodeworks.block.entity.BreakerBlockEntity
+import damien.nodeworks.block.entity.PlacerBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.Registry
@@ -99,6 +101,16 @@ object ModBlockEntities {
     val INVENTORY_TERMINAL: BlockEntityType<InventoryTerminalBlockEntity> = register(
         "inventory_terminal",
         PlatformServices.blockEntity.createBlockEntityType(::InventoryTerminalBlockEntity, ModBlocks.INVENTORY_TERMINAL)
+    )
+
+    val BREAKER: BlockEntityType<BreakerBlockEntity> = register(
+        "breaker",
+        PlatformServices.blockEntity.createBlockEntityType(::BreakerBlockEntity, ModBlocks.BREAKER)
+    )
+
+    val PLACER: BlockEntityType<PlacerBlockEntity> = register(
+        "placer",
+        PlatformServices.blockEntity.createBlockEntityType(::PlacerBlockEntity, ModBlocks.PLACER)
     )
 
     private fun <T : BlockEntity> register(

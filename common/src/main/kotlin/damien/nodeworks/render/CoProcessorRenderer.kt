@@ -14,7 +14,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
 
 /**
- * Emissive overlay for the Co-Processor — all 6 faces, un-tinted white. Texture
+ * Emissive overlay for the Co-Processor, all 6 faces, un-tinted white. Texture
  * picks between the formed base glow and the 3 overheating variants based on the
  * block's `overheat_level` state. Does nothing when `FORMED=false`.
  */

@@ -15,7 +15,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.world.item.ItemStack
 
 /**
- * A single virtual slot — no dependency on MC's Slot class.
+ * A single virtual slot, no dependency on MC's Slot class.
  */
 data class VirtualSlot(
     var index: Int,
@@ -27,7 +27,7 @@ data class VirtualSlot(
 }
 
 /**
- * Reusable virtual slot grid — renders items and handles click detection
+ * Reusable virtual slot grid, renders items and handles click detection
  * without using MC's Slot system. Fully portable across MC versions.
  *
  * Positioning is absolute (screen coordinates). Call [moveTo] to reposition.
@@ -66,7 +66,7 @@ class VirtualSlotGrid(
 
     /** Render slot backgrounds. Uses direct blit for performance (1 blit per slot instead of 9). */
     fun renderBackground(graphics: GuiGraphicsExtractor) {
-        // Direct blit of SLOT texture region — same visual as 9-slice at native 18x18 but much faster
+        // Direct blit of SLOT texture region, same visual as 9-slice at native 18x18 but much faster
         val slot = NineSlice.SLOT
         for (r in 0 until rows) {
             for (c in 0 until cols) {
@@ -86,7 +86,7 @@ class VirtualSlotGrid(
      * @param scrollOffset For scrollable grids, the number of rows scrolled.
      * @param totalItems For scrollable grids, the total number of items available.
      */
-    // Reusable slot for provider callbacks — avoids per-frame allocations
+    // Reusable slot for provider callbacks, avoids per-frame allocations
     private val tempSlot = VirtualSlot(0, slotType)
 
     fun renderItems(graphics: GuiGraphicsExtractor, scrollOffset: Int = 0, totalItems: Int = slots.size, skipRows: Int = 0) {
@@ -126,8 +126,8 @@ class VirtualSlotGrid(
                 // Render scaled count text (0.5x) anchored to bottom-right of slot
                 val pose = graphics.pose()
                 pose.pushMatrix()
-                // 26.1: Matrix3x2fStack is 2D; dropped Z translation. The 200f Z lift
-                //  used to stack the count text above item icon geometry — in the new
+                // 26.1: Matrix3x2fStack is 2D, dropped Z translation. The 200f Z lift
+                //  used to stack the count text above item icon geometry, in the new
                 //  pipeline, submission order already handles that.
                 val scale = 0.5f
                 pose.scale(scale, scale)

@@ -37,13 +37,13 @@ class NodeSideScreenHandler(
         }
     }
 
-    /** Currently displayed side — updated by tab clicks. */
+    /** Currently displayed side, updated by tab clicks. */
     var activeSide: Direction = initialSide
         private set
 
     init {
         // Add all 54 node slots (6 sides × 9 slots).
-        // Only the initial side's slots are at visible positions; others are off-screen.
+        // Only the initial side's slots are at visible positions, others are off-screen.
         for (side in Direction.entries) {
             val offset = side.ordinal * NodeBlockEntity.SLOTS_PER_SIDE
             val visible = side == initialSide
@@ -71,7 +71,7 @@ class NodeSideScreenHandler(
         }
     }
 
-    /** Switch the active side — repositions slots so only the new side is visible. */
+    /** Switch the active side, repositions slots so only the new side is visible. */
     fun switchSide(newSide: Direction) {
         activeSide = newSide
         // 26.1: the vanilla jar common/ compiles against has Slot.x / Slot.y as

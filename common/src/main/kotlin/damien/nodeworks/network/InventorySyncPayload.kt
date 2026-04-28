@@ -7,7 +7,7 @@ import net.minecraft.resources.Identifier
 
 /**
  * Server → Client: Syncs inventory terminal data.
- * fullUpdate=true: complete inventory — may be chunked across multiple packets.
+ * fullUpdate=true: complete inventory, may be chunked across multiple packets.
  *   chunkIndex/totalChunks track pagination. Client clears on first chunk,
  *   buffers entries, and marks view dirty when last chunk arrives.
  * fullUpdate=false: delta (only changed/removed entries, always single packet)

@@ -4,9 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.InstructionStorageBlock
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import net.minecraft.client.renderer.SubmitNodeCollector
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.client.renderer.state.level.CameraRenderState
@@ -21,10 +19,10 @@ import org.joml.Quaternionf
  * front face. The card PNG is 4×1 and maps onto the 12 slot cutouts painted into
  * `instruction_storage_front.png` at the positions in [SLOT_POSITIONS].
  */
-class InstructionStorageRenderer(context: BlockEntityRendererProvider.Context) :
-    BlockEntityRenderer<InstructionStorageBlockEntity, InstructionStorageRenderer.RenderState> {
+open class InstructionStorageRenderer(context: BlockEntityRendererProvider.Context) :
+    ConnectableBER<InstructionStorageBlockEntity, InstructionStorageRenderer.RenderState>(context) {
 
-    class RenderState : BlockEntityRenderState() {
+    class RenderState : ConnectableRenderState() {
         val filled: BooleanArray = BooleanArray(InstructionStorageBlockEntity.TOTAL_SLOTS)
         var facing: Direction? = null
         var anyFilled: Boolean = false
@@ -55,20 +53,17 @@ class InstructionStorageRenderer(context: BlockEntityRendererProvider.Context) :
         )
 
         private const val Z_OFFSET = 0.001f
-        private const val FULLBRIGHT = 15728880
     }
 
     override fun createRenderState(): RenderState = RenderState()
 
-    override fun extractRenderState(
+    override fun extractConnectable(
         blockEntity: InstructionStorageBlockEntity,
         state: RenderState,
         partialTicks: Float,
         cameraPosition: Vec3,
-        breakProgress: ModelFeatureRenderer.CrumblingOverlay?
+        breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
-        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
-
         val blockState = blockEntity.blockState
         state.facing = if (blockState.hasProperty(InstructionStorageBlock.FACING))
             blockState.getValue(InstructionStorageBlock.FACING) else null
@@ -81,18 +76,14 @@ class InstructionStorageRenderer(context: BlockEntityRendererProvider.Context) :
         }
         state.anyFilled = any
 
-        state.networkColor = if (!NodeConnectionRenderer.isReachable(blockEntity.blockPos)) {
-            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        } else {
-            NodeConnectionRenderer.findNetworkColor(blockEntity.level, blockEntity.blockPos)
-        }
+        state.networkColor = resolveNetworkColor(blockEntity)
     }
 
-    override fun submit(
+    override fun submitConnectable(
         state: RenderState,
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        camera: CameraRenderState
+        camera: CameraRenderState,
     ) {
         val facing = state.facing ?: return
 
@@ -126,13 +117,13 @@ class InstructionStorageRenderer(context: BlockEntityRendererProvider.Context) :
                 val yTop = (16 - pxY) / 16f - 0.5f
 
                 vc.addVertex(pose, x1, yBot, z).setColor(255, 255, 255, 255).setUv(0f, 1f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x2, yBot, z).setColor(255, 255, 255, 255).setUv(1f, 1f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x2, yTop, z).setColor(255, 255, 255, 255).setUv(1f, 0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
                 vc.addVertex(pose, x1, yTop, z).setColor(255, 255, 255, 255).setUv(0f, 0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(FULLBRIGHT).setNormal(pose, 0f, 0f, 1f)
+                    .setOverlay(OverlayTexture.NO_OVERLAY).setLight(RenderUtils.FULL_BRIGHT).setNormal(pose, 0f, 0f, 1f)
             }
         }
 

@@ -22,7 +22,7 @@ import net.minecraft.world.level.block.state.properties.BooleanProperty
 import net.minecraft.world.phys.BlockHitResult
 
 /**
- * Crafting Core — the brain of the multiblock Crafting CPU.
+ * Crafting Core, the brain of the multiblock Crafting CPU.
  * Connects to the network via laser. Right-click to open the CPU GUI.
  * When broken, drops any items held in the buffer.
  */
@@ -49,7 +49,7 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
     }
 
     /** Emit red redstone-dust particles around the Core whenever a craft failure is
-     *  undismissed — gives a visible-from-distance cue to find the stuck CPU without
+     *  undismissed, gives a visible-from-distance cue to find the stuck CPU without
      *  a GUI. Scales with the player's particle setting automatically because vanilla
      *  animateTick runs at the client's random-tick rate. */
     override fun animateTick(state: BlockState, level: Level, pos: BlockPos, random: RandomSource) {

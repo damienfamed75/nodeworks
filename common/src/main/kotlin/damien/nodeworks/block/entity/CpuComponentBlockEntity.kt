@@ -7,7 +7,7 @@ import net.minecraft.world.level.Level
 /**
  * Marker interface for block entities that are part of a Crafting CPU multiblock.
  *
- * The [CraftingCoreBlockEntity] discovers components via free-form adjacency BFS —
+ * The [CraftingCoreBlockEntity] discovers components via free-form adjacency BFS,
  * any block entity implementing this interface will be traversed as part of the CPU
  * structure. Specific contributions (buffer capacity, parallel job slots, etc.) are
  * accessed via type-specific checks in the Core's recalculation logic.
@@ -17,7 +17,7 @@ import net.minecraft.world.level.Level
 interface CpuComponentBlockEntity {
     companion object {
         /**
-         * BFS from [startPos] through connected CPU components; returns all
+         * BFS from [startPos] through connected CPU components, returns all
          * [CraftingCoreBlockEntity]s reachable via a chain of adjacent components.
          *
          * Used to notify every affected Core when a component is placed/removed/retiered.

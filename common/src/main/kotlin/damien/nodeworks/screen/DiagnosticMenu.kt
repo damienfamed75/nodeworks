@@ -14,10 +14,10 @@ class DiagnosticMenu(
     val topology: DiagnosticOpenData
 ) : AbstractContainerMenu(ModScreenHandlers.DIAGNOSTIC, syncId) {
 
-    /** Craft tree received from server — updated via S2C packet. */
+    /** Craft tree received from server, updated via S2C packet. */
     var craftTree: CraftTreeBuilder.CraftTreeNode? = null
 
-    /** Live errors from network terminals — populated by fanned-out TerminalLogPayloads. */
+    /** Live errors from network terminals, populated by fanned-out TerminalLogPayloads. */
     data class DiagnosticError(val terminalPos: net.minecraft.core.BlockPos, val message: String, val timestamp: Long)
     val liveErrors = mutableListOf<DiagnosticError>()
     private val maxErrors = 50

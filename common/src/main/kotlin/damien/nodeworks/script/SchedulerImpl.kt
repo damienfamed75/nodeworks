@@ -7,8 +7,8 @@ import org.luaj.vm2.lib.*
  * Manages tick-based scheduling for Lua scripts.
  *
  * Two systems:
- * 1. Scheduled tasks — :tick(fn), :second(fn), :delay(ticks, fn), :cancel(id)
- * 2. Pending jobs — polling callbacks checked each tick (used by job:pull and network:process)
+ * 1. Scheduled tasks, :tick(fn), :second(fn), :delay(ticks, fn), :cancel(id)
+ * 2. Pending jobs, polling callbacks checked each tick (used by job:pull and network:process)
  */
 class SchedulerImpl(
     /** Called when a scheduled task throws an error. The error is logged but execution continues. */
@@ -96,6 +96,59 @@ class SchedulerImpl(
         pendingJobs.clear()
         nextId = 1
         currentTick = 0
+    }
+
+    // =====================================================================
+    // Kotlin callable task registration
+    //
+    // These exist so native code (preset builders in particular) can schedule
+    // repeated work without going through a Lua round trip. Internally each
+    // helper wraps the Kotlin lambda in a thin [ZeroArgFunction] so the task
+    // list still holds a uniform [LuaFunction] and the main [tick] loop's
+    // error handling path keeps working.
+    // =====================================================================
+
+    private fun addTaskInternal(callback: () -> Unit, interval: Int, repeating: Boolean, firstRunDelay: Int = 0): Int {
+        val id = nextId++
+        val fn = object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+                callback()
+                return LuaValue.NIL
+            }
+        }
+        val nextRun = if (repeating) 0L else currentTick + firstRunDelay
+        tasks.add(ScheduledTask(id, fn, interval, nextRun, repeating))
+        return id
+    }
+
+    /** Schedule a Kotlin callback every tick. Returns the task id for [cancelTaskById]. */
+    fun addTick(callback: () -> Unit): Int = addTaskInternal(callback, interval = 1, repeating = true)
+
+    /** Schedule a Kotlin callback every 20 ticks (once per second). Returns the task id. */
+    fun addSecond(callback: () -> Unit): Int = addTaskInternal(callback, interval = 20, repeating = true)
+
+    /** Schedule a Kotlin callback every [intervalTicks] ticks. Returns the task id. */
+    fun addRepeating(intervalTicks: Int, callback: () -> Unit): Int {
+        require(intervalTicks >= 1) { "intervalTicks must be >= 1" }
+        return addTaskInternal(callback, interval = intervalTicks, repeating = true)
+    }
+
+    /** Schedule a one-shot Kotlin callback to run after [delayTicks] ticks. Pass `0`
+     *  to fire on the next scheduler tick, useful for "defer this until the current
+     *  Lua statement chain has finished evaluating," which is what `network:craft`'s
+     *  default-to-store-after-connect-window relies on. Returns the task id for
+     *  [cancelTaskById] in case the caller wants to abort before it fires. */
+    fun runOnce(delayTicks: Int, callback: () -> Unit): Int {
+        require(delayTicks >= 0) { "delayTicks must be >= 0" }
+        return addTaskInternal(callback, interval = 1, repeating = false, firstRunDelay = delayTicks)
+    }
+
+    /** Cancel a scheduled task previously added via [addTick] / [addSecond] / [addRepeating].
+     *  Returns true if a task with this id was present. */
+    fun cancelTaskById(id: Int): Boolean {
+        val before = tasks.size
+        tasks.removeAll { it.id == id }
+        return tasks.size < before
     }
 
     fun createLuaTable(): LuaTable {

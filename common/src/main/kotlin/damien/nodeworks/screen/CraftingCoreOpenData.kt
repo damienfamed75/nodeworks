@@ -6,7 +6,7 @@ import net.minecraft.network.codec.StreamCodec
 
 /**
  * Initial CPU state sent to the client on menu open.
- * Counts are Long-safe; type counts are Int (small).
+ * Counts are Long-safe, type counts are Int (small).
  * Live updates after open are pushed via BufferSyncPayload.
  */
 data class CraftingCoreOpenData(

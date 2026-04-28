@@ -22,7 +22,7 @@ import java.util.function.Consumer
  * Handheld Inventory Terminal. A wearable version of the fixed
  * <ItemLink id="inventory_terminal" /> that connects to a network remotely via a
  * [LinkCrystalItem] installed in its crystal slot. The crystal must be paired to a
- * Broadcast Antenna sitting adjacent to a Network Controller — see
+ * Broadcast Antenna sitting adjacent to a Network Controller, see
  * [BroadcastSourceKind.NETWORK_CONTROLLER] for the pairing model.
  *
  * ## Crystal storage
@@ -30,13 +30,13 @@ import java.util.function.Consumer
  * The installed crystal lives in the Portable's
  * [ModDataComponents.PORTABLE_INVENTORY_TERMINAL_CRYSTAL] component as a full
  * [ItemStack]. Storing the stack (not just the pairing data) preserves any extra
- * state on the crystal — a renamed crystal stays renamed when pulled out.
+ * state on the crystal, a renamed crystal stays renamed when pulled out.
  *
  * ## Opening
  *
  * Right-click always opens the Inventory Terminal menu, regardless of whether a
  * crystal is installed or links to a reachable network. If the crystal is missing,
- * blank, wrong-kind, or out of range, the menu opens in a disconnected state — the
+ * blank, wrong-kind, or out of range, the menu opens in a disconnected state, the
  * grid renders empty and operations no-op until the player installs a working
  * crystal via the menu's slot (the menu re-resolves on any slot change, and once a
  * second on its own as a recovery path).
@@ -48,7 +48,7 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
         player: Player,
         hand: InteractionHand,
     ): InteractionResult {
-        // Animation hint handled client-side; all state + menu open happen server-side.
+        // Animation hint handled client-side, all state + menu open happen server-side.
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
@@ -62,7 +62,7 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.portable_inventory_terminal"),
-            // Portable has no world position — null tells the client "no SetLayout
+            // Portable has no world position, null tells the client "no SetLayout
             // round-trip target." See InventoryTerminalOpenData for the nullable
             // terminalPos handling.
             InventoryTerminalOpenData(terminalPos = null, hasCrystalSlot = true),
@@ -71,7 +71,7 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
                 // Open with no source. The menu seeds the crystal slot from the
                 // Portable's component and then calls tryResolveSource() itself to
                 // connect (or stay disconnected) based on the crystal's state.
-                // serverLevel is the player's current level — used as a fallback
+                // serverLevel is the player's current level, used as a fallback
                 // for recipe lookups until resolve swaps it for the network's
                 // actual dimension.
                 InventoryTerminalMenu.createServer(
@@ -113,7 +113,7 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
         }
         if (pairing.kind != BroadcastSourceKind.NETWORK_CONTROLLER) {
             // Portables only drive network-controller-kind pairings. A wrong-kind
-            // crystal is user error; surface it explicitly rather than showing a
+            // crystal is user error, surface it explicitly rather than showing a
             // "Paired to Processing Storage" line that would look fine at a glance.
             tooltip.accept(
                 Component.literal("Installed crystal has wrong pairing kind.")
@@ -121,10 +121,22 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
             )
             return
         }
-        tooltip.accept(
-            Component.literal("Linked to network at (${pairing.pos.x}, ${pairing.pos.y}, ${pairing.pos.z})")
-                .withStyle(ChatFormatting.GRAY)
-        )
+        // If the controller's BE happens to be loaded on the client (player is
+        // in render range, same dimension), prefer its custom network name.
+        // Out of range or cross-dimension we fall back to the position line so
+        // the tooltip still tells the player something useful.
+        val networkName = resolveNetworkName(pairing)
+        if (networkName != null) {
+            tooltip.accept(
+                Component.literal("Linked to \"$networkName\"")
+                    .withStyle(ChatFormatting.GRAY)
+            )
+        } else {
+            tooltip.accept(
+                Component.literal("Linked to network at (${pairing.pos.x}, ${pairing.pos.y}, ${pairing.pos.z})")
+                    .withStyle(ChatFormatting.GRAY)
+            )
+        }
         val dimId = pairing.dimension.identifier().path
         tooltip.accept(
             Component.literal("Dimension: $dimId")
@@ -132,14 +144,34 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
         )
     }
 
+    /** Read the live network name off the paired antenna's adjacent controller,
+     *  or null when neither BE is loaded on the client (out of range or
+     *  different dimension), no controller is adjacent, or the controller
+     *  hasn't been given a custom name. The crystal stores the *antenna's*
+     *  position, not the controller's, so we have to scan the antenna's six
+     *  neighbours the same way [BroadcastAntennaBlockEntity.detectSource]
+     *  does at encoding time. */
+    private fun resolveNetworkName(pairing: LinkCrystalItem.Companion.PairingData): String? {
+        val level = net.minecraft.client.Minecraft.getInstance().level ?: return null
+        if (level.dimension() != pairing.dimension) return null
+        for (dir in net.minecraft.core.Direction.entries) {
+            val neighbor = pairing.pos.relative(dir)
+            val be = level.getBlockEntity(neighbor)
+                as? damien.nodeworks.block.entity.NetworkControllerBlockEntity
+                ?: continue
+            return be.networkName.takeIf { it.isNotEmpty() }
+        }
+        return null
+    }
+
     companion object {
         /**
          * Read the Link Crystal currently installed in [portable]. Returns
-         * [ItemStack.EMPTY] when no crystal is installed — the component is absent on
+         * [ItemStack.EMPTY] when no crystal is installed, the component is absent on
          * a freshly-crafted Portable, and callers treat missing and empty identically.
          *
          * The returned stack is the live value stored in the component. Mutating it
-         * is not supported — call [setInstalledCrystal] to write back a modified
+         * is not supported, call [setInstalledCrystal] to write back a modified
          * crystal.
          */
         fun getInstalledCrystal(portable: ItemStack): ItemStack {
@@ -150,7 +182,7 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
         /**
          * Store [crystal] in [portable]'s crystal slot. Pass [ItemStack.EMPTY] to
          * clear the slot. When the stored value would be empty we REMOVE the component
-         * entirely rather than storing an empty wrapper — keeps the item's component
+         * entirely rather than storing an empty wrapper, keeps the item's component
          * map clean (relevant for equality checks and stack merging).
          *
          * The stored stack is always a copy: if the caller mutates the stack they

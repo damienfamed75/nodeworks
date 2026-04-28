@@ -19,6 +19,12 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.compat.renderTooltip
 import damien.nodeworks.compat.scan
+import damien.nodeworks.script.LuaApiDocs
+import damien.nodeworks.script.LuaTokenizer
+import damien.nodeworks.script.LuaTokenizer.Token
+import damien.nodeworks.script.LuaTokenizer.TokenType
+import damien.nodeworks.script.diagnostics.Diagnostic
+import damien.nodeworks.script.diagnostics.Severity
 import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
@@ -31,7 +37,7 @@ import net.minecraft.network.chat.Component
 
 /**
  * Custom multi-line code editor widget with built-in syntax highlighting.
- * No reflection, no mixins — fully self-contained using only stable public APIs.
+ * No reflection, no mixins, fully self-contained using only stable public APIs.
  */
 class ScriptEditor(
     private val font: Font,
@@ -39,24 +45,30 @@ class ScriptEditor(
 ) : AbstractWidget(x, y, width, height, Component.empty()) {
 
     companion object {
-        // Syntax colors (One Dark theme)
-        private const val KEYWORD_COLOR = 0xFFC678DD.toInt()
-        private const val STRING_COLOR = 0xFF98C379.toInt()
-        private const val COMMENT_COLOR = 0xFF5C6370.toInt()
-        private const val NUMBER_COLOR = 0xFFD19A66.toInt()
-        private const val FUNCTION_COLOR = 0xFF61AFEF.toInt()
-        private const val DEFAULT_COLOR = 0xFFABB2BF.toInt()
+        // Syntax colours are sourced from [damien.nodeworks.script.LuaTokenizer] so the
+        // editor, the overlay highlighter, and the guidebook's <LuaCode> tag all use the
+        // same palette. Only FOLD_COLOR and editor-chrome colours (selection, cursor,
+        // background) stay local since they're not syntax classifications.
+        private const val FOLD_COLOR = damien.nodeworks.script.LuaTokenizer.COMMENT_COLOR
         private const val SELECTION_BG = 0xFF264F78.toInt()
         private const val CURSOR_COLOR = 0xFFFFFFFF.toInt()
         private const val BG_COLOR = 0xFF0D0D0D.toInt()
         private const val CURSOR_BLINK_MS = 300L
 
-        private val KEYWORDS = setOf(
-            "and", "break", "do", "else", "elseif", "end", "false", "for",
-            "function", "if", "in", "local", "nil", "not", "or", "repeat",
-            "return", "then", "true", "until", "while"
-        )
-        private val BUILTINS = setOf("card", "scheduler", "print", "network", "clock", "require")
+        /** Seconds of key-held time needed to trigger the guidebook open. Matches
+         *  GuideME's own OpenGuideHotkey "~half a second" feel. */
+        private const val HOLD_PROGRESS_TARGET = 0.5f
+
+        /** Decay multiplier on release, partial progress drains out quickly so an
+         *  interrupted hold doesn't linger visually. */
+        private const val HOLD_PROGRESS_DECAY = 4.0f
+
+        /** Minimum progress before we start eating the paired character events. Below
+         *  this, the press is treated as a tap and the char flows through normally,
+         *  so quickly pressing G while mouse-over a doc-bearing token still types `g`.
+         *  A single render frame (~16ms) plus a small margin is enough to separate a
+         *  tap from a deliberate hold. */
+        private const val HOLD_TAP_GUARD = 0.05f
     }
 
     // Text state
@@ -71,9 +83,84 @@ class ScriptEditor(
     // Callbacks
     private var valueListener: ((String) -> Unit)? = null
 
+    /** Supplies the variable-type map used by [LuaApiDocs.resolveAt] so hover / G-key
+     *  resolution can fall through from `local cards = card, cards:setPowered(…)` to the
+     *  `Card:setPowered` doc entry. Default returns an empty map so out-of-terminal
+     *  usage of this widget (e.g. unit tests, future embeddings) still gets the bare
+     *  + qualified-literal lookups without extra wiring.
+     *
+     *  The terminal wires this to [AutocompletePopup.getSymbolTable], which already
+     *  does full inference (explicit annotations, function-param types, chain resolution,
+     *  network:get/var special cases). No parallel inference lives here.
+     *
+     *  [charPos] is the character offset in [value] to anchor the scope walk at, hover
+     *  tooltips use the position of the *hovered token* so a local declared in a function
+     *  resolves correctly when the cursor is outside that function. Autocomplete passes
+     *  the cursor position. */
+    var symbolTableProvider: (charPos: Int) -> Map<String, String> = { emptyMap() }
+
+    /** Invoked when the player hits the open-docs keybind over a token whose doc entry
+     *  carries a [LuaApiDocs.Doc.guidebookRef]. The wrapping screen is responsible for
+     *  actually navigating, ScriptEditor only knows "this token wants to open this ref". */
+    var openGuidebookRef: (ref: String) -> Unit = {}
+
+    /** Polled each frame to decide whether to advance the Hold-G progress bar. Bypasses
+     *  focus routing (implemented via raw GLFW `isKeyDown` on the loader side) so the
+     *  editor can detect the key as held even while it itself has focus. Default is
+     *  always-false, out-of-terminal usages get no progress bar unless wired.
+     *
+     *  Frame-polling rather than a keyPressed hook because MC auto-repeat fires the
+     *  key-press event many times per second while held, which doesn't map cleanly to
+     *  a smooth progress ramp. Polling each frame gives us a natural delta-time advance
+     *  instead. */
+    var isOpenDocsKeyHeld: () -> Boolean = { false }
+
+    /** Cache of UNFOLDED tokens per line, populated each render pass. Used by the
+     *  hover-tooltip lookup so we don't re-tokenise every frame, and don't have to redo
+     *  the multi-line block-comment state tracking the render loop already does. */
+    private val renderedLineTokens = HashMap<Int, List<Token>>()
+
+    /** Diagnostics to underline in the editor (red/yellow/blue squiggles per [Severity]).
+     *  Polled once per frame in [extractWidgetRenderState]; the host wires this to a cached
+     *  [damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze] call so the analyzer
+     *  doesn't run on every render frame. Default returns nothing so out-of-terminal usages
+     *  of this widget render no squiggles. */
+    var diagnosticsProvider: () -> List<Diagnostic> = { emptyList() }
+
+    /** Snapshot of [diagnosticsProvider]'s output captured at frame start, kept stable
+     *  through the rest of the frame so the squiggle pass and the hover lookup
+     *  ([diagnosticAt]) agree on what's flagged. */
+    private var renderedDiagnostics: List<Diagnostic> = emptyList()
+
+    /** Last mouse position passed into [extractWidgetRenderState]. Needed by the G-key
+     *  handler so it can resolve the hovered token at the moment of the press, KeyEvent
+     *  doesn't carry mouse coords. */
+    private var lastMouseX: Int = 0
+    private var lastMouseY: Int = 0
+
+    /** Char that [charTyped] deferred while the docs key is held over a doc-bearing
+     *  token. We buffer instead of inserting so we can decide on release whether this
+     *  was a tap (commit the buffered char) or a hold that completed (drop it). Null
+     *  when nothing's pending. */
+    private var pendingTapChar: String? = null
+
+    /** Hold-G progress in frame units, capped at [HOLD_PROGRESS_TARGET]. Incremented per
+     *  frame while [isOpenDocsKeyHeld] returns true AND the mouse is over a doc-bearing
+     *  token, decays when the key is released so a partial-hold doesn't stick around. */
+    private var holdProgress: Float = 0f
+
+    /** Set after a full hold completes so we only fire [openGuidebookRef] once per
+     *  hold, no second firing if the user keeps holding past completion. Reset on
+     *  release. */
+    private var holdCompleted: Boolean = false
+
+    /** Nanotime of the previous render frame, used to compute delta so the progress
+     *  ramp ends up frame-rate-independent. */
+    private var lastFrameNanos: Long = 0L
+
     /**
      * A character range on a line that should render as a short replacement string when
-     * the cursor isn't inside it. The buffer text itself is unchanged — folding is purely
+     * the cursor isn't inside it. The buffer text itself is unchanged, folding is purely
      * a display layer. When the cursor falls inside [startCol, endCol), the fold is
      * automatically suppressed so the player can see and edit the underlying text.
      *
@@ -84,14 +171,12 @@ class ScriptEditor(
 
     /** Folds that *might* apply to [lineIdx]. The editor automatically suppresses any
      *  fold whose range contains the current cursor (so the player can still type inside
-     *  it). Default returns nothing — folding is opt-in by the caller. */
+     *  it). Default returns nothing, folding is opt-in by the caller. */
     var foldsForLine: (lineIdx: Int) -> List<Fold> = { emptyList() }
 
-    /** Color folds render in. Same dim grey used for syntax comments to read as metadata. */
-    private val FOLD_COLOR: Int = 0xFF5C6370.toInt()
 
     /** How many extra pixels of vertical space to leave ABOVE [lineIdx] for a decoration
-     *  (e.g. an inline recipe-icon hint). Default 0 — no decoration. Returning >0 for a
+     *  (e.g. an inline recipe-icon hint). Default 0, no decoration. Returning >0 for a
      *  given line shifts that line and everything after it downward by the returned px.
      *
      *  Setter invalidates the cumulative-Y cache so geometry picks up the new values
@@ -106,7 +191,7 @@ class ScriptEditor(
 
     /** Draw the decoration that sits in the reserved space above [lineIdx]. Called once per
      *  visible line whose decoration height is > 0. (x, y) is the top-left of the
-     *  reserved region; (w, h) is its size. The editor has already scissored to the
+     *  reserved region, (w, h) is its size. The editor has already scissored to the
      *  editor bounds, so the callback can freely draw within (x, y, w, h) without
      *  worrying about the surrounding chrome. */
     var renderDecoration: (graphics: GuiGraphicsExtractor, lineIdx: Int, x: Int, y: Int, w: Int, h: Int) -> Unit =
@@ -119,14 +204,19 @@ class ScriptEditor(
             return lines.joinToString("\n")
         }
         set(text) {
-            rebuildLines(text)
-            cursor = cursor.coerceAtMost(text.length)
+            // Normalise on the way in: Minecraft's Font draws raw `\r` / `\t` as literal
+            // "CR" / "HT" glyph boxes, so anything loaded from disk (or pasted from an
+            // editor with CRLF line endings + hard tabs) would render as a field of
+            // control-char boxes. [LuaTokenizer.normalize] collapses to LF + soft tabs.
+            val normalized = LuaTokenizer.normalize(text)
+            rebuildLines(normalized)
+            cursor = cursor.coerceAtMost(normalized.length)
             selectStart = -1
             scrollY = 0
             scrollX = 0
         }
 
-    /** Update lines without resetting cursor/selection/scroll — for internal edits. */
+    /** Update lines without resetting cursor/selection/scroll, for internal edits. */
     private fun rebuildLines(text: String) {
         lines.clear()
         lines.addAll(if (text.isEmpty()) listOf("") else text.split("\n"))
@@ -141,18 +231,24 @@ class ScriptEditor(
         return lines[lineIdx]
     }
 
-    /** Set text and cursor without resetting scroll — for autocomplete insertion. */
+    /** Set text and cursor without resetting scroll, for autocomplete insertion. */
     fun setValueKeepScroll(text: String, newCursor: Int) {
-        rebuildLines(text)
-        cursor = newCursor.coerceIn(0, text.length)
+        val normalized = LuaTokenizer.normalize(text)
+        rebuildLines(normalized)
+        cursor = newCursor.coerceIn(0, normalized.length)
         selectStart = -1
         ensureCursorVisible()
         onTextChanged()
     }
 
 
-    fun setCharacterLimit(limit: Int) { characterLimit = limit }
-    fun setValueListener(listener: (String) -> Unit) { valueListener = listener }
+    fun setCharacterLimit(limit: Int) {
+        characterLimit = limit
+    }
+
+    fun setValueListener(listener: (String) -> Unit) {
+        valueListener = listener
+    }
 
     fun getCursorPosition(): Int = cursor
 
@@ -179,7 +275,7 @@ class ScriptEditor(
     // --- Variable-height line layout ---
     //
     // Line indexing uses decorations so we don't lose cursor/mouse/scroll accuracy when
-    // decorations push lines down. All geometry goes through these helpers; never
+    // decorations push lines down. All geometry goes through these helpers, never
     // multiply by lineHeight directly.
 
     /** Cumulative Y position of each line's text-row top, i.e. `cumulativeY[i]` = y of
@@ -188,7 +284,7 @@ class ScriptEditor(
     private var cumulativeY: IntArray = IntArray(0)
     private var decorationCacheDirty: Boolean = true
 
-    /** Mark the decoration cache dirty — call whenever the callback's return values
+    /** Mark the decoration cache dirty, call whenever the callback's return values
      *  may have changed (e.g. the network's recipe list updated). */
     fun invalidateDecorationCache() {
         decorationCacheDirty = true
@@ -212,7 +308,7 @@ class ScriptEditor(
     }
 
     /** Y-offset (in content coordinates, before scroll) of the TOP of line [lineIdx]'s
-     *  text row — i.e. immediately AFTER that line's decoration (if any).
+     *  text row, i.e. immediately AFTER that line's decoration (if any).
      *
      *  Calling with `lineIdx == lines.size` is valid: it returns the total content
      *  height (= bottom of the last line). Callers that want "Y just past line N" pass
@@ -229,7 +325,7 @@ class ScriptEditor(
         if (contentY < 0) return 0
         ensureDecorationCache()
         // Binary search: find last line whose (decoration + body) still starts at or below contentY.
-        // cumulativeY[i] = top of line i's body; (cumulativeY[i] - decorationAboveLine(i)) = top of decoration band.
+        // cumulativeY[i] = top of line i's body, (cumulativeY[i] - decorationAboveLine(i)) = top of decoration band.
         for (i in lines.indices) {
             val bodyBottom = cumulativeY[i] + lineHeight
             if (contentY < bodyBottom) return i
@@ -243,7 +339,7 @@ class ScriptEditor(
         return cumulativeY[lines.size]
     }
 
-    /** Y-offset of the BOTTOM of line [lineIdx]'s text row — excludes any decoration
+    /** Y-offset of the BOTTOM of line [lineIdx]'s text row, excludes any decoration
      *  band above the *next* line. Use this for things that want to anchor "directly
      *  under this line" without being pushed down by a following decoration row. */
     fun yBottomOfLine(lineIdx: Int): Int {
@@ -298,7 +394,7 @@ class ScriptEditor(
                 x += font.width(fold.display)
                 c = fold.endCol
             } else {
-                // col inside fold (shouldn't normally happen — fold would be suppressed —
+                // col inside fold (shouldn't normally happen, fold would be suppressed,
                 // but guard for safety): return fold's start X.
                 x += font.width(line.substring(c, fold.startCol))
                 return x
@@ -392,9 +488,14 @@ class ScriptEditor(
         val relY = my - textTop + scrollY
         val lineIdx = lineAtContentY(relY.toInt())
         if (lineIdx < 0 || lineIdx >= lines.size) return null
-        // Don't treat clicks on the decoration band as being on text.
+        // Must land strictly inside the line's text row. Without the lower bound check,
+        // hovering below all content clamps to the last line via [lineAtContentY] and
+        // falsely reports a word under the cursor, bug previously visible as "tooltip
+        // keeps showing below the last line of a short script" because the tooltip's
+        // fallback path calls this method.
         val lineBodyTop = yTopOfLine(lineIdx)
-        if (relY < lineBodyTop) return null
+        val lineBodyBottom = lineBodyTop + lineHeight
+        if (relY < lineBodyTop || relY >= lineBodyBottom) return null
         val line = lines[lineIdx]
         val relX = (mx - textLeft + scrollX).toInt()
         val col = colAtX(lineIdx, relX)
@@ -411,6 +512,23 @@ class ScriptEditor(
         return line.substring(start, end)
     }
 
+    /** Tokenise every line, threading block-comment state through, and stash the result
+     *  in [renderedLineTokens]. Run once per frame at the top of
+     *  [extractWidgetRenderState] so later frame-phase work (hover resolve, hold-G
+     *  advance, actual drawing) all sees the same stable, fully-populated cache. */
+    private fun populateTokenCache() {
+        renderedLineTokens.clear()
+        var inBlockComment = false
+        for (lineIdx in lines.indices) {
+            val tokens = tokenize(lines[lineIdx], inBlockComment)
+            renderedLineTokens[lineIdx] = tokens
+            for (t in tokens) {
+                if (t.type == TokenType.BLOCK_COMMENT_START) inBlockComment = true
+                if (t.type == TokenType.BLOCK_COMMENT_END) inBlockComment = false
+            }
+        }
+    }
+
     /** Convert screen coordinates to cursor position. */
     private fun screenToCursor(mx: Double, my: Double): Int {
         val relY = my - textTop + scrollY
@@ -422,7 +540,29 @@ class ScriptEditor(
 
     // --- Rendering ---
 
-    override fun extractWidgetRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+    override fun extractWidgetRenderState(
+        graphics: GuiGraphicsExtractor,
+        mouseX: Int,
+        mouseY: Int,
+        partialTick: Float
+    ) {
+        lastMouseX = mouseX
+        lastMouseY = mouseY
+
+        // Pre-tokenise every line into the cache up-front, before the hold-progress
+        // check needs to read it. Doing this inside the draw loop (as we used to)
+        // leaves [renderedLineTokens] empty when [advanceHoldProgress] runs, which
+        // silently breaks the Hold-G UX, the resolver never finds a doc under the
+        // mouse because there are no tokens yet. The loop below reads from the cache
+        // for rendering, so no re-tokenisation.
+        populateTokenCache()
+
+        // Snapshot diagnostics once per frame so the squiggle pass (below) and the
+        // hover lookup ([diagnosticAt]) work off the same list.
+        renderedDiagnostics = diagnosticsProvider()
+
+        advanceHoldProgress(mouseX, mouseY)
+
         // Background
         graphics.fill(x, y, x + width, y + height, BG_COLOR)
 
@@ -477,9 +617,13 @@ class ScriptEditor(
                 }
             }
 
-            // Syntax-highlighted text — fold-aware. applyFolds() splices the raw token
+            // Syntax-highlighted text, fold-aware. applyFolds() splices the raw token
             // stream so any active fold renders as its short display string in FOLD_COLOR.
-            val tokens = applyFolds(lineIdx, tokenize(line, inBlockComment))
+            // Raw tokens come from the pre-populated cache so hover lookups stay stable
+            // across the frame (folded text is a visual shortcut, the logical token for
+            // docs is still the original).
+            val rawTokens = renderedLineTokens[lineIdx] ?: tokenize(line, inBlockComment)
+            val tokens = applyFolds(lineIdx, rawTokens)
             var tx = textLeft - scrollX
             for (token in tokens) {
                 if (token.type == TokenType.BLOCK_COMMENT_START) inBlockComment = true
@@ -487,6 +631,13 @@ class ScriptEditor(
                 graphics.drawString(font, token.text, tx, lineY, token.color, false)
                 tx += font.width(token.text)
             }
+        }
+
+        // Diagnostic squiggles. Drawn after the line text so the wave sits over the
+        // glyph descenders, before the cursor so the cursor's vertical bar still
+        // renders on top of any underline that lands at the same column.
+        for (diag in renderedDiagnostics) {
+            drawDiagnosticSquiggle(graphics, diag)
         }
 
         // Cursor
@@ -500,7 +651,215 @@ class ScriptEditor(
         }
 
         graphics.disableScissor()
+
+        // Hover-doc tooltip rendering is the hosting screen's job, it draws a 9-sliced
+        // tooltip backed by [resolveDocAt] and [getHoldProgressFraction]. Keeping it
+        // outside the editor widget lets the screen position the popup above its own
+        // chrome and control z-order against the autocomplete popup etc.
     }
+
+    /** Draw a horizontally-tiling sawtooth underline beneath [diag]'s range, coloured
+     *  per [Severity]. Uses the white SQUIGGLE atlas region tinted to the severity colour
+     *  so the wave shape lives in the texture (and can be redesigned by editing the atlas
+     *  rather than this code). Multi-line diagnostics get a separate run per line. */
+    private fun drawDiagnosticSquiggle(graphics: GuiGraphicsExtractor, diag: Diagnostic) {
+        val color = when (diag.severity) {
+            Severity.ERROR -> 0xFFFF4444.toInt()
+            Severity.WARNING -> 0xFFFFCC00.toInt()
+            Severity.HINT -> 0xFF4494FF.toInt()
+        }
+        val (startLine, startCol) = cursorToLineCol(diag.range.start)
+        val (endLine, endCol) = cursorToLineCol(diag.range.end)
+        for (lineIdx in startLine..endLine) {
+            if (lineIdx < 0 || lineIdx >= lines.size) continue
+            val line = lines[lineIdx]
+            val sCol = if (lineIdx == startLine) startCol else 0
+            val eCol = if (lineIdx == endLine) endCol else line.length
+            if (sCol >= eCol) continue
+            val lineY = textTop + yTopOfLine(lineIdx) - scrollY
+            // Cull lines fully outside the editor's visible band.
+            if (lineY + lineHeight < y || lineY > y + height) continue
+            val sx = textLeft + xOfCol(lineIdx, sCol) - scrollX
+            val ex = textLeft + xOfCol(lineIdx, eCol) - scrollX
+            // Underline sits at the bottom 2 rows of the line; SQUIGGLE is 4x2 in the atlas
+            // and tiles horizontally to fill (ex - sx) pixels.
+            val baseY = lineY + lineHeight - 2
+            damien.nodeworks.screen.NineSlice.SQUIGGLE.drawTinted(
+                graphics, sx, baseY, ex - sx, 2, color,
+            )
+        }
+    }
+
+    /** Diagnostic whose range covers the character offset at (mouseX, mouseY), or null
+     *  if the mouse isn't over any flagged span. Higher-severity diagnostics win when
+     *  multiple overlap so an error doesn't get hidden behind a hint. */
+    fun diagnosticAt(mouseX: Int, mouseY: Int): Diagnostic? {
+        if (renderedDiagnostics.isEmpty()) return null
+        if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return null
+        val relY = mouseY - textTop + scrollY
+        if (relY < 0) return null
+        val lineIdx = lineAtContentY(relY)
+        if (lineIdx < 0 || lineIdx >= lines.size) return null
+        val lineTop = yTopOfLine(lineIdx)
+        if (relY < lineTop || relY >= lineTop + lineHeight) return null
+        val relX = (mouseX - textLeft + scrollX)
+        val col = colAtX(lineIdx, relX)
+        val absoluteOffset = lineColToCursor(lineIdx, col)
+        // Severity priority: ERROR > WARNING > HINT, so a typo squiggle wins over a hint
+        // when their ranges overlap (e.g. a future nullable warning on the same token).
+        return renderedDiagnostics
+            .filter { absoluteOffset in it.range }
+            .minByOrNull {
+                when (it.severity) {
+                    Severity.ERROR -> 0
+                    Severity.WARNING -> 1
+                    Severity.HINT -> 2
+                }
+            }
+    }
+
+    /**
+     * Resolve whichever token is under (mouseX, mouseY). Returns null if the mouse isn't
+     * over a known-documented identifier. Shared between the hover tooltip renderer and
+     * the G-key handler so both code paths see the same doc entry.
+     */
+    private fun resolveDocUnderMouse(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? {
+        if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return null
+
+        // Y must land strictly inside a line's body row. [lineAtContentY] clamps to
+        // the first/last line when we're above/below all text, and its contract also
+        // returns the next line's index for anything in that line's decoration band,
+        // both would cause hovers outside the text to register as hovers over a token.
+        val relY = mouseY - textTop + scrollY
+        if (relY < 0) return null
+        val lineIdx = lineAtContentY(relY)
+        if (lineIdx < 0 || lineIdx >= lines.size) return null
+        val lineTop = yTopOfLine(lineIdx)
+        val lineBottom = lineTop + lineHeight
+        if (relY < lineTop || relY >= lineBottom) return null
+
+        val tokens = renderedLineTokens[lineIdx] ?: return null
+
+        // X matching via pixel extents, not col-space. Going through [colAtX] would
+        // clamp mouse-left-of-all-text to col=0 and falsely report a hover on the
+        // first token. Walking token widths means we only match when the mouse is
+        // strictly inside a drawn glyph span.
+        var tokenX = textLeft - scrollX
+        for ((i, tok) in tokens.withIndex()) {
+            val tokenW = font.width(tok.text)
+            if (mouseX in tokenX until tokenX + tokenW) {
+                // Anchor the symbol-table scope at the END of the hovered line. This makes
+                // a hover tooltip inside `function f(item: ItemsHandle) item:matches() end`
+                // resolve `item` correctly even when the cursor is outside the function,
+                // we want the scope at the token's position, not the cursor's.
+                val scopeAnchor = lines.take(lineIdx + 1).sumOf { it.length } + lineIdx
+                // Concatenate every prior line's tokens onto the current line's stream
+                // so [LuaApiDocs.resolveAt]'s chain walker can see method calls from
+                // earlier lines. Without this, multi-line chains like:
+                //   importer
+                //       :from(network)
+                //       :to("...")
+                // can't resolve `:to` because the receiver `:from(...)` lives on a
+                // prior line and the per-line token list ends right before it.
+                val combined = ArrayList<Token>()
+                var combinedIndex = -1
+                for (li in 0 until lineIdx) {
+                    val prior = renderedLineTokens[li] ?: continue
+                    combined.addAll(prior)
+                }
+                combinedIndex = combined.size + i
+                combined.addAll(tokens)
+                return LuaApiDocs.resolveAt(combined, combinedIndex, symbolTableProvider(scopeAnchor))
+            }
+            tokenX += tokenW
+        }
+        return null
+    }
+
+    /** True when the token under (mouseX, mouseY) has a [LuaApiDocs] entry. */
+    fun hasDocUnderMouse(mouseX: Int, mouseY: Int): Boolean =
+        resolveDocUnderMouse(mouseX, mouseY) != null
+
+    /** Public accessor for the hosting screen's tooltip renderer. Returns the doc entry
+     *  for whatever token is under (mouseX, mouseY), or null. Uses the shared per-frame
+     *  token cache + symbol-table provider, so resolution is identical to what the
+     *  hold-G progress logic sees. */
+    fun resolveDocAt(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? =
+        resolveDocUnderMouse(mouseX, mouseY)
+
+    /**
+     * Character offset in [value] at the end of the line under (mouseX, mouseY), or null
+     * if the mouse isn't over a text line. Lets the tooltip renderer's fallback path build
+     * a symbol table anchored at the HOVERED token rather than the cursor, so a hover on
+     * a function parameter shows `paramName: Type` even with the cursor outside the body.
+     */
+    fun getHoverScopeAnchor(mouseX: Int, mouseY: Int): Int? {
+        if (!isMouseOver(mouseX.toDouble(), mouseY.toDouble())) return null
+        val relY = mouseY - textTop + scrollY
+        if (relY < 0) return null
+        val lineIdx = lineAtContentY(relY)
+        if (lineIdx < 0 || lineIdx >= lines.size) return null
+        return lines.take(lineIdx + 1).sumOf { it.length } + lineIdx
+    }
+
+    /** Current Hold-G progress as a [0, 1] fraction. The hosting screen uses this to
+     *  render the progress bar in its tooltip footer. */
+    fun getHoldProgressFraction(): Float =
+        (holdProgress / HOLD_PROGRESS_TARGET).coerceIn(0f, 1f)
+
+    /** True while a press of the docs keybind is either buffering (awaiting release)
+     *  or actively advancing the hold timer. The hosting screen uses this to suppress
+     *  autocomplete, when the player is holding to open docs, completion suggestions
+     *  would just obscure the tooltip they're trying to read. */
+    fun isOpenDocsHoldActive(): Boolean = pendingTapChar != null || holdProgress > 0f
+
+    /**
+     * Per-frame Hold-G progress update. Increments [holdProgress] while the docs key
+     * is held AND the mouse is over a doc-bearing token, decays otherwise.
+     *
+     * When progress hits 1.0 we fire [openGuidebookRef] exactly once per hold (guarded
+     * by [holdCompleted]) and keep progress pinned at full so the bar stays solid as
+     * long as the key is held. Releasing the key resets both.
+     *
+     * While progress is > 0 we also flag [suppressNextCharTyped] so auto-repeat of the
+     * held key doesn't spam chars into the editor buffer.
+     */
+    private fun advanceHoldProgress(mouseX: Int, mouseY: Int) {
+        val now = System.nanoTime()
+        val deltaSec = if (lastFrameNanos == 0L) 0f else (now - lastFrameNanos) / 1_000_000_000f
+        lastFrameNanos = now
+
+        val held = isOpenDocsKeyHeld()
+        val doc = if (held) resolveDocUnderMouse(mouseX, mouseY) else null
+        val canAdvance = held && doc?.guidebookRef != null
+
+        if (canAdvance) {
+            holdProgress = (holdProgress + deltaSec).coerceAtMost(HOLD_PROGRESS_TARGET)
+            if (!holdCompleted && holdProgress >= HOLD_PROGRESS_TARGET) {
+                holdCompleted = true
+                // Hold fully formed, the buffered char was never meant to be typed.
+                pendingTapChar = null
+                openGuidebookRef(doc!!.guidebookRef!!)
+            }
+        } else {
+            if (!held) {
+                // Key released. If progress didn't cross the tap-guard we treat this
+                // as a quick tap and commit the buffered char into the editor so the
+                // user's keystroke isn't lost. Past the guard means they held long
+                // enough that we don't think they meant to type, drop it.
+                val wasTap = holdProgress < HOLD_TAP_GUARD
+                val buffered = pendingTapChar
+                pendingTapChar = null
+                if (wasTap && buffered != null) {
+                    if (hasSelection) deleteSelection()
+                    insertText(buffered)
+                }
+                holdCompleted = false
+            }
+            holdProgress = (holdProgress - deltaSec * HOLD_PROGRESS_DECAY).coerceAtLeast(0f)
+        }
+    }
+
 
     // --- Input handling ---
 
@@ -515,26 +874,36 @@ class ScriptEditor(
         val shift = (modifiers and 1) != 0
         val (line, col) = cursorToLineCol(cursor)
 
+        // Hold-G progress is advanced per-frame in [extractWidgetRenderState], not
+        // here. We intentionally don't consume key-presses for the docs keybind so the
+        // base keyPressed logic (typing characters, etc.) stays intact. Char suppression
+        // is flagged from the frame-update path when the user is actively holding to
+        // open docs.
+
         when (keyCode) {
             // Arrow keys
             263 -> { // LEFT
                 if (shift) startSelection()
                 if (ctrl) moveCursorWordLeft()
-                else if (shift) { if (cursor > 0) cursor-- }
-                else moveCursorLeft()
+                else if (shift) {
+                    if (cursor > 0) cursor--
+                } else moveCursorLeft()
                 if (!shift) clearSelection()
                 ensureCursorVisible()
                 return true
             }
+
             262 -> { // RIGHT
                 if (shift) startSelection()
                 if (ctrl) moveCursorWordRight()
-                else if (shift) { if (cursor < totalTextLength()) cursor++ }
-                else moveCursorRight()
+                else if (shift) {
+                    if (cursor < totalTextLength()) cursor++
+                } else moveCursorRight()
                 if (!shift) clearSelection()
                 ensureCursorVisible()
                 return true
             }
+
             265 -> { // UP
                 if (shift) startSelection()
                 if (line > 0) cursor = lineColToCursor(line - 1, col)
@@ -542,6 +911,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             264 -> { // DOWN
                 if (shift) startSelection()
                 if (line < lines.size - 1) cursor = lineColToCursor(line + 1, col)
@@ -550,6 +920,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             268 -> { // HOME
                 if (shift) startSelection()
                 cursor = lineColToCursor(line, 0)
@@ -557,6 +928,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             269 -> { // END
                 if (shift) startSelection()
                 cursor = lineColToCursor(line, lines[line].length)
@@ -564,6 +936,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             266 -> { // PAGE UP
                 if (shift) startSelection()
                 val targetLine = maxOf(0, line - visibleLines)
@@ -572,6 +945,7 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             267 -> { // PAGE DOWN
                 if (shift) startSelection()
                 val targetLine = minOf(lines.size - 1, line + visibleLines)
@@ -583,7 +957,9 @@ class ScriptEditor(
 
             // Editing keys
             259 -> { // BACKSPACE
-                if (hasSelection) { deleteSelection(); return true }
+                if (hasSelection) {
+                    deleteSelection(); return true
+                }
                 if (cursor > 0) {
                     if (ctrl) {
                         deleteWordLeft()
@@ -596,8 +972,11 @@ class ScriptEditor(
                 ensureCursorVisible()
                 return true
             }
+
             261 -> { // DELETE
-                if (hasSelection) { deleteSelection(); return true }
+                if (hasSelection) {
+                    deleteSelection(); return true
+                }
                 if (ctrl) {
                     deleteWordRight()
                     onTextChanged()
@@ -610,33 +989,38 @@ class ScriptEditor(
                 }
                 return true
             }
+
             257, 335 -> { // ENTER / NUMPAD ENTER
                 if (hasSelection) deleteSelection()
-                insertText("\n")
+                handleEnter()
                 return true
             }
+
             258 -> { // TAB
                 if (hasSelection) deleteSelection()
-                insertText("  ")
+                insertText("    ")
                 return true
             }
 
             // Ctrl shortcuts
-            65 -> if (ctrl) { // Ctrl+A — select all
+            65 -> if (ctrl) { // Ctrl+A, select all
                 selectStart = 0
                 cursor = totalTextLength()
                 return true
             }
-            67 -> if (ctrl) { // Ctrl+C — copy
+
+            67 -> if (ctrl) { // Ctrl+C, copy
                 copySelection()
                 return true
             }
-            88 -> if (ctrl) { // Ctrl+X — cut
+
+            88 -> if (ctrl) { // Ctrl+X, cut
                 copySelection()
                 deleteSelection()
                 return true
             }
-            86 -> if (ctrl) { // Ctrl+V — paste
+
+            86 -> if (ctrl) { // Ctrl+V, paste
                 val clipboard = Minecraft.getInstance().keyboardHandler.clipboard ?: ""
                 if (clipboard.isNotEmpty()) {
                     if (hasSelection) deleteSelection()
@@ -652,6 +1036,20 @@ class ScriptEditor(
         val codePoint = event.character
         val modifiers = 0
         if (!isFocused) return false
+
+        // If the docs key is currently held AND the mouse is over a doc-bearing token,
+        // we don't yet know if this is a tap (→ type the char) or a hold (→ open docs
+        // without typing). Buffer the char and let [advanceHoldProgress] decide when
+        // the key is released (tap: commit to buffer) or when progress completes (hold:
+        // discard). Subsequent auto-repeat chars during the same hold are dropped, we
+        // only keep the first.
+        if (isOpenDocsKeyHeld() && resolveDocUnderMouse(lastMouseX, lastMouseY) != null) {
+            if (pendingTapChar == null) {
+                pendingTapChar = codePoint.toString()
+            }
+            return true
+        }
+
         if (codePoint < ' ' && codePoint != '\t') return false
         cursorBlinkTime = System.currentTimeMillis()
 
@@ -687,13 +1085,89 @@ class ScriptEditor(
     // --- Text manipulation ---
 
     private fun insertText(text: String) {
+        // Normalise BEFORE length math, expanding `\t` to two spaces changes length, so
+        // using `text.length` instead of `clean.length` would advance the cursor to the
+        // wrong column after a paste containing tabs.
+        val clean = LuaTokenizer.normalize(text)
         val fullText = value
-        if (fullText.length + text.length > characterLimit) return
-        val newText = StringBuilder(fullText).insert(cursor, text).toString()
+        if (fullText.length + clean.length > characterLimit) return
+        val newText = StringBuilder(fullText).insert(cursor, clean).toString()
         rebuildLines(newText)
-        cursor += text.length
+        cursor += clean.length
         onTextChanged()
         ensureCursorVisible()
+    }
+
+    /** Three-job ENTER handler:
+     *
+     *   1. Auto-indent: a newline after `if x then`, `for ... do`, `function f()`,
+     *      etc. lands the cursor one indent level deeper.
+     *   2. Auto-`end`: when the new line opens a block whose matching closer
+     *      doesn't already exist further down the script, also drop in an `end`
+     *      on the line below the cursor. The "already exists" check is
+     *      cursor-relative ([LuaBlockBalance.shouldInsertAutoEnd]) so we don't
+     *      spawn phantom `end`s inside well-formed blocks.
+     *   3. Bare-newline at column 0: don't add the previous line's indent in
+     *      front of the cursor. The line being pushed down already has its own
+     *      leading whitespace and adding more produces visual double-indent.
+     */
+    private fun handleEnter() {
+        val (curLineIdx, col) = cursorToLineCol(cursor)
+        val curLine = lines.getOrNull(curLineIdx) ?: ""
+        val prefix = curLine.substring(0, col.coerceAtMost(curLine.length))
+
+        // Job 3: cursor at start-of-content (or earlier) on a line that already has
+        // leading whitespace. Just split the line, no indent added at the cursor.
+        if (prefix.trimStart().isEmpty()) {
+            insertText("\n")
+            return
+        }
+
+        val baseIndent = curLine.takeWhile { it == ' ' }
+        val deeperIndent = if (shouldIndentDeeper(prefix.trimEnd())) "    " else ""
+        val newIndent = baseIndent + deeperIndent
+
+        // Job 2: drop in a matching `end` for an unclosed block opener.
+        if (damien.nodeworks.script.LuaBlockBalance.shouldInsertAutoEnd(curLine, col, value, cursor)) {
+            val insertion = "\n$newIndent\n${baseIndent}end"
+            insertText(insertion)
+            // [insertText] advances the cursor past the whole insertion. Pull it
+            // back to the indented body line so the player lands ready to type
+            // with the matching `end` sitting just below.
+            val backDistance = ("\n${baseIndent}end").length
+            cursor -= backDistance
+            ensureCursorVisible()
+            return
+        }
+
+        // Job 1: plain auto-indent.
+        insertText("\n$newIndent")
+    }
+
+    /** Whether a line ending in [trimmed] should push the next line one indent deeper.
+     *  Matches Lua's usual block-opening shapes. Conservative about comments, a `then`
+     *  inside a line comment doesn't count. */
+    private fun shouldIndentDeeper(trimmed: String): Boolean {
+        if (trimmed.isEmpty()) return false
+        // Strip trailing line comment before matching keywords.
+        val commentIdx = trimmed.indexOf("--")
+        val code = if (commentIdx >= 0) trimmed.substring(0, commentIdx).trimEnd() else trimmed
+        if (code.isEmpty()) return false
+        // Keywords that open a block. `else` / `elseif ... then` count, bare `elseif`
+        // without `then` doesn't (the user is still mid-expression and will hit enter
+        // again after finishing it).
+        val openers = Regex("""(^|\W)(function|do|then|else|repeat)\s*$""")
+        if (openers.containsMatchIn(code)) return true
+        // A line ending in `function(...)` / `function name(...)` / `function obj.m(...)`,
+        // user is starting either an anonymous or named function body. The optional
+        // `[\w_.:]*` matches the qualified name (or empty for anonymous).
+        if (Regex("""\bfunction\s*[\w_.:]*\s*\([^)]*\)\s*$""").containsMatchIn(code)) return true
+        // A line ending in an unclosed `(`, chained API calls often do this
+        // (`network:handle("name",` + Enter + new function body).
+        val opens = code.count { it == '(' }
+        val closes = code.count { it == ')' }
+        if (opens > closes) return true
+        return false
     }
 
     private fun deleteAt(pos: Int) {
@@ -726,15 +1200,21 @@ class ScriptEditor(
         if (selectStart < 0) selectStart = cursor
     }
 
-    private fun clearSelection() { selectStart = -1 }
+    private fun clearSelection() {
+        selectStart = -1
+    }
 
     private fun moveCursorLeft() {
-        if (hasSelection && selectStart >= 0) { cursor = selectionStart; return }
+        if (hasSelection && selectStart >= 0) {
+            cursor = selectionStart; return
+        }
         if (cursor > 0) cursor--
     }
 
     private fun moveCursorRight() {
-        if (hasSelection && selectStart >= 0) { cursor = selectionEnd; return }
+        if (hasSelection && selectStart >= 0) {
+            cursor = selectionEnd; return
+        }
         if (cursor < totalTextLength()) cursor++
     }
 
@@ -753,17 +1233,31 @@ class ScriptEditor(
     private fun findWordBoundaryLeft(text: String, pos: Int): Int {
         if (pos <= 0) return 0
         var p = pos - 1
-        // Skip spaces (but stop at newline)
-        while (p > 0 && text[p] == ' ') p--
-        if (p >= 0 && text[p] == '\n') return p
+        val initialP = p
+        // Skip spaces back toward the start of text. Newline isn't a space so the
+        // loop exits cleanly when we hit one.
+        while (p >= 0 && text[p] == ' ') p--
+
+        if (p >= 0 && text[p] == '\n') {
+            // Ran into a newline after scanning back. Match VS Code's Ctrl+Backspace:
+            //   * If we skipped some spaces first, this was an "indented blank line"
+            //     deletion. Delete just the indent, keep the newline, cursor ends
+            //     up at column 0 of the current line.
+            //   * If we didn't skip any spaces, the cursor was already at column 0.
+            //     Delete the newline itself to merge with the previous line.
+            return if (p < initialP) p + 1 else p
+        }
+        // Pure-whitespace prefix all the way back to start-of-text, delete it all.
+        if (p < 0) return 0
         return when {
-            // At a delimiter — consume that one delimiter
-            p >= 0 && text[p].isDelimiter() -> p
-            // At a word char — consume the whole word
-            p >= 0 && text[p].isWordChar() -> {
+            // At a delimiter, consume that one delimiter
+            text[p].isDelimiter() -> p
+            // At a word char, consume the whole word
+            text[p].isWordChar() -> {
                 while (p > 0 && text[p - 1].isWordChar()) p--
                 p
             }
+
             else -> maxOf(0, p)
         }
     }
@@ -780,6 +1274,7 @@ class ScriptEditor(
                 while (p < text.length && text[p].isWordChar()) p++
                 p
             }
+
             else -> minOf(text.length, p + 1)
         }
     }
@@ -809,7 +1304,7 @@ class ScriptEditor(
     private fun ensureCursorVisible() {
         val (line, col) = cursorToLineCol(cursor)
 
-        // Vertical — use the cursor line's decorated top so scrolling also reveals the
+        // Vertical, use the cursor line's decorated top so scrolling also reveals the
         // decoration sitting above, not just the text row.
         val cursorY = yTopOfLine(line) - decorationAboveLine(line)
         val viewTop = scrollY
@@ -818,7 +1313,7 @@ class ScriptEditor(
         if (cursorY > viewBottom) scrollY = cursorY - (height - padding * 2 - lineHeight)
         scrollY = scrollY.coerceAtLeast(0)
 
-        // Horizontal — fold-aware so scrolling tracks the cursor's actual on-screen X.
+        // Horizontal, fold-aware so scrolling tracks the cursor's actual on-screen X.
         val cursorPixelX = xOfCol(line, col)
         val viewWidth = width - padding * 2
         val viewLeft = scrollX
@@ -836,100 +1331,13 @@ class ScriptEditor(
 
     override fun updateWidgetNarration(output: NarrationElementOutput) {}
 
-    // --- Syntax tokenizer (integrated from LuaSyntaxHighlighter) ---
+    // --- Syntax tokenizer ---
+    //
+    // Delegates to the shared [damien.nodeworks.script.LuaTokenizer] so the editor, the
+    // overlay highlighter, and the guidebook's <LuaCode> tag all produce identical token
+    // streams. Local aliases keep existing editor code compiling unchanged, [Token] and
+    // [TokenType] throughout this file are the shared public types.
 
-    private enum class TokenType {
-        KEYWORD, STRING, COMMENT, NUMBER, FUNCTION, DEFAULT,
-        BLOCK_COMMENT_START, BLOCK_COMMENT_END
-    }
-
-    private data class Token(val text: String, val color: Int, val type: TokenType = TokenType.DEFAULT)
-
-    private fun tokenize(line: String, inBlockComment: Boolean): List<Token> {
-        val tokens = mutableListOf<Token>()
-        var i = 0
-        var currentlyInBlock = inBlockComment
-
-        if (currentlyInBlock) {
-            val endIdx = line.indexOf("]]", i)
-            if (endIdx >= 0) {
-                tokens.add(Token(line.substring(i, endIdx + 2), COMMENT_COLOR, TokenType.BLOCK_COMMENT_END))
-                i = endIdx + 2
-            } else {
-                tokens.add(Token(line, COMMENT_COLOR))
-                return tokens
-            }
-        }
-
-        while (i < line.length) {
-            val ch = line[i]
-
-            if (ch == '-' && i + 1 < line.length && line[i + 1] == '-') {
-                if (i + 3 < line.length && line[i + 2] == '[' && line[i + 3] == '[') {
-                    val endIdx = line.indexOf("]]", i + 4)
-                    if (endIdx >= 0) {
-                        tokens.add(Token(line.substring(i, endIdx + 2), COMMENT_COLOR))
-                        i = endIdx + 2
-                    } else {
-                        tokens.add(Token(line.substring(i), COMMENT_COLOR, TokenType.BLOCK_COMMENT_START))
-                        return tokens
-                    }
-                } else {
-                    tokens.add(Token(line.substring(i), COMMENT_COLOR))
-                    return tokens
-                }
-                continue
-            }
-
-            if (ch == '"') {
-                val end = findStringEnd(line, i + 1, '"')
-                tokens.add(Token(line.substring(i, end), STRING_COLOR))
-                i = end
-                continue
-            }
-
-            if (ch == '\'') {
-                val end = findStringEnd(line, i + 1, '\'')
-                tokens.add(Token(line.substring(i, end), STRING_COLOR))
-                i = end
-                continue
-            }
-
-            if (ch.isDigit() || (ch == '.' && i + 1 < line.length && line[i + 1].isDigit())) {
-                val start = i
-                while (i < line.length && (line[i].isDigit() || line[i] == '.' || line[i] == 'x' || line[i] in 'a'..'f' || line[i] in 'A'..'F')) i++
-                tokens.add(Token(line.substring(start, i), NUMBER_COLOR))
-                continue
-            }
-
-            if (ch.isLetter() || ch == '_') {
-                val start = i
-                while (i < line.length && (line[i].isLetterOrDigit() || line[i] == '_')) i++
-                val word = line.substring(start, i)
-                val color = when {
-                    word in KEYWORDS -> KEYWORD_COLOR
-                    word in BUILTINS -> FUNCTION_COLOR
-                    i < line.length && line[i] == '(' -> FUNCTION_COLOR
-                    else -> DEFAULT_COLOR
-                }
-                tokens.add(Token(word, color))
-                continue
-            }
-
-            tokens.add(Token(ch.toString(), DEFAULT_COLOR))
-            i++
-        }
-
-        return tokens
-    }
-
-    private fun findStringEnd(line: String, start: Int, quote: Char): Int {
-        var i = start
-        while (i < line.length) {
-            if (line[i] == '\\') { i += 2; continue }
-            if (line[i] == quote) return i + 1
-            i++
-        }
-        return line.length
-    }
+    private fun tokenize(line: String, inBlockComment: Boolean): List<Token> =
+        damien.nodeworks.script.LuaTokenizer.tokenize(line, inBlockComment)
 }

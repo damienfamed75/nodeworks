@@ -1,0 +1,64 @@
+{
+    DataVersion: 4790,
+    size: [3, 1, 1],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                autoRun: 0b,
+                layoutIndex: 0,
+                networkId: "50705d3d-7104-4b66-b457-8f46602198f7",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: ""
+                    }
+                ],
+                connections: [
+                    [I; 1, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "50705d3d-7104-4b66-b457-8f46602198f7",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 2, 0, 0],
+                    [I; 0, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "50705d3d-7104-4b66-b457-8f46602198f7",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 1, 0, 0]
+                ],
+                networkColor: 11087358
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "nodeworks:terminal{facing:north}",
+        "nodeworks:node",
+        "nodeworks:network_controller"
+    ]
+}

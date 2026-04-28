@@ -3,7 +3,7 @@ plugins {
 }
 
 base {
-    // Ships as `nodeworks-<version>.jar` — no `-neoforge` suffix since this is the only
+    // Ships as `nodeworks-<version>.jar`, no `-neoforge` suffix since this is the only
     // loader module producing a distributable jar. If Fabric ever re-enters the picture,
     // add a suffix then to disambiguate.
     archivesName = providers.gradleProperty("archives_base_name")
@@ -19,9 +19,28 @@ neoForge {
     runs {
         register("client") {
             client()
+            // Live-preview the guidebook while developing. Edits to files under
+            // `guidebook/` hot-reload in-game without a rebuild. See
+            // https://guideme.appliedenergistics.org/live-preview for the property
+            // naming convention (`guideme.<ns>.<path>.sources` where ns+path come
+            // from the guide id, here `nodeworks:guide`).
+            systemProperty(
+                "guideme.nodeworks.guide.sources",
+                rootProject.file("guidebook").absolutePath
+            )
         }
         register("server") {
             server()
+        }
+        // `./gradlew :neoforge:runGuide`, same as runClient but also auto-opens the
+        // guidebook at launch so doc work doesn't need clicking through menus each run.
+        register("guide") {
+            client()
+            systemProperty(
+                "guideme.nodeworks.guide.sources",
+                rootProject.file("guidebook").absolutePath
+            )
+            systemProperty("guideme.showOnStartup", "nodeworks:guide")
         }
     }
 
@@ -42,6 +61,11 @@ repositories {
         name = "Jared"
         url = uri("https://maven.blamejared.com/")
     }
+    // GuideME releases (pre-release `-alpha` tags land on Central Snapshots too).
+    maven {
+        name = "Central Snapshots"
+        url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+    }
 }
 
 dependencies {
@@ -55,15 +79,26 @@ dependencies {
     implementation("org.luaj:luaj-jse:3.0")
     jarJar("org.luaj:luaj-jse:3.0")
 
+    // GuideME, in-game + web guidebook (see docs/authoring.md).
+    // jarJar-bundled so players don't need to install it separately.
+    implementation("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
+    jarJar("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
+
     // Dev-only testing mods (not bundled in release)
     runtimeOnly("mezz.jei:jei-${providers.gradleProperty("minecraft_version").get()}-neoforge:${providers.gradleProperty("jei_version").get()}")
 }
 
-// Copy common resources alongside neoforge resources
+// Copy common resources + guidebook content alongside neoforge resources
 tasks.processResources {
     inputs.property("version", version)
 
     from(commonResources)
+
+    // Ship the authoring-side `guidebook/` folder at the path GuideME scans by default.
+    // Matches AE2's convention (`assets/<modid>/<modid>guide/`).
+    from(rootProject.file("guidebook")) {
+        into("assets/nodeworks/nodeworksguide")
+    }
 
     filesMatching("META-INF/neoforge.mods.toml") {
         expand("version" to version)

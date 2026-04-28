@@ -24,7 +24,7 @@ import net.minecraft.world.level.Level
 import java.util.function.Consumer
 
 /**
- * Processing Set — stores a processing recipe contract:
+ * Processing Set, stores a processing recipe contract:
  * input items + counts, up to 3 output items + counts, and optional timeout in ticks.
  * Goes in Processing Storage blocks. Right-click while holding to open the recipe editor.
  */
@@ -194,13 +194,13 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         /**
          * Build the canonical handler ID for a Processing Set from its input and output
          * layout. Inputs must already be in row-major grid order (slot 0 → 8, empty
-         * slots skipped); outputs top-to-bottom. Duplicate items in different slots are
-         * preserved — they produce distinct entries.
+         * slots skipped), outputs top-to-bottom. Duplicate items in different slots are
+         * preserved, they produce distinct entries.
          *
          * Format: `itemId@count|itemId@count|...>>itemId@count|...`
          *
-         * The format deliberately uses `@` and `|` — characters that never appear in
-         * vanilla or modded item IDs — so parsing is unambiguous.
+         * The format deliberately uses `@` and `|`, characters that never appear in
+         * vanilla or modded item IDs, so parsing is unambiguous.
          */
         fun canonicalId(inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>): String {
             val inputPart = inputs.joinToString("|") { (id, c) -> "$id@$c" }
@@ -246,7 +246,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         /**
          * Save the processing recipe to the card stack. [inputPositions] maps each
          * entry in [inputs] to its grid slot (0..8). [outputPositions] does the same
-         * for outputs (0..2). Pass `null` to default to sequential positions; this is
+         * for outputs (0..2). Pass `null` to default to sequential positions, this is
          * only appropriate for legacy callers that don't care about layout.
          */
         fun setRecipe(
