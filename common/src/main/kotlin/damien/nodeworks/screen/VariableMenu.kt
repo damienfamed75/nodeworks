@@ -16,7 +16,9 @@ class VariableMenu(
     val initialName: String = "",
     val initialValue: String = "",
     private val data: ContainerData = SimpleContainerData(DATA_SLOTS)
-) : AbstractContainerMenu(ModScreenHandlers.VARIABLE, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.VARIABLE, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = variablePos
 
     companion object {
         const val DATA_SLOTS = 3 // 0=variableType, 1=boolValue, 2=channelId

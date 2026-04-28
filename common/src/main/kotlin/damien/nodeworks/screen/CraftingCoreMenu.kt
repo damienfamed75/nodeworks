@@ -18,7 +18,9 @@ class CraftingCoreMenu(
     private val serverEntity: CraftingCoreBlockEntity? = null,
     private val packetSender: ((net.minecraft.network.protocol.common.custom.CustomPacketPayload) -> Unit)? = null,
     initialFailureReason: String = ""
-) : AbstractContainerMenu(ModScreenHandlers.CRAFTING_CORE, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.CRAFTING_CORE, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = corePos
 
     companion object {
         // ContainerData layout:

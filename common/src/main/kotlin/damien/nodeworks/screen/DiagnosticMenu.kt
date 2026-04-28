@@ -12,7 +12,9 @@ class DiagnosticMenu(
     syncId: Int,
     val clickedPos: BlockPos,
     val topology: DiagnosticOpenData
-) : AbstractContainerMenu(ModScreenHandlers.DIAGNOSTIC, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.DIAGNOSTIC, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = clickedPos
 
     /** Craft tree received from server, updated via S2C packet. */
     var craftTree: CraftTreeBuilder.CraftTreeNode? = null

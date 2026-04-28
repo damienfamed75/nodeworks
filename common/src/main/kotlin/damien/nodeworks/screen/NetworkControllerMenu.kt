@@ -15,7 +15,9 @@ class NetworkControllerMenu(
     val controllerPos: BlockPos,
     private val data: ContainerData = SimpleContainerData(DATA_SLOTS),
     val initialName: String = ""
-) : AbstractContainerMenu(ModScreenHandlers.NETWORK_CONTROLLER, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.NETWORK_CONTROLLER, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = controllerPos
 
     companion object {
         const val DATA_SLOTS = 6

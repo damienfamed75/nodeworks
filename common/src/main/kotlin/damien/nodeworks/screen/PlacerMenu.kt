@@ -15,7 +15,9 @@ class PlacerMenu(
     val devicePos: BlockPos,
     val initialName: String = "",
     private val data: ContainerData = SimpleContainerData(DATA_SLOTS),
-) : AbstractContainerMenu(ModScreenHandlers.PLACER, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.PLACER, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = devicePos
 
     companion object {
         const val DATA_SLOTS = 1

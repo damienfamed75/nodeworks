@@ -18,7 +18,9 @@ class BroadcastAntennaMenu(
     playerInventory: Inventory,
     private val antennaInventory: Container,
     val antennaPos: BlockPos
-) : AbstractContainerMenu(ModScreenHandlers.BROADCAST_ANTENNA, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.BROADCAST_ANTENNA, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = antennaPos
 
     companion object {
         // Slot item positions. The slot frame is NOT drawn, the background image

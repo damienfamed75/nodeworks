@@ -21,7 +21,9 @@ class BreakerMenu(
     val devicePos: BlockPos,
     val initialName: String = "",
     private val data: ContainerData = SimpleContainerData(DATA_SLOTS),
-) : AbstractContainerMenu(ModScreenHandlers.BREAKER, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.BREAKER, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = devicePos
 
     companion object {
         const val DATA_SLOTS = 1 // 0 = channelId

@@ -21,7 +21,9 @@ class InstructionStorageScreenHandler(
     playerInventory: Inventory,
     private val storageInventory: Container,
     val storagePos: BlockPos
-) : AbstractContainerMenu(ModScreenHandlers.INSTRUCTION_STORAGE, syncId) {
+) : AbstractContainerMenu(ModScreenHandlers.INSTRUCTION_STORAGE, syncId), BlockBackedMenu {
+
+    override val blockBackingPos: BlockPos get() = storagePos
 
     companion object {
         const val INSTRUCTION_SLOT_COUNT = 12
