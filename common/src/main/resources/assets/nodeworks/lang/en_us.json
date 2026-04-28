@@ -27,6 +27,7 @@
   "container.nodeworks.node_side": "Node, %s",
   "block.nodeworks.terminal": "Scripting Terminal",
   "message.nodeworks.terminal_no_network": "Terminal is not connected to a node network.",
+  "message.nodeworks.terminal_in_use": "Terminal is already in use by %s.",
   "tooltip.nodeworks.instruction_set.input": "Input:",
   "tooltip.nodeworks.instruction_set.output": "Output:",
   "block.nodeworks.instruction_crafter": "Instruction Crafter",
