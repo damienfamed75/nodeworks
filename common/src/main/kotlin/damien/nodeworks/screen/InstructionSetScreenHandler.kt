@@ -182,7 +182,21 @@ class InstructionSetScreenHandler(
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is InstructionSet) {
-                    InstructionSet.setRecipe(stack, recipe, output)
+                    // InstructionSets stack to 64 with shared NBT, so writing the
+                    // recipe directly into the held stack would programme every
+                    // copy in it. Split off a single copy when the stack has more
+                    // than one, apply the recipe to that copy alone, and bounce
+                    // it into the player's inventory.
+                    if (stack.count > 1) {
+                        val configured = stack.copyWithCount(1)
+                        InstructionSet.setRecipe(configured, recipe, output)
+                        stack.shrink(1)
+                        if (!player.inventory.add(configured)) {
+                            player.drop(configured, false)
+                        }
+                    } else {
+                        InstructionSet.setRecipe(stack, recipe, output)
+                    }
                 }
             }
             is SaveMode.InNode -> {

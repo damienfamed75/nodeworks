@@ -312,11 +312,29 @@ class ProcessingSetScreenHandler(
                     // the unique handler key. Custom naming is gone. See
                     // docs/design/processing-set-handler-ux.md.
                     val canonical = ProcessingSet.canonicalId(inputs, outputs)
-                    ProcessingSet.setRecipe(
-                        stack, canonical, inputs, outputs, timeout, serial,
-                        inputPositions = inputSlots.toIntArray(),
-                        outputPositions = outputSlots.toIntArray()
-                    )
+                    // ProcessingSets stack to 64 with shared NBT, so writing the
+                    // recipe into the held stack would programme every copy.
+                    // Split off a single copy when the stack has more than one,
+                    // apply the recipe to that copy alone, and bounce it into the
+                    // player's inventory.
+                    if (stack.count > 1) {
+                        val configured = stack.copyWithCount(1)
+                        ProcessingSet.setRecipe(
+                            configured, canonical, inputs, outputs, timeout, serial,
+                            inputPositions = inputSlots.toIntArray(),
+                            outputPositions = outputSlots.toIntArray()
+                        )
+                        stack.shrink(1)
+                        if (!player.inventory.add(configured)) {
+                            player.drop(configured, false)
+                        }
+                    } else {
+                        ProcessingSet.setRecipe(
+                            stack, canonical, inputs, outputs, timeout, serial,
+                            inputPositions = inputSlots.toIntArray(),
+                            outputPositions = outputSlots.toIntArray()
+                        )
+                    }
                 }
             }
             is SaveMode.ClientDummy -> {}
