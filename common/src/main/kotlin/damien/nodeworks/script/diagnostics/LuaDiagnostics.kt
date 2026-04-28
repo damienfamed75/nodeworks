@@ -52,6 +52,50 @@ object LuaDiagnostics {
         "ambiguous-card-name" to Severity.HINT,
     )
 
+    // -----------------------------------------------------------------------
+    // Lifted regex constants. analyze() runs per keystroke. Every inline
+    // `Regex("""...""")` was recompiling per call, hoisting the static ones
+    // here compiles each pattern once for the lifetime of the JVM. Patterns
+    // that interpolate a runtime string (variable name in narrowing checks,
+    // module export prefix) stay inline since there isn't a stable cache key.
+    // -----------------------------------------------------------------------
+    private val GET_CALL: Regex = Regex(""":get\s*\(\s*(['"])([^'"]+)\1""")
+    private val ROUTE_FROM_TO_CALL: Regex =
+        Regex(""":(route|from|to)\s*\(\s*(['"])([^'"]+)\2""")
+    private val FUNCTION_DEF: Regex =
+        Regex("""\b(?:local\s+)?function\s+(\w+(?:\.\w+)?)\s*\(([^)]*)\)""")
+    private val REQUIRE_LOCAL: Regex =
+        Regex("""\blocal\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)""")
+    private val MODULE_RETURN: Regex =
+        Regex("""^\s*return\s+(\w+)\s*$""", RegexOption.MULTILINE)
+
+    // findNullableVars passes
+    private val LOCAL_TYPE_DECL: Regex = Regex("""\blocal\s+(\w+)\s*:""")
+    private val PARAM_TYPE_DECL: Regex = Regex("""[(,]\s*(\w+)\s*:""")
+    private val LOCAL_TYPE_NULLABLE: Regex = Regex("""\blocal\s+(\w+)\s*:\s*\w+\?""")
+    private val PARAM_TYPE_NULLABLE: Regex = Regex("""[(,]\s*(\w+)\s*:\s*\w+\?""")
+    private val LOCAL_BIND_LHS: Regex = Regex("""\blocal\s+(\w+)\s*=""")
+
+    // collectDeclaredNames patterns (run across the whole script).
+    private val DECL_LOCAL_NAMES: Regex =
+        Regex("""\blocal\s+([\w_]+(?:\s*[,:]\s*(?:[\w_]+|\{[^}]*\}))*)""")
+    private val DECL_FUNCTION_BARE: Regex =
+        Regex("""\b(?:local\s+)?function\s+([\w_]+)""")
+    private val DECL_FUNCTION_QUALIFIED: Regex =
+        Regex("""\bfunction\s+([\w_]+)\s*\.""")
+    private val DECL_FUNCTION_PARAMS: Regex =
+        Regex("""\bfunction\b\s*[\w_.:]*\s*\(([^)]*)\)""")
+    private val DECL_FOR_NUMERIC: Regex =
+        Regex("""\bfor\s+([\w_]+(?:\s*,\s*[\w_]+)*)\s*=""")
+    private val DECL_FOR_IN: Regex =
+        Regex("""\bfor\s+([\w_]+(?:\s*,\s*[\w_]+)*)\s+in\b""")
+
+    // Type-annotation extraction.
+    private val ANN_LOCAL_TYPE_BODY: Regex =
+        Regex("""\blocal\s+\w+\s*:\s*(\w[\w_]*\??|\{[^}]*})""")
+    private val ANN_PARAM_TYPE_BODY: Regex =
+        Regex("""[(,]\s*\w+\s*:\s*(\w[\w_]*\??|\{[^}]*})""")
+
     /** Returns the names that are nullable AT [offset] in [text]. A name counts as
      *  nullable when (1) the analyzer would put it in `nullableVars` (explicit
      *  `T?` annotation, function-param `T?`, or RHS that resolves to `Optional`),
@@ -160,7 +204,7 @@ object LuaDiagnostics {
 
         // `<receiver>:get("<name>")`, singular lookup. Both `network:get` and
         // `Channel:get` flow through the same bare-name resolution.
-        val getPattern = Regex(""":get\s*\(\s*(['"])([^'"]+)\1""")
+        val getPattern = GET_CALL
         for (m in getPattern.findAll(stripped)) {
             val name = m.groupValues[2]
             if (name !in ambiguousNames) continue
@@ -180,7 +224,7 @@ object LuaDiagnostics {
         // Collection-receiver methods: `:route(...)`, `:from(...)`, `:to(...)`.
         // First string arg is a card alias that's expected to glob to multiple
         // cards in the duplicate-name case. Hint suggests the glob.
-        val collectionPattern = Regex(""":(route|from|to)\s*\(\s*(['"])([^'"]+)\2""")
+        val collectionPattern = ROUTE_FROM_TO_CALL
         for (m in collectionPattern.findAll(stripped)) {
             val method = m.groupValues[1]
             val name = m.groupValues[3]
@@ -215,9 +259,11 @@ object LuaDiagnostics {
         val knownGlobals = collectKnownGlobals()
         val knownStdlibMembers = STDLIB_MEMBERS
 
-        // Walk the token stream with running global offsets.
+        // Walk the token stream with running global offsets. One split feeds
+        // both the line iteration and the tokenizer, halving the per-pass
+        // tokenisation cost.
         val lines = text.split('\n')
-        val tokenLines = LuaTokenizer.tokenizeLines(text)
+        val tokenLines = LuaTokenizer.tokenizeLines(lines)
         var lineStart = 0
         for ((lineIdx, line) in lines.withIndex()) {
             val tokens = tokenLines[lineIdx]
@@ -344,7 +390,7 @@ object LuaDiagnostics {
     ): List<Diagnostic> {
         val diagnostics = mutableListOf<Diagnostic>()
         val lines = text.split('\n')
-        val tokenLines = LuaTokenizer.tokenizeLines(text)
+        val tokenLines = LuaTokenizer.tokenizeLines(lines)
         var lineStart = 0
         for ((lineIdx, line) in lines.withIndex()) {
             val tokens = tokenLines[lineIdx]
@@ -631,8 +677,8 @@ object LuaDiagnostics {
         if (text.isEmpty()) return text
         val out = CharArray(text.length)
         text.toCharArray(out, 0, 0, text.length)
-        val tokenLines = LuaTokenizer.tokenizeLines(text)
         val lines = text.split('\n')
+        val tokenLines = LuaTokenizer.tokenizeLines(lines)
         var lineStart = 0
         for ((lineIdx, line) in lines.withIndex()) {
             val toks = tokenLines.getOrNull(lineIdx) ?: emptyList()
@@ -665,8 +711,8 @@ object LuaDiagnostics {
 
     private fun flattenTokens(text: String): List<FlatToken> {
         val out = mutableListOf<FlatToken>()
-        val tokenLines = LuaTokenizer.tokenizeLines(text)
         val lines = text.split('\n')
+        val tokenLines = LuaTokenizer.tokenizeLines(lines)
         var lineStart = 0
         for ((lineIdx, line) in lines.withIndex()) {
             val toks = tokenLines.getOrNull(lineIdx) ?: emptyList()
@@ -835,7 +881,7 @@ object LuaDiagnostics {
     private fun collectUserFunctions(rawText: String): Map<String, List<LuaType.Param>> {
         val text = stripComments(rawText)
         val out = mutableMapOf<String, List<LuaType.Param>>()
-        val pattern = Regex("""\b(?:local\s+)?function\s+(\w+(?:\.\w+)?)\s*\(([^)]*)\)""")
+        val pattern = FUNCTION_DEF
         for (match in pattern.findAll(text)) {
             val name = match.groupValues[1]
             val raw = match.groupValues[2]
@@ -862,10 +908,7 @@ object LuaDiagnostics {
         if (otherScripts.isEmpty()) return emptyMap()
         val text = stripComments(rawText)
         val out = mutableMapOf<String, List<LuaType.Param>>()
-        val requirePattern = Regex(
-            """\blocal\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)"""
-        )
-        for (m in requirePattern.findAll(text)) {
+        for (m in REQUIRE_LOCAL.findAll(text)) {
             val localName = m.groupValues[1]
             val moduleName = m.groupValues[2]
             val rawModuleText = otherScripts[moduleName] ?: continue
@@ -894,8 +937,7 @@ object LuaDiagnostics {
      *  expected to have stripped comments already so a commented-out
      *  `-- return foo` doesn't get mistaken for the real export. */
     private fun findModuleExportPrefix(moduleText: String): String? {
-        val pattern = Regex("""^\s*return\s+(\w+)\s*$""", RegexOption.MULTILINE)
-        return pattern.findAll(moduleText).lastOrNull()?.groupValues?.get(1)
+        return MODULE_RETURN.findAll(moduleText).lastOrNull()?.groupValues?.get(1)
     }
 
     /** Parse a comma-separated parameter list with optional `: Type` / `: Type?`
@@ -994,11 +1036,11 @@ object LuaDiagnostics {
     private fun collectDeclarationNameRanges(rawText: String): List<TextRange> {
         val text = stripComments(rawText)
         val ranges = mutableListOf<TextRange>()
-        Regex("""\blocal\s+(\w+)\s*:""").findAll(text).forEach {
+        LOCAL_TYPE_DECL.findAll(text).forEach {
             val r = it.groups[1]!!.range
             ranges.add(TextRange(r.first, r.last + 1))
         }
-        Regex("""[(,]\s*(\w+)\s*:""").findAll(text).forEach {
+        PARAM_TYPE_DECL.findAll(text).forEach {
             val r = it.groups[1]!!.range
             ranges.add(TextRange(r.first, r.last + 1))
         }
@@ -1021,11 +1063,11 @@ object LuaDiagnostics {
         val out = mutableSetOf<String>()
 
         // Explicit `local x: T?` (and the rare comma-separated `local x: T?, y: U?`).
-        Regex("""\blocal\s+(\w+)\s*:\s*\w+\?""").findAll(text).forEach {
+        LOCAL_TYPE_NULLABLE.findAll(text).forEach {
             out.add(it.groupValues[1])
         }
         // Function param annotations: `function f(x: T?, ...)`.
-        Regex("""[(,]\s*(\w+)\s*:\s*\w+\?""").findAll(text).forEach {
+        PARAM_TYPE_NULLABLE.findAll(text).forEach {
             out.add(it.groupValues[1])
         }
 
@@ -1034,7 +1076,7 @@ object LuaDiagnostics {
         // nullable. Skip when an explicit annotation already covers the name, so a
         // user override (`local items: ItemsHandle = ...`) silences the warning
         // intentionally even when the runtime call would actually return `T?`.
-        for (m in Regex("""\blocal\s+(\w+)\s*=""").findAll(text)) {
+        for (m in LOCAL_BIND_LHS.findAll(text)) {
             val name = m.groupValues[1]
             if (name in out) continue
             val rhsStart = m.range.last + 1
@@ -1311,7 +1353,7 @@ object LuaDiagnostics {
 
         // local <name> [, <name>, ...] = ...
         // local <name>: <Type> = ...
-        Regex("""\blocal\s+([\w_]+(?:\s*[,:]\s*(?:[\w_]+|\{[^}]*\}))*)""")
+        DECL_LOCAL_NAMES
             .findAll(text)
             .forEach { match ->
                 val raw = match.groupValues[1]
@@ -1325,14 +1367,14 @@ object LuaDiagnostics {
             }
 
         // function <name>(...) and local function <name>(...)
-        Regex("""\b(?:local\s+)?function\s+([\w_]+)""")
+        DECL_FUNCTION_BARE
             .findAll(text)
             .forEach { names.add(it.groupValues[1]) }
 
         // function <obj>.<name>(...), the .name half is the declared method
         // name, but we want the obj name in declared too so a downstream
         // reference to <obj> doesn't squiggle.
-        Regex("""\bfunction\s+([\w_]+)\s*\.""")
+        DECL_FUNCTION_QUALIFIED
             .findAll(text)
             .forEach { names.add(it.groupValues[1]) }
 
@@ -1341,7 +1383,7 @@ object LuaDiagnostics {
         // (`function foo.bar(a)`), and colon-method declarations (`function foo:bar(a)`).
         // The `[\w_.:]*` between `function` and `(` allows the qualified name to slip
         // through without re-entering the params regex.
-        Regex("""\bfunction\b\s*[\w_.:]*\s*\(([^)]*)\)""")
+        DECL_FUNCTION_PARAMS
             .findAll(text)
             .forEach { match ->
                 val params = match.groupValues[1]
@@ -1355,7 +1397,7 @@ object LuaDiagnostics {
         // The numeric form (`for i=1, 5 do`) has no required whitespace before `=`,
         // so we use `\s*` there. The generic form (`for x in xs`) needs at least one
         // space before `in` to keep us from chopping `for inner = 1, 5 do` at "in".
-        Regex("""\bfor\s+([\w_]+(?:\s*,\s*[\w_]+)*)\s*=""")
+        DECL_FOR_NUMERIC
             .findAll(text)
             .forEach { match ->
                 for (chunk in match.groupValues[1].split(',')) {
@@ -1363,7 +1405,7 @@ object LuaDiagnostics {
                     if (isIdentifierLike(name)) names.add(name)
                 }
             }
-        Regex("""\bfor\s+([\w_]+(?:\s*,\s*[\w_]+)*)\s+in\b""")
+        DECL_FOR_IN
             .findAll(text)
             .forEach { match ->
                 for (chunk in match.groupValues[1].split(',')) {
@@ -1388,9 +1430,9 @@ object LuaDiagnostics {
         // (`{ T }`, `{ [K]: V }`).
         val patterns = listOf(
             // local <name>: Type
-            Regex("""\blocal\s+\w+\s*:\s*(\w[\w_]*\??|\{[^}]*})"""),
+            ANN_LOCAL_TYPE_BODY,
             // function param: `(name: Type` or `, name: Type`
-            Regex("""[(,]\s*\w+\s*:\s*(\w[\w_]*\??|\{[^}]*})"""),
+            ANN_PARAM_TYPE_BODY,
             // return type annotation: `): Type`
             Regex("""\)\s*:\s*(\w[\w_]*\??|\{[^}]*})"""),
         )
