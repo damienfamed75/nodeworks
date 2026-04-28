@@ -99,6 +99,15 @@ class ScriptEditor(
      *  the cursor position. */
     var symbolTableProvider: (charPos: Int) -> Map<String, String> = { emptyMap() }
 
+    /** When the hovered token is `<owner>.<field>` and `<owner>`'s type is
+     *  `InputItems`, the per-recipe slot names aren't known statically, the
+     *  surrounding `network:handle("name", …)` block decides them. The
+     *  provider returns those slot names at [charPos], or null when the offset
+     *  isn't inside a handler. The hover path forwards the list to
+     *  [LuaApiDocs.resolveAt] so hovering `items.copperOre` synthesises an
+     *  `ItemsHandle` doc the same way autocomplete suggests it. */
+    var inputItemsFieldsProvider: (charPos: Int) -> List<String>? = { null }
+
     /** Invoked when the player hits the open-docs keybind over a token whose doc entry
      *  carries a [LuaApiDocs.Doc.guidebookRef]. The wrapping screen is responsible for
      *  actually navigating, ScriptEditor only knows "this token wants to open this ref". */
@@ -769,7 +778,12 @@ class ScriptEditor(
                 }
                 combinedIndex = combined.size + i
                 combined.addAll(tokens)
-                return LuaApiDocs.resolveAt(combined, combinedIndex, symbolTableProvider(scopeAnchor))
+                return LuaApiDocs.resolveAt(
+                    combined,
+                    combinedIndex,
+                    symbolTableProvider(scopeAnchor),
+                    inputItemsFieldsProvider(scopeAnchor),
+                )
             }
             tokenX += tokenW
         }

@@ -723,6 +723,13 @@ class TerminalScreen(
                 editor.value.substring(0, clamped),
             )
         }
+        // Hover-side InputItems field resolution. Mirrors the autocomplete
+        // dispatch so hovering `items.copperOre` inside a handler block
+        // synthesises an `ItemsHandle` Doc using the live recipe's slot names.
+        editor.inputItemsFieldsProvider = { scopeAnchor ->
+            val clamped = scopeAnchor.coerceIn(0, editor.value.length)
+            autocomplete.inputItemsFieldsAt(editor.value.substring(0, clamped))
+        }
         // G-on-hover → open the guidebook at the doc's anchor. Delegates to the platform
         // service so :common doesn't import GuideME (neoforge-only dep), see
         // PlatformServices.guidebook.
@@ -1381,8 +1388,18 @@ class TerminalScreen(
         // Prefer LuaApiDocs, type-aware, covers modules/methods/types via the shared
         // resolver (which already hops module → Type via `LuaApiDocs.moduleTypes` and
         // typed-local via the autocomplete symbol table).
-        val doc = editor.resolveDocAt(mouseX, mouseY)
+        val resolverDoc = editor.resolveDocAt(mouseX, mouseY)
         val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble())
+        // When the resolver returns null (or a Doc with empty description), promote
+        // a registered-type fallback to a real Doc so the rendering path below
+        // surfaces the type's description and guidebookRef instead of producing a
+        // bare `name: Type` text line. This is the path that previously rendered as
+        // the legacy hand-rolled hover for typed locals where the resolver missed.
+        val fallbackDoc = if (resolverDoc == null && word != null) {
+            buildFallbackDoc(word, mouseX, mouseY)
+        } else null
+        val doc = resolverDoc ?: fallbackDoc
+
         if (doc != null) {
             doc.signature?.let { accum.add(Line(it, COLOR_SIGNATURE)) }
             // Hard-wrap at [TOOLTIP_MAX_WIDTH_PX] so long descriptions don't run past
@@ -1391,45 +1408,10 @@ class TerminalScreen(
             // `FormattedCharSequence` path earlier was wrong, `.toString()` on those
             // returns the Lambda class name, not the character stream.
             for (rawLine in doc.description.split('\n')) {
+                if (rawLine.isEmpty()) continue
                 for (part in font.splitter.splitLines(rawLine, TOOLTIP_MAX_WIDTH_PX, net.minecraft.network.chat.Style.EMPTY)) {
                     accum.add(Line(part.string, COLOR_DESCRIPTION))
                 }
-            }
-        } else if (word != null) {
-            // Fallback path for tokens the registry doesn't cover, user-defined
-            // functions and locals whose types come from the autocomplete symbol
-            // table.
-            //
-            // The symbol-table lookup uses the HOVER position as its scope anchor, not
-            // the cursor. Otherwise hovering a function parameter (e.g. `from` in
-            // `function getThings(from: { CardHandle })`) wouldn't resolve while the
-            // cursor sits outside the function body, the param's scope would be closed
-            // at cursor time but is still open at the hover line.
-            val fallback = autocomplete.getFunctionSignature(word, editor.value)
-                ?: run {
-                    val hoverAnchor = editor.getHoverScopeAnchor(mouseX, mouseY)
-                        ?: editor.getCursorPosition()
-                    val clamped = hoverAnchor.coerceIn(0, editor.value.length)
-                    val symbols = autocomplete.getSymbolTable(
-                        editor.value,
-                        editor.value.substring(0, clamped),
-                    )
-                    val baseType = symbols[word] ?: return@run null
-                    // Surface nullability the same way the diagnostic analyzer sees
-                    // it: a name flagged as nullable here that isn't inside a
-                    // narrowing region renders as `T?`. Inside `if word then ... end`
-                    // the narrowing region covers `clamped`, so the `?` drops off
-                    // and the hover shows the unwrapped type.
-                    val nullableHere = damien.nodeworks.script.diagnostics.LuaDiagnostics
-                        .nullablesAtOffset(editor.value, clamped, symbols)
-                    val display = if (word in nullableHere) "$baseType?" else baseType
-                    "$word: $display"
-                }
-            if (fallback != null) {
-                accum.add(Line(fallback, COLOR_PLAIN))
-            } else if (accum.isEmpty()) {
-                // Nothing to show: no doc, no fallback, no diagnostic.
-                return
             }
         } else if (accum.isEmpty()) {
             // No doc, no word under cursor, no diagnostic.
@@ -1490,6 +1472,99 @@ class TerminalScreen(
      *  progress it's plain text in dark gray, while the player is holding, the text is
      *  replaced by a bar of `|` characters that fills left-to-right as progress
      *  advances, same visual language GuideME uses on item tooltips. */
+    /** Build a synthesized hover Doc for tokens the [LuaApiDocs.resolveAt] path
+     *  missed. Two shapes:
+     *
+     *  1. User-defined function: signature only, no description / guidebookRef.
+     *  2. Typed local / param whose declared type IS registered: full Doc with
+     *     the type's description and guidebookRef so [G] navigation works.
+     *
+     *  Lifted out of [renderTypeTooltip]'s inline fallback so the hover path
+     *  always produces the same Doc shape regardless of whether resolveAt or
+     *  this fallback fired, and the rendering downstream only has one branch
+     *  to maintain. */
+    private fun buildFallbackDoc(
+        word: String,
+        mouseX: Int,
+        mouseY: Int,
+    ): damien.nodeworks.script.LuaApiDocs.Doc? {
+        // Bare type-name literal (`Job`, `InputItems`, …). The shared resolver
+        // *should* have handled this via `entries[tok.text]`, but the registry
+        // is the source of truth so we ask it directly here. Covers hover on
+        // type literals in annotation positions like `function(job: Job, …)`.
+        damien.nodeworks.script.api.LuaApiRegistry.allDocs()[word]?.let { apiDoc ->
+            if (apiDoc.category == damien.nodeworks.script.api.ApiCategory.TYPE ||
+                apiDoc.category == damien.nodeworks.script.api.ApiCategory.MODULE
+            ) {
+                return damien.nodeworks.script.LuaApiDocs.Doc(
+                    signature = apiDoc.signature,
+                    description = apiDoc.description,
+                    category = when (apiDoc.category) {
+                        damien.nodeworks.script.api.ApiCategory.TYPE ->
+                            damien.nodeworks.script.LuaApiDocs.Category.TYPE
+                        damien.nodeworks.script.api.ApiCategory.MODULE ->
+                            damien.nodeworks.script.LuaApiDocs.Category.MODULE
+                        else -> damien.nodeworks.script.LuaApiDocs.Category.TYPE
+                    },
+                    guidebookRef = apiDoc.guidebookRef,
+                )
+            }
+        }
+
+        // User-defined function `function name(...): T` lookup. Returns the
+        // signature string when found.
+        autocomplete.getFunctionSignature(word, editor.value)?.let { sig ->
+            return damien.nodeworks.script.LuaApiDocs.Doc(
+                signature = sig,
+                description = "",
+                category = damien.nodeworks.script.LuaApiDocs.Category.FUNCTION,
+                guidebookRef = null,
+            )
+        }
+
+        // Typed local / param fallback. The symbol-table lookup uses the HOVER
+        // position as its scope anchor, not the cursor. Otherwise hovering a
+        // function parameter (e.g. `from` in `function getThings(from: { CardHandle })`)
+        // wouldn't resolve while the cursor sits outside the function body, the
+        // param's scope would be closed at cursor time but is still open at the
+        // hover line.
+        val hoverAnchor = editor.getHoverScopeAnchor(mouseX, mouseY)
+            ?: editor.getCursorPosition()
+        val clamped = hoverAnchor.coerceIn(0, editor.value.length)
+        val symbols = autocomplete.getSymbolTable(
+            editor.value,
+            editor.value.substring(0, clamped),
+        )
+        val baseType = symbols[word] ?: return null
+        // Surface nullability the same way the diagnostic analyzer sees it: a
+        // name flagged as nullable here that isn't inside a narrowing region
+        // renders as `T?`. Inside `if word then ... end` the narrowing region
+        // covers `clamped`, so the `?` drops off and the hover shows the
+        // unwrapped type.
+        val nullableHere = damien.nodeworks.script.diagnostics.LuaDiagnostics
+            .nullablesAtOffset(editor.value, clamped, symbols)
+        val displayType = if (word in nullableHere) "$baseType?" else baseType
+        // Promote to a rich Doc when the type is registered, the description /
+        // guidebookRef come straight off the registered ApiDoc so [G] navigation
+        // works the same as a direct hover on the type literal would.
+        val unwrapped = baseType.trimEnd('?')
+        val typeDoc = damien.nodeworks.script.LuaApiDocs.get(unwrapped)
+            ?: damien.nodeworks.script.api.LuaApiRegistry.allDocs()[unwrapped]?.let { apiDoc ->
+                damien.nodeworks.script.LuaApiDocs.Doc(
+                    signature = apiDoc.signature,
+                    description = apiDoc.description,
+                    category = damien.nodeworks.script.LuaApiDocs.Category.TYPE,
+                    guidebookRef = apiDoc.guidebookRef,
+                )
+            }
+        return damien.nodeworks.script.LuaApiDocs.Doc(
+            signature = "$word: $displayType",
+            description = typeDoc?.description ?: "",
+            category = typeDoc?.category ?: damien.nodeworks.script.LuaApiDocs.Category.TYPE,
+            guidebookRef = typeDoc?.guidebookRef,
+        )
+    }
+
     private fun renderHoldGProgressFooter(
         graphics: GuiGraphicsExtractor,
         x: Int,

@@ -364,6 +364,7 @@ object LuaApiDocs {
         tokens: List<LuaTokenizer.Token>,
         index: Int,
         variableTypes: Map<String, String> = emptyMap(),
+        inputItemsFields: List<String>? = null,
     ): Doc? {
         val tok = tokens.getOrNull(index) ?: return null
         val eligible = tok.type == LuaTokenizer.TokenType.DEFAULT ||
@@ -407,6 +408,17 @@ object LuaApiDocs {
                             }
                             variableTypes[owner.text]?.let { ownerType ->
                                 lookupTypedMethod(ownerType, sep.text, tok.text)?.let { return it }
+                                // Dynamic InputItems fields, the per-recipe slot names
+                                // can't be statically registered so they fall through
+                                // [lookupTypedMethod]. Synthesise an ItemsHandle Doc
+                                // when the caller supplied the live field set.
+                                if (ownerType.trimEnd('?') == "InputItems" &&
+                                    sep.text == "." &&
+                                    inputItemsFields != null &&
+                                    tok.text in inputItemsFields
+                                ) {
+                                    return synthesizeInputItemsFieldDoc(tok.text)
+                                }
                             }
                         }
                     }
@@ -414,12 +426,20 @@ object LuaApiDocs {
             }
         }
         entries[tok.text]?.let { return it }
+        // Type-name fall-through: when the bare token IS a registered type
+        // (`Job`, `InputItems`, …), surface its registered Doc directly. The
+        // [entries] lookup above SHOULD already cover this, but
+        // [LuaApiRegistry] is the source of truth and we'd rather hit it
+        // here than fall through to a null-return that masks the type's
+        // description and guidebookRef.
+        registryTypeDoc(tok.text)?.let { return it }
         // Variable hover: synthesize a `name: Type` signature and pull the type's
         // description from its own entry when one exists. This beats returning the raw
         // type doc (which would hide that the token is a *variable*) while still
         // surfacing the type's explanation so the user understands what operations apply.
         variableTypes[tok.text]?.let { selfType ->
-            val typeDoc = entries[selfType]
+            val unwrapped = selfType.trimEnd('?')
+            val typeDoc = entries[unwrapped] ?: registryTypeDoc(unwrapped)
             return Doc(
                 signature = "${tok.text}: $selfType",
                 description = typeDoc?.description ?: "",
@@ -428,5 +448,41 @@ object LuaApiDocs {
             )
         }
         return null
+    }
+
+    /** Fetch a registered type's Doc straight from [LuaApiRegistry]. Used by
+     *  the hover fall-through paths so a registry hit on `Job` / `InputItems`
+     *  surfaces description + guidebookRef even if the [entries] lazy somehow
+     *  misses (stale class-load, partial bootstrap, etc.). Returns null when
+     *  the name isn't a registered type. */
+    private fun registryTypeDoc(name: String): Doc? {
+        val apiDoc = damien.nodeworks.script.api.LuaApiRegistry.allDocs()[name] ?: return null
+        if (apiDoc.category != damien.nodeworks.script.api.ApiCategory.TYPE &&
+            apiDoc.category != damien.nodeworks.script.api.ApiCategory.MODULE
+        ) return null
+        return Doc(
+            signature = apiDoc.signature,
+            description = apiDoc.description,
+            category = when (apiDoc.category) {
+                damien.nodeworks.script.api.ApiCategory.TYPE -> Category.TYPE
+                damien.nodeworks.script.api.ApiCategory.MODULE -> Category.MODULE
+                else -> Category.TYPE
+            },
+            guidebookRef = apiDoc.guidebookRef,
+        )
+    }
+
+    /** Build a hover Doc for a per-slot `items.<field>` access inside a
+     *  handler. Each slot is statically typed `ItemsHandle`, so the doc just
+     *  carries that signature plus the ItemsHandle entry's description /
+     *  guidebookRef so hovering teaches the player what they can call on it. */
+    private fun synthesizeInputItemsFieldDoc(fieldName: String): Doc {
+        val itemsHandleDoc = entries["ItemsHandle"]
+        return Doc(
+            signature = "$fieldName: ItemsHandle",
+            description = itemsHandleDoc?.description ?: "",
+            category = Category.PROPERTY,
+            guidebookRef = itemsHandleDoc?.guidebookRef,
+        )
     }
 }

@@ -1,0 +1,46 @@
+{
+    DataVersion: 4790,
+    size: [4, 2, 1],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:budding_celestine"
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:budding_celestine"
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:budding_celestine"
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:budding_celestine"
+        },
+        {
+            pos: [0, 1, 0],
+            state: "nodeworks:celestine_cluster{facing:up,waterlogged:false}"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "nodeworks:large_celestine_bud{facing:up,waterlogged:false}"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:medium_celestine_bud{facing:up,waterlogged:false}"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "nodeworks:small_celestine_bud{facing:up,waterlogged:false}"
+        }
+    ],
+    entities: [],
+    palette: [
+        "nodeworks:budding_celestine",
+        "nodeworks:celestine_cluster{facing:up,waterlogged:false}",
+        "nodeworks:large_celestine_bud{facing:up,waterlogged:false}",
+        "nodeworks:medium_celestine_bud{facing:up,waterlogged:false}",
+        "nodeworks:small_celestine_bud{facing:up,waterlogged:false}"
+    ]
+}

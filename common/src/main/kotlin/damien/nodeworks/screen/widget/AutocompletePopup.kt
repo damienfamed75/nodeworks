@@ -352,6 +352,11 @@ class AutocompletePopup(
         private val TRAILING_FUNC_EXPR: Regex = Regex("""([\w.:]+)\s*$""")
         private val COLON_PARTIAL: Regex = Regex(""":(\w*)$""")
         private val DOT_PARTIAL: Regex = Regex("""\.(\w*)$""")
+
+        /** Variant of [DOT_PARTIAL] requiring a non-empty field, used by
+         *  comparison-operand resolution where the field has to already be
+         *  typed for the `==` to follow. */
+        private val TRAILING_DOT_FIELD: Regex = Regex("""\.(\w+)$""")
         private val BARE_IDENT: Regex = Regex("""^\w+$""")
         private val WHITESPACE_SPLIT: Regex = Regex("""\s+""")
         private val DOTTED_RHS: Regex = Regex(""".+\.\w+$""")
@@ -1077,8 +1082,10 @@ class AutocompletePopup(
             // HandleList<T> local, return the parameterised wrapper so chained
             // `:list()` can unwrap it via [handleListElement].
             handleListLocals[name]?.let { return it }
-            // Other user-variable types (CardHandle locals, etc.) are still
-            // resolved at higher levels where the symbol table is available.
+            // Generic typed locals: consult [symbolsInScope]. Lets
+            // `local x = input:find("*")` resolve when `input` is a
+            // function-param or earlier-bound local of a known type.
+            symbolsInScope[name]?.takeIf { it.isNotBlank() }?.let { return it.trimEnd('?') }
         }
         return null
     }
@@ -1221,6 +1228,15 @@ class AutocompletePopup(
      *  that don't get fullText as a parameter can still inspect the script (e.g. to find
      *  already-registered handler API names). */
     private var cachedFullText: String = ""
+
+    /** Symbol table snapshot exposed to chain-resolution helpers
+     *  ([extractReceiverType], [resolveExpressionType]) that don't take it as
+     *  an argument. Populated by [buildSymbolTable] after the typed-annotation
+     *  + function-param passes so RHS inference of `local x = receiver:method()`
+     *  can resolve the receiver's type even when it's a plain locally-typed
+     *  variable (not a Channel / HandleList tracked by their dedicated sets).
+     *  Cleared after the symbol-table build so later passes see an empty map. */
+    private var symbolsInScope: Map<String, String> = emptyMap()
 
     /** Processing API whose handler body contains the cursor, or null if the cursor is
      *  not inside a `network:handle("...", function(...) ... end)` callback. Computed
@@ -1637,6 +1653,13 @@ class AutocompletePopup(
             if (name != "_") symbols.putIfAbsent(name, "number")
         }
 
+        // Expose the in-progress scalar map so receiver-type resolution called
+        // from the RHS pass below can fall back to it for plain typed locals
+        // (e.g. `input:find(...)` where `input` is a function-param of a
+        // declared type). Cleared after the build so later passes don't pick
+        // up stale state.
+        symbolsInScope = symbols
+
         // General inference: local x = expr
         // (`containerVars` was initialized above and may already carry explicit-annotation
         // entries, RHS-inferred container types are merged in below without overwriting
@@ -1735,6 +1758,7 @@ class AutocompletePopup(
             }
         }
 
+        symbolsInScope = symbols
         return symbols
     }
 
@@ -1906,6 +1930,12 @@ class AutocompletePopup(
         // arg whose declared type is the local's annotation.
         trySuggestViaTypedAssignment(ctx, symbols)?.let { return it }
 
+        // String literal on the right-hand side of `==` / `~=` against a value
+        // whose type is a registered string subtype. e.g. `if myTag == "|"`
+        // where `myTag: TagId` should suggest tags, or `if all.id == "|"` where
+        // `all.id` is `ResourceId` should suggest item + fluid ids.
+        trySuggestViaComparison(ctx, symbols)?.let { return it }
+
         return when {
             ctx.funcExpr.endsWith("network:handle") -> {
                 // Full-block snippet: accepting a suggestion inserts the whole handle()
@@ -2016,7 +2046,7 @@ class AutocompletePopup(
             // the line width with longer card-name first-args). Non-boolean
             // callbacks land in an empty body where the user types whatever.
             val returnsBoolean = fnType.returnType ===
-                damien.nodeworks.script.api.LuaType.Primitive.Boolean
+                    damien.nodeworks.script.api.LuaType.Primitive.Boolean
             val bodyPrefix = if (returnsBoolean) "return true" else ""
             return baseSuggestions.map { s ->
                 val before = "${s.insertText}\", function($fnParamList)\n    $bodyPrefix"
@@ -2107,6 +2137,97 @@ class AutocompletePopup(
         val typeName = parseTypedAssignmentType(text, symbols) ?: return null
         val resolved = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName) ?: return null
         return suggestionsForType(resolved, ctx.partial)
+    }
+
+    /** Resolve a `<expr> == "|"` / `<expr> ~= "|"` comparison to the LHS's
+     *  declared type and dispatch via [suggestionsForType]. Two LHS shapes
+     *  are recognised:
+     *
+     *  1. Bare local: `if myTag == "|"` resolves `myTag` against the symbol
+     *     table populated by [buildSymbolTable].
+     *  2. Property access: `if items.id == "|"` resolves `items` against the
+     *     symbol table, then [lookupPropertyType] to find `id`'s type.
+     *
+     *  Returns null when neither shape matches or the resolved type isn't a
+     *  registered string subtype, the caller falls through. */
+    private fun trySuggestViaComparison(
+        ctx: CursorContext.StringArg,
+        symbols: Map<String, String>,
+    ): List<Suggestion>? {
+        val text = ctx.precedingText
+        if (text.isBlank()) return null
+
+        val typeName = parseComparisonOperandType(text, symbols) ?: return null
+        val resolved = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName) ?: return null
+        return suggestionsForType(resolved, ctx.partial)
+    }
+
+    /** Operator on the right-hand side of which we expect a string literal
+     *  whose value should match the operator's left operand. Anchored to end
+     *  of input (the cursor is right after the operator + opening quote). */
+    private val COMPARISON_OPERATOR_TAIL: Regex = Regex("""(==|~=)\s*$""")
+
+    private fun parseComparisonOperandType(
+        precedingText: String,
+        symbols: Map<String, String>,
+    ): String? {
+        val trimmed = precedingText.trimEnd()
+        val opMatch = COMPARISON_OPERATOR_TAIL.find(trimmed) ?: return null
+        val beforeOp = trimmed.substring(0, opMatch.range.first).trimEnd()
+        if (beforeOp.isEmpty()) return null
+
+        // Property access wins ahead of bare ident. Splits at the LAST dot, the
+        // receiver expression can be anything resolvable: a bare local
+        // (`items.id`), an indexed call result (`io_1:findEach("*")[0].id`), or
+        // a chained call (`network:getAll("io"):first().id`). [resolveOperandReceiverType]
+        // handles all three.
+        val dotField = TRAILING_DOT_FIELD.find(beforeOp)
+        if (dotField != null && dotField.range.last == beforeOp.lastIndex) {
+            val field = dotField.groupValues[1]
+            val receiverExpr = beforeOp.substring(0, dotField.range.first).trimEnd()
+            val receiverType = resolveOperandReceiverType(receiverExpr, symbols) ?: return null
+            return lookupPropertyType(receiverType, field)?.trimEnd('?')
+        }
+
+        val bareMatch = TRAILING_BARE_IDENT.find(beforeOp)
+        if (bareMatch != null && bareMatch.range.last == beforeOp.lastIndex) {
+            return symbols[bareMatch.groupValues[1]]?.trimEnd('?')
+        }
+        return null
+    }
+
+    /** Resolve the type of the receiver expression on the LHS of a property
+     *  access in a comparison. Three shapes covered, in order of decreasing
+     *  cheapness:
+     *
+     *  1. Bare local: symbol-table hit on the trailing identifier.
+     *  2. Indexed access (`<expr>[N]`): element-type lookup via
+     *     [resolveIndexedElementType].
+     *  3. Call chain (`…)`): scalar return type via [resolveExpressionType].
+     *
+     *  [expr] may carry a leading keyword (`if fromInput`) or assignment
+     *  context (`local x = input`) before the actual receiver. Each branch
+     *  isolates the trailing receiver shape rather than requiring the whole
+     *  string to be a clean expression. Returns null when none of the shapes
+     *  match, so the caller falls through to other dispatch paths. */
+    private fun resolveOperandReceiverType(
+        expr: String,
+        symbols: Map<String, String>,
+    ): String? {
+        val trimmed = expr.trimEnd()
+        if (trimmed.isEmpty()) return null
+        if (trimmed.endsWith("]")) {
+            return resolveIndexedElementType(trimmed, symbols)
+        }
+        if (trimmed.endsWith(")")) {
+            return resolveExpressionType(trimmed)
+        }
+        // Bare-ident path: pull just the trailing word so leading keywords
+        // (`if`, `while`, `return`) or assignment prefixes (`local x = `)
+        // don't block the symbol-table lookup.
+        val tail = TRAILING_BARE_IDENT.find(trimmed) ?: return null
+        if (tail.range.last != trimmed.lastIndex) return null
+        return symbols[tail.groupValues[1]]?.trimEnd('?')
     }
 
     /** Match `local <name>: <Type> =`, `local <name>: { <Type> } = { ..., "|"`,
@@ -2589,7 +2710,7 @@ class AutocompletePopup(
             }
 
         val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs +
-            cardImports + variableImports + breakerImports + placerImports)
+                cardImports + variableImports + breakerImports + placerImports)
             .distinctBy { it.insertText }
         val matches = FuzzyMatch.filter(partial, all).filter { it.insertText != partial }
         return matches
@@ -2746,6 +2867,16 @@ class AutocompletePopup(
 
             else -> null
         }
+    }
+
+    /** Public hover-side accessor: returns the list of valid `items.<field>`
+     *  names at the given character offset, or null when [textBeforeOffset] is
+     *  not inside a `network:handle("name", function(...) … end)` body or the
+     *  named API isn't loaded. Mirrors the dispatch used by the autocomplete's
+     *  property-suggestion path so hover and completion stay in sync. */
+    fun inputItemsFieldsAt(textBeforeOffset: String): List<String>? {
+        val api = findEnclosingHandlerApi(textBeforeOffset) ?: return null
+        return damien.nodeworks.card.HandlerParamNames.build(api.inputs)
     }
 
     /**
