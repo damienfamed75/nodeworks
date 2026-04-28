@@ -2403,11 +2403,12 @@ class AutocompletePopup(
             )
         ) else emptyList()
 
-        // Auto-import suggestions: every card and variable on the network shows up
-        // as a Lua-safe identifier (via the same naming the sidebar click handler
-        // uses), and accepting one prepends `local NAME = network:get("alias")`
-        // (or `:var(...)`) to the script. Skip aliases whose identifier is already
-        // declared as a local in the script, those will surface as plain user vars.
+        // Auto-import suggestions: every card, variable, breaker, and placer on
+        // the network shows up as a Lua-safe identifier (via the same naming the
+        // sidebar click handler uses), and accepting one prepends
+        // `local NAME = network:get("alias")` to the script. Skip aliases whose
+        // identifier is already declared as a local in the script, those will
+        // surface as plain user vars.
         val declared = (extractVariableNames(beforeCursor) + extractFunctionParams(beforeCursor)).toSet()
         val cardImports = cards
             .map { it.effectiveAlias to it.capability.type }
@@ -2435,8 +2436,33 @@ class AutocompletePopup(
                     autoImport = "local $ident = network:get(\"$name\")"
                 )
             }
+        val breakerImports = breakerAliases
+            .distinct()
+            .mapNotNull { alias ->
+                val ident = damien.nodeworks.script.LuaIdent.toLuaIdentifier(alias, "breaker")
+                if (ident in declared) return@mapNotNull null
+                Suggestion(
+                    insertText = ident,
+                    displayText = "$ident  $alias (breaker)",
+                    kind = Kind.VARIABLE,
+                    autoImport = "local $ident = network:get(\"$alias\")"
+                )
+            }
+        val placerImports = placerAliases
+            .distinct()
+            .mapNotNull { alias ->
+                val ident = damien.nodeworks.script.LuaIdent.toLuaIdentifier(alias, "placer")
+                if (ident in declared) return@mapNotNull null
+                Suggestion(
+                    insertText = ident,
+                    displayText = "$ident  $alias (placer)",
+                    kind = Kind.VARIABLE,
+                    autoImport = "local $ident = network:get(\"$alias\")"
+                )
+            }
 
-        val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs + cardImports + variableImports)
+        val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs +
+            cardImports + variableImports + breakerImports + placerImports)
             .distinctBy { it.insertText }
         val matches = FuzzyMatch.filter(partial, all).filter { it.insertText != partial }
         return matches

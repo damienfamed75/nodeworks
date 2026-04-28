@@ -135,23 +135,32 @@ class CardProgrammerMenu(
     }
 
     override fun clicked(slotIndex: Int, button: Int, clickType: ContainerInput, player: Player) {
-        // Intercept regular clicks on the input slot (slot 1)
-        if (slotIndex == 1 && clickType == ContainerInput.PICKUP) {
-            val carried = carried
-            if (!carried.isEmpty && isValidInput(carried)) {
-                val modified = carried.copyWithCount(1)
-                applyTemplate(modified)
-                if (!player.inventory.add(modified)) {
-                    if (!player.level().isClientSide) {
-                        player.drop(modified, false)
-                    }
-                }
-                carried.shrink(1)
-                broadcastChanges()
-                return
-            }
-        }
         super.clicked(slotIndex, button, clickType, player)
+        // Anything that ends up in the input slot — direct PICKUP, drag-spread
+        // (QUICK_CRAFT), hotbar SWAP, the various shift-click paths — should
+        // immediately get the template applied and bounce back into the player's
+        // inventory. The slot's mayPlace already filtered for valid cards, so
+        // whatever's there is safe to programme. Doing this in one place after
+        // super means we don't have to enumerate every click type that vanilla
+        // might add. Server-only because the actual inventory mutation belongs
+        // there, the client picks up the result via broadcastChanges.
+        if (!player.level().isClientSide) {
+            ejectInputSlot(player)
+        }
+    }
+
+    /** Drain the input slot into the player's inventory with the template
+     *  settings applied. No-op when the slot is empty. */
+    private fun ejectInputSlot(player: Player) {
+        val slot = slots.getOrNull(1) ?: return
+        if (!slot.hasItem()) return
+        val processed = slot.item.copy()
+        applyTemplate(processed)
+        if (!player.inventory.add(processed)) {
+            player.drop(processed, false)
+        }
+        slot.set(ItemStack.EMPTY)
+        broadcastChanges()
     }
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
@@ -199,6 +208,11 @@ class CardProgrammerMenu(
     override fun removed(player: Player) {
         super.removed(player)
         if (player.level().isClientSide) return
+        // Safety net: if the GUI closes while a card is still parked in the
+        // input slot (e.g. closed mid-drag, before the next click triggered
+        // ejectInputSlot), drain it now. Otherwise the SimpleContainer is GC'd
+        // and the card vanishes silently.
+        ejectInputSlot(player)
         saveToProgrammer(player)
     }
 

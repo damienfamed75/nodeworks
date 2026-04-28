@@ -44,15 +44,15 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         data class Single(val rgb: Int) : FaceTint()
 
         /** Cards on this face span ≥2 distinct channels. [rgbs] holds the
-         *  distinct channel colours actually present on this face (sorted by
-         *  [net.minecraft.world.item.DyeColor.ordinal] so the cycle order is
-         *  stable across save/reload) and the lip animates through *only*
-         *  those colours instead of the full HSV rainbow, so a red+blue face
-         *  cycles red↔blue rather than sweeping through every hue. WHITE
-         *  shows as actual white here, the [Single]/[Network] white-folds
-         *  exists because a single-white face looked indistinguishable from
-         *  the plain frame texture, but on a mixed face the cycle motion
-         *  itself signals the white slot is intentional. */
+         *  distinct channel colours actually present, sorted by
+         *  [net.minecraft.world.item.DyeColor.ordinal] so the segment order
+         *  is stable across save/reload. The lip on each face is split into
+         *  N equal-width segments showing those colours side-by-side, so a
+         *  blue+white face reads as half-blue, half-white. WHITE shows as
+         *  actual white here, the [Single]/[Network] white-fold exists
+         *  because a single-white face looked indistinguishable from the
+         *  plain frame texture, but on a mixed face the neighbouring
+         *  segments make the white slot read as intentional. */
         data class Mixed(val rgbs: List<Int>) : FaceTint()
     }
 
@@ -80,11 +80,6 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         // glowStyle 5 = NONE in the controller GUI, skip rendering
         private const val GLOW_STYLE_NONE = 5
 
-        /** Rainbow-mix face cycle period in ms. 3 seconds = leisurely loop,
-         *  fast enough that you notice the animation on a face you're looking at,
-         *  slow enough to not be visually noisy on a wall of nodes. */
-        private const val MIXED_CYCLE_MS = 3000L
-
         private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
 
         /** Solid-emissive base used for the per-face channel-color "lip" overlay.
@@ -93,6 +88,13 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
          *  EYES pipeline adds the channel tint via vertex colour. */
         private val LIP_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/node_glow_square.png")
         private val LIP_RENDER_TYPE: RenderType = EmissiveCubeRenderer.renderType(LIP_TEXTURE)
+
+        /** Fraction of each [FaceTint.Mixed] strip's long axis trimmed off
+         *  each end to produce the inset look that matches the single-
+         *  colour strip's natural texture falloff. 0.25 leaves a centred
+         *  band that's half the strip's long-axis width, with the outer
+         *  quarters showing the underlying frame texture. */
+        private const val LIP_INSET = 0.25f
 
         /** Per-card-type beam colour (r, g, b 0–255). */
         private val CARD_COLORS = mapOf(
@@ -268,8 +270,10 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     /** Emit emissive overlay quads on each face's inner-lip surfaces (the inward-
      *  facing walls of the 4 frame edges that ring the central opening on a side).
      *  Faces with [FaceTint.Network] are skipped so their lip stays the plain
-     *  `#frame` texture from the JSON model. Mixed faces sample the shared hue
-     *  clock so all rainbow lips stay phase-locked. */
+     *  `#frame` texture from the JSON model. [FaceTint.Single] paints all 4
+     *  strips one colour, [FaceTint.Mixed] splits each strip into N equal-width
+     *  segments along its long axis so the player sees every channel on the
+     *  face at once. */
     private fun submitFaceLips(
         state: NodeRenderState,
         poseStack: PoseStack,
@@ -283,17 +287,23 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         }
         if (!anyTinted) return
 
-        val now = System.currentTimeMillis()
-        val mixedPhase = (now % MIXED_CYCLE_MS) / MIXED_CYCLE_MS.toFloat()
-
         submitNodeCollector.submitCustomGeometry(poseStack, LIP_RENDER_TYPE) { pose, vc ->
             for (side in Direction.entries) {
-                val tint = state.faceTints[side.ordinal]
-                if (tint is FaceTint.Network) continue
-                val (r, g, b) = resolveRgb(tint, state.networkColor, mixedPhase)
-                emitLipQuadsForFace(pose, vc, side, r, g, b)
+                val rgbs = segmentColors(state.faceTints[side.ordinal]) ?: continue
+                emitLipQuadsForFace(pose, vc, side, rgbs)
             }
         }
+    }
+
+    /** Build the per-segment colour list for one face. Returns null for
+     *  [FaceTint.Network] so the caller skips the strip emit, the plain
+     *  frame texture stays visible. Single-element array for [FaceTint.Single]
+     *  paints all 4 strips uniformly. N-element array for [FaceTint.Mixed]
+     *  drives the per-strip subdivision. */
+    private fun segmentColors(tint: FaceTint): IntArray? = when (tint) {
+        is FaceTint.Network -> null
+        is FaceTint.Single -> intArrayOf(tint.rgb)
+        is FaceTint.Mixed -> tint.rgbs.toIntArray()
     }
 
     /** Emit the 4 lip quads for a single face. Each quad is a 1-pixel-deep strip on
@@ -311,7 +321,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         pose: PoseStack.Pose,
         vc: com.mojang.blaze3d.vertex.VertexConsumer,
         side: Direction,
-        r: Int, g: Int, b: Int,
+        rgbs: IntArray,
     ) {
         val a5 = 5f / 16f
         val a6 = 6f / 16f
@@ -334,56 +344,75 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         when (side) {
             Direction.SOUTH -> {
                 // bottom-south top face (long, x=a5..aB)
-                lipQuad(pose, vc, a5, a6e, outer, aB, a6e, outer, aB, a6e, inner, a5, a6e, inner, 0f, 1f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, a6e, outer, aB, a6e, outer, aB, a6e, inner, a5, a6e, inner, 0f, 1f, 0f, rgbs)
                 // top-south bottom face (long, x=a5..aB)
-                lipQuad(pose, vc, a5, aAe, inner, aB, aAe, inner, aB, aAe, outer, a5, aAe, outer, 0f, -1f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, aAe, inner, aB, aAe, inner, aB, aAe, outer, a5, aAe, outer, 0f, -1f, 0f, rgbs)
                 // vertical-SW inner face (short, y=a6..aA)
-                lipQuad(pose, vc, a6e, aA, outer, a6e, a6, outer, a6e, a6, inner, a6e, aA, inner, 1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, a6e, aA, outer, a6e, a6, outer, a6e, a6, inner, a6e, aA, inner, 1f, 0f, 0f, rgbs)
                 // vertical-SE inner face (short, y=a6..aA)
-                lipQuad(pose, vc, aAe, a6, inner, aAe, a6, outer, aAe, aA, outer, aAe, aA, inner, -1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, aAe, a6, inner, aAe, a6, outer, aAe, aA, outer, aAe, aA, inner, -1f, 0f, 0f, rgbs)
             }
 
             Direction.NORTH -> {
-                lipQuad(pose, vc, a5, a6e, inner, aB, a6e, inner, aB, a6e, outer, a5, a6e, outer, 0f, 1f, 0f, r, g, b)
-                lipQuad(pose, vc, a5, aAe, outer, aB, aAe, outer, aB, aAe, inner, a5, aAe, inner, 0f, -1f, 0f, r, g, b)
-                lipQuad(pose, vc, a6e, a6, inner, a6e, a6, outer, a6e, aA, outer, a6e, aA, inner, 1f, 0f, 0f, r, g, b)
-                lipQuad(pose, vc, aAe, a6, outer, aAe, a6, inner, aAe, aA, inner, aAe, aA, outer, -1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, a6e, inner, aB, a6e, inner, aB, a6e, outer, a5, a6e, outer, 0f, 1f, 0f, rgbs)
+                lipQuad(pose, vc, a5, aAe, outer, aB, aAe, outer, aB, aAe, inner, a5, aAe, inner, 0f, -1f, 0f, rgbs)
+                lipQuad(pose, vc, a6e, a6, inner, a6e, a6, outer, a6e, aA, outer, a6e, aA, inner, 1f, 0f, 0f, rgbs)
+                lipQuad(pose, vc, aAe, a6, outer, aAe, a6, inner, aAe, aA, inner, aAe, aA, outer, -1f, 0f, 0f, rgbs)
             }
 
             Direction.EAST -> {
                 // East ring is 4-px on all 4 strips, bottom/top-east are short (z=a6..aA),
                 // vertical-NE/SE are short (y=a6..aA).
-                lipQuad(pose, vc, inner, a6e, aA, outer, a6e, aA, outer, a6e, a6, inner, a6e, a6, 0f, 1f, 0f, r, g, b)
-                lipQuad(pose, vc, inner, aAe, a6, outer, aAe, a6, outer, aAe, aA, inner, aAe, aA, 0f, -1f, 0f, r, g, b)
-                lipQuad(pose, vc, inner, a6, a6e, outer, a6, a6e, outer, aA, a6e, inner, aA, a6e, 0f, 0f, 1f, r, g, b)
-                lipQuad(pose, vc, outer, a6, aAe, inner, a6, aAe, inner, aA, aAe, outer, aA, aAe, 0f, 0f, -1f, r, g, b)
+                lipQuad(pose, vc, inner, a6e, aA, outer, a6e, aA, outer, a6e, a6, inner, a6e, a6, 0f, 1f, 0f, rgbs)
+                lipQuad(pose, vc, inner, aAe, a6, outer, aAe, a6, outer, aAe, aA, inner, aAe, aA, 0f, -1f, 0f, rgbs)
+                lipQuad(pose, vc, inner, a6, a6e, outer, a6, a6e, outer, aA, a6e, inner, aA, a6e, 0f, 0f, 1f, rgbs)
+                lipQuad(pose, vc, outer, a6, aAe, inner, a6, aAe, inner, aA, aAe, outer, aA, aAe, 0f, 0f, -1f, rgbs)
             }
 
             Direction.WEST -> {
-                lipQuad(pose, vc, outer, a6e, aA, inner, a6e, aA, inner, a6e, a6, outer, a6e, a6, 0f, 1f, 0f, r, g, b)
-                lipQuad(pose, vc, outer, aAe, a6, inner, aAe, a6, inner, aAe, aA, outer, aAe, aA, 0f, -1f, 0f, r, g, b)
-                lipQuad(pose, vc, outer, a6, a6e, inner, a6, a6e, inner, aA, a6e, outer, aA, a6e, 0f, 0f, 1f, r, g, b)
-                lipQuad(pose, vc, inner, a6, aAe, outer, a6, aAe, outer, aA, aAe, inner, aA, aAe, 0f, 0f, -1f, r, g, b)
+                lipQuad(pose, vc, outer, a6e, aA, inner, a6e, aA, inner, a6e, a6, outer, a6e, a6, 0f, 1f, 0f, rgbs)
+                lipQuad(pose, vc, outer, aAe, a6, inner, aAe, a6, inner, aAe, aA, outer, aAe, aA, 0f, -1f, 0f, rgbs)
+                lipQuad(pose, vc, outer, a6, a6e, inner, a6, a6e, inner, aA, a6e, outer, aA, a6e, 0f, 0f, 1f, rgbs)
+                lipQuad(pose, vc, inner, a6, aAe, outer, a6, aAe, outer, aA, aAe, inner, aA, aAe, 0f, 0f, -1f, rgbs)
             }
 
             Direction.UP -> {
                 // top-north/top-south are long in X (a5..aB), top-west/top-east are short in Z.
-                lipQuad(pose, vc, a5, inner, a6e, aB, inner, a6e, aB, outer, a6e, a5, outer, a6e, 0f, 0f, 1f, r, g, b)
-                lipQuad(pose, vc, aB, inner, aAe, a5, inner, aAe, a5, outer, aAe, aB, outer, aAe, 0f, 0f, -1f, r, g, b)
-                lipQuad(pose, vc, a6e, inner, aA, a6e, inner, a6, a6e, outer, a6, a6e, outer, aA, 1f, 0f, 0f, r, g, b)
-                lipQuad(pose, vc, aAe, inner, a6, aAe, inner, aA, aAe, outer, aA, aAe, outer, a6, -1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, inner, a6e, aB, inner, a6e, aB, outer, a6e, a5, outer, a6e, 0f, 0f, 1f, rgbs)
+                lipQuad(pose, vc, aB, inner, aAe, a5, inner, aAe, a5, outer, aAe, aB, outer, aAe, 0f, 0f, -1f, rgbs)
+                lipQuad(pose, vc, a6e, inner, aA, a6e, inner, a6, a6e, outer, a6, a6e, outer, aA, 1f, 0f, 0f, rgbs)
+                lipQuad(pose, vc, aAe, inner, a6, aAe, inner, aA, aAe, outer, aA, aAe, outer, a6, -1f, 0f, 0f, rgbs)
             }
 
             Direction.DOWN -> {
-                lipQuad(pose, vc, a5, outer, a6e, aB, outer, a6e, aB, inner, a6e, a5, inner, a6e, 0f, 0f, 1f, r, g, b)
-                lipQuad(pose, vc, aB, outer, aAe, a5, outer, aAe, a5, inner, aAe, aB, inner, aAe, 0f, 0f, -1f, r, g, b)
-                lipQuad(pose, vc, a6e, outer, aA, a6e, outer, a6, a6e, inner, a6, a6e, inner, aA, 1f, 0f, 0f, r, g, b)
-                lipQuad(pose, vc, aAe, outer, a6, aAe, outer, aA, aAe, inner, aA, aAe, inner, a6, -1f, 0f, 0f, r, g, b)
+                lipQuad(pose, vc, a5, outer, a6e, aB, outer, a6e, aB, inner, a6e, a5, inner, a6e, 0f, 0f, 1f, rgbs)
+                lipQuad(pose, vc, aB, outer, aAe, a5, outer, aAe, a5, inner, aAe, aB, inner, aAe, 0f, 0f, -1f, rgbs)
+                lipQuad(pose, vc, a6e, outer, aA, a6e, outer, a6, a6e, inner, a6, a6e, inner, aA, 1f, 0f, 0f, rgbs)
+                lipQuad(pose, vc, aAe, outer, a6, aAe, outer, aA, aAe, inner, aA, aAe, inner, a6, -1f, 0f, 0f, rgbs)
             }
         }
     }
 
-    /** Yea it's ugly but it's a hot path */
+    /** Emit one lip strip, optionally split into N equal-width sub-quads along
+     *  the strip's long axis when [rgbs] has more than one entry. Vertex
+     *  ordering is CCW (v0→v1→v2→v3) from the cavity-facing side. The strip's
+     *  long axis can be either v0→v1 or v0→v3 depending on the call site, so
+     *  we measure both edge pairs and split along the longer one.
+     *
+     *  Layout: the single-colour strip uses the full 0..1 UV range so the
+     *  texture's natural alpha falloff at the U/V edges paints a smaller
+     *  emissive bar inside the strip's geometry. The multi-segment path
+     *  can't reuse that — proportional UV slicing gives the middle segment
+     *  of a 3-way split the bright plateau while the outer two get the
+     *  faded edges, so the middle reads as much wider. Instead we keep the
+     *  "emissive smaller than the lip" look by shrinking the *geometry* on
+     *  *both* axes to the central [LIP_INSET..1-LIP_INSET] band: long-axis
+     *  inset trims the outer ends of the strip, depth-axis inset trims the
+     *  two long edges. Inside that band, each sub-quad covers an equal 1/N
+     *  slice along the long axis and samples the texture's bright centre
+     *  at UV (0.5, 0.5) flat so segment boundaries are clean colour
+     *  switches. The trimmed margins on all four sides show the underlying
+     *  frame texture, which produces the inset effect. */
     private fun lipQuad(
         pose: PoseStack.Pose,
         vc: com.mojang.blaze3d.vertex.VertexConsumer,
@@ -392,76 +421,121 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         x2: Float, y2: Float, z2: Float, // v2
         x3: Float, y3: Float, z3: Float, // v3
         nx: Float, ny: Float, nz: Float, // normal
-        r: Int, g: Int, b: Int, // color
+        rgbs: IntArray,
     ) {
+        val n = rgbs.size
+        if (n <= 1) {
+            emitLipSubQuad(
+                pose, vc,
+                x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3,
+                0f, 1f, 1f, 1f, 1f, 0f, 0f, 0f,
+                nx, ny, nz, rgbs[0],
+            )
+            return
+        }
+        // |v0→v1|² vs |v0→v3|², pick the longer pair as the segmentation axis.
+        // Strip 4-on-each-vertical-face has v0→v1 as the 1px depth and v0→v3
+        // as the 4px length, the others have it the other way round, so the
+        // detection saves us hand-normalising 24 call sites.
+        val d01x = x1 - x0; val d01y = y1 - y0; val d01z = z1 - z0
+        val d03x = x3 - x0; val d03y = y3 - y0; val d03z = z3 - z0
+        val len01sq = d01x * d01x + d01y * d01y + d01z * d01z
+        val len03sq = d03x * d03x + d03y * d03y + d03z * d03z
+        val along01 = len01sq >= len03sq
+        val emissiveSpan = 1f - 2f * LIP_INSET
+        for (i in 0 until n) {
+            val t0 = LIP_INSET + emissiveSpan * i.toFloat() / n
+            val t1 = LIP_INSET + emissiveSpan * (i + 1).toFloat() / n
+            val rgb = rgbs[i]
+            if (along01) {
+                // Original (un-inset) corners.
+                // q0 = lerp(v0,v1,t0), q1 = lerp(v0,v1,t1) — depth-1 edge
+                // q2 = lerp(v3,v2,t1), q3 = lerp(v3,v2,t0) — depth-0 edge
+                // Depth-opposite pairs: (q0, q3) at long t0, (q1, q2) at long t1.
+                val q0x = x0 + d01x * t0; val q0y = y0 + d01y * t0; val q0z = z0 + d01z * t0
+                val q1x = x0 + d01x * t1; val q1y = y0 + d01y * t1; val q1z = z0 + d01z * t1
+                val d32x = x2 - x3; val d32y = y2 - y3; val d32z = z2 - z3
+                val q2x = x3 + d32x * t1; val q2y = y3 + d32y * t1; val q2z = z3 + d32z * t1
+                val q3x = x3 + d32x * t0; val q3y = y3 + d32y * t0; val q3z = z3 + d32z * t0
+                // Pull each corner toward its depth-opposite by LIP_INSET.
+                val p0x = q0x + (q3x - q0x) * LIP_INSET; val p0y = q0y + (q3y - q0y) * LIP_INSET; val p0z = q0z + (q3z - q0z) * LIP_INSET
+                val p1x = q1x + (q2x - q1x) * LIP_INSET; val p1y = q1y + (q2y - q1y) * LIP_INSET; val p1z = q1z + (q2z - q1z) * LIP_INSET
+                val p2x = q2x + (q1x - q2x) * LIP_INSET; val p2y = q2y + (q1y - q2y) * LIP_INSET; val p2z = q2z + (q1z - q2z) * LIP_INSET
+                val p3x = q3x + (q0x - q3x) * LIP_INSET; val p3y = q3y + (q0y - q3y) * LIP_INSET; val p3z = q3z + (q0z - q3z) * LIP_INSET
+                emitLipSubQuad(
+                    pose, vc,
+                    p0x, p0y, p0z, p1x, p1y, p1z, p2x, p2y, p2z, p3x, p3y, p3z,
+                    0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f,
+                    nx, ny, nz, rgb,
+                )
+            } else {
+                // Original (un-inset) corners.
+                // q0 = lerp(v0,v3,t0), q3 = lerp(v0,v3,t1) — depth-0 edge
+                // q1 = lerp(v1,v2,t0), q2 = lerp(v1,v2,t1) — depth-1 edge
+                // Depth-opposite pairs: (q0, q1) at long t0, (q3, q2) at long t1.
+                val q0x = x0 + d03x * t0; val q0y = y0 + d03y * t0; val q0z = z0 + d03z * t0
+                val q3x = x0 + d03x * t1; val q3y = y0 + d03y * t1; val q3z = z0 + d03z * t1
+                val d12x = x2 - x1; val d12y = y2 - y1; val d12z = z2 - z1
+                val q1x = x1 + d12x * t0; val q1y = y1 + d12y * t0; val q1z = z1 + d12z * t0
+                val q2x = x1 + d12x * t1; val q2y = y1 + d12y * t1; val q2z = z1 + d12z * t1
+                val p0x = q0x + (q1x - q0x) * LIP_INSET; val p0y = q0y + (q1y - q0y) * LIP_INSET; val p0z = q0z + (q1z - q0z) * LIP_INSET
+                val p1x = q1x + (q0x - q1x) * LIP_INSET; val p1y = q1y + (q0y - q1y) * LIP_INSET; val p1z = q1z + (q0z - q1z) * LIP_INSET
+                val p2x = q2x + (q3x - q2x) * LIP_INSET; val p2y = q2y + (q3y - q2y) * LIP_INSET; val p2z = q2z + (q3z - q2z) * LIP_INSET
+                val p3x = q3x + (q2x - q3x) * LIP_INSET; val p3y = q3y + (q2y - q3y) * LIP_INSET; val p3z = q3z + (q2z - q3z) * LIP_INSET
+                emitLipSubQuad(
+                    pose, vc,
+                    p0x, p0y, p0z, p1x, p1y, p1z, p2x, p2y, p2z, p3x, p3y, p3z,
+                    0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f,
+                    nx, ny, nz, rgb,
+                )
+            }
+        }
+    }
+
+    /** Yea it's ugly but it's a hot path */
+    private fun emitLipSubQuad(
+        pose: PoseStack.Pose,
+        vc: com.mojang.blaze3d.vertex.VertexConsumer,
+        x0: Float, y0: Float, z0: Float,
+        x1: Float, y1: Float, z1: Float,
+        x2: Float, y2: Float, z2: Float,
+        x3: Float, y3: Float, z3: Float,
+        u0: Float, v0: Float,
+        u1: Float, v1: Float,
+        u2: Float, v2: Float,
+        u3: Float, v3: Float,
+        nx: Float, ny: Float, nz: Float,
+        rgb: Int,
+    ) {
+        val r = (rgb shr 16) and 0xFF
+        val g = (rgb shr 8) and 0xFF
+        val b = rgb and 0xFF
         val overlay = OverlayTexture.NO_OVERLAY
         vc.addVertex(pose, x0, y0, z0)
-            .setUv(0f, 1f)
+            .setUv(u0, v0)
             .setColor(r, g, b, 255)
             .setOverlay(overlay)
             .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT)
             .setNormal(pose, nx, ny, nz)
         vc.addVertex(pose, x1, y1, z1)
-            .setUv(1f, 1f)
+            .setUv(u1, v1)
             .setColor(r, g, b, 255)
             .setOverlay(overlay)
             .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT)
             .setNormal(pose, nx, ny, nz)
         vc.addVertex(pose, x2, y2, z2)
-            .setUv(1f, 0f)
+            .setUv(u2, v2)
             .setColor(r, g, b, 255)
             .setOverlay(overlay)
             .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT)
             .setNormal(pose, nx, ny, nz)
         vc.addVertex(pose, x3, y3, z3)
-            .setUv(0f, 0f)
+            .setUv(u3, v3)
             .setColor(r, g, b, 255)
             .setOverlay(overlay)
             .setUv2(RenderUtils.FULL_BRIGHT, RenderUtils.FULL_BRIGHT)
             .setNormal(pose, nx, ny, nz)
     }
-
-    /** Resolve a face's [FaceTint] to a concrete (r, g, b) at submit time.
-     *  [networkColor] is the per-network ARGB, [mixedPhase] is the current
-     *  cycle phase in [0, 1) shared across every Mixed face on this node so
-     *  all rainbow lips stay phase-locked. */
-    private fun resolveRgb(tint: FaceTint, networkColor: Int, mixedPhase: Float): Triple<Int, Int, Int> = when (tint) {
-        is FaceTint.Network -> Triple(
-            (networkColor shr 16) and 0xFF,
-            (networkColor shr 8) and 0xFF,
-            networkColor and 0xFF,
-        )
-
-        is FaceTint.Single -> Triple(
-            (tint.rgb shr 16) and 0xFF,
-            (tint.rgb shr 8) and 0xFF,
-            tint.rgb and 0xFF,
-        )
-
-        // Walk the cycle as N evenly-spaced segments where N = present channel
-        // count. Segment i lerps rgbs[i] → rgbs[(i+1) % N], so a 2-colour face
-        // crossfades A↔B↔A and a 3-colour face goes A→B→C→A. Pure linear RGB
-        // lerp, the intermediate hue is on the line between two endpoints in
-        // RGB space (e.g. red↔blue passes through purple) which is fine for a
-        // small face indicator and avoids hauling HSV in.
-        is FaceTint.Mixed -> {
-            val n = tint.rgbs.size
-            val scaled = mixedPhase * n
-            val idxA = scaled.toInt().mod(n)
-            val idxB = (idxA + 1).mod(n)
-            val t = scaled - scaled.toInt().toFloat()
-            val a = tint.rgbs[idxA]
-            val b = tint.rgbs[idxB]
-            Triple(
-                lerpByte((a shr 16) and 0xFF, (b shr 16) and 0xFF, t),
-                lerpByte((a shr 8) and 0xFF, (b shr 8) and 0xFF, t),
-                lerpByte(a and 0xFF, b and 0xFF, t),
-            )
-        }
-    }
-
-    private fun lerpByte(a: Int, b: Int, t: Float): Int =
-        (a + (b - a) * t).toInt().coerceIn(0, 255)
 
     /** Emits one billboarded beam per [CardLink] from the card slot's exact position on
      *  the node face out to the adjacent block's near face. Billboarding uses the camera
