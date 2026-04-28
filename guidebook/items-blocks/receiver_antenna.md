@@ -13,15 +13,9 @@ item_ids:
 
 # Receiver Antenna
 
-<GameScene zoom="3" interactive={true} paddingTop="20" paddingLeft="50" paddingRight="50">
-  <ImportStructure src="../assets/assemblies/receiver_antenna_uses.snbt" />
-  <BoxAnnotation min="0 0 0" max="2 1 1">
-    Both Processing Storage blocks are being broadcasted
-  </BoxAnnotation>
-  <BoxAnnotation min="2 0 0" max="3 1 1">
-    Being broadcasted for Portable Inventory Terminals
-  </BoxAnnotation>
-</GameScene>
+Used to connect one network to another [subnet](../nodeworks-mechanics/subnets.md).
+This ends up being useful for splitting up [Processing Set](./recipe_sets.md#processing-set) recipes across different
+networks for [autocrafting](../nodeworks-mechanics/autocrafting.md)
 
 ## Recipe
 
