@@ -40,8 +40,15 @@ object CardChannel {
 
     /** Write the channel onto [stack], preserving every other custom-data key.
      *  Round-trips through [CustomData.of] so the component update fires the usual
-     *  ItemStack change hooks (tooltip refresh, network sync, etc.). */
+     *  ItemStack change hooks (tooltip refresh, network sync, etc.).
+     *
+     *  Early-return when the value already matches so a clean GUI open+close
+     *  doesn't add a CUSTOM_DATA patch to a previously-pristine stack. The tag
+     *  rendering pipeline treats any stack with component patches as a
+     *  "modified" subtype and drops the mod-name tooltip line, so we want to
+     *  avoid noisy no-op writes. */
     fun set(stack: ItemStack, color: DyeColor) {
+        if (get(stack) == color) return
         val existing = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
         existing.putInt(KEY, color.id)
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(existing))

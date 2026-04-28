@@ -17,6 +17,7 @@ import mezz.jei.api.ingredients.ITypedIngredient
 import mezz.jei.api.recipe.RecipeIngredientRole
 import mezz.jei.api.recipe.transfer.IRecipeTransferError
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandler
+import mezz.jei.api.ingredients.subtypes.ISubtypeInterpreter
 import mezz.jei.api.recipe.transfer.IUniversalRecipeTransferHandler
 import mezz.jei.api.recipe.types.IRecipeType
 import mezz.jei.api.registration.IGuiHandlerRegistration
@@ -24,6 +25,7 @@ import mezz.jei.api.registration.IRecipeCatalystRegistration
 import mezz.jei.api.registration.IRecipeCategoryRegistration
 import mezz.jei.api.registration.IRecipeRegistration
 import mezz.jei.api.registration.IRecipeTransferRegistration
+import mezz.jei.api.registration.ISubtypeRegistration
 import net.minecraft.client.renderer.Rect2i
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
@@ -54,6 +56,28 @@ class NodeworksJeiPlugin : IModPlugin {
 
     override fun getPluginUid(): Identifier =
         Identifier.fromNamespaceAndPath("nodeworks", "jei_plugin")
+
+    override fun registerItemSubtypes(registration: ISubtypeRegistration) {
+        // Cards / sets write CUSTOM_DATA when their settings GUI closes (channel
+        // colour, storage priority, recipe contents, etc.). JEI 29.5 treats any
+        // components-modified ItemStack as a distinct "subtype" by default,
+        // which makes the modified stack an unknown ingredient and drops the
+        // JEI mod-name tooltip line. Returning null from the interpreter tells
+        // JEI all variants of these items collapse to the same base ingredient,
+        // which keeps the "Nodeworks" mod tag on the tooltip after a GUI cycle.
+        val collapseSubtypes = ISubtypeInterpreter<ItemStack> { _, _ -> null }
+        val items = listOf(
+            damien.nodeworks.registry.ModItems.IO_CARD,
+            damien.nodeworks.registry.ModItems.STORAGE_CARD,
+            damien.nodeworks.registry.ModItems.REDSTONE_CARD,
+            damien.nodeworks.registry.ModItems.OBSERVER_CARD,
+            damien.nodeworks.registry.ModItems.INSTRUCTION_SET,
+            damien.nodeworks.registry.ModItems.PROCESSING_SET,
+        )
+        for (item in items) {
+            registration.registerSubtypeInterpreter(item, collapseSubtypes)
+        }
+    }
 
     override fun registerRecipeTransferHandlers(registration: IRecipeTransferRegistration) {
         registration.addRecipeTransferHandler(InstructionSetTransferHandler(), RecipeTypes.CRAFTING)

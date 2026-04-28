@@ -56,6 +56,10 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
 
         fun setPriority(stack: ItemStack, priority: Int) {
             val clamped = priority.coerceIn(0, 999)
+            // Skip the write when the value already matches so a clean GUI cycle
+            // doesn't dirty CUSTOM_DATA on a previously-pristine stack and drop
+            // the mod-name tooltip line.
+            if (getPriority(stack) == clamped) return
             // Read-modify-write so we don't clobber sibling keys like the channel
             // color set via [CardChannel.set]. Pre-channel this method always wrote
             // a fresh single-key tag, which is fine when nothing else lives in

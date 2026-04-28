@@ -51,6 +51,11 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
         }
 
         fun setTemplate(stack: ItemStack, template: ItemStack) {
+            // Skip the write when the template is already what we'd write so a
+            // clean GUI cycle on a previously-pristine programmer doesn't add
+            // an unnecessary CONTAINER patch and drop the mod-name tooltip line.
+            val current = getTemplate(stack)
+            if (ItemStack.matches(current, template)) return
             if (template.isEmpty) {
                 stack.remove(DataComponents.CONTAINER)
             } else {
@@ -64,8 +69,10 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
         }
 
         fun setCounter(stack: ItemStack, counter: Int) {
+            val clamped = counter.coerceAtLeast(0)
+            if (getCounter(stack) == clamped) return
             val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
-            tag.putInt("counter", counter.coerceAtLeast(0))
+            tag.putInt("counter", clamped)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
 
@@ -75,6 +82,7 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
         }
 
         fun setCopyName(stack: ItemStack, value: Boolean) {
+            if (getCopyName(stack) == value) return
             val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
             tag.putBoolean("copy_name", value)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
@@ -86,6 +94,7 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
         }
 
         fun setCopyChannel(stack: ItemStack, value: Boolean) {
+            if (getCopyChannel(stack) == value) return
             val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
             tag.putBoolean("copy_channel", value)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
