@@ -113,6 +113,13 @@ class ScriptEditor(
      *  actually navigating, ScriptEditor only knows "this token wants to open this ref". */
     var openGuidebookRef: (ref: String) -> Unit = {}
 
+    /** Secondary doc resolver consulted when [LuaApiDocs.resolveAt] returns null.
+     *  TerminalScreen wires this to [TerminalScreen.buildFallbackDoc] so Hold-G
+     *  sees the same Doc the tooltip shows: the [G] indicator and the actual
+     *  G-key action stay in sync for tokens (user-defined functions, typed
+     *  locals with nullability narrowing) that the resolver can't synthesise. */
+    var extraDocResolver: (word: String, mouseX: Int, mouseY: Int) -> LuaApiDocs.Doc? = { _, _, _ -> null }
+
     /** Polled each frame to decide whether to advance the Hold-G progress bar. Bypasses
      *  focus routing (implemented via raw GLFW `isKeyDown` on the loader side) so the
      *  editor can detect the key as held even while it itself has focus. Default is
@@ -790,16 +797,29 @@ class ScriptEditor(
         return null
     }
 
+    /** Public hover resolver that falls through to [extraDocResolver] when the
+     *  primary [LuaApiDocs.resolveAt] path misses. The fallback uses [getWordAt]
+     *  to recover a word even when the pixel-precise token walk in
+     *  [resolveDocUnderMouse] doesn't land cleanly on a token (e.g. mouse
+     *  between glyph extents). Used by both the tooltip renderer and the
+     *  Hold-G handler so the `[G]` indicator and the G-key action share the
+     *  same Doc. */
+    private fun resolveDocWithFallback(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? {
+        resolveDocUnderMouse(mouseX, mouseY)?.let { return it }
+        val word = getWordAt(mouseX.toDouble(), mouseY.toDouble()) ?: return null
+        return extraDocResolver(word, mouseX, mouseY)
+    }
+
     /** True when the token under (mouseX, mouseY) has a [LuaApiDocs] entry. */
     fun hasDocUnderMouse(mouseX: Int, mouseY: Int): Boolean =
-        resolveDocUnderMouse(mouseX, mouseY) != null
+        resolveDocWithFallback(mouseX, mouseY) != null
 
     /** Public accessor for the hosting screen's tooltip renderer. Returns the doc entry
      *  for whatever token is under (mouseX, mouseY), or null. Uses the shared per-frame
      *  token cache + symbol-table provider, so resolution is identical to what the
      *  hold-G progress logic sees. */
     fun resolveDocAt(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? =
-        resolveDocUnderMouse(mouseX, mouseY)
+        resolveDocWithFallback(mouseX, mouseY)
 
     /**
      * Character offset in [value] at the end of the line under (mouseX, mouseY), or null
@@ -844,7 +864,7 @@ class ScriptEditor(
         lastFrameNanos = now
 
         val held = isOpenDocsKeyHeld()
-        val doc = if (held) resolveDocUnderMouse(mouseX, mouseY) else null
+        val doc = if (held) resolveDocWithFallback(mouseX, mouseY) else null
         val canAdvance = held && doc?.guidebookRef != null
 
         if (canAdvance) {
@@ -1057,7 +1077,7 @@ class ScriptEditor(
         // the key is released (tap: commit to buffer) or when progress completes (hold:
         // discard). Subsequent auto-repeat chars during the same hold are dropped, we
         // only keep the first.
-        if (isOpenDocsKeyHeld() && resolveDocUnderMouse(lastMouseX, lastMouseY) != null) {
+        if (isOpenDocsKeyHeld() && resolveDocWithFallback(lastMouseX, lastMouseY) != null) {
             if (pendingTapChar == null) {
                 pendingTapChar = codePoint.toString()
             }

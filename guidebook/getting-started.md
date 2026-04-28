@@ -8,7 +8,7 @@ navigation:
 
 ## Required Materials
 
-Nodework networks are pwoered by the reflective properties of <ItemLink id="celestine_shard" />s
+Nodework networks are powered by the reflective properties of <ItemLink id="celestine_shard" />s
 
 ## Growing Celestine
 

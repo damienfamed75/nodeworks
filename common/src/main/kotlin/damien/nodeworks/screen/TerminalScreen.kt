@@ -734,6 +734,11 @@ class TerminalScreen(
         // service so :common doesn't import GuideME (neoforge-only dep), see
         // PlatformServices.guidebook.
         editor.openGuidebookRef = { ref -> damien.nodeworks.platform.PlatformServices.guidebook.open(ref) }
+        // Bridge the editor's hover/Hold-G path to the local fallback that knows
+        // about user-defined functions, type-name literals, and typed locals
+        // with nullability narrowing. Same Doc the tooltip renders, so [G]
+        // shown in the tooltip matches what G actually opens.
+        editor.extraDocResolver = { word, mx, my -> buildFallbackDoc(word, mx, my) }
         // Key binding is registered loader-side as a `KeyMapping` (rebindable in the
         // controls menu). The editor polls the held state each frame via this callback
         //, see PlatformServices.openDocsKeyHeld for the loader impl.
@@ -1385,20 +1390,13 @@ class TerminalScreen(
             }
         }
 
-        // Prefer LuaApiDocs, type-aware, covers modules/methods/types via the shared
-        // resolver (which already hops module → Type via `LuaApiDocs.moduleTypes` and
-        // typed-local via the autocomplete symbol table).
-        val resolverDoc = editor.resolveDocAt(mouseX, mouseY)
-        val word = editor.getWordAt(mouseX.toDouble(), mouseY.toDouble())
-        // When the resolver returns null (or a Doc with empty description), promote
-        // a registered-type fallback to a real Doc so the rendering path below
-        // surfaces the type's description and guidebookRef instead of producing a
-        // bare `name: Type` text line. This is the path that previously rendered as
-        // the legacy hand-rolled hover for typed locals where the resolver missed.
-        val fallbackDoc = if (resolverDoc == null && word != null) {
-            buildFallbackDoc(word, mouseX, mouseY)
-        } else null
-        val doc = resolverDoc ?: fallbackDoc
+        // [resolveDocAt] consults [buildFallbackDoc] internally via the editor's
+        // `extraDocResolver` callback, so the same Doc is shared between this
+        // tooltip and the editor's Hold-G handler. Without that wiring, the
+        // tooltip would show a `[G]` indicator (rendered from doc.guidebookRef)
+        // for types that only the fallback resolves, but pressing G would do
+        // nothing because the Hold-G code path consulted only the resolver.
+        val doc = editor.resolveDocAt(mouseX, mouseY)
 
         if (doc != null) {
             doc.signature?.let { accum.add(Line(it, COLOR_SIGNATURE)) }
@@ -1472,26 +1470,23 @@ class TerminalScreen(
      *  progress it's plain text in dark gray, while the player is holding, the text is
      *  replaced by a bar of `|` characters that fills left-to-right as progress
      *  advances, same visual language GuideME uses on item tooltips. */
-    /** Build a synthesized hover Doc for tokens the [LuaApiDocs.resolveAt] path
-     *  missed. Two shapes:
+    /** Hover doc for tokens the [LuaApiDocs.resolveAt] path missed. Three shapes:
      *
-     *  1. User-defined function: signature only, no description / guidebookRef.
-     *  2. Typed local / param whose declared type IS registered: full Doc with
-     *     the type's description and guidebookRef so [G] navigation works.
+     *  1. Bare type-name literal (`Job`, `InputItems`) — registry lookup.
+     *  2. User-defined function — signature only.
+     *  3. Typed local / param — symbol-table lookup with nullability narrowing.
      *
-     *  Lifted out of [renderTypeTooltip]'s inline fallback so the hover path
-     *  always produces the same Doc shape regardless of whether resolveAt or
-     *  this fallback fired, and the rendering downstream only has one branch
-     *  to maintain. */
+     *  Lifted out of [renderTypeTooltip] so [resolveDocAtIncludingFallback] can
+     *  call it from the Hold-G path too, keeping the [G] tooltip indicator and
+     *  the actual G-key action consistent. */
     private fun buildFallbackDoc(
         word: String,
         mouseX: Int,
         mouseY: Int,
     ): damien.nodeworks.script.LuaApiDocs.Doc? {
-        // Bare type-name literal (`Job`, `InputItems`, …). The shared resolver
-        // *should* have handled this via `entries[tok.text]`, but the registry
-        // is the source of truth so we ask it directly here. Covers hover on
-        // type literals in annotation positions like `function(job: Job, …)`.
+        // Bare type-name literal lookup. Hits when the resolver's chain walker
+        // returned null for a top-level type token, e.g. `Job` / `InputItems`
+        // in `function(job: Job, items: InputItems)`.
         damien.nodeworks.script.api.LuaApiRegistry.allDocs()[word]?.let { apiDoc ->
             if (apiDoc.category == damien.nodeworks.script.api.ApiCategory.TYPE ||
                 apiDoc.category == damien.nodeworks.script.api.ApiCategory.MODULE
