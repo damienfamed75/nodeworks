@@ -70,7 +70,45 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
                 net.minecraft.sounds.SoundSource.BLOCKS,
                 1.0f, 1.0f,
             )
+            spawnCardPlacementPuff(level, pos, targetSide, stack.item as damien.nodeworks.card.NodeCard)
             return InteractionResult.SUCCESS
+        }
+
+        /** Tinted dust puff at the centre of the face the card was placed on,
+         *  colour matched to the card type so a row of cards visually says
+         *  what's where as the player drops them in. Mirrors the palette
+         *  [damien.nodeworks.render.NodeRenderer] uses on the node body so the
+         *  puff and the resulting indicator agree. */
+        private fun spawnCardPlacementPuff(
+            level: Level,
+            pos: BlockPos,
+            face: Direction,
+            card: damien.nodeworks.card.NodeCard,
+        ) {
+            val server = level as? net.minecraft.server.level.ServerLevel ?: return
+            val color = cardTypeColor(card.cardType)
+            // Node geometry is a 6x6x6 centred cube (5..11). The face centre is
+            // 3px out from the block centre along the face normal, plus a 2px
+            // offset so the puff blooms in front of the face rather than
+            // overlapping the node body. Total: 5px = 5/16 = 0.3125.
+            val cx = pos.x + 0.5 + face.stepX * 0.3125
+            val cy = pos.y + 0.5 + face.stepY * 0.3125
+            val cz = pos.z + 0.5 + face.stepZ * 0.3125
+            server.sendParticles(
+                net.minecraft.core.particles.DustParticleOptions(color, 1.0f),
+                cx, cy, cz,
+                6,                  // count
+                0.08, 0.08, 0.08,   // per-axis spread
+                0.01,               // speed
+            )
+        }
+
+        private fun cardTypeColor(type: String): Int = when (type) {
+            "io" -> 0x83E086        // green
+            "storage" -> 0xAA83E0   // purple
+            "redstone" -> 0xF53B68  // red
+            "observer" -> 0xFFEB3B  // yellow
+            else -> 0xFFFFFF        // unrecognised cards fall back to white
         }
     }
 
