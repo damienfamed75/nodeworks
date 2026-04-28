@@ -28,7 +28,7 @@ location**, not a single inventory stack. Two important consequences:
 
 **The same handle covers both items and fluids.** The `.kind` field tells
 you which one you're looking at. Counts are stack units for items and
-millibuckets (mB) for fluids — covered in detail under [count](./items-handle.md#count) and
+millibuckets (mB) for fluids. Covered in detail under [count](./items-handle.md#count) and
 [kind](./items-handle.md#kind).
 
 **The count can exceed `maxStackSize`.** `network:find("minecraft:coal")`

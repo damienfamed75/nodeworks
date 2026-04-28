@@ -43,9 +43,17 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
          *  card on this face. */
         data class Single(val rgb: Int) : FaceTint()
 
-        /** Cards on this face span ≥2 distinct channels, render the rainbow
-         *  cycle so the player can see at a glance "this face is mixed." */
-        data object Mixed : FaceTint()
+        /** Cards on this face span ≥2 distinct channels. [rgbs] holds the
+         *  distinct channel colours actually present on this face (sorted by
+         *  [net.minecraft.world.item.DyeColor.ordinal] so the cycle order is
+         *  stable across save/reload) and the lip animates through *only*
+         *  those colours instead of the full HSV rainbow, so a red+blue face
+         *  cycles red↔blue rather than sweeping through every hue. WHITE
+         *  shows as actual white here, the [Single]/[Network] white-folds
+         *  exists because a single-white face looked indistinguishable from
+         *  the plain frame texture, but on a mixed face the cycle motion
+         *  itself signals the white slot is intentional. */
+        data class Mixed(val rgbs: List<Int>) : FaceTint()
     }
 
     class NodeRenderState : ConnectableRenderState() {
@@ -153,15 +161,23 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
      *  unconfigured channel) → [FaceTint.Network] so the lip stays the plain
      *  frame texture, a white indicator looked indistinguishable from the
      *  default lip and was visually noisy. Single non-white channel →
-     *  [FaceTint.Single]. ≥2 distinct channels → [FaceTint.Mixed]. */
+     *  [FaceTint.Single]. ≥2 distinct channels → [FaceTint.Mixed] carrying
+     *  exactly those distinct channel RGBs, with WHITE included as-is so a
+     *  white+blue face actually cycles to white rather than to whatever the
+     *  network colour happens to be. */
     private fun resolveFaceTint(channels: List<net.minecraft.world.item.DyeColor>): FaceTint {
         if (channels.isEmpty()) return FaceTint.Network
-        val first = channels[0]
-        for (i in 1 until channels.size) {
-            if (channels[i] != first) return FaceTint.Mixed
+        val distinct = channels.distinct()
+        if (distinct.size == 1) {
+            val only = distinct[0]
+            if (only == net.minecraft.world.item.DyeColor.WHITE) return FaceTint.Network
+            return FaceTint.Single(only.textureDiffuseColor and 0xFFFFFF)
         }
-        if (first == net.minecraft.world.item.DyeColor.WHITE) return FaceTint.Network
-        return FaceTint.Single(first.textureDiffuseColor and 0xFFFFFF)
+        // Sort by ordinal so the cycle direction stays put across save/reload,
+        // otherwise the order would track inventory iteration and flip whenever
+        // the player rearranges cards on the face.
+        val rgbs = distinct.sortedBy { it.ordinal }.map { it.textureDiffuseColor and 0xFFFFFF }
+        return FaceTint.Mixed(rgbs)
     }
 
     override fun submitConnectable(
@@ -268,13 +284,13 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         if (!anyTinted) return
 
         val now = System.currentTimeMillis()
-        val mixedHue = ((now % MIXED_CYCLE_MS) / MIXED_CYCLE_MS.toFloat()) * 360f
+        val mixedPhase = (now % MIXED_CYCLE_MS) / MIXED_CYCLE_MS.toFloat()
 
         submitNodeCollector.submitCustomGeometry(poseStack, LIP_RENDER_TYPE) { pose, vc ->
             for (side in Direction.entries) {
                 val tint = state.faceTints[side.ordinal]
                 if (tint is FaceTint.Network) continue
-                val (r, g, b) = resolveRgb(tint, state.networkColor, mixedHue)
+                val (r, g, b) = resolveRgb(tint, state.networkColor, mixedPhase)
                 emitLipQuadsForFace(pose, vc, side, r, g, b)
             }
         }
@@ -406,9 +422,10 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     }
 
     /** Resolve a face's [FaceTint] to a concrete (r, g, b) at submit time.
-     *  [networkColor] is the per-network ARGB, [mixedHue] is the current frame's
-     *  rainbow phase shared across every Mixed face on this node. */
-    private fun resolveRgb(tint: FaceTint, networkColor: Int, mixedHue: Float): Triple<Int, Int, Int> = when (tint) {
+     *  [networkColor] is the per-network ARGB, [mixedPhase] is the current
+     *  cycle phase in [0, 1) shared across every Mixed face on this node so
+     *  all rainbow lips stay phase-locked. */
+    private fun resolveRgb(tint: FaceTint, networkColor: Int, mixedPhase: Float): Triple<Int, Int, Int> = when (tint) {
         is FaceTint.Network -> Triple(
             (networkColor shr 16) and 0xFF,
             (networkColor shr 8) and 0xFF,
@@ -421,31 +438,30 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
             tint.rgb and 0xFF,
         )
 
-        is FaceTint.Mixed -> hsvToRgb(mixedHue, 0.85f, 1f)
+        // Walk the cycle as N evenly-spaced segments where N = present channel
+        // count. Segment i lerps rgbs[i] → rgbs[(i+1) % N], so a 2-colour face
+        // crossfades A↔B↔A and a 3-colour face goes A→B→C→A. Pure linear RGB
+        // lerp, the intermediate hue is on the line between two endpoints in
+        // RGB space (e.g. red↔blue passes through purple) which is fine for a
+        // small face indicator and avoids hauling HSV in.
+        is FaceTint.Mixed -> {
+            val n = tint.rgbs.size
+            val scaled = mixedPhase * n
+            val idxA = scaled.toInt().mod(n)
+            val idxB = (idxA + 1).mod(n)
+            val t = scaled - scaled.toInt().toFloat()
+            val a = tint.rgbs[idxA]
+            val b = tint.rgbs[idxB]
+            Triple(
+                lerpByte((a shr 16) and 0xFF, (b shr 16) and 0xFF, t),
+                lerpByte((a shr 8) and 0xFF, (b shr 8) and 0xFF, t),
+                lerpByte(a and 0xFF, b and 0xFF, t),
+            )
+        }
     }
 
-    /** HSV → RGB at full byte range. Hue in degrees [0..360), s/v in [0..1].
-     *  Used only for the rainbow-mix face indicator, if other render paths need
-     *  HSV in the future this can move into a shared helper. */
-    private fun hsvToRgb(hueDeg: Float, s: Float, v: Float): Triple<Int, Int, Int> {
-        val h = ((hueDeg % 360f) + 360f) % 360f
-        val c = v * s
-        val x = c * (1f - kotlin.math.abs(((h / 60f) % 2f) - 1f))
-        val m = v - c
-        val (r1, g1, b1) = when {
-            h < 60f -> Triple(c, x, 0f)
-            h < 120f -> Triple(x, c, 0f)
-            h < 180f -> Triple(0f, c, x)
-            h < 240f -> Triple(0f, x, c)
-            h < 300f -> Triple(x, 0f, c)
-            else -> Triple(c, 0f, x)
-        }
-        return Triple(
-            ((r1 + m) * 255f).toInt().coerceIn(0, 255),
-            ((g1 + m) * 255f).toInt().coerceIn(0, 255),
-            ((b1 + m) * 255f).toInt().coerceIn(0, 255),
-        )
-    }
+    private fun lerpByte(a: Int, b: Int, t: Float): Int =
+        (a + (b - a) * t).toInt().coerceIn(0, 255)
 
     /** Emits one billboarded beam per [CardLink] from the card slot's exact position on
      *  the node face out to the adjacent block's near face. Billboarding uses the camera

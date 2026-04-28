@@ -116,9 +116,12 @@ object CardPlacementPreviewRenderer {
             Direction.EAST -> SlabBounds(inner, outer, BOX_MIN, BOX_MAX, BOX_MIN, BOX_MAX)
             Direction.WEST -> SlabBounds(outer, inner, BOX_MIN, BOX_MAX, BOX_MIN, BOX_MAX)
         }
-        val ax0 = ox + x0; val ax1 = ox + x1
-        val ay0 = oy + y0; val ay1 = oy + y1
-        val az0 = oz + z0; val az1 = oz + z1
+        val ax0 = ox + x0;
+        val ax1 = ox + x1
+        val ay0 = oy + y0;
+        val ay1 = oy + y1
+        val az0 = oz + z0;
+        val az1 = oz + z1
 
         val pose = poseStack.last()
         // 12 edges of the slab box. Width comes from the per-vertex LineWidth
@@ -149,7 +152,7 @@ object CardPlacementPreviewRenderer {
      *  in 26.1 requires a per-vertex LineWidth element or BufferBuilder
      *  crashes; the value (in pixels) becomes the rendered line width. AE2's
      *  placement-preview overlay uses 3.0 via a baked-pipeline `LineStateShard`
-     *  for the same reason — we go a touch wider so the lighter card colours
+     *  for the same reason. We go a touch wider so the lighter card colours
      *  (observer yellow, io green) stay legible against bright skies. */
     private const val LINE_WIDTH = 4.0f
 
