@@ -20,8 +20,10 @@ import net.minecraft.core.registries.Registries
 import net.minecraft.resources.Identifier
 import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
+import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
 import net.neoforged.fml.common.Mod
+import net.neoforged.fml.loading.FMLEnvironment
 import net.neoforged.neoforge.common.NeoForge
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension
 import net.neoforged.neoforge.event.entity.player.PlayerEvent
@@ -61,8 +63,17 @@ class Nodeworks(modBus: IEventBus) {
         NeoForge.EVENT_BUS.addListener(::onRegisterCommands)
         NeoForge.EVENT_BUS.addListener(::onDatapackSync)
 
-        // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber)
-        damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
+        // Register client setup (bypasses KFF's AutoKotlinEventBusSubscriber). Gated
+        // on `Dist.CLIENT` because [NeoForgeClientSetup.register] eagerly calls
+        // [NodeworksGuide.register], which loads `guideme.Guide` types. GuideME is
+        // declared `side = "CLIENT"` in neoforge.mods.toml so it's absent on a
+        // dedicated server, calling this unconditionally would NoClassDefFoundError
+        // during mod construction. JVM class loading is lazy enough that the
+        // reference to NeoForgeClientSetup itself doesn't trigger loading until the
+        // call resolves at runtime, so the gate is sufficient.
+        if (FMLEnvironment.getDist() == Dist.CLIENT) {
+            damien.nodeworks.client.NeoForgeClientSetup.register(modBus)
+        }
 
         logger.info("Nodeworks initialized")
     }
