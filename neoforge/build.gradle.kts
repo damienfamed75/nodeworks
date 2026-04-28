@@ -42,29 +42,6 @@ neoForge {
             )
             systemProperty("guideme.showOnStartup", "nodeworks:guide")
         }
-        // `./gradlew :neoforge:runGuideExport` boots a headless client, asks GuideME
-        // to render every page (incl. `<GameScene>` 3D structures) to static HTML,
-        // then exits. Output lands in `<repo>/build/guide/` and is what the
-        // `publish-guide.yml` workflow uploads to GitHub Pages on `main` pushes.
-        //
-        // System properties come from `guideme.internal.siteexport.SiteExportOnStartup`:
-        //   * `guideme.exportOnStartupAndExit`: comma-separated guide IDs to export.
-        //   * `guideme.exportDestination.<ns>.<path>`: output dir for that guide.
-        // We also re-feed the live `guidebook/` source dir so the export reflects
-        // uncommitted edits when run locally, same hot-reload property the dev `guide`
-        // run uses.
-        register("guideExport") {
-            client()
-            systemProperty(
-                "guideme.nodeworks.guide.sources",
-                rootProject.file("guidebook").absolutePath
-            )
-            systemProperty("guideme.exportOnStartupAndExit", "nodeworks:guide")
-            systemProperty(
-                "guideme.exportDestination.nodeworks.guide",
-                rootProject.layout.buildDirectory.dir("guide").get().asFile.absolutePath
-            )
-        }
     }
 
     mods {
@@ -115,7 +92,7 @@ dependencies {
     implementation("org.luaj:luaj-jse:3.0")
     jarJar("org.luaj:luaj-jse:3.0")
 
-    // GuideME, in-game + web guidebook (see docs/authoring.md).
+    // GuideME, in-game guidebook (see docs/authoring.md).
     // jarJar-bundled so players don't need to install it separately.
     implementation("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
     jarJar("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
