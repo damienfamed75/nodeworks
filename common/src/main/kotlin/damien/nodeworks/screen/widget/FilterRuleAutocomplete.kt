@@ -182,24 +182,43 @@ class FilterRuleAutocomplete(private val font: Font) {
         }
     }
 
-    /** Returns the new value for the field if a suggestion was accepted, else null. */
-    fun keyPressed(keyCode: Int): String? {
-        if (suggestions.isEmpty() || anchor == null) return null
+    /** Outcome of routing a key press through the popup. Lets the caller
+     *  consume navigation keys without confusing them with an "accepted"
+     *  event that should mutate the field and close the popup. */
+    sealed interface KeyResult {
+        /** Popup didn't recognise this key, caller should fall through. */
+        object NotHandled : KeyResult
+
+        /** Up/Down moved the highlight, popup stays open, field unchanged. */
+        object Navigated : KeyResult
+
+        /** Esc closed the popup without picking a suggestion. */
+        object Dismissed : KeyResult
+
+        /** Enter/Tab picked a suggestion. The caller writes [value] to the field. */
+        data class Accepted(val value: String) : KeyResult
+    }
+
+    fun keyPressed(keyCode: Int): KeyResult {
+        if (suggestions.isEmpty() || anchor == null) return KeyResult.NotHandled
         return when (keyCode) {
             265 -> { // Up
                 selectedIndex = (selectedIndex - 1).coerceAtLeast(0)
-                ""
+                KeyResult.Navigated
             }
             264 -> { // Down
                 selectedIndex = (selectedIndex + 1).coerceAtMost(suggestions.size - 1)
-                ""
+                KeyResult.Navigated
             }
-            257, 335, 258 -> suggestions.getOrNull(selectedIndex) // Enter / KP-Enter / Tab
-            256 -> { // Esc, close without accepting
+            257, 335, 258 -> { // Enter / KP-Enter / Tab
+                val pick = suggestions.getOrNull(selectedIndex)
+                if (pick != null) KeyResult.Accepted(pick) else KeyResult.NotHandled
+            }
+            256 -> { // Esc
                 unbind()
-                ""
+                KeyResult.Dismissed
             }
-            else -> null
+            else -> KeyResult.NotHandled
         }
     }
 

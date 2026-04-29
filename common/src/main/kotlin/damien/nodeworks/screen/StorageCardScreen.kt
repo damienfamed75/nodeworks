@@ -423,39 +423,44 @@ class StorageCardScreen(
         for ((idx, field) in ruleFields.withIndex()) {
             if (!field.isFocused) continue
             if (autocomplete.isOpen) {
-                val accepted = autocomplete.keyPressed(keyCode)
-                if (accepted != null) {
-                    if (accepted.isNotEmpty()) {
-                        field.value = accepted
+                when (val result = autocomplete.keyPressed(keyCode)) {
+                    is FilterRuleAutocomplete.KeyResult.Accepted -> {
+                        field.value = result.value
                         field.moveCursorToEnd(false)
                         commitRuleField(idx)
+                        autocomplete.unbind()
+                        autocompleteDismissed.add(idx)
+                        autocompleteAnchorIdx = -1
+                        lastAutocompletePartial = null
+                        // Re-anchor the screen-level focus tracker to the field.
+                        // Without this the field's `isFocused` stays true but the
+                        // Screen's `focused` member drifts (because we skipped
+                        // `super.mouseClicked` / `super.keyPressed`), so further
+                        // input doesn't reach the EditBox until the player
+                        // closes and reopens the GUI.
+                        setFocused(field)
+                        return true
                     }
-                    // Mark the popup as dismissed for this row so the next
-                    // frame's syncAutocompleteToFocus doesn't immediately
-                    // rebind. Cleared on click-into-field or further typing.
-                    autocomplete.unbind()
-                    autocompleteDismissed.add(idx)
-                    autocompleteAnchorIdx = -1
-                    lastAutocompletePartial = null
-                    // Re-anchor the screen-level focus tracker to the field.
-                    // Without this the field's `isFocused` stays true but the
-                    // Screen's `focused` member drifts (because we skipped
-                    // `super.mouseClicked` / `super.keyPressed`), so further
-                    // input doesn't reach the EditBox until the player
-                    // closes and reopens the GUI.
-                    setFocused(field)
-                    return true
+                    FilterRuleAutocomplete.KeyResult.Dismissed -> {
+                        autocompleteDismissed.add(idx)
+                        autocompleteAnchorIdx = -1
+                        lastAutocompletePartial = null
+                        setFocused(field)
+                        return true
+                    }
+                    FilterRuleAutocomplete.KeyResult.Navigated -> return true
+                    FilterRuleAutocomplete.KeyResult.NotHandled -> { /* fall through */ }
                 }
             }
             if (keyCode == 256) {
-                field.isFocused = false
                 commitRuleField(idx)
+                if (focused === field) setFocused(null) else field.isFocused = false
                 autocompleteDismissed.add(idx)
                 return true
             }
             if (keyCode == 257 || keyCode == 335) {
                 commitRuleField(idx)
-                field.isFocused = false
+                if (focused === field) setFocused(null) else field.isFocused = false
                 return true
             }
             return field.keyPressed(event)
@@ -1031,13 +1036,21 @@ class StorageCardScreen(
             // Without the explicit defocus, `EditBox.isFocused` stays true
             // when the player clicks empty GUI space and the autocomplete
             // popup keeps rebinding.
+            //
+            // We have to route through `setFocused(null)` rather than just
+            // flipping `f.isFocused = false`. Vanilla's [setFocused] short-
+            // circuits when the current focused widget already matches the
+            // new one, so leaving `screen.focused = f` while clearing the
+            // EditBox's local flag would make a later click on f hit that
+            // equality check and never re-enter `setFocused(true)`. Field
+            // ends up un-clickable until the GUI is closed and reopened.
             for (idx in ruleFields.indices) {
                 if (!ruleFields[idx].isFocused) continue
                 val f = ruleFields[idx]
                 val inField = mx in f.x until f.x + f.width && my in f.y until f.y + f.height
                 if (!inField) {
                     commitRuleField(idx)
-                    f.isFocused = false
+                    if (focused === f) setFocused(null) else f.isFocused = false
                     autocompleteDismissed.add(idx)
                 }
             }
