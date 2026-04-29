@@ -27,19 +27,10 @@ settings
 
 ![](../assets/images/card_programmer_gui.png)
 
-## What gets copied
+You'll also notice two toggle buttons to copy the template's name and the channel.
 
-Mostly what it's useful for is copying priority of a <ItemLink id="storage_card" /> template
-or a Card's name.
-
-### Naming copied cards
-
-Cards programmed together are usually meant to be distinguishable, the Card Programmer
-has the built-in batch-rename to save you from manually setting 20 aliases.
-
-Renaming 20 cards at a time in an anvil is miserable so you can turn on **Copy Name**
-and the Card Programmer will stamp the template's name onto each target with a
-running counter appended. (`chest_0`, `chest_1`, `chest_2`, and so on)
+> **Note:** Any card that's dropped or shift+clicked into the "Target" slot
+> will immediately return to your inventory after the copy is complete.
 
 ## Recipe
 
