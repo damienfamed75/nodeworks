@@ -192,5 +192,18 @@ class Icons private constructor(val col: Int, val row: Int) {
         val OBSERVER_CARD = Icons(0, 4)
         val BREAKER = Icons(1, 4)
         val PLACER = Icons(2, 4)
+        // Storage Card filter toggles (9×9 in top-left of each cell), drawn
+        // via [drawTopLeft] inside the cycle buttons on the Storage Card GUI.
+        val FILTER_ALLOW = Icons(3, 4)
+        val FILTER_DENY = Icons(4, 4)
+        val FILTER_STACKABLE = Icons(5, 4)
+        val FILTER_NON_STACKABLE = Icons(6, 4)
+        val FILTER_ANY_STACKABLE = Icons(7, 4)
+        val FILTER_NBT = Icons(8, 4)
+        val FILTER_NO_NBT = Icons(9, 4)
+        val FILTER_ANY_NBT = Icons(10, 4)
+        // 9×9 question mark in the top-left of its cell, used by the
+        // Storage Card GUI's [?] guidebook-link button.
+        val QUESTION_9 = Icons(11, 4)
     }
 }

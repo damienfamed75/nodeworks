@@ -15,7 +15,15 @@ object LuaBlockBalance {
      *  is what makes this safe inside otherwise-balanced code that lives
      *  inside an unclosed surrounding block. The outer block's missing
      *  closer doesn't cause us to spuriously add a closer for the inner
-     *  opener. */
+     *  opener.
+     *
+     *  Indentation guards against the LIFO trap: when the user types a new
+     *  opener inside an existing nested block (e.g. an `if` inside a `for`
+     *  whose `end` is below), Lua's grammar would silently re-pair that
+     *  outer `end` with the new opener, leaving the outer block hanging.
+     *  We treat a closer that lives at a SHALLOWER indent than the new
+     *  opener as belonging to the outer block, not this one, so the editor
+     *  still drops in a fresh `end` matching the new opener's depth. */
     fun shouldInsertAutoEnd(
         curLineText: String,
         col: Int,
@@ -25,7 +33,8 @@ object LuaBlockBalance {
         if (col < curLineText.length) return false
         val prefix = curLineText.substring(0, col).trimEnd()
         if (!lineOpensEndBlock(prefix)) return false
-        return !isOpenerClosedAfter(fullText, cursorPos)
+        val openerIndent = curLineText.takeWhile { it == ' ' }.length
+        return !isOpenerClosedAfter(fullText, cursorPos, openerIndent)
     }
 
     /** True when [trimmedPrefix] ends with a keyword that opens a block needing
@@ -48,24 +57,34 @@ object LuaBlockBalance {
      *  this opener already has its `end` later in the script and the editor
      *  shouldn't auto-insert another one.
      *
+     *  A depth-0 closer that sits at a strictly shallower indent than
+     *  [openerIndent] is treated as NOT closing this opener: the user typed
+     *  it for some outer block whose closer would otherwise get cannibalised
+     *  by the new inner opener under Lua's LIFO matching.
+     *
      *  Walks the [LuaTokenizer] rather than raw text so keywords inside
      *  strings or comments don't skew the count. `do` is intentionally NOT
      *  counted as an opener here: `for ... do` and `while ... do` already
      *  incremented for `for`/`while`, and standalone `do ... end` blocks are
      *  rare enough that under-counting them is preferable to double-counting
      *  the common case. */
-    private fun isOpenerClosedAfter(fullText: String, cursorPos: Int): Boolean {
+    private fun isOpenerClosedAfter(fullText: String, cursorPos: Int, openerIndent: Int): Boolean {
         if (cursorPos >= fullText.length) return false
         val after = fullText.substring(cursorPos)
+        val sourceLines = after.split('\n')
+        val tokenLines = LuaTokenizer.tokenizeLines(sourceLines)
         var depth = 1
-        for (line in LuaTokenizer.tokenizeLines(after)) {
-            for (t in line) {
+        for ((lineIdx, lineTokens) in tokenLines.withIndex()) {
+            for (t in lineTokens) {
                 if (t.type != LuaTokenizer.TokenType.KEYWORD) continue
                 when (t.text) {
                     "if", "for", "while", "repeat", "function" -> depth++
                     "end", "until" -> {
                         depth--
-                        if (depth == 0) return true
+                        if (depth == 0) {
+                            val closerIndent = sourceLines[lineIdx].takeWhile { it == ' ' }.length
+                            return closerIndent >= openerIndent
+                        }
                     }
                 }
             }

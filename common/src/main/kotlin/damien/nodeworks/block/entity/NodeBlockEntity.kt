@@ -159,7 +159,14 @@ class NodeBlockEntity(
                 is damien.nodeworks.card.IOCard -> IOSideCapability(adjacentPos, accessFace)
                 is damien.nodeworks.card.StorageCard -> {
                     val priority = damien.nodeworks.card.StorageCard.getPriority(stack)
-                    StorageSideCapability(adjacentPos, accessFace, priority)
+                    val filterMode = damien.nodeworks.card.StorageCard.getFilterMode(stack)
+                    val filterRules = damien.nodeworks.card.StorageCard.getFilterRules(stack)
+                    val stackability = damien.nodeworks.card.StorageCard.getStackabilityFilter(stack)
+                    val nbtFilter = damien.nodeworks.card.StorageCard.getNbtFilter(stack)
+                    StorageSideCapability(
+                        adjacentPos, accessFace, priority,
+                        filterMode, filterRules, stackability, nbtFilter,
+                    )
                 }
                 is damien.nodeworks.card.RedstoneCard -> RedstoneSideCapability(adjacentPos, worldPosition, side, accessFace)
                 is damien.nodeworks.card.ObserverCard -> ObserverSideCapability(adjacentPos, accessFace)

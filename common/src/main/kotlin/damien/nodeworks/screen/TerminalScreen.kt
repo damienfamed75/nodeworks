@@ -91,6 +91,7 @@ class TerminalScreen(
     private val fluidTags: List<String>
     private val itemIds: List<String>
     private val fluidIds: List<String>
+    private val blockIds: List<String>
     private val variables: List<Pair<String, Int>>
 
     /** Variable name → channel color, parallel to [variables]. Kept as a separate
@@ -683,12 +684,17 @@ class TerminalScreen(
             .filter { !it.endsWith(":empty") && !it.contains(":flowing_") }
             .sorted()
             .toList()
+        val scannedBlockIds = net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()
+            .map { it.toString() }
+            .sorted()
+            .toList()
 
         cards = scannedCards
         itemTags = scannedTags
         fluidTags = scannedFluidTags
         itemIds = scannedItemIds
         fluidIds = scannedFluidIds
+        blockIds = scannedBlockIds
         variables = scannedVars
         variableChannels = scannedVarChannels
         breakerAliases = scannedBreakerAliases
@@ -862,7 +868,7 @@ class TerminalScreen(
         autocomplete =
             AutocompletePopup(
                 font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis,
-                itemIds, fluidIds, fluidTags,
+                itemIds, fluidIds, fluidTags, blockIds,
                 breakerAliases, placerAliases,
             ) { scripts }
         // Position popups directly under the cursor's text row. Using yBottomOfLine

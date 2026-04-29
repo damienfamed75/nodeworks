@@ -1,0 +1,165 @@
+{
+    DataVersion: 4790,
+    size: [3, 2, 3],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [0, 0, 2],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [1, 0, 1],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [1, 0, 2],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [2, 0, 1],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [2, 0, 2],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [0, 1, 1],
+            state: "minecraft:stone"
+        },
+        {
+            pos: [1, 1, 2],
+            state: "minecraft:cobblestone"
+        },
+        {
+            pos: [2, 1, 1],
+            state: "minecraft:stone"
+        },
+        {
+            pos: [0, 1, 2],
+            state: "minecraft:stone_stairs{facing:east,half:bottom,shape:straight,waterlogged:true}"
+        },
+        {
+            pos: [2, 1, 2],
+            state: "minecraft:lava{level:0}"
+        },
+        {
+            pos: [1, 0, 0],
+            state: "minecraft:barrel{facing:up,open:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 12,
+                        Slot: 0b,
+                        id: "minecraft:cobblestone"
+                    }
+                ],
+                id: "minecraft:barrel"
+            }
+        },
+        {
+            pos: [0, 1, 0],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                autoRun: 0b,
+                layoutIndex: 0,
+                networkId: "95219519-bc8d-41c4-b9e7-57589ead0ae1",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: "local breaker_1 = network:get(\"breaker_1\")
+scheduler:second(function()
+    breaker_1:mine()
+end)
+"
+                    }
+                ],
+                connections: [
+                    [I; 1, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [1, 1, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "95219519-bc8d-41c4-b9e7-57589ead0ae1",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 2, 1, 0],
+                    [I; 1, 1, 1],
+                    [I; 0, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [1, 1, 1],
+            state: "nodeworks:breaker{facing:south}",
+            nbt: {
+                breakProgress: 0,
+                breakDurationTicks: 0,
+                components: {},
+                channel: 0,
+                networkId: "95219519-bc8d-41c4-b9e7-57589ead0ae1",
+                id: "nodeworks:breaker",
+                deviceName: "",
+                connections: [
+                    [I; 1, 1, 0]
+                ]
+            }
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "95219519-bc8d-41c4-b9e7-57589ead0ae1",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 1, 1, 0]
+                ],
+                networkColor: 6282847
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:sandstone",
+        "minecraft:stone",
+        "minecraft:cobblestone",
+        "minecraft:stone_stairs{facing:east,half:bottom,shape:straight,waterlogged:true}",
+        "minecraft:lava{level:0}",
+        "minecraft:barrel{facing:up,open:false}",
+        "nodeworks:terminal{facing:north}",
+        "nodeworks:node",
+        "nodeworks:breaker{facing:south}",
+        "nodeworks:network_controller"
+    ]
+}

@@ -41,6 +41,12 @@ val CraftBuilder: LuaType.Named = LuaTypes.type(
     guidebookRef = "nodeworks:lua-api/craft-builder.md",
 )
 
+val RouteBuilder: LuaType.Named = LuaTypes.type(
+    name = "RouteBuilder",
+    description = "Returned by `network:route`. Configures the filter on every Storage Card whose alias matches the pattern. Each method mutates and returns the builder for chaining.",
+    guidebookRef = "nodeworks:lua-api/network.md#route",
+)
+
 val InputItems: LuaType.Named = LuaTypes.type(
     name = "InputItems",
     description = "Per-recipe bag of `ItemsHandle` fields, the second argument to a `network:handle` callback.",
@@ -145,19 +151,11 @@ val NetworkApi: ApiSurface = api(Network) {
         param(
             "alias",
             StorageCardAlias,
-            description = "Storage card alias to route matching items to. Wildcard `<prefix>_*` matches every numbered card sharing the prefix."
+            description = "Storage card alias or `<prefix>_*` glob. Every matching Storage Card is configured by the returned builder."
         )
-        param(
-            "predicate",
-            function {
-                param("items", ItemsHandle)
-                returns(Boolean)
-            },
-            description = "Predicate run on each insert, return true to route to [alias].",
-        )
-        returns(Void)
+        returns(RouteBuilder)
         description =
-            "Routing rule. Items matching the predicate are directed to the card with this alias during `network:insert`."
+            "Returns a builder that configures the filter rules / mode / stackability / NBT toggle on every Storage Card whose alias matches. Mutations apply immediately on each chained call."
         guidebookRef = "nodeworks:lua-api/network.md#route"
     }
 
@@ -257,3 +255,72 @@ val CraftBuilderApi: ApiSurface = api(CraftBuilder) {
  *  hover and type-annotation autocomplete, the dynamic-properties path falls
  *  through to legacy when [LuaApiRegistry.propertiesOf] returns empty. */
 val InputItemsApi: ApiSurface = api(InputItems) {}
+
+val RouteBuilderApi: ApiSurface = api(RouteBuilder) {
+    method("rule") {
+        param("filter", Filter, description = "Filter pattern, same syntax as `network:find`: `*`, `#tag`, `mod:*`, `/regex/`, or an exact id.")
+        returns(RouteBuilder)
+        description = "Append a filter rule to every matching card. No-op when the rule already exists. Returns the builder for chaining."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("clearRules") {
+        returns(RouteBuilder)
+        description = "Remove every filter rule from matching cards. Mode and stackability/NBT toggles are left alone."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("allow") {
+        returns(RouteBuilder)
+        description = "Set whitelist mode. Items matching at least one rule are accepted, everything else is rejected."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("deny") {
+        returns(RouteBuilder)
+        description = "Set blacklist mode. Items matching at least one rule are rejected, everything else is accepted."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("stackable") {
+        returns(RouteBuilder)
+        description = "Restrict to stackable items only (max stack > 1). Tools, armour, etc. are rejected."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("nonStackable") {
+        returns(RouteBuilder)
+        description = "Restrict to non-stackable items only (max stack == 1). Tools, armour, enchanted books, etc."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("anyStackable") {
+        returns(RouteBuilder)
+        description = "Disable the stackability restriction. Items pass regardless of max stack size."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("hasNbt") {
+        returns(RouteBuilder)
+        description = "Restrict to items carrying NBT data (damage, custom name, enchantments, etc.)."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("noNbt") {
+        returns(RouteBuilder)
+        description = "Restrict to items in their pristine form (no NBT)."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("anyNbt") {
+        returns(RouteBuilder)
+        description = "Disable the NBT restriction. Items pass regardless of NBT presence."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+
+    method("reset") {
+        returns(RouteBuilder)
+        description = "Full reset to defaults: clear rules, set Allow mode, any-stackable, any-NBT. Useful at the top of a script chain so re-runs don't leave stale state."
+        guidebookRef = "nodeworks:lua-api/network.md#route"
+    }
+}

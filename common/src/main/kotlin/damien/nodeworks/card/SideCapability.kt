@@ -1,5 +1,6 @@
 package damien.nodeworks.card
 
+import damien.nodeworks.script.CardHandle
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 
@@ -43,9 +44,59 @@ data class RecipeSideCapability(
 data class StorageSideCapability(
     override val adjacentPos: BlockPos,
     val defaultFace: Direction,
-    val priority: Int = 0
+    val priority: Int = 0,
+    /** Filter mode + rules + stackability + NBT gates carried from the card's
+     *  CUSTOM_DATA at capability resolution time. The runtime gates inserts on
+     *  [acceptsItem] before writing to the underlying inventory, so a card
+     *  with a configured whitelist refuses non-matching items even when
+     *  something tries to push them in. Defaults preserve legacy
+     *  "accept anything" behavior for existing world saves. */
+    val filterMode: StorageCard.Companion.FilterMode = StorageCard.Companion.FilterMode.ALLOW,
+    val filterRules: List<String> = emptyList(),
+    val stackability: StorageCard.Companion.StackabilityFilter = StorageCard.Companion.StackabilityFilter.ANY,
+    val nbtFilter: StorageCard.Companion.NbtFilter = StorageCard.Companion.NbtFilter.ANY,
 ) : SideCapability {
     override val type: String = "storage"
+
+    /** True when this card should accept the item ([itemId], [hasData]).
+     *
+     *  All four constraints AND together: stackability gate, NBT gate, rule
+     *  list match (or empty list passes), then the ALLOW/DENY mode flips
+     *  the rule-list result. A card with all defaults (empty rules, ANY/ANY
+     *  gates, ALLOW mode) accepts everything, so untouched cards behave the
+     *  way they always have.
+     *
+     *  We look up `maxStackSize` on the registered Item to evaluate
+     *  stackability. For unknown ids the gate falls back to "any" (true)
+     *  so a card never rejects an item it can't classify. */
+    fun acceptsItem(itemId: String, hasData: Boolean = false): Boolean {
+        if (!stackabilityMatches(itemId)) return false
+        if (!nbtMatches(hasData)) return false
+        if (filterRules.isEmpty()) return true
+        val anyMatch = filterRules.any { rule -> CardHandle.matchesFilter(itemId, rule) }
+        return when (filterMode) {
+            StorageCard.Companion.FilterMode.ALLOW -> anyMatch
+            StorageCard.Companion.FilterMode.DENY -> !anyMatch
+        }
+    }
+
+    private fun stackabilityMatches(itemId: String): Boolean {
+        if (stackability == StorageCard.Companion.StackabilityFilter.ANY) return true
+        val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return true
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return true
+        val isStackable = item.defaultMaxStackSize > 1
+        return when (stackability) {
+            StorageCard.Companion.StackabilityFilter.STACKABLE -> isStackable
+            StorageCard.Companion.StackabilityFilter.NON_STACKABLE -> !isStackable
+            StorageCard.Companion.StackabilityFilter.ANY -> true
+        }
+    }
+
+    private fun nbtMatches(hasData: Boolean): Boolean = when (nbtFilter) {
+        StorageCard.Companion.NbtFilter.ANY -> true
+        StorageCard.Companion.NbtFilter.HAS_DATA -> hasData
+        StorageCard.Companion.NbtFilter.NO_DATA -> !hasData
+    }
 }
 
 /**

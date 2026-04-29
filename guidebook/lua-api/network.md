@@ -342,33 +342,38 @@ end)
 
 ## route
 
-Sets a filter to a target <ItemLink id="storage_card" /> using a predicate function.
-This function should return `true` if the [ItemsHandle](items-handle.md) should be accepted by the storage.
+Bulk-edits the [filter settings](../items-blocks/storage_card.md#filters) of every
+<ItemLink id="storage_card" /> whose name matches a pattern. Returns a builder
+whose methods chain so the whole rule set for a row of cards can be written
+in one call. Each method mutates the matching cards immediately, the same as
+right-clicking each card and editing its GUI by hand.
+
+The pattern is a name with `*` as a wildcard. `cobblestone_*` matches `cobblestone_0`,
+`cobblestone_1`, etc. `*` alone matches every Storage Card on the network.
 
 <LuaCode>
 ```lua
-network:route("cobblestone_only", function(item: ItemsHandle)
-  return item.id == "minecraft:cobblestone" -- true if item id is "minecraft:cobblestone"
-end)
+network:route("cobblestone_*")
+  :reset()
+  :rule("#minecraft:cobblestones")
+  :noNbt()
+  :allow()
 ```
 </LuaCode>
 
-If you have multiple storage cards with _N suffixes ( `non_stackable_0`, `non_stackable_1`, `non_stackable_2` etc. )
-then you can refer to all of them using a wildcard ( \* )
+### Builder methods
 
-<LuaCode>
-```lua
--- matches all non_stackable_ Storage Cards
-network:route("non_stackable_*", function(item: ItemsHandle)
-  return not item.stackable
-end)
-```
-</LuaCode>
+| Method                                                 | Effect                                            |
+| ------------------------------------------------------ | ------------------------------------------------- |
+| `:rule(filter)`                                        | Appends a rule (same syntax as the GUI rule list) |
+| `:clearRules()`                                        | Drops every rule, leaves modes alone              |
+| `:allow()` / `:deny()`                                 | Sets the rule-list mode                           |
+| `:stackable()` / `:nonStackable()` / `:anyStackable()` | Sets the Stackability filter                      |
+| `:hasNbt()` / `:noNbt()` / `:anyNbt()`                 | Sets the NBT filter                               |
+| `:reset()`                                             | Clears rules, sets Allow + Any + Any              |
 
-> **Tip:** It's also recommended to turn on the ["Autorun"](../items-blocks/scripting_terminal.md#autorun) of the <ItemLink id="terminal" />
-> if it's using `route`
-
-![](../assets/images/autorun.png)
+Calls return the same builder so they chain. Mutations are immediate and
+persist across save/load.
 
 ---
 

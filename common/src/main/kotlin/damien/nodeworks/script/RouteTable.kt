@@ -74,7 +74,7 @@ class RouteTable(
      * when no route applies. Callers insert into the list in order, overflowing to open
      * storages only after every candidate is full.
      */
-    fun findRouteTargets(itemInfo: ItemInfo): List<ItemStorageHandle> {
+    fun findRouteTargets(itemInfo: ItemInfo): List<Pair<CardSnapshot, ItemStorageHandle>> {
         val cacheKey = "${itemInfo.itemId}:${itemInfo.hasData}"
 
         val matchingRoute: Route? = if (routeCache.containsKey(cacheKey)) {
@@ -94,7 +94,14 @@ class RouteTable(
         }
 
         if (matchingRoute == null) return emptyList()
-        return matchingRoute.cards.mapNotNull { NetworkStorageHelper.getStorage(level, it) }
+        // Pairs so the caller can gate on the card's per-card filter
+        // ([damien.nodeworks.card.StorageSideCapability.acceptsItem]) before
+        // moving items into the underlying storage. Without the CardSnapshot
+        // carried alongside the handle, the caller would have no way to consult
+        // the route target's filter rules.
+        return matchingRoute.cards.mapNotNull { card ->
+            NetworkStorageHelper.getStorage(level, card)?.let { storage -> card to storage }
+        }
     }
 
     /**
@@ -121,10 +128,18 @@ class RouteTable(
         for (card in openStorageCards) {
             if (remaining <= 0) break
             val destStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            // Per-card filter gate: predicate must match BOTH the caller's filter
+            // and the card's configured rules. An ALLOW-mode card with no rules
+            // and ANY/ANY gates accepts everything (legacy behavior). Routes
+            // through `moveItemsVariant` so the per-card filter has access to
+            // `hasData` for the NBT-presence gate.
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
             val moved = try {
-                PlatformServices.storage.moveItems(
+                PlatformServices.storage.moveItemsVariant(
                     source, destStorage,
-                    { CardHandle.matchesFilter(it, filter) },
+                    { id, hasData ->
+                        CardHandle.matchesFilter(id, filter) && (cap == null || cap.acceptsItem(id, hasData))
+                    },
                     remaining
                 )
             } catch (_: Exception) { 0L }
@@ -139,8 +154,18 @@ class RouteTable(
      */
     fun insertItemStackDefault(stack: net.minecraft.world.item.ItemStack): Int {
         var remaining = stack.count
+        val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString()
+        // Vanilla's "isn't this just a default ItemStack" check: an ItemStack
+        // with no `damage`, custom data, name overrides, etc. is "no data";
+        // anything carrying NBT-equivalent state is "has data".
+        val hasData = stack.componentsPatch.isEmpty.not()
         for (card in openStorageCards) {
             if (remaining <= 0) break
+            // Same per-card filter gate as [insertDefault], the source here is
+            // a single concrete ItemStack so we resolve its id and hasData
+            // once and skip cards that refuse it.
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+            if (cap != null && !cap.acceptsItem(itemId, hasData)) continue
             val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
             remaining -= inserted

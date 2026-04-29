@@ -322,20 +322,32 @@ object NetworkStorageHelper {
         return null
     }
 
-    /** Insert an ItemStack into the network's Storage Cards (highest priority first). Returns count inserted. */
+    /** Insert an ItemStack into the network's Storage Cards (highest priority first). Returns count inserted.
+     *
+     *  Skips cards whose configured filter rejects the stack. The importer,
+     *  inventory terminal manual inserts, crafting CPU completion, and the
+     *  CPU op executor all funnel through here, so without the filter check
+     *  any card with an ALLOW-mode whitelist would still receive every item
+     *  the network produced (the filter would only gate the Lua-API
+     *  `:insert` paths). */
     fun insertItemStack(level: ServerLevel, snapshot: NetworkSnapshot, stack: net.minecraft.world.item.ItemStack, cache: NetworkInventoryCache? = null): Int {
         var remaining = stack.count
+        val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+        // ItemStack carries its own NBT-presence state, so the filter check
+        // can use the actual `hasData` rather than guessing.
+        val hasData = !stack.componentsPatch.isEmpty
         for (card in getStorageCards(snapshot)) {
             if (remaining <= 0) break
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+            if (cap != null && itemId != null && !cap.acceptsItem(itemId, hasData)) continue
             val storage = getStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
             remaining -= inserted
         }
         val totalInserted = stack.count - remaining
         if (totalInserted > 0 && cache != null) {
-            val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
             if (itemId != null) {
-                cache.onInserted(itemId, stack.componentsPatch.size() > 0, totalInserted.toLong())
+                cache.onInserted(itemId, hasData, totalInserted.toLong())
             }
         }
         return totalInserted
@@ -400,8 +412,14 @@ object NetworkStorageHelper {
             val routeTargets = routeTable?.findRouteTargets(itemInfo) ?: emptyList()
             if (routeTargets.isNotEmpty()) {
                 var routeRemaining = toMove
-                for (target in routeTargets) {
+                for ((targetCard, target) in routeTargets) {
                     if (routeRemaining <= 0L) break
+                    // Per-card filter gate. A route may point at a card whose
+                    // configured rules reject this item (misconfiguration, but
+                    // valid). Skip those and let overflow fall through to
+                    // open storages. Passes [hasData] so the NBT gate works.
+                    val cap = targetCard.capability as? damien.nodeworks.card.StorageSideCapability
+                    if (cap != null && !cap.acceptsItem(itemId, hasData)) continue
                     val moved = try {
                         PlatformServices.storage.moveItemsVariant(source, target, variantFilter, routeRemaining)
                     } catch (_: Exception) { 0L }
@@ -470,10 +488,17 @@ object NetworkStorageHelper {
         for (card in getStorageCards(snapshot)) {
             if (remaining <= 0) break
             val destStorage = getStorage(level, card) ?: continue
+            // Per-card filter gate, see [RouteTable.insertDefault] for the rationale.
+            // An ALLOW-mode card with empty rules + ANY/ANY gates accepts anything
+            // (legacy behavior). Routes through `moveItemsVariant` so the filter
+            // sees `hasData` for the NBT-presence gate.
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
             val moved = try {
-                PlatformServices.storage.moveItems(
+                PlatformServices.storage.moveItemsVariant(
                     source, destStorage,
-                    { CardHandle.matchesFilter(it, filter) },
+                    { id, hasData ->
+                        CardHandle.matchesFilter(id, filter) && (cap == null || cap.acceptsItem(id, hasData))
+                    },
                     remaining
                 )
             } catch (_: Exception) { 0L }
