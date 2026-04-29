@@ -8,8 +8,8 @@ navigation:
 
 A programmable logistics and automation network.
 
-<GameScene zoom="3" interactive={false} paddingTop="30" paddingRight="30" paddingLeft="10">
-  <ImportStructure src="assets/assemblies/all.snbt" />
+<GameScene zoom="3.8" background="#000000" interactive={false} paddingTop="30" paddingRight="30" paddingLeft="10">
+  <ImportStructure src="assets/assemblies/subnet.snbt" />
   <IsometricCamera yaw="200" pitch="20" />
   <RemoveBlocks id="minecraft:sandstone" />
 </GameScene>
