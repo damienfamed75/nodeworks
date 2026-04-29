@@ -111,6 +111,12 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
     }
 
     private fun safeTick() {
+        // Live-refresh the snapshot before each tick so card NBT changes the
+        // player makes mid-script (Storage Card filter mode/rules, channel,
+        // priority, etc.) take effect on the very next preset run instead of
+        // sticking around until the script is restarted. Cost is one
+        // network walk per preset interval, fine for typical networks.
+        engine.refreshSnapshot()
         val snap = engine.currentSnapshot() ?: return
         if (snap !== lastSnapshotSeen) {
             onSnapshotChanged(snap)

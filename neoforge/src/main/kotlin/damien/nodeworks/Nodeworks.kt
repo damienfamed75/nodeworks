@@ -454,6 +454,16 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToServer(SetStorageCardFilterRulesPayload.TYPE, SetStorageCardFilterRulesPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.StorageCardMenu && menu.containerId == payload.containerId) {
+                    menu.replaceFilterRules(payload.rules)
+                }
+            }
+        }
+
 
         registrar.playToServer(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC) { payload, context ->
             context.enqueueWork {

@@ -1396,7 +1396,8 @@
                 networkId: "f210d720-4c7b-4b07-ada2-e3844189091b",
                 id: "nodeworks:node",
                 connections: [
-                    [I; 3, 0, 2]
+                    [I; 3, 0, 2],
+                    [I; 4, 1, 2]
                 ]
             }
         },
@@ -1406,11 +1407,11 @@
             nbt: {
                 lit_total_time: 20000,
                 components: {},
-                cooking_time_spent: 180,
+                cooking_time_spent: 33,
                 cooking_total_time: 200,
                 Items: [
                     {
-                        count: 61,
+                        count: 64,
                         Slot: 0b,
                         id: "minecraft:raw_iron"
                     },
@@ -1418,18 +1419,11 @@
                         count: 1,
                         Slot: 1b,
                         id: "minecraft:bucket"
-                    },
-                    {
-                        count: 3,
-                        Slot: 2b,
-                        id: "minecraft:iron_ingot"
                     }
                 ],
                 id: "minecraft:furnace",
-                lit_time_remaining: 19221,
-                RecipesUsed: {
-                    "minecraft:iron_ingot_from_smelting_raw_iron": 3
-                }
+                lit_time_remaining: 19968,
+                RecipesUsed: {}
             }
         },
         {
@@ -1438,11 +1432,11 @@
             nbt: {
                 lit_total_time: 20000,
                 components: {},
-                cooking_time_spent: 149,
+                cooking_time_spent: 53,
                 cooking_total_time: 200,
                 Items: [
                     {
-                        count: 61,
+                        count: 64,
                         Slot: 0b,
                         id: "minecraft:raw_iron"
                     },
@@ -1450,18 +1444,11 @@
                         count: 1,
                         Slot: 1b,
                         id: "minecraft:bucket"
-                    },
-                    {
-                        count: 3,
-                        Slot: 2b,
-                        id: "minecraft:iron_ingot"
                     }
                 ],
                 id: "minecraft:furnace",
-                lit_time_remaining: 19252,
-                RecipesUsed: {
-                    "minecraft:iron_ingot_from_smelting_raw_iron": 3
-                }
+                lit_time_remaining: 19948,
+                RecipesUsed: {}
             }
         },
         {
@@ -1470,11 +1457,11 @@
             nbt: {
                 lit_total_time: 20000,
                 components: {},
-                cooking_time_spent: 120,
+                cooking_time_spent: 70,
                 cooking_total_time: 200,
                 Items: [
                     {
-                        count: 61,
+                        count: 64,
                         Slot: 0b,
                         id: "minecraft:raw_iron"
                     },
@@ -1482,18 +1469,11 @@
                         count: 1,
                         Slot: 1b,
                         id: "minecraft:bucket"
-                    },
-                    {
-                        count: 3,
-                        Slot: 2b,
-                        id: "minecraft:iron_ingot"
                     }
                 ],
                 id: "minecraft:furnace",
-                lit_time_remaining: 19281,
-                RecipesUsed: {
-                    "minecraft:iron_ingot_from_smelting_raw_iron": 3
-                }
+                lit_time_remaining: 19931,
+                RecipesUsed: {}
             }
         },
         {
@@ -1601,7 +1581,11 @@
                         id: "nodeworks:link_crystal"
                     }
                 ],
-                id: "nodeworks:receiver_antenna"
+                networkId: "f210d720-4c7b-4b07-ada2-e3844189091b",
+                id: "nodeworks:receiver_antenna",
+                connections: [
+                    [I; 4, 0, 2]
+                ]
             }
         },
         {

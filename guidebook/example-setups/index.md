@@ -6,4 +6,4 @@ navigation:
 
 # Examples
 
-asd
+<CategoryIndexDescriptions category="example" />

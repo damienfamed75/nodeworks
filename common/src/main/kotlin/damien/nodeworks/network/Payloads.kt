@@ -655,3 +655,37 @@ class DebugInventoryTerminalPayload : CustomPacketPayload {
     }
     override fun type() = TYPE
 }
+
+/**
+ * C2S: Replace the entire filter-rule list on a Storage Card menu. The mode
+ * toggle goes through [AbstractContainerMenu.clickMenuButton] (id 3000) so it
+ * doesn't need its own payload, but the rule list carries a list of strings
+ * which doesn't fit through that channel. Full-list semantics keep the protocol
+ * trivially simple, the list is bounded at
+ * [damien.nodeworks.screen.StorageCardOpenData.MAX_RULES] entries so packets
+ * stay small (~32 × 256 bytes worst case = 8 KB, well under the 2 MiB ceiling).
+ */
+data class SetStorageCardFilterRulesPayload(val containerId: Int, val rules: List<String>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetStorageCardFilterRulesPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "set_storage_card_filter_rules")
+        )
+        const val MAX_RULES = 32
+        const val MAX_RULE_LENGTH = 256
+        val CODEC: StreamCodec<FriendlyByteBuf, SetStorageCardFilterRulesPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                val cropped = p.rules.take(MAX_RULES)
+                buf.writeVarInt(cropped.size)
+                for (rule in cropped) buf.writeUtf(rule.take(MAX_RULE_LENGTH), MAX_RULE_LENGTH)
+            },
+            { buf ->
+                val id = buf.readVarInt()
+                val count = buf.readVarInt().coerceIn(0, MAX_RULES)
+                val rules = (0 until count).map { buf.readUtf(MAX_RULE_LENGTH) }
+                SetStorageCardFilterRulesPayload(id, rules)
+            }
+        )
+    }
+    override fun type() = TYPE
+}

@@ -278,24 +278,36 @@ class CardHandle private constructor(
         atomic: Boolean
     ): Long {
         val sourceStorage = itemsHandle.sourceStorage() ?: return 0L
+        // When the destination is a Storage Card with configured filter rules,
+        // gate the insert on its [acceptsItem] check too. Direct `card:insert`
+        // calls respect the card's configuration so a script dumping a mixed
+        // bag into a logs-only card correctly leaves everything except logs
+        // in the source. Atomic path uses `tryMoveAll` whose predicate is
+        // `(String) -> Boolean`, so the per-stack `hasData` isn't visible
+        // there. We approximate by checking the rules + stackability gates
+        // and skipping the NBT gate for atomic moves; non-atomic uses
+        // `moveItemsVariant` which has full info.
+        val destCap = card.capability as? damien.nodeworks.card.StorageSideCapability
         if (atomic) {
+            val predicate: (String) -> Boolean = if (destCap != null) {
+                { matchesFilter(it, itemsHandle.filter) && destCap.acceptsItem(it) }
+            } else {
+                { matchesFilter(it, itemsHandle.filter) }
+            }
             val ok = try {
-                PlatformServices.storage.tryMoveAll(
-                    sourceStorage, destStorage,
-                    { matchesFilter(it, itemsHandle.filter) },
-                    requested
-                )
+                PlatformServices.storage.tryMoveAll(sourceStorage, destStorage, predicate, requested)
             } catch (_: Exception) {
                 false
             }
             return if (ok) requested else 0L
         }
+        val variantPredicate: (String, Boolean) -> Boolean = if (destCap != null) {
+            { id, hasData -> matchesFilter(id, itemsHandle.filter) && destCap.acceptsItem(id, hasData) }
+        } else {
+            { id, _ -> matchesFilter(id, itemsHandle.filter) }
+        }
         return try {
-            PlatformServices.storage.moveItems(
-                sourceStorage, destStorage,
-                { matchesFilter(it, itemsHandle.filter) },
-                requested
-            )
+            PlatformServices.storage.moveItemsVariant(sourceStorage, destStorage, variantPredicate, requested)
         } catch (_: Exception) {
             0L
         }

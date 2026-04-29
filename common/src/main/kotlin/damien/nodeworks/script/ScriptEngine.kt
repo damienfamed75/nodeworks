@@ -42,6 +42,16 @@ class ScriptEngine(
      *  Presets compare identity (`!==`) to decide when to re-resolve card names. */
     internal fun currentSnapshot(): NetworkSnapshot? = networkSnapshot
 
+    /** Discard the cached snapshot and rebuild it from a live walk of the
+     *  network. Called by [damien.nodeworks.script.preset.PresetBuilder.safeTick]
+     *  so long-running presets pick up Storage Card filter changes (and any
+     *  other card-NBT mutations) the player makes mid-script. Cheap on small
+     *  networks, ~O(n) on connectable count, fine to run once per preset
+     *  tick (presets default to 20-tick intervals = once per second). */
+    internal fun refreshSnapshot() {
+        networkSnapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
+    }
+
     /** Log an error through the terminal's log callback. Presets use this when
      *  a tick throws so the player sees the error without the preset unscheduling. */
     internal fun logError(msg: String) = logCallback(msg, true)
@@ -1351,15 +1361,18 @@ class ScriptEngine(
             }
         })
 
-        // network:route(alias, predicate), register a declarative storage route
-        // Items where predicate(itemsHandle) returns true go to that storage
-        routeTable = RouteTable(level, snapshot)
-        networkTable.set("route", object : ThreeArgFunction() {
-            override fun call(selfArg: LuaValue, aliasArg: LuaValue, predicateArg: LuaValue): LuaValue {
-                val alias = aliasArg.checkjstring()
-                val predicate = predicateArg.checkfunction()
-                routeTable?.addRoute(alias, predicate)
-                return LuaValue.NIL
+        // network:route(aliasPattern) → builder that configures matching
+        // Storage Cards' filter NBT directly. Replaces the pre-1.1 runtime
+        // routing predicate. Card filters are now the source of truth for
+        // routing decisions, so this method just sugars "set the rule list
+        // / mode / stack / nbt fields on every card whose alias matches."
+        // [routeTable] stays null, the storage helper falls through to the
+        // default priority-sorted insert.
+        routeTable = null
+        networkTable.set("route", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
+                val pattern = aliasArg.checkjstring()
+                return StorageCardConfigurator.createBuilder(level, snapshot, pattern)
             }
         })
 

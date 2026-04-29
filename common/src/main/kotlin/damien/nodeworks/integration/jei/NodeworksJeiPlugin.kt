@@ -8,6 +8,7 @@ import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.screen.ProcessingSetScreen
 import damien.nodeworks.screen.ProcessingSetScreenHandler
+import damien.nodeworks.screen.StorageCardScreen
 import mezz.jei.api.IModPlugin
 import mezz.jei.api.JeiPlugin
 import mezz.jei.api.constants.RecipeTypes
@@ -92,6 +93,10 @@ class NodeworksJeiPlugin : IModPlugin {
         registration.addGhostIngredientHandler(
             ProcessingSetScreen::class.java,
             ProcessingSetGhostHandler()
+        )
+        registration.addGhostIngredientHandler(
+            StorageCardScreen::class.java,
+            StorageCardGhostHandler()
         )
     }
 
@@ -334,6 +339,42 @@ class ProcessingSetGhostHandler : IGhostIngredientHandler<ProcessingSetScreen> {
             PlatformServices.clientNetworking.sendToServer(
                 SetProcessingApiSlotPayload(gui.menu.containerId, slotIndex, itemId)
             )
+        }
+    }
+}
+
+// ── Storage Card: ghost-ingredient drag from JEI onto the rule panel ──
+
+/**
+ * Lets a player drag an item from JEI anywhere onto the Storage Card's
+ * filter rule panel. The dropped item's id (e.g. `minecraft:oak_planks`) is
+ * appended as a new rule. Per the design, the entire panel is one drop
+ * target rather than one per row, so the player doesn't have to aim for a
+ * specific empty row to add a filter.
+ */
+class StorageCardGhostHandler : IGhostIngredientHandler<StorageCardScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: StorageCardScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val rect = gui.rulePanelDropArea() ?: return emptyList()
+        return listOf(StorageCardRuleTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
+    }
+
+    override fun onComplete() {}
+
+    private class StorageCardRuleTarget<I : Any>(
+        private val gui: StorageCardScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+        override fun getArea(): Rect2i = area
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
+            gui.acceptGhostItem(itemId)
         }
     }
 }

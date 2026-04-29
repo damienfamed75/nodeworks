@@ -30,6 +30,7 @@ class AutocompletePopup(
     private val itemIds: List<String> = emptyList(),
     private val fluidIds: List<String> = emptyList(),
     private val fluidTags: List<String> = emptyList(),
+    private val blockIds: List<String> = emptyList(),
     /** Effective aliases of every Breaker on the network (auto-alias `breaker_N` or
      *  GUI-set name). Used to narrow `network:get("name")` to BreakerHandle. */
     private val breakerAliases: List<String> = emptyList(),
@@ -1453,13 +1454,7 @@ class AutocompletePopup(
             )
             for (m in pattern.findAll(fullText)) {
                 val varName = m.groupValues[1]
-                val element = when (m.groupValues[2]) {
-                    "redstone" -> "RedstoneCard"
-                    "observer" -> "ObserverCard"
-                    "variable" -> "VariableHandle"
-                    "io", "storage" -> "CardHandle"
-                    else -> null
-                } ?: continue
+                val element = channelElementType(m.groupValues[2]) ?: continue
                 pairs[varName] = "HandleList<$element>"
             }
             handleListLocals = pairs
@@ -2189,6 +2184,14 @@ class AutocompletePopup(
             return lookupPropertyType(receiverType, field)?.trimEnd('?')
         }
 
+        // Method-call LHS: `breaker:block() == "|"`. The whole expression is
+        // the value being compared, so its return type is the operand type.
+        // Has to come before the bare-ident branch since trailing `)` doesn't
+        // match `\w+$`.
+        if (beforeOp.endsWith(")")) {
+            return resolveExpressionType(beforeOp)?.trimEnd('?')
+        }
+
         val bareMatch = TRAILING_BARE_IDENT.find(beforeOp)
         if (bareMatch != null && bareMatch.range.last == beforeOp.lastIndex) {
             return symbols[bareMatch.groupValues[1]]?.trimEnd('?')
@@ -2302,7 +2305,7 @@ class AutocompletePopup(
         "item-id" -> fuzzyStrings(partial, itemIds)
         "fluid-id" -> fuzzyStrings(partial, fluidIds)
         "tag-id" -> fuzzyStrings(partial, (itemTags + fluidTags).distinct())
-        "block-id" -> emptyList()
+        "block-id" -> fuzzyStrings(partial, blockIds)
         "craftable" -> fuzzyStrings(partial, craftableOutputs)
         "card-alias" -> {
             val labels = cards.map { it.effectiveAlias to it.capability.type }.distinct()

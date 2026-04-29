@@ -123,11 +123,17 @@ they're tracked by volume not stacks.
 
 <LuaCode>
 ```lua
-network:route("non_stackable_*", function(item: ItemsHandle)
-  return not item.stackable -- non-stackables go to a dedicated card
-end)
+for _, item in inputChest:findEach("*") do
+  if not item.stackable then
+    nonStackables:insert(item)
+  else
+    network:insert(item)
+  end
+end
 ```
 </LuaCode>
+
+Example of moving non-stacking items in another chest outside of your network
 
 ### maxStackSize
 
@@ -150,9 +156,13 @@ sorting "interesting" items away from plain bulk.
 
 <LuaCode>
 ```lua
-network:route("enchanted_loot", function(item: ItemsHandle)
-  return item.hasData -- enchanted gear, named tools, etc.
-end)
+for _, item in inputChest:findEach("*") do
+  if item.hasData then
+    enchantedItems:insert(item)
+  else
+    network:insert(item)
+  end
+end
 ```
 </LuaCode>
 
@@ -188,9 +198,13 @@ predicates and per-item branching without needing a full `:find` round-trip.
 
 <LuaCode>
 ```lua
-network:route("ores_only", function(item: ItemsHandle)
-  return item:matches("/_ore$/") -- regex, anything ending in "_ore"
-end)
+function smelt(item: ItemsHandle)
+  if item:matches("/_ore$/") then
+    machine:insert(item)
+    return
+  end
+  furnace:insert(item)
+end
 ```
 </LuaCode>
 

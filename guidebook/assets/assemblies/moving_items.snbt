@@ -1,0 +1,134 @@
+{
+    DataVersion: 4790,
+    size: [6, 1, 2],
+    data: [
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:chest{facing:north,type:single,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:io_card"
+                    }
+                ],
+                networkId: "1cef5c66-0c24-41ef-bf90-40bacd8d2979",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 4, 0, 0],
+                    [I; 2, 0, 1]
+                ]
+            }
+        },
+        {
+            pos: [2, 0, 1],
+            state: "nodeworks:terminal{facing:north}",
+            nbt: {
+                components: {},
+                autoRun: 0b,
+                layoutIndex: 0,
+                networkId: "1cef5c66-0c24-41ef-bf90-40bacd8d2979",
+                id: "nodeworks:terminal",
+                scripts: [
+                    {
+                        name: "main",
+                        text: ""
+                    }
+                ],
+                connections: [
+                    [I; 1, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [3, 0, 1],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "1cef5c66-0c24-41ef-bf90-40bacd8d2979",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                redstoneMode: 0,
+                connections: [
+                    [I; 4, 0, 0]
+                ],
+                networkColor: 5630138
+            }
+        },
+        {
+            pos: [4, 0, 0],
+            state: "nodeworks:node",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 45b,
+                        id: "nodeworks:io_card"
+                    }
+                ],
+                networkId: "1cef5c66-0c24-41ef-bf90-40bacd8d2979",
+                id: "nodeworks:node",
+                connections: [
+                    [I; 3, 0, 1],
+                    [I; 1, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [5, 0, 0],
+            state: "minecraft:shulker_box{facing:up}",
+            nbt: {
+                components: {},
+                id: "minecraft:shulker_box"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "minecraft:chest{facing:north,type:single,waterlogged:false}",
+        "nodeworks:node",
+        "nodeworks:terminal{facing:north}",
+        "nodeworks:network_controller",
+        "minecraft:shulker_box{facing:up}"
+    ]
+}

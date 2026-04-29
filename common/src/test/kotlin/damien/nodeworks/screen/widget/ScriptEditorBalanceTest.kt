@@ -97,6 +97,22 @@ class ScriptEditorBalanceTest {
     }
 
     @Test
+    fun shouldFireForNewOpenerNestedInsideForLoopWithExistingEnd() {
+        // The `for`'s `end` is at the for's indent; the user just typed an
+        // `if` deeper inside. Lua's LIFO grammar would silently let that
+        // existing `end` close the new `if`, leaving the for hanging. The
+        // editor treats the shallower-indent closer as belonging to the
+        // outer block and inserts a fresh `end` for the if.
+        val text = "scheduler:second(function()\n    for _, breaker in breakers:list() do\n        if true then\n    end\nend)"
+        val curLine = "        if true then"
+        val cursorPos = "scheduler:second(function()\n    for _, breaker in breakers:list() do\n        if true then".length
+        assertTrue(
+            LuaBlockBalance.shouldInsertAutoEnd(curLine, curLine.length, text, cursorPos),
+            "new opener nested deeper than next closer should still trigger auto-end",
+        )
+    }
+
+    @Test
     fun shouldNotFireOnFullScriptWithTwoBalancedIfBlocks() {
         val fullText = """
             local input = network:get("input")

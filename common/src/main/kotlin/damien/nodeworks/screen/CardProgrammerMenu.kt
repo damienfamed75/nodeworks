@@ -99,9 +99,16 @@ class CardProgrammerMenu(
         val template = getTemplate()
         if (template.isEmpty) return
 
-        // Copy priority (StorageCard)
+        // Copy priority + filter configuration (StorageCard). Filter mode,
+        // rule list, stackability gate, and NBT gate are all considered part
+        // of the card's "settings" alongside priority, so they always copy
+        // (no per-field toggle). The template is the source of truth.
         if (template.item is StorageCard && stack.item is StorageCard) {
             StorageCard.setPriority(stack, StorageCard.getPriority(template))
+            StorageCard.setFilterMode(stack, StorageCard.getFilterMode(template))
+            StorageCard.setFilterRules(stack, StorageCard.getFilterRules(template))
+            StorageCard.setStackabilityFilter(stack, StorageCard.getStackabilityFilter(template))
+            StorageCard.setNbtFilter(stack, StorageCard.getNbtFilter(template))
         }
 
         // Copy the template's name verbatim when the toggle is on.
