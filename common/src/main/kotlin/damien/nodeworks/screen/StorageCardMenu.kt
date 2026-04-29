@@ -37,9 +37,14 @@ class StorageCardMenu(
 
     /** Authoritative server-side filter rules. The screen's add/edit/delete
      *  affordances send mutations as [SetStorageCardFilterRulesPayload], the
-     *  server applies them here, and the next [removed] persists to NBT.
-     *  Mirrored on the client from [initialFilterRules] at open time, then
-     *  kept in sync by the same payloads (server-broadcast on change). */
+     *  server applies them here, and [removed] persists the final list to
+     *  NBT on close.
+     *
+     *  No S2C broadcast: the menu is opened off the player's held stack so
+     *  there's only one viewer. The client mirrors [initialFilterRules]
+     *  from the open payload, edits locally, and ships each commit to the
+     *  server. The server's copy here is the authoritative one to write
+     *  back, the client's copy is the editing buffer for the open session. */
     var filterRules: MutableList<String> = initialFilterRules.toMutableList()
         private set
 
@@ -139,12 +144,22 @@ class StorageCardMenu(
 
     override fun clickMenuButton(player: Player, id: Int): Boolean {
         when {
-            id == 0 -> { priorityData.set(0, (priorityData.get(0) - 1).coerceIn(0, 999)); dirty = true }
-            id == 1 -> { priorityData.set(0, (priorityData.get(0) + 1).coerceIn(0, 999)); dirty = true }
-            id in 100..1099 -> { priorityData.set(0, (id - 100).coerceIn(0, 999)); dirty = true } // direct value set
+            id == 0 -> {
+                priorityData.set(0, (priorityData.get(0) - 1).coerceIn(0, 999)); dirty = true
+            }
+
+            id == 1 -> {
+                priorityData.set(0, (priorityData.get(0) + 1).coerceIn(0, 999)); dirty = true
+            }
+
+            id in 100..1099 -> {
+                priorityData.set(0, (id - 100).coerceIn(0, 999)); dirty = true
+            } // direct value set
             // Channel picker uses ids 2000..2015, outside the priority range so the two
             // controls can't accidentally collide if one expands later.
-            id in 2000..2015 -> { channelData.set(0, id - 2000); dirty = true }
+            id in 2000..2015 -> {
+                channelData.set(0, id - 2000); dirty = true
+            }
             // 3000 = toggle filter mode (whitelist <-> blacklist).
             // 3001 = cycle stackability (any/stackable/non-stackable).
             // 3002 = cycle NBT (any/has-data/no-data).
@@ -183,7 +198,8 @@ class StorageCardMenu(
 
     companion object {
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: StorageCardOpenData): StorageCardMenu {
-            val hand = if (data.handOrdinal < InteractionHand.entries.size) InteractionHand.entries[data.handOrdinal] else null
+            val hand =
+                if (data.handOrdinal < InteractionHand.entries.size) InteractionHand.entries[data.handOrdinal] else null
             val mode = StorageCard.Companion.FilterMode.entries.getOrNull(data.filterMode)
                 ?: StorageCard.Companion.FilterMode.ALLOW
             val stackability = StorageCard.Companion.StackabilityFilter.entries.getOrNull(data.stackability)
