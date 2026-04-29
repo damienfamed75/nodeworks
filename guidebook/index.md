@@ -8,6 +8,12 @@ navigation:
 
 A programmable logistics and automation network.
 
+<GameScene zoom="3" interactive={false} paddingTop="30" paddingRight="30" paddingLeft="10">
+  <ImportStructure src="assets/assemblies/all.snbt" />
+  <IsometricCamera yaw="200" pitch="20" />
+  <RemoveBlocks id="minecraft:sandstone" />
+</GameScene>
+
 ## Sections
 
 - [Getting Started](./getting-started.md)
@@ -17,7 +23,7 @@ A programmable logistics and automation network.
 - [Example Setups](./example-setups/index.md)
 
 The Scripting Terminal's editor hovers any documented identifier with its signature and
-short description, pressing **G** while hovering opens the relevant page here.
+short description, pressing <Color id="green">[ <KeyBind id="key.nodeworks.open_docs" /> ]</Color> while hovering opens the relevant page here.
 
 See [docs/authoring.md](https://github.com/damienfamed75/nodeworks/blob/main/docs/authoring.md)
 for how to add to these docs.
