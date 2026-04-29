@@ -355,7 +355,7 @@ The pattern is a name with `*` as a wildcard. `cobblestone_*` matches `cobblesto
 ```lua
 network:route("cobblestone_*")
   :reset()
-  :rule("#minecraft:cobblestones")
+  :rule("#c:cobblestones")
   :noNbt()
   :allow()
 ```

@@ -103,7 +103,7 @@ consulted. Pick settings that make sense together.
 > 
 > **NBT:** Any
 > 
-> **Rules:** #minecraft:cobblestone
+> **Rules:** #c:cobblestone
 
 Accepts any cobblestone in the `#c:cobblestones` tag
 

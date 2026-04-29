@@ -124,7 +124,7 @@ they're tracked by volume not stacks.
 <LuaCode>
 ```lua
 for _, item in inputChest:findEach("*") do
-  if item.stackable then
+  if not item.stackable then
     nonStackables:insert(item)
   else
     network:insert(item)
