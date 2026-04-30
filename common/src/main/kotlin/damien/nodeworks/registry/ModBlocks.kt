@@ -183,7 +183,7 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
             .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.AMETHYST_CLUSTER)
-            .strength(1.5f).lightLevel { 5 }
+            .strength(1.5f).lightLevel { 14 }
             .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
     ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(7.0f, 3.0f, props) }
 
@@ -191,7 +191,7 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
             .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.LARGE_AMETHYST_BUD)
-            .strength(1.5f).lightLevel { 4 }
+            .strength(1.5f).lightLevel { 11 }
             .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
     ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(5.0f, 3.0f, props) }
 
@@ -199,7 +199,7 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
             .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.MEDIUM_AMETHYST_BUD)
-            .strength(1.5f).lightLevel { 2 }
+            .strength(1.5f).lightLevel { 7 }
             .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
     ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(4.0f, 3.0f, props) }
 
@@ -207,7 +207,7 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .mapColor(net.minecraft.world.level.material.MapColor.COLOR_LIGHT_BLUE)
             .forceSolidOn().noOcclusion().sound(net.minecraft.world.level.block.SoundType.SMALL_AMETHYST_BUD)
-            .strength(1.5f).lightLevel { 1 }
+            .strength(1.5f).lightLevel { 4 }
             .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
     ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(3.0f, 4.0f, props) }
 
