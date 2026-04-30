@@ -1146,6 +1146,14 @@ class InventoryTerminalScreen(
             return true
         }
 
+        // Right-click search bar = clear + focus, so a player can chain queries
+        // without manually selecting and deleting the prior text first.
+        if (button == 1 && mx >= searchX && mx < searchX + searchW && my >= searchY && my < searchY + SEARCH_H) {
+            searchBox.value = ""
+            setFocused(searchBox)
+            return true
+        }
+
         // Crafting utility buttons are SlicedButton widgets, click handled automatically
 
         // Double-click collect check
@@ -1243,6 +1251,7 @@ class InventoryTerminalScreen(
                         PlatformServices.clientNetworking.sendToServer(
                             damien.nodeworks.network.CraftQueueExtractPayload(menu.containerId, slot.id, action)
                         )
+                        unfocusSearchBox()
                     }
                 }
                 return true
@@ -1272,6 +1281,7 @@ class InventoryTerminalScreen(
                     PlatformServices.clientNetworking.sendToServer(
                         InvTerminalClickPayload(menu.containerId, entry.info.itemId, action, kind = 1)
                     )
+                    unfocusSearchBox()
                 }
                 return true
             }
@@ -1284,6 +1294,7 @@ class InventoryTerminalScreen(
                 PlatformServices.clientNetworking.sendToServer(
                     InvTerminalClickPayload(menu.containerId, entry.info.itemId, action)
                 )
+                unfocusSearchBox()
                 return true
             } else if (!menu.carried.isEmpty) {
                 val insertAction = if (button == 1) 4 else 1  // right=one, left=all
@@ -1346,7 +1357,7 @@ class InventoryTerminalScreen(
         // Deselect search if clicking elsewhere
         if (searchBox.isFocused) {
             if (!(mx >= searchX && mx < searchX + searchW && my >= searchY && my < searchY + SEARCH_H)) {
-                searchBox.isFocused = false
+                unfocusSearchBox()
             }
         }
 
@@ -1490,7 +1501,7 @@ class InventoryTerminalScreen(
 
         if (searchBox.isFocused) {
             if (keyCode == InputConstants.KEY_ESCAPE) {
-                searchBox.isFocused = false
+                unfocusSearchBox()
                 return true
             }
             return searchBox.keyPressed(event)
@@ -1530,6 +1541,15 @@ class InventoryTerminalScreen(
     }
 
     // ========== Slot Helpers ==========
+
+    /** Drop the search field's focus, also clearing the screen-level tracker
+     *  when it was pointing here. Without the `setFocused(null)` route, vanilla's
+     *  same-target equality check on `setFocused(child)` will skip re-focusing
+     *  on the next click and the field becomes silently unclickable. */
+    private fun unfocusSearchBox() {
+        if (!searchBox.isFocused) return
+        if (focused === searchBox) setFocused(null) else searchBox.isFocused = false
+    }
 
     /** Find the crafting input slot index (0-8) at the mouse position, or -1. */
     private fun getCraftSlotAt(mx: Int, my: Int): Int {

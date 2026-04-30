@@ -1223,7 +1223,7 @@ class InventoryTerminalMenu(
 
     override fun removed(player: Player) {
         super.removed(player)
-        clearContainer(player, craftingContainer)
+        drainCraftingGridOnClose(player)
         // Mark completed queue entries as seen so they're cleared on next open
         val queue = CraftQueueManager.getQueue(player.uuid)
         for (entry in queue) {
@@ -1231,6 +1231,34 @@ class InventoryTerminalMenu(
                 entry.seenComplete = true
             }
         }
+    }
+
+    /** Empty the 3x3 crafting grid on close, preferring the network's storage
+     *  cards over the player's inventory so staged ingredients don't pile up
+     *  in the hotbar.
+     *
+     *  Pre-pass shrinks each grid slot by what the network accepts. Then
+     *  vanilla [clearContainer] handles the rest, which is what we need:
+     *  re-implementing the player-inventory side ourselves loses the
+     *  `ClientboundContainerSetSlotPacket(-2, ...)` sync that
+     *  `placeItemBackInInventory` emits, and [transferState] then ships the
+     *  pre-drain `remoteSlots` snapshot to the inventory menu, painting
+     *  ghost items in the hotbar until the next open re-syncs. */
+    private fun drainCraftingGridOnClose(player: Player) {
+        val lvl = serverLevel
+        val snap = snapshot
+        if (lvl != null && snap != null) {
+            for (i in 0 until craftingContainer.containerSize) {
+                val stack = craftingContainer.getItem(i)
+                if (stack.isEmpty) continue
+                val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack)
+                if (inserted > 0) {
+                    stack.shrink(inserted)
+                    if (stack.isEmpty) craftingContainer.setItem(i, ItemStack.EMPTY)
+                }
+            }
+        }
+        clearContainer(player, craftingContainer)
     }
 
     /**
