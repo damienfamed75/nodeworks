@@ -3,6 +3,8 @@ package damien.nodeworks.screen
 import damien.nodeworks.card.CardChannel
 import damien.nodeworks.card.NodeCard
 import damien.nodeworks.registry.ModScreenHandlers
+import net.minecraft.core.component.DataComponents
+import net.minecraft.network.chat.Component
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
@@ -26,6 +28,7 @@ class CardSettingsMenu(
     syncId: Int,
     playerInventory: Inventory,
     private val hand: InteractionHand?,
+    val initialName: String = "",
 ) : AbstractContainerMenu(ModScreenHandlers.CARD_SETTINGS, syncId) {
 
     /** Slot 0: the dye color ordinal (0..15). Defaults to white when no card is held. */
@@ -37,6 +40,16 @@ class CardSettingsMenu(
             channelData.set(0, CardChannel.get(stack).id)
         }
         addDataSlots(channelData)
+    }
+
+    /** Apply a player-supplied name to the held card. Empty / blank input
+     *  clears [DataComponents.CUSTOM_NAME] so the card reverts to its
+     *  translated item name. */
+    fun setCardName(player: Player, name: String) {
+        if (hand == null) return
+        val stack = player.getItemInHand(hand)
+        if (stack.item !is NodeCard) return
+        applyCardName(stack, name)
     }
 
     fun getChannel(): DyeColor =
@@ -74,7 +87,18 @@ class CardSettingsMenu(
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: CardSettingsOpenData): CardSettingsMenu {
             val hand = if (data.handOrdinal < InteractionHand.entries.size)
                 InteractionHand.entries[data.handOrdinal] else null
-            return CardSettingsMenu(syncId, playerInventory, hand)
+            return CardSettingsMenu(syncId, playerInventory, hand, data.cardName)
         }
+    }
+}
+
+/** Shared rename helper for card settings menus. Trims, length-caps, and
+ *  either writes [DataComponents.CUSTOM_NAME] or clears it on blank input. */
+internal fun applyCardName(stack: ItemStack, name: String) {
+    val trimmed = name.trim().take(CardSettingsOpenData.MAX_NAME_LENGTH)
+    if (trimmed.isEmpty()) {
+        stack.remove(DataComponents.CUSTOM_NAME)
+    } else {
+        stack.set(DataComponents.CUSTOM_NAME, Component.literal(trimmed))
     }
 }

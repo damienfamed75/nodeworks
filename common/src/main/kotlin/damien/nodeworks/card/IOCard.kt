@@ -3,6 +3,7 @@ package damien.nodeworks.card
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.CardSettingsOpenData
 import damien.nodeworks.screen.CardSettingsMenu
+import net.minecraft.core.component.DataComponents
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
@@ -32,12 +33,14 @@ class IOCard(properties: Properties) : NodeCard(properties) {
 internal fun openCardSettings(level: Level, player: Player, hand: InteractionHand): InteractionResult {
     if (level.isClientSide) return InteractionResult.SUCCESS
     val serverPlayer = player as ServerPlayer
+    val stack = serverPlayer.getItemInHand(hand)
+    val cardName = stack.get(DataComponents.CUSTOM_NAME)?.string.orEmpty()
     PlatformServices.menu.openExtendedMenu(
         serverPlayer,
         Component.translatable("container.nodeworks.card_settings"),
-        CardSettingsOpenData(hand.ordinal),
+        CardSettingsOpenData(hand.ordinal, cardName),
         CardSettingsOpenData.STREAM_CODEC,
-        { syncId, inv, _ -> CardSettingsMenu(syncId, inv, hand) },
+        { syncId, inv, _ -> CardSettingsMenu(syncId, inv, hand, cardName) },
     )
     return InteractionResult.CONSUME
 }

@@ -713,3 +713,28 @@ data class SetStorageCardFilterRulesPayload(val containerId: Int, val rules: Lis
     }
     override fun type() = TYPE
 }
+
+/**
+ * C2S: Rename the held card from its settings GUI. Server-side handler walks
+ * `player.containerMenu` and writes the new name onto the held stack via the
+ * menu's own `setCardName` helper, an empty string clears the name back to the
+ * translated item name. Sent by both [StorageCardScreen] and [CardSettingsScreen].
+ */
+data class SetCardNamePayload(val containerId: Int, val name: String) : CustomPacketPayload {
+    companion object {
+        /** Mirrors [damien.nodeworks.screen.CardSettingsOpenData.MAX_NAME_LENGTH]. */
+        const val MAX_NAME_LENGTH = 50
+
+        val TYPE: CustomPacketPayload.Type<SetCardNamePayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "set_card_name")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, SetCardNamePayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                buf.writeUtf(p.name.take(MAX_NAME_LENGTH), MAX_NAME_LENGTH)
+            },
+            { buf -> SetCardNamePayload(buf.readVarInt(), buf.readUtf(MAX_NAME_LENGTH)) }
+        )
+    }
+    override fun type() = TYPE
+}
