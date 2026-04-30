@@ -64,10 +64,19 @@ class InstructionSetScreen(
         private const val CLEAR_BTN_X = 16
         private const val CLEAR_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - CLEAR_BTN_SIZE) / 2
 
+        // Substitutions toggle, sits directly above the [x] button with a 2px
+        // vertical gap so the two buttons read as a related pair.
+        private const val SUBST_BTN_SIZE = 14
+        private const val SUBST_BTN_X = CLEAR_BTN_X
+        private const val SUBST_BTN_Y = CLEAR_BTN_Y - SUBST_BTN_SIZE - 2
+        private const val SUBST_ICON_SIZE = 9
+
         private const val WHITE = 0xFFFFFFFF.toInt()
 
         /** Menu-button ID sent to the server to clear the 3x3 recipe grid. */
         const val BTN_ID_CLEAR_GRID = 0
+        /** Menu-button ID sent to the server to toggle the substitutions flag. */
+        const val BTN_ID_TOGGLE_SUBSTITUTIONS = 1
 
         private val BG_TEXTURE = Identifier.fromNamespaceAndPath(
             "nodeworks", "textures/gui/instruction_set_bg.png"
@@ -79,8 +88,23 @@ class InstructionSetScreen(
         titleLabelY = -9999
     }
 
+    /** Hover tooltip queued during [extractBackground]'s button rendering and
+     *  drawn after the rest of the GUI in [extractRenderState], so it overlays
+     *  on top of every other layer. Mirrors the pattern in StorageCardScreen. */
+    private val pendingTooltipLines: MutableList<Component> = mutableListOf()
+    private var pendingTooltipX: Int = 0
+    private var pendingTooltipY: Int = 0
+
+    private fun queueTooltip(mouseX: Int, mouseY: Int, vararg lines: String) {
+        pendingTooltipLines.clear()
+        for (line in lines) pendingTooltipLines.add(Component.literal(line))
+        pendingTooltipX = mouseX
+        pendingTooltipY = mouseY
+    }
+
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
+        pendingTooltipLines.clear()
         val x = leftPos
         val y = topPos
 
@@ -110,6 +134,31 @@ class InstructionSetScreen(
             clearX + (clearDrawW - 5) / 2,
             clearY + (clearDrawH - 5) / 2,
             5, 5, WHITE)
+        if (clearHover) queueTooltip(mouseX, mouseY, "Clear grid")
+
+        // Substitutions toggle. Icon reflects the server-synced flag from
+        // [substitutionsData] so it stays in sync without bespoke payloads.
+        val substX = x + SUBST_BTN_X
+        val substY = y + SUBST_BTN_Y
+        val substDrawW = SUBST_BTN_SIZE - 1
+        val substDrawH = SUBST_BTN_SIZE - 1
+        val substHover = mouseX in substX until substX + SUBST_BTN_SIZE && mouseY in substY until substY + SUBST_BTN_SIZE
+        (if (substHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, substX, substY, substDrawW, substDrawH)
+        val substIcon = if (menu.getSubstitutions()) Icons.SUBSTITUTIONS_ON else Icons.SUBSTITUTIONS_OFF
+        substIcon.drawTopLeft(
+            graphics,
+            substX + (substDrawW - SUBST_ICON_SIZE) / 2,
+            substY + (substDrawH - SUBST_ICON_SIZE) / 2,
+            SUBST_ICON_SIZE, SUBST_ICON_SIZE,
+        )
+        if (substHover) {
+            queueTooltip(
+                mouseX, mouseY,
+                "Substitutions: ${if (menu.getSubstitutions()) "On" else "Off"}",
+                "Allow tag substitutions (e.g. any plank type).",
+                "Click to toggle.",
+            )
+        }
 
         // Player inventory, separate panel.
         NineSlice.WINDOW_FRAME.draw(graphics, x, y + INV_PANEL_Y, FRAME_W, INV_PANEL_H)
@@ -130,6 +179,12 @@ class InstructionSetScreen(
                 Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, BTN_ID_CLEAR_GRID)
                 return true
             }
+            val substX = leftPos + SUBST_BTN_X
+            val substY = topPos + SUBST_BTN_Y
+            if (mx in substX until substX + SUBST_BTN_SIZE && my in substY until substY + SUBST_BTN_SIZE) {
+                Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, BTN_ID_TOGGLE_SUBSTITUTIONS)
+                return true
+            }
         }
         return super.mouseClicked(event, doubleClick)
     }
@@ -145,7 +200,8 @@ class InstructionSetScreen(
                 graphics.fillGradient(sx, sy, sx + 16, sy + 16, GHOST_OVERLAY, GHOST_OVERLAY)
             }
         }
-        // 26.1: tooltip rendering is handled automatically by ACS's extractRenderState
-        // pipeline (extractTooltip → setTooltipForNextFrame). No explicit call needed.
+        if (pendingTooltipLines.isNotEmpty()) {
+            graphics.renderComponentTooltip(font, pendingTooltipLines, pendingTooltipX, pendingTooltipY)
+        }
     }
 }

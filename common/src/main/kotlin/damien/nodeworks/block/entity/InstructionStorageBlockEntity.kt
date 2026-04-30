@@ -55,7 +55,8 @@ class InstructionStorageBlockEntity(
             val recipe = InstructionSet.getRecipe(stack)
             val output = InstructionSet.getOutput(stack)
             val alias = stack.hoverName.string.takeIf { it != "Instruction Set" }
-            result.add(InstructionSetInfo(recipe, output, alias, i))
+            val subs = InstructionSet.getSubstitutions(stack)
+            result.add(InstructionSetInfo(recipe, output, alias, i, subs))
         }
         return result
     }
@@ -92,7 +93,11 @@ class InstructionStorageBlockEntity(
         val recipe: List<String>,
         val outputItemId: String,
         val alias: String?,
-        val slotIndex: Int
+        val slotIndex: Int,
+        /** When true the planner expands recipe ingredients via the live recipe's
+         *  `Ingredient` predicate and may swap exemplar items for any acceptable
+         *  alternative the network has in stock. */
+        val allowSubstitutions: Boolean = true,
     )
 
     // --- Connectable ---

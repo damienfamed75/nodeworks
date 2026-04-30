@@ -36,12 +36,13 @@ class InstructionSet(properties: Properties) : Item(properties) {
 
         val stack = player.getItemInHand(hand)
         val recipe = getRecipe(stack)
+        val subs = getSubstitutions(stack)
         val serverPlayer = player as ServerPlayer
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.instruction_set"),
-            InstructionSetOpenData(BlockPos.ZERO, -1, -1, recipe),
+            InstructionSetOpenData(BlockPos.ZERO, -1, -1, recipe, subs),
             InstructionSetOpenData.STREAM_CODEC,
             { syncId, inv, p -> InstructionSetScreenHandler.createHandheld(syncId, inv, hand, stack) }
         )
@@ -82,6 +83,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
     companion object {
         private const val RECIPE_KEY = "recipe"
         private const val OUTPUT_KEY = "output"
+        private const val SUBSTITUTIONS_KEY = "allowSubstitutions"
 
         fun getRecipe(stack: ItemStack): List<String> {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return List(9) { "" }
@@ -96,7 +98,16 @@ class InstructionSet(properties: Properties) : Item(properties) {
             return customData.copyTag().getStringOr(OUTPUT_KEY, "")
         }
 
-        fun setRecipe(stack: ItemStack, recipe: List<String>, output: String = "") {
+        /** Whether the instruction set should accept tag substitutions for its
+         *  ingredients (e.g. any plank in `#minecraft:planks` for a chest
+         *  recipe). Defaults to true, so a fresh card and any older saved card
+         *  without the field both behave as substitution-enabled. */
+        fun getSubstitutions(stack: ItemStack): Boolean {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return true
+            return customData.copyTag().getBooleanOr(SUBSTITUTIONS_KEY, true)
+        }
+
+        fun setRecipe(stack: ItemStack, recipe: List<String>, output: String = "", allowSubstitutions: Boolean = true) {
             require(recipe.size == 9)
             val tag = CompoundTag()
             val list = ListTag()
@@ -105,6 +116,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
             }
             tag.put(RECIPE_KEY, list)
             tag.putString(OUTPUT_KEY, output)
+            tag.putBoolean(SUBSTITUTIONS_KEY, allowSubstitutions)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
     }
