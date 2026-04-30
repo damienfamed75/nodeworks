@@ -208,6 +208,10 @@ class InventoryTerminalScreen(
 
     override fun init() {
         super.init()
+        // JEI's recipe view overlays this screen via setScreen, so the
+        // recipe-transfer handler can't reach the live terminal through
+        // `Minecraft.getInstance().screen` and reads through here instead.
+        activeScreen = this
         computeLayout()
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
@@ -1671,5 +1675,13 @@ class InventoryTerminalScreen(
             count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
             else -> count.toString()
         }
+    }
+
+    companion object {
+        /** Set in [init] so the JEI recipe-transfer handler can read this
+         *  screen's [repo]. Never cleared, callers validate by checking
+         *  `activeScreen?.menu === menu` before trusting the reference. */
+        var activeScreen: InventoryTerminalScreen? = null
+            private set
     }
 }

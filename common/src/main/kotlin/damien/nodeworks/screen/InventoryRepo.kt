@@ -128,6 +128,18 @@ class InventoryRepo {
         }
     }
 
+    /** Sum network stock for the given item id across every non-fluid
+     *  entry. Used by the JEI handler's missing-ingredient probe so the
+     *  caller doesn't have to walk the entry map. */
+    fun countItem(itemId: String): Long {
+        var total = 0L
+        for (entry in entries.values) {
+            if (entry.isFluid) continue
+            if (entry.info.itemId == itemId) total += entry.info.count
+        }
+        return total
+    }
+
     /** Rebuild the filtered/sorted view if dirty. Call once per frame before reading view. */
     fun ensureUpdated() {
         if (viewDirty) {

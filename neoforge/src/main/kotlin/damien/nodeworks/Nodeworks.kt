@@ -371,7 +371,7 @@ class Nodeworks(modBus: IEventBus) {
                 val player = context.player()
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
-                    menu.handleCraftGridFill(player, payload.grid)
+                    menu.handleCraftGridFill(player, payload.recipeId, payload.fallback)
                 }
             }
         }

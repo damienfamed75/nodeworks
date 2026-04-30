@@ -12,7 +12,9 @@ import damien.nodeworks.screen.StorageCardScreen
 import mezz.jei.api.IModPlugin
 import mezz.jei.api.JeiPlugin
 import mezz.jei.api.constants.RecipeTypes
+import mezz.jei.api.gui.builder.ITooltipBuilder
 import mezz.jei.api.gui.handlers.IGhostIngredientHandler
+import mezz.jei.api.gui.ingredient.IRecipeSlotView
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView
 import mezz.jei.api.ingredients.ITypedIngredient
 import mezz.jei.api.recipe.RecipeIngredientRole
@@ -27,6 +29,8 @@ import mezz.jei.api.registration.IRecipeCategoryRegistration
 import mezz.jei.api.registration.IRecipeRegistration
 import mezz.jei.api.registration.IRecipeTransferRegistration
 import mezz.jei.api.registration.ISubtypeRegistration
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.network.chat.Component
 import net.minecraft.client.renderer.Rect2i
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
@@ -150,24 +154,130 @@ class InventoryTerminalTransferHandler :
         maxTransfer: Boolean,
         doTransfer: Boolean
     ): IRecipeTransferError? {
+        val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
         if (doTransfer) {
-            val grid = Array(9) { "" }
-            val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
-            for ((index, slotView) in inputSlots.withIndex()) {
-                if (index >= 9) break
-                val displayed = slotView.displayedIngredient
-                if (displayed.isPresent) {
-                    val ingredient = displayed.get().ingredient
-                    if (ingredient is ItemStack && !ingredient.isEmpty) {
-                        grid[index] = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: ""
+            // (kinda grabbed from AE2, thank you for having this, don't kill me :pray:)
+            // Ship the recipe id and per-slot displayed-stack
+            // fallback. Server re-resolves the recipe to get the full
+            // tag-expanded `Ingredient` list, so we don't enumerate every
+            // accepted item over the wire. RecipeHolder.id is a
+            // `ResourceKey<Recipe<?>>` in 26.1, the server rebuilds the key
+            // from the flattened identifier.
+            val fallback = (0 until 9).map { idx ->
+                val slot = inputSlots.getOrNull(idx) ?: return@map ""
+                val displayed = slot.displayedIngredient.orElse(null)?.ingredient as? ItemStack
+                if (displayed == null || displayed.isEmpty) "" else
+                    BuiltInRegistries.ITEM.getKey(displayed.item)?.toString().orEmpty()
+            }
+            PlatformServices.clientNetworking.sendToServer(
+                damien.nodeworks.network.InvTerminalCraftGridPayload(
+                    container.containerId,
+                    recipe.id.identifier(),
+                    fallback,
+                )
+            )
+        }
+
+        // Probe missing on every call so the [+] button gets the cosmetic
+        // red highlight on hover. Returning a COSMETIC error keeps the
+        // button clickable, the player can still queue a partial transfer.
+        val missing = findMissingInputs(container, player, inputSlots)
+        return if (missing.isEmpty()) null else MissingIngredientsError(missing)
+    }
+
+    /** For each recipe input slot, decide whether any of its accepted items
+     *  can be sourced from the player's inventory, the crafting grid the
+     *  [+] would overwrite, or the network. Greedy first-fit with running
+     *  availability so one stack doesn't satisfy multiple slots. */
+    private fun findMissingInputs(
+        menu: damien.nodeworks.screen.InventoryTerminalMenu,
+        player: Player,
+        inputSlots: List<IRecipeSlotView>,
+    ): List<IRecipeSlotView> {
+        if (inputSlots.isEmpty()) return emptyList()
+
+        val available = HashMap<String, Long>()
+        for (i in 0 until player.inventory.containerSize) {
+            val stack = player.inventory.getItem(i)
+            if (stack.isEmpty) continue
+            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            available.merge(id, stack.count.toLong(), Long::plus)
+        }
+        for (i in 0 until 9) {
+            val stack = menu.craftingContainer.getItem(i)
+            if (stack.isEmpty) continue
+            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            available.merge(id, stack.count.toLong(), Long::plus)
+        }
+        // Only query the repo for ids the recipe mentions, so a huge
+        // network doesn't pay for every stored item id every probe.
+        val screen = damien.nodeworks.screen.InventoryTerminalScreen.activeScreen
+        if (screen != null && screen.menu === menu) {
+            val sampled = HashSet<String>()
+            for (slot in inputSlots) {
+                slot.getItemStacks().forEach { stack ->
+                    val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return@forEach
+                    if (sampled.add(id)) {
+                        val networkCount = screen.repo.countItem(id)
+                        if (networkCount > 0) available.merge(id, networkCount, Long::plus)
                     }
                 }
             }
-            PlatformServices.clientNetworking.sendToServer(
-                damien.nodeworks.network.InvTerminalCraftGridPayload(container.containerId, grid.toList())
-            )
         }
-        return null
+
+        val missing = mutableListOf<IRecipeSlotView>()
+        for (slot in inputSlots) {
+            val candidates = slot.getItemStacks().toList()
+            if (candidates.isEmpty()) continue  // no-ingredient slot, doesn't count as missing
+            var satisfied = false
+            for (stack in candidates) {
+                val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+                val have = available[id] ?: 0L
+                if (have >= stack.count) {
+                    available[id] = have - stack.count
+                    satisfied = true
+                    break
+                }
+            }
+            if (!satisfied) missing.add(slot)
+        }
+        return missing
+    }
+}
+
+/** Cosmetic transfer error that highlights missing recipe slots in red
+ *  without disabling the [+] button, mirrors vanilla's crafting-table UX. */
+private class MissingIngredientsError(
+    private val missingSlots: List<IRecipeSlotView>,
+) : IRecipeTransferError {
+    override fun getType(): IRecipeTransferError.Type = IRecipeTransferError.Type.COSMETIC
+
+    override fun showError(
+        guiGraphics: GuiGraphicsExtractor,
+        mouseX: Int,
+        mouseY: Int,
+        recipeSlotsView: IRecipeSlotsView,
+        recipeX: Int,
+        recipeY: Int,
+    ) {
+        // `drawHighlight` paints at the slot's recipe-local coordinates, so
+        // we translate to the recipe origin first or every overlay lands at
+        // (0, 0) of the window. Pop after so the shift doesn't leak.
+        guiGraphics.pose().pushMatrix()
+        guiGraphics.pose().translate(recipeX.toFloat(), recipeY.toFloat())
+        for (slot in missingSlots) slot.drawHighlight(guiGraphics, MISSING_COLOR)
+        guiGraphics.pose().popMatrix()
+    }
+
+    override fun getTooltip(tooltip: ITooltipBuilder) {
+        tooltip.add(Component.translatable("tooltip.nodeworks.missing_ingredients"))
+    }
+
+    override fun getMissingCountHint(): Int = missingSlots.size
+
+    companion object {
+        /** Semi-transparent red wash, matches JEI's default error overlay. */
+        private const val MISSING_COLOR: Int = 0x66FF0000.toInt()
     }
 }
 

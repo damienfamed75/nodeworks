@@ -142,14 +142,34 @@ data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val
 
 /**
  * C2S: Fill the Inventory Terminal crafting grid with a recipe from JEI.
- * grid: 9 item IDs (empty string = empty slot)
+ * Carries the recipe id (so the server can re-resolve the authoritative
+ * `Ingredient` list with full tag expansion) plus per-slot fallback item
+ * ids for JEI synthetic recipes that have no registry id. Pattern lifted
+ * from AE2's `FillCraftingGridFromRecipePacket`.
  */
-data class InvTerminalCraftGridPayload(val containerId: Int, val grid: List<String>) : CustomPacketPayload {
+data class InvTerminalCraftGridPayload(
+    val containerId: Int,
+    val recipeId: Identifier?,
+    val fallback: List<String>,
+) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<InvTerminalCraftGridPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_craft_grid"))
         val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalCraftGridPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeVarInt(p.containerId); for (id in p.grid) buf.writeUtf(id, 256) },
-            { buf -> InvTerminalCraftGridPayload(buf.readVarInt(), (0 until 9).map { buf.readUtf(256) }) }
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                val recipeId = p.recipeId
+                buf.writeBoolean(recipeId != null)
+                if (recipeId != null) buf.writeUtf(recipeId.toString(), 256)
+                for (slotIdx in 0 until 9) {
+                    buf.writeUtf(p.fallback.getOrNull(slotIdx).orEmpty(), 256)
+                }
+            },
+            { buf ->
+                val containerId = buf.readVarInt()
+                val recipeId = if (buf.readBoolean()) Identifier.tryParse(buf.readUtf(256)) else null
+                val fallback = (0 until 9).map { buf.readUtf(256) }
+                InvTerminalCraftGridPayload(containerId, recipeId, fallback)
+            }
         )
     }
     override fun type() = TYPE
