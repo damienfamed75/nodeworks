@@ -179,7 +179,9 @@ data class InvTerminalCraftGridPayload(
 
 /**
  * C2S: Crafting grid utility action.
- * action 0 = distribute/balance items evenly, 1 = clear grid to network
+ * action 0 = distribute/balance items evenly across same-type slots,
+ *        1 = clear grid to network,
+ *        2 = toggle the server's auto-pull flag for the menu.
  */
 data class InvTerminalCraftGridActionPayload(val containerId: Int, val action: Int) : CustomPacketPayload {
     companion object {

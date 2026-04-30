@@ -231,10 +231,12 @@ class InventoryTerminalScreen(
         networkGrid.stackProvider = { slot -> getItemStackForNetworkSlot(slot.index) }
         networkGrid.countFormatter = { slot -> getCountForNetworkSlot(slot.index) }
 
-        // Crafting area position, centered in window
+        // Crafting area position, centered in window. Bias right by 8px to
+        // visually balance the side-button column (collapse + 3 util buttons)
+        // that sits to the left of the 3x3 grid.
         val craftAreaH = if (craftingCollapsed) CRAFT_COLLAPSED_H else CRAFT_H
         val craftTotalW = 3 * 18 + 16 + 18 // 3x3 grid + arrow gap + output slot
-        craftX = leftPos + (imageWidth - craftTotalW) / 2
+        craftX = leftPos + (imageWidth - craftTotalW) / 2 + 8
         craftY = gridY + layout.rows * SLOT_SIZE + GRID_PAD
 
         // Player inventory grids, centered in window
@@ -375,14 +377,11 @@ class InventoryTerminalScreen(
             val ubW = 16
             val ubH = 16
 
-            // Auto-pull toggle (persists client-side + syncs to server)
-            val autoPullIcon = if (ClientConfig.invTerminalAutoPull) Icons.AUTO_PULL_ON else Icons.AUTO_PULL_OFF
-            addRenderableWidget(SlicedButton.create(ubX, craftY + 1, ubW, ubH, "", autoPullIcon) { _ ->
-                ClientConfig.invTerminalAutoPull = !ClientConfig.invTerminalAutoPull
+            // Clear to network
+            addRenderableWidget(SlicedButton.create(ubX, craftY + 1, ubW, ubH, "", Icons.CRAFTING_GRID_CLEAR) { _ ->
                 PlatformServices.clientNetworking.sendToServer(
-                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 2)
+                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 1)
                 )
-                rebuildWidgets()
             })
 
             // Distribute/balance
@@ -392,11 +391,14 @@ class InventoryTerminalScreen(
                 )
             })
 
-            // Clear to network
-            addRenderableWidget(SlicedButton.create(ubX, craftY + 37, ubW, ubH, "", Icons.CRAFTING_GRID_CLEAR) { _ ->
+            // Auto-pull toggle (persists client-side + syncs to server)
+            val autoPullIcon = if (ClientConfig.invTerminalAutoPull) Icons.AUTO_PULL_ON else Icons.AUTO_PULL_OFF
+            addRenderableWidget(SlicedButton.create(ubX, craftY + 37, ubW, ubH, "", autoPullIcon) { _ ->
+                ClientConfig.invTerminalAutoPull = !ClientConfig.invTerminalAutoPull
                 PlatformServices.clientNetworking.sendToServer(
-                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 1)
+                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 2)
                 )
+                rebuildWidgets()
             })
         }
     }
@@ -512,7 +514,7 @@ class InventoryTerminalScreen(
 
         // Crafting collapse toggle, to the left of the crafting area
         val collapseIcon = if (craftingCollapsed) Icons.EXPAND_IDLE else Icons.COLLAPSE_IDLE
-        collapseIcon.draw(graphics, craftX - 30, craftY + 1)
+        collapseIcon.draw(graphics, craftX - 36, craftY + 1)
 
         // Utility buttons are SlicedButton widgets, rendered automatically
 
@@ -910,12 +912,12 @@ class InventoryTerminalScreen(
                 val ubH = 16
                 if (mouseX >= ubX && mouseX < ubX + ubW) {
                     val tip = when {
-                        mouseY >= craftY + 1 && mouseY < craftY + 1 + ubH -> {
+                        mouseY >= craftY + 1 && mouseY < craftY + 1 + ubH -> "Clear to network"
+                        mouseY >= craftY + 19 && mouseY < craftY + 19 + ubH -> "Distribute evenly"
+                        mouseY >= craftY + 37 && mouseY < craftY + 37 + ubH -> {
                             val state = if (damien.nodeworks.config.ClientConfig.invTerminalAutoPull) "On" else "Off"
                             "Auto-pull: $state"
                         }
-                        mouseY >= craftY + 19 && mouseY < craftY + 19 + ubH -> "Distribute evenly"
-                        mouseY >= craftY + 37 && mouseY < craftY + 37 + ubH -> "Clear to network"
                         else -> null
                     }
                     if (tip != null) {
@@ -1144,8 +1146,8 @@ class InventoryTerminalScreen(
             return true
         }
 
-        // Crafting collapse toggle (moved further left)
-        if (mx >= craftX - 30 && mx < craftX - 14 && my >= craftY + 1 && my < craftY + 17) {
+        // Crafting collapse toggle, sits 2px left of the util-button column.
+        if (mx >= craftX - 36 && mx < craftX - 20 && my >= craftY + 1 && my < craftY + 17) {
             craftingCollapsed = !craftingCollapsed
             ClientConfig.invTerminalCraftingCollapsed = craftingCollapsed
             rebuildWidgets()

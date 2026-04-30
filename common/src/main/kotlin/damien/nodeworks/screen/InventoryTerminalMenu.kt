@@ -992,6 +992,7 @@ class InventoryTerminalMenu(
      * Crafting grid utility actions.
      * action 0 = distribute/balance items evenly across slots of the same type
      * action 1 = clear grid, depositing all items into network storage
+     * action 2 = toggle the server's auto-pull flag
      */
     fun handleCraftGridAction(player: Player, action: Int) {
         when (action) {
