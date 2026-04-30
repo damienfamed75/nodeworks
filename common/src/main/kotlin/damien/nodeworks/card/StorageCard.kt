@@ -35,19 +35,21 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
 
         val serverPlayer = player as ServerPlayer
         val stack = serverPlayer.getItemInHand(hand)
+        val cardName = stack.get(DataComponents.CUSTOM_NAME)?.string.orEmpty()
         val openData = StorageCardOpenData(
             handOrdinal = hand.ordinal,
             filterMode = getFilterMode(stack).ordinal,
             stackability = getStackabilityFilter(stack).ordinal,
             nbtFilter = getNbtFilter(stack).ordinal,
             filterRules = getFilterRules(stack),
+            cardName = cardName,
         )
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.storage_card"),
             openData,
             StorageCardOpenData.STREAM_CODEC,
-            { syncId, inv, _ -> StorageCardMenu(syncId, inv, hand) }
+            { syncId, inv, _ -> StorageCardMenu(syncId, inv, hand, initialName = cardName) }
         )
         return InteractionResult.CONSUME
     }

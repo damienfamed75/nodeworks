@@ -15,6 +15,7 @@ import damien.nodeworks.compat.scan
 import damien.nodeworks.card.StorageCard
 import damien.nodeworks.network.SetStorageCardFilterRulesPayload
 import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.screen.widget.CardRenameRow
 import damien.nodeworks.screen.widget.ChannelPickerWidget
 import damien.nodeworks.screen.widget.FilterRuleAutocomplete
 import net.minecraft.client.input.CharacterEvent
@@ -218,10 +219,21 @@ class StorageCardScreen(
         titleLabelY = -9999
     }
 
+    private lateinit var renameRow: CardRenameRow
+
     override fun init() {
         super.init()
         layoutTopInset()
         rebuildRuleFields()
+        renameRow = CardRenameRow(
+            font, leftPos, topPos, imageWidth, menu.initialName,
+            sendRename = { name ->
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.SetCardNamePayload(menu.containerId, name)
+                )
+            },
+        )
+        renameRow.addToScreen { addRenderableWidget(it) }
     }
 
     /** Compute pixel-perfect positions for the priority + channel widgets so
@@ -410,6 +422,7 @@ class StorageCardScreen(
     }
 
     override fun keyPressed(event: KeyEvent): Boolean {
+        if (renameRow.keyPressed(event)) return true
         val keyCode = event.keyCode
         if (priorityField?.isFocused == true) {
             if (keyCode == 256) { priorityField!!.isFocused = false; return true }
@@ -483,7 +496,7 @@ class StorageCardScreen(
         // visible. Single static PNG since the GUI is fixed-size.
         graphics.blit(PCB_TEXTURE, leftPos - PCB_MARGIN, topPos - PCB_MARGIN, 0f, 0f, PCB_TEX_W, PCB_TEX_H, PCB_TEX_W, PCB_TEX_H)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
-        graphics.drawString(font, "Storage Card", leftPos + 6, topPos + 7, 0xFFFFFFFF.toInt())
+        renameRow.render(graphics, mouseX, mouseY)
 
         renderTopInset(graphics, mouseX, mouseY)
         renderFilterHeader(graphics, mouseX, mouseY)
@@ -887,6 +900,7 @@ class StorageCardScreen(
         if (picker?.expanded == true) {
             if (picker!!.handleOverlayClick(event.mouseX, event.mouseY)) return true
         }
+        if (renameRow.mouseClicked(event)) return true
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
         if (event.buttonNum == 0) {

@@ -451,7 +451,22 @@ class InventoryTerminalMenu(
             val result = slot.item.copy()
             if (!playerInventory.add(result.copy())) return ItemStack.EMPTY
             slot.onTake(player, result)
-            if (autoPull) pendingAutoPull = true
+            // Clear the live result stack so vanilla's QUICK_MOVE loop
+            // terminates client-side after one iteration. Our [slotsChanged]
+            // is server-gated, so without this the client's prediction
+            // can't see the slot empty and re-enters quickMoveStack until
+            // it fills the player inventory with a phantom stack.
+            slot.set(ItemStack.EMPTY)
+            // Refill from network inline so the server's QUICK_MOVE loop
+            // can chain crafts off the player's network stock instead of
+            // capping at one craft per click. The refill triggers
+            // [slotsChanged] which repopulates [resultContainer], the loop
+            // then sees a fresh result and continues. Client-side this is
+            // a no-op (server-only network access), so the prediction
+            // still exits after one iteration as desired.
+            if (autoPull) {
+                autoPullRefill()
+            }
             return result
         }
         // Crafting input slots: move back to player inventory
@@ -591,6 +606,34 @@ class InventoryTerminalMenu(
                         carried.shrink(1)
                         if (carried.isEmpty) setCarried(ItemStack.EMPTY)
                     }
+                }
+            }
+            5, 6 -> {
+                // Drop one (5) or a stack (6) of [itemId] from the network into
+                // the world. Mirrors vanilla's Q / Ctrl+Q behavior on a hovered
+                // slot, but pulls from network storage instead of an inventory
+                // slot. Stack count is clamped to the item's default max stack
+                // size so dropping doesn't dump 64-stack-thousands at once.
+                val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+                val available = if (c != null) c.count(itemId) else NetworkStorageHelper.countItems(lvl, snap, itemId)
+                val maxStack = item.getDefaultMaxStackSize().toLong()
+                val toDrop = if (action == 5) 1L else minOf(available, maxStack)
+
+                var extracted = 0L
+                for (card in NetworkStorageHelper.getStorageCards(snap)) {
+                    if (extracted >= toDrop) break
+                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+                    val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
+                        storage, { it == itemId }, toDrop - extracted
+                    )
+                    if (amount > 0) {
+                        c?.onExtracted(itemId, false, amount)
+                        extracted += amount
+                    }
+                }
+                if (extracted > 0) {
+                    player.drop(ItemStack(item, extracted.toInt()), true)
                 }
             }
         }
@@ -826,12 +869,16 @@ class InventoryTerminalMenu(
         if (action == 2) needsImmediateSync = true
     }
 
-    /**
-     * Fill the crafting grid with items from a JEI recipe.
-     * Returns items from the old grid to the player inventory first.
-     */
-    fun handleCraftGridFill(player: Player, grid: List<String>) {
-        // Return current crafting grid items to player
+    /** Fill the crafting grid from a JEI recipe transfer. The server
+     *  re-resolves the recipe by id to get the authoritative `Ingredient`
+     *  list (with full tag expansion), then for each grid slot picks an
+     *  item it can actually source. Player inventory wins over network so
+     *  pocketed items get used before triggering a network round-trip. */
+    fun handleCraftGridFill(
+        player: Player,
+        recipeId: net.minecraft.resources.Identifier?,
+        fallback: List<String>,
+    ) {
         for (i in 0 until craftingContainer.containerSize) {
             val stack = craftingContainer.getItem(i)
             if (!stack.isEmpty) {
@@ -842,48 +889,110 @@ class InventoryTerminalMenu(
             }
         }
 
-        // Fill with new recipe
-        for ((i, itemId) in grid.withIndex()) {
-            if (i >= 9 || itemId.isEmpty()) continue
-            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
-
-            // Try player inventory first, then pull from network
-            val invSlot = playerInventory.findSlotMatchingItem(ItemStack(item))
-            if (invSlot >= 0) {
-                val taken = playerInventory.getItem(invSlot).split(1)
-                craftingContainer.setItem(i, taken)
-            } else {
-                // Pull from network storage
-                val lvl = serverLevel ?: continue
-                val snap = snapshot ?: continue
-                val c = cache
-                var extracted = 0L
-                for (card in NetworkStorageHelper.getStorageCards(snap)) {
-                    if (extracted >= 1) break
-                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
-                    val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
-                        storage, { it == itemId }, 1
-                    )
-                    if (amount > 0) {
-                        c?.onExtracted(itemId, false, amount)
-                        extracted += amount
-                    }
-                }
-                if (extracted > 0) {
-                    craftingContainer.setItem(i, ItemStack(item, 1))
-                }
-            }
+        val ingredients = resolveRecipeIngredients(recipeId)
+        // Track claimed ingredients so a single `#planks` entry doesn't
+        // get greedy-matched to all 8 slots of a chest pattern, leaving
+        // the rest empty.
+        val claimed = BooleanArray(ingredients.size)
+        for (slot in 0 until 9) {
+            if (slot >= craftingContainer.containerSize) break
+            val fallbackId = fallback.getOrNull(slot).orEmpty()
+            if (fallbackId.isEmpty()) continue
+            val taken = takeOneOf(pickCandidatesFor(fallbackId, ingredients, claimed)) ?: continue
+            craftingContainer.setItem(slot, taken)
         }
 
         slotsChanged(craftingContainer)
         playerInventory.setChanged()
     }
 
+    /** Resolve a recipe id to its placement-info ingredient list. Empty for
+     *  null / unknown / non-crafting / unplaceable, the caller falls back to
+     *  per-slot single-item resolution in those cases. */
+    private fun resolveRecipeIngredients(
+        recipeId: net.minecraft.resources.Identifier?,
+    ): List<net.minecraft.world.item.crafting.Ingredient> {
+        if (recipeId == null) return emptyList()
+        val lvl = serverLevel ?: return emptyList()
+        val key = net.minecraft.resources.ResourceKey.create(
+            net.minecraft.core.registries.Registries.RECIPE,
+            recipeId,
+        )
+        val holder = lvl.recipeAccess().byKey(key).orElse(null) ?: return emptyList()
+        val recipe = holder.value() as? net.minecraft.world.item.crafting.CraftingRecipe ?: return emptyList()
+        return recipe.placementInfo().ingredients()
+    }
+
+    /** Candidate item ids for a grid slot. Prefers the recipe's tag-
+     *  expanded ingredient set when one accepts the fallback item, marking
+     *  it claimed so the next slot moves to a different ingredient. Falls
+     *  back to the single fallback id for JEI-synthetic recipes where the
+     *  ingredient list doesn't cover the displayed item. */
+    private fun pickCandidatesFor(
+        fallbackId: String,
+        ingredients: List<net.minecraft.world.item.crafting.Ingredient>,
+        claimed: BooleanArray,
+    ): List<String> {
+        val id = net.minecraft.resources.Identifier.tryParse(fallbackId) ?: return listOf(fallbackId)
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return listOf(fallbackId)
+        val probe = ItemStack(item)
+        for (ingredientIdx in ingredients.indices) {
+            if (claimed[ingredientIdx]) continue
+            val ingredient = ingredients[ingredientIdx]
+            if (!ingredient.test(probe)) continue
+            claimed[ingredientIdx] = true
+            // `items()` is deprecated in 26.1, but it's the only public path
+            // that enumerates the accepted item set. `acceptsItem(holder)`
+            // would need every item id fed in one by one.
+            @Suppress("DEPRECATION")
+            return ingredient.items().toList()
+                .mapNotNull { net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(it.value())?.toString() }
+                .distinct()
+        }
+        return listOf(fallbackId)
+    }
+
+    /** Try each candidate id in order and return a 1-count [ItemStack] the
+     *  moment one resolves. Mutates the source inventory / network in place,
+     *  so successive calls see the running total drained: candidate
+     *  `oak_planks` resolves until oak runs out, then `birch_planks` picks
+     *  up the rest. */
+    private fun takeOneOf(candidates: List<String>): ItemStack? {
+        for (itemId in candidates) {
+            if (itemId.isEmpty()) continue
+            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
+
+            val invSlot = playerInventory.findSlotMatchingItem(ItemStack(item))
+            if (invSlot >= 0) {
+                return playerInventory.getItem(invSlot).split(1)
+            }
+
+            val lvl = serverLevel ?: continue
+            val snap = snapshot ?: continue
+            val c = cache
+            var extracted = 0L
+            for (card in NetworkStorageHelper.getStorageCards(snap)) {
+                if (extracted >= 1) break
+                val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+                val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
+                    storage, { it == itemId }, 1
+                )
+                if (amount > 0) {
+                    c?.onExtracted(itemId, false, amount)
+                    extracted += amount
+                }
+            }
+            if (extracted > 0) return ItemStack(item, 1)
+        }
+        return null
+    }
+
     /**
      * Crafting grid utility actions.
      * action 0 = distribute/balance items evenly across slots of the same type
      * action 1 = clear grid, depositing all items into network storage
+     * action 2 = toggle the server's auto-pull flag
      */
     fun handleCraftGridAction(player: Player, action: Int) {
         when (action) {
@@ -1223,7 +1332,7 @@ class InventoryTerminalMenu(
 
     override fun removed(player: Player) {
         super.removed(player)
-        clearContainer(player, craftingContainer)
+        drainCraftingGridOnClose(player)
         // Mark completed queue entries as seen so they're cleared on next open
         val queue = CraftQueueManager.getQueue(player.uuid)
         for (entry in queue) {
@@ -1231,6 +1340,34 @@ class InventoryTerminalMenu(
                 entry.seenComplete = true
             }
         }
+    }
+
+    /** Empty the 3x3 crafting grid on close, preferring the network's storage
+     *  cards over the player's inventory so staged ingredients don't pile up
+     *  in the hotbar.
+     *
+     *  Pre-pass shrinks each grid slot by what the network accepts. Then
+     *  vanilla [clearContainer] handles the rest, which is what we need:
+     *  re-implementing the player-inventory side ourselves loses the
+     *  `ClientboundContainerSetSlotPacket(-2, ...)` sync that
+     *  `placeItemBackInInventory` emits, and [transferState] then ships the
+     *  pre-drain `remoteSlots` snapshot to the inventory menu, painting
+     *  ghost items in the hotbar until the next open re-syncs. */
+    private fun drainCraftingGridOnClose(player: Player) {
+        val lvl = serverLevel
+        val snap = snapshot
+        if (lvl != null && snap != null) {
+            for (i in 0 until craftingContainer.containerSize) {
+                val stack = craftingContainer.getItem(i)
+                if (stack.isEmpty) continue
+                val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack)
+                if (inserted > 0) {
+                    stack.shrink(inserted)
+                    if (stack.isEmpty) craftingContainer.setItem(i, ItemStack.EMPTY)
+                }
+            }
+        }
+        clearContainer(player, craftingContainer)
     }
 
     /**

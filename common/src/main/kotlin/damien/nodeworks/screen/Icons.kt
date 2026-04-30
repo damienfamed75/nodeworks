@@ -205,5 +205,9 @@ class Icons private constructor(val col: Int, val row: Int) {
         // 9×9 question mark in the top-left of its cell, used by the
         // Storage Card GUI's [?] guidebook-link button.
         val QUESTION_9 = Icons(11, 4)
+        // Instruction Set substitution toggle (9×9 in top-left of each cell),
+        // drawn via [drawTopLeft] inside the button on the Instruction Set GUI.
+        val SUBSTITUTIONS_ON = Icons(12, 4)
+        val SUBSTITUTIONS_OFF = Icons(13, 4)
     }
 }

@@ -164,13 +164,15 @@ class InventoryTerminalScreen(
         }
     }
 
-    // Slot drag state (works across crafting grid and player inventory)
-    private var slotDragButton = -1       // -1 = not dragging, 0 = left, 1 = right
-    private var slotDragShift = false     // shift-drag: move items out
-    private var slotDragStack = ItemStack.EMPTY // snapshot of carried stack at drag start
-    // slotType: 0=crafting, 1=player inventory. index: menu slot index for crafting, virtual index for player
+    // Slot drag state (works across crafting grid and player inventory).
+    // slotType: 0 = crafting, 1 = player inventory. index: menu slot index
+    // for crafting, virtual index (0-26 main, 27-35 hotbar) for player.
     private data class DragSlotRef(val slotType: Int, val index: Int)
-    private val slotDragVisited = mutableListOf<DragSlotRef>()
+    private var slotDragButton = -1                  // -1 = not dragging, 0 = left, 1 = right
+    private var slotDragShift = false                // shift-drag: move items out
+    private var slotDragStack = ItemStack.EMPTY      // carried snapshot at drag start
+    private val slotDragVisited = mutableListOf<DragSlotRef>()  // dedup for non-shift drags
+    private var slotDragLastHovered: DragSlotRef? = null         // slot-entry tracker for shift-drag
     private lateinit var searchBox: EditBox
     private var cachedNetworkColor: Int? = null
     private var itemStackCache = HashMap<String, ItemStack>()
@@ -208,6 +210,10 @@ class InventoryTerminalScreen(
 
     override fun init() {
         super.init()
+        // JEI's recipe view overlays this screen via setScreen, so the
+        // recipe-transfer handler can't reach the live terminal through
+        // `Minecraft.getInstance().screen` and reads through here instead.
+        activeScreen = this
         computeLayout()
         leftPos = (width - imageWidth) / 2
         topPos = (height - imageHeight) / 2
@@ -225,10 +231,12 @@ class InventoryTerminalScreen(
         networkGrid.stackProvider = { slot -> getItemStackForNetworkSlot(slot.index) }
         networkGrid.countFormatter = { slot -> getCountForNetworkSlot(slot.index) }
 
-        // Crafting area position, centered in window
+        // Crafting area position, centered in window. Bias right by 8px to
+        // visually balance the side-button column (collapse + 3 util buttons)
+        // that sits to the left of the 3x3 grid.
         val craftAreaH = if (craftingCollapsed) CRAFT_COLLAPSED_H else CRAFT_H
         val craftTotalW = 3 * 18 + 16 + 18 // 3x3 grid + arrow gap + output slot
-        craftX = leftPos + (imageWidth - craftTotalW) / 2
+        craftX = leftPos + (imageWidth - craftTotalW) / 2 + 8
         craftY = gridY + layout.rows * SLOT_SIZE + GRID_PAD
 
         // Player inventory grids, centered in window
@@ -369,14 +377,11 @@ class InventoryTerminalScreen(
             val ubW = 16
             val ubH = 16
 
-            // Auto-pull toggle (persists client-side + syncs to server)
-            val autoPullIcon = if (ClientConfig.invTerminalAutoPull) Icons.AUTO_PULL_ON else Icons.AUTO_PULL_OFF
-            addRenderableWidget(SlicedButton.create(ubX, craftY + 1, ubW, ubH, "", autoPullIcon) { _ ->
-                ClientConfig.invTerminalAutoPull = !ClientConfig.invTerminalAutoPull
+            // Clear to network
+            addRenderableWidget(SlicedButton.create(ubX, craftY + 1, ubW, ubH, "", Icons.CRAFTING_GRID_CLEAR) { _ ->
                 PlatformServices.clientNetworking.sendToServer(
-                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 2)
+                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 1)
                 )
-                rebuildWidgets()
             })
 
             // Distribute/balance
@@ -386,11 +391,14 @@ class InventoryTerminalScreen(
                 )
             })
 
-            // Clear to network
-            addRenderableWidget(SlicedButton.create(ubX, craftY + 37, ubW, ubH, "", Icons.CRAFTING_GRID_CLEAR) { _ ->
+            // Auto-pull toggle (persists client-side + syncs to server)
+            val autoPullIcon = if (ClientConfig.invTerminalAutoPull) Icons.AUTO_PULL_ON else Icons.AUTO_PULL_OFF
+            addRenderableWidget(SlicedButton.create(ubX, craftY + 37, ubW, ubH, "", autoPullIcon) { _ ->
+                ClientConfig.invTerminalAutoPull = !ClientConfig.invTerminalAutoPull
                 PlatformServices.clientNetworking.sendToServer(
-                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 1)
+                    damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 2)
                 )
+                rebuildWidgets()
             })
         }
     }
@@ -506,7 +514,7 @@ class InventoryTerminalScreen(
 
         // Crafting collapse toggle, to the left of the crafting area
         val collapseIcon = if (craftingCollapsed) Icons.EXPAND_IDLE else Icons.COLLAPSE_IDLE
-        collapseIcon.draw(graphics, craftX - 30, craftY + 1)
+        collapseIcon.draw(graphics, craftX - 36, craftY + 1)
 
         // Utility buttons are SlicedButton widgets, rendered automatically
 
@@ -904,12 +912,12 @@ class InventoryTerminalScreen(
                 val ubH = 16
                 if (mouseX >= ubX && mouseX < ubX + ubW) {
                     val tip = when {
-                        mouseY >= craftY + 1 && mouseY < craftY + 1 + ubH -> {
+                        mouseY >= craftY + 1 && mouseY < craftY + 1 + ubH -> "Clear to network"
+                        mouseY >= craftY + 19 && mouseY < craftY + 19 + ubH -> "Distribute evenly"
+                        mouseY >= craftY + 37 && mouseY < craftY + 37 + ubH -> {
                             val state = if (damien.nodeworks.config.ClientConfig.invTerminalAutoPull) "On" else "Off"
                             "Auto-pull: $state"
                         }
-                        mouseY >= craftY + 19 && mouseY < craftY + 19 + ubH -> "Distribute evenly"
-                        mouseY >= craftY + 37 && mouseY < craftY + 37 + ubH -> "Clear to network"
                         else -> null
                     }
                     if (tip != null) {
@@ -1138,11 +1146,19 @@ class InventoryTerminalScreen(
             return true
         }
 
-        // Crafting collapse toggle (moved further left)
-        if (mx >= craftX - 30 && mx < craftX - 14 && my >= craftY + 1 && my < craftY + 17) {
+        // Crafting collapse toggle, sits 2px left of the util-button column.
+        if (mx >= craftX - 36 && mx < craftX - 20 && my >= craftY + 1 && my < craftY + 17) {
             craftingCollapsed = !craftingCollapsed
             ClientConfig.invTerminalCraftingCollapsed = craftingCollapsed
             rebuildWidgets()
+            return true
+        }
+
+        // Right-click search bar = clear + focus, so a player can chain queries
+        // without manually selecting and deleting the prior text first.
+        if (button == 1 && mx >= searchX && mx < searchX + searchW && my >= searchY && my < searchY + SEARCH_H) {
+            searchBox.value = ""
+            setFocused(searchBox)
             return true
         }
 
@@ -1243,6 +1259,7 @@ class InventoryTerminalScreen(
                         PlatformServices.clientNetworking.sendToServer(
                             damien.nodeworks.network.CraftQueueExtractPayload(menu.containerId, slot.id, action)
                         )
+                        unfocusSearchBox()
                     }
                 }
                 return true
@@ -1272,6 +1289,7 @@ class InventoryTerminalScreen(
                     PlatformServices.clientNetworking.sendToServer(
                         InvTerminalClickPayload(menu.containerId, entry.info.itemId, action, kind = 1)
                     )
+                    unfocusSearchBox()
                 }
                 return true
             }
@@ -1284,6 +1302,7 @@ class InventoryTerminalScreen(
                 PlatformServices.clientNetworking.sendToServer(
                     InvTerminalClickPayload(menu.containerId, entry.info.itemId, action)
                 )
+                unfocusSearchBox()
                 return true
             } else if (!menu.carried.isEmpty) {
                 val insertAction = if (button == 1) 4 else 1  // right=one, left=all
@@ -1346,7 +1365,7 @@ class InventoryTerminalScreen(
         // Deselect search if clicking elsewhere
         if (searchBox.isFocused) {
             if (!(mx >= searchX && mx < searchX + searchW && my >= searchY && my < searchY + SEARCH_H)) {
-                searchBox.isFocused = false
+                unfocusSearchBox()
             }
         }
 
@@ -1357,7 +1376,14 @@ class InventoryTerminalScreen(
         val mouseX = event.mouseX
         val mouseY = event.mouseY
         val button = event.buttonNum
-        // Slot drag across crafting grid and player inventory
+        // Bootstrap a shift-drag if the player started left-click+shift
+        // outside any slot and dragged into inventory territory. Without
+        // this every slot-touch path below short-circuits on slotDragButton.
+        if (slotDragButton == -1 && button == 0 && hasShiftDownCompat()) {
+            slotDragButton = 0
+            slotDragShift = true
+            slotDragVisited.clear()
+        }
         if (slotDragButton >= 0) {
             val mx = mouseX.toInt()
             val my = mouseY.toInt()
@@ -1368,8 +1394,7 @@ class InventoryTerminalScreen(
                 if (craftSlot >= 0) {
                     val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
                     val ref = DragSlotRef(0, slotIdx)
-                    if (ref !in slotDragVisited) {
-                        slotDragVisited.add(ref)
+                    if (shouldTriggerDragOn(ref)) {
                         if (slotDragShift) {
                             slotClicked(menu.slots[slotIdx], slotIdx, 0, net.minecraft.world.inventory.ContainerInput.QUICK_MOVE)
                         } else if (slotDragButton == 1 && !menu.carried.isEmpty) {
@@ -1387,8 +1412,7 @@ class InventoryTerminalScreen(
             if (playerSlot != null) {
                 val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
                 val ref = DragSlotRef(1, virtualIndex)
-                if (ref !in slotDragVisited) {
-                    slotDragVisited.add(ref)
+                if (shouldTriggerDragOn(ref)) {
                     if (slotDragShift) {
                         PlatformServices.clientNetworking.sendToServer(
                             InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 2)
@@ -1402,6 +1426,9 @@ class InventoryTerminalScreen(
                 return true
             }
 
+            // Cursor off every slot. Clear the last-hovered marker so a
+            // shift-drag retriggers when it sweeps back onto a slot.
+            slotDragLastHovered = null
             return true
         }
 
@@ -1452,6 +1479,7 @@ class InventoryTerminalScreen(
         slotDragShift = false
         slotDragStack = ItemStack.EMPTY
         slotDragVisited.clear()
+        slotDragLastHovered = null
 
         draggingScrollbar = false
         return super.mouseReleased(event)
@@ -1490,12 +1518,70 @@ class InventoryTerminalScreen(
 
         if (searchBox.isFocused) {
             if (keyCode == InputConstants.KEY_ESCAPE) {
-                searchBox.isFocused = false
+                unfocusSearchBox()
                 return true
             }
             return searchBox.keyPressed(event)
         }
+        // Drop key under cursor: Q drops one, Ctrl+Q drops a stack. Vanilla's
+        // own drop-key handler relies on `hoveredSlot`, which is null for our
+        // virtual-slot layout, so we hit-test the grids ourselves and route
+        // to the right path per slot type.
+        val mc = Minecraft.getInstance()
+        if (mc.options.keyDrop.matches(event)) {
+            if (handleDropAtCursor(hasControlDownCompat())) return true
+        }
         return super.keyPressed(event)
+    }
+
+    /** Hit-test the grids under the current mouse position and dispatch a
+     *  drop. Crafting and player-inventory slots are real menu slots, so
+     *  vanilla's THROW click does the right thing (and stays in lock-step
+     *  with the slot tracker). The network grid isn't a real slot, so we
+     *  send a custom payload action that extracts and drops server-side. */
+    private fun handleDropAtCursor(dropStack: Boolean): Boolean {
+        val mc = Minecraft.getInstance()
+        val mx = (mc.mouseHandler.xpos() * mc.window.guiScaledWidth / mc.window.screenWidth).toInt()
+        val my = (mc.mouseHandler.ypos() * mc.window.guiScaledHeight / mc.window.screenHeight).toInt()
+        val button = if (dropStack) 1 else 0
+
+        if (!craftingCollapsed) {
+            val craftSlot = getCraftSlotAt(mx, my)
+            if (craftSlot >= 0) {
+                val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
+                if (menu.slots[slotIdx].hasItem()) {
+                    slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ContainerInput.THROW)
+                    return true
+                }
+            }
+        }
+
+        val playerSlot = playerMainGrid.getSlotAt(mx, my) ?: playerHotbarGrid.getSlotAt(mx, my)
+        if (playerSlot != null) {
+            val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
+            if (menu.slots[virtualIndex].hasItem()) {
+                slotClicked(menu.slots[virtualIndex], virtualIndex, button, net.minecraft.world.inventory.ContainerInput.THROW)
+                return true
+            }
+        }
+
+        val networkSlot = networkGrid.getSlotAt(mx, my, 0)
+        if (networkSlot != null) {
+            // Skip the craft-queue reserved row, drops out of the queue would
+            // mean cancelling a craft mid-flight which we don't support.
+            val gridRow = networkSlot.index / layout.cols
+            if (gridRow == 0) return false
+            val viewIndex = scrollOffset * layout.cols + (networkSlot.index - layout.cols)
+            val entry = repo.getViewEntry(viewIndex)
+            if (entry != null && !entry.isFluid && entry.info.count > 0) {
+                val action = if (dropStack) 6 else 5
+                PlatformServices.clientNetworking.sendToServer(
+                    InvTerminalClickPayload(menu.containerId, entry.info.itemId, action)
+                )
+                return true
+            }
+        }
+        return false
     }
 
     override fun charTyped(event: CharacterEvent): Boolean {
@@ -1530,6 +1616,45 @@ class InventoryTerminalScreen(
     }
 
     // ========== Slot Helpers ==========
+
+    /** Whether the drag tick over [ref] should fire an insert / place. For
+     *  shift-drag we trigger only when the cursor enters a different slot
+     *  than the previous tick: standing still doesn't re-fire, but sweeping
+     *  back over a slot whose items have changed (e.g. picked up after a
+     *  prior insert) does. For non-shift drags we keep the visited-list
+     *  semantics so a left-distribute or right-place-one drag only acts on
+     *  each slot once. */
+    private fun shouldTriggerDragOn(ref: DragSlotRef): Boolean {
+        if (slotDragShift) {
+            if (ref == slotDragLastHovered) return false
+            slotDragLastHovered = ref
+            return dragSlotItemCount(ref) > 0
+        }
+        if (ref in slotDragVisited) return false
+        slotDragVisited.add(ref)
+        return true
+    }
+
+    /** Client-side item count at the slot referenced by [ref], used by
+     *  shift-drag to skip slot-entry triggers when there's nothing to
+     *  insert. Returns 0 for unknown slot types. */
+    private fun dragSlotItemCount(ref: DragSlotRef): Int = when (ref.slotType) {
+        0 -> menu.craftingContainer.getItem(ref.index - InventoryTerminalMenu.CRAFT_INPUT_START).count
+        1 -> {
+            val invIndex = if (ref.index < 27) ref.index + 9 else ref.index - 27
+            (Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY).count
+        }
+        else -> 0
+    }
+
+    /** Drop the search field's focus, also clearing the screen-level tracker
+     *  when it was pointing here. Without the `setFocused(null)` route, vanilla's
+     *  same-target equality check on `setFocused(child)` will skip re-focusing
+     *  on the next click and the field becomes silently unclickable. */
+    private fun unfocusSearchBox() {
+        if (!searchBox.isFocused) return
+        if (focused === searchBox) setFocused(null) else searchBox.isFocused = false
+    }
 
     /** Find the crafting input slot index (0-8) at the mouse position, or -1. */
     private fun getCraftSlotAt(mx: Int, my: Int): Int {
@@ -1651,5 +1776,13 @@ class InventoryTerminalScreen(
             count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
             else -> count.toString()
         }
+    }
+
+    companion object {
+        /** Set in [init] so the JEI recipe-transfer handler can read this
+         *  screen's [repo]. Never cleared, callers validate by checking
+         *  `activeScreen?.menu === menu` before trusting the reference. */
+        var activeScreen: InventoryTerminalScreen? = null
+            private set
     }
 }

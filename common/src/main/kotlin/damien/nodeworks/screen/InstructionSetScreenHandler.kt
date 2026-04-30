@@ -14,6 +14,7 @@ import net.minecraft.world.item.crafting.RecipeType
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.AbstractContainerMenu
+import net.minecraft.world.inventory.SimpleContainerData
 import net.minecraft.world.inventory.Slot
 import net.minecraft.world.item.ItemStack
 
@@ -25,7 +26,8 @@ class InstructionSetScreenHandler(
     syncId: Int,
     private val playerInventory: Inventory,
     private val recipeGrid: SimpleContainer,
-    private val saveMode: SaveMode
+    private val saveMode: SaveMode,
+    initialSubstitutions: Boolean = true,
 ) : AbstractContainerMenu(ModScreenHandlers.INSTRUCTION_SET, syncId) {
 
     private val resultContainer = SimpleContainer(1)
@@ -37,6 +39,13 @@ class InstructionSetScreenHandler(
      *  the >1-stack save uses), leaving the player with a "programmed-empty"
      *  card alongside the original stack. */
     private val initialRecipe: List<String> = readRecipe()
+    private val initialSubstitutionsValue: Boolean = initialSubstitutions
+
+    /** Slot 0: substitutions toggle (1 = on, 0 = off). Server-synced so the
+     *  screen's icon reflects the current value without bespoke payloads. */
+    val substitutionsData: SimpleContainerData = SimpleContainerData(1).apply {
+        set(0, if (initialSubstitutions) 1 else 0)
+    }
 
     sealed class SaveMode {
         data class Handheld(val hand: InteractionHand) : SaveMode()
@@ -59,16 +68,18 @@ class InstructionSetScreenHandler(
 
         fun createHandheld(syncId: Int, playerInventory: Inventory, hand: InteractionHand, stack: ItemStack): InstructionSetScreenHandler {
             val recipe = InstructionSet.getRecipe(stack)
-            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(recipe), SaveMode.Handheld(hand))
+            val subs = InstructionSet.getSubstitutions(stack)
+            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(recipe), SaveMode.Handheld(hand), subs)
         }
 
         fun createServer(syncId: Int, playerInventory: Inventory, nodePos: BlockPos, side: Direction, slotIndex: Int, stack: ItemStack): InstructionSetScreenHandler {
             val recipe = InstructionSet.getRecipe(stack)
-            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(recipe), SaveMode.InNode(nodePos, side.ordinal, slotIndex))
+            val subs = InstructionSet.getSubstitutions(stack)
+            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(recipe), SaveMode.InNode(nodePos, side.ordinal, slotIndex), subs)
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, data: InstructionSetOpenData): InstructionSetScreenHandler {
-            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(data.recipe), SaveMode.ClientDummy)
+            return InstructionSetScreenHandler(syncId, playerInventory, recipeToGrid(data.recipe), SaveMode.ClientDummy, data.allowSubstitutions)
         }
     }
 
@@ -94,8 +105,11 @@ class InstructionSetScreenHandler(
             addSlot(net.minecraft.world.inventory.Slot(playerInventory, col, 9 + col * 18, 153))
         }
 
+        addDataSlots(substitutionsData)
         updateResult()
     }
+
+    fun getSubstitutions(): Boolean = substitutionsData.get(0) != 0
 
     private class GhostSlot(container: Container, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
         override fun mayPlace(stack: ItemStack): Boolean = true
@@ -128,13 +142,19 @@ class InstructionSetScreenHandler(
     }
 
     override fun clickMenuButton(player: Player, id: Int): Boolean {
-        // ID 0, triggered by the clear-all button in InstructionSetScreen. Wipes every
-        // ghost slot in the 3×3 recipe grid and recomputes the result.
-        if (id == 0) {
-            for (i in 0..8) recipeGrid.setItem(i, ItemStack.EMPTY)
-            updateResult()
-            broadcastChanges()
-            return true
+        when (id) {
+            // 0 = clear grid (matches InstructionSetScreen.BTN_ID_CLEAR_GRID)
+            0 -> {
+                for (i in 0..8) recipeGrid.setItem(i, ItemStack.EMPTY)
+                updateResult()
+                broadcastChanges()
+                return true
+            }
+            // 1 = toggle substitutions (matches InstructionSetScreen.BTN_ID_TOGGLE_SUBSTITUTIONS)
+            1 -> {
+                substitutionsData.set(0, if (getSubstitutions()) 0 else 1)
+                return true
+            }
         }
         return false
     }
@@ -176,11 +196,12 @@ class InstructionSetScreenHandler(
         super.removed(player)
         if (player.level().isClientSide) return
         // Skip the save (and the >1-stack split-copy side effect) when the user
-        // closes without changing the grid. See [initialRecipe] for the bug
+        // closes without changing anything. See [initialRecipe] for the bug
         // this guards against.
         val recipe = readRecipe()
-        if (recipe == initialRecipe) return
-        saveRecipe(player, recipe)
+        val subs = getSubstitutions()
+        if (recipe == initialRecipe && subs == initialSubstitutionsValue) return
+        saveRecipe(player, recipe, subs)
     }
 
     private fun readRecipe(): List<String> = (0 until 9).map { i ->
@@ -188,7 +209,7 @@ class InstructionSetScreenHandler(
         if (stack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: ""
     }
 
-    private fun saveRecipe(player: Player, recipe: List<String>) {
+    private fun saveRecipe(player: Player, recipe: List<String>, allowSubstitutions: Boolean) {
         val resultStack = resultContainer.getItem(0)
         val output = if (resultStack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(resultStack.item)?.toString() ?: ""
 
@@ -203,13 +224,13 @@ class InstructionSetScreenHandler(
                     // it into the player's inventory.
                     if (stack.count > 1) {
                         val configured = stack.copyWithCount(1)
-                        InstructionSet.setRecipe(configured, recipe, output)
+                        InstructionSet.setRecipe(configured, recipe, output, allowSubstitutions)
                         stack.shrink(1)
                         if (!player.inventory.add(configured)) {
                             player.drop(configured, false)
                         }
                     } else {
-                        InstructionSet.setRecipe(stack, recipe, output)
+                        InstructionSet.setRecipe(stack, recipe, output, allowSubstitutions)
                     }
                 }
             }
@@ -220,7 +241,7 @@ class InstructionSetScreenHandler(
                 val globalSlot = side.ordinal * damien.nodeworks.block.entity.NodeBlockEntity.SLOTS_PER_SIDE + mode.slotIndex
                 val cardStack = nodeEntity.getItem(globalSlot)
                 if (cardStack.item is InstructionSet) {
-                    InstructionSet.setRecipe(cardStack, recipe, output)
+                    InstructionSet.setRecipe(cardStack, recipe, output, allowSubstitutions)
                     nodeEntity.setChanged()
                 }
             }

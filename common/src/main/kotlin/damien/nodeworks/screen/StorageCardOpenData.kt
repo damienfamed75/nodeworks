@@ -22,6 +22,7 @@ data class StorageCardOpenData(
     val stackability: Int,
     val nbtFilter: Int,
     val filterRules: List<String>,
+    val cardName: String,
 ) {
     companion object {
         /** Per-rule string cap. The filter syntax (`*`, `#tag`, `/regex/`,
@@ -34,6 +35,9 @@ data class StorageCardOpenData(
          *  scroll forever. */
         const val MAX_RULES = 32
 
+        /** Cap matches the in-game anvil cap so the rename UX feels familiar. */
+        const val MAX_NAME_LENGTH = 50
+
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, StorageCardOpenData> =
             object : StreamCodec<FriendlyByteBuf, StorageCardOpenData> {
                 override fun decode(buf: FriendlyByteBuf): StorageCardOpenData {
@@ -44,7 +48,8 @@ data class StorageCardOpenData(
                     val count = buf.readVarInt().coerceIn(0, MAX_RULES)
                     val rules = ArrayList<String>(count)
                     for (i in 0 until count) rules.add(buf.readUtf(MAX_RULE_LENGTH))
-                    return StorageCardOpenData(hand, mode, stack, nbt, rules)
+                    val name = buf.readUtf(MAX_NAME_LENGTH)
+                    return StorageCardOpenData(hand, mode, stack, nbt, rules, name)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, data: StorageCardOpenData) {
@@ -55,6 +60,7 @@ data class StorageCardOpenData(
                     val cropped = data.filterRules.take(MAX_RULES)
                     buf.writeVarInt(cropped.size)
                     for (rule in cropped) buf.writeUtf(rule.take(MAX_RULE_LENGTH), MAX_RULE_LENGTH)
+                    buf.writeUtf(data.cardName.take(MAX_NAME_LENGTH), MAX_NAME_LENGTH)
                 }
             }
     }

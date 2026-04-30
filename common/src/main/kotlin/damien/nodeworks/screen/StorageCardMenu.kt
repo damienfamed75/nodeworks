@@ -19,6 +19,7 @@ class StorageCardMenu(
     initialStackability: StorageCard.Companion.StackabilityFilter = StorageCard.Companion.StackabilityFilter.ANY,
     initialNbtFilter: StorageCard.Companion.NbtFilter = StorageCard.Companion.NbtFilter.ANY,
     initialFilterRules: List<String> = emptyList(),
+    val initialName: String = "",
 ) : AbstractContainerMenu(ModScreenHandlers.STORAGE_CARD, syncId) {
 
     val priorityData = SimpleContainerData(1)
@@ -142,6 +143,16 @@ class StorageCardMenu(
         dirty = true
     }
 
+    /** Apply a player-supplied name to the held card. Empty / blank input
+     *  clears [DataComponents.CUSTOM_NAME] so the card reverts to its
+     *  translated item name. */
+    fun setCardName(player: Player, name: String) {
+        if (hand == null) return
+        val stack = player.getItemInHand(hand)
+        if (stack.item !is StorageCard) return
+        applyCardName(stack, name)
+    }
+
     override fun clickMenuButton(player: Player, id: Int): Boolean {
         when {
             id == 0 -> {
@@ -206,7 +217,7 @@ class StorageCardMenu(
                 ?: StorageCard.Companion.StackabilityFilter.ANY
             val nbt = StorageCard.Companion.NbtFilter.entries.getOrNull(data.nbtFilter)
                 ?: StorageCard.Companion.NbtFilter.ANY
-            return StorageCardMenu(syncId, playerInventory, hand, mode, stackability, nbt, data.filterRules)
+            return StorageCardMenu(syncId, playerInventory, hand, mode, stackability, nbt, data.filterRules, data.cardName)
         }
     }
 }

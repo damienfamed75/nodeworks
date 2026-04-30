@@ -3,10 +3,14 @@ package damien.nodeworks.screen
 import damien.nodeworks.compat.drawString
 import damien.nodeworks.compat.mouseX
 import damien.nodeworks.compat.mouseY
+import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.screen.widget.CardRenameRow
 import damien.nodeworks.screen.widget.ChannelPickerWidget
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
@@ -46,6 +50,8 @@ class CardSettingsScreen(
      *  client) can flow into the widget without clobbering an in-progress click. */
     private var lastSyncedChannel: Int = -1
 
+    private lateinit var renameRow: CardRenameRow
+
     init {
         inventoryLabelY = -9999
         titleLabelY = -9999
@@ -60,7 +66,7 @@ class CardSettingsScreen(
         labelX = rowStart
         pickerX = labelX + labelW + LABEL_TO_PICKER_GAP
 
-        val pickerY = topPos + INSET_Y + (INSET_H - ChannelPickerWidget.SWATCH) / 2
+        val pickerY = topPos + INSET_Y + (INSET_H - ChannelPickerWidget.SWATCH) / 2 + 1
         val initial = menu.getChannel()
         lastSyncedChannel = initial.id
         picker = ChannelPickerWidget(leftPos + pickerX, pickerY, initial) { color ->
@@ -71,17 +77,27 @@ class CardSettingsScreen(
             Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, color.id)
         }
         addRenderableWidget(picker!!)
+
+        renameRow = CardRenameRow(
+            font, leftPos, topPos, imageWidth, menu.initialName,
+            sendRename = { name ->
+                PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.SetCardNamePayload(menu.containerId, name)
+                )
+            },
+        )
+        renameRow.addToScreen { addRenderableWidget(it) }
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
-        graphics.drawString(font, "Card Settings", leftPos + 6, topPos + 7, 0xFFFFFFFF.toInt())
+        renameRow.render(graphics, mouseX, mouseY)
         NineSlice.WINDOW_RECESSED.draw(graphics, leftPos + INSET_X, topPos + INSET_Y, INSET_W, INSET_H)
         graphics.drawString(
             font, LABEL_TEXT,
             leftPos + labelX,
-            topPos + INSET_Y + (INSET_H - font.lineHeight) / 2 + 1,
+            topPos + INSET_Y + (INSET_H - font.lineHeight) / 2 + 2,
             0xFFAAAAAA.toInt(),
         )
     }
@@ -107,6 +123,12 @@ class CardSettingsScreen(
         if (picker?.expanded == true) {
             if (picker!!.handleOverlayClick(event.mouseX, event.mouseY)) return true
         }
+        if (renameRow.mouseClicked(event)) return true
         return super.mouseClicked(event, doubleClick)
+    }
+
+    override fun keyPressed(event: KeyEvent): Boolean {
+        if (renameRow.keyPressed(event)) return true
+        return super.keyPressed(event)
     }
 }

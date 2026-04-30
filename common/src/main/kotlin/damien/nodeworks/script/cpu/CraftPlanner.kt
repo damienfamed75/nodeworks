@@ -119,10 +119,11 @@ object CraftPlanner {
                 }
                 "craft_template" -> {
                     val inputDeps = node.children.mapNotNull { outputOpOf[IdentityKey(it)] }
-                    // Resolve the recipe pattern by looking up the Instruction Set that
-                    // produces this item. Tree only carries the template name, here we
-                    // fetch the actual 9-slot pattern so the Execute op is self-contained.
-                    val recipe = recipeLookup(node.itemId)
+                    // Prefer the tree's pre-substituted recipe when the builder
+                    // already resolved tag-based ingredients to concrete items.
+                    // Otherwise fall back to the Instruction Set's stored
+                    // pattern via [recipeLookup].
+                    val recipe = node.resolvedRecipe ?: recipeLookup(node.itemId)
                         ?: return PlanResult(
                             null, true,
                             "Could not resolve recipe pattern for ${node.itemId}"

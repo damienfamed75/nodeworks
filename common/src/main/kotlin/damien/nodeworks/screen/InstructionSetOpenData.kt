@@ -8,7 +8,8 @@ data class InstructionSetOpenData(
     val nodePos: BlockPos,
     val sideOrdinal: Int,
     val slotIndex: Int,
-    val recipe: List<String> // 9 item IDs
+    val recipe: List<String>, // 9 item IDs
+    val allowSubstitutions: Boolean = true,
 ) {
     companion object {
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, InstructionSetOpenData> = object : StreamCodec<FriendlyByteBuf, InstructionSetOpenData> {
@@ -17,7 +18,8 @@ data class InstructionSetOpenData(
                 val sideOrdinal = buf.readVarInt()
                 val slotIndex = buf.readVarInt()
                 val recipe = (0 until 9).map { buf.readUtf(256) }
-                return InstructionSetOpenData(nodePos, sideOrdinal, slotIndex, recipe)
+                val allowSubstitutions = buf.readBoolean()
+                return InstructionSetOpenData(nodePos, sideOrdinal, slotIndex, recipe, allowSubstitutions)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: InstructionSetOpenData) {
@@ -27,6 +29,7 @@ data class InstructionSetOpenData(
                 for (itemId in data.recipe) {
                     buf.writeUtf(itemId, 256)
                 }
+                buf.writeBoolean(data.allowSubstitutions)
             }
         }
     }

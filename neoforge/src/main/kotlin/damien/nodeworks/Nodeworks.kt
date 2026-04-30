@@ -371,7 +371,7 @@ class Nodeworks(modBus: IEventBus) {
                 val player = context.player()
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
-                    menu.handleCraftGridFill(player, payload.grid)
+                    menu.handleCraftGridFill(player, payload.recipeId, payload.fallback)
                 }
             }
         }
@@ -480,6 +480,17 @@ class Nodeworks(modBus: IEventBus) {
             }
         }
 
+        registrar.playToServer(SetCardNamePayload.TYPE, SetCardNamePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                when (val menu = player.containerMenu) {
+                    is damien.nodeworks.screen.StorageCardMenu ->
+                        if (menu.containerId == payload.containerId) menu.setCardName(player, payload.name)
+                    is damien.nodeworks.screen.CardSettingsMenu ->
+                        if (menu.containerId == payload.containerId) menu.setCardName(player, payload.name)
+                }
+            }
+        }
 
         registrar.playToServer(CancelCraftPayload.TYPE, CancelCraftPayload.CODEC) { payload, context ->
             context.enqueueWork {

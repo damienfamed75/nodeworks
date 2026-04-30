@@ -121,7 +121,9 @@ data class SetInstructionGridPayload(val containerId: Int, val items: List<Strin
 
 /**
  * C2S: Click on the inventory terminal grid.
- * action: 0 = extract stack (left click), 1 = insert carried item, 2 = extract half (right click)
+ * action: 0 = extract stack (left click), 1 = insert carried item,
+ *         2 = extract half (right click), 3 = shift-click to inventory,
+ *         4 = right-click insert one, 5 = drop one (Q), 6 = drop stack (Ctrl+Q)
  * kind: 0 = item (default), 1 = fluid, fluid clicks route to bucket-fill logic server-side.
  */
 data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val action: Int, val kind: Byte = 0) : CustomPacketPayload {
@@ -142,14 +144,34 @@ data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val
 
 /**
  * C2S: Fill the Inventory Terminal crafting grid with a recipe from JEI.
- * grid: 9 item IDs (empty string = empty slot)
+ * Carries the recipe id (so the server can re-resolve the authoritative
+ * `Ingredient` list with full tag expansion) plus per-slot fallback item
+ * ids for JEI synthetic recipes that have no registry id. Pattern lifted
+ * from AE2's `FillCraftingGridFromRecipePacket`.
  */
-data class InvTerminalCraftGridPayload(val containerId: Int, val grid: List<String>) : CustomPacketPayload {
+data class InvTerminalCraftGridPayload(
+    val containerId: Int,
+    val recipeId: Identifier?,
+    val fallback: List<String>,
+) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<InvTerminalCraftGridPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_craft_grid"))
         val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalCraftGridPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeVarInt(p.containerId); for (id in p.grid) buf.writeUtf(id, 256) },
-            { buf -> InvTerminalCraftGridPayload(buf.readVarInt(), (0 until 9).map { buf.readUtf(256) }) }
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                val recipeId = p.recipeId
+                buf.writeBoolean(recipeId != null)
+                if (recipeId != null) buf.writeUtf(recipeId.toString(), 256)
+                for (slotIdx in 0 until 9) {
+                    buf.writeUtf(p.fallback.getOrNull(slotIdx).orEmpty(), 256)
+                }
+            },
+            { buf ->
+                val containerId = buf.readVarInt()
+                val recipeId = if (buf.readBoolean()) Identifier.tryParse(buf.readUtf(256)) else null
+                val fallback = (0 until 9).map { buf.readUtf(256) }
+                InvTerminalCraftGridPayload(containerId, recipeId, fallback)
+            }
         )
     }
     override fun type() = TYPE
@@ -157,7 +179,9 @@ data class InvTerminalCraftGridPayload(val containerId: Int, val grid: List<Stri
 
 /**
  * C2S: Crafting grid utility action.
- * action 0 = distribute/balance items evenly, 1 = clear grid to network
+ * action 0 = distribute/balance items evenly across same-type slots,
+ *        1 = clear grid to network,
+ *        2 = toggle the server's auto-pull flag for the menu.
  */
 data class InvTerminalCraftGridActionPayload(val containerId: Int, val action: Int) : CustomPacketPayload {
     companion object {
@@ -685,6 +709,31 @@ data class SetStorageCardFilterRulesPayload(val containerId: Int, val rules: Lis
                 val rules = (0 until count).map { buf.readUtf(MAX_RULE_LENGTH) }
                 SetStorageCardFilterRulesPayload(id, rules)
             }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * C2S: Rename the held card from its settings GUI. Server-side handler walks
+ * `player.containerMenu` and writes the new name onto the held stack via the
+ * menu's own `setCardName` helper, an empty string clears the name back to the
+ * translated item name. Sent by both [StorageCardScreen] and [CardSettingsScreen].
+ */
+data class SetCardNamePayload(val containerId: Int, val name: String) : CustomPacketPayload {
+    companion object {
+        /** Mirrors [damien.nodeworks.screen.CardSettingsOpenData.MAX_NAME_LENGTH]. */
+        const val MAX_NAME_LENGTH = 50
+
+        val TYPE: CustomPacketPayload.Type<SetCardNamePayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "set_card_name")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, SetCardNamePayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                buf.writeUtf(p.name.take(MAX_NAME_LENGTH), MAX_NAME_LENGTH)
+            },
+            { buf -> SetCardNamePayload(buf.readVarInt(), buf.readUtf(MAX_NAME_LENGTH)) }
         )
     }
     override fun type() = TYPE

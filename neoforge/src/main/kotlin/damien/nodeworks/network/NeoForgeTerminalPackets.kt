@@ -178,11 +178,12 @@ object NeoForgeTerminalPackets {
             val cardStack = nodeEntity.getItem(globalSlot)
             if (cardStack.item !is InstructionSet) return@enqueueWork
             val recipe = InstructionSet.getRecipe(cardStack)
+            val subs = InstructionSet.getSubstitutions(cardStack)
 
             PlatformServices.menu.openExtendedMenu(
                 serverPlayer,
                 Component.translatable("container.nodeworks.instruction_set"),
-                InstructionSetOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe),
+                InstructionSetOpenData(payload.nodePos, payload.sideOrdinal, payload.slotIndex, recipe, subs),
                 InstructionSetOpenData.STREAM_CODEC
             ) { syncId, inv, p ->
                 InstructionSetScreenHandler.createServer(syncId, inv, payload.nodePos, side, payload.slotIndex, cardStack)

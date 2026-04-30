@@ -137,8 +137,23 @@ class ProcessingSetScreen(
         }
     }
 
+    /** Hover tooltip queued during [extractBackground] and rendered after the
+     *  rest of the GUI in [extractRenderState] so it overlays everything else.
+     *  Same pattern StorageCardScreen uses for its filter-toggle tooltips. */
+    private val pendingTooltipLines: MutableList<Component> = mutableListOf()
+    private var pendingTooltipX: Int = 0
+    private var pendingTooltipY: Int = 0
+
+    private fun queueTooltip(mouseX: Int, mouseY: Int, vararg lines: String) {
+        pendingTooltipLines.clear()
+        for (line in lines) pendingTooltipLines.add(Component.literal(line))
+        pendingTooltipX = mouseX
+        pendingTooltipY = mouseY
+    }
+
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
+        pendingTooltipLines.clear()
         val x = leftPos
         val y = topPos
 
@@ -183,6 +198,7 @@ class ProcessingSetScreen(
             clearX + (clearDrawW - 5) / 2,
             clearY + (clearDrawH - 5) / 2,
             5, 5, WHITE)
+        if (clearHover) queueTooltip(mouseX, mouseY, "Clear slots")
 
         // Stepper buttons, draw the 9-slice background first, then paint the +/- glyph
         // on top. (Previously the text was drawn before the button and got painted over.)
@@ -250,8 +266,12 @@ class ProcessingSetScreen(
                 if (count > 1) drawStackCountBadge(graphics, leftPos + slot.x, topPos + slot.y, count)
             }
         }
-        // 26.1: tooltip rendering is handled automatically by ACS's
-        // extractRenderState pipeline, no explicit call needed.
+        // 26.1: slot tooltips are handled automatically by ACS's
+        // extractRenderState pipeline, no explicit call needed. Our own
+        // button tooltips queued during extractBackground get drawn here.
+        if (pendingTooltipLines.isNotEmpty()) {
+            graphics.renderComponentTooltip(font, pendingTooltipLines, pendingTooltipX, pendingTooltipY)
+        }
     }
 
     /** Vanilla stack-count badge, right-aligned, white w/ shadow, at the bottom-right
