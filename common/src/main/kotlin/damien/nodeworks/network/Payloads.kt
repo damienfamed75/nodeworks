@@ -121,7 +121,9 @@ data class SetInstructionGridPayload(val containerId: Int, val items: List<Strin
 
 /**
  * C2S: Click on the inventory terminal grid.
- * action: 0 = extract stack (left click), 1 = insert carried item, 2 = extract half (right click)
+ * action: 0 = extract stack (left click), 1 = insert carried item,
+ *         2 = extract half (right click), 3 = shift-click to inventory,
+ *         4 = right-click insert one, 5 = drop one (Q), 6 = drop stack (Ctrl+Q)
  * kind: 0 = item (default), 1 = fluid, fluid clicks route to bucket-fill logic server-side.
  */
 data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val action: Int, val kind: Byte = 0) : CustomPacketPayload {

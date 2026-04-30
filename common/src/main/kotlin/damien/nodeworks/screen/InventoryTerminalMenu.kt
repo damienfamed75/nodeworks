@@ -608,6 +608,34 @@ class InventoryTerminalMenu(
                     }
                 }
             }
+            5, 6 -> {
+                // Drop one (5) or a stack (6) of [itemId] from the network into
+                // the world. Mirrors vanilla's Q / Ctrl+Q behavior on a hovered
+                // slot, but pulls from network storage instead of an inventory
+                // slot. Stack count is clamped to the item's default max stack
+                // size so dropping doesn't dump 64-stack-thousands at once.
+                val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+                val available = if (c != null) c.count(itemId) else NetworkStorageHelper.countItems(lvl, snap, itemId)
+                val maxStack = item.getDefaultMaxStackSize().toLong()
+                val toDrop = if (action == 5) 1L else minOf(available, maxStack)
+
+                var extracted = 0L
+                for (card in NetworkStorageHelper.getStorageCards(snap)) {
+                    if (extracted >= toDrop) break
+                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+                    val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
+                        storage, { it == itemId }, toDrop - extracted
+                    )
+                    if (amount > 0) {
+                        c?.onExtracted(itemId, false, amount)
+                        extracted += amount
+                    }
+                }
+                if (extracted > 0) {
+                    player.drop(ItemStack(item, extracted.toInt()), true)
+                }
+            }
         }
 
         // Mark inventory dirty so the player's inventoryMenu syncs the change

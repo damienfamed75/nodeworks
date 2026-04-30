@@ -1521,7 +1521,65 @@ class InventoryTerminalScreen(
             }
             return searchBox.keyPressed(event)
         }
+        // Drop key under cursor: Q drops one, Ctrl+Q drops a stack. Vanilla's
+        // own drop-key handler relies on `hoveredSlot`, which is null for our
+        // virtual-slot layout, so we hit-test the grids ourselves and route
+        // to the right path per slot type.
+        val mc = Minecraft.getInstance()
+        if (mc.options.keyDrop.matches(event)) {
+            if (handleDropAtCursor(hasControlDownCompat())) return true
+        }
         return super.keyPressed(event)
+    }
+
+    /** Hit-test the grids under the current mouse position and dispatch a
+     *  drop. Crafting and player-inventory slots are real menu slots, so
+     *  vanilla's THROW click does the right thing (and stays in lock-step
+     *  with the slot tracker). The network grid isn't a real slot, so we
+     *  send a custom payload action that extracts and drops server-side. */
+    private fun handleDropAtCursor(dropStack: Boolean): Boolean {
+        val mc = Minecraft.getInstance()
+        val mx = (mc.mouseHandler.xpos() * mc.window.guiScaledWidth / mc.window.screenWidth).toInt()
+        val my = (mc.mouseHandler.ypos() * mc.window.guiScaledHeight / mc.window.screenHeight).toInt()
+        val button = if (dropStack) 1 else 0
+
+        if (!craftingCollapsed) {
+            val craftSlot = getCraftSlotAt(mx, my)
+            if (craftSlot >= 0) {
+                val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
+                if (menu.slots[slotIdx].hasItem()) {
+                    slotClicked(menu.slots[slotIdx], slotIdx, button, net.minecraft.world.inventory.ContainerInput.THROW)
+                    return true
+                }
+            }
+        }
+
+        val playerSlot = playerMainGrid.getSlotAt(mx, my) ?: playerHotbarGrid.getSlotAt(mx, my)
+        if (playerSlot != null) {
+            val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
+            if (menu.slots[virtualIndex].hasItem()) {
+                slotClicked(menu.slots[virtualIndex], virtualIndex, button, net.minecraft.world.inventory.ContainerInput.THROW)
+                return true
+            }
+        }
+
+        val networkSlot = networkGrid.getSlotAt(mx, my, 0)
+        if (networkSlot != null) {
+            // Skip the craft-queue reserved row, drops out of the queue would
+            // mean cancelling a craft mid-flight which we don't support.
+            val gridRow = networkSlot.index / layout.cols
+            if (gridRow == 0) return false
+            val viewIndex = scrollOffset * layout.cols + (networkSlot.index - layout.cols)
+            val entry = repo.getViewEntry(viewIndex)
+            if (entry != null && !entry.isFluid && entry.info.count > 0) {
+                val action = if (dropStack) 6 else 5
+                PlatformServices.clientNetworking.sendToServer(
+                    InvTerminalClickPayload(menu.containerId, entry.info.itemId, action)
+                )
+                return true
+            }
+        }
+        return false
     }
 
     override fun charTyped(event: CharacterEvent): Boolean {
