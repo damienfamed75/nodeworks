@@ -58,18 +58,18 @@ class InstructionSetScreen(
         private const val RESULT_X = 128
         private const val RESULT_Y = INPUT_SECTION_Y + 18  // middle row
 
-        // Clear-all button, matches ProcessingSetScreen placement (left of the input grid,
-        // vertically centered on it). Same CLEAR_BTN_X/Y since both GUIs have INPUT_SECTION_Y=13.
+        // Clear-all + substitutions toggle, stacked left of the input grid and
+        // centered as a pair against the 3-row grid. The pair is the
+        // substitutions button on top, a 2px gap, then the [x] beneath.
         private const val CLEAR_BTN_SIZE = 14
         private const val CLEAR_BTN_X = 16
-        private const val CLEAR_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - CLEAR_BTN_SIZE) / 2
-
-        // Substitutions toggle, sits directly above the [x] button with a 2px
-        // vertical gap so the two buttons read as a related pair.
         private const val SUBST_BTN_SIZE = 14
         private const val SUBST_BTN_X = CLEAR_BTN_X
-        private const val SUBST_BTN_Y = CLEAR_BTN_Y - SUBST_BTN_SIZE - 2
         private const val SUBST_ICON_SIZE = 9
+        private const val BTN_PAIR_GAP = 2
+        private const val BTN_PAIR_H = SUBST_BTN_SIZE + BTN_PAIR_GAP + CLEAR_BTN_SIZE
+        private const val SUBST_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - BTN_PAIR_H) / 2
+        private const val CLEAR_BTN_Y = SUBST_BTN_Y + SUBST_BTN_SIZE + BTN_PAIR_GAP
 
         private const val WHITE = 0xFFFFFFFF.toInt()
 
