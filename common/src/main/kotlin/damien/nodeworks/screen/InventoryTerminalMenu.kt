@@ -451,7 +451,22 @@ class InventoryTerminalMenu(
             val result = slot.item.copy()
             if (!playerInventory.add(result.copy())) return ItemStack.EMPTY
             slot.onTake(player, result)
-            if (autoPull) pendingAutoPull = true
+            // Clear the live result stack so vanilla's QUICK_MOVE loop
+            // terminates client-side after one iteration. Our [slotsChanged]
+            // is server-gated, so without this the client's prediction
+            // can't see the slot empty and re-enters quickMoveStack until
+            // it fills the player inventory with a phantom stack.
+            slot.set(ItemStack.EMPTY)
+            // Refill from network inline so the server's QUICK_MOVE loop
+            // can chain crafts off the player's network stock instead of
+            // capping at one craft per click. The refill triggers
+            // [slotsChanged] which repopulates [resultContainer], the loop
+            // then sees a fresh result and continues. Client-side this is
+            // a no-op (server-only network access), so the prediction
+            // still exits after one iteration as desired.
+            if (autoPull) {
+                autoPullRefill()
+            }
             return result
         }
         // Crafting input slots: move back to player inventory
