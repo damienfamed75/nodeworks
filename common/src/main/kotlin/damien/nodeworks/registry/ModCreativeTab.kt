@@ -40,6 +40,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.RECEIVER_ANTENNA)
 
                 // Celestine
+                output.accept(ModBlocks.CELESTINE_ORE)
                 output.accept(ModBlocks.CELESTINE_BLOCK)
                 output.accept(ModBlocks.BUDDING_CELESTINE)
                 output.accept(ModBlocks.CELESTINE_CLUSTER)

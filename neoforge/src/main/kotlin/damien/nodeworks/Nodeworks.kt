@@ -109,6 +109,22 @@ class Nodeworks(modBus: IEventBus) {
             damien.nodeworks.registry.ModCreativeTab.initialize()
         }
 
+        // Worldgen features. Registered on the FEATURE event so the configured-
+        // feature JSON can resolve its `type` reference. Single-feature registry
+        // for now, swap to a dedicated init object if more land here.
+        event.register(Registries.FEATURE) {
+            Registry.register(
+                BuiltInRegistries.FEATURE,
+                ResourceKey.create(
+                    Registries.FEATURE,
+                    Identifier.fromNamespaceAndPath("nodeworks", "celestine_ore"),
+                ),
+                damien.nodeworks.worldgen.CelestineOreFeature(
+                    net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration.CODEC
+                ),
+            )
+        }
+
         // Register menu types
         event.register(Registries.MENU) {
             ModScreenHandlers.TERMINAL = Registry.register(

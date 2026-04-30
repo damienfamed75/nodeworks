@@ -211,6 +211,20 @@ object ModBlocks {
             .pushReaction(net.minecraft.world.level.material.PushReaction.DESTROY)
     ) { props -> net.minecraft.world.level.block.AmethystClusterBlock(3.0f, 4.0f, props) }
 
+    /** Deep-underground celestine ore, the early-game on-ramp that lets new
+     *  players gather their first shards without having to locate a geode.
+     *  Glows softly so it's easy to spot in a cave wall. The block itself
+     *  doesn't random-tick, the celestine buds attached during worldgen are
+     *  decorative-only and won't grow further (unlike [BUDDING_CELESTINE]). */
+    val CELESTINE_ORE: Block = registerDirect("celestine_ore",
+        BlockBehaviour.Properties.of()
+            .mapColor(net.minecraft.world.level.material.MapColor.DEEPSLATE)
+            .strength(4.5f, 3.0f)
+            .sound(net.minecraft.world.level.block.SoundType.DEEPSLATE)
+            .lightLevel { 7 }
+            .requiresCorrectToolForDrops()
+    ) { props -> net.minecraft.world.level.block.Block(props) }
+
     val INVENTORY_TERMINAL: Block = register(
         "inventory_terminal",
         ::InventoryTerminalBlock,
