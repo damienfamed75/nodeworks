@@ -188,7 +188,7 @@ class SchedulerImpl(
     fun createLuaTable(): LuaTable {
         val table = LuaTable()
 
-        table.set("tick", object : TwoArgFunction() {
+        table.setGuarded("Scheduler", "tick", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, fn: LuaValue): LuaValue {
                 assertCanRegister(tasks.size, "scheduler")
                 val id = nextId++
@@ -197,7 +197,7 @@ class SchedulerImpl(
             }
         })
 
-        table.set("second", object : TwoArgFunction() {
+        table.setGuarded("Scheduler", "second", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, fn: LuaValue): LuaValue {
                 assertCanRegister(tasks.size, "scheduler")
                 val id = nextId++
@@ -206,7 +206,7 @@ class SchedulerImpl(
             }
         })
 
-        table.set("delay", object : ThreeArgFunction() {
+        table.setGuarded("Scheduler", "delay", object : ThreeArgFunction() {
             override fun call(selfArg: LuaValue, ticksArg: LuaValue, fn: LuaValue): LuaValue {
                 assertCanRegister(tasks.size, "scheduler")
                 val id = nextId++
@@ -216,7 +216,7 @@ class SchedulerImpl(
             }
         })
 
-        table.set("cancel", object : TwoArgFunction() {
+        table.setGuarded("Scheduler", "cancel", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, idArg: LuaValue): LuaValue {
                 val id = idArg.checkint()
                 tasks.removeAll { it.id == id }

@@ -169,10 +169,21 @@ class LuaExecGate(
             // LuaJ's source:line prefix + stack traceback.
             Outcome.Fatal(e.cleanReason)
         } catch (e: LuaError) {
-            Outcome.Errored(e.message ?: "lua error")
+            Outcome.Errored(stripLuaTraceback(e.message) ?: "lua error")
         } catch (e: Exception) {
             Outcome.Errored(e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    /** Strip LuaJ's auto-appended `\nstack traceback:\n...[Java]: in ?` from a
+     *  Lua error message. The leading `source:line` prefix LuaJ also adds is
+     *  kept (it tells the player which script line errored, useful), but the
+     *  trailing stack trace is verbose and rarely actionable in a one-script
+     *  Terminal context. Returns null if the input is null. */
+    fun stripLuaTraceback(message: String?): String? {
+        if (message == null) return null
+        val idx = message.indexOf("\nstack traceback:")
+        return if (idx >= 0) message.substring(0, idx) else message
     }
 
     private inline fun <T> runWithDeadline(

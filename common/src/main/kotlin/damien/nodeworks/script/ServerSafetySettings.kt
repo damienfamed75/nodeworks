@@ -124,6 +124,27 @@ data class ServerSafetySettings(
      *  of which fires on its own schedule, eventually saturating the per-tick
      *  budget AND building up unbounded memory. */
     val maxCallbacksPerKind: Int = 256,
+
+    /** Set of optional Lua standard libraries to load on engine startup. Default
+     *  contains the full set of currently-shipped libs so vanilla / trusted
+     *  servers behave like an unrestricted sandbox. Admins on hostile servers
+     *  comment out lines to strip individual libs (e.g. drop `bit32` from a
+     *  pack that doesn't need it).
+     *
+     *  Hardcoded essentials (`base`, `package`) load regardless. Without `base`
+     *  scripts have no `print`/`pairs`/`tostring`; without `package` `require`
+     *  breaks. The `package` global itself is always nil'd so scripts can't
+     *  reach `package.loadlib` / `package.searchers` regardless of this list. */
+    val enabledModules: Set<String> = setOf("bit32", "table", "string", "math"),
+
+    /** Set of `Type:method` entries the admin has disabled. Calling any of these
+     *  from a script throws a [LuaError] with a clear "disabled on this server"
+     *  message. Default empty.
+     *
+     *  Format is exact-match on the canonical method registration. Examples:
+     *    `"Network:insert"`, `"CardHandle:insert"`, `"PlacerHandle:place"`,
+     *    `"VariableHandle:set"`, `"RedstoneCard:set"`, `"Scheduler:tick"`. */
+    val disabledMethods: Set<String> = emptySet(),
 ) {
     companion object {
         /** Compiled-in defaults, used as the seed values when generating the

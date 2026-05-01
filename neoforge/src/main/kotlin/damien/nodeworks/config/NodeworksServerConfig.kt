@@ -9,9 +9,10 @@ import net.neoforged.neoforge.common.ModConfigSpec
  * load). Edit the file and run `/reload` (or restart the server) to push changes
  * through to in-flight script engines via [ServerPolicy].
  *
- * Two sections: `[scripting]` for the wall-clock budgets and per-tick budgets,
- * `[scripting.rateLimits]` for per-op call caps. Future module allow-list and
- * method deny-list will land in additional subsections as those features ship.
+ * Sections:
+ *   `[scripting]`                 wall-clock budgets and per-tick engine budgets
+ *   `[scripting.rateLimits]`      per-op call caps (network + engine pools)
+ *   `[scripting.sandbox]`         module allow-list and method deny-list
  */
 object NodeworksServerConfig {
 
@@ -29,6 +30,8 @@ object NodeworksServerConfig {
     val MAX_ERROR_LOGS_PER_TICK: ModConfigSpec.IntValue
     val MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK: ModConfigSpec.IntValue
     val MAX_CALLBACKS_PER_KIND: ModConfigSpec.IntValue
+    val ENABLED_MODULES: ModConfigSpec.ConfigValue<List<String>>
+    val DISABLED_METHODS: ModConfigSpec.ConfigValue<List<String>>
 
     val SPEC: ModConfigSpec
 
@@ -268,8 +271,66 @@ object NodeworksServerConfig {
             )
 
         builder.pop()
+        builder.pop()
+        builder
+            .comment(
+                " Sandbox controls.",
+                " Allow-list for optional Lua standard libraries, deny-list for individual",
+                " script API methods. Server-side enforcement: a disabled method throws a",
+                " 'disabled on this server' Lua error when called. Trusted / singleplayer",
+                " servers can leave both at defaults (full set enabled, deny-list empty)."
+            )
+            .push("scripting.sandbox")
+
+        ENABLED_MODULES = builder
+            .comment(
+                " Optional Lua standard libraries to load on engine startup.",
+                " Available: bit32 (bitwise ops), table, string, math.",
+                " The base library (print, pairs, tostring, etc.) and the package library",
+                " (required by `require`) load unconditionally. The `package` global itself",
+                " is always nil'd so scripts can't reach package.loadlib / searchers.",
+                " Comment out (delete) entries to strip individual libs."
+            )
+            .defineList(
+                "enabledModules",
+                ServerSafetySettings.Defaults.enabledModules.toList(),
+                { "math" },
+            ) { obj -> obj is String && obj in ALLOWED_MODULE_NAMES }
+
+        DISABLED_METHODS = builder
+            .comment(
+                " Deny-list of script API methods. Format: \"Type:method\" exact match.",
+                " Calling any of these from a script throws a Lua error.",
+                "",
+                " Type names:",
+                "   Network            global network table (network:insert, network:tryInsert, etc.)",
+                "   Scheduler          global scheduler table (scheduler:tick, second, delay, cancel)",
+                "   CardHandle         storage card methods (insert, tryInsert, find, findEach, count, face, slots)",
+                "   RedstoneCard       redstone card methods (powered, strength, set, onChange)",
+                "   ObserverCard       observer card methods (block, state, onChange)",
+                "   VariableHandle     variable card methods (get, set, cas, increment, decrement, etc.)",
+                "   PlacerHandle       placer methods (place, block, isBlocked)",
+                "   BreakerHandle      breaker methods (mine, cancel, block, state, isMining, progress)",
+                "",
+                " Recommended public-server posture:",
+                "   disabledMethods = [\"CardHandle:insert\", \"Network:insert\"]",
+                " (forces scripts to use the partial-success tryInsert variants, which",
+                "  interact better with the per-tick item budget)."
+            )
+            .defineListAllowEmpty(
+                "disabledMethods",
+                ServerSafetySettings.Defaults.disabledMethods.toList(),
+                { "Network:insert" },
+            ) { it is String }
+
+        builder.pop()
         SPEC = builder.build()
     }
+
+    /** Names valid for the [ENABLED_MODULES] config value. Anything outside this
+     *  set gets silently dropped on load (NeoForge calls our validator and
+     *  treats invalid entries as missing, falling back to the default list). */
+    private val ALLOWED_MODULE_NAMES: Set<String> = setOf("bit32", "table", "string", "math")
 
     /** Snapshot the current spec values into a [ServerSafetySettings] instance.
      *  Called by the config-event listener on load and reload. */
@@ -288,5 +349,7 @@ object NodeworksServerConfig {
         maxErrorLogsPerTick = MAX_ERROR_LOGS_PER_TICK.get(),
         maxItemsMovedPerTickPerNetwork = MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK.get().toLong(),
         maxCallbacksPerKind = MAX_CALLBACKS_PER_KIND.get(),
+        enabledModules = ENABLED_MODULES.get().toSet(),
+        disabledMethods = DISABLED_METHODS.get().toSet(),
     )
 }

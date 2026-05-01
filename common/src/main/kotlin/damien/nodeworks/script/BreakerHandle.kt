@@ -50,7 +50,7 @@ object BreakerHandle {
         // target is invalid (air, above-tier, unbreakable), returns a no-op
         // builder so chained calls don't crash and the broadcast
         // `HandleList:mine()` shape remains uniform.
-        table.set("mine", object : OneArgFunction() {
+        table.setGuarded("BreakerHandle", "mine", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 val started = entity.startBreak(level)
@@ -59,7 +59,7 @@ object BreakerHandle {
         })
 
         // :cancel(), abort the in-progress break, if any. Safe to call when idle.
-        table.set("cancel", object : OneArgFunction() {
+        table.setGuarded("BreakerHandle", "cancel", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 getEntity().cancel()
                 return LuaValue.NONE
@@ -70,25 +70,25 @@ object BreakerHandle {
         // BlockState internally for the duration formula so exposing these reads is
         // free, saves the user from placing a separate Observer Card next to every
         // breaker for stage-gated farms.
-        table.set("block", object : OneArgFunction() {
+        table.setGuarded("BreakerHandle", "block", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 val state = level.getBlockState(entity.targetPos)
                 return LuaValue.valueOf(BuiltInRegistries.BLOCK.getKey(state.block).toString())
             }
         })
-        table.set("state", object : OneArgFunction() {
+        table.setGuarded("BreakerHandle", "state", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 val state = level.getBlockState(entity.targetPos)
                 return blockStateToLua(state)
             }
         })
-        table.set("isMining", object : OneArgFunction() {
+        table.setGuarded("BreakerHandle", "isMining", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue =
                 LuaValue.valueOf(getEntity().isBreaking)
         })
-        table.set("progress", object : OneArgFunction() {
+        table.setGuarded("BreakerHandle", "progress", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue =
                 LuaValue.valueOf(getEntity().progressFraction.toDouble())
         })

@@ -372,7 +372,7 @@ class CardHandle private constructor(
         table.set("kind", LuaValue.valueOf(card.capability.type))
 
         // :face(name) -> new CardHandle with specific access face
-        table.set("face", object : TwoArgFunction() {
+        table.setGuarded("CardHandle", "face", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
                 val dir = faceName(name) ?: throw LuaError("Unknown face: $name")
@@ -381,7 +381,7 @@ class CardHandle private constructor(
         })
 
         // :slots(...) -> new CardHandle filtered to specific slots
-        table.set("slots", object : VarArgFunction() {
+        table.setGuarded("CardHandle", "slots", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val slots = mutableSetOf<Int>()
                 for (i in 2..args.narg()) {
@@ -393,7 +393,7 @@ class CardHandle private constructor(
 
         // :find(filter) -> ItemsHandle or nil (aggregated count across all slots/tanks)
         // Item side first, then fluid, unless the filter carries a kind prefix.
-        table.set("find", object : TwoArgFunction() {
+        table.setGuarded("CardHandle", "find", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val (kindGate, _) = parseFilterKind(filter)
@@ -433,7 +433,7 @@ class CardHandle private constructor(
         })
 
         // :findEach(filter) -> table of ItemsHandles (items then fluids, filtered by kind prefix if any)
-        table.set("findEach", object : TwoArgFunction() {
+        table.setGuarded("CardHandle", "findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val (kindGate, _) = parseFilterKind(filter)
@@ -468,14 +468,14 @@ class CardHandle private constructor(
         // :insert(itemsHandle, count?) -> boolean
         // Atomic move: moves `count` (or handle.count if omitted) exactly, or 0. Never partial.
         // Use :tryInsert for best-effort "move what fits" semantics.
-        table.set("insert", buildInsertFn(self, atomic = true))
+        table.setGuarded("CardHandle", "insert", buildInsertFn(self, atomic = true))
 
         // :tryInsert(itemsHandle, count?) -> number moved
         // Best-effort move: returns the actual count moved (0..requested).
-        table.set("tryInsert", buildInsertFn(self, atomic = false))
+        table.setGuarded("CardHandle", "tryInsert", buildInsertFn(self, atomic = false))
 
         // :count(filter) -> number (items + fluids matching, or only one if kind-prefixed)
-        table.set("count", object : TwoArgFunction() {
+        table.setGuarded("CardHandle", "count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val (kindGate, _) = parseFilterKind(filter)

@@ -168,10 +168,15 @@ class ScriptEngine(
         val g = Globals()
         g.load(JseBaseLib())
         g.load(PackageLib())
-        g.load(Bit32Lib())
-        g.load(TableLib())
-        g.load(StringLib())
-        g.load(JseMathLib())
+        // Optional std libs gated by [ServerSafetySettings.enabledModules]. Admins
+        // strip libs by removing entries from the config list; defaults load all
+        // four. Base + package always load (above) since scripts depend on print /
+        // pairs / require to function at all.
+        val modules = ServerPolicy.current.enabledModules
+        if ("bit32" in modules) g.load(Bit32Lib())
+        if ("table" in modules) g.load(TableLib())
+        if ("string" in modules) g.load(StringLib())
+        if ("math" in modules) g.load(JseMathLib())
 
         // Install the Lua compiler
         LuaC.install(g)
@@ -263,8 +268,9 @@ class ScriptEngine(
                 }
                 else -> {
                     // Regular script-level error. Surfaces through the player-facing
-                    // terminal log and the Diagnostic Tool's error buffer.
-                    logCallback("Error: ${e.message}", true)
+                    // terminal log and the Diagnostic Tool's error buffer. Strips the
+                    // LuaJ stack traceback for a single-line readable error.
+                    logCallback("Error: ${gate.stripLuaTraceback(e.message)}", true)
                 }
             }
             stop()
@@ -425,7 +431,7 @@ class ScriptEngine(
             if (System.nanoTime() < tickDeadlineNs) pollRedstoneCallbacks(tickDeadlineNs)
             if (System.nanoTime() < tickDeadlineNs) pollObserverCallbacks(tickDeadlineNs)
         } catch (e: LuaError) {
-            logCallback("Runtime error: ${e.message}", true)
+            logCallback("Runtime error: ${gate.stripLuaTraceback(e.message)}", true)
             stop()
         } catch (e: Exception) {
             logCallback("Runtime error: ${e.message}", true)
@@ -720,7 +726,7 @@ class ScriptEngine(
             table.set("face", LuaValue.NIL)
 
             // powered() → boolean
-            table.set("powered", object : OneArgFunction() {
+            table.setGuarded("RedstoneCard", "powered", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue {
                     val strength = level.getSignal(cap.adjacentPos, cap.nodeSide)
                     return LuaValue.valueOf(strength > 0)
@@ -728,7 +734,7 @@ class ScriptEngine(
             })
 
             // strength() → number 0-15
-            table.set("strength", object : OneArgFunction() {
+            table.setGuarded("RedstoneCard", "strength", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue {
                     val strength = level.getSignal(cap.adjacentPos, cap.nodeSide)
                     return LuaValue.valueOf(strength)
@@ -736,7 +742,7 @@ class ScriptEngine(
             })
 
             // set(boolean | number), emit redstone signal
-            table.set("set", networkRateLimited(
+            table.setGuarded("RedstoneCard", "set", networkRateLimited(
                 "redstone:set",
                 consume = { b, tick -> b.tryConsumeRedstoneWrite(tick) },
                 warnOp = NetworkBudget.WARN_REDSTONE_WRITE,
@@ -755,7 +761,7 @@ class ScriptEngine(
                 }))
 
             // onChange(function(strength: number)), register callback for signal changes
-            table.set("onChange", object : TwoArgFunction() {
+            table.setGuarded("RedstoneCard", "onChange", object : TwoArgFunction() {
                 override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
                     val fn = fnArg.checkfunction()
                     // Only count when adding a new alias, replacing an existing
@@ -785,13 +791,13 @@ class ScriptEngine(
             table.set("face", LuaValue.NIL)
 
             // block() → string, current block id at the watched position.
-            table.set("block", object : OneArgFunction() {
+            table.setGuarded("ObserverCard", "block", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue =
                     LuaValue.valueOf(blockIdOf(level.getBlockState(cap.adjacentPos)))
             })
 
             // state() → { [string]: any }, properties of the watched block.
-            table.set("state", object : OneArgFunction() {
+            table.setGuarded("ObserverCard", "state", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue =
                     blockStateToLua(level.getBlockState(cap.adjacentPos))
             })
@@ -800,7 +806,7 @@ class ScriptEngine(
             // Replaces any prior handler bound to the same alias. `lastState` seeds with the
             // current block so the very first poll after registration won't fire a phantom
             // change event for "transition from null to whatever's already there."
-            table.set("onChange", object : TwoArgFunction() {
+            table.setGuarded("ObserverCard", "onChange", object : TwoArgFunction() {
                 override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
                     val fn = fnArg.checkfunction()
                     if (alias !in observerCallbacks) assertCallbackCap(observerCallbacks.size, "observer-handler")
@@ -1292,7 +1298,7 @@ class ScriptEngine(
         // when a variable happens to share an alias with a card, a future "validate
         // unique names across cards + variables" pass on the network would catch
         // collisions at edit time, but for now the lookup order is the contract.
-        networkTable.set("get", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "get", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
                 val alias = aliasArg.checkjstring()
                 snapshot.findByAlias(alias)?.let { return createCardTable(it, alias) }
@@ -1309,7 +1315,7 @@ class ScriptEngine(
         // HandleList's broadcast methods lock in to the shared `VariableHandle`
         // surface (`set`, `cas`). Callers wanting type-specific atomics on every
         // variable should iterate via `:list()`.
-        networkTable.set("getAll", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "getAll", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
                 val type = typeArg.checkjstring()
                 if (type == "variable") {
@@ -1357,7 +1363,7 @@ class ScriptEngine(
         // won't show up in it, re-call `network:cards` to refresh. For tick-time
         // re-resolution, use the bare-string wildcard form on importer/stocker
         // (`importer:from("io_*")`).
-        networkTable.set("cards", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "cards", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, patternArg: LuaValue): LuaValue {
                 val pattern = patternArg.checkjstring()
                 val regex = damien.nodeworks.script.preset.wildcardToRegex(pattern)
@@ -1382,7 +1388,7 @@ class ScriptEngine(
         // network:channel(color) → Channel handle scoped to that dye color.
         // Errors on bad color names so a typo surfaces immediately rather than
         // silently iterating an empty group.
-        networkTable.set("channel", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "channel", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, colorArg: LuaValue): LuaValue {
                 val name = colorArg.checkjstring()
                 val color = net.minecraft.world.item.DyeColor.byName(name, null)
@@ -1396,7 +1402,7 @@ class ScriptEngine(
         // member carry a channel and `network:channel(color):getAll(...)` scopes
         // against any of them, so the in-use set has to mirror the same union.
         // Order is by DyeColor.id ascending so iteration is stable across calls.
-        networkTable.set("channels", object : OneArgFunction() {
+        networkTable.setGuarded("Network", "channels", object : OneArgFunction() {
             override fun call(selfArg: LuaValue): LuaValue {
                 val seen = sortedSetOf<net.minecraft.world.item.DyeColor>(compareBy { it.id })
                 snapshot.allCards().forEach { seen.add(it.channel) }
@@ -1413,7 +1419,7 @@ class ScriptEngine(
 
         // network:find(filter) → ItemsHandle or nil (scans real storage, aggregated count)
         // Respects kind-qualified filters (`item:*`, `fluid:*`). Bare filters check items first.
-        networkTable.set("find", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "find", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val (kindGate, _) = CardHandle.parseFilterKind(filter)
@@ -1462,7 +1468,7 @@ class ScriptEngine(
 
         // network:findEach(filter) → table of ItemsHandles (scans real storage).
         // Bare filter lists items then fluids, kind-prefixed filter yields only that kind.
-        networkTable.set("findEach", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val (kindGate, _) = CardHandle.parseFilterKind(filter)
@@ -1508,7 +1514,7 @@ class ScriptEngine(
         })
 
         // network:count(filter) → number (items + fluids, or kind-filtered)
-        networkTable.set("count", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val count = NetworkStorageHelper.countResource(level, snapshot, filter)
@@ -1521,7 +1527,7 @@ class ScriptEngine(
         // Use network:tryInsert for "move what fits, leave the rest" semantics.
         // Per-network call cap returns false on rate limit (matches "atomic move blocked"
         // semantics scripts already handle).
-        networkTable.set("insert", networkRateLimited(
+        networkTable.setGuarded("Network", "insert", networkRateLimited(
             "network:insert",
             consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
             warnOp = NetworkBudget.WARN_ITEM_MOVE,
@@ -1532,7 +1538,7 @@ class ScriptEngine(
         // network:tryInsert(itemsHandle, count?) → number (best-effort count moved).
         // Per-network call cap returns 0 on rate limit (partial-success is the natural
         // shape for tryInsert, scripts already check the return value).
-        networkTable.set("tryInsert", networkRateLimited(
+        networkTable.setGuarded("Network", "tryInsert", networkRateLimited(
             "network:tryInsert",
             consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
             warnOp = NetworkBudget.WARN_ITEM_MOVE,
@@ -1548,7 +1554,7 @@ class ScriptEngine(
         // callback fires with an ItemsHandle on success, or `nil` on any failure
         // (plan failed, async timed out, no Crafting CPU). Without `:connect`, plan
         // failures still log to the terminal so the player sees what went wrong.
-        networkTable.set("craft", object : VarArgFunction() {
+        networkTable.setGuarded("Network", "craft", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val identifier = args.checkjstring(2)
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
@@ -1681,7 +1687,7 @@ class ScriptEngine(
                 fun fireHandler(handle: LuaValue) {
                     val fn = handler ?: return
                     try { fn.call(handle) }
-                    catch (e: LuaError) { logCallback("craft callback error: ${e.message}", true) }
+                    catch (e: LuaError) { logCallback("craft callback error: ${gate.stripLuaTraceback(e.message)}", true) }
                 }
 
                 fun resolve(success: Boolean) {
@@ -1749,7 +1755,7 @@ class ScriptEngine(
         // [routeTable] stays null, the storage helper falls through to the
         // default priority-sorted insert.
         routeTable = null
-        networkTable.set("route", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "route", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
                 val pattern = aliasArg.checkjstring()
                 return StorageCardConfigurator.createBuilder(level, snapshot, pattern)
@@ -1759,7 +1765,7 @@ class ScriptEngine(
 
         // network:shapeless(item1, count1, item2?, count2?, ...) → ItemsHandle or nil
         // Crafts using vanilla shapeless recipes. Inputs are item/count pairs.
-        networkTable.set("shapeless", object : VarArgFunction() {
+        networkTable.setGuarded("Network", "shapeless", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 // Parse item/count pairs from varargs (self is arg1)
                 val ingredients = mutableMapOf<String, Int>()
@@ -1808,7 +1814,7 @@ class ScriptEngine(
         // cardName matches the name set on a Processing Set in Processing Storage.
         // The handler function receives input items as arguments and should return
         // the result ItemsHandle from the processing machine's output.
-        networkTable.set("handle", object : ThreeArgFunction() {
+        networkTable.setGuarded("Network", "handle", object : ThreeArgFunction() {
             override fun call(selfArg: LuaValue, nameArg: LuaValue, handlerArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
                 val handler = handlerArg.checkfunction()
@@ -1822,7 +1828,7 @@ class ScriptEngine(
         // network and resolved through `network:get(name)` alongside cards.)
 
         // network:debug(), print full network summary
-        networkTable.set("debug", object : OneArgFunction() {
+        networkTable.setGuarded("Network", "debug", object : OneArgFunction() {
             override fun call(selfArg: LuaValue): LuaValue {
                 val sb = StringBuilder()
                 sb.appendLine("=== Network Debug ===")

@@ -47,7 +47,7 @@ object PlacerHandle {
         // referenced source. Returns false on any failure (no item available, target
         // not replaceable, item isn't a BlockItem, claim mod cancellation) so the
         // script can branch on the return value rather than relying on a callback.
-        table.set("place", object : TwoArgFunction() {
+        table.setGuarded("PlacerHandle", "place", object : TwoArgFunction() {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 val target = entity.targetPos
@@ -99,7 +99,7 @@ object PlacerHandle {
 
         // :block() → string, current block id at the targeted position. Useful
         // for "is the slot still empty" checks before calling :place.
-        table.set("block", object : OneArgFunction() {
+        table.setGuarded("PlacerHandle", "block", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 val state = level.getBlockState(entity.targetPos)
@@ -109,7 +109,7 @@ object PlacerHandle {
 
         // :isBlocked() → boolean, true if a place would fail because the target
         // is non-air and not replaceable.
-        table.set("isBlocked", object : OneArgFunction() {
+        table.setGuarded("PlacerHandle", "isBlocked", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 val state = level.getBlockState(entity.targetPos)
