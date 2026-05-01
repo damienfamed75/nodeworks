@@ -738,3 +738,49 @@ data class SetCardNamePayload(val containerId: Int, val name: String) : CustomPa
     }
     override fun type() = TYPE
 }
+
+/**
+ * S2C: Snapshot of the server's script-sandbox policy ([enabledModules],
+ * [disabledMethods]). Sent on player join, on `/reload`, and whenever the
+ * server config is reloaded. The client mirrors it into [ClientServerPolicy]
+ * so the autocomplete popup can hide methods that would error on the server.
+ *
+ * Server-side enforcement remains the actual security boundary, this payload
+ * just keeps the client's UX honest. Singleplayer integrated server uses the
+ * same path, so the in-game GUI honours the player's own config edits without
+ * a special-case branch.
+ */
+data class ServerPolicySyncPayload(
+    val enabledModules: Set<String>,
+    val disabledMethods: Set<String>,
+) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ServerPolicySyncPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "server_policy_sync")
+        )
+        // Module names are short ascii ids (`bit32`/`table`/`string`/`math`),
+        // method keys are `Type:method` and bounded by the longest pair we'd
+        // ever ship (well under 64 chars). The list bounds prevent a bad
+        // server from sending pathological payloads to clients.
+        private const val MAX_NAME = 64
+        private const val MAX_ENTRIES = 1024
+        val CODEC: StreamCodec<FriendlyByteBuf, ServerPolicySyncPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.enabledModules.size.coerceAtMost(MAX_ENTRIES))
+                for (m in p.enabledModules.take(MAX_ENTRIES)) buf.writeUtf(m, MAX_NAME)
+                buf.writeVarInt(p.disabledMethods.size.coerceAtMost(MAX_ENTRIES))
+                for (m in p.disabledMethods.take(MAX_ENTRIES)) buf.writeUtf(m, MAX_NAME)
+            },
+            { buf ->
+                val mc = buf.readVarInt().coerceAtMost(MAX_ENTRIES)
+                val modules = HashSet<String>(mc)
+                repeat(mc) { modules.add(buf.readUtf(MAX_NAME)) }
+                val dc = buf.readVarInt().coerceAtMost(MAX_ENTRIES)
+                val disabled = HashSet<String>(dc)
+                repeat(dc) { disabled.add(buf.readUtf(MAX_NAME)) }
+                ServerPolicySyncPayload(modules, disabled)
+            }
+        )
+    }
+    override fun type() = TYPE
+}

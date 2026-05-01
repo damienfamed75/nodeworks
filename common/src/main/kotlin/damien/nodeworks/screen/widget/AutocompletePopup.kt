@@ -2558,10 +2558,14 @@ class AutocompletePopup(
         val receiver = ctx.receiver
         val partial = ctx.partial
 
-        // Built-in modules
-        if (receiver == "string") return suggestStringMethods(partial)
-        if (receiver == "math") return suggestMathMethods(partial)
-        if (receiver == "table") return suggestTableMethods(partial)
+        // Built-in modules. Skip when the admin has stripped the lib via the
+        // server's enabledModules allow-list, scripts that try to call into a
+        // missing global will just nil-error at runtime so completing into a
+        // dead namespace would be misleading.
+        val modules = damien.nodeworks.script.ClientServerPolicy.enabledModules
+        if (receiver == "string") return if ("string" in modules) suggestStringMethods(partial) else emptyList()
+        if (receiver == "math") return if ("math" in modules) suggestMathMethods(partial) else emptyList()
+        if (receiver == "table") return if ("table" in modules) suggestTableMethods(partial) else emptyList()
 
         // Check if it's a required module
         val moduleExports = getModuleExports(fullText, receiver)
@@ -2727,14 +2731,19 @@ class AutocompletePopup(
     private fun suggestionsFromRegistryMethods(type: String, partial: String): List<Suggestion>? {
         val methods = damien.nodeworks.script.api.LuaApiRegistry.methodsOf(type)
         if (methods.isEmpty()) return null
-        val out = methods.map { doc ->
-            val sigSuffix = doc.signature.substringAfter(doc.displayName)
-            if (doc.snippetBody != null) {
-                snippet("${doc.displayName}(", "${doc.displayName}$sigSuffix", doc.snippetBody, doc.snippetCursorOffset)
-            } else {
-                suggest("${doc.displayName}(", "${doc.displayName}$sigSuffix", Kind.METHOD)
+        // Hide methods the server has disabled. Server-side guard is the actual
+        // security boundary, this just keeps the editor honest so the player
+        // doesn't autocomplete into a "disabled on this server" runtime error.
+        val out = methods
+            .filter { damien.nodeworks.script.ClientServerPolicy.isMethodAllowed(type, it.displayName) }
+            .map { doc ->
+                val sigSuffix = doc.signature.substringAfter(doc.displayName)
+                if (doc.snippetBody != null) {
+                    snippet("${doc.displayName}(", "${doc.displayName}$sigSuffix", doc.snippetBody, doc.snippetCursorOffset)
+                } else {
+                    suggest("${doc.displayName}(", "${doc.displayName}$sigSuffix", Kind.METHOD)
+                }
             }
-        }
         return fuzzy(partial, out)
     }
 
@@ -2791,7 +2800,10 @@ class AutocompletePopup(
             // the broadcast version reads identically to the per-member call. The
             // hover tooltip resolution path (LuaApiDocs.resolveAt) does the same
             // lookup at hover time, so popup labels and tooltips stay in sync.
+            // Skip methods disabled on the server, the broadcast variant resolves
+            // through the same per-member binding so hiding it tracks the deny-list.
             for (name in broadcastNames) {
+                if (!damien.nodeworks.script.ClientServerPolicy.isMethodAllowed(elementType, name)) continue
                 val sourceDoc = LuaApiDocs.get("${elementType}:${name}")
                 val display = sourceDoc?.signature ?: "$name(...)  broadcast to every member"
                 methods.add(suggest("$name(", display, Kind.METHOD))
