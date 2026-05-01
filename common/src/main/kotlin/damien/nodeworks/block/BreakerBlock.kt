@@ -10,7 +10,9 @@ import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.BaseEntityBlock
@@ -58,6 +60,19 @@ class BreakerBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity =
         BreakerBlockEntity(pos, state)
+
+    /** Capture the placer's UUID so breaks fire BlockEvent.BreakEvent with that actor,
+     *  letting claim mods (FTB Chunks etc.) and vanilla spawn protection resolve the
+     *  permission as if the player swung a pickaxe themselves. */
+    override fun setPlacedBy(level: Level, pos: BlockPos, state: BlockState, placer: LivingEntity?, stack: ItemStack) {
+        super.setPlacedBy(level, pos, state, placer, stack)
+        if (level.isClientSide) return
+        val breaker = level.getBlockEntity(pos) as? BreakerBlockEntity ?: return
+        if (breaker.ownerUuid == null && placer is Player) {
+            breaker.ownerUuid = placer.uuid
+            breaker.setChanged()
+        }
+    }
 
     override fun <T : BlockEntity> getTicker(
         level: Level,

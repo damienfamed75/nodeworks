@@ -49,6 +49,7 @@ class Nodeworks(modBus: IEventBus) {
         PlatformServices.menu = NeoForgeMenuService()
         PlatformServices.storage = NeoForgeStorageService()
         PlatformServices.modState = NeoForgeModStateService()
+        PlatformServices.fakePlayer = damien.nodeworks.platform.NeoForgeFakePlayerService()
 
         // Register during NeoForge's register event (registries are unfrozen at that point)
         modBus.addListener(::onRegister)

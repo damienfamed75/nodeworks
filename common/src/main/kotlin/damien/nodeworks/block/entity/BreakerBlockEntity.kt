@@ -3,6 +3,7 @@ package damien.nodeworks.block.entity
 import damien.nodeworks.block.BreakerBlock
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
+import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
 import net.minecraft.core.HolderLookup
@@ -35,6 +36,11 @@ class BreakerBlockEntity(
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
+
+    /** UUID of the player who placed this breaker. Drives the FakePlayer identity used
+     *  for [BlockEvent.BreakEvent] dispatch + spawn protection. Legacy null on pre-update
+     *  worlds, falls back to the static "Nodeworks" profile via FakePlayerService. */
+    var ownerUuid: UUID? = null
 
     /** Custom alias for `network:get(name)`. Empty string falls back to the
      *  auto-alias (`breaker_N`) assigned by [NetworkDiscovery.assignAutoAliases]. */
@@ -153,11 +159,29 @@ class BreakerBlockEntity(
 
     /** Finalise the break: clear the overlay, drop loot, set the target to air,
      *  hand drops to the configured handler (or default-store via the network
-     *  insert path). */
+     *  insert path).
+     *
+     *  Routes through [PlatformServices.fakePlayer] for permission gating: a claim
+     *  mod or vanilla spawn protection can cancel the break, in which case nothing
+     *  drops and the target is left untouched. The breaker still resets its progress
+     *  state so the next tick can re-attempt (or a player can rebind the breaker to
+     *  somewhere it has permission to mine). */
     private fun completeBreak(level: ServerLevel, target: BlockPos, state: BlockState) {
-        // Clear the per-stage overlay before changing the block, otherwise the
-        // crack texture lingers on the new (air) block for a frame or two.
+        // Clear the per-stage overlay before any branch, otherwise the crack
+        // texture lingers on the live block when the break is rejected.
         level.destroyBlockProgress(breakerId, target, -1)
+
+        // Permission gate: spawn protection + BreakBlockEvent fired with the owner's
+        // FakePlayer. On rejection we drop the queued handler and reset progress
+        // without producing drops or mutating the world.
+        if (!PlatformServices.fakePlayer.mayBreak(level, target, state, ownerUuid)) {
+            breakProgress = 0
+            breakDurationTicks = 0
+            targetSnapshot = null
+            pendingHandler = null
+            markDirtyAndSync()
+            return
+        }
 
         // Compute drops with a diamond-pickaxe loot context so players get the
         // tier-appropriate items (cobblestone from stone, ore drops with proper
@@ -240,6 +264,7 @@ class BreakerBlockEntity(
         output.putInt("breakProgress", breakProgress)
         output.putInt("breakDurationTicks", breakDurationTicks)
         networkId?.let { output.putString("networkId", it.toString()) }
+        ownerUuid?.let { output.putString("ownerUuid", it.toString()) }
         output.putBlockPosList("connections", connections)
     }
 
@@ -254,6 +279,9 @@ class BreakerBlockEntity(
         // routing to default (network storage) on next tick.
         pendingHandler = null
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
+        ownerUuid = input.getStringOrNull("ownerUuid")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)

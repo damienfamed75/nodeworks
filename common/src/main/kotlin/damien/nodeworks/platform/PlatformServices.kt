@@ -25,6 +25,11 @@ object PlatformServices {
     lateinit var clientNetworking: ClientNetworkingService
     lateinit var clientEvents: ClientEventService
 
+    /** FakePlayer factory + permission gate for script-driven block mutations. Defaults
+     *  to a no-op so unit tests and pre-init paths don't crash, the loader replaces
+     *  this at mod init. */
+    var fakePlayer: FakePlayerService = NoopFakePlayerService
+
     /** Set by the loader-specific client init. Falls back to a plain gray square if
      *  the loader didn't register a renderer (e.g. dedicated server, never touched). */
     var fluidRenderer: FluidSpriteRenderer = FluidSpriteRenderer.Fallback

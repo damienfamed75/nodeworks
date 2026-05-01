@@ -39,6 +39,12 @@ class TerminalBlockEntity(
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
 
+    /** UUID of the player who placed this terminal. Captured in [TerminalBlock.setPlacedBy]
+     *  and used as the FakePlayer identity when scripts mutate the world (Breaker/Placer
+     *  routed through this terminal's network). Legacy null on pre-update worlds, the
+     *  FakePlayer service falls back to a static "Nodeworks" profile in that case. */
+    var ownerUuid: UUID? = null
+
     // Script storage
     val scripts: MutableMap<String, String> = linkedMapOf("main" to "")
     var autoRun: Boolean = false
@@ -196,6 +202,7 @@ class TerminalBlockEntity(
         output.putBoolean("autoRun", autoRun)
         output.putInt("layoutIndex", layoutIndex)
         networkId?.let { output.putString("networkId", it.toString()) }
+        ownerUuid?.let { output.putString("ownerUuid", it.toString()) }
         output.putBlockPosList("connections", connections)
     }
 
@@ -213,6 +220,9 @@ class TerminalBlockEntity(
         autoRun = input.getBooleanOr("autoRun", false)
         layoutIndex = input.getIntOr("layoutIndex", 0)
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
+        ownerUuid = input.getStringOrNull("ownerUuid")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)

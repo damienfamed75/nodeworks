@@ -31,6 +31,11 @@ class PlacerBlockEntity(
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
 
+    /** UUID of the player who placed this placer. Drives the FakePlayer identity used
+     *  for [BlockEvent.EntityPlaceEvent] dispatch + spawn protection. Legacy null on
+     *  pre-update worlds, falls back to the static "Nodeworks" profile. */
+    var ownerUuid: UUID? = null
+
     var deviceName: String = ""
         set(value) {
             field = value.take(32)
@@ -92,6 +97,7 @@ class PlacerBlockEntity(
         output.putString("deviceName", deviceName)
         output.putInt("channel", channel.id)
         networkId?.let { output.putString("networkId", it.toString()) }
+        ownerUuid?.let { output.putString("ownerUuid", it.toString()) }
         output.putBlockPosList("connections", connections)
     }
 
@@ -100,6 +106,9 @@ class PlacerBlockEntity(
         deviceName = input.getStringOr("deviceName", "")
         channel = runCatching { DyeColor.byId(input.getIntOr("channel", 0)) }.getOrDefault(DyeColor.WHITE)
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
+        ownerUuid = input.getStringOrNull("ownerUuid")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)

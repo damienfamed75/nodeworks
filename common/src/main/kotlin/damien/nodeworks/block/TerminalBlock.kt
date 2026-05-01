@@ -12,7 +12,9 @@ import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.block.BaseEntityBlock
@@ -61,6 +63,20 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity {
         return TerminalBlockEntity(pos, state)
+    }
+
+    /** Capture the placer's UUID so script-driven block mutations carry an actor identity
+     *  to claim mods (FTB Chunks etc.) and to vanilla spawn protection. Stack-restored
+     *  block-entity-data already carries the saved ownerUuid via the BLOCK_ENTITY_DATA
+     *  load, so we only set it when the freshly-placed BE has a null owner. */
+    override fun setPlacedBy(level: Level, pos: BlockPos, state: BlockState, placer: LivingEntity?, stack: ItemStack) {
+        super.setPlacedBy(level, pos, state, placer, stack)
+        if (level.isClientSide) return
+        val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return
+        if (terminal.ownerUuid == null && placer is Player) {
+            terminal.ownerUuid = placer.uuid
+            terminal.setChanged()
+        }
     }
 
     override fun useWithoutItem(
