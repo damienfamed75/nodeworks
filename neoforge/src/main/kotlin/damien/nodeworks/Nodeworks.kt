@@ -687,6 +687,9 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // Wipe chunk-load refcounts, each controller's setLevel on the next run will
         // re-claim, rebuilding the map from scratch against a fresh level.
         damien.nodeworks.network.ChunkForceLoadManager.clearAll()
+        // Drop per-network rate-limit budgets so a quit-and-rejoin doesn't carry
+        // stale tick counters into the new session.
+        damien.nodeworks.script.NetworkRateLimits.clearAll()
     }
 
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {
@@ -729,11 +732,20 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         val newSettings = damien.nodeworks.config.NodeworksServerConfig.snapshot()
         damien.nodeworks.script.ServerPolicy.update(newSettings)
         logger.info(
-            "Nodeworks server config loaded: topLevelSoftAbortMs={}, callbackSoftAbortMs={}, turnOffAutoRunOnTimeout={}, instructionsPerWallClockCheck={}",
+            "Nodeworks server config loaded: topLevelSoftAbort={}ms callbackSoftAbort={}ms localTickBudget={}ms globalTickBudget={}ms instructionsPerCheck={} maxItemMoveCalls={} maxPlacements={} maxRedstoneWrites={} maxVariableWrites={} maxPrints={} maxErrorLogs={} maxItemsMovedPerTick={} maxCallbacksPerKind={}",
             newSettings.topLevelSoftAbortMs,
             newSettings.callbackSoftAbortMs,
-            newSettings.turnOffAutoRunOnTimeout,
+            newSettings.localTickBudgetMs,
+            newSettings.globalTickBudgetMs,
             newSettings.instructionsPerWallClockCheck,
+            newSettings.maxItemMoveCallsPerTick,
+            newSettings.maxPlacementsPerTick,
+            newSettings.maxRedstoneWritesPerTick,
+            newSettings.maxVariableWritesPerTick,
+            newSettings.maxPrintsPerTick,
+            newSettings.maxErrorLogsPerTick,
+            newSettings.maxItemsMovedPerTickPerNetwork,
+            newSettings.maxCallbacksPerKind,
         )
     }
 

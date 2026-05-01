@@ -27,7 +27,7 @@ object NodeworksServerConfig {
     val MAX_REDSTONE_WRITES_PER_TICK: ModConfigSpec.IntValue
     val MAX_VARIABLE_WRITES_PER_TICK: ModConfigSpec.IntValue
     val MAX_ERROR_LOGS_PER_TICK: ModConfigSpec.IntValue
-    val MAX_ITEMS_MOVED_PER_TICK_PER_SCRIPT: ModConfigSpec.IntValue
+    val MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK: ModConfigSpec.IntValue
     val MAX_CALLBACKS_PER_KIND: ModConfigSpec.IntValue
 
     val SPEC: ModConfigSpec
@@ -142,25 +142,22 @@ object NodeworksServerConfig {
                 " sending packets, defending against the kind of accidental DDoS that the",
                 " wall-clock hook alone can't catch (a tight loop fires faster than clients",
                 " drain, hanging the server tick on Netty buffer pressure).",
-                " Set any of these to 0 for 'unlimited' on trusted / singleplayer servers."
+                " Set any of these to 0 for 'unlimited' on trusted / singleplayer servers.",
+                "",
+                " Split into two pools:",
+                "   network: shared across all terminals on the same network. Multiple",
+                "            terminals running the same offending script can't multiply",
+                "            the cap by spreading themselves across terminals.",
+                "   engine:  per-terminal, for state that's genuinely script-internal",
+                "            (callback registry size). Each engine has its own pool",
+                "            because these aren't shared network resources."
             )
             .push("scripting.rateLimits")
-
-        MAX_PRINTS_PER_TICK = builder
-            .comment(
-                " Max script `print(...)` calls per tick per engine. 20/tick = 400/sec is",
-                " plenty for real scripts; bounds abuse via tight print loops."
-            )
-            .defineInRange(
-                "maxPrintsPerTick",
-                ServerSafetySettings.Defaults.maxPrintsPerTick,
-                0,
-                100_000,
-            )
+            .push("network")
 
         MAX_PLACEMENTS_PER_TICK = builder
             .comment(
-                " Max script-driven block placements per tick per engine (placer:place).",
+                " Max script-driven block placements per tick per network (placer:place).",
                 " Each placement fires a BlockUpdatePacket and neighbour updates; placement",
                 " is heavy, so this cap is the lowest by default."
             )
@@ -173,8 +170,8 @@ object NodeworksServerConfig {
 
         MAX_ITEM_MOVE_CALLS_PER_TICK = builder
             .comment(
-                " Max network/card insert/tryInsert/route calls per tick per engine. Per-call",
-                " cap, separate from maxItemsMovedPerTickPerScript which limits item count",
+                " Max network/card insert/tryInsert/route calls per tick per network. Per-call",
+                " cap, separate from maxItemsMovedPerTickPerNetwork which limits item count",
                 " rather than call count. A single call can move a stack of 64; the call cap",
                 " bounds packet flood from menu syncs, the item cap bounds bulk throughput."
             )
@@ -187,7 +184,7 @@ object NodeworksServerConfig {
 
         MAX_REDSTONE_WRITES_PER_TICK = builder
             .comment(
-                " Max script-driven redstone signal writes per tick per engine (redstone:set).",
+                " Max script-driven redstone signal writes per tick per network (redstone:set).",
                 " Each write triggers neighbour-change updates."
             )
             .defineInRange(
@@ -199,7 +196,7 @@ object NodeworksServerConfig {
 
         MAX_VARIABLE_WRITES_PER_TICK = builder
             .comment(
-                " Max script-driven variable card writes per tick per engine (var:set, var:cas).",
+                " Max script-driven variable card writes per tick per network (var:set, var:cas).",
                 " Each write fires setChanged + sendBlockUpdated."
             )
             .defineInRange(
@@ -209,10 +206,25 @@ object NodeworksServerConfig {
                 100_000,
             )
 
+        MAX_PRINTS_PER_TICK = builder
+            .comment(
+                " Max script `print(...)` calls per tick per network. Each print sends a chat",
+                " packet to nearby players, so the actual shared resource is the player's",
+                " network bandwidth, not any per-terminal channel. Per-network so a player",
+                " can't multiply the cap by spreading bad scripts across N terminals."
+            )
+            .defineInRange(
+                "maxPrintsPerTick",
+                ServerSafetySettings.Defaults.maxPrintsPerTick,
+                0,
+                100_000,
+            )
+
         MAX_ERROR_LOGS_PER_TICK = builder
             .comment(
-                " Max error-log dispatches per tick per engine. Same packet path as",
-                " maxPrintsPerTick but for error-log calls (bug spam from a loop)."
+                " Max error-log dispatches per tick per network. Same packet path as",
+                " maxPrintsPerTick but for error-log calls (bug spam from a loop).",
+                " Counted separately so legit error reporting isn't starved by a noisy script."
             )
             .defineInRange(
                 "maxErrorLogsPerTick",
@@ -221,21 +233,23 @@ object NodeworksServerConfig {
                 100_000,
             )
 
-        MAX_ITEMS_MOVED_PER_TICK_PER_SCRIPT = builder
+        MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK = builder
             .comment(
-                " Max items moved per tick per engine across all network insert/tryInsert/",
-                " route calls. Independent of maxItemMoveCallsPerTick (a single call can move",
-                " 64 items). 0 means unlimited. When exhausted, remaining moves return",
-                " partial counts; atomic insert short-circuits to false.",
-                " (Enforcement wires up in a follow-up pass; this knob is currently a",
-                " placeholder so admins see the full surface in one config edit.)"
+                " Max items moved per tick per network across all network:insert and",
+                " network:tryInsert calls. Independent of maxItemMoveCallsPerTick (a",
+                " single call can move 64 items, so call count != item count). 0 means",
+                " unlimited. When exhausted, tryInsert returns partial counts and atomic",
+                " insert short-circuits to false."
             )
             .defineInRange(
-                "maxItemsMovedPerTickPerScript",
-                ServerSafetySettings.Defaults.maxItemsMovedPerTickPerScript.toInt(),
+                "maxItemsMovedPerTickPerNetwork",
+                ServerSafetySettings.Defaults.maxItemsMovedPerTickPerNetwork.toInt(),
                 0,
                 Int.MAX_VALUE,
             )
+
+        builder.pop()
+        builder.push("engine")
 
         MAX_CALLBACKS_PER_KIND = builder
             .comment(
@@ -244,7 +258,7 @@ object NodeworksServerConfig {
                 " The 257th registration throws a fatal Lua error and locks the terminal,",
                 " so a recursive self-register pattern (a callback that registers another",
                 " callback each time it fires) crashes loud rather than slowly bloating the",
-                " registry. 0 means unlimited."
+                " registry. Per-engine because the registry is script-internal state."
             )
             .defineInRange(
                 "maxCallbacksPerKind",
@@ -272,7 +286,7 @@ object NodeworksServerConfig {
         maxRedstoneWritesPerTick = MAX_REDSTONE_WRITES_PER_TICK.get(),
         maxVariableWritesPerTick = MAX_VARIABLE_WRITES_PER_TICK.get(),
         maxErrorLogsPerTick = MAX_ERROR_LOGS_PER_TICK.get(),
-        maxItemsMovedPerTickPerScript = MAX_ITEMS_MOVED_PER_TICK_PER_SCRIPT.get().toLong(),
+        maxItemsMovedPerTickPerNetwork = MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK.get().toLong(),
         maxCallbacksPerKind = MAX_CALLBACKS_PER_KIND.get(),
     )
 }

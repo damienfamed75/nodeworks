@@ -17,6 +17,7 @@ import net.minecraft.tags.TagKey
 import net.minecraft.server.level.ServerLevel
 import org.luaj.vm2.*
 import org.luaj.vm2.lib.*
+import java.util.UUID
 
 /**
  * Lua-side handle for a card on the network. Exposes :find(), :insert(), :count(), :face(), :slots().
@@ -26,7 +27,12 @@ class CardHandle private constructor(
     private val card: CardSnapshot,
     private val level: ServerLevel,
     private val accessFace: Direction?,
-    private val slotFilter: Set<Int>?
+    private val slotFilter: Set<Int>?,
+    /** Network UUID this card belongs to. Used by [buildInsertFn] to charge
+     *  the per-network items-moved budget for card-level inserts. Null means
+     *  the card is on a network without a controller (rare/transient), the
+     *  rate limiter falls back to its NO_NETWORK_UUID bucket. */
+    private val networkId: UUID?,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger("nodeworks-cardhandle")
@@ -102,8 +108,8 @@ class CardHandle private constructor(
             return resourceId == filter
         }
 
-        fun create(card: CardSnapshot, level: ServerLevel): LuaTable {
-            return CardHandle(card, level, null, null).toLuaTable()
+        fun create(card: CardSnapshot, level: ServerLevel, networkId: UUID? = null): LuaTable {
+            return CardHandle(card, level, null, null, networkId).toLuaTable()
         }
 
         private fun faceName(name: String): Direction? = when (name.lowercase()) {
@@ -151,23 +157,41 @@ class CardHandle private constructor(
                     return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
                 }
 
+                // Per-network items-moved budget (items only; fluids dispatch through
+                // a separate path below). Mirrors [ScriptEngine.invokeItems]: clamp
+                // the request, atomic short-circuits when budget can't fit the full
+                // count, best-effort clamps and charges only what actually moved.
+                val isItem = itemsHandle.kind != ResourceKind.FLUID
+                val tick = PlatformServices.modState.tickCount
+                val budget = if (isItem) NetworkRateLimits.forNetwork(self.networkId) else null
+                val available = if (isItem) budget!!.availableItems(tick) else Long.MAX_VALUE
+                if (isItem && available < requested) {
+                    if (budget!!.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {
+                        logger.info("[card:insert items moved rate-limited this tick on network {}]", self.networkId)
+                    }
+                    if (atomic) return LuaValue.FALSE
+                    if (available <= 0L) return LuaValue.valueOf(0)
+                }
+                val clamped = minOf(requested, available)
+
                 // Dispatch by the handle's kind, an item handle targets the card's item cap,
                 // a fluid handle targets the card's fluid cap. A block with neither matching
                 // cap simply fails the op (returns 0/false).
                 val moved: Long = if (itemsHandle.kind == ResourceKind.FLUID) {
                     val destFluid = self.getFluidStorage()
                         ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
-                    moveFluidToDest(itemsHandle, destFluid, requested, atomic)
+                    moveFluidToDest(itemsHandle, destFluid, clamped, atomic)
                 } else {
                     val destStorage = self.getItemStorage()
                         ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
                     val bufSrc = itemsHandle.bufferSource
-                    if (bufSrc != null) moveFromBuffer(bufSrc, destStorage, requested, atomic)
-                    else moveFromStorage(itemsHandle, destStorage, requested, atomic)
+                    if (bufSrc != null) moveFromBuffer(bufSrc, destStorage, clamped, atomic)
+                    else moveFromStorage(itemsHandle, destStorage, clamped, atomic)
                 }
+                if (isItem) budget!!.noteItemsMoved(tick, moved)
 
                 return if (atomic) {
-                    LuaValue.valueOf(moved == requested)
+                    LuaValue.valueOf(moved == clamped)
                 } else {
                     LuaValue.valueOf(moved.toInt())
                 }
@@ -352,7 +376,7 @@ class CardHandle private constructor(
             override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
                 val dir = faceName(name) ?: throw LuaError("Unknown face: $name")
-                return CardHandle(card, level, dir, slotFilter).toLuaTable()
+                return CardHandle(card, level, dir, slotFilter, networkId).toLuaTable()
             }
         })
 
@@ -363,7 +387,7 @@ class CardHandle private constructor(
                 for (i in 2..args.narg()) {
                     slots.add(args.checkint(i) - 1) // Lua 1-indexed → 0-indexed
                 }
-                return CardHandle(card, level, accessFace, slots).toLuaTable()
+                return CardHandle(card, level, accessFace, slots, networkId).toLuaTable()
             }
         })
 

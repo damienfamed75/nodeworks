@@ -71,46 +71,46 @@ data class ServerSafetySettings(
     // 0 on any of these means "unlimited", singleplayer or trusted servers
     // can opt out of all rate limiting by setting them to 0 in the config.
 
-    /** Max script-driven `print(...)` calls per tick per engine. Each print
-     *  dispatches a chat packet to every player in range. */
+    /** Max script-driven `print(...)` calls per tick per network. Each print
+     *  dispatches a chat packet to every player in range, so the actual shared
+     *  resource is the player's outbound bandwidth. Per-network bounds the
+     *  flood across multi-terminal setups. */
     val maxPrintsPerTick: Int = 20,
 
-    /** Max script-driven block placements per tick per engine (placer:place).
+    /** Max script-driven block placements per tick per network (placer:place).
      *  Each placement fires a BlockUpdatePacket to nearby clients + neighbour
      *  updates. Placement is naturally heavy, lower than the others. */
     val maxPlacementsPerTick: Int = 5,
 
     /** Max script-driven network/card insert/tryInsert/route calls per tick
-     *  per engine. Each call can fire `setChanged` on storage containers,
+     *  per network. Each call can fire `setChanged` on storage containers,
      *  triggering menu sync packets to anyone with a GUI open. Per-call cap,
-     *  separate from [maxItemsMovedPerTickPerScript] which counts items
+     *  separate from [maxItemsMovedPerTickPerNetwork] which counts items
      *  rather than calls. */
     val maxItemMoveCallsPerTick: Int = 100,
 
-    /** Max script-driven redstone signal writes per tick per engine
+    /** Max script-driven redstone signal writes per tick per network
      *  (redstone:set). Each write triggers neighbour-change updates. */
     val maxRedstoneWritesPerTick: Int = 20,
 
-    /** Max script-driven variable card writes per tick per engine
+    /** Max script-driven variable card writes per tick per network
      *  (var:set, var:cas). Each write fires `setChanged` + `sendBlockUpdated`. */
     val maxVariableWritesPerTick: Int = 100,
 
-    /** Max error-log dispatches per tick per engine. Same packet path as
+    /** Max error-log dispatches per tick per network. Same packet path as
      *  [maxPrintsPerTick] but for `isError = true` log calls. Typically
      *  low-volume but a `pcall(function() error("x") end)` loop could abuse
      *  it. Counted separately from prints so legit error reporting isn't
      *  starved by a noisy script. */
     val maxErrorLogsPerTick: Int = 20,
 
-    /** Max items moved per tick per engine across all `network:insert`,
-     *  `network:tryInsert`, and `network:route` calls. Independent of
-     *  [maxItemMoveCallsPerTick] (a single call can move 64 items, so call
-     *  count != item count). When this is exhausted, remaining moves return
-     *  partial counts (matching the existing partial-success semantics of
-     *  `tryInsert`); atomic `insert` short-circuits to false.
-     *
-     *  Currently a placeholder; enforcement wires up in a follow-up pass. */
-    val maxItemsMovedPerTickPerScript: Long = 0,
+    /** Max items moved per tick per network across all `network:insert` and
+     *  `network:tryInsert` calls (and any future bulk-move paths that route
+     *  through the same helper). Independent of [maxItemMoveCallsPerTick]
+     *  (a single call can move 64 items, so call count != item count).
+     *  When this is exhausted, `tryInsert` returns partial counts and atomic
+     *  `insert` short-circuits to false. 0 means unlimited. */
+    val maxItemsMovedPerTickPerNetwork: Long = 0,
 
     /** Max simultaneously-registered callbacks per kind, per engine. Each kind
      *  (scheduler tasks, redstone handlers, observer handlers, processing

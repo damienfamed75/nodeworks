@@ -31,19 +31,21 @@ class ScriptEngine(
     rawLogCallback: (String, Boolean) -> Unit, // (message, isError), raw sink. See [logCallback].
 ) {
 
-    /** Rate-limited wrapper around [rawLogCallback] for error messages. Non-error
-     *  prints are already throttled by [printLimiter] inside the `print` global
-     *  itself, so they pass through unchanged. Error logs go through
-     *  [errorLogLimiter] so a tight loop that throws Lua errors (e.g.
-     *  `pcall(function() error("x") end)`) can't flood the chat packet path the
-     *  same way an unbounded `print` could. */
+    /** Rate-limited wrapper around [rawLogCallback] for error messages. Routed
+     *  through the per-network [NetworkBudget] so multiple terminals on one
+     *  network share the error-log pool, the same way they share the print pool.
+     *  Player-bound chat output is the actual shared resource (Netty's outbound
+     *  buffer to nearby players), so binding the cap to the terminal-source
+     *  granularity rather than the network granularity would let a player
+     *  multiply the cap by spreading bad scripts across N terminals. */
     private val logCallback: (String, Boolean) -> Unit = { msg, isError ->
         if (isError) {
             val tick = PlatformServices.modState.tickCount
-            if (errorLogLimiter.tryConsume(tick)) {
+            val budget = NetworkRateLimits.forNetwork(currentSnapshot()?.controller?.networkId)
+            if (budget.tryConsumeErrorLog(tick)) {
                 rawLogCallback(msg, true)
-            } else if (errorLogLimiter.warnOnce()) {
-                rawLogCallback("[error log rate-limited this tick, further errors dropped]", true)
+            } else if (budget.warnOnce(NetworkBudget.WARN_ERROR_LOG)) {
+                rawLogCallback("[error log rate-limited this tick on this network, further errors dropped]", true)
             }
         } else {
             rawLogCallback(msg, false)
@@ -119,16 +121,12 @@ class ScriptEngine(
     var inventoryCache: NetworkInventoryCache? = null
         private set
 
-    // Per-engine rate limiters for script-callable ops that generate outbound
-    // packets or container sync events. Each reads its cap live from
-    // [ServerPolicy.current] on every call so a `/reload` of the config takes
-    // effect immediately. A cap of 0 in the config means unlimited.
-    private val printLimiter = TickRateLimit { ServerPolicy.current.maxPrintsPerTick }
-    private val errorLogLimiter = TickRateLimit { ServerPolicy.current.maxErrorLogsPerTick }
-    private val placementLimiter = TickRateLimit { ServerPolicy.current.maxPlacementsPerTick }
-    private val itemMoveCallLimiter = TickRateLimit { ServerPolicy.current.maxItemMoveCallsPerTick }
-    private val redstoneWriteLimiter = TickRateLimit { ServerPolicy.current.maxRedstoneWritesPerTick }
-    private val variableWriteLimiter = TickRateLimit { ServerPolicy.current.maxVariableWritesPerTick }
+    // Rate-limited ops (print, error-log, place, redstone:set, var:set,
+    // item-move calls, items-moved budget) all live on [NetworkRateLimits]
+    // keyed by the network UUID. Multiple terminals on the same network share
+    // one pool so a player can't multiply caps by spreading bad scripts across
+    // terminals. The one per-engine cap left is [maxCallbacksPerKind] which
+    // gates registry size at registration sites directly, no limiter needed.
 
     /** Processing handlers registered by network:handle(). Keyed by card name. */
     val processingHandlers = mutableMapOf<String, LuaFunction>()
@@ -342,27 +340,33 @@ class ScriptEngine(
         }
     }
 
-    /** Wrap [fn] with a per-tick rate limiter. When the cap kicks in, calls
-     *  return [onLimit] instead of running the underlying function and a single
-     *  warning per tick is logged. Used for script-callable ops that generate
-     *  outbound packets per call (insert, place, redstone:set, var:set), so
-     *  pathological loops can't flood the server's outbound buffer faster than
-     *  clients can drain.
+    /** Wrap [fn] with a per-network, per-tick rate limiter via [NetworkRateLimits].
+     *  All engines touching the same network share one pool, so a player running
+     *  N terminals on the same network can't multiply the cap N times by spreading
+     *  identical scripts. Used for `network:insert`/`tryInsert`, `card:insert`,
+     *  `placer:place`, `redstone:set`, and `var:set`/`cas`.
      *
-     *  Pass-through when [fn] is nil so disabled bindings (Phase 5 deny-list)
-     *  stay disabled. */
-    private fun rateLimited(
-        limiter: TickRateLimit,
+     *  [consume] picks the right per-op counter on the budget. [warnOp] is a
+     *  bitmask key into [NetworkBudget.warnOnce] so the rate-limited warning
+     *  fires once per op per network per tick rather than spamming.
+     *
+     *  Pass-through when [fn] is nil so disabled bindings stay disabled. */
+    private fun networkRateLimited(
         label: String,
+        consume: (NetworkBudget, Long) -> Boolean,
+        warnOp: Int,
         fn: LuaValue,
         onLimit: Varargs = LuaValue.NIL,
     ): LuaValue {
         if (!fn.isfunction()) return fn
         return object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
-                if (!limiter.tryConsume(PlatformServices.modState.tickCount)) {
-                    if (limiter.warnOnce()) {
-                        logCallback("[$label rate-limited this tick, further calls dropped]", true)
+                val networkId = currentSnapshot()?.controller?.networkId
+                val budget = NetworkRateLimits.forNetwork(networkId)
+                val tick = PlatformServices.modState.tickCount
+                if (!consume(budget, tick)) {
+                    if (budget.warnOnce(warnOp)) {
+                        logCallback("[$label rate-limited this tick on this network, further calls dropped]", true)
                     }
                     return onLimit
                 }
@@ -629,7 +633,13 @@ class ScriptEngine(
         val table = PlacerHandle.create(snapshot, networkSnapshot, level)
         val origPlace = table.get("place")
         if (origPlace.isfunction()) {
-            table.set("place", rateLimited(placementLimiter, "placer:place", origPlace, onLimit = LuaValue.FALSE))
+            table.set("place", networkRateLimited(
+                "placer:place",
+                consume = { b, tick -> b.tryConsumePlacement(tick) },
+                warnOp = NetworkBudget.WARN_PLACEMENT,
+                origPlace,
+                onLimit = LuaValue.FALSE,
+            ))
         }
         return table
     }
@@ -643,17 +653,28 @@ class ScriptEngine(
         val table = VariableHandle.create(snapshot, level)
         val origSet = table.get("set")
         if (origSet.isfunction()) {
-            table.set("set", rateLimited(variableWriteLimiter, "var:set", origSet))
+            table.set("set", networkRateLimited(
+                "var:set",
+                consume = { b, tick -> b.tryConsumeVariableWrite(tick) },
+                warnOp = NetworkBudget.WARN_VARIABLE_WRITE,
+                origSet,
+            ))
         }
         val origCas = table.get("cas")
         if (origCas.isfunction()) {
-            table.set("cas", rateLimited(variableWriteLimiter, "var:cas", origCas, onLimit = LuaValue.FALSE))
+            table.set("cas", networkRateLimited(
+                "var:cas",
+                consume = { b, tick -> b.tryConsumeVariableWrite(tick) },
+                warnOp = NetworkBudget.WARN_VARIABLE_WRITE,
+                origCas,
+                onLimit = LuaValue.FALSE,
+            ))
         }
         return table
     }
 
     private fun createCardTable(card: damien.nodeworks.network.CardSnapshot, alias: String): LuaTable {
-        val table = CardHandle.create(card, level)
+        val table = CardHandle.create(card, level, currentSnapshot()?.controller?.networkId)
         // Wrap insert/tryInsert with the per-tick call rate limiter. Done here
         // (post-construction) rather than inside CardHandle so the helper doesn't
         // need to thread an engine reference through. Note: `:face(side)` returns
@@ -662,11 +683,23 @@ class ScriptEngine(
         // "card:insert(handle) in a loop" case, the wrap here is sufficient.
         val origInsert = table.get("insert")
         if (origInsert.isfunction()) {
-            table.set("insert", rateLimited(itemMoveCallLimiter, "card:insert", origInsert, onLimit = LuaValue.FALSE))
+            table.set("insert", networkRateLimited(
+                "card:insert",
+                consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
+                warnOp = NetworkBudget.WARN_ITEM_MOVE,
+                origInsert,
+                onLimit = LuaValue.FALSE,
+            ))
         }
         val origTryInsert = table.get("tryInsert")
         if (origTryInsert.isfunction()) {
-            table.set("tryInsert", rateLimited(itemMoveCallLimiter, "card:tryInsert", origTryInsert, onLimit = LuaValue.valueOf(0)))
+            table.set("tryInsert", networkRateLimited(
+                "card:tryInsert",
+                consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
+                warnOp = NetworkBudget.WARN_ITEM_MOVE,
+                origTryInsert,
+                onLimit = LuaValue.valueOf(0),
+            ))
         }
         val cap = card.capability
 
@@ -703,7 +736,10 @@ class ScriptEngine(
             })
 
             // set(boolean | number), emit redstone signal
-            table.set("set", rateLimited(redstoneWriteLimiter, "redstone:set",
+            table.set("set", networkRateLimited(
+                "redstone:set",
+                consume = { b, tick -> b.tryConsumeRedstoneWrite(tick) },
+                warnOp = NetworkBudget.WARN_REDSTONE_WRITE,
                 object : TwoArgFunction() {
                     override fun call(selfArg: LuaValue, valueArg: LuaValue): LuaValue {
                         val strength = when {
@@ -1127,17 +1163,37 @@ class ScriptEngine(
         val sourceStorage = itemsHandle.sourceStorage()
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
 
+        // Per-network items-moved budget: clamp the request to whatever's left
+        // in the budget for this tick. Atomic short-circuits to false when the
+        // budget can't satisfy the full requested count, best-effort moves only
+        // the clamped amount and reports back the actual moved count. Charges
+        // the budget after the move based on what really landed (so storage-full
+        // shortfalls don't burn budget on items that didn't actually move).
+        val tick = PlatformServices.modState.tickCount
+        val budget = NetworkRateLimits.forNetwork(snapshot.controller?.networkId)
+        val available = budget.availableItems(tick)
+        if (available < requested) {
+            if (budget.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {
+                logCallback("[items moved rate-limited this tick on this network]", true)
+            }
+            if (atomic) return LuaValue.FALSE
+            if (available <= 0L) return LuaValue.valueOf(0)
+        }
+        val clamped = minOf(requested, available)
+
         return if (atomic) {
             val ok = NetworkStorageHelper.tryInsertItemsAcrossNetwork(
                 level, snapshot, sourceStorage, itemsHandle.filter,
-                requested, routeTable, inventoryCache
+                clamped, routeTable, inventoryCache
             )
+            if (ok) budget.noteItemsMoved(tick, clamped)
             LuaValue.valueOf(ok)
         } else {
             val moved = NetworkStorageHelper.insertItems(
                 level, snapshot, sourceStorage, itemsHandle.filter,
-                requested, routeTable, null, inventoryCache
+                clamped, routeTable, null, inventoryCache
             )
+            budget.noteItemsMoved(tick, moved)
             LuaValue.valueOf(moved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         }
     }
@@ -1159,9 +1215,24 @@ class ScriptEngine(
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
         val maxStack = item.getDefaultMaxStackSize().toLong()
 
+        // Same per-network budget enforcement as [invokeItems]: clamp the
+        // request, atomic short-circuits when budget can't fit the full count,
+        // best-effort clamps and charges only what actually moved.
+        val tick = PlatformServices.modState.tickCount
+        val budget = NetworkRateLimits.forNetwork(snapshot.controller?.networkId)
+        val available = budget.availableItems(tick)
+        if (available < requested) {
+            if (budget.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {
+                logCallback("[items moved rate-limited this tick on this network]", true)
+            }
+            if (atomic) return LuaValue.FALSE
+            if (available <= 0L) return LuaValue.valueOf(0)
+        }
+        val clamped = minOf(requested, available)
+
         if (atomic) {
-            val extracted = bufSrc.extract(requested)
-            if (extracted < requested) {
+            val extracted = bufSrc.extract(clamped)
+            if (extracted < clamped) {
                 bufSrc.returnUnused(extracted)
                 return LuaValue.FALSE
             }
@@ -1179,11 +1250,12 @@ class ScriptEngine(
                 bufSrc.returnUnused(extracted - totalInserted)
                 return LuaValue.FALSE
             }
+            budget.noteItemsMoved(tick, totalInserted)
             return LuaValue.TRUE
         }
 
         var totalMoved = 0L
-        var remaining = requested
+        var remaining = clamped
         while (remaining > 0L) {
             val batch = minOf(remaining, maxStack)
             val extracted = bufSrc.extract(batch)
@@ -1197,6 +1269,7 @@ class ScriptEngine(
             }
             remaining -= inserted
         }
+        budget.noteItemsMoved(tick, totalMoved)
         return LuaValue.valueOf(totalMoved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
     }
 
@@ -1446,19 +1519,23 @@ class ScriptEngine(
         // network:insert(itemsHandle, count?) → boolean (atomic, either the full count lands
         // in network storage or nothing moves). Mirrors CardHandle:insert for consistency.
         // Use network:tryInsert for "move what fits, leave the rest" semantics.
-        // Per-tick call cap returns false on rate limit (matches "atomic move blocked"
+        // Per-network call cap returns false on rate limit (matches "atomic move blocked"
         // semantics scripts already handle).
-        networkTable.set("insert", rateLimited(
-            itemMoveCallLimiter, "network:insert",
+        networkTable.set("insert", networkRateLimited(
+            "network:insert",
+            consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
+            warnOp = NetworkBudget.WARN_ITEM_MOVE,
             buildNetworkInsertFn(snapshot, atomic = true),
             onLimit = LuaValue.FALSE,
         ))
 
         // network:tryInsert(itemsHandle, count?) → number (best-effort count moved).
-        // Per-tick call cap returns 0 on rate limit (partial-success is the natural
+        // Per-network call cap returns 0 on rate limit (partial-success is the natural
         // shape for tryInsert, scripts already check the return value).
-        networkTable.set("tryInsert", rateLimited(
-            itemMoveCallLimiter, "network:tryInsert",
+        networkTable.set("tryInsert", networkRateLimited(
+            "network:tryInsert",
+            consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
+            warnOp = NetworkBudget.WARN_ITEM_MOVE,
             buildNetworkInsertFn(snapshot, atomic = false),
             onLimit = LuaValue.valueOf(0),
         ))
@@ -1805,9 +1882,11 @@ class ScriptEngine(
         // print(message)
         g.set("print", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
-                if (!printLimiter.tryConsume(PlatformServices.modState.tickCount)) {
-                    if (printLimiter.warnOnce()) {
-                        logCallback("[print rate-limited this tick, further prints dropped]", true)
+                val tick = PlatformServices.modState.tickCount
+                val budget = NetworkRateLimits.forNetwork(currentSnapshot()?.controller?.networkId)
+                if (!budget.tryConsumePrint(tick)) {
+                    if (budget.warnOnce(NetworkBudget.WARN_PRINT)) {
+                        logCallback("[print rate-limited this tick on this network, further prints dropped]", true)
                     }
                     return LuaValue.NONE
                 }
