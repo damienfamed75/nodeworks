@@ -111,7 +111,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val occupant = serverLevel.players().firstOrNull { other ->
             val menu = other.containerMenu
             menu is damien.nodeworks.screen.TerminalScreenHandler &&
-                menu.blockBackingPos == terminal.blockPos
+                    menu.blockBackingPos == terminal.blockPos
         }
         if (occupant != null) {
             player.sendSystemMessage(
@@ -139,6 +139,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
             terminal.autoRun,
             terminal.layoutIndex,
             remoteApis,
+            terminal.lastError,
         )
 
         PlatformServices.menu.openExtendedMenu(
@@ -178,6 +179,14 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
             if (PlatformServices.modState.isScriptRunning(level, pos)) {
                 PlatformServices.modState.stopScript(level, pos)
             } else if (terminal.scriptText.isNotBlank()) {
+                // Refuse to restart a script that previously hit a wall-clock
+                // soft-abort. Without this, a redstone clock pointed at a
+                // misbehaving terminal (e.g. `while true do print() end`) would
+                // re-trigger the bad script every other tick, eating the per-tick
+                // budget on each cycle. The player must edit the script which
+                // clears [TerminalBlockEntity.lastError] in [setScript] before
+                // it's eligible to run again.
+                if (terminal.lastError != null) return
                 PlatformServices.modState.startScript(level, pos)
             }
         }
@@ -189,7 +198,12 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         return super.playerWillDestroy(level, pos, state, player)
     }
 
-    override fun affectNeighborsAfterRemoval(state: BlockState, level: ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+    override fun affectNeighborsAfterRemoval(
+        state: BlockState,
+        level: ServerLevel,
+        pos: BlockPos,
+        movedByPiston: Boolean
+    ) {
         val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
         if (entity != null) entity.blockDestroyed = true
         super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)

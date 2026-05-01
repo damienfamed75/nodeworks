@@ -22,7 +22,10 @@ import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
+import net.neoforged.fml.ModContainer
 import net.neoforged.fml.common.Mod
+import net.neoforged.fml.config.ModConfig
+import net.neoforged.fml.event.config.ModConfigEvent
 import net.neoforged.fml.loading.FMLEnvironment
 import net.neoforged.neoforge.common.NeoForge
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension
@@ -34,7 +37,7 @@ import net.neoforged.neoforge.registries.RegisterEvent
 import org.slf4j.LoggerFactory
 
 @Mod("nodeworks")
-class Nodeworks(modBus: IEventBus) {
+class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
     companion object {
         const val MOD_ID = "nodeworks"
@@ -50,6 +53,16 @@ class Nodeworks(modBus: IEventBus) {
         PlatformServices.storage = NeoForgeStorageService()
         PlatformServices.modState = NeoForgeModStateService()
         PlatformServices.fakePlayer = damien.nodeworks.platform.NeoForgeFakePlayerService()
+
+        // Register the server-scoped config. Per-world file at
+        // `serverconfig/nodeworks-server.toml` is auto-generated on first load
+        // with the in-code defaults. Edit + `/reload` (or restart) to apply.
+        container.registerConfig(ModConfig.Type.SERVER, damien.nodeworks.config.NodeworksServerConfig.SPEC)
+
+        // Push spec values into [ServerPolicy] on (re)load so in-flight engines pick
+        // up changes on their next tick into Lua. Both `Loading` and `Reloading` fire
+        // on the mod event bus; we listen to the parent type to catch either.
+        modBus.addListener(::onConfigEvent)
 
         // Register during NeoForge's register event (registries are unfrozen at that point)
         modBus.addListener(::onRegister)
@@ -700,6 +713,28 @@ class Nodeworks(modBus: IEventBus) {
     // current across datapack reloads.
     private fun onDatapackSync(event: net.neoforged.neoforge.event.OnDatapackSyncEvent) {
         event.sendRecipes(damien.nodeworks.registry.ModRecipeTypes.SOUL_SAND_INFUSION)
+    }
+
+    /** Snapshot the server config into [damien.nodeworks.script.ServerPolicy] whenever
+     *  the file is loaded or reloaded. Filters by spec identity so other mods'
+     *  config events on the same bus don't trigger a snapshot of the wrong spec.
+     *
+     *  Skips [ModConfigEvent.Unloading] (fires on server stop) because the config
+     *  values are already invalidated by then and `.get()` throws. We don't need
+     *  to re-snapshot on the way down anyway, the in-memory [ServerPolicy] gets
+     *  reset by the next server start before any script runs. */
+    private fun onConfigEvent(event: ModConfigEvent) {
+        if (event is ModConfigEvent.Unloading) return
+        if (event.config.spec !== damien.nodeworks.config.NodeworksServerConfig.SPEC) return
+        val newSettings = damien.nodeworks.config.NodeworksServerConfig.snapshot()
+        damien.nodeworks.script.ServerPolicy.update(newSettings)
+        logger.info(
+            "Nodeworks server config loaded: topLevelSoftAbortMs={}, callbackSoftAbortMs={}, turnOffAutoRunOnTimeout={}, instructionsPerWallClockCheck={}",
+            newSettings.topLevelSoftAbortMs,
+            newSettings.callbackSoftAbortMs,
+            newSettings.turnOffAutoRunOnTimeout,
+            newSettings.instructionsPerWallClockCheck,
+        )
     }
 
     /**

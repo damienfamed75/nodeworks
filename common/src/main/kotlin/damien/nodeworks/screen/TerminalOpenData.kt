@@ -18,6 +18,13 @@ data class TerminalOpenData(
      * autocomplete so `network:craft("...")` suggests remote recipe names.
      */
     val remoteApis: List<ProcessingStorageBlockEntity.ProcessingApiInfo> = emptyList(),
+    /**
+     * Persisted soft-abort sentinel. Non-null means a previous run timed out and the
+     * terminal is locked from re-running until the player edits any script tab. The
+     * GUI surfaces this so the player sees why the run button doesn't fire and can
+     * fix the script before unlocking.
+     */
+    val lastError: String? = null,
 ) {
     companion object {
         private fun writeApi(buf: FriendlyByteBuf, api: ProcessingStorageBlockEntity.ProcessingApiInfo) {
@@ -63,7 +70,8 @@ data class TerminalOpenData(
                 val apiCount = buf.readVarInt()
                 val remoteApis = ArrayList<ProcessingStorageBlockEntity.ProcessingApiInfo>(apiCount)
                 repeat(apiCount) { remoteApis.add(readApi(buf)) }
-                return TerminalOpenData(pos, scripts, running, autoRun, layoutIndex, remoteApis)
+                val lastError = if (buf.readBoolean()) buf.readUtf(512) else null
+                return TerminalOpenData(pos, scripts, running, autoRun, layoutIndex, remoteApis, lastError)
             }
 
             override fun encode(buf: FriendlyByteBuf, data: TerminalOpenData) {
@@ -78,6 +86,8 @@ data class TerminalOpenData(
                 buf.writeVarInt(data.layoutIndex)
                 buf.writeVarInt(data.remoteApis.size)
                 for (api in data.remoteApis) writeApi(buf, api)
+                buf.writeBoolean(data.lastError != null)
+                data.lastError?.let { buf.writeUtf(it, 512) }
             }
         }
     }

@@ -51,11 +51,29 @@ object NeoForgeTerminalPackets {
      */
     fun startEngine(level: ServerLevel, pos: BlockPos): Boolean {
         val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return false
+        // Refuse to start a script that previously hit a wall-clock soft-abort.
+        // A redstone clock pointed at a misbehaving terminal would otherwise re-
+        // trigger the bad script every cycle, eating per-tick budget repeatedly.
+        // The player has to actually edit the script (which clears [lastError]
+        // in [TerminalBlockEntity.setScript]) before it's eligible to run again.
+        if (terminal.lastError != null) {
+            val msg = TerminalLogPayload(
+                pos,
+                "Cannot run, this terminal's script previously timed out: ${terminal.lastError}. Edit the script to re-enable.",
+                true,
+            )
+            for (p in level.players()) {
+                if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
+                    PacketDistributor.sendToPlayer(p, msg)
+                }
+            }
+            return false
+        }
         val nodePos = terminal.getNetworkStartPos() ?: return false
         val gp = GlobalPos.of(level.dimension(), pos)
         activeEngines.remove(gp)?.stop()
 
-        val engine = ScriptEngine(level, nodePos) { message, isError ->
+        val engine = ScriptEngine(level, nodePos, pos) { message, isError ->
             if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
             // Cap script-originated print output so a single absurd log line can't blow past
             // the network string length and disconnect the player. Truncation happens here
@@ -260,15 +278,44 @@ object NeoForgeTerminalPackets {
         // ConcurrentModifyException the live iteration. Also re-resolve the engine from
         // the map each iteration so a snapshot'd entry that was replaced mid-tick isn't
         // double-ticked.
+        //
+        // Per-tick budget enforcement (CFS-inspired):
+        //   - globalTickBudgetMs caps total Lua time across all engines this tick.
+        //     When exhausted, remaining engines defer their work to the next tick.
+        //   - localTickBudgetMs caps a single engine's slice. Bounds the worst case
+        //     where one engine has many handlers and could otherwise consume the
+        //     full global budget alone.
+        //   - Engines are sorted by accumulated vruntime ascending, well-behaved
+        //     scripts (low vruntime) run first, so a runaway engine eating its
+        //     full local budget every tick gets deprioritised vs a neighbour that
+        //     normally finishes in microseconds. Same idea Linux CFS uses.
+        val settings = damien.nodeworks.script.ServerPolicy.current
+        val tickStartNs = System.nanoTime()
+        val globalDeadlineNs = tickStartNs + settings.globalTickBudgetMs * 1_000_000L
+        val localBudgetNs = settings.localTickBudgetMs * 1_000_000L
+
         val toRemove = mutableListOf<GlobalPos>()
-        val snapshot = activeEngines.keys.toList()
-        for (gp in snapshot) {
+        val snapshot = activeEngines.entries
+            .toList()
+            .sortedBy { it.value.vruntimeNs }
+        for ((gp, _) in snapshot) {
+            // Re-resolve in case a reentrant startEngine replaced the entry.
             val engine = activeEngines[gp] ?: continue
             if (!engine.isRunning()) {
                 toRemove.add(gp)
                 continue
             }
-            engine.tick(tickCount)
+            // Stop dispatching once the shared global budget is gone. Engines we
+            // didn't reach this tick stay in `activeEngines` and pick up next tick
+            // (sorted by vruntime so they get fair priority).
+            val nowNs = System.nanoTime()
+            if (nowNs >= globalDeadlineNs) break
+
+            val perEngineDeadlineNs = minOf(nowNs + localBudgetNs, globalDeadlineNs)
+            val before = nowNs
+            engine.tick(tickCount, perEngineDeadlineNs)
+            engine.vruntimeNs += System.nanoTime() - before
+
             if (!engine.hasWork()) {
                 toRemove.add(gp)
             }
