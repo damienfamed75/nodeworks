@@ -96,18 +96,24 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
             return InteractionResult.SUCCESS
         }
 
-        if (NodeConnectionHelper.getConnectable(level, selectedPos) == null) {
+        val entityA = NodeConnectionHelper.getConnectable(level, selectedPos)
+        if (entityA == null) {
             selectedNodes.remove(player.uuid)
             player.sendSystemMessage(Component.translatable("message.nodeworks.selection_invalid"))
             return InteractionResult.SUCCESS
         }
+
+        // Existing connections take the disconnect branch, which skips the LOS
+        // gate, a node placed between two already-linked nodes blocks LOS for
+        // them and would otherwise trap the link until the obstacle is removed.
+        val isDisconnect = entityA.hasConnection(pos)
 
         if (!NodeConnectionHelper.isWithinRange(selectedPos, pos)) {
             player.sendSystemMessage(Component.translatable("message.nodeworks.too_far"))
             return InteractionResult.SUCCESS
         }
 
-        if (!NodeConnectionHelper.checkLineOfSight(level, selectedPos, pos)) {
+        if (!isDisconnect && !NodeConnectionHelper.checkLineOfSight(level, selectedPos, pos)) {
             player.sendSystemMessage(Component.translatable("message.nodeworks.no_line_of_sight"))
             return InteractionResult.SUCCESS
         }
@@ -117,14 +123,15 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         // holds its connection to the old controller on-the-books, is correctly treated as
         // belonging to that controller's network. Otherwise a player could wrench-bridge
         // two networks through a blocked orphan and see both light up once LOS is restored.
-        val entityA = NodeConnectionHelper.getConnectable(level, selectedPos)
-        val entityB = NodeConnectionHelper.getConnectable(level, pos)
-        if (entityA != null && entityB != null && !entityA.hasConnection(pos)) {
-            val ctlA = NodeConnectionHelper.findTopologyController(serverLevel, selectedPos)
-            val ctlB = NodeConnectionHelper.findTopologyController(serverLevel, pos)
-            if (ctlA != null && ctlB != null && ctlA != ctlB) {
-                player.sendSystemMessage(Component.translatable("message.nodeworks.duplicate_controller"))
-                return InteractionResult.SUCCESS
+        if (!isDisconnect) {
+            val entityB = NodeConnectionHelper.getConnectable(level, pos)
+            if (entityB != null) {
+                val ctlA = NodeConnectionHelper.findTopologyController(serverLevel, selectedPos)
+                val ctlB = NodeConnectionHelper.findTopologyController(serverLevel, pos)
+                if (ctlA != null && ctlB != null && ctlA != ctlB) {
+                    player.sendSystemMessage(Component.translatable("message.nodeworks.duplicate_controller"))
+                    return InteractionResult.SUCCESS
+                }
             }
         }
 
