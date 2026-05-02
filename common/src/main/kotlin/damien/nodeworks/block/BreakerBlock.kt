@@ -28,10 +28,12 @@ import net.minecraft.world.phys.BlockHitResult
 
 /**
  * Breaker, destroys the block at its facing position over time, routes drops
- * into network storage by default. Diamond-pickaxe tier (encoded via the recipe),
- * break duration uses the wooden-pickaxe formula so common blocks break in ~1s
- * but harder blocks like ancient debris are slow. See [BreakerBlockEntity] for
- * the server-side break-progress logic.
+ * into network storage by default. Diamond-tier across all three mining tool
+ * classes (pickaxe / axe / shovel), so it breaks anything a diamond pickaxe,
+ * diamond axe, or diamond shovel could harvest. Break duration uses the
+ * matching wooden-tier formula so common blocks break in ~1s but harder
+ * blocks like ancient debris are slow. See [BreakerBlockEntity] for the
+ * server-side break-progress logic.
  */
 class BreakerBlock(properties: Properties) : BaseEntityBlock(properties) {
 
