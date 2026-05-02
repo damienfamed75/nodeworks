@@ -403,6 +403,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     "name" -> entity.networkName = payload.strValue
                     "retry" -> entity.handlerRetryLimit = payload.intValue
                     "chunkload" -> entity.setChunkLoadingEnabled(payload.intValue != 0)
+                    "laserenable" -> entity.laserEnabled = payload.intValue != 0
+                    "lasermode" -> entity.laserMode = payload.intValue
                 }
             }
         }

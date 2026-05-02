@@ -13,9 +13,17 @@ object NetworkSettingsRegistry {
 
     data class NetworkSettings(
         val color: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR,
-        val glowStyle: Int = 0
-        // Future: logLevel, etc.
+        val glowStyle: Int = 0,
+        /** Whether to render the laser beams between this network's connectables.
+         *  Nodes + glows are unaffected, only the inter-node beams toggle. */
+        val laserEnabled: Boolean = true,
+        /** Beam render style: 0 = Fancy (animated prism + billboarded glow),
+         *  1 = Fast (single thin colored line). */
+        val laserMode: Int = LASER_MODE_FANCY,
     )
+
+    const val LASER_MODE_FANCY = 0
+    const val LASER_MODE_FAST = 1
 
     private val registry = ConcurrentHashMap<UUID, NetworkSettings>()
 
