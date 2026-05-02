@@ -157,13 +157,25 @@ class CardHandle private constructor(
                     return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
                 }
 
+                // Per-network call cap. Charged here (not in a wrapper) so all
+                // CardHandle insert paths share the same budget, including handles
+                // returned from `:face(...)` / `:slots(...)` whose freshly-constructed
+                // tables would otherwise route around an outer wrapper.
+                val tick = PlatformServices.modState.tickCount
+                val callBudget = NetworkRateLimits.forNetwork(self.networkId)
+                if (!callBudget.tryConsumeItemMoveCall(tick)) {
+                    if (callBudget.warnOnce(NetworkBudget.WARN_ITEM_MOVE)) {
+                        logger.info("[card:insert calls rate-limited this tick on network {}]", self.networkId)
+                    }
+                    return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
+                }
+
                 // Per-network items-moved budget (items only; fluids dispatch through
                 // a separate path below). Mirrors [ScriptEngine.invokeItems]: clamp
                 // the request, atomic short-circuits when budget can't fit the full
                 // count, best-effort clamps and charges only what actually moved.
                 val isItem = itemsHandle.kind != ResourceKind.FLUID
-                val tick = PlatformServices.modState.tickCount
-                val budget = if (isItem) NetworkRateLimits.forNetwork(self.networkId) else null
+                val budget = if (isItem) callBudget else null
                 val available = if (isItem) budget!!.availableItems(tick) else Long.MAX_VALUE
                 if (isItem && available < requested) {
                     if (budget!!.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {

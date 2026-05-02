@@ -722,32 +722,10 @@ class ScriptEngine(
 
     private fun createCardTable(card: damien.nodeworks.network.CardSnapshot, alias: String): LuaTable {
         val table = CardHandle.create(card, level, currentSnapshot()?.controller?.networkId)
-        // Wrap insert/tryInsert with the per-tick call rate limiter. Done here
-        // (post-construction) rather than inside CardHandle so the helper doesn't
-        // need to thread an engine reference through. Note: `:face(side)` returns
-        // a freshly-constructed table with un-wrapped bindings, the eventual
-        // deny-list sweep will handle that path uniformly. For the typical
-        // "card:insert(handle) in a loop" case, the wrap here is sufficient.
-        val origInsert = table.get("insert")
-        if (origInsert.isfunction()) {
-            table.set("insert", networkRateLimited(
-                "card:insert",
-                consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
-                warnOp = NetworkBudget.WARN_ITEM_MOVE,
-                origInsert,
-                onLimit = LuaValue.FALSE,
-            ))
-        }
-        val origTryInsert = table.get("tryInsert")
-        if (origTryInsert.isfunction()) {
-            table.set("tryInsert", networkRateLimited(
-                "card:tryInsert",
-                consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
-                warnOp = NetworkBudget.WARN_ITEM_MOVE,
-                origTryInsert,
-                onLimit = LuaValue.valueOf(0),
-            ))
-        }
+        // Per-tick call cap is enforced inside [CardHandle.buildInsertFn] so all
+        // insert paths share the budget uniformly, including handles returned from
+        // `:face(...)` / `:slots(...)` (which build a fresh table that wouldn't
+        // pass through a post-hoc wrapper here).
         val cap = card.capability
 
         if (cap is damien.nodeworks.card.RedstoneSideCapability) {
