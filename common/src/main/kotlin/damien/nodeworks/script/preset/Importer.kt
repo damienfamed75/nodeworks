@@ -286,7 +286,14 @@ class ImporterBuilder(
     }
 
     /** Pull from the Network Storage pool into a specific card. Walks Storage Cards
-     *  in priority order until [maxCount] is satisfied or the pool runs dry. */
+     *  in priority order until [maxCount] is satisfied or the pool runs dry.
+     *
+     *  Moves per (itemId, hasData) so each transfer can notify the cache via
+     *  [NetworkInventoryCache.onExtracted], balancing the [onInserted] that fired
+     *  when the item entered the pool. Without this, an importer that pipes the
+     *  pool straight back out (`from(network):to("chest")`) leaks ghost entries:
+     *  the poll never catches the items in transit, dirtyKeys protects them from
+     *  the orphan sweep every tick, and `entries[key].count` grows unbounded. */
     private fun movePoolToCard(
         snapshot: NetworkSnapshot,
         level: net.minecraft.server.level.ServerLevel,
@@ -295,14 +302,24 @@ class ImporterBuilder(
         maxCount: Long,
     ): Long {
         val destStorage = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
+        val cache = engine.inventoryCache
         var remaining = maxCount
         var totalMoved = 0L
         for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
             val poolStorage = NetworkStorageHelper.getStorage(level, poolCard) ?: continue
-            val moved = PlatformServices.storage.moveItems(poolStorage, destStorage, filterPred, remaining)
-            totalMoved += moved
-            remaining -= moved
+            val infos = PlatformServices.storage.findAllItemInfo(poolStorage) { filterPred(it) }
+            for (info in infos) {
+                if (remaining <= 0L) break
+                val moved = PlatformServices.storage.moveItemsVariant(
+                    poolStorage, destStorage,
+                    { id, hasData -> id == info.itemId && hasData == info.hasData },
+                    remaining,
+                )
+                totalMoved += moved
+                remaining -= moved
+                if (moved > 0L) cache?.onExtracted(info.itemId, info.hasData, moved)
+            }
         }
         return totalMoved
     }
