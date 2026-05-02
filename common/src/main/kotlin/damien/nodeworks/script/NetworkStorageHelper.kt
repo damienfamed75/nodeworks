@@ -347,7 +347,7 @@ object NetworkStorageHelper {
         val totalInserted = stack.count - remaining
         if (totalInserted > 0 && cache != null) {
             if (itemId != null) {
-                cache.onInserted(itemId, hasData, totalInserted.toLong())
+                cache.onInserted(itemId, hasData, totalInserted.toLong(), stack.componentsPatch)
             }
         }
         return totalInserted
@@ -423,14 +423,14 @@ object NetworkStorageHelper {
                     val moved = try {
                         PlatformServices.storage.moveItemsVariant(source, target, variantFilter, routeRemaining)
                     } catch (_: Exception) { 0L }
-                    if (moved > 0) cache?.onInserted(itemId, hasData, moved)
+                    if (moved > 0) cache?.onInserted(itemId, hasData, moved, itemInfo.componentsPatch)
                     totalMoved += moved
                     remaining -= moved
                     routeRemaining -= moved
                 }
                 if (routeRemaining > 0L && routeTable != null) {
                     val overflow = routeTable.insertDefault(source, itemId, routeRemaining)
-                    if (overflow > 0) cache?.onInserted(itemId, hasData, overflow)
+                    if (overflow > 0) cache?.onInserted(itemId, hasData, overflow, itemInfo.componentsPatch)
                     totalMoved += overflow
                     remaining -= overflow
                 }
@@ -443,7 +443,7 @@ object NetworkStorageHelper {
                 val moved = try {
                     PlatformServices.storage.moveItemsVariant(source, callbackTarget, variantFilter, toMove)
                 } catch (_: Exception) { 0L }
-                if (moved > 0) cache?.onInserted(itemId, hasData, moved)
+                if (moved > 0) cache?.onInserted(itemId, hasData, moved, itemInfo.componentsPatch)
                 totalMoved += moved
                 remaining -= moved
                 if (moved < toMove) {
@@ -453,7 +453,7 @@ object NetworkStorageHelper {
                     } else {
                         insertItemsDefault(level, snapshot, source, itemId, toMove - moved, cache)
                     }
-                    if (fallbackMoved > 0) cache?.onInserted(itemId, hasData, fallbackMoved)
+                    if (fallbackMoved > 0) cache?.onInserted(itemId, hasData, fallbackMoved, itemInfo.componentsPatch)
                     totalMoved += fallbackMoved
                     remaining -= fallbackMoved
                 }
@@ -466,7 +466,7 @@ object NetworkStorageHelper {
             } else {
                 insertItemsDefault(level, snapshot, source, itemId, toMove, cache)
             }
-            if (defaultMoved > 0) cache?.onInserted(itemId, hasData, defaultMoved)
+            if (defaultMoved > 0) cache?.onInserted(itemId, hasData, defaultMoved, itemInfo.componentsPatch)
             totalMoved += defaultMoved
             remaining -= defaultMoved
         }

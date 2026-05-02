@@ -2,6 +2,7 @@ package damien.nodeworks.platform
 
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.core.component.DataComponentPatch
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
@@ -137,6 +138,20 @@ interface StorageService {
     /** Extract (remove) items from storage matching the filter. Returns count actually removed. */
     fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
 
+    /** Extract (remove) items from storage matching the filter, returning the actual
+     *  removed [ItemStack]s with all components / NBT preserved. Use this instead of
+     *  [extractItems] when the caller is going to hand the items to a player or insert
+     *  them into another inventory: rebuilding a stack from `ItemStack(item, count)`
+     *  would silently strip durability, enchantments, custom names, dyed colour, etc.
+     *
+     *  Returned stacks are already removed from the source storage. May return multiple
+     *  stacks if matching items are split across slots with different components. */
+    fun extractItemStacksMatching(
+        storage: ItemStorageHandle,
+        filter: (String) -> Boolean,
+        maxCount: Long,
+    ): List<ItemStack>
+
     /** Insert an ItemStack into storage. Returns count actually inserted. */
     fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int
 
@@ -216,14 +231,22 @@ interface StorageService {
     fun extractFluid(storage: FluidStorageHandle, filter: (String) -> Boolean, maxAmount: Long): Long = 0L
 }
 
-/** Metadata for an item found in storage. */
+/** Metadata for an item found in storage.
+ *
+ *  [componentsPatch] is a representative sample of one source stack's components
+ *  (the first sampled when multiple stacks aggregate into the same `(itemId,
+ *  hasData)` bucket). Drives the Inventory Terminal's display stack so durability
+ *  bars, custom names, and enchantment glints render in the grid. Extracted
+ *  stacks carry their own real components via [StorageService.extractItemStacksMatching],
+ *  so per-bucket aggregation never loses data on the way back out. */
 data class ItemInfo(
     val itemId: String,
     val name: String,
     val count: Long,
     val maxStackSize: Int,
     val hasData: Boolean,
-    val isCraftable: Boolean = false
+    val isCraftable: Boolean = false,
+    val componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
 ) {
     val stackable: Boolean get() = maxStackSize > 1
 }

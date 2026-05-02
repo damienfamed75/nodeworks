@@ -7,6 +7,7 @@ import damien.nodeworks.platform.FluidInfo
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
+import net.minecraft.core.component.DataComponentPatch
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import java.util.concurrent.ConcurrentHashMap
@@ -292,12 +293,25 @@ class NetworkInventoryCache(
                 entries[key] = SerialEntry(serial, info)
                 changedSerials.add(serial)
                 changed = true
-            } else if (existing.info.count != info.count || existing.info.isCraftable != info.isCraftable) {
-                entries[key] = existing.copy(
-                    info = existing.info.copy(count = info.count, isCraftable = info.isCraftable)
-                )
-                changedSerials.add(existing.serial)
-                changed = true
+            } else {
+                // Pick up patch updates too, the prior count-and-craftable-only
+                // check left a stale empty patch on entries that were created via
+                // [onInserted] (which doesn't see the actual stack), the next
+                // poll has the real components and we want them to land.
+                val patchChanged = existing.info.componentsPatch != info.componentsPatch
+                val countChanged = existing.info.count != info.count
+                val craftableChanged = existing.info.isCraftable != info.isCraftable
+                if (countChanged || craftableChanged || patchChanged) {
+                    entries[key] = existing.copy(
+                        info = existing.info.copy(
+                            count = info.count,
+                            isCraftable = info.isCraftable,
+                            componentsPatch = info.componentsPatch,
+                        )
+                    )
+                    changedSerials.add(existing.serial)
+                    changed = true
+                }
             }
         }
 
@@ -390,7 +404,12 @@ class NetworkInventoryCache(
 
     // --- Delta updates from script operations (for immediate feedback) ---
 
-    fun onInserted(itemId: String, hasData: Boolean, amount: Long) {
+    fun onInserted(
+        itemId: String,
+        hasData: Boolean,
+        amount: Long,
+        componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
+    ) {
         if (amount <= 0) return
         val key = cacheKey(itemId, hasData)
         // Mark dirty so the next applyDiff doesn't revert this update with a stale
@@ -398,7 +417,17 @@ class NetworkInventoryCache(
         dirtyKeys.add(key)
         val existing = entries[key]
         if (existing != null) {
-            entries[key] = existing.copy(info = existing.info.copy(count = existing.info.count + amount))
+            // Adopt the new patch when the existing entry has none so a player-
+            // inserted damaged tool gets its bar immediately even if the bucket
+            // already held a default-state instance from a prior insert.
+            val mergedPatch = if (existing.info.componentsPatch.isEmpty) componentsPatch
+                else existing.info.componentsPatch
+            entries[key] = existing.copy(
+                info = existing.info.copy(
+                    count = existing.info.count + amount,
+                    componentsPatch = mergedPatch,
+                )
+            )
             changedSerials.add(existing.serial)
         } else {
             val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
@@ -409,7 +438,8 @@ class NetworkInventoryCache(
                 name = net.minecraft.world.item.ItemStack(item).hoverName.string,
                 count = amount,
                 maxStackSize = item.getDefaultMaxStackSize(),
-                hasData = hasData
+                hasData = hasData,
+                componentsPatch = componentsPatch,
             ))
             changedSerials.add(serial)
         }

@@ -555,33 +555,33 @@ class InventoryTerminalMenu(
                     else -> minOf(available, maxStack)
                 }
 
-                var extracted = 0L
-                for (card in NetworkStorageHelper.getStorageCards(snap)) {
-                    if (extracted >= toExtract) break
-                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
-                    val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
-                        storage, { it == itemId }, toExtract - extracted
-                    )
-                    if (amount > 0) {
-                        c?.onExtracted(itemId, false, amount)
-                        extracted += amount
-                    }
-                }
-
-                if (extracted > 0) {
-                    val stack = ItemStack(item, extracted.toInt())
+                val stacks = extractRealStacks(lvl, snap, c, itemId, toExtract)
+                if (stacks.isNotEmpty()) {
                     if (action == 3) {
-                        if (!playerInventory.add(stack)) {
-                            NetworkStorageHelper.insertItemStack(lvl, snap, stack, c)
+                        // Shift-click into player inventory. Each component-distinct
+                        // stack lands separately so a 1-damage pickaxe and a pristine
+                        // pickaxe end up in different slots, matching vanilla.
+                        for (stack in stacks) {
+                            if (!playerInventory.add(stack)) {
+                                NetworkStorageHelper.insertItemStack(lvl, snap, stack, c)
+                            }
                         }
                     } else {
+                        // Cursor pickup. Multiple component variants can't share a
+                        // cursor stack (vanilla forbids merging across components),
+                        // so the first stack goes on the cursor and the rest spill
+                        // back to network storage.
+                        val first = stacks.first()
                         val carried = carried
                         if (carried.isEmpty) {
-                            setCarried(stack)
-                        } else if (ItemStack.isSameItemSameComponents(carried, stack) && carried.count + stack.count <= carried.maxStackSize) {
-                            carried.grow(stack.count)
+                            setCarried(first)
+                        } else if (ItemStack.isSameItemSameComponents(carried, first) && carried.count + first.count <= carried.maxStackSize) {
+                            carried.grow(first.count)
                         } else {
-                            NetworkStorageHelper.insertItemStack(lvl, snap, stack, c)
+                            NetworkStorageHelper.insertItemStack(lvl, snap, first, c)
+                        }
+                        for (i in 1 until stacks.size) {
+                            NetworkStorageHelper.insertItemStack(lvl, snap, stacks[i], c)
                         }
                     }
                 }
@@ -620,20 +620,8 @@ class InventoryTerminalMenu(
                 val maxStack = item.getDefaultMaxStackSize().toLong()
                 val toDrop = if (action == 5) 1L else minOf(available, maxStack)
 
-                var extracted = 0L
-                for (card in NetworkStorageHelper.getStorageCards(snap)) {
-                    if (extracted >= toDrop) break
-                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
-                    val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
-                        storage, { it == itemId }, toDrop - extracted
-                    )
-                    if (amount > 0) {
-                        c?.onExtracted(itemId, false, amount)
-                        extracted += amount
-                    }
-                }
-                if (extracted > 0) {
-                    player.drop(ItemStack(item, extracted.toInt()), true)
+                for (stack in extractRealStacks(lvl, snap, c, itemId, toDrop)) {
+                    player.drop(stack, true)
                 }
             }
         }
@@ -952,6 +940,44 @@ class InventoryTerminalMenu(
         return listOf(fallbackId)
     }
 
+    /** Extract up to [maxCount] of [itemId] from network storage, returning the
+     *  actual [ItemStack]s with components preserved (durability, enchantments,
+     *  custom names, dyed colour, etc.).
+     *
+     *  Replaces the count-only `extractItems` path because rebuilding a stack
+     *  from `ItemStack(item, count)` after a count-only extract silently strips
+     *  every per-stack component. Cache deltas use each stack's real `hasData`
+     *  so the per-variant bucket counts in [NetworkInventoryCache] stay accurate.
+     *
+     *  Multiple distinct stacks may come back for one call when a chest holds
+     *  several component-distinct copies of the same item (e.g. three pickaxes
+     *  at different durabilities). */
+    private fun extractRealStacks(
+        lvl: ServerLevel,
+        snap: damien.nodeworks.network.NetworkSnapshot,
+        c: NetworkInventoryCache?,
+        itemId: String,
+        maxCount: Long,
+    ): List<ItemStack> {
+        if (maxCount <= 0L) return emptyList()
+        val out = ArrayList<ItemStack>()
+        var remaining = maxCount
+        for (card in NetworkStorageHelper.getStorageCards(snap)) {
+            if (remaining <= 0L) break
+            val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+            val stacks = damien.nodeworks.platform.PlatformServices.storage
+                .extractItemStacksMatching(storage, { it == itemId }, remaining)
+            for (stack in stacks) {
+                if (stack.isEmpty) continue
+                val hasData = !stack.componentsPatch.isEmpty
+                c?.onExtracted(itemId, hasData, stack.count.toLong())
+                out.add(stack)
+                remaining -= stack.count
+            }
+        }
+        return out
+    }
+
     /** Try each candidate id in order and return a 1-count [ItemStack] the
      *  moment one resolves. Mutates the source inventory / network in place,
      *  so successive calls see the running total drained: candidate
@@ -970,20 +996,8 @@ class InventoryTerminalMenu(
 
             val lvl = serverLevel ?: continue
             val snap = snapshot ?: continue
-            val c = cache
-            var extracted = 0L
-            for (card in NetworkStorageHelper.getStorageCards(snap)) {
-                if (extracted >= 1) break
-                val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
-                val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
-                    storage, { it == itemId }, 1
-                )
-                if (amount > 0) {
-                    c?.onExtracted(itemId, false, amount)
-                    extracted += amount
-                }
-            }
-            if (extracted > 0) return ItemStack(item, 1)
+            val stacks = extractRealStacks(lvl, snap, cache, itemId, 1L)
+            if (stacks.isNotEmpty()) return stacks.first()
         }
         return null
     }
@@ -1064,23 +1078,9 @@ class InventoryTerminalMenu(
                 val current = craftingContainer.getItem(i)
                 if (!current.isEmpty) continue
 
-                var extracted = 0L
-                for (card in NetworkStorageHelper.getStorageCards(snap)) {
-                    if (extracted >= 1) break
-                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
-                    val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
-                        storage, { it == itemId }, 1
-                    )
-                    if (amount > 0) {
-                        c?.onExtracted(itemId, false, amount)
-                        extracted += amount
-                    }
-                }
-                if (extracted > 0) {
-                    val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
-                    craftingContainer.setItem(i, ItemStack(item, 1))
-                }
+                val stacks = extractRealStacks(lvl, snap, c, itemId, 1L)
+                val refill = stacks.firstOrNull() ?: continue
+                craftingContainer.setItem(i, refill)
             }
         } finally {
             suppressSlotsChanged = false
@@ -1390,35 +1390,29 @@ class InventoryTerminalMenu(
             else -> minOf(entry.availableCount.toLong(), maxStack)
         }
 
-        var extracted = 0L
-        for (card in NetworkStorageHelper.getStorageCards(snap)) {
-            if (extracted >= toExtract) break
-            val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
-            val amount = damien.nodeworks.platform.PlatformServices.storage.extractItems(
-                storage, { it == entry.itemId }, toExtract - extracted
-            )
-            if (amount > 0) {
-                cache?.onExtracted(entry.itemId, false, amount)
-                extracted += amount
-            }
-        }
-
-        if (extracted > 0) {
-            entry.takenCount += extracted.toInt()
+        val stacks = extractRealStacks(lvl, snap, cache, entry.itemId, toExtract)
+        if (stacks.isNotEmpty()) {
+            val totalExtracted = stacks.sumOf { it.count }
+            entry.takenCount += totalExtracted
             entry.dirty = true
-            val stack = ItemStack(item, extracted.toInt())
             if (action == 1) {
-                if (!playerInventory.add(stack)) {
-                    NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                for (stack in stacks) {
+                    if (!playerInventory.add(stack)) {
+                        NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                    }
                 }
             } else {
+                val first = stacks.first()
                 val carried = carried
                 if (carried.isEmpty) {
-                    setCarried(stack)
-                } else if (ItemStack.isSameItemSameComponents(carried, stack) && carried.count + stack.count <= carried.maxStackSize) {
-                    carried.grow(stack.count)
+                    setCarried(first)
+                } else if (ItemStack.isSameItemSameComponents(carried, first) && carried.count + first.count <= carried.maxStackSize) {
+                    carried.grow(first.count)
                 } else {
-                    NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                    NetworkStorageHelper.insertItemStack(lvl, snap, first, cache)
+                }
+                for (i in 1 until stacks.size) {
+                    NetworkStorageHelper.insertItemStack(lvl, snap, stacks[i], cache)
                 }
             }
         }
@@ -1498,7 +1492,8 @@ class InventoryTerminalMenu(
                         count = maxOf(0L, entry.info.count - deduct),
                         maxStackSize = entry.info.maxStackSize,
                         hasData = entry.info.hasData,
-                        craftable = entry.info.isCraftable
+                        craftable = entry.info.isCraftable,
+                        componentsPatch = entry.info.componentsPatch,
                     )
                 }
                 val fluidEntries = c.getAllFluidEntries().map { entry ->
@@ -1571,7 +1566,8 @@ class InventoryTerminalMenu(
                     count = maxOf(0L, entry.info.count - deduct),
                     maxStackSize = entry.info.maxStackSize,
                     hasData = entry.info.hasData,
-                    craftable = entry.info.isCraftable
+                    craftable = entry.info.isCraftable,
+                    componentsPatch = entry.info.componentsPatch,
                 )
             }
             val fluidEntries = changedFluids.map { entry ->
