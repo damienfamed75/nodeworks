@@ -7,10 +7,9 @@ neoForge {
     neoFormVersion = providers.gradleProperty("neoform_version").get()
 
     // Apply the neoforge-module access transformer at common's compile time so
-    // common code can reach private Mojang APIs (e.g. RenderPipelines.BLOCK_SNIPPET
-    // and RenderType.create) that NeoForge opens at runtime. Without this the
-    // Kotlin compiler refuses the references even though they resolve fine
-    // in-game.
+    // common code can reach private Mojang APIs that NeoForge opens at runtime.
+    // Without this the Kotlin compiler refuses the references even though they
+    // resolve fine in-game.
     accessTransformers.from(rootProject.file("neoforge/src/main/resources/META-INF/accesstransformer.cfg"))
 }
 

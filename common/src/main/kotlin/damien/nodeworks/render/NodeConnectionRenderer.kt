@@ -9,15 +9,12 @@ import damien.nodeworks.platform.PlatformServices
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
 import net.minecraft.client.renderer.MultiBufferSource
-import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.world.level.Level
-import net.minecraft.world.phys.AABB
 import org.joml.Quaternionf
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.sqrt
 
 object NodeConnectionRenderer {
 
@@ -37,10 +34,6 @@ object NodeConnectionRenderer {
     // Set of block positions reachable from any controller through unblocked connections
     private val reachablePositions = HashSet<BlockPos>()
 
-    // Node shape bounds (5/16 to 11/16)
-    private const val MIN = 5f / 16f
-    private const val MAX = 11f / 16f
-
     /** Global tracker, any Connectable block entity can register/unregister here. */
     fun trackConnectable(pos: BlockPos, loaded: Boolean) {
         if (loaded) knownNodes.add(pos) else knownNodes.remove(pos)
@@ -50,7 +43,10 @@ object NodeConnectionRenderer {
      * Walks the connection graph to find the NetworkController for a given position.
      * BFS capped at 32 hops. Returns null if no controller found.
      */
-    fun findController(level: net.minecraft.world.level.Level?, startPos: BlockPos): damien.nodeworks.block.entity.NetworkControllerBlockEntity? {
+    fun findController(
+        level: net.minecraft.world.level.Level?,
+        startPos: BlockPos
+    ): damien.nodeworks.block.entity.NetworkControllerBlockEntity? {
         if (level == null) return null
         val startEntity = level.getBlockEntity(startPos)
         if (startEntity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) return startEntity
@@ -98,7 +94,7 @@ object NodeConnectionRenderer {
             val neighborBe = level.getBlockEntity(neighbor)
             val sameCluster =
                 (instr && neighborBe is damien.nodeworks.block.entity.InstructionStorageBlockEntity) ||
-                (proc && neighborBe is damien.nodeworks.block.entity.ProcessingStorageBlockEntity)
+                        (proc && neighborBe is damien.nodeworks.block.entity.ProcessingStorageBlockEntity)
             if (sameCluster) {
                 visited.add(neighbor)
                 queue.add(neighbor)
@@ -275,6 +271,7 @@ object NodeConnectionRenderer {
             if (poseStack != null && consumers != null) {
                 render(poseStack, consumers, cameraPos)
                 renderPinHighlight(poseStack, consumers, cameraPos)
+                renderSelectionThroughWalls(poseStack, consumers, cameraPos)
             }
         }
     }
@@ -297,26 +294,6 @@ object NodeConnectionRenderer {
             refreshLosCache(level)
         }
 
-        poseStack.pushPose()
-        poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
-
-        // Wrench selection highlight (only if endpoint still exists and player holds wrench)
-        val selectedPos = NetworkWrenchItem.clientSelectedPos
-        val player = mc.player
-        if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
-            val selectedEntity = level.getBlockEntity(selectedPos) as? damien.nodeworks.network.Connectable
-            if (selectedEntity != null) {
-                val highlightBuffer = consumers.getBuffer(RenderTypes.LINES)
-                val nid = selectedEntity.networkId
-                hlColor = if (nid != null) damien.nodeworks.network.NetworkSettingsRegistry.getColor(nid) else DEFAULT_NETWORK_COLOR
-                renderSelectionHighlight(poseStack, highlightBuffer, level, selectedPos)
-            } else {
-                NetworkWrenchItem.clientSelectedPos = null
-            }
-        }
-
-        poseStack.popPose()
-
         // Monitor count text, stays here because it wants camera-relative billboarding
         // over the entire knownNodes set, not a per-BER pass.
         poseStack.pushPose()
@@ -325,80 +302,31 @@ object NodeConnectionRenderer {
         poseStack.popPose()
     }
 
-    private fun renderSelectionHighlight(
+    /** Through-walls highlight on the wrench's selected endpoint. Self-clears
+     *  the selection field if the underlying block has been removed. */
+    fun renderSelectionThroughWalls(
         poseStack: PoseStack,
-        buffer: VertexConsumer,
-        level: Level,
-        pos: BlockPos,
+        consumers: MultiBufferSource,
+        cameraPos: net.minecraft.world.phys.Vec3,
     ) {
-        // Trace the block's outline shape so full cubes get a full-cube highlight
-        // and partial shapes wrap their actual bounds. Empty-shape fallback to
-        // the node box keeps the highlight visible for transparent Connectables
-        // (not expected in practice).
-        val shape = level.getBlockState(pos).getShape(level, pos)
-        val aabb = if (shape.isEmpty) {
-            AABB(MIN.toDouble(), MIN.toDouble(), MIN.toDouble(),
-                 MAX.toDouble(), MAX.toDouble(), MAX.toDouble())
-        } else {
-            shape.bounds()
+        val pos = NetworkWrenchItem.clientSelectedPos ?: return
+        val mc = Minecraft.getInstance()
+        val player = mc.player ?: return
+        val level = mc.level ?: return
+        // I hate this so much but whatever. Curse my choice of kotlin
+        if (!player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) return
+
+        val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable
+        if (be == null) {
+            NetworkWrenchItem.clientSelectedPos = null
+            return
         }
-
-        // Outset matches vanilla's selection-box offset so lines sit just
-        // outside the block surface and don't z-fight with the block faces.
-        val outset = 0.002
-        val x0 = (pos.x + aabb.minX - outset).toFloat()
-        val y0 = (pos.y + aabb.minY - outset).toFloat()
-        val z0 = (pos.z + aabb.minZ - outset).toFloat()
-        val x1 = (pos.x + aabb.maxX + outset).toFloat()
-        val y1 = (pos.y + aabb.maxY + outset).toFloat()
-        val z1 = (pos.z + aabb.maxZ + outset).toFloat()
-
-        val pose = poseStack.last()
-        // 12 edges of a box
-        drawLine(buffer, pose, x0, y0, z0, x1, y0, z0)
-        drawLine(buffer, pose, x1, y0, z0, x1, y0, z1)
-        drawLine(buffer, pose, x1, y0, z1, x0, y0, z1)
-        drawLine(buffer, pose, x0, y0, z1, x0, y0, z0)
-        drawLine(buffer, pose, x0, y1, z0, x1, y1, z0)
-        drawLine(buffer, pose, x1, y1, z0, x1, y1, z1)
-        drawLine(buffer, pose, x1, y1, z1, x0, y1, z1)
-        drawLine(buffer, pose, x0, y1, z1, x0, y1, z0)
-        drawLine(buffer, pose, x0, y0, z0, x0, y1, z0)
-        drawLine(buffer, pose, x1, y0, z0, x1, y1, z0)
-        drawLine(buffer, pose, x1, y0, z1, x1, y1, z1)
-        drawLine(buffer, pose, x0, y0, z1, x0, y1, z1)
-    }
-
-    private var hlColor = DEFAULT_NETWORK_COLOR
-
-    private fun drawLine(
-        buffer: VertexConsumer, pose: PoseStack.Pose,
-        x0: Float, y0: Float, z0: Float,
-        x1: Float, y1: Float, z1: Float
-    ) {
-        val lr = (hlColor shr 16) and 0xFF
-        val lg = (hlColor shr 8) and 0xFF
-        val lb = hlColor and 0xFF
-        val dx = x1 - x0
-        val dy = y1 - y0
-        val dz = z1 - z0
-        val len = sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
-        val nx = if (len > 0) dx / len else 0f
-        val ny = if (len > 0) dy / len else 0f
-        val nz = if (len > 0) dz / len else 1f
-
-        // 26.1: RenderTypes.LINES vertex format includes a per-vertex LineWidth element.
-        //  Omitting setLineWidth() crashes BufferBuilder with "Missing elements in vertex:
-        //  LineWidth". Pattern copied from vanilla ShapeRenderer.renderLineBox.
-        buffer.addVertex(pose, x0, y0, z0)
-            .setColor(lr, lg, lb, 255)
-            .setNormal(pose, nx, ny, nz)
-            .setLineWidth(1.0f)
-
-        buffer.addVertex(pose, x1, y1, z1)
-            .setColor(lr, lg, lb, 255)
-            .setNormal(pose, nx, ny, nz)
-            .setLineWidth(1.0f)
+        val color = be.networkId?.let { damien.nodeworks.network.NetworkSettingsRegistry.getColor(it) }
+            ?: DEFAULT_NETWORK_COLOR
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        submitThroughWallsBox(poseStack, consumers, cameraPos, level, pos, r, g, b)
     }
 
     private fun renderMonitorText(
@@ -486,24 +414,7 @@ object NodeConnectionRenderer {
 
     // ========== Diagnostic Pin Highlight ==========
 
-    /**
-     * Draws a pulsing cyan full-block overlay around the pinned block whenever the
-     * Diagnostic Tool is held. Drawn through walls (ALWAYS_PASS depth) so the
-     * player can locate the block from anywhere.
-     *
-     * 26.1 rewrite: the pre-migration version stamped the block's quads through
-     * an immediate-mode `RenderSystem.setShader` + `BufferUploader.drawWithShader`
-     * path. Both of those APIs are gone in 26.1 (replaced by
-     * `RegisterRenderPipelinesEvent` + `RenderType` dispatch), and `BakedQuad`
-     * switched from `quad.vertices: int[]` to `position(i)` / `packedUV(i)`
-     * accessors. The new flow: look up the block's `BlockStateModel`, collect
-     * its `BlockStateModelPart`s, walk every `BakedQuad`, and emit each vertex
-     * to our registered [PinHighlightRenderType.THROUGH_WALLS], which uses the
-     * block atlas with translucent blending and depth-test disabled.
-     *
-     * Vertex format is `DefaultVertexFormat.BLOCK` (Position + Color + UV0 + UV2),
-     * no normal, no overlay.
-     */
+    /** Through-walls highlight on the diagnostic-tool's pinned block. */
     fun renderPinHighlight(
         poseStack: PoseStack,
         consumers: MultiBufferSource,
@@ -517,23 +428,38 @@ object NodeConnectionRenderer {
         val mainItem = player.mainHandItem.item
         val offItem = player.offhandItem.item
         if (mainItem !is damien.nodeworks.item.DiagnosticToolItem &&
-            offItem !is damien.nodeworks.item.DiagnosticToolItem) return
+            offItem !is damien.nodeworks.item.DiagnosticToolItem
+        ) return
 
+        val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable
+        val color = be?.networkId?.let { damien.nodeworks.network.NetworkSettingsRegistry.getColor(it) }
+            ?: DEFAULT_NETWORK_COLOR
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        submitThroughWallsBox(poseStack, consumers, cameraPos, level, pos, r, g, b)
+    }
+
+    /** Pulsing through-walls box around [pos] tinted [r,g,b]. Box bounds come
+     *  from the block's outline shape so a Node gets a 6/16 cube and a full
+     *  block gets a 1×1×1 cube. */
+    private fun submitThroughWallsBox(
+        poseStack: PoseStack,
+        consumers: MultiBufferSource,
+        cameraPos: net.minecraft.world.phys.Vec3,
+        level: Level,
+        pos: BlockPos,
+        r: Int, g: Int, b: Int,
+    ) {
         val blockState = level.getBlockState(pos)
         if (blockState.isAir) return
 
-        val modelSet = mc.modelManager.blockStateModelSet ?: return
-        val model = modelSet.get(blockState) ?: return
+        val shape = blockState.getShape(level, pos)
+        val aabb = if (shape.isEmpty) net.minecraft.world.phys.AABB(0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+            else shape.bounds()
 
-        // Pulse 0.6 → 1.0 at ~0.5 Hz modulates alpha so the highlight "breathes".
         val time = (System.currentTimeMillis() % 2000) / 2000f
-        val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.2f + 0.8f)
-
-        // Collect model parts with a deterministic seed so quad order is stable.
-        val random = net.minecraft.util.RandomSource.create(blockState.getSeed(pos))
-        val parts = ArrayList<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart>()
-        model.collectParts(random, parts)
-        if (parts.isEmpty()) return
+        val pulse = (kotlin.math.sin(time * Math.PI * 2).toFloat() * 0.15f + 0.85f)
 
         poseStack.pushPose()
         poseStack.translate(
@@ -541,55 +467,54 @@ object NodeConnectionRenderer {
             (pos.y - cameraPos.y).toFloat(),
             (pos.z - cameraPos.z).toFloat()
         )
-        // Slight outward breathe around block center so the overlay visibly
-        // pulses without z-fighting the block below it.
-        val scale = 1.0f + pulse * 0.04f
+        val scale = 1.0f + pulse * 0.05f
         poseStack.translate(0.5f, 0.5f, 0.5f)
         poseStack.scale(scale, scale, scale)
         poseStack.translate(-0.5f, -0.5f, -0.5f)
         val pose = poseStack.last()
 
-        // Cyan tint (0.6, 0.9, 1.0) with pulse-driven alpha.
-        val r = (0.6f * 255).toInt().coerceIn(0, 255)
-        val g = (0.9f * 255).toInt().coerceIn(0, 255)
-        val b = 255
-        val a = (pulse * 200).toInt().coerceIn(0, 255)
-
+        // Modulate vertex color by pulse, additive ignores dst alpha so this is
+        // what drives glow strength.
+        val pr = (r * pulse).toInt().coerceIn(0, 255)
+        val pg = (g * pulse).toInt().coerceIn(0, 255)
+        val pb = (b * pulse).toInt().coerceIn(0, 255)
         val buffer = consumers.getBuffer(PinHighlightRenderType.THROUGH_WALLS)
 
-        // Fullbright lightmap so the overlay ignores block/sky light.
-        val lightU = 240
-        val lightV = 240
-
-        for (part in parts) {
-            // `null` direction collects quads without a culling face (interior geometry).
-            emitQuads(buffer, pose, part.getQuads(null), r, g, b, a, lightU, lightV)
-            for (dir in Direction.entries) {
-                emitQuads(buffer, pose, part.getQuads(dir), r, g, b, a, lightU, lightV)
-            }
-        }
+        emitBox(
+            buffer, pose,
+            aabb.minX.toFloat(), aabb.minY.toFloat(), aabb.minZ.toFloat(),
+            aabb.maxX.toFloat(), aabb.maxY.toFloat(), aabb.maxZ.toFloat(),
+            pr, pg, pb, 255,
+        )
 
         poseStack.popPose()
     }
 
-    private fun emitQuads(
-        buffer: VertexConsumer,
-        pose: PoseStack.Pose,
-        quads: List<net.minecraft.client.resources.model.geometry.BakedQuad>,
+    private fun emitBox(
+        buffer: VertexConsumer, pose: PoseStack.Pose,
+        x0: Float, y0: Float, z0: Float,
+        x1: Float, y1: Float, z1: Float,
         r: Int, g: Int, b: Int, a: Int,
-        lightU: Int, lightV: Int
     ) {
-        for (quad in quads) {
-            for (i in 0 until 4) {
-                val p = quad.position(i)
-                val packedUv = quad.packedUV(i)
-                val u = net.minecraft.client.model.geom.builders.UVPair.unpackU(packedUv)
-                val v = net.minecraft.client.model.geom.builders.UVPair.unpackV(packedUv)
-                buffer.addVertex(pose, p.x(), p.y(), p.z())
-                    .setColor(r, g, b, a)
-                    .setUv(u, v)
-                    .setUv2(lightU, lightV)
-            }
-        }
+        emitQuad(buffer, pose, x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, r, g, b, a)
+        emitQuad(buffer, pose, x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, r, g, b, a)
+        emitQuad(buffer, pose, x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0, r, g, b, a)
+        emitQuad(buffer, pose, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, r, g, b, a)
+        emitQuad(buffer, pose, x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, r, g, b, a)
+        emitQuad(buffer, pose, x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1, r, g, b, a)
+    }
+
+    private fun emitQuad(
+        buffer: VertexConsumer, pose: PoseStack.Pose,
+        ax: Float, ay: Float, az: Float,
+        bx: Float, by: Float, bz: Float,
+        cx: Float, cy: Float, cz: Float,
+        dx: Float, dy: Float, dz: Float,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        buffer.addVertex(pose, ax, ay, az).setColor(r, g, b, a)
+        buffer.addVertex(pose, bx, by, bz).setColor(r, g, b, a)
+        buffer.addVertex(pose, cx, cy, cz).setColor(r, g, b, a)
+        buffer.addVertex(pose, dx, dy, dz).setColor(r, g, b, a)
     }
 }
