@@ -12,6 +12,8 @@ import net.minecraft.client.renderer.MultiBufferSource
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.world.level.Level
+import net.minecraft.world.phys.AABB
 import org.joml.Quaternionf
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -298,8 +300,8 @@ object NodeConnectionRenderer {
         poseStack.pushPose()
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
 
-        // Wrench selection highlight (only if node still exists and player holds wrench)
-        val selectedPos = NetworkWrenchItem.clientSelectedNode
+        // Wrench selection highlight (only if endpoint still exists and player holds wrench)
+        val selectedPos = NetworkWrenchItem.clientSelectedPos
         val player = mc.player
         if (selectedPos != null && player != null && player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) {
             val selectedEntity = level.getBlockEntity(selectedPos) as? damien.nodeworks.network.Connectable
@@ -307,9 +309,9 @@ object NodeConnectionRenderer {
                 val highlightBuffer = consumers.getBuffer(RenderTypes.LINES)
                 val nid = selectedEntity.networkId
                 hlColor = if (nid != null) damien.nodeworks.network.NetworkSettingsRegistry.getColor(nid) else DEFAULT_NETWORK_COLOR
-                renderSelectionHighlight(poseStack, highlightBuffer, selectedPos)
+                renderSelectionHighlight(poseStack, highlightBuffer, level, selectedPos)
             } else {
-                NetworkWrenchItem.clientSelectedNode = null
+                NetworkWrenchItem.clientSelectedPos = null
             }
         }
 
@@ -323,19 +325,35 @@ object NodeConnectionRenderer {
         poseStack.popPose()
     }
 
-    private fun renderSelectionHighlight(poseStack: PoseStack, buffer: VertexConsumer, pos: BlockPos) {
-        val x = pos.x.toFloat()
-        val y = pos.y.toFloat()
-        val z = pos.z.toFloat()
+    private fun renderSelectionHighlight(
+        poseStack: PoseStack,
+        buffer: VertexConsumer,
+        level: Level,
+        pos: BlockPos,
+    ) {
+        // Trace the block's outline shape so full cubes get a full-cube highlight
+        // and partial shapes wrap their actual bounds. Empty-shape fallback to
+        // the node box keeps the highlight visible for transparent Connectables
+        // (not expected in practice).
+        val shape = level.getBlockState(pos).getShape(level, pos)
+        val aabb = if (shape.isEmpty) {
+            AABB(MIN.toDouble(), MIN.toDouble(), MIN.toDouble(),
+                 MAX.toDouble(), MAX.toDouble(), MAX.toDouble())
+        } else {
+            shape.bounds()
+        }
+
+        // Outset matches vanilla's selection-box offset so lines sit just
+        // outside the block surface and don't z-fight with the block faces.
+        val outset = 0.002
+        val x0 = (pos.x + aabb.minX - outset).toFloat()
+        val y0 = (pos.y + aabb.minY - outset).toFloat()
+        val z0 = (pos.z + aabb.minZ - outset).toFloat()
+        val x1 = (pos.x + aabb.maxX + outset).toFloat()
+        val y1 = (pos.y + aabb.maxY + outset).toFloat()
+        val z1 = (pos.z + aabb.maxZ + outset).toFloat()
+
         val pose = poseStack.last()
-
-        val x0 = x + MIN
-        val y0 = y + MIN
-        val z0 = z + MIN
-        val x1 = x + MAX
-        val y1 = y + MAX
-        val z1 = z + MAX
-
         // 12 edges of a box
         drawLine(buffer, pose, x0, y0, z0, x1, y0, z0)
         drawLine(buffer, pose, x1, y0, z0, x1, y0, z1)
