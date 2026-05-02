@@ -68,6 +68,47 @@ class ScriptEngine(
      *  and the cross-engine scheduler lives in the `:neoforge` module. */
     @Volatile
     var vruntimeNs: Long = 0L
+
+    /** Wall-clock cost of the most recent tick this engine actually ran
+     *  (nanos). Set by [NeoForgeTerminalPackets.tickAll] via [recordTickCost].
+     *  Surfaces in `/nodeworks terminal info` so admins can spot a single
+     *  heavy tick that the [vruntimeNs] running total would smear out. */
+    @Volatile
+    var lastTickCostNs: Long = 0L
+        private set
+
+    /** Ring buffer of per-tick wall-clock costs over the last second (20 slots
+     *  at 20 TPS). Indexed by `tickCount % 20`, the per-tick scheduler zeros
+     *  this engine's slot at the start of each tick via [resetTickCostSlot]
+     *  before deciding whether to dispatch us, so engines deferred by global
+     *  budget pressure contribute 0 to the sum rather than carrying the
+     *  previous round trip's value. The sum across all 20 slots feeds the
+     *  "% local tick budget" column shown by `/nodeworks terminal list`. */
+    private val recentTickCostNs = LongArray(20)
+
+    /** Zero this engine's ring-buffer slot for [tickCount] before the
+     *  cross-engine scheduler decides whether to run us. Skipped engines stay
+     *  at 0 for that slot, so the moving-average view stays honest about how
+     *  much wall-clock this engine actually consumed. */
+    fun resetTickCostSlot(tickCount: Long) {
+        recentTickCostNs[(tickCount % 20).toInt()] = 0L
+    }
+
+    /** Record the wall-clock cost of this tick's [engine.tick] call. Called
+     *  by the cross-engine scheduler after our slice runs. Updates both the
+     *  ring buffer and the [lastTickCostNs] sentinel. */
+    fun recordTickCost(tickCount: Long, costNs: Long) {
+        recentTickCostNs[(tickCount % 20).toInt()] = costNs
+        lastTickCostNs = costNs
+    }
+
+    /** Sum of wall-clock cost across the last 20 ticks (nanos). One-second
+     *  rolling cost on default 20 TPS. Cheap, just a 20-element sum. */
+    fun recentTickCostSumNs(): Long {
+        var sum = 0L
+        for (v in recentTickCostNs) sum += v
+        return sum
+    }
     private var globals: Globals? = null
     private var networkSnapshot: NetworkSnapshot? = null
     val scheduler = SchedulerImpl(

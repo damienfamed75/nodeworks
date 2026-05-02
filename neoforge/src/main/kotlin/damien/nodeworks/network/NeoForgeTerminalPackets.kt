@@ -270,6 +270,27 @@ object NeoForgeTerminalPackets {
         }
     }
 
+    /** Ring buffer of total Lua wall-clock cost across all engines for the
+     *  last 20 server ticks (one second at 20 TPS). Slot `tickCount % 20` is
+     *  zeroed at the start of each [tickAll] before any engine writes to it,
+     *  then accumulated as engines run. [totalLuaCostNsLastSecond] sums the
+     *  ring for the `/nodeworks safety status` "% global tick budget" line. */
+    private val totalLuaCostNsRing = LongArray(20)
+
+    /** Sum of all-engine Lua wall-clock cost across the last second of ticks.
+     *  Read by [damien.nodeworks.command.NodeworksCommand]. */
+    fun totalLuaCostNsLastSecond(): Long {
+        var sum = 0L
+        for (v in totalLuaCostNsRing) sum += v
+        return sum
+    }
+
+    /** Snapshot of the live engine table for the admin command suite. Returns a
+     *  list copy so callers can iterate without ConcurrentModification when a
+     *  reentrant tick edits [activeEngines]. */
+    fun activeEnginesSnapshot(): List<Pair<GlobalPos, ScriptEngine>> =
+        activeEngines.entries.map { it.key to it.value }
+
     fun tickAll(server: MinecraftServer, tickCount: Long) {
         processPendingAutoRun(server, tickCount)
         // Snapshot before iterating: `engine.tick` may run Lua that reenters this class
@@ -294,6 +315,14 @@ object NeoForgeTerminalPackets {
         val globalDeadlineNs = tickStartNs + settings.globalTickBudgetMs * 1_000_000L
         val localBudgetNs = settings.localTickBudgetMs * 1_000_000L
 
+        // Zero this tick's slot in the global + per-engine cost rings before
+        // anyone writes to it. Engines deferred by global-budget exhaustion
+        // contribute 0 for this tick (rather than re-counting the previous
+        // tick's value), so % utilisation stays honest.
+        val ringSlot = (tickCount % 20).toInt()
+        totalLuaCostNsRing[ringSlot] = 0L
+        for (e in activeEngines.values) e.resetTickCostSlot(tickCount)
+
         val toRemove = mutableListOf<GlobalPos>()
         val snapshot = activeEngines.entries
             .toList()
@@ -314,7 +343,10 @@ object NeoForgeTerminalPackets {
             val perEngineDeadlineNs = minOf(nowNs + localBudgetNs, globalDeadlineNs)
             val before = nowNs
             engine.tick(tickCount, perEngineDeadlineNs)
-            engine.vruntimeNs += System.nanoTime() - before
+            val cost = System.nanoTime() - before
+            engine.vruntimeNs += cost
+            engine.recordTickCost(tickCount, cost)
+            totalLuaCostNsRing[ringSlot] += cost
 
             if (!engine.hasWork()) {
                 toRemove.add(gp)

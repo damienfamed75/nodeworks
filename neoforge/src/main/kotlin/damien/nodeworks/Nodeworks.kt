@@ -683,6 +683,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
     private fun onRegisterCommands(event: net.neoforged.neoforge.event.RegisterCommandsEvent) {
         damien.nodeworks.command.NwDebugCommand.register(event.dispatcher)
+        damien.nodeworks.command.NodeworksCommand.register(event.dispatcher)
     }
 
     private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
