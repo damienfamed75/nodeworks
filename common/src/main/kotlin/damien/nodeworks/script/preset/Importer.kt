@@ -190,9 +190,11 @@ class ImporterBuilder(
     }
 
     /** Round robin: stay on the current target until it has received its
-     *  [roundRobinStep] allotment, then advance. Carries partial fills across
-     *  ticks so a target that got less than `step` (source ran dry) keeps the
-     *  cursor until it's topped off next tick.
+     *  [roundRobinStep] allotment, then advance. A target that accepts some
+     *  but not all of its allotment (source ran dry mid-fill) holds the
+     *  cursor so next tick tops it off. A target that accepts nothing
+     *  (full, filter rejects, missing capability) yields the cursor
+     *  immediately so a single dead slot doesn't stall the rotation.
      *
      *  Example: 5 items, step=2, 3 targets:
      *    Tick 1: chest1 fills to 2, chest2 fills to 2, chest3 starts with 1/2 → stop
@@ -221,14 +223,16 @@ class ImporterBuilder(
             }
             val moved = moveIntoTarget(snapshot, level, resolvedTargets[idx], filterPred, needed)
             rrServedToCurrent = (rrServedToCurrent.toLong() + moved).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            if (rrServedToCurrent.toLong() >= stepL) {
-                // Allotment filled, advance to the next target for the next round.
+            // Advance past targets that filled cleanly OR accepted nothing.
+            // Partial fills (moved > 0 but allotment short) hold the cursor so
+            // the next tick can finish topping the target off when source has more.
+            val filled = rrServedToCurrent.toLong() >= stepL
+            val rejected = moved == 0L
+            if (filled || rejected) {
                 rrCursor = (rrCursor + 1) % resolvedTargets.size
                 rrServedToCurrent = 0
                 ringsRemaining--
             } else {
-                // Source ran dry or target full before the allotment was hit. Keep
-                // the cursor on this target so the next tick can finish filling it.
                 break
             }
         }
