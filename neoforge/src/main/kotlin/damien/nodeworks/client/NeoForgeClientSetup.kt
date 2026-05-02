@@ -73,6 +73,7 @@ object NeoForgeClientSetup {
         }
         NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingOut ->
             damien.nodeworks.recipe.SoulSandInfusionClientCache.clear()
+            damien.nodeworks.item.NetworkWrenchItem.clientSelectedNode = null
         }
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
