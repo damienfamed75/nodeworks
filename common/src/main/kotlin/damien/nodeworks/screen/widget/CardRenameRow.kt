@@ -91,7 +91,13 @@ class CardRenameRow(
     }
 
     /** Forwards keys to the focused name field. Enter commits, Esc falls
-     *  through so the host's close-screen behavior still wins. */
+     *  through so the host's close-screen behavior still wins. All other
+     *  keys are consumed unconditionally while the field is focused: vanilla
+     *  [AbstractContainerScreen.keyPressed] otherwise checks the inventory
+     *  keybind and closes the GUI on raw `E`, since EditBox.keyPressed
+     *  returns false for printable characters (they're inserted in
+     *  charTyped). The character still types because charTyped fires
+     *  independently from the GLFW char callback. */
     fun keyPressed(event: KeyEvent): Boolean {
         if (!nameField.isFocused) return false
         if (event.keyCode == InputConstants.KEY_RETURN) {
@@ -99,7 +105,8 @@ class CardRenameRow(
             return true
         }
         if (event.keyCode == InputConstants.KEY_ESCAPE) return false
-        return nameField.keyPressed(event)
+        nameField.keyPressed(event)
+        return true
     }
 
     private fun commit() {
