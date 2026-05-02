@@ -122,6 +122,13 @@ class VirtualSlotGrid(
             graphics.renderItem(stack, ix, iy)
 
             val customCount = formatter?.invoke(tempSlot)
+            // Always run itemDecorations so the durability bar (and cooldown
+            // overlay) draws on every item, including the network-grid path
+            // where stack.count is normalised to 1 and the real count is
+            // displayed via [customCount]. Pass "" as the count string in
+            // that path to suppress vanilla's count badge, the scaled
+            // formatter text below replaces it.
+            graphics.renderItemDecorations(font, stack, ix, iy, if (customCount != null) "" else null)
             if (customCount != null) {
                 // Render scaled count text (0.5x) anchored to bottom-right of slot
                 val pose = graphics.pose()
@@ -136,8 +143,6 @@ class VirtualSlotGrid(
                 val sy = ((iy + 16).toFloat() / scale - font.lineHeight).toInt()
                 graphics.drawString(font, customCount, sx, sy, 0xFFFFFFFF.toInt(), true)
                 pose.popMatrix()
-            } else if (stack.count > 1) {
-                graphics.renderItemDecorations(font, stack, ix, iy)
             }
         }
     }

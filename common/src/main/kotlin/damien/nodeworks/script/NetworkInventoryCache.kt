@@ -7,6 +7,7 @@ import damien.nodeworks.platform.FluidInfo
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
+import net.minecraft.core.component.DataComponentPatch
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import java.util.concurrent.ConcurrentHashMap
@@ -32,13 +33,11 @@ class NetworkInventoryCache(
         val info: FluidInfo
     )
 
-    // Double buffer for diff detection, items
-    private var frontBuffer = LinkedHashMap<String, ItemInfo>()
-    private var backBuffer = LinkedHashMap<String, ItemInfo>()
-
-    // Double buffer for diff detection, fluids
-    private var fluidFrontBuffer = LinkedHashMap<String, FluidInfo>()
-    private var fluidBackBuffer = LinkedHashMap<String, FluidInfo>()
+    // Authoritative view of the latest poll. Filled across the cycle's slices,
+    // diffed against [entries] at cycle end. Anything in [entries] but not in
+    // [frontBuffer] (and not protected by the dirty mark) is treated as gone.
+    private val frontBuffer = LinkedHashMap<String, ItemInfo>()
+    private val fluidFrontBuffer = LinkedHashMap<String, FluidInfo>()
 
     // Serial-tracked entries for delta sync to clients
     private val entries = LinkedHashMap<String, SerialEntry>()
@@ -166,19 +165,11 @@ class NetworkInventoryCache(
         return changed
     }
 
-    /** Start a new poll cycle: swap buffers, capture the network snapshot for
-     *  the cycle, return the frozen card list to scan. */
+    /** Start a new poll cycle: clear the front buffers, capture the network
+     *  snapshot for the cycle, return the frozen card list to scan. */
     private fun snapshotCardsForCycle(): List<CardSnapshot> {
-        val tmp = backBuffer
-        backBuffer = frontBuffer
-        frontBuffer = tmp
         frontBuffer.clear()
-
-        val fluidTmp = fluidBackBuffer
-        fluidBackBuffer = fluidFrontBuffer
-        fluidFrontBuffer = fluidTmp
         fluidFrontBuffer.clear()
-
         val snapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
         cycleSnapshot = snapshot
         return NetworkStorageHelper.getStorageCards(snapshot).toList()
@@ -261,65 +252,78 @@ class NetworkInventoryCache(
         }
     }
 
-    /** Compare front buffer against back buffer, update entries and change tracking.
+    /** Reconcile [entries] / [fluidEntries] against this cycle's poll.
      *
-     *  Keys present in [dirtyKeys] / [dirtyFluidKeys] are skipped: they were already
-     *  updated by an immediate-delta hook this cycle, so the polled `frontBuffer`
-     *  value is stale (the poll captured pre-hook state). The hook's value in
-     *  `entries` is the truth; trusting `front` here would briefly flicker the
-     *  count back to the pre-hook value until the next cycle re-polls the chest.
-     *  The dirty sets are cleared at the end of this method. */
+     *  Removal pass iterates [entries] (not the prior poll), so entries added
+     *  via [onInserted] but never observed in a [frontBuffer] still get evicted
+     *  when they're really gone. The previous back-vs-front diff missed that
+     *  class of orphan: items routed through the pool faster than the poll
+     *  could see them (e.g. an importer rule that immediately re-extracts what
+     *  another rule just inserted) accumulated forever in [entries] because
+     *  they were never in any cycle's back buffer to be diffed away.
+     *
+     *  Keys in [dirtyKeys] / [dirtyFluidKeys] are protected: they were just
+     *  updated by [onInserted] this cycle and the poll may not have covered
+     *  the relevant card yet, the next cycle's full sweep will pick them up.
+     *  Dirty sets are cleared at the end so the next cycle starts fresh. */
     private fun applyDiff(): Boolean {
         var changed = false
 
-        // Detect removed items (in back but not in front).
-        val backKeys = backBuffer.keys.toSet()
-        for (key in backKeys) {
+        // Items removed: anything in entries the latest poll didn't see.
+        val itemKeys = entries.keys.toSet()
+        for (key in itemKeys) {
             if (key in dirtyKeys) continue
             if (key !in frontBuffer) {
-                val entry = entries.remove(key)
-                if (entry != null) {
-                    removedSerials.add(entry.serial)
-                    changedSerials.remove(entry.serial)
-                    changed = true
-                }
+                val entry = entries.remove(key) ?: continue
+                removedSerials.add(entry.serial)
+                changedSerials.remove(entry.serial)
+                changed = true
             }
         }
 
-        // Detect new and changed items. We compare count AND isCraftable: adding or
-        //  removing a Processing Set / Instruction Set for an item that was already
-        //  present in storage only flips the craftable flag, leaving count untouched
-        //, the old count-only check missed that case, so adds/removes of recipes
-        //  for in-stock items never reached the client.
+        // Items added or changed. count + isCraftable are both diffed: adding /
+        // removing a recipe for an in-stock item only flips the craftable flag
+        // without touching count, the count-only check missed that case so
+        // recipe registrations never reached the client.
         for ((key, info) in frontBuffer) {
             if (key in dirtyKeys) continue
             val existing = entries[key]
             if (existing == null) {
-                // New item
                 val serial = nextSerial++
                 entries[key] = SerialEntry(serial, info)
                 changedSerials.add(serial)
                 changed = true
-            } else if (existing.info.count != info.count || existing.info.isCraftable != info.isCraftable) {
-                entries[key] = existing.copy(
-                    info = existing.info.copy(count = info.count, isCraftable = info.isCraftable)
-                )
-                changedSerials.add(existing.serial)
-                changed = true
+            } else {
+                // Pick up patch updates too, the prior count-and-craftable-only
+                // check left a stale empty patch on entries that were created via
+                // [onInserted] (which doesn't see the actual stack), the next
+                // poll has the real components and we want them to land.
+                val patchChanged = existing.info.componentsPatch != info.componentsPatch
+                val countChanged = existing.info.count != info.count
+                val craftableChanged = existing.info.isCraftable != info.isCraftable
+                if (countChanged || craftableChanged || patchChanged) {
+                    entries[key] = existing.copy(
+                        info = existing.info.copy(
+                            count = info.count,
+                            isCraftable = info.isCraftable,
+                            componentsPatch = info.componentsPatch,
+                        )
+                    )
+                    changedSerials.add(existing.serial)
+                    changed = true
+                }
             }
         }
 
-        // Fluids, same diff pattern against fluidFrontBuffer / fluidBackBuffer.
-        val fluidBackKeys = fluidBackBuffer.keys.toSet()
-        for (key in fluidBackKeys) {
+        // Fluids, same shape.
+        val fluidKeys = fluidEntries.keys.toSet()
+        for (key in fluidKeys) {
             if (key in dirtyFluidKeys) continue
             if (key !in fluidFrontBuffer) {
-                val entry = fluidEntries.remove(key)
-                if (entry != null) {
-                    removedSerials.add(entry.serial)
-                    changedFluidSerials.remove(entry.serial)
-                    changed = true
-                }
+                val entry = fluidEntries.remove(key) ?: continue
+                removedSerials.add(entry.serial)
+                changedFluidSerials.remove(entry.serial)
+                changed = true
             }
         }
         for ((key, info) in fluidFrontBuffer) {
@@ -337,8 +341,6 @@ class NetworkInventoryCache(
             }
         }
 
-        // Clear dirty trackers after a successful diff so the next cycle starts
-        // fresh. Hooks that fire BEFORE the next applyDiff repopulate them.
         dirtyKeys.clear()
         dirtyFluidKeys.clear()
 
@@ -402,7 +404,12 @@ class NetworkInventoryCache(
 
     // --- Delta updates from script operations (for immediate feedback) ---
 
-    fun onInserted(itemId: String, hasData: Boolean, amount: Long) {
+    fun onInserted(
+        itemId: String,
+        hasData: Boolean,
+        amount: Long,
+        componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
+    ) {
         if (amount <= 0) return
         val key = cacheKey(itemId, hasData)
         // Mark dirty so the next applyDiff doesn't revert this update with a stale
@@ -410,7 +417,17 @@ class NetworkInventoryCache(
         dirtyKeys.add(key)
         val existing = entries[key]
         if (existing != null) {
-            entries[key] = existing.copy(info = existing.info.copy(count = existing.info.count + amount))
+            // Adopt the new patch when the existing entry has none so a player-
+            // inserted damaged tool gets its bar immediately even if the bucket
+            // already held a default-state instance from a prior insert.
+            val mergedPatch = if (existing.info.componentsPatch.isEmpty) componentsPatch
+                else existing.info.componentsPatch
+            entries[key] = existing.copy(
+                info = existing.info.copy(
+                    count = existing.info.count + amount,
+                    componentsPatch = mergedPatch,
+                )
+            )
             changedSerials.add(existing.serial)
         } else {
             val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
@@ -421,7 +438,8 @@ class NetworkInventoryCache(
                 name = net.minecraft.world.item.ItemStack(item).hoverName.string,
                 count = amount,
                 maxStackSize = item.getDefaultMaxStackSize(),
-                hasData = hasData
+                hasData = hasData,
+                componentsPatch = componentsPatch,
             ))
             changedSerials.add(serial)
         }

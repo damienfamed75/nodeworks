@@ -45,9 +45,9 @@ object PlacerHandle {
         // :place(idOrItemsHandle) → boolean
         // String form pulls from network storage, ItemsHandle form pulls from the
         // referenced source. Returns false on any failure (no item available, target
-        // not replaceable, item isn't a BlockItem) so the script can branch on the
-        // return value rather than relying on a callback.
-        table.set("place", object : TwoArgFunction() {
+        // not replaceable, item isn't a BlockItem, claim mod cancellation) so the
+        // script can branch on the return value rather than relying on a callback.
+        table.setGuarded("PlacerHandle", "place", object : TwoArgFunction() {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 val target = entity.targetPos
@@ -56,44 +56,50 @@ object PlacerHandle {
                     return LuaValue.FALSE
                 }
 
-                // Resolve which item id to place. ItemsHandle and string both reduce
-                // to a single item id we then pull one of from network storage.
                 val itemId = resolvePlaceTargetItemId(arg) ?: return LuaValue.FALSE
-
-                // Verify it's a placeable block before consuming inventory.
                 val identifier = Identifier.tryParse(itemId) ?: return LuaValue.FALSE
                 val item = BuiltInRegistries.ITEM.getValue(identifier) ?: return LuaValue.FALSE
                 val blockItem = item as? BlockItem ?: return LuaValue.FALSE
-
-                // Pull one of [itemId] from network storage. Walks storage cards in
-                // priority order, first card with stock wins. Bail if nothing in
-                // network has it (the per-card extract returns 0).
-                if (!extractOneFromNetwork(level, networkSnapshot, itemId)) {
-                    return LuaValue.FALSE
-                }
-
-                // Place the block. UPDATE_ALL fires neighbor changes so adjacent
-                // observers / redstone notice. Default state, no fancy
-                // BlockItem.useOn rotation logic for v1.
                 val newState = blockItem.block.defaultBlockState()
-                level.setBlock(target, newState, Block.UPDATE_ALL)
+                val placedAgainst = level.getBlockState(entity.blockPos)
 
-                // Play the place sound by mirroring vanilla BlockPlaceContext.
-                val soundType = newState.soundType
-                level.playSound(
-                    null, target,
-                    soundType.placeSound,
-                    net.minecraft.sounds.SoundSource.BLOCKS,
-                    (soundType.volume + 1f) / 2f,
-                    soundType.pitch * 0.8f,
+                // The placer block is itself the "placed against" block (one step
+                // back along its facing). Routing through FakePlayerService gates
+                // on spawn protection + EntityPlaceEvent so claim mods can deny
+                // the placement, in which case we refund the pulled item via
+                // [onRollback].
+                var pulled = false
+                val ok = PlatformServices.fakePlayer.tryPlace(
+                    level, target, placedAgainst, entity.ownerUuid,
+                    mutate = {
+                        if (!extractOneFromNetwork(level, networkSnapshot, itemId)) return@tryPlace false
+                        pulled = true
+                        level.setBlock(target, newState, Block.UPDATE_ALL)
+
+                        val soundType = newState.soundType
+                        level.playSound(
+                            null, target,
+                            soundType.placeSound,
+                            net.minecraft.sounds.SoundSource.BLOCKS,
+                            (soundType.volume + 1f) / 2f,
+                            soundType.pitch * 0.8f,
+                        )
+                        true
+                    },
+                    onRollback = {
+                        if (pulled) {
+                            val refund = net.minecraft.world.item.ItemStack(item, 1)
+                            damien.nodeworks.script.NetworkStorageHelper.insertItemStack(level, networkSnapshot, refund)
+                        }
+                    },
                 )
-                return LuaValue.TRUE
+                return if (ok) LuaValue.TRUE else LuaValue.FALSE
             }
         })
 
         // :block() → string, current block id at the targeted position. Useful
         // for "is the slot still empty" checks before calling :place.
-        table.set("block", object : OneArgFunction() {
+        table.setGuarded("PlacerHandle", "block", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 val state = level.getBlockState(entity.targetPos)
@@ -103,7 +109,7 @@ object PlacerHandle {
 
         // :isBlocked() → boolean, true if a place would fail because the target
         // is non-air and not replaceable.
-        table.set("isBlocked", object : OneArgFunction() {
+        table.setGuarded("PlacerHandle", "isBlocked", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 val state = level.getBlockState(entity.targetPos)

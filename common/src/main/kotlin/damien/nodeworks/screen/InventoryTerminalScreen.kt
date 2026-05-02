@@ -34,6 +34,7 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.core.component.DataComponentPatch
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
@@ -492,14 +493,17 @@ class InventoryTerminalScreen(
             // Output slot
             graphics.blit(NineSlice.GUI_ATLAS, craftX + 3 * 18 + 16, craftY + 18, slotU, slotV, 18, 18, 256, 256)
 
-            // Render crafting items (from the real MC slots)
+            // Render crafting items (from the real MC slots). renderItemDecorations
+            // covers count badge + durability bar + cooldown overlay; the count
+            // badge auto-suppresses for stack.count <= 1, so we don't need a guard
+            // here, and dropping the guard means durability draws on single tools.
             for (i in 0..8) {
                 val stack = menu.craftingContainer.getItem(i)
                 if (!stack.isEmpty) {
                     val sx = craftX + (i % 3) * 18 + 1
                     val sy = craftY + (i / 3) * 18 + 1
                     graphics.renderItem(stack, sx, sy)
-                    if (stack.count > 1) graphics.renderItemDecorations(font, stack, sx, sy)
+                    graphics.renderItemDecorations(font, stack, sx, sy)
                 }
             }
             // Output
@@ -508,7 +512,7 @@ class InventoryTerminalScreen(
                 val sx = craftX + 3 * 18 + 17
                 val sy = craftY + 19
                 graphics.renderItem(resultStack, sx, sy)
-                if (resultStack.count > 1) graphics.renderItemDecorations(font, resultStack, sx, sy)
+                graphics.renderItemDecorations(font, resultStack, sx, sy)
             }
         }
 
@@ -874,7 +878,9 @@ class InventoryTerminalScreen(
                     lines.add(Component.literal("${formatCount(entry.info.count)} mB").withStyle { it.withColor(0xAAAAAA) })
                     graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 } else {
-                    val stack = getItemStack(entry.info.itemId)
+                    // Patch-aware overload so the tooltip reflects per-stack
+                    // components (enchantments, custom name, dye colour, etc.).
+                    val stack = getItemStack(entry.info.itemId, entry.info.componentsPatch)
                     if (!stack.isEmpty) {
                         val lines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
                         lines.add(Component.literal("Network: ${formatCount(entry.info.count)}").withStyle { it.withColor(0xAAAAAA) })
@@ -1748,7 +1754,7 @@ class InventoryTerminalScreen(
         // (renderFluidOverlay) using the fluid's still texture. Returning EMPTY here
         // keeps the grid's item renderer from drawing anything in the fluid cell.
         if (entry.isFluid) return ItemStack.EMPTY
-        return getItemStack(entry.info.itemId)
+        return getItemStack(entry.info.itemId, entry.info.componentsPatch)
     }
 
     private val countStringCache = HashMap<Long, String>()
@@ -1761,11 +1767,21 @@ class InventoryTerminalScreen(
         return countStringCache.getOrPut(entry.info.count) { formatCount(entry.info.count) }
     }
 
-    private fun getItemStack(itemId: String): ItemStack {
-        return itemStackCache.getOrPut(itemId) {
+    private fun getItemStack(itemId: String): ItemStack =
+        getItemStack(itemId, DataComponentPatch.EMPTY)
+
+    /** Build (or fetch from cache) a display stack for [itemId] with [patch]
+     *  applied so durability bars, custom names, and enchantment glints render
+     *  in the network grid. Cache key includes the patch hash so a damaged +
+     *  pristine variant of the same itemId cache distinctly. */
+    private fun getItemStack(itemId: String, patch: DataComponentPatch): ItemStack {
+        val cacheKey = if (patch.isEmpty) itemId else "$itemId:${patch.hashCode()}"
+        return itemStackCache.getOrPut(cacheKey) {
             val id = Identifier.tryParse(itemId) ?: return@getOrPut ItemStack.EMPTY
             val item = BuiltInRegistries.ITEM.getValue(id) ?: return@getOrPut ItemStack.EMPTY
-            ItemStack(item)
+            val stack = ItemStack(item)
+            if (!patch.isEmpty) stack.applyComponents(patch)
+            stack
         }
     }
 

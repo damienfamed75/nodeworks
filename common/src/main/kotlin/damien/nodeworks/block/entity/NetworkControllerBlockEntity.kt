@@ -88,6 +88,25 @@ class NetworkControllerBlockEntity(
     var chunkLoadingEnabled: Boolean = false
         private set
 
+    /** Whether laser beams between this network's connectables render. Nodes and
+     *  their colored glows still render either way, this only gates the inter-node
+     *  beams. Default true. */
+    var laserEnabled: Boolean = true
+        set(value) {
+            field = value
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
+    /** Beam render mode: 0 = Fancy (current animated prism + glow), 1 = Fast
+     *  (single thin colored line per connection). Default Fancy. */
+    var laserMode: Int = damien.nodeworks.network.NetworkSettingsRegistry.LASER_MODE_FANCY
+        set(value) {
+            field = value.coerceIn(0, 1)
+            setChanged()
+            level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
+        }
+
     /** Chunk-long keys this controller has claimed with [ChunkForceLoadManager]. Persisted
      *  in NBT so a reload can re-claim (rebuilding the in-memory refcount map) without
      *  re-walking the network. */
@@ -235,6 +254,8 @@ class NetworkControllerBlockEntity(
         output.putInt("nodeGlowStyle", nodeGlowStyle)
         output.putInt("handlerRetryLimit", handlerRetryLimit)
         output.putBoolean("chunkLoadingEnabled", chunkLoadingEnabled)
+        output.putBoolean("laserEnabled", laserEnabled)
+        output.putInt("laserMode", laserMode)
         output.putLongList("claimedChunks", claimedChunks.toLongArray())
         output.putBlockPosList("connections", connections)
     }
@@ -255,15 +276,23 @@ class NetworkControllerBlockEntity(
         nodeGlowStyle = input.getIntOr("nodeGlowStyle", GLOW_SQUARE)
         handlerRetryLimit = input.getIntOr("handlerRetryLimit", 50)
         chunkLoadingEnabled = input.getBooleanOr("chunkLoadingEnabled", false)
+        laserEnabled = input.getBooleanOr("laserEnabled", true)
+        laserMode = input.getIntOr("laserMode", damien.nodeworks.network.NetworkSettingsRegistry.LASER_MODE_FANCY)
         claimedChunks.clear()
         for (packed in input.getLongList("claimedChunks")) claimedChunks.add(packed)
         connections.clear()
         connections.addAll(input.getBlockPosList("connections"))
-        // Push loaded settings into client-visible registry so color/glow survive reloads.
+        // Push loaded settings into client-visible registry so the renderer + GUI see
+        // the persisted values immediately on reload, not just after the next sync.
         networkId?.let {
             damien.nodeworks.network.NetworkSettingsRegistry.update(
                 it,
-                damien.nodeworks.network.NetworkSettingsRegistry.NetworkSettings(networkColor, nodeGlowStyle)
+                damien.nodeworks.network.NetworkSettingsRegistry.NetworkSettings(
+                    color = networkColor,
+                    glowStyle = nodeGlowStyle,
+                    laserEnabled = laserEnabled,
+                    laserMode = laserMode,
+                )
             )
         }
     }

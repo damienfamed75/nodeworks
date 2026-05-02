@@ -12,7 +12,9 @@ import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.block.BaseEntityBlock
@@ -63,6 +65,20 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         return TerminalBlockEntity(pos, state)
     }
 
+    /** Capture the placer's UUID so script-driven block mutations carry an actor identity
+     *  to claim mods (FTB Chunks etc.) and to vanilla spawn protection. Stack-restored
+     *  block-entity-data already carries the saved ownerUuid via the BLOCK_ENTITY_DATA
+     *  load, so we only set it when the freshly-placed BE has a null owner. */
+    override fun setPlacedBy(level: Level, pos: BlockPos, state: BlockState, placer: LivingEntity?, stack: ItemStack) {
+        super.setPlacedBy(level, pos, state, placer, stack)
+        if (level.isClientSide) return
+        val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return
+        if (terminal.ownerUuid == null && placer is Player) {
+            terminal.ownerUuid = placer.uuid
+            terminal.setChanged()
+        }
+    }
+
     override fun useWithoutItem(
         state: BlockState,
         level: Level,
@@ -95,7 +111,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val occupant = serverLevel.players().firstOrNull { other ->
             val menu = other.containerMenu
             menu is damien.nodeworks.screen.TerminalScreenHandler &&
-                menu.blockBackingPos == terminal.blockPos
+                    menu.blockBackingPos == terminal.blockPos
         }
         if (occupant != null) {
             player.sendSystemMessage(
@@ -123,6 +139,7 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
             terminal.autoRun,
             terminal.layoutIndex,
             remoteApis,
+            terminal.lastError,
         )
 
         PlatformServices.menu.openExtendedMenu(
@@ -162,6 +179,14 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
             if (PlatformServices.modState.isScriptRunning(level, pos)) {
                 PlatformServices.modState.stopScript(level, pos)
             } else if (terminal.scriptText.isNotBlank()) {
+                // Refuse to restart a script that previously hit a wall-clock
+                // soft-abort. Without this, a redstone clock pointed at a
+                // misbehaving terminal (e.g. `while true do print() end`) would
+                // re-trigger the bad script every other tick, eating the per-tick
+                // budget on each cycle. The player must edit the script which
+                // clears [TerminalBlockEntity.lastError] in [setScript] before
+                // it's eligible to run again.
+                if (terminal.lastError != null) return
                 PlatformServices.modState.startScript(level, pos)
             }
         }
@@ -173,7 +198,12 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         return super.playerWillDestroy(level, pos, state, player)
     }
 
-    override fun affectNeighborsAfterRemoval(state: BlockState, level: ServerLevel, pos: BlockPos, movedByPiston: Boolean) {
+    override fun affectNeighborsAfterRemoval(
+        state: BlockState,
+        level: ServerLevel,
+        pos: BlockPos,
+        movedByPiston: Boolean
+    ) {
         val entity = level.getBlockEntity(pos) as? TerminalBlockEntity
         if (entity != null) entity.blockDestroyed = true
         super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)

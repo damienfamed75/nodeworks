@@ -260,14 +260,27 @@ class StockerBuilder(
     ): Long {
         if (targetRef is CardRef.Pool) return 0L
         val destStorage = resolvedTarget?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) } ?: return 0L
+        val cache = engine.inventoryCache
         var remaining = maxCount
         var totalMoved = 0L
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
             val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val moved = PlatformServices.storage.moveItems(storage, destStorage, filterPred, remaining)
-            totalMoved += moved
-            remaining -= moved
+            // Per (itemId, hasData) move so the cache gets a paired onExtracted for
+            // each item that leaves the pool. See [Importer.movePoolToCard] for the
+            // full rationale, same orphan-entry leak applies here.
+            val infos = PlatformServices.storage.findAllItemInfo(storage) { filterPred(it) }
+            for (info in infos) {
+                if (remaining <= 0L) break
+                val moved = PlatformServices.storage.moveItemsVariant(
+                    storage, destStorage,
+                    { id, hasData -> id == info.itemId && hasData == info.hasData },
+                    remaining,
+                )
+                totalMoved += moved
+                remaining -= moved
+                if (moved > 0L) cache?.onExtracted(info.itemId, info.hasData, moved)
+            }
         }
         return totalMoved
     }

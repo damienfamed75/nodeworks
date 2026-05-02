@@ -45,6 +45,9 @@ object ConnectionBeamRenderer {
      * Pre-extracted render data for a single beam. All coordinates are **block-relative**
      * (target offset from the source node in block units) so the BER's pose transform,
      * already centered on the source block, needs no extra translation to render.
+     *
+     * [mode] follows the source network's render style (fancy / fast). Stored per beam
+     * to mirror the per-beam color fields, [submit] partitions on it.
      */
     data class Beam(
         val toDx: Float,
@@ -54,6 +57,7 @@ object ConnectionBeamRenderer {
         val g: Int,
         val b: Int,
         val blocked: Boolean,
+        val mode: Int = NetworkSettingsRegistry.LASER_MODE_FANCY,
     )
 
     /** Canonical keys (min(a,b), max(a,b) hash) for beam pairs already drawn in the current
@@ -84,11 +88,16 @@ object ConnectionBeamRenderer {
         val level = be.level ?: return emptyList()
         val myPos = be.blockPos
 
-        // Resolve the source network's color once, defaults to the neutral grey used elsewhere
-        // so a connection to a disconnected-but-still-paired neighbor still draws something.
-        val myNetworkColor = connectable.networkId
-            ?.let { NetworkSettingsRegistry.getColor(it) }
-            ?: NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        // Per-network laser toggles. When the source network has lasers disabled,
+        // skip the entire extract: no beam allocations, no dedup bookkeeping.
+        // Nodes + glows render through a separate path (NodeConnectionRenderer)
+        // so they remain visible.
+        val networkId = connectable.networkId
+        val mySettings = NetworkSettingsRegistry.get(networkId)
+        if (networkId != null && !mySettings.laserEnabled) return emptyList()
+        val laserMode = mySettings.laserMode
+        val myNetworkColor = if (networkId != null) mySettings.color
+            else NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
 
         // The LOS cache + reachability BFS that drives [blocked] only run against the main
         // client level via NodeConnectionRenderer's world-render hook, GuideME scenes and
@@ -124,6 +133,7 @@ object ConnectionBeamRenderer {
                     g = (pairColor shr 8) and 0xFF,
                     b = pairColor and 0xFF,
                     blocked = blocked,
+                    mode = laserMode,
                 )
             )
         }
@@ -179,44 +189,81 @@ object ConnectionBeamRenderer {
         // Source position is always the centre of *this* block in BER-local space.
         val fx = 0.5f; val fy = 0.5f; val fz = 0.5f
 
-        // Prism core (white, rotating), only for unblocked beams.
-        submitNodeCollector.submitCustomGeometry(poseStack, opaqueType) { pose, vc ->
-            for (beam in active) {
-                if (beam.blocked) continue
-                val tx = fx + beam.toDx; val ty = fy + beam.toDy; val tz = fz + beam.toDz
-                renderPrismBeam(
-                    vc, pose,
-                    fx, fy, fz, tx, ty, tz,
-                    time,
-                    255, 255, 255, 255,
-                    BEAM_WIDTH * 0.5f
-                )
+        // Split by render mode in one pass so each mode submits at most one
+        // batch per render type. Avoids paying the prism + glow cost for
+        // fast-mode networks and skips the fast pass entirely for fancy-mode.
+        val (fastBeams, fancyBeams) = active.partition { it.mode == NetworkSettingsRegistry.LASER_MODE_FAST }
+
+        if (fancyBeams.isNotEmpty()) {
+            // Prism core (white, rotating), only for unblocked beams.
+            submitNodeCollector.submitCustomGeometry(poseStack, opaqueType) { pose, vc ->
+                for (beam in fancyBeams) {
+                    if (beam.blocked) continue
+                    val tx = fx + beam.toDx; val ty = fy + beam.toDy; val tz = fz + beam.toDz
+                    renderPrismBeam(
+                        vc, pose,
+                        fx, fy, fz, tx, ty, tz,
+                        time,
+                        255, 255, 255, 255,
+                        BEAM_WIDTH * 0.5f
+                    )
+                }
+            }
+
+            // Billboarded glow, colored pulse for unblocked, red for blocked.
+            submitNodeCollector.submitCustomGeometry(poseStack, translucentType) { pose, vc ->
+                for (beam in fancyBeams) {
+                    val tx = fx + beam.toDx; val ty = fy + beam.toDy; val tz = fz + beam.toDz
+                    if (beam.blocked) {
+                        renderBillboardBeam(
+                            vc, pose,
+                            camLocalX, camLocalY, camLocalZ,
+                            fx, fy, fz, tx, ty, tz,
+                            time,
+                            180, 50, 50, 80,
+                            BEAM_WIDTH * 2f
+                        )
+                    } else {
+                        val alpha = (120 * pulse).toInt().coerceIn(0, 255)
+                        renderBillboardBeam(
+                            vc, pose,
+                            camLocalX, camLocalY, camLocalZ,
+                            fx, fy, fz, tx, ty, tz,
+                            time,
+                            beam.r, beam.g, beam.b, alpha,
+                            BEAM_WIDTH * 3.5f * sizePulse
+                        )
+                    }
+                }
             }
         }
 
-        // Billboarded glow, colored pulse for unblocked, red for blocked.
-        submitNodeCollector.submitCustomGeometry(poseStack, translucentType) { pose, vc ->
-            for (beam in active) {
-                val tx = fx + beam.toDx; val ty = fy + beam.toDy; val tz = fz + beam.toDz
-                if (beam.blocked) {
-                    renderBillboardBeam(
-                        vc, pose,
-                        camLocalX, camLocalY, camLocalZ,
-                        fx, fy, fz, tx, ty, tz,
-                        time,
-                        180, 50, 50, 80,
-                        BEAM_WIDTH * 2f
-                    )
-                } else {
-                    val alpha = (120 * pulse).toInt().coerceIn(0, 255)
-                    renderBillboardBeam(
-                        vc, pose,
-                        camLocalX, camLocalY, camLocalZ,
-                        fx, fy, fz, tx, ty, tz,
-                        time,
-                        beam.r, beam.g, beam.b, alpha,
-                        BEAM_WIDTH * 3.5f * sizePulse
-                    )
+        if (fastBeams.isNotEmpty()) {
+            // Fast mode: a single thin opaque billboard per beam, no animation,
+            // no glow pulse. Reuses [renderBillboardBeam] but with a fixed alpha
+            // and width so the visual reads as a flat colored line.
+            submitNodeCollector.submitCustomGeometry(poseStack, translucentType) { pose, vc ->
+                for (beam in fastBeams) {
+                    val tx = fx + beam.toDx; val ty = fy + beam.toDy; val tz = fz + beam.toDz
+                    if (beam.blocked) {
+                        renderBillboardBeam(
+                            vc, pose,
+                            camLocalX, camLocalY, camLocalZ,
+                            fx, fy, fz, tx, ty, tz,
+                            time,
+                            180, 50, 50, 220,
+                            BEAM_WIDTH * 0.75f
+                        )
+                    } else {
+                        renderBillboardBeam(
+                            vc, pose,
+                            camLocalX, camLocalY, camLocalZ,
+                            fx, fy, fz, tx, ty, tz,
+                            time,
+                            beam.r, beam.g, beam.b, 220,
+                            BEAM_WIDTH * 0.75f
+                        )
+                    }
                 }
             }
         }

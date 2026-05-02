@@ -22,8 +22,7 @@ class PollCycleIntegrationTest {
         maxSlices: Int = 60,
     ) {
         private val pollCycle = PollCycle<Card>(minSlices, maxSlices)
-        private var frontBuffer = mutableMapOf<String, Int>()
-        private var backBuffer = mutableMapOf<String, Int>()
+        private val frontBuffer = mutableMapOf<String, Int>()
 
         val entries = mutableMapOf<String, Int>()
 
@@ -51,9 +50,6 @@ class PollCycleIntegrationTest {
         }
 
         private fun beginCycle(): List<Card> {
-            val tmp = backBuffer
-            backBuffer = frontBuffer
-            frontBuffer = tmp
             frontBuffer.clear()
             return cards()
         }
@@ -66,7 +62,10 @@ class PollCycleIntegrationTest {
 
         private fun endCycle(): Boolean {
             var changed = false
-            for (key in backBuffer.keys.toSet()) {
+            // Mirrors NetworkInventoryCache.applyDiff: iterate entries, not a
+            // back buffer, so orphans (entries added via simulateHookDelta but
+            // never seen in any frontBuffer) get evicted.
+            for (key in entries.keys.toSet()) {
                 if (key in dirtyKeys) continue
                 if (key !in frontBuffer) {
                     if (entries.remove(key) != null) changed = true
@@ -226,5 +225,29 @@ class PollCycleIntegrationTest {
         for (i in 0 until 12) {
             assertEquals((i + 1) * 10, cache.entries["test:item_$i"])
         }
+    }
+
+    @Test
+    fun orphanedHookEntriesGetEvicted() {
+        // Regression: an item piped through the pool faster than the poll runs
+        // (importer:from(net):to("chest") on a script that also imports into
+        // the pool) used to leak. The hook fired onInserted every tick, the
+        // item left before any poll caught it, and the back-vs-front diff
+        // never had it in either buffer so the orphan stayed in entries
+        // forever. The fix iterates entries.keys directly and evicts anything
+        // the latest poll didn't see (and isn't dirty-protected this cycle).
+        val card = Card("io_pool", emptyMap())
+        val cache = FakeCache({ listOf(card) })
+        // Simulate one onInserted (item briefly in pool) without ever appearing
+        // in frontBuffer, this is the orphan we want to evict.
+        cache.simulateHookDelta("nodeworks:raw_iron", 5)
+        assertEquals(5, cache.entries["nodeworks:raw_iron"])
+
+        // PollCycle grows the slice budget on idle cycles, so 50 ticks easily
+        // covers two cycle boundaries. First cycle's diff sees the dirty mark
+        // and skips, second cycle's diff finds the entry orphaned (not dirty,
+        // not in frontBuffer) and evicts.
+        repeat(50) { cache.tick() }
+        assertTrue("nodeworks:raw_iron" !in cache.entries)
     }
 }

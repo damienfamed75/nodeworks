@@ -5,6 +5,8 @@
     "nodeworks:terminal",
     "nodeworks:inventory_terminal",
     "nodeworks:network_controller",
+    "nodeworks:breaker",
+    "nodeworks:placer",
     "nodeworks:variable",
     "nodeworks:instruction_storage",
     "nodeworks:processing_storage",

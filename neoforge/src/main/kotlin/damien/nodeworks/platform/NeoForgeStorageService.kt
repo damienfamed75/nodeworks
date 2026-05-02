@@ -111,6 +111,33 @@ class NeoForgeStorageService : StorageService {
         return total
     }
 
+    override fun extractItemStacksMatching(
+        storage: ItemStorageHandle,
+        filter: (String) -> Boolean,
+        maxCount: Long,
+    ): List<ItemStack> {
+        if (maxCount <= 0L) return emptyList()
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        val out = ArrayList<ItemStack>()
+        var remaining = maxCount
+        for (slot in 0 until handler.slots) {
+            if (remaining <= 0L) break
+            val stack = handler.getStackInSlot(slot)
+            if (stack.isEmpty) continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            if (!filter(itemId)) continue
+            val toExtract = minOf(remaining, stack.count.toLong()).toInt()
+            // extractItem returns a real stack with the slot's components intact,
+            // unlike extractItems which only sums counts. Returning these directly
+            // preserves durability, enchantments, custom names, dye colour, etc.
+            val extracted = handler.extractItem(slot, toExtract, false)
+            if (extracted.isEmpty) continue
+            out.add(extracted)
+            remaining -= extracted.count
+        }
+        return out
+    }
+
     override fun insertItemStack(storage: ItemStorageHandle, stack: ItemStack): Int {
         if (stack.isEmpty) return 0
         val handler = (storage as NeoForgeItemStorageHandle).handler
@@ -270,7 +297,8 @@ class NeoForgeStorageService : StorageService {
                     name = stack.hoverName.string,
                     count = stack.count.toLong(),
                     maxStackSize = stack.item.getDefaultMaxStackSize(),
-                    hasData = stack.componentsPatch.size() > 0
+                    hasData = stack.componentsPatch.size() > 0,
+                    componentsPatch = stack.componentsPatch,
                 )
             }
         }
@@ -289,6 +317,11 @@ class NeoForgeStorageService : StorageService {
             val cacheKey = "$itemId:$hasData"
             val existing = aggregated[cacheKey]
             if (existing != null) {
+                // Aggregate count, keep the first-sampled stack's components as the
+                // representative for client-side display. A second damaged tool with
+                // a different durability still shows the first one's bar, the
+                // exact stack is only material for extracts which use the live
+                // storage scan via [extractItemStacksMatching].
                 aggregated[cacheKey] = existing.copy(count = existing.count + stack.count)
             } else {
                 aggregated[cacheKey] = ItemInfo(
@@ -296,7 +329,8 @@ class NeoForgeStorageService : StorageService {
                     name = stack.hoverName.string,
                     count = stack.count.toLong(),
                     maxStackSize = stack.item.getDefaultMaxStackSize(),
-                    hasData = hasData
+                    hasData = hasData,
+                    componentsPatch = stack.componentsPatch,
                 )
             }
         }

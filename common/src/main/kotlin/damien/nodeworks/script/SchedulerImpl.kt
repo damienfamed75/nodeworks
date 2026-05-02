@@ -12,7 +12,19 @@ import org.luaj.vm2.lib.*
  */
 class SchedulerImpl(
     /** Called when a scheduled task throws an error. The error is logged but execution continues. */
-    private val onTaskError: ((String) -> Unit)? = null
+    private val onTaskError: ((String) -> Unit)? = null,
+    /** Runs a Lua callback with a wall-clock soft-abort budget. ScriptEngine wires this to
+     *  its [LuaExecGate] so per-task timeouts can evict the task from [tasks]. The default
+     *  is "just run the body and report Ok" so non-engine schedulers ([ResumeScheduler])
+     *  keep their current ungated behaviour without code changes. */
+    private val runCallback: (String, () -> Unit) -> LuaExecGate.Outcome = { _, body ->
+        body(); LuaExecGate.Outcome.Ok
+    },
+    /** Checks that registering one more scheduled task wouldn't exceed the
+     *  per-kind callback cap, throwing a Lua error if it would. Wired by
+     *  ScriptEngine to read from [ServerPolicy]; default is a no-op so
+     *  [ResumeScheduler] (which has no script-side caller) is unaffected. */
+    private val assertCanRegister: (currentSize: Int, kind: String) -> Unit = { _, _ -> },
 ) {
 
     private data class ScheduledTask(
@@ -36,16 +48,38 @@ class SchedulerImpl(
     var currentTick: Long = 0
         private set
 
-    fun tick(tickCount: Long) {
+    fun tick(tickCount: Long, tickDeadlineNs: Long = Long.MAX_VALUE) {
         currentTick = tickCount
 
         val toRun = tasks.filter { tickCount >= it.nextRun }
         val toRemove = mutableListOf<Int>()
         for (task in toRun) {
-            try {
-                task.callback.call()
-            } catch (e: org.luaj.vm2.LuaError) {
-                onTaskError?.invoke("${e.message}")
+            // Per-tick budget: if the engine's slice is gone, the remaining tasks
+            // sit untouched. Their nextRun is in the past so the next tick picks
+            // them up again, no execution is silently skipped, just deferred.
+            if (System.nanoTime() >= tickDeadlineNs) break
+            val outcome = runCallback("scheduler-task-${task.id}") { task.callback.call() }
+            // Eviction: a callback that hit the wall-clock soft-abort gets removed
+            // from [tasks] regardless of [repeating], so the bad task can't re-fire
+            // every tick. Other tasks keep running. A regular Lua error is logged
+            // but doesn't evict, mirroring the prior behaviour for non-timeout
+            // failures so transient bugs don't unschedule legitimate handlers.
+            when (outcome) {
+                LuaExecGate.Outcome.TimedOut -> {
+                    onTaskError?.invoke("Scheduled task #${task.id} took too long to run, task removed.")
+                    toRemove.add(task.id)
+                    continue
+                }
+                is LuaExecGate.Outcome.Errored -> {
+                    onTaskError?.invoke(outcome.message)
+                }
+                is LuaExecGate.Outcome.Fatal -> {
+                    // Engine has already been stopped by [runGatedCallback]'s
+                    // fatal handler; bail out of the iteration so we don't keep
+                    // ticking remaining tasks against a dead engine.
+                    return
+                }
+                LuaExecGate.Outcome.Ok -> { /* no-op */ }
             }
             if (task.repeating) {
                 val index = tasks.indexOf(task)
@@ -154,24 +188,27 @@ class SchedulerImpl(
     fun createLuaTable(): LuaTable {
         val table = LuaTable()
 
-        table.set("tick", object : TwoArgFunction() {
+        table.setGuarded("Scheduler", "tick", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, fn: LuaValue): LuaValue {
+                assertCanRegister(tasks.size, "scheduler")
                 val id = nextId++
                 tasks.add(ScheduledTask(id, fn.checkfunction(), 1, 0, true))
                 return LuaValue.valueOf(id)
             }
         })
 
-        table.set("second", object : TwoArgFunction() {
+        table.setGuarded("Scheduler", "second", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, fn: LuaValue): LuaValue {
+                assertCanRegister(tasks.size, "scheduler")
                 val id = nextId++
                 tasks.add(ScheduledTask(id, fn.checkfunction(), 20, 0, true))
                 return LuaValue.valueOf(id)
             }
         })
 
-        table.set("delay", object : ThreeArgFunction() {
+        table.setGuarded("Scheduler", "delay", object : ThreeArgFunction() {
             override fun call(selfArg: LuaValue, ticksArg: LuaValue, fn: LuaValue): LuaValue {
+                assertCanRegister(tasks.size, "scheduler")
                 val id = nextId++
                 val delayTicks = ticksArg.checkint()
                 tasks.add(ScheduledTask(id, fn.checkfunction(), 0, currentTick + delayTicks, false))
@@ -179,7 +216,7 @@ class SchedulerImpl(
             }
         })
 
-        table.set("cancel", object : TwoArgFunction() {
+        table.setGuarded("Scheduler", "cancel", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, idArg: LuaValue): LuaValue {
                 val id = idArg.checkint()
                 tasks.removeAll { it.id == id }

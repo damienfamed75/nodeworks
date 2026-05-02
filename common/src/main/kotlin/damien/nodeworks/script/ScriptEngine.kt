@@ -14,16 +14,108 @@ import org.luaj.vm2.lib.jse.JseMathLib
 
 /**
  * Manages a sandboxed Lua VM for one terminal. Provides the Nodeworks API
- * (card, scheduler, print) and enforces an instruction budget per tick.
+ * (card, scheduler, print) and gates each Lua entry point with a wall-clock
+ * soft-abort budget via [LuaExecGate].
+ *
+ * [terminalPos] is the position of the [damien.nodeworks.block.entity.TerminalBlockEntity]
+ * that owns this engine, separate from [networkEntryNode] because a terminal can
+ * connect to the network either directly (laser link, entry == terminal) or via
+ * an adjacent NodeBlockEntity (entry != terminal). The engine needs both: entry
+ * to discover the network, terminalPos to mark the BE on top-level timeout
+ * (clearing autoRun so a `while true do end` script doesn't re-fire on world load).
  */
 class ScriptEngine(
     internal val level: ServerLevel,
     private val networkEntryNode: BlockPos,
-    private val logCallback: (String, Boolean) -> Unit // (message, isError)
+    private val terminalPos: BlockPos,
+    rawLogCallback: (String, Boolean) -> Unit, // (message, isError), raw sink. See [logCallback].
 ) {
+
+    /** Rate-limited wrapper around [rawLogCallback] for error messages. Routed
+     *  through the per-network [NetworkBudget] so multiple terminals on one
+     *  network share the error-log pool, the same way they share the print pool.
+     *  Player-bound chat output is the actual shared resource (Netty's outbound
+     *  buffer to nearby players), so binding the cap to the terminal-source
+     *  granularity rather than the network granularity would let a player
+     *  multiply the cap by spreading bad scripts across N terminals. */
+    private val logCallback: (String, Boolean) -> Unit = { msg, isError ->
+        if (isError) {
+            val tick = PlatformServices.modState.tickCount
+            val budget = NetworkRateLimits.forNetwork(currentSnapshot()?.controller?.networkId)
+            if (budget.tryConsumeErrorLog(tick)) {
+                rawLogCallback(msg, true)
+            } else if (budget.warnOnce(NetworkBudget.WARN_ERROR_LOG)) {
+                rawLogCallback("[error log rate-limited this tick on this network, further errors dropped]", true)
+            }
+        } else {
+            rawLogCallback(msg, false)
+        }
+    }
+
+    /** Per-engine execution gate. Created before [Globals] so [installOn] can wire
+     *  the debug hook on engine startup. The gate reads from [ServerPolicy.current]
+     *  on each gated entry, so a `/reload` of `serverconfig/nodeworks-server.toml`
+     *  takes effect on the next tick into Lua, no engine restart required. */
+    internal val gate: LuaExecGate = LuaExecGate()
+
+    /** Accumulated wall-clock time (nanos) this engine has spent executing Lua
+     *  across all ticks. The cross-engine scheduler in `NeoForgeTerminalPackets`
+     *  uses this CFS-style: engines with lower vruntime get scheduled first each
+     *  tick, so a heavy engine doesn't starve well-behaved neighbours when the
+     *  global tick budget is tight. Reset to 0 on engine restart.
+     *
+     *  Public (rather than internal) because Kotlin `internal` is module-scoped
+     *  and the cross-engine scheduler lives in the `:neoforge` module. */
+    @Volatile
+    var vruntimeNs: Long = 0L
+
+    /** Wall-clock cost of the most recent tick this engine actually ran
+     *  (nanos). Set by [NeoForgeTerminalPackets.tickAll] via [recordTickCost].
+     *  Surfaces in `/nodeworks terminal info` so admins can spot a single
+     *  heavy tick that the [vruntimeNs] running total would smear out. */
+    @Volatile
+    var lastTickCostNs: Long = 0L
+        private set
+
+    /** Ring buffer of per-tick wall-clock costs over the last second (20 slots
+     *  at 20 TPS). Indexed by `tickCount % 20`, the per-tick scheduler zeros
+     *  this engine's slot at the start of each tick via [resetTickCostSlot]
+     *  before deciding whether to dispatch us, so engines deferred by global
+     *  budget pressure contribute 0 to the sum rather than carrying the
+     *  previous round trip's value. The sum across all 20 slots feeds the
+     *  "% local tick budget" column shown by `/nodeworks terminal list`. */
+    private val recentTickCostNs = LongArray(20)
+
+    /** Zero this engine's ring-buffer slot for [tickCount] before the
+     *  cross-engine scheduler decides whether to run us. Skipped engines stay
+     *  at 0 for that slot, so the moving-average view stays honest about how
+     *  much wall-clock this engine actually consumed. */
+    fun resetTickCostSlot(tickCount: Long) {
+        recentTickCostNs[(tickCount % 20).toInt()] = 0L
+    }
+
+    /** Record the wall-clock cost of this tick's [engine.tick] call. Called
+     *  by the cross-engine scheduler after our slice runs. Updates both the
+     *  ring buffer and the [lastTickCostNs] sentinel. */
+    fun recordTickCost(tickCount: Long, costNs: Long) {
+        recentTickCostNs[(tickCount % 20).toInt()] = costNs
+        lastTickCostNs = costNs
+    }
+
+    /** Sum of wall-clock cost across the last 20 ticks (nanos). One-second
+     *  rolling cost on default 20 TPS. Cheap, just a 20-element sum. */
+    fun recentTickCostSumNs(): Long {
+        var sum = 0L
+        for (v in recentTickCostNs) sum += v
+        return sum
+    }
     private var globals: Globals? = null
     private var networkSnapshot: NetworkSnapshot? = null
-    val scheduler = SchedulerImpl { errorMsg -> logCallback(errorMsg, true) }
+    val scheduler = SchedulerImpl(
+        onTaskError = { errorMsg -> logCallback(errorMsg, true) },
+        runCallback = { label, body -> runGatedCallback(label, body) },
+        assertCanRegister = { size, kind -> assertCallbackCap(size, kind) },
+    )
 
     /** Preset builders (Importer, Stocker) registered by the `importer` / `stocker`
      *  factory globals. Each preset is stopped in [stop] before the scheduler is
@@ -32,8 +124,14 @@ class ScriptEngine(
 
     /** Register a preset builder so it's stopped on script teardown. Called by
      *  each factory method the instant a builder is created (not when the user
-     *  calls `:run()`) so dangling builders that never start still get cleaned up. */
+     *  calls `:run()`) so dangling builders that never start still get cleaned up.
+     *
+     *  Capped at [ServerSafetySettings.maxCallbacksPerKind] like the other
+     *  registries. Without this, a `scheduler:tick(function() importer:...:start() end)`
+     *  loop creates a new preset every tick and grows memory linearly; the
+     *  cap stops that pattern at ~256 presets and locks the terminal. */
     internal fun registerPreset(p: damien.nodeworks.script.preset.PresetBuilder<*>) {
+        assertCallbackCap(presets.size, "preset")
         p.registryIndex = presets.size
         presets.add(p)
     }
@@ -63,6 +161,13 @@ class ScriptEngine(
     /** Cached inventory index across all network storage. */
     var inventoryCache: NetworkInventoryCache? = null
         private set
+
+    // Rate-limited ops (print, error-log, place, redstone:set, var:set,
+    // item-move calls, items-moved budget) all live on [NetworkRateLimits]
+    // keyed by the network UUID. Multiple terminals on the same network share
+    // one pool so a player can't multiply caps by spreading bad scripts across
+    // terminals. The one per-engine cap left is [maxCallbacksPerKind] which
+    // gates registry size at registration sites directly, no limiter needed.
 
     /** Processing handlers registered by network:handle(). Keyed by card name. */
     val processingHandlers = mutableMapOf<String, LuaFunction>()
@@ -104,13 +209,23 @@ class ScriptEngine(
         val g = Globals()
         g.load(JseBaseLib())
         g.load(PackageLib())
-        g.load(Bit32Lib())
-        g.load(TableLib())
-        g.load(StringLib())
-        g.load(JseMathLib())
+        // Optional std libs gated by [ServerSafetySettings.enabledModules]. Admins
+        // strip libs by removing entries from the config list; defaults load all
+        // four. Base + package always load (above) since scripts depend on print /
+        // pairs / require to function at all.
+        val modules = ServerPolicy.current.enabledModules
+        if ("bit32" in modules) g.load(Bit32Lib())
+        if ("table" in modules) g.load(TableLib())
+        if ("string" in modules) g.load(StringLib())
+        if ("math" in modules) g.load(JseMathLib())
 
         // Install the Lua compiler
         LuaC.install(g)
+
+        // Install the wall-clock soft-abort hook. Must come AFTER the libs are
+        // loaded (so PackageLib's initialisation isn't itself gated, which would
+        // otherwise burn the budget before the script even starts).
+        gate.installOn(g)
 
         // Remove dangerous globals
         g.set("dofile", LuaValue.NIL)
@@ -118,6 +233,12 @@ class ScriptEngine(
         g.set("io", LuaValue.NIL)
         g.set("os", LuaValue.NIL)
         g.set("luajava", LuaValue.NIL)
+        // PackageLib leaves a `package` table reachable that exposes `loadlib`,
+        // `searchpath`, and the `searchers` chain, a sandbox escape hatch. We
+        // need PackageLib itself loaded so our custom `require` can register
+        // modules in `package.loaded`, but the script-visible `package` global
+        // gets nil'd here so scripts can't reach loadlib/searchers.
+        g.set("package", LuaValue.NIL)
 
         // Custom require() that resolves modules from the scripts map
         val loaded = LuaTable()
@@ -153,16 +274,46 @@ class ScriptEngine(
 
         globals = g
 
-        // Compile and run the main script (top-level code: variable setup, scheduler registrations)
+        // Compile and run the main script (top-level code: variable setup, scheduler registrations).
+        // The top-level body runs under [LuaExecGate.runTopLevel] so a `while true do end`
+        // is killed after [ServerSafetySettings.topLevelSoftAbortMs], and on timeout we
+        // clear the BE's `autoRun` flag so the bad script doesn't re-fire on world load.
         return try {
             val chunk = g.load(wrapForLoopIterators(stripTypeAnnotations(mainScript)), "main")
             logCallback("Script started.", false)
-            chunk.call()
+            gate.runTopLevel("main") { chunk.call() }
+            // A clean run wipes any persisted timeout error from a prior failed start.
+            (level.getBlockEntity(terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity)?.clearLastError()
             true
         } catch (e: LuaError) {
-            // Script-level errors belong in the player-facing terminal log and the
-            // Diagnostic Tool's error buffer, not the server console.
-            logCallback("Error: ${e.message}", true)
+            when {
+                e is LuaExecGate.FatalScriptError -> {
+                    // Hard limit hit during top-level setup (e.g. registering more
+                    // callbacks than maxCallbacksPerKind allows). Treat the same
+                    // as a timeout: log + lock the terminal so the player has to
+                    // edit before retrying. Use [cleanReason] so the user-facing
+                    // log skips LuaJ's source:line prefix + stack traceback.
+                    handleFatalScriptFault(e.cleanReason)
+                    return false
+                }
+                gate.isTimeoutError(e) -> {
+                    // Top-level wall-clock soft-abort: persist the reason and clear
+                    // autoRun so a `while true do end` at chunk level doesn't pin
+                    // the server tick on every world load.
+                    logCallback("Script took too long to run and was stopped.", true)
+                    val terminal = level.getBlockEntity(terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity
+                    terminal?.markTimedOut("Top-level script timed out.")
+                    if (terminal?.autoRun == false) {
+                        logCallback("Auto-run disabled until you edit the script.", true)
+                    }
+                }
+                else -> {
+                    // Regular script-level error. Surfaces through the player-facing
+                    // terminal log and the Diagnostic Tool's error buffer. Strips the
+                    // LuaJ stack traceback for a single-line readable error.
+                    logCallback("Error: ${gate.stripLuaTraceback(e.message)}", true)
+                }
+            }
             stop()
             false
         }
@@ -187,6 +338,102 @@ class ScriptEngine(
 
     fun isRunning(): Boolean = globals != null
 
+    /** Run [body] under the per-callback wall-clock budget AND mark the terminal's
+     *  autoRun flag off if the callback times out. Used by the scheduler and the
+     *  redstone/observer pollers so any timeout (not just top-level) clears
+     *  autoRun, matching the user-facing rule "any timeout means the script is
+     *  broken, don't auto-restart it." Eviction of the offending callback from
+     *  its registry is still the caller's responsibility (it's registry-specific).
+     */
+    internal fun runGatedCallback(label: String, body: () -> Unit): LuaExecGate.Outcome {
+        val outcome = gate.runCallback(label, body)
+        when (outcome) {
+            LuaExecGate.Outcome.TimedOut -> markCallbackTimedOut(label)
+            is LuaExecGate.Outcome.Fatal -> handleFatalScriptFault(outcome.message)
+            else -> { /* Ok / Errored already logged by gate via the engine's logCallback */ }
+        }
+        return outcome
+    }
+
+    /** Handle a fatal script-side fault: stop the engine and lock the terminal so
+     *  the player must edit the script before it can run again. Used for errors
+     *  that would otherwise re-fire every tick (e.g. callback registry full,
+     *  evicting one offending callback doesn't help when peer callbacks driving
+     *  the registration pressure also keep firing). Logged once via the engine's
+     *  rate-limited error path. */
+    private fun handleFatalScriptFault(reason: String) {
+        logCallback(reason, true)
+        val terminal = level.getBlockEntity(terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity
+        val wasAutoRun = terminal?.autoRun == true
+        terminal?.markTimedOut(reason)
+        if (wasAutoRun) logCallback("Auto-run disabled until you edit the script.", true)
+        stop()
+    }
+
+    /** Throw a [LuaExecGate.FatalScriptError] if registering one more callback
+     *  of [kind] would exceed the per-engine cap. Catches the recursive-self-
+     *  registration pattern (a callback that adds another callback every time
+     *  it fires) before the registry bloats. The [LuaExecGate.FatalScriptError]
+     *  type is what classifies this as a fatal stop in [LuaExecGate.Outcome]:
+     *  the engine halts and the terminal locks rather than retrying every
+     *  tick (which would just re-throw the same error forever). A cap of 0
+     *  in the config means "unlimited". */
+    private fun assertCallbackCap(currentSize: Int, kind: String) {
+        val cap = ServerPolicy.current.maxCallbacksPerKind
+        if (cap > 0 && currentSize >= cap) {
+            throw LuaExecGate.FatalScriptError(
+                "Too many $kind callbacks registered ($cap). Edit the script to reduce registrations."
+            )
+        }
+    }
+
+    /** Wrap [fn] with a per-network, per-tick rate limiter via [NetworkRateLimits].
+     *  All engines touching the same network share one pool, so a player running
+     *  N terminals on the same network can't multiply the cap N times by spreading
+     *  identical scripts. Used for `network:insert`/`tryInsert`, `card:insert`,
+     *  `placer:place`, `redstone:set`, and `var:set`/`cas`.
+     *
+     *  [consume] picks the right per-op counter on the budget. [warnOp] is a
+     *  bitmask key into [NetworkBudget.warnOnce] so the rate-limited warning
+     *  fires once per op per network per tick rather than spamming.
+     *
+     *  Pass-through when [fn] is nil so disabled bindings stay disabled. */
+    private fun networkRateLimited(
+        label: String,
+        consume: (NetworkBudget, Long) -> Boolean,
+        warnOp: Int,
+        fn: LuaValue,
+        onLimit: Varargs = LuaValue.NIL,
+    ): LuaValue {
+        if (!fn.isfunction()) return fn
+        return object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val networkId = currentSnapshot()?.controller?.networkId
+                val budget = NetworkRateLimits.forNetwork(networkId)
+                val tick = PlatformServices.modState.tickCount
+                if (!consume(budget, tick)) {
+                    if (budget.warnOnce(warnOp)) {
+                        logCallback("[$label rate-limited this tick on this network, further calls dropped]", true)
+                    }
+                    return onLimit
+                }
+                return fn.invoke(args)
+            }
+        }
+    }
+
+    /** Persist a callback-timeout reason to the terminal BE and clear autoRun.
+     *  Reads autoRun before clearing so we only emit the user-facing log line if
+     *  there was actually anything to disable. */
+    private fun markCallbackTimedOut(label: String) {
+        val terminal = level.getBlockEntity(terminalPos) as? damien.nodeworks.block.entity.TerminalBlockEntity ?: return
+        val wasAutoRun = terminal.autoRun
+        terminal.markTimedOut("Callback '$label' timed out.")
+        if (wasAutoRun) {
+            logCallback("Auto-run disabled until you edit the script.", true)
+        }
+    }
+
     /** Whether this engine should stay alive, has scheduler tasks, handlers, or routing. */
     fun hasWork(): Boolean = scheduler.hasActiveTasks()
         || processingHandlers.isNotEmpty()
@@ -195,8 +442,17 @@ class ScriptEngine(
         || routeTable?.hasRoutes() == true
 
 
-    /** Called each server tick. Runs scheduler callbacks within the instruction budget. */
-    fun tick(tickCount: Long) {
+    /** Called each server tick. Runs scheduler callbacks and pollers, deferring
+     *  remaining work to the next tick when [tickDeadlineNs] is reached.
+     *
+     *  [tickDeadlineNs] is an absolute [System.nanoTime] value computed by the
+     *  cross-engine scheduler ([NeoForgeTerminalPackets.tickAll]). Between each
+     *  callback we check if `now >= tickDeadlineNs` and if so, return early.
+     *  The un-run callbacks stay in their registries and fire next tick. The
+     *  budget only applies *between* callbacks, not within them; a single
+     *  callback that runs longer than the local budget still completes
+     *  (bounded by the per-callback soft-abort cumulatively). */
+    fun tick(tickCount: Long, tickDeadlineNs: Long = Long.MAX_VALUE) {
         if (globals == null) return
 
         // The server keeps every Connectable's `networkId` current, when an LOS break or
@@ -212,11 +468,11 @@ class ScriptEngine(
         }
 
         try {
-            scheduler.tick(tickCount)
-            pollRedstoneCallbacks()
-            pollObserverCallbacks()
+            scheduler.tick(tickCount, tickDeadlineNs)
+            if (System.nanoTime() < tickDeadlineNs) pollRedstoneCallbacks(tickDeadlineNs)
+            if (System.nanoTime() < tickDeadlineNs) pollObserverCallbacks(tickDeadlineNs)
         } catch (e: LuaError) {
-            logCallback("Runtime error: ${e.message}", true)
+            logCallback("Runtime error: ${gate.stripLuaTraceback(e.message)}", true)
             stop()
         } catch (e: Exception) {
             logCallback("Runtime error: ${e.message}", true)
@@ -224,15 +480,36 @@ class ScriptEngine(
         }
     }
 
-    private fun pollRedstoneCallbacks() {
+    private fun pollRedstoneCallbacks(tickDeadlineNs: Long = Long.MAX_VALUE) {
         if (redstoneCallbacks.isEmpty()) return
-        for ((_, cb) in redstoneCallbacks) {
+        // Iterate over a snapshot of entries so eviction-on-timeout (mutating the
+        // map mid-iteration) doesn't ConcurrentModificationException.
+        val toEvict = mutableListOf<String>()
+        for ((alias, cb) in redstoneCallbacks.toList()) {
+            // Per-tick budget: if we've exhausted the engine's slice, leave any
+            // remaining handlers unprocessed. They keep `lastStrength` at its
+            // previous value so the change is re-detected next tick. No events
+            // get silently swallowed.
+            if (System.nanoTime() >= tickDeadlineNs) break
             val currentStrength = level.getSignal(cb.capability.adjacentPos, cb.capability.nodeSide)
-            if (currentStrength != cb.lastStrength) {
-                cb.lastStrength = currentStrength
+            if (currentStrength == cb.lastStrength) continue
+            cb.lastStrength = currentStrength
+            val outcome = runGatedCallback("redstone-handler:$alias") {
                 cb.callback.call(LuaValue.valueOf(currentStrength))
             }
+            when (outcome) {
+                LuaExecGate.Outcome.TimedOut -> {
+                    logCallback("Redstone handler on '$alias' took too long to run, handler removed.", true)
+                    toEvict += alias
+                }
+                is LuaExecGate.Outcome.Errored -> {
+                    logCallback("Redstone handler on '$alias': ${outcome.message}", true)
+                }
+                is LuaExecGate.Outcome.Fatal -> return  // engine already stopped
+                LuaExecGate.Outcome.Ok -> { /* no-op */ }
+            }
         }
+        for (alias in toEvict) redstoneCallbacks.remove(alias)
     }
 
     /** Polled once per server tick. Skips any observer whose target chunk isn't loaded
@@ -240,25 +517,35 @@ class ScriptEngine(
      *  the chunk reloads the next poll resyncs `lastState` silently and won't fire a
      *  spurious onChange for the load delta. Handler exceptions are caught and routed
      *  through the log so one bad observer can't kill the whole tick. */
-    private fun pollObserverCallbacks() {
+    private fun pollObserverCallbacks(tickDeadlineNs: Long = Long.MAX_VALUE) {
         if (observerCallbacks.isEmpty()) return
-        for ((alias, cb) in observerCallbacks) {
+        val toEvict = mutableListOf<String>()
+        for ((alias, cb) in observerCallbacks.toList()) {
+            if (System.nanoTime() >= tickDeadlineNs) break
             val pos = cb.capability.adjacentPos
             if (!level.isLoaded(pos)) continue
             val current = level.getBlockState(pos)
             if (current == cb.lastState) continue
             cb.lastState = current
-            try {
+            val outcome = runGatedCallback("observer-handler:$alias") {
                 cb.callback.call(
                     LuaValue.valueOf(blockIdOf(current)),
                     blockStateToLua(current)
                 )
-            } catch (e: LuaError) {
-                logCallback("[observer:$alias] ${e.message}", true)
-            } catch (e: Exception) {
-                logCallback("[observer:$alias] ${e.message ?: e.javaClass.simpleName}", true)
+            }
+            when (outcome) {
+                LuaExecGate.Outcome.TimedOut -> {
+                    logCallback("Observer handler on '$alias' took too long to run, handler removed.", true)
+                    toEvict += alias
+                }
+                is LuaExecGate.Outcome.Errored -> {
+                    logCallback("Observer handler on '$alias': ${outcome.message}", true)
+                }
+                is LuaExecGate.Outcome.Fatal -> return  // engine already stopped
+                LuaExecGate.Outcome.Ok -> { /* no-op */ }
             }
         }
+        for (alias in toEvict) observerCallbacks.remove(alias)
     }
 
     /** Block id at [pos] formatted as `"namespace:path"`. Used by observer reads
@@ -383,8 +670,62 @@ class ScriptEngine(
         }
     }
 
+    /** Build a Lua table for a placer device with `:place(...)` rate-limited via
+     *  [placementLimiter]. Centralised here because [PlacerHandle.create] has
+     *  five call sites and we want consistent rate-limiting across all of them. */
+    private fun createPlacerTable(
+        snapshot: damien.nodeworks.network.PlacerSnapshot,
+        networkSnapshot: damien.nodeworks.network.NetworkSnapshot,
+    ): LuaTable {
+        val table = PlacerHandle.create(snapshot, networkSnapshot, level)
+        val origPlace = table.get("place")
+        if (origPlace.isfunction()) {
+            table.set("place", networkRateLimited(
+                "placer:place",
+                consume = { b, tick -> b.tryConsumePlacement(tick) },
+                warnOp = NetworkBudget.WARN_PLACEMENT,
+                origPlace,
+                onLimit = LuaValue.FALSE,
+            ))
+        }
+        return table
+    }
+
+    /** Build a Lua table for a variable card with `:set` and `:cas` rate-limited via
+     *  [variableWriteLimiter]. Each write fires `setChanged` + `sendBlockUpdated`,
+     *  which generates client packets, bounded here so a tight loop can't flood. */
+    private fun createVariableTable(
+        snapshot: damien.nodeworks.network.VariableSnapshot,
+    ): LuaTable {
+        val table = VariableHandle.create(snapshot, level)
+        val origSet = table.get("set")
+        if (origSet.isfunction()) {
+            table.set("set", networkRateLimited(
+                "var:set",
+                consume = { b, tick -> b.tryConsumeVariableWrite(tick) },
+                warnOp = NetworkBudget.WARN_VARIABLE_WRITE,
+                origSet,
+            ))
+        }
+        val origCas = table.get("cas")
+        if (origCas.isfunction()) {
+            table.set("cas", networkRateLimited(
+                "var:cas",
+                consume = { b, tick -> b.tryConsumeVariableWrite(tick) },
+                warnOp = NetworkBudget.WARN_VARIABLE_WRITE,
+                origCas,
+                onLimit = LuaValue.FALSE,
+            ))
+        }
+        return table
+    }
+
     private fun createCardTable(card: damien.nodeworks.network.CardSnapshot, alias: String): LuaTable {
-        val table = CardHandle.create(card, level)
+        val table = CardHandle.create(card, level, currentSnapshot()?.controller?.networkId)
+        // Per-tick call cap is enforced inside [CardHandle.buildInsertFn] so all
+        // insert paths share the budget uniformly, including handles returned from
+        // `:face(...)` / `:slots(...)` (which build a fresh table that wouldn't
+        // pass through a post-hoc wrapper here).
         val cap = card.capability
 
         if (cap is damien.nodeworks.card.RedstoneSideCapability) {
@@ -404,7 +745,7 @@ class ScriptEngine(
             table.set("face", LuaValue.NIL)
 
             // powered() → boolean
-            table.set("powered", object : OneArgFunction() {
+            table.setGuarded("RedstoneCard", "powered", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue {
                     val strength = level.getSignal(cap.adjacentPos, cap.nodeSide)
                     return LuaValue.valueOf(strength > 0)
@@ -412,7 +753,7 @@ class ScriptEngine(
             })
 
             // strength() → number 0-15
-            table.set("strength", object : OneArgFunction() {
+            table.setGuarded("RedstoneCard", "strength", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue {
                     val strength = level.getSignal(cap.adjacentPos, cap.nodeSide)
                     return LuaValue.valueOf(strength)
@@ -420,24 +761,34 @@ class ScriptEngine(
             })
 
             // set(boolean | number), emit redstone signal
-            table.set("set", object : TwoArgFunction() {
-                override fun call(selfArg: LuaValue, valueArg: LuaValue): LuaValue {
-                    val strength = when {
-                        valueArg.isboolean() -> if (valueArg.toboolean()) 15 else 0
-                        valueArg.isnumber() -> valueArg.checkint().coerceIn(0, 15)
-                        else -> throw LuaError("set() expects boolean or number (0-15)")
+            table.setGuarded("RedstoneCard", "set", networkRateLimited(
+                "redstone:set",
+                consume = { b, tick -> b.tryConsumeRedstoneWrite(tick) },
+                warnOp = NetworkBudget.WARN_REDSTONE_WRITE,
+                object : TwoArgFunction() {
+                    override fun call(selfArg: LuaValue, valueArg: LuaValue): LuaValue {
+                        val strength = when {
+                            valueArg.isboolean() -> if (valueArg.toboolean()) 15 else 0
+                            valueArg.isnumber() -> valueArg.checkint().coerceIn(0, 15)
+                            else -> throw LuaError("set() expects boolean or number (0-15)")
+                        }
+                        val entity = level.getBlockEntity(cap.nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity
+                            ?: throw LuaError("Node block entity not found")
+                        entity.setRedstoneOutput(cap.nodeSide, strength)
+                        return LuaValue.NIL
                     }
-                    val entity = level.getBlockEntity(cap.nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity
-                        ?: throw LuaError("Node block entity not found")
-                    entity.setRedstoneOutput(cap.nodeSide, strength)
-                    return LuaValue.NIL
-                }
-            })
+                }))
 
             // onChange(function(strength: number)), register callback for signal changes
-            table.set("onChange", object : TwoArgFunction() {
+            table.setGuarded("RedstoneCard", "onChange", object : TwoArgFunction() {
                 override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
                     val fn = fnArg.checkfunction()
+                    // Only count when adding a new alias, replacing an existing
+                    // handler doesn't grow the registry. Without this check a
+                    // script could re-register the same alias forever and never
+                    // hit the cap, but also: a script that replaces handlers in
+                    // place is doing the right thing and shouldn't trip a cap.
+                    if (alias !in redstoneCallbacks) assertCallbackCap(redstoneCallbacks.size, "redstone-handler")
                     val currentStrength = level.getSignal(cap.adjacentPos, cap.nodeSide)
                     redstoneCallbacks[alias] = RedstoneCallback(cap, currentStrength, fn)
                     return LuaValue.NIL
@@ -459,13 +810,13 @@ class ScriptEngine(
             table.set("face", LuaValue.NIL)
 
             // block() → string, current block id at the watched position.
-            table.set("block", object : OneArgFunction() {
+            table.setGuarded("ObserverCard", "block", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue =
                     LuaValue.valueOf(blockIdOf(level.getBlockState(cap.adjacentPos)))
             })
 
             // state() → { [string]: any }, properties of the watched block.
-            table.set("state", object : OneArgFunction() {
+            table.setGuarded("ObserverCard", "state", object : OneArgFunction() {
                 override fun call(selfArg: LuaValue): LuaValue =
                     blockStateToLua(level.getBlockState(cap.adjacentPos))
             })
@@ -474,9 +825,10 @@ class ScriptEngine(
             // Replaces any prior handler bound to the same alias. `lastState` seeds with the
             // current block so the very first poll after registration won't fire a phantom
             // change event for "transition from null to whatever's already there."
-            table.set("onChange", object : TwoArgFunction() {
+            table.setGuarded("ObserverCard", "onChange", object : TwoArgFunction() {
                 override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
                     val fn = fnArg.checkfunction()
+                    if (alias !in observerCallbacks) assertCallbackCap(observerCallbacks.size, "observer-handler")
                     val seed = level.getBlockState(cap.adjacentPos)
                     observerCallbacks[alias] = ObserverCallback(cap, seed, fn)
                     return LuaValue.NIL
@@ -516,7 +868,7 @@ class ScriptEngine(
                 val type = typeArg.checkjstring()
                 if (type == "variable") {
                     val v = snapshot.variables.firstOrNull { it.channel == color } ?: return LuaValue.NIL
-                    return VariableHandle.create(v, level)
+                    return createVariableTable(v)
                 }
                 if (type == "breaker") {
                     val b = snapshot.breakers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
@@ -524,7 +876,7 @@ class ScriptEngine(
                 }
                 if (type == "placer") {
                     val p = snapshot.placers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
-                    return PlacerHandle.create(p, snapshot, level)
+                    return createPlacerTable(p, snapshot)
                 }
                 val card = snapshot.allCards().firstOrNull {
                     it.channel == color && it.capability.type == type
@@ -549,7 +901,7 @@ class ScriptEngine(
                 if (type == null || type == "variable") {
                     for (v in snapshot.variables) {
                         if (v.channel != color) continue
-                        members.add(VariableHandle.create(v, level))
+                        members.add(createVariableTable(v))
                     }
                 }
                 if (type == null || type == "breaker") {
@@ -561,7 +913,7 @@ class ScriptEngine(
                 if (type == null || type == "placer") {
                     for (p in snapshot.placers) {
                         if (p.channel != color) continue
-                        members.add(PlacerHandle.create(p, snapshot, level))
+                        members.add(createPlacerTable(p, snapshot))
                     }
                 }
                 if (type != "variable" && type != "breaker" && type != "placer") {
@@ -588,11 +940,11 @@ class ScriptEngine(
                 }
                 if (card != null) return selfRef.createCardTable(card, card.effectiveAlias)
                 val v = snapshot.variables.firstOrNull { it.channel == color && it.name == alias }
-                if (v != null) return VariableHandle.create(v, level)
+                if (v != null) return createVariableTable(v)
                 val b = snapshot.breakers.firstOrNull { it.channel == color && it.effectiveAlias == alias }
                 if (b != null) return BreakerHandle.create(b, snapshot, level)
                 val p = snapshot.placers.firstOrNull { it.channel == color && it.effectiveAlias == alias }
-                if (p != null) return PlacerHandle.create(p, snapshot, level)
+                if (p != null) return createPlacerTable(p, snapshot)
                 throw LuaError("No member named '$alias' on the ${color.name.lowercase()} channel")
             }
         })
@@ -836,17 +1188,37 @@ class ScriptEngine(
         val sourceStorage = itemsHandle.sourceStorage()
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
 
+        // Per-network items-moved budget: clamp the request to whatever's left
+        // in the budget for this tick. Atomic short-circuits to false when the
+        // budget can't satisfy the full requested count, best-effort moves only
+        // the clamped amount and reports back the actual moved count. Charges
+        // the budget after the move based on what really landed (so storage-full
+        // shortfalls don't burn budget on items that didn't actually move).
+        val tick = PlatformServices.modState.tickCount
+        val budget = NetworkRateLimits.forNetwork(snapshot.controller?.networkId)
+        val available = budget.availableItems(tick)
+        if (available < requested) {
+            if (budget.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {
+                logCallback("[items moved rate-limited this tick on this network]", true)
+            }
+            if (atomic) return LuaValue.FALSE
+            if (available <= 0L) return LuaValue.valueOf(0)
+        }
+        val clamped = minOf(requested, available)
+
         return if (atomic) {
             val ok = NetworkStorageHelper.tryInsertItemsAcrossNetwork(
                 level, snapshot, sourceStorage, itemsHandle.filter,
-                requested, routeTable, inventoryCache
+                clamped, routeTable, inventoryCache
             )
+            if (ok) budget.noteItemsMoved(tick, clamped)
             LuaValue.valueOf(ok)
         } else {
             val moved = NetworkStorageHelper.insertItems(
                 level, snapshot, sourceStorage, itemsHandle.filter,
-                requested, routeTable, null, inventoryCache
+                clamped, routeTable, null, inventoryCache
             )
+            budget.noteItemsMoved(tick, moved)
             LuaValue.valueOf(moved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         }
     }
@@ -868,9 +1240,24 @@ class ScriptEngine(
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
         val maxStack = item.getDefaultMaxStackSize().toLong()
 
+        // Same per-network budget enforcement as [invokeItems]: clamp the
+        // request, atomic short-circuits when budget can't fit the full count,
+        // best-effort clamps and charges only what actually moved.
+        val tick = PlatformServices.modState.tickCount
+        val budget = NetworkRateLimits.forNetwork(snapshot.controller?.networkId)
+        val available = budget.availableItems(tick)
+        if (available < requested) {
+            if (budget.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {
+                logCallback("[items moved rate-limited this tick on this network]", true)
+            }
+            if (atomic) return LuaValue.FALSE
+            if (available <= 0L) return LuaValue.valueOf(0)
+        }
+        val clamped = minOf(requested, available)
+
         if (atomic) {
-            val extracted = bufSrc.extract(requested)
-            if (extracted < requested) {
+            val extracted = bufSrc.extract(clamped)
+            if (extracted < clamped) {
                 bufSrc.returnUnused(extracted)
                 return LuaValue.FALSE
             }
@@ -888,11 +1275,12 @@ class ScriptEngine(
                 bufSrc.returnUnused(extracted - totalInserted)
                 return LuaValue.FALSE
             }
+            budget.noteItemsMoved(tick, totalInserted)
             return LuaValue.TRUE
         }
 
         var totalMoved = 0L
-        var remaining = requested
+        var remaining = clamped
         while (remaining > 0L) {
             val batch = minOf(remaining, maxStack)
             val extracted = bufSrc.extract(batch)
@@ -906,6 +1294,7 @@ class ScriptEngine(
             }
             remaining -= inserted
         }
+        budget.noteItemsMoved(tick, totalMoved)
         return LuaValue.valueOf(totalMoved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
     }
 
@@ -928,13 +1317,13 @@ class ScriptEngine(
         // when a variable happens to share an alias with a card, a future "validate
         // unique names across cards + variables" pass on the network would catch
         // collisions at edit time, but for now the lookup order is the contract.
-        networkTable.set("get", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "get", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
                 val alias = aliasArg.checkjstring()
                 snapshot.findByAlias(alias)?.let { return createCardTable(it, alias) }
-                snapshot.findVariable(alias)?.let { return VariableHandle.create(it, level) }
+                snapshot.findVariable(alias)?.let { return createVariableTable(it) }
                 snapshot.findBreaker(alias)?.let { return BreakerHandle.create(it, snapshot, level) }
-                snapshot.findPlacer(alias)?.let { return PlacerHandle.create(it, snapshot, level) }
+                snapshot.findPlacer(alias)?.let { return createPlacerTable(it, snapshot) }
                 throw LuaError("Not found on network: '$alias'")
             }
         })
@@ -945,11 +1334,11 @@ class ScriptEngine(
         // HandleList's broadcast methods lock in to the shared `VariableHandle`
         // surface (`set`, `cas`). Callers wanting type-specific atomics on every
         // variable should iterate via `:list()`.
-        networkTable.set("getAll", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "getAll", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
                 val type = typeArg.checkjstring()
                 if (type == "variable") {
-                    val members = snapshot.variables.map { VariableHandle.create(it, level) as LuaValue }
+                    val members = snapshot.variables.map { createVariableTable(it) as LuaValue }
                     return createHandleListTable(
                         members,
                         HandleListMethods.methodsForHandleType("VariableHandle"),
@@ -966,7 +1355,7 @@ class ScriptEngine(
                 }
                 if (type == "placer") {
                     val members = snapshot.placers.map {
-                        PlacerHandle.create(it, snapshot, level) as LuaValue
+                        createPlacerTable(it, snapshot) as LuaValue
                     }
                     return createHandleListTable(
                         members,
@@ -993,7 +1382,7 @@ class ScriptEngine(
         // won't show up in it, re-call `network:cards` to refresh. For tick-time
         // re-resolution, use the bare-string wildcard form on importer/stocker
         // (`importer:from("io_*")`).
-        networkTable.set("cards", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "cards", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, patternArg: LuaValue): LuaValue {
                 val pattern = patternArg.checkjstring()
                 val regex = damien.nodeworks.script.preset.wildcardToRegex(pattern)
@@ -1018,7 +1407,7 @@ class ScriptEngine(
         // network:channel(color) → Channel handle scoped to that dye color.
         // Errors on bad color names so a typo surfaces immediately rather than
         // silently iterating an empty group.
-        networkTable.set("channel", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "channel", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, colorArg: LuaValue): LuaValue {
                 val name = colorArg.checkjstring()
                 val color = net.minecraft.world.item.DyeColor.byName(name, null)
@@ -1032,7 +1421,7 @@ class ScriptEngine(
         // member carry a channel and `network:channel(color):getAll(...)` scopes
         // against any of them, so the in-use set has to mirror the same union.
         // Order is by DyeColor.id ascending so iteration is stable across calls.
-        networkTable.set("channels", object : OneArgFunction() {
+        networkTable.setGuarded("Network", "channels", object : OneArgFunction() {
             override fun call(selfArg: LuaValue): LuaValue {
                 val seen = sortedSetOf<net.minecraft.world.item.DyeColor>(compareBy { it.id })
                 snapshot.allCards().forEach { seen.add(it.channel) }
@@ -1049,7 +1438,7 @@ class ScriptEngine(
 
         // network:find(filter) → ItemsHandle or nil (scans real storage, aggregated count)
         // Respects kind-qualified filters (`item:*`, `fluid:*`). Bare filters check items first.
-        networkTable.set("find", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "find", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val (kindGate, _) = CardHandle.parseFilterKind(filter)
@@ -1098,7 +1487,7 @@ class ScriptEngine(
 
         // network:findEach(filter) → table of ItemsHandles (scans real storage).
         // Bare filter lists items then fluids, kind-prefixed filter yields only that kind.
-        networkTable.set("findEach", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "findEach", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val (kindGate, _) = CardHandle.parseFilterKind(filter)
@@ -1144,7 +1533,7 @@ class ScriptEngine(
         })
 
         // network:count(filter) → number (items + fluids, or kind-filtered)
-        networkTable.set("count", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "count", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
                 val filter = filterArg.checkjstring()
                 val count = NetworkStorageHelper.countResource(level, snapshot, filter)
@@ -1155,10 +1544,26 @@ class ScriptEngine(
         // network:insert(itemsHandle, count?) → boolean (atomic, either the full count lands
         // in network storage or nothing moves). Mirrors CardHandle:insert for consistency.
         // Use network:tryInsert for "move what fits, leave the rest" semantics.
-        networkTable.set("insert", buildNetworkInsertFn(snapshot, atomic = true))
+        // Per-network call cap returns false on rate limit (matches "atomic move blocked"
+        // semantics scripts already handle).
+        networkTable.setGuarded("Network", "insert", networkRateLimited(
+            "network:insert",
+            consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
+            warnOp = NetworkBudget.WARN_ITEM_MOVE,
+            buildNetworkInsertFn(snapshot, atomic = true),
+            onLimit = LuaValue.FALSE,
+        ))
 
         // network:tryInsert(itemsHandle, count?) → number (best-effort count moved).
-        networkTable.set("tryInsert", buildNetworkInsertFn(snapshot, atomic = false))
+        // Per-network call cap returns 0 on rate limit (partial-success is the natural
+        // shape for tryInsert, scripts already check the return value).
+        networkTable.setGuarded("Network", "tryInsert", networkRateLimited(
+            "network:tryInsert",
+            consume = { b, tick -> b.tryConsumeItemMoveCall(tick) },
+            warnOp = NetworkBudget.WARN_ITEM_MOVE,
+            buildNetworkInsertFn(snapshot, atomic = false),
+            onLimit = LuaValue.valueOf(0),
+        ))
 
         // network:craft(identifier, count?) → CraftBuilder.
         //
@@ -1168,7 +1573,7 @@ class ScriptEngine(
         // callback fires with an ItemsHandle on success, or `nil` on any failure
         // (plan failed, async timed out, no Crafting CPU). Without `:connect`, plan
         // failures still log to the terminal so the player sees what went wrong.
-        networkTable.set("craft", object : VarArgFunction() {
+        networkTable.setGuarded("Network", "craft", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val identifier = args.checkjstring(2)
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
@@ -1301,7 +1706,7 @@ class ScriptEngine(
                 fun fireHandler(handle: LuaValue) {
                     val fn = handler ?: return
                     try { fn.call(handle) }
-                    catch (e: LuaError) { logCallback("craft callback error: ${e.message}", true) }
+                    catch (e: LuaError) { logCallback("craft callback error: ${gate.stripLuaTraceback(e.message)}", true) }
                 }
 
                 fun resolve(success: Boolean) {
@@ -1369,7 +1774,7 @@ class ScriptEngine(
         // [routeTable] stays null, the storage helper falls through to the
         // default priority-sorted insert.
         routeTable = null
-        networkTable.set("route", object : TwoArgFunction() {
+        networkTable.setGuarded("Network", "route", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, aliasArg: LuaValue): LuaValue {
                 val pattern = aliasArg.checkjstring()
                 return StorageCardConfigurator.createBuilder(level, snapshot, pattern)
@@ -1379,7 +1784,7 @@ class ScriptEngine(
 
         // network:shapeless(item1, count1, item2?, count2?, ...) → ItemsHandle or nil
         // Crafts using vanilla shapeless recipes. Inputs are item/count pairs.
-        networkTable.set("shapeless", object : VarArgFunction() {
+        networkTable.setGuarded("Network", "shapeless", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 // Parse item/count pairs from varargs (self is arg1)
                 val ingredients = mutableMapOf<String, Int>()
@@ -1428,10 +1833,11 @@ class ScriptEngine(
         // cardName matches the name set on a Processing Set in Processing Storage.
         // The handler function receives input items as arguments and should return
         // the result ItemsHandle from the processing machine's output.
-        networkTable.set("handle", object : ThreeArgFunction() {
+        networkTable.setGuarded("Network", "handle", object : ThreeArgFunction() {
             override fun call(selfArg: LuaValue, nameArg: LuaValue, handlerArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
                 val handler = handlerArg.checkfunction()
+                if (name !in processingHandlers) assertCallbackCap(processingHandlers.size, "processing-handler")
                 processingHandlers[name] = handler
                 return LuaValue.NIL
             }
@@ -1441,7 +1847,7 @@ class ScriptEngine(
         // network and resolved through `network:get(name)` alongside cards.)
 
         // network:debug(), print full network summary
-        networkTable.set("debug", object : OneArgFunction() {
+        networkTable.setGuarded("Network", "debug", object : OneArgFunction() {
             override fun call(selfArg: LuaValue): LuaValue {
                 val sb = StringBuilder()
                 sb.appendLine("=== Network Debug ===")
@@ -1501,6 +1907,14 @@ class ScriptEngine(
         // print(message)
         g.set("print", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
+                val tick = PlatformServices.modState.tickCount
+                val budget = NetworkRateLimits.forNetwork(currentSnapshot()?.controller?.networkId)
+                if (!budget.tryConsumePrint(tick)) {
+                    if (budget.warnOnce(NetworkBudget.WARN_PRINT)) {
+                        logCallback("[print rate-limited this tick on this network, further prints dropped]", true)
+                    }
+                    return LuaValue.NONE
+                }
                 val parts = mutableListOf<String>()
                 for (i in 1..args.narg()) {
                     parts.add(formatValue(args.arg(i)))

@@ -39,11 +39,24 @@ class TerminalBlockEntity(
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
 
+    /** UUID of the player who placed this terminal. Captured in [TerminalBlock.setPlacedBy]
+     *  and used as the FakePlayer identity when scripts mutate the world (Breaker/Placer
+     *  routed through this terminal's network). Legacy null on pre-update worlds, the
+     *  FakePlayer service falls back to a static "Nodeworks" profile in that case. */
+    var ownerUuid: UUID? = null
+
     // Script storage
     val scripts: MutableMap<String, String> = linkedMapOf("main" to "")
     var autoRun: Boolean = false
         private set
     var layoutIndex: Int = 0
+        private set
+
+    /** Last execution error message, persisted across save/load so the player can
+     *  see why their terminal isn't running after a reboot. Set by [markTimedOut]
+     *  on top-level wall-clock soft-abort and cleared by a successful subsequent
+     *  start. */
+    var lastError: String? = null
         private set
 
     /** The current script text (active tab = "main"). */
@@ -66,7 +79,13 @@ class TerminalBlockEntity(
     fun getScriptsCopy(): Map<String, String> = scripts.toMap()
 
     fun setScript(name: String, text: String) {
+        val changed = scripts[name] != text
         scripts[name] = text
+        // Editing the script clears the prior soft-abort sentinel so the player can
+        // run the (presumed-fixed) script again. Without this, a misbehaving script
+        // that timed out would stay locked forever. The runtime gate explicitly
+        // refuses to start when `lastError != null`.
+        if (changed) lastError = null
         setChanged()
     }
 
@@ -79,6 +98,10 @@ class TerminalBlockEntity(
 
     fun deleteScript(name: String) {
         if (name != "main" && scripts.remove(name) != null) {
+            // Same logic as [setScript]: removing a tab counts as editing the
+            // terminal, clears the run-lock so the player can retry. Worst case,
+            // a still-broken sibling tab times out again and the lock returns.
+            lastError = null
             setChanged()
         }
     }
@@ -86,6 +109,25 @@ class TerminalBlockEntity(
     fun setAutoRun(enabled: Boolean) {
         autoRun = enabled
         setChanged()
+    }
+
+    /** Record a script-level fault (currently only the wall-clock soft-abort uses
+     *  this) and clear `autoRun` so the next world load doesn't re-trigger the
+     *  failing script. Persisted across save/load. The player sees the reason in
+     *  the terminal log on next open. */
+    fun markTimedOut(reason: String) {
+        lastError = reason
+        autoRun = false
+        setChanged()
+    }
+
+    /** Clear any stored last-error. Called when a fresh manual start succeeds so
+     *  the persisted error doesn't linger past a working run. */
+    fun clearLastError() {
+        if (lastError != null) {
+            lastError = null
+            setChanged()
+        }
     }
 
     fun setLayoutIndex(index: Int) {
@@ -176,11 +218,15 @@ class TerminalBlockEntity(
             // NeoForge requires "id" in BLOCK_ENTITY_DATA for serialization
             val typeKey = net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type)
             if (typeKey != null) tag.putString("id", typeKey.toString())
-            stack.set(net.minecraft.core.component.DataComponents.BLOCK_ENTITY_DATA,
-                net.minecraft.world.item.component.TypedEntityData.of(type, tag))
+            stack.set(
+                net.minecraft.core.component.DataComponents.BLOCK_ENTITY_DATA,
+                net.minecraft.world.item.component.TypedEntityData.of(type, tag)
+            )
         }
-        net.minecraft.world.Containers.dropItemStack(level,
-            worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5, stack)
+        net.minecraft.world.Containers.dropItemStack(
+            level,
+            worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5, stack
+        )
     }
 
     // --- Serialization ---
@@ -196,6 +242,8 @@ class TerminalBlockEntity(
         output.putBoolean("autoRun", autoRun)
         output.putInt("layoutIndex", layoutIndex)
         networkId?.let { output.putString("networkId", it.toString()) }
+        ownerUuid?.let { output.putString("ownerUuid", it.toString()) }
+        lastError?.let { output.putString("lastError", it) }
         output.putBlockPosList("connections", connections)
     }
 
@@ -213,8 +261,20 @@ class TerminalBlockEntity(
         autoRun = input.getBooleanOr("autoRun", false)
         layoutIndex = input.getIntOr("layoutIndex", 0)
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
-            try { UUID.fromString(it) } catch (_: Exception) { null }
+            try {
+                UUID.fromString(it)
+            } catch (_: Exception) {
+                null
+            }
         }
+        ownerUuid = input.getStringOrNull("ownerUuid")?.takeIf { it.isNotEmpty() }?.let {
+            try {
+                UUID.fromString(it)
+            } catch (_: Exception) {
+                null
+            }
+        }
+        lastError = input.getStringOrNull("lastError")?.takeIf { it.isNotEmpty() }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         connections.clear()
         connections.addAll(input.getBlockPosList("connections"))

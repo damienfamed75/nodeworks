@@ -20,7 +20,7 @@ class NetworkControllerMenu(
     override val blockBackingPos: BlockPos get() = controllerPos
 
     companion object {
-        const val DATA_SLOTS = 6
+        const val DATA_SLOTS = 8
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: NetworkControllerOpenData): NetworkControllerMenu {
             val data = SimpleContainerData(DATA_SLOTS)
@@ -30,6 +30,8 @@ class NetworkControllerMenu(
             data.set(3, openData.nodeGlowStyle)
             data.set(4, openData.handlerRetryLimit)
             data.set(5, if (openData.chunkLoading) 1 else 0)
+            data.set(6, if (openData.laserEnabled) 1 else 0)
+            data.set(7, openData.laserMode)
             return NetworkControllerMenu(syncId, openData.pos, data, openData.networkName)
         }
 
@@ -46,6 +48,8 @@ class NetworkControllerMenu(
                     3 -> entity.nodeGlowStyle
                     4 -> entity.handlerRetryLimit
                     5 -> if (entity.chunkLoadingEnabled) 1 else 0
+                    6 -> if (entity.laserEnabled) 1 else 0
+                    7 -> entity.laserMode
                     else -> 0
                 }
                 override fun set(index: Int, value: Int) {
@@ -59,6 +63,8 @@ class NetworkControllerMenu(
                         // so we can run the claim/unclaim side-effects, reject direct writes
                         // here to avoid bypassing that.
                         5 -> Unit
+                        6 -> entity.laserEnabled = value != 0
+                        7 -> entity.laserMode = value
                     }
                 }
                 override fun getCount(): Int = DATA_SLOTS
@@ -72,6 +78,8 @@ class NetworkControllerMenu(
     val nodeGlowStyle: Int get() = data.get(3)
     val handlerRetryLimit: Int get() = data.get(4)
     val chunkLoading: Boolean get() = data.get(5) != 0
+    val laserEnabled: Boolean get() = data.get(6) != 0
+    val laserMode: Int get() = data.get(7)
 
     init {
         addDataSlots(data)

@@ -51,11 +51,29 @@ object NeoForgeTerminalPackets {
      */
     fun startEngine(level: ServerLevel, pos: BlockPos): Boolean {
         val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: return false
+        // Refuse to start a script that previously hit a wall-clock soft-abort.
+        // A redstone clock pointed at a misbehaving terminal would otherwise re-
+        // trigger the bad script every cycle, eating per-tick budget repeatedly.
+        // The player has to actually edit the script (which clears [lastError]
+        // in [TerminalBlockEntity.setScript]) before it's eligible to run again.
+        if (terminal.lastError != null) {
+            val msg = TerminalLogPayload(
+                pos,
+                "Cannot run, this terminal's script previously timed out: ${terminal.lastError}. Edit the script to re-enable.",
+                true,
+            )
+            for (p in level.players()) {
+                if (p.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= 64.0 * 64.0) {
+                    PacketDistributor.sendToPlayer(p, msg)
+                }
+            }
+            return false
+        }
         val nodePos = terminal.getNetworkStartPos() ?: return false
         val gp = GlobalPos.of(level.dimension(), pos)
         activeEngines.remove(gp)?.stop()
 
-        val engine = ScriptEngine(level, nodePos) { message, isError ->
+        val engine = ScriptEngine(level, nodePos, pos) { message, isError ->
             if (isError) damien.nodeworks.script.NetworkErrorBuffer.addError(pos, message, level.server.tickCount.toLong())
             // Cap script-originated print output so a single absurd log line can't blow past
             // the network string length and disconnect the player. Truncation happens here
@@ -252,6 +270,27 @@ object NeoForgeTerminalPackets {
         }
     }
 
+    /** Ring buffer of total Lua wall-clock cost across all engines for the
+     *  last 20 server ticks (one second at 20 TPS). Slot `tickCount % 20` is
+     *  zeroed at the start of each [tickAll] before any engine writes to it,
+     *  then accumulated as engines run. [totalLuaCostNsLastSecond] sums the
+     *  ring for the `/nodeworks safety status` "% global tick budget" line. */
+    private val totalLuaCostNsRing = LongArray(20)
+
+    /** Sum of all-engine Lua wall-clock cost across the last second of ticks.
+     *  Read by [damien.nodeworks.command.NodeworksCommand]. */
+    fun totalLuaCostNsLastSecond(): Long {
+        var sum = 0L
+        for (v in totalLuaCostNsRing) sum += v
+        return sum
+    }
+
+    /** Snapshot of the live engine table for the admin command suite. Returns a
+     *  list copy so callers can iterate without ConcurrentModification when a
+     *  reentrant tick edits [activeEngines]. */
+    fun activeEnginesSnapshot(): List<Pair<GlobalPos, ScriptEngine>> =
+        activeEngines.entries.map { it.key to it.value }
+
     fun tickAll(server: MinecraftServer, tickCount: Long) {
         processPendingAutoRun(server, tickCount)
         // Snapshot before iterating: `engine.tick` may run Lua that reenters this class
@@ -260,15 +299,55 @@ object NeoForgeTerminalPackets {
         // ConcurrentModifyException the live iteration. Also re-resolve the engine from
         // the map each iteration so a snapshot'd entry that was replaced mid-tick isn't
         // double-ticked.
+        //
+        // Per-tick budget enforcement (CFS-inspired):
+        //   - globalTickBudgetMs caps total Lua time across all engines this tick.
+        //     When exhausted, remaining engines defer their work to the next tick.
+        //   - localTickBudgetMs caps a single engine's slice. Bounds the worst case
+        //     where one engine has many handlers and could otherwise consume the
+        //     full global budget alone.
+        //   - Engines are sorted by accumulated vruntime ascending, well-behaved
+        //     scripts (low vruntime) run first, so a runaway engine eating its
+        //     full local budget every tick gets deprioritised vs a neighbour that
+        //     normally finishes in microseconds. Same idea Linux CFS uses.
+        val settings = damien.nodeworks.script.ServerPolicy.current
+        val tickStartNs = System.nanoTime()
+        val globalDeadlineNs = tickStartNs + settings.globalTickBudgetMs * 1_000_000L
+        val localBudgetNs = settings.localTickBudgetMs * 1_000_000L
+
+        // Zero this tick's slot in the global + per-engine cost rings before
+        // anyone writes to it. Engines deferred by global-budget exhaustion
+        // contribute 0 for this tick (rather than re-counting the previous
+        // tick's value), so % utilisation stays honest.
+        val ringSlot = (tickCount % 20).toInt()
+        totalLuaCostNsRing[ringSlot] = 0L
+        for (e in activeEngines.values) e.resetTickCostSlot(tickCount)
+
         val toRemove = mutableListOf<GlobalPos>()
-        val snapshot = activeEngines.keys.toList()
-        for (gp in snapshot) {
+        val snapshot = activeEngines.entries
+            .toList()
+            .sortedBy { it.value.vruntimeNs }
+        for ((gp, _) in snapshot) {
+            // Re-resolve in case a reentrant startEngine replaced the entry.
             val engine = activeEngines[gp] ?: continue
             if (!engine.isRunning()) {
                 toRemove.add(gp)
                 continue
             }
-            engine.tick(tickCount)
+            // Stop dispatching once the shared global budget is gone. Engines we
+            // didn't reach this tick stay in `activeEngines` and pick up next tick
+            // (sorted by vruntime so they get fair priority).
+            val nowNs = System.nanoTime()
+            if (nowNs >= globalDeadlineNs) break
+
+            val perEngineDeadlineNs = minOf(nowNs + localBudgetNs, globalDeadlineNs)
+            val before = nowNs
+            engine.tick(tickCount, perEngineDeadlineNs)
+            val cost = System.nanoTime() - before
+            engine.vruntimeNs += cost
+            engine.recordTickCost(tickCount, cost)
+            totalLuaCostNsRing[ringSlot] += cost
+
             if (!engine.hasWork()) {
                 toRemove.add(gp)
             }

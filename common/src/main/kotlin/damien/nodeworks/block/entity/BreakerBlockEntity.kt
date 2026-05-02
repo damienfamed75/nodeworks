@@ -3,6 +3,7 @@ package damien.nodeworks.block.entity
 import damien.nodeworks.block.BreakerBlock
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
+import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
 import net.minecraft.core.HolderLookup
@@ -35,6 +36,11 @@ class BreakerBlockEntity(
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
+
+    /** UUID of the player who placed this breaker. Drives the FakePlayer identity used
+     *  for [BlockEvent.BreakEvent] dispatch + spawn protection. Legacy null on pre-update
+     *  worlds, falls back to the static "Nodeworks" profile via FakePlayerService. */
+    var ownerUuid: UUID? = null
 
     /** Custom alias for `network:get(name)`. Empty string falls back to the
      *  auto-alias (`breaker_N`) assigned by [NetworkDiscovery.assignAutoAliases]. */
@@ -153,16 +159,36 @@ class BreakerBlockEntity(
 
     /** Finalise the break: clear the overlay, drop loot, set the target to air,
      *  hand drops to the configured handler (or default-store via the network
-     *  insert path). */
+     *  insert path).
+     *
+     *  Routes through [PlatformServices.fakePlayer] for permission gating: a claim
+     *  mod or vanilla spawn protection can cancel the break, in which case nothing
+     *  drops and the target is left untouched. The breaker still resets its progress
+     *  state so the next tick can re-attempt (or a player can rebind the breaker to
+     *  somewhere it has permission to mine). */
     private fun completeBreak(level: ServerLevel, target: BlockPos, state: BlockState) {
-        // Clear the per-stage overlay before changing the block, otherwise the
-        // crack texture lingers on the new (air) block for a frame or two.
+        // Clear the per-stage overlay before any branch, otherwise the crack
+        // texture lingers on the live block when the break is rejected.
         level.destroyBlockProgress(breakerId, target, -1)
 
-        // Compute drops with a diamond-pickaxe loot context so players get the
-        // tier-appropriate items (cobblestone from stone, ore drops with proper
-        // tier checks, etc.).
-        val tool = ItemStack(Items.DIAMOND_PICKAXE)
+        // Permission gate: spawn protection + BreakBlockEvent fired with the owner's
+        // FakePlayer. On rejection we drop the queued handler and reset progress
+        // without producing drops or mutating the world.
+        if (!PlatformServices.fakePlayer.mayBreak(level, target, state, ownerUuid)) {
+            breakProgress = 0
+            breakDurationTicks = 0
+            targetSnapshot = null
+            pendingHandler = null
+            markDirtyAndSync()
+            return
+        }
+
+        // Compute drops with the matching diamond tool so loot reflects the right
+        // tool class: stone drops cobblestone (pickaxe), wood drops logs (axe),
+        // dirt drops dirt (shovel). Falls back to diamond pickaxe if nothing
+        // matches, defensive only since computeBreakDuration would have returned
+        // null and the break wouldn't have started.
+        val tool = pickToolPair(state)?.first ?: ItemStack(Items.DIAMOND_PICKAXE)
         val targetEntity = level.getBlockEntity(target)
         val drops = Block.getDrops(state, level, target, targetEntity, null, tool)
 
@@ -240,6 +266,7 @@ class BreakerBlockEntity(
         output.putInt("breakProgress", breakProgress)
         output.putInt("breakDurationTicks", breakDurationTicks)
         networkId?.let { output.putString("networkId", it.toString()) }
+        ownerUuid?.let { output.putString("ownerUuid", it.toString()) }
         output.putBlockPosList("connections", connections)
     }
 
@@ -256,6 +283,9 @@ class BreakerBlockEntity(
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
+        ownerUuid = input.getStringOrNull("ownerUuid")?.takeIf { it.isNotEmpty() }?.let {
+            try { UUID.fromString(it) } catch (_: Exception) { null }
+        }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         connections.clear()
         connections.addAll(input.getBlockPosList("connections"))
@@ -266,24 +296,40 @@ class BreakerBlockEntity(
         ClientboundBlockEntityDataPacket.create(this)
 
     companion object {
-        /** Compute how many ticks a break should take using the wooden-pickaxe formula
-         *  (slow but realistic) while gating tier eligibility on diamond pickaxe (so
-         *  the breaker can mine anything a diamond pick could).
+        /** Pick a diamond / wooden tool pair appropriate for [state]. Tries
+         *  pickaxe, axe, then shovel and returns the first whose diamond
+         *  variant is the correct tool for drops. Null when none of the three
+         *  match (block needs a non-mining tool like shears, or is above
+         *  diamond tier). The wooden variant of the same class drives the
+         *  break-speed formula, so wood breaks at wooden-axe speed, dirt at
+         *  wooden-shovel speed, etc. */
+        fun pickToolPair(state: BlockState): Pair<ItemStack, ItemStack>? {
+            val pick = ItemStack(Items.DIAMOND_PICKAXE)
+            if (pick.isCorrectToolForDrops(state)) return pick to ItemStack(Items.WOODEN_PICKAXE)
+            val axe = ItemStack(Items.DIAMOND_AXE)
+            if (axe.isCorrectToolForDrops(state)) return axe to ItemStack(Items.WOODEN_AXE)
+            val shovel = ItemStack(Items.DIAMOND_SHOVEL)
+            if (shovel.isCorrectToolForDrops(state)) return shovel to ItemStack(Items.WOODEN_SHOVEL)
+            return null
+        }
+
+        /** Compute how many ticks a break should take using the wooden-tier formula
+         *  (slow but realistic) while gating tier eligibility on the matching diamond
+         *  tool (so the breaker can mine anything a diamond pickaxe / axe / shovel
+         *  could, including wood and dirt).
          *
          *  Returns null when the block is air, unbreakable (negative hardness), or
-         *  above-tier (no diamond drops). Callers treat null as a silent no-op,
-         *  matches the user's preference for failed breaks not to spam errors. */
+         *  above-tier (no matching diamond tool). Callers treat null as a silent
+         *  no-op, matches the user's preference for failed breaks not to spam errors. */
         fun computeBreakDuration(level: net.minecraft.world.level.Level, pos: BlockPos, state: BlockState): Int? {
             if (state.isAir) return null
-            val diamondPick = ItemStack(Items.DIAMOND_PICKAXE)
-            if (!diamondPick.isCorrectToolForDrops(state)) return null
+            val (_, woodenTool) = pickToolPair(state) ?: return null
             val hardness = state.getDestroySpeed(level, pos)
             if (hardness < 0f) return null
-            val woodenPick = ItemStack(Items.WOODEN_PICKAXE)
-            // Wooden pick speed is 0 for blocks it doesn't apply to (e.g. dirt). Floor
-            // at 1.0 so we still produce a finite tick count via the slow-path divisor.
-            val woodSpeed = woodenPick.getDestroySpeed(state).coerceAtLeast(1f)
-            val canHarvestWithWood = woodenPick.isCorrectToolForDrops(state)
+            // Wooden-tier speed is 0 for blocks it doesn't apply to. Floor at 1.0
+            // so we still produce a finite tick count via the slow-path divisor.
+            val woodSpeed = woodenTool.getDestroySpeed(state).coerceAtLeast(1f)
+            val canHarvestWithWood = woodenTool.isCorrectToolForDrops(state)
             val divisor = if (canHarvestWithWood) 30f else 100f
             val damagePerTick = woodSpeed / (hardness * divisor)
             if (damagePerTick <= 0f) return null

@@ -10,7 +10,9 @@ import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.BaseEntityBlock
@@ -51,6 +53,18 @@ class PlacerBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity =
         PlacerBlockEntity(pos, state)
+
+    /** Capture the placer's UUID so placements fire BlockEvent.EntityPlaceEvent with
+     *  that actor, letting claim mods and spawn protection resolve permissions correctly. */
+    override fun setPlacedBy(level: Level, pos: BlockPos, state: BlockState, placer: LivingEntity?, stack: ItemStack) {
+        super.setPlacedBy(level, pos, state, placer, stack)
+        if (level.isClientSide) return
+        val placerEntity = level.getBlockEntity(pos) as? PlacerBlockEntity ?: return
+        if (placerEntity.ownerUuid == null && placer is Player) {
+            placerEntity.ownerUuid = placer.uuid
+            placerEntity.setChanged()
+        }
+    }
 
     override fun useWithoutItem(
         state: BlockState,

@@ -116,7 +116,8 @@ class InventoryRepo {
                         count = syncEntry.count,
                         maxStackSize = syncEntry.maxStackSize,
                         hasData = syncEntry.hasData,
-                        isCraftable = syncEntry.craftable
+                        isCraftable = syncEntry.craftable,
+                        componentsPatch = syncEntry.componentsPatch,
                     ),
                     kind = syncEntry.kind
                 )

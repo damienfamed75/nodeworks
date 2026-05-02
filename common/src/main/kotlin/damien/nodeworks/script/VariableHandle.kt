@@ -25,7 +25,7 @@ object VariableHandle {
 
         // --- Universal methods ---
 
-        table.set("get", object : OneArgFunction() {
+        table.setGuarded("VariableHandle", "get", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 return when (entity.variableType) {
@@ -36,7 +36,7 @@ object VariableHandle {
             }
         })
 
-        table.set("set", object : TwoArgFunction() {
+        table.setGuarded("VariableHandle", "set", object : TwoArgFunction() {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 val strVal = when (entity.variableType) {
@@ -52,7 +52,7 @@ object VariableHandle {
             }
         })
 
-        table.set("cas", object : ThreeArgFunction() {
+        table.setGuarded("VariableHandle", "cas", object : ThreeArgFunction() {
             override fun call(self: LuaValue, expected: LuaValue, new: LuaValue): LuaValue {
                 val entity = getEntity()
                 val expStr = toLuaString(expected, entity.variableType)
@@ -61,7 +61,7 @@ object VariableHandle {
             }
         })
 
-        table.set("type", object : OneArgFunction() {
+        table.setGuarded("VariableHandle", "type", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 return LuaValue.valueOf(getEntity().variableType.name.lowercase())
             }
@@ -76,7 +76,7 @@ object VariableHandle {
 
         // --- Number methods ---
 
-        table.set("increment", object : TwoArgFunction() {
+        table.setGuarded("VariableHandle", "increment", object : TwoArgFunction() {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.NUMBER, "increment")
@@ -84,7 +84,7 @@ object VariableHandle {
             }
         })
 
-        table.set("decrement", object : TwoArgFunction() {
+        table.setGuarded("VariableHandle", "decrement", object : TwoArgFunction() {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.NUMBER, "decrement")
@@ -92,7 +92,7 @@ object VariableHandle {
             }
         })
 
-        table.set("min", object : TwoArgFunction() {
+        table.setGuarded("VariableHandle", "min", object : TwoArgFunction() {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.NUMBER, "min")
@@ -100,7 +100,7 @@ object VariableHandle {
             }
         })
 
-        table.set("max", object : TwoArgFunction() {
+        table.setGuarded("VariableHandle", "max", object : TwoArgFunction() {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.NUMBER, "max")
@@ -110,7 +110,7 @@ object VariableHandle {
 
         // --- String methods ---
 
-        table.set("append", object : TwoArgFunction() {
+        table.setGuarded("VariableHandle", "append", object : TwoArgFunction() {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.STRING, "append")
@@ -118,7 +118,7 @@ object VariableHandle {
             }
         })
 
-        table.set("length", object : OneArgFunction() {
+        table.setGuarded("VariableHandle", "length", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.STRING, "length")
@@ -126,7 +126,7 @@ object VariableHandle {
             }
         })
 
-        table.set("clear", object : OneArgFunction() {
+        table.setGuarded("VariableHandle", "clear", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.STRING, "clear")
@@ -137,7 +137,7 @@ object VariableHandle {
 
         // --- Bool methods ---
 
-        table.set("toggle", object : OneArgFunction() {
+        table.setGuarded("VariableHandle", "toggle", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.BOOL, "toggle")
@@ -145,7 +145,7 @@ object VariableHandle {
             }
         })
 
-        table.set("tryLock", object : OneArgFunction() {
+        table.setGuarded("VariableHandle", "tryLock", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.BOOL, "tryLock")
@@ -153,7 +153,7 @@ object VariableHandle {
             }
         })
 
-        table.set("unlock", object : OneArgFunction() {
+        table.setGuarded("VariableHandle", "unlock", object : OneArgFunction() {
             override fun call(self: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.BOOL, "unlock")

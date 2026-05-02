@@ -22,7 +22,10 @@ import net.minecraft.resources.ResourceKey
 import net.minecraft.server.level.ServerLevel
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
+import net.neoforged.fml.ModContainer
 import net.neoforged.fml.common.Mod
+import net.neoforged.fml.config.ModConfig
+import net.neoforged.fml.event.config.ModConfigEvent
 import net.neoforged.fml.loading.FMLEnvironment
 import net.neoforged.neoforge.common.NeoForge
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension
@@ -34,7 +37,7 @@ import net.neoforged.neoforge.registries.RegisterEvent
 import org.slf4j.LoggerFactory
 
 @Mod("nodeworks")
-class Nodeworks(modBus: IEventBus) {
+class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
     companion object {
         const val MOD_ID = "nodeworks"
@@ -49,6 +52,17 @@ class Nodeworks(modBus: IEventBus) {
         PlatformServices.menu = NeoForgeMenuService()
         PlatformServices.storage = NeoForgeStorageService()
         PlatformServices.modState = NeoForgeModStateService()
+        PlatformServices.fakePlayer = damien.nodeworks.platform.NeoForgeFakePlayerService()
+
+        // Register the server-scoped config. Per-world file at
+        // `serverconfig/nodeworks-server.toml` is auto-generated on first load
+        // with the in-code defaults. Edit + `/reload` (or restart) to apply.
+        container.registerConfig(ModConfig.Type.SERVER, damien.nodeworks.config.NodeworksServerConfig.SPEC)
+
+        // Push spec values into [ServerPolicy] on (re)load so in-flight engines pick
+        // up changes on their next tick into Lua. Both `Loading` and `Reloading` fire
+        // on the mod event bus; we listen to the parent type to catch either.
+        modBus.addListener(::onConfigEvent)
 
         // Register during NeoForge's register event (registries are unfrozen at that point)
         modBus.addListener(::onRegister)
@@ -389,6 +403,8 @@ class Nodeworks(modBus: IEventBus) {
                     "name" -> entity.networkName = payload.strValue
                     "retry" -> entity.handlerRetryLimit = payload.intValue
                     "chunkload" -> entity.setChunkLoadingEnabled(payload.intValue != 0)
+                    "laserenable" -> entity.laserEnabled = payload.intValue != 0
+                    "lasermode" -> entity.laserMode = payload.intValue
                 }
             }
         }
@@ -639,6 +655,12 @@ class Nodeworks(modBus: IEventBus) {
                 }
             }
         }
+
+        registrar.playToClient(ServerPolicySyncPayload.TYPE, ServerPolicySyncPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                damien.nodeworks.script.ClientServerPolicy.update(payload.enabledModules, payload.disabledMethods)
+            }
+        }
     }
 
     private fun onServerTick(event: ServerTickEvent.Post) {
@@ -663,6 +685,7 @@ class Nodeworks(modBus: IEventBus) {
 
     private fun onRegisterCommands(event: net.neoforged.neoforge.event.RegisterCommandsEvent) {
         damien.nodeworks.command.NwDebugCommand.register(event.dispatcher)
+        damien.nodeworks.command.NodeworksCommand.register(event.dispatcher)
     }
 
     private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {
@@ -673,6 +696,9 @@ class Nodeworks(modBus: IEventBus) {
         // Wipe chunk-load refcounts, each controller's setLevel on the next run will
         // re-claim, rebuilding the map from scratch against a fresh level.
         damien.nodeworks.network.ChunkForceLoadManager.clearAll()
+        // Drop per-network rate-limit budgets so a quit-and-rejoin doesn't carry
+        // stale tick counters into the new session.
+        damien.nodeworks.script.NetworkRateLimits.clearAll()
     }
 
     private fun onPlayerDisconnect(event: PlayerEvent.PlayerLoggedOutEvent) {
@@ -695,10 +721,63 @@ class Nodeworks(modBus: IEventBus) {
     // entries, so JEI + GuideME can't find the recipe even though gameplay
     // (which goes through the server) works fine.
     //
-    // Fires on every player join AND on `/reload`, so the client cache stays
-    // current across datapack reloads.
+    // Also pushes the script-sandbox policy snapshot ([ServerPolicySyncPayload])
+    // so the client's autocomplete can hide methods the server has disabled.
+    //
+    // Fires on every player join AND on `/reload`, so both the recipe cache
+    // and the policy mirror stay current across datapack reloads.
     private fun onDatapackSync(event: net.neoforged.neoforge.event.OnDatapackSyncEvent) {
         event.sendRecipes(damien.nodeworks.registry.ModRecipeTypes.SOUL_SAND_INFUSION)
+        val policy = damien.nodeworks.script.ServerPolicy.current
+        val payload = ServerPolicySyncPayload(policy.enabledModules, policy.disabledMethods)
+        // event.player is non-null on join, null on /reload (broadcast). Iterate
+        // getRelevantPlayers() which covers both cases without branching. The
+        // event API returns a Stream<ServerPlayer>, not Iterable.
+        event.relevantPlayers.forEach { p ->
+            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p, payload)
+        }
+    }
+
+    /** Snapshot the server config into [damien.nodeworks.script.ServerPolicy] whenever
+     *  the file is loaded or reloaded. Filters by spec identity so other mods'
+     *  config events on the same bus don't trigger a snapshot of the wrong spec.
+     *
+     *  Skips [ModConfigEvent.Unloading] (fires on server stop) because the config
+     *  values are already invalidated by then and `.get()` throws. We don't need
+     *  to re-snapshot on the way down anyway, the in-memory [ServerPolicy] gets
+     *  reset by the next server start before any script runs. */
+    private fun onConfigEvent(event: ModConfigEvent) {
+        if (event is ModConfigEvent.Unloading) return
+        if (event.config.spec !== damien.nodeworks.config.NodeworksServerConfig.SPEC) return
+        val newSettings = damien.nodeworks.config.NodeworksServerConfig.snapshot()
+        damien.nodeworks.script.ServerPolicy.update(newSettings)
+        // Push the new sandbox snapshot to any players currently online. On
+        // initial Loading the server isn't up yet (currentServer is null) and
+        // OnDatapackSyncEvent will deliver the snapshot when each player joins;
+        // on Reloading we broadcast so the editor's autocomplete refreshes
+        // without needing a re-log.
+        net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer()?.let { server ->
+            val payload = ServerPolicySyncPayload(newSettings.enabledModules, newSettings.disabledMethods)
+            for (p in server.playerList.players) {
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p, payload)
+            }
+        }
+        logger.info(
+            "Nodeworks server config loaded: topLevelSoftAbort={}ms callbackSoftAbort={}ms localTickBudget={}ms globalTickBudget={}ms instructionsPerCheck={} maxItemMoveCalls={} maxPlacements={} maxRedstoneWrites={} maxVariableWrites={} maxPrints={} maxErrorLogs={} maxItemsMovedPerTick={} maxCallbacksPerKind={}",
+            newSettings.topLevelSoftAbortMs,
+            newSettings.callbackSoftAbortMs,
+            newSettings.localTickBudgetMs,
+            newSettings.globalTickBudgetMs,
+            newSettings.instructionsPerWallClockCheck,
+            newSettings.maxItemMoveCallsPerTick,
+            newSettings.maxPlacementsPerTick,
+            newSettings.maxRedstoneWritesPerTick,
+            newSettings.maxVariableWritesPerTick,
+            newSettings.maxPrintsPerTick,
+            newSettings.maxErrorLogsPerTick,
+            newSettings.maxItemsMovedPerTickPerNetwork,
+            newSettings.maxCallbacksPerKind,
+        )
     }
 
     /**

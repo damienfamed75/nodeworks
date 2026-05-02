@@ -59,7 +59,10 @@ class NetworkControllerScreen(
 
     // Property definitions
     private data class Property(val label: String, val type: PropertyType)
-    private enum class PropertyType { NAME, COLOR, REDSTONE, GLOW_STYLE, HANDLER_RETRY, CHUNK_LOADING }
+    private enum class PropertyType {
+        NAME, COLOR, REDSTONE, GLOW_STYLE, HANDLER_RETRY, CHUNK_LOADING,
+        LASER_ENABLE, LASER_MODE,
+    }
 
     private val properties = listOf(
         Property("Name", PropertyType.NAME),
@@ -68,6 +71,8 @@ class NetworkControllerScreen(
         Property("Node Glow", PropertyType.GLOW_STYLE),
         Property("Retries", PropertyType.HANDLER_RETRY),
         Property("Chunk Loading", PropertyType.CHUNK_LOADING),
+        Property("Show Lasers", PropertyType.LASER_ENABLE),
+        Property("Fancy Lasers", PropertyType.LASER_MODE),
     )
 
     private lateinit var nameField: EditBox
@@ -232,6 +237,14 @@ class NetworkControllerScreen(
                     renderChunkLoadingControl(graphics, controlX, controlY)
                 }
 
+                PropertyType.LASER_ENABLE -> {
+                    renderLaserEnableControl(graphics, controlX, controlY)
+                }
+
+                PropertyType.LASER_MODE -> {
+                    renderLaserModeControl(graphics, controlX, controlY)
+                }
+
                 else -> {}
             }
         }
@@ -335,6 +348,21 @@ class NetworkControllerScreen(
 
     private fun renderChunkLoadingControl(graphics: GuiGraphicsExtractor, bx: Int, by: Int) {
         val slice = if (menu.chunkLoading) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
+        slice.draw(graphics, bx + CHUNK_LOADING_OFFSET_X, by, CHUNK_LOADING_BTN_W, CHUNK_LOADING_BTN_H)
+    }
+
+    private fun renderLaserEnableControl(graphics: GuiGraphicsExtractor, bx: Int, by: Int) {
+        // Mirrors the chunk-loading toggle, on/off binary visual.
+        val slice = if (menu.laserEnabled) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
+        slice.draw(graphics, bx + CHUNK_LOADING_OFFSET_X, by, CHUNK_LOADING_BTN_W, CHUNK_LOADING_BTN_H)
+    }
+
+    private fun renderLaserModeControl(graphics: GuiGraphicsExtractor, bx: Int, by: Int) {
+        // Plain on/off toggle, the row label "Fancy Lasers" tells the player
+        // what the on state means. Active = Fancy (the current beam style),
+        // inactive = Fast (single thin colored line).
+        val isFancy = menu.laserMode == damien.nodeworks.network.NetworkSettingsRegistry.LASER_MODE_FANCY
+        val slice = if (isFancy) NineSlice.TOGGLE_ACTIVE else NineSlice.TOGGLE_INACTIVE
         slice.draw(graphics, bx + CHUNK_LOADING_OFFSET_X, by, CHUNK_LOADING_BTN_W, CHUNK_LOADING_BTN_H)
     }
 
@@ -524,6 +552,28 @@ class NetworkControllerScreen(
                     }
                 }
 
+                PropertyType.LASER_ENABLE -> {
+                    val btnX = controlX + CHUNK_LOADING_OFFSET_X
+                    if (mx >= btnX && mx < btnX + CHUNK_LOADING_BTN_W
+                        && my >= controlY && my < controlY + CHUNK_LOADING_BTN_H) {
+                        sendLaserEnableUpdate(!menu.laserEnabled)
+                        return true
+                    }
+                }
+
+                PropertyType.LASER_MODE -> {
+                    val btnX = controlX + CHUNK_LOADING_OFFSET_X
+                    if (mx >= btnX && mx < btnX + CHUNK_LOADING_BTN_W
+                        && my >= controlY && my < controlY + CHUNK_LOADING_BTN_H) {
+                        val next = if (menu.laserMode == damien.nodeworks.network.NetworkSettingsRegistry.LASER_MODE_FANCY)
+                            damien.nodeworks.network.NetworkSettingsRegistry.LASER_MODE_FAST
+                        else
+                            damien.nodeworks.network.NetworkSettingsRegistry.LASER_MODE_FANCY
+                        sendLaserModeUpdate(next)
+                        return true
+                    }
+                }
+
                 else -> {}
             }
         }
@@ -605,6 +655,22 @@ class NetworkControllerScreen(
         PlatformServices.clientNetworking.sendToServer(
             damien.nodeworks.network.ControllerSettingsPayload(
                 menu.controllerPos, "chunkload", if (enabled) 1 else 0, ""
+            )
+        )
+    }
+
+    private fun sendLaserEnableUpdate(enabled: Boolean) {
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.ControllerSettingsPayload(
+                menu.controllerPos, "laserenable", if (enabled) 1 else 0, ""
+            )
+        )
+    }
+
+    private fun sendLaserModeUpdate(mode: Int) {
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.ControllerSettingsPayload(
+                menu.controllerPos, "lasermode", mode, ""
             )
         )
     }
