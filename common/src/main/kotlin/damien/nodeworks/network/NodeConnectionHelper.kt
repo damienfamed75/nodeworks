@@ -461,6 +461,13 @@ object NodeConnectionHelper {
 
             if (!flipped && !inconsistent) continue
 
+            // Auto-splice: LOS just broke (was clear, now blocked) and the obstruction
+            // is itself a fresh splicer. Rewire A↔B → A↔C↔B instead of marking
+            // the pair LOS-blocked.
+            if (!wasBlocked && !hasLos && trySplice(level, nodePos, targetPos, changedPos)) {
+                continue
+            }
+
             setPairBlocked(level, nodePos, targetPos, !hasLos)
             propagateNetworkId(level, nodePos)
             // If LOS just broke, the opposite endpoint may have just lost its controller, run
@@ -468,6 +475,38 @@ object NodeConnectionHelper {
             // (If `inconsistent` drove us here with clear LOS, one propagate already covered both.)
             if (!hasLos) propagateNetworkId(level, targetPos)
         }
+    }
+
+    /** Rewire A↔B into A↔C↔B when [splicerPos] holds a freshly placed splicer that
+     *  blocks the line. Both new segments must be in range and have clear LOS, the
+     *  splicer must opt in via [Connectable.autoSpliceOnPlace] and have no prior
+     *  connections (so we don't hijack a Connectable placed via piston / /setblock
+     *  with restored data). Mutates connections atomically and propagates once,
+     *  going through [connect] / [disconnect] would interleave three propagates and
+     *  cover the splicer pos in [propagatedThisTickByDim] before the final graph
+     *  was settled. Returns true if the rewire happened. */
+    private fun trySplice(level: ServerLevel, posA: BlockPos, posB: BlockPos, splicerPos: BlockPos): Boolean {
+        val splicer = getConnectable(level, splicerPos) ?: return false
+        if (!splicer.autoSpliceOnPlace()) return false
+        if (splicer.getConnections().isNotEmpty()) return false
+        if (!isWithinRange(posA, splicerPos)) return false
+        if (!isWithinRange(splicerPos, posB)) return false
+        if (!checkLineOfSight(level, posA, splicerPos)) return false
+        if (!checkLineOfSight(level, splicerPos, posB)) return false
+        val entityA = getConnectable(level, posA) ?: return false
+        val entityB = getConnectable(level, posB) ?: return false
+
+        entityA.addConnection(splicerPos)
+        splicer.addConnection(posA)
+        entityB.addConnection(splicerPos)
+        splicer.addConnection(posB)
+        entityA.removeConnection(posB)
+        entityB.removeConnection(posA)
+        blockedPairs(level).remove(pairKey(posA, posB))
+
+        // Single propagate from the splicer covers everyone now wired through it.
+        propagateNetworkId(level, splicerPos)
+        return true
     }
 
     private fun isInsideConnectionBounds(a: BlockPos, b: BlockPos, point: BlockPos): Boolean {

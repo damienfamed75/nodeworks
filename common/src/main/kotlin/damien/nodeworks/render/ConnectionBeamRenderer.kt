@@ -60,28 +60,13 @@ object ConnectionBeamRenderer {
         val mode: Int = NetworkSettingsRegistry.LASER_MODE_FANCY,
     )
 
-    /** Canonical keys (min(a,b), max(a,b) hash) for beam pairs already drawn in the current
-     *  render frame. First BER to submit a given pair wins the draw, every later BER that
-     *  extracts the *same* pair skips it. Cleared at the top of each frame by [startFrame].
-     *
-     *  Why this over the old "extract only from the lex-lower end" rule: lex-dedup meant a
-     *  single forgotten BER wiring (as happened with Monitor) or an unloaded lower endpoint
-     *  would silently drop a beam. Now both endpoints always extract, so as long as *either*
-     *  BER runs, the beam renders, no silent failures. */
-    private val drawnThisFrame = HashSet<Long>()
-
-    /** Called by the platform layer once per render frame, before any BER submits. Neoforge
-     *  wires this through `RenderFrameEvent.Pre`, see `NeoForgeClientSetup`. */
-    fun startFrame() {
-        drawnThisFrame.clear()
-    }
-
     /**
      * Collect the beams this [Connectable] should render this frame. Called from each
-     * BER's `extractRenderState`. Emits every outgoing connection, dedup is deferred
-     * to [submit] via the frame-scoped [drawnThisFrame] set, so missing a BER wiring or
-     * having one endpoint in an unloaded chunk never drops a beam as long as the other
-     * endpoint renders.
+     * BER's `extractRenderState`. Each pair is emitted from the lex-lower endpoint
+     * only, so a connection appears exactly once across the pair's two BERs without
+     * needing cross-BER dedup state. If the lower endpoint's chunk is unloaded its
+     * BER won't run, but the target block isn't visible then either, so dropping
+     * the beam matches what the player sees.
      */
     fun extract(connectable: Connectable): List<Beam> {
         val be = connectable as? net.minecraft.world.level.block.entity.BlockEntity ?: return emptyList()
@@ -109,6 +94,8 @@ object ConnectionBeamRenderer {
 
         val beams = mutableListOf<Beam>()
         for (targetPos in connectable.getConnections()) {
+            // Each pair handled exactly once, by the lex-lower endpoint.
+            if (!isLessThan(myPos, targetPos)) continue
             val targetBe = level.getBlockEntity(targetPos) as? Connectable ?: continue
 
             val pairColor = when {
@@ -158,20 +145,6 @@ object ConnectionBeamRenderer {
     ) {
         if (beams.isEmpty()) return
 
-        // Claim each beam in the frame-scoped dedup set. A beam claimed by an earlier BER
-        // this frame is filtered out here, only the first submitter draws it. Using the
-        // canonical (sorted) pair key means it doesn't matter which end extracted first.
-        val active = ArrayList<Beam>(beams.size)
-        for (beam in beams) {
-            val tx = blockWorldPos.x + beam.toDx.toInt()
-            val ty = blockWorldPos.y + beam.toDy.toInt()
-            val tz = blockWorldPos.z + beam.toDz.toInt()
-            val targetPos = BlockPos(tx, ty, tz)
-            val key = connectionKey(blockWorldPos, targetPos)
-            if (drawnThisFrame.add(key)) active.add(beam)
-        }
-        if (active.isEmpty()) return
-
         val time = (System.currentTimeMillis() % 100_000) / 1000f
         val pulse = (sin((time * 2.0).toDouble()).toFloat() * 0.3f + 0.7f)
         val sizePulse = (sin((time * 2.0).toDouble()).toFloat() * 0.25f + 1.0f) // 0.75×–1.25×
@@ -192,7 +165,7 @@ object ConnectionBeamRenderer {
         // Split by render mode in one pass so each mode submits at most one
         // batch per render type. Avoids paying the prism + glow cost for
         // fast-mode networks and skips the fast pass entirely for fancy-mode.
-        val (fastBeams, fancyBeams) = active.partition { it.mode == NetworkSettingsRegistry.LASER_MODE_FAST }
+        val (fastBeams, fancyBeams) = beams.partition { it.mode == NetworkSettingsRegistry.LASER_MODE_FAST }
 
         if (fancyBeams.isNotEmpty()) {
             // Prism core (white, rotating), only for unblocked beams.
@@ -267,12 +240,6 @@ object ConnectionBeamRenderer {
                 }
             }
         }
-    }
-
-    /** Canonical key that hashes (min(a,b), max(a,b)) so A↔B and B↔A collide. */
-    private fun connectionKey(a: BlockPos, b: BlockPos): Long {
-        val (lo, hi) = if (isLessThan(a, b)) a to b else b to a
-        return lo.asLong() xor (hi.asLong() * 31)
     }
 
     /** AABB encompassing this Connectable's block plus every block it has a connection to.

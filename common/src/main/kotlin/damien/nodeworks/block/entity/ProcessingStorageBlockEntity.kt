@@ -224,10 +224,6 @@ class ProcessingStorageBlockEntity(
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
-        val sideLabel = if (level?.isClientSide == true) "CLIENT" else "SERVER"
-        org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
-            "ProcessingStorage.loadAdditional [{}] pos={} networkId={}", sideLabel, worldPosition, networkId
-        )
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
         connections.clear()
         connections.addAll(input.getBlockPosList("connections"))

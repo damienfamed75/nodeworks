@@ -336,6 +336,11 @@ class NodeBlockEntity(
      *  invisible to the player. */
     override fun usesAdjacency(): Boolean = false
 
+    /** Nodes auto-splice into existing lasers when placed on the line. Lets a
+     *  player extend a network by dropping a Node onto an active laser without
+     *  having to manually disconnect and reconnect. */
+    override fun autoSpliceOnPlace(): Boolean = true
+
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level
