@@ -22,9 +22,9 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         builder: java.util.function.Consumer<Component>,
         tooltipFlag: net.minecraft.world.item.TooltipFlag
     ) {
-        builder.accept(Component.literal("Connects Nodes to devices").withStyle(net.minecraft.ChatFormatting.GRAY))
+        builder.accept(Component.literal("Connects Nodes and devices").withStyle(net.minecraft.ChatFormatting.GRAY))
         builder.accept(
-            Component.literal("Shift + right-click: select endpoint").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)
+            Component.literal("Shift + right-click: select starting node or device").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)
         )
         builder.accept(
             Component.literal("Right-click: connect to selected").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)
