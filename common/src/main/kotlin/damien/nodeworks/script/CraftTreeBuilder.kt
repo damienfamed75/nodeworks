@@ -279,7 +279,9 @@ object CraftTreeBuilder {
         for (slot in 0 until 9) {
             val originalId = concrete[slot]
             if (originalId.isEmpty()) continue
-            val ingredientIdx = slotsToIngredient.getInt(slot)
+            // slotsToIngredientIndex covers the recipe's bounding box, not the full
+            // 3×3, so slots past its size carry no ingredient (treat as -1).
+            val ingredientIdx = if (slot < slotsToIngredient.size) slotsToIngredient.getInt(slot) else -1
             if (ingredientIdx < 0) continue
             val candidates = candidatesPerIngredient.getOrNull(ingredientIdx) ?: continue
 

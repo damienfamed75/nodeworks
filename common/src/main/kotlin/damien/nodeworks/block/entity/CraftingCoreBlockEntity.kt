@@ -180,13 +180,29 @@ class CraftingCoreBlockEntity(
 
     /** The reason the last craft plan failed (empty if none or if the last craft succeeded).
      *  Surfaced in the CPU GUI so players can debug without tailing the server log. Cleared
-     *  on the next successful plan completion or when a new plan is submitted. */
+     *  on the next successful plan completion or when a new plan is submitted. The setter
+     *  sanitizes raw exception traces so the GUI shows a single, readable line instead of
+     *  Lua tracebacks or Java exception class prefixes. */
     var lastFailureReason: String = ""
         set(value) {
-            field = value.take(256)
+            field = sanitizeFailureReason(value).take(256)
             setChanged()
             level?.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_ALL)
         }
+
+    private fun sanitizeFailureReason(raw: String): String {
+        if (raw.isEmpty()) return raw
+        // Drop the LuaJ traceback suffix (already stripped at most call sites, belt-
+        // and-braces here in case a path missed it).
+        val noTraceback = raw.substringBefore("\nstack traceback:")
+        // First non-blank line only, exception messages occasionally span multiple
+        // lines and the GUI's single-line label can't render those.
+        val firstLine = noTraceback.lineSequence().firstOrNull { it.isNotBlank() } ?: noTraceback
+        // Strip Java/Kotlin/LuaJ exception class prefixes like
+        // "java.lang.IndexOutOfBoundsException: " so the player sees the message only.
+        val prefix = Regex("""\b(?:java|kotlin|org\.luaj)\.[\w.$]+(?:Exception|Error)?:\s*""")
+        return prefix.replace(firstLine, "").trim()
+    }
 
     /** Incremented on each plan boundary (cancel, success, failure) so any still-active
      *  resume polls on the global ResumeScheduler become stale and route their next pulled
