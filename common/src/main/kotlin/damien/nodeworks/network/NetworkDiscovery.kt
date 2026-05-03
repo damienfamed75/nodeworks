@@ -26,8 +26,9 @@ object NetworkDiscovery {
      *  via adjacency, would otherwise bounce [discoverNetwork] back and forth via
      *  [BroadcastAntennaBlockEntity.getProviderTerminalPositions] until the stack
      *  overflows. Skipping any antenna already mid-walk is safe, the in-flight
-     *  outer walk already covers that network. */
-    private val activeProviderWalks: ThreadLocal<MutableSet<BlockPos>> =
+     *  outer walk already covers that network. Keyed on (dimension, pos) so two
+     *  cross-dim antennas at the same coordinates don't collide. */
+    private val activeProviderWalks: ThreadLocal<MutableSet<Pair<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, BlockPos>>> =
         ThreadLocal.withInitial { mutableSetOf() }
 
     fun discoverNetwork(level: ServerLevel, startPos: BlockPos): NetworkSnapshot {
@@ -76,26 +77,28 @@ object NetworkDiscovery {
                     }
                 }
                 is ReceiverAntennaBlockEntity -> {
-                    val serverLevel = level
-                    val broadcast = connectable.getBroadcastAntenna(serverLevel)
-                    val activeWalks = activeProviderWalks.get()
-                    if (broadcast != null && activeWalks.add(broadcast.blockPos)) {
-                        try {
-                            val remoteApis = broadcast.getAvailableApis()
-                            if (remoteApis.isNotEmpty()) {
-                                val remoteTerminals = broadcast.getProviderTerminalPositions()
-                                val broadcastLevel = broadcast.level as? ServerLevel
-                                processingApis.add(
-                                    ProcessingApiSnapshot(
-                                        broadcast.blockPos,
-                                        remoteApis,
-                                        remoteTerminals,
-                                        broadcastLevel?.dimension()
+                    val broadcast = connectable.getBroadcastAntenna(level)
+                    val broadcastLevel = broadcast?.level as? ServerLevel
+                    if (broadcast != null && broadcastLevel != null) {
+                        val activeWalks = activeProviderWalks.get()
+                        val walkKey = broadcastLevel.dimension() to broadcast.blockPos
+                        if (activeWalks.add(walkKey)) {
+                            try {
+                                val remoteApis = broadcast.getAvailableApis()
+                                if (remoteApis.isNotEmpty()) {
+                                    val remoteTerminals = broadcast.getProviderTerminalPositions()
+                                    processingApis.add(
+                                        ProcessingApiSnapshot(
+                                            broadcast.blockPos,
+                                            remoteApis,
+                                            remoteTerminals,
+                                            broadcastLevel.dimension()
+                                        )
                                     )
-                                )
+                                }
+                            } finally {
+                                activeWalks.remove(walkKey)
                             }
-                        } finally {
-                            activeWalks.remove(broadcast.blockPos)
                         }
                     }
                 }
