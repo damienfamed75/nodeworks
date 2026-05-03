@@ -51,6 +51,7 @@ object NodeConnectionHelper {
         blockedDataCache.clear()
         propagatedThisTickByDim.clear()
         pendingRevalidateByDim.clear()
+        losThisTickByDim.clear()
     }
 
     fun pairKey(a: BlockPos, b: BlockPos): Long {
@@ -92,9 +93,26 @@ object NodeConnectionHelper {
             java.util.Collections.newSetFromMap(ConcurrentHashMap())
         }
 
-    /** Reset per-tick propagate dedup. Call once per server tick (Post). */
+    /** Per-tick LOS raycast cache. Bursts of block changes against the same
+     *  edges (quarry beside lasers, farm clearing) collapse to one raycast. */
+    private val losThisTickByDim = ConcurrentHashMap<ResourceKey<Level>, MutableMap<Long, Boolean>>()
+
+    private fun losThisTick(level: ServerLevel): MutableMap<Long, Boolean> =
+        losThisTickByDim.computeIfAbsent(level.dimension()) { ConcurrentHashMap() }
+
+    private fun checkLineOfSightCached(level: ServerLevel, posA: BlockPos, posB: BlockPos): Boolean {
+        val cache = losThisTick(level)
+        val key = pairKey(posA, posB)
+        cache[key]?.let { return it }
+        val result = checkLineOfSight(level, posA, posB)
+        cache[key] = result
+        return result
+    }
+
+    /** Reset per-tick propagate dedup + LOS cache. Call once per server tick (Post). */
     fun clearTickDedup() {
         propagatedThisTickByDim.clear()
+        losThisTickByDim.clear()
     }
 
     /**
@@ -115,6 +133,10 @@ object NodeConnectionHelper {
             .add(pos.asLong())
     }
 
+    /** Spread large revalidation bursts (player teleport, render-distance jump)
+     *  across ticks so one chunk-load wave can't stall a single tick. */
+    private const val MAX_REVALIDATIONS_PER_TICK = 64
+
     fun drainPendingRevalidations(server: net.minecraft.server.MinecraftServer) {
         for (level in server.allLevels) {
             val pending = pendingRevalidateByDim[level.dimension()] ?: continue
@@ -123,11 +145,17 @@ object NodeConnectionHelper {
             // accumulate into the next-tick batch rather than mutate the set we're iterating.
             val snapshot = pending.toLongArray()
             pending.clear()
-            for (packed in snapshot) {
+            var processed = 0
+            for ((index, packed) in snapshot.withIndex()) {
+                if (processed >= MAX_REVALIDATIONS_PER_TICK) {
+                    for (i in index until snapshot.size) pending.add(snapshot[i])
+                    break
+                }
                 val pos = BlockPos.of(packed)
                 if (!level.isLoaded(pos)) continue
                 val entity = getConnectable(level, pos) ?: continue
                 revalidateOnLoad(level, entity)
+                processed++
             }
         }
     }
@@ -374,7 +402,7 @@ object NodeConnectionHelper {
             if (!isLessThan(pos, targetPos)) continue  // canonical side handles each pair once
 
             val wasBlocked = isPairBlocked(level, pos, targetPos)
-            val hasLos = checkLineOfSight(level, pos, targetPos)
+            val hasLos = checkLineOfSightCached(level, pos, targetPos)
             if (hasLos == wasBlocked) {
                 setPairBlocked(level, pos, targetPos, !hasLos)
             }
@@ -452,7 +480,7 @@ object NodeConnectionHelper {
             // Primary transition: cached blocked flag disagrees with live LOS, either a new
             // obstruction was placed or an existing one was removed.
             val wasBlocked = isPairBlocked(level, nodePos, targetPos)
-            val hasLos = checkLineOfSight(level, nodePos, targetPos)
+            val hasLos = checkLineOfSightCached(level, nodePos, targetPos)
             val flipped = hasLos == wasBlocked
 
             // Stale-cache heal: on server load the blocked-set starts empty, so a restored-LOS
@@ -493,8 +521,8 @@ object NodeConnectionHelper {
         if (splicer.getConnections().isNotEmpty()) return false
         if (!isWithinRange(posA, splicerPos)) return false
         if (!isWithinRange(splicerPos, posB)) return false
-        if (!checkLineOfSight(level, posA, splicerPos)) return false
-        if (!checkLineOfSight(level, splicerPos, posB)) return false
+        if (!checkLineOfSightCached(level, posA, splicerPos)) return false
+        if (!checkLineOfSightCached(level, splicerPos, posB)) return false
         val entityA = getConnectable(level, posA) ?: return false
         val entityB = getConnectable(level, posB) ?: return false
 

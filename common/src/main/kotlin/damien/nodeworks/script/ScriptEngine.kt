@@ -12,6 +12,14 @@ import org.luaj.vm2.lib.*
 import org.luaj.vm2.lib.jse.JseBaseLib
 import org.luaj.vm2.lib.jse.JseMathLib
 
+/** Hard cap on the number of distinct resources [network:findEach] will return.
+ *  Sized for legitimate scripts (typical modded networks have 1-2k distinct item
+ *  types in storage) while still catching the foot-gun case where a player calls
+ *  `network:findEach("*")` on a million-item network and accidentally builds a
+ *  Lua table large enough to stall the server. The error message points to
+ *  [network:count] / [network:find] as the right alternative for aggregate work. */
+private const val MAX_FINDEACH_RESULTS = 10_000
+
 /**
  * Manages a sandboxed Lua VM for one terminal. Provides the Nodeworks API
  * (card, scheduler, print) and gates each Lua entry point with a wall-clock
@@ -1495,6 +1503,13 @@ class ScriptEngine(
                 var idx = 1
                 if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.ITEM) {
                     val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot, filter)
+                    if (allItems.size > MAX_FINDEACH_RESULTS) {
+                        throw LuaError(
+                            "network:findEach('$filter') matched ${allItems.size} distinct items, " +
+                            "above the $MAX_FINDEACH_RESULTS cap. Narrow the filter (e.g. 'minecraft:*') " +
+                            "or switch to network:find(filter):count() for an aggregate."
+                        )
+                    }
                     for (pair in allItems) {
                         val (info, _) = pair
                         val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
@@ -1514,6 +1529,12 @@ class ScriptEngine(
                     // Single-pass aggregation, avoids O(N*M) rescans from calling countFluid
                     // per discovered fluid id.
                     val allFluids = NetworkStorageHelper.findAllFluidInfoAcrossNetwork(level, snapshot, filter)
+                    if (idx - 1 + allFluids.size > MAX_FINDEACH_RESULTS) {
+                        throw LuaError(
+                            "network:findEach('$filter') matched ${idx - 1 + allFluids.size} distinct resources, " +
+                            "above the $MAX_FINDEACH_RESULTS cap. Narrow the filter or switch to network:count(filter)."
+                        )
+                    }
                     for ((info, _) in allFluids) {
                         val fluidSource: () -> damien.nodeworks.platform.FluidStorageHandle? = {
                             NetworkStorageHelper.getStorageCards(snapshot).firstNotNullOfOrNull { c ->

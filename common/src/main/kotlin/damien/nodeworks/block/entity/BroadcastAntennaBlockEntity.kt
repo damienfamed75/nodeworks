@@ -127,19 +127,22 @@ class BroadcastAntennaBlockEntity(
     }
 
     /**
-     * Discover the provider network's terminal positions.
-     * Finds an adjacent Processing Storage block that's Connectable, then runs network discovery from it.
+     * Discover the provider network's terminal positions by walking out from an
+     * adjacent Processing Storage. The storage may be on its network through
+     * face-adjacency rather than its own laser connection (still valid since
+     * the adjacency rule landed), so we don't gate on getConnections, an empty-
+     * connections storage that's adjacency-attached still has a real network.
+     * Tries every adjacent storage and returns the first whose discovery yields
+     * terminals, so a lone unattached storage doesn't shadow a real one.
      */
     fun getProviderTerminalPositions(): List<BlockPos> {
         val lvl = level as? ServerLevel ?: return emptyList()
         for (dir in Direction.entries) {
             val neighbor = worldPosition.relative(dir)
             if (!lvl.isLoaded(neighbor)) continue
-            val entity = lvl.getBlockEntity(neighbor)
-            if (entity is ProcessingStorageBlockEntity && entity.getConnections().isNotEmpty()) {
-                val snapshot = NetworkDiscovery.discoverNetwork(lvl, neighbor)
-                return snapshot.terminalPositions
-            }
+            val entity = lvl.getBlockEntity(neighbor) as? ProcessingStorageBlockEntity ?: continue
+            val snapshot = NetworkDiscovery.discoverNetwork(lvl, neighbor)
+            if (snapshot.terminalPositions.isNotEmpty()) return snapshot.terminalPositions
         }
         return emptyList()
     }
