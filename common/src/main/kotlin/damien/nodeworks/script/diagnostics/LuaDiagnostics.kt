@@ -1567,19 +1567,33 @@ object LuaDiagnostics {
         return out
     }
 
-    private val FUNCTION_OR_END_KW: Regex = Regex("""\b(function|end)\b""")
+    private val BLOCK_BOUNDARY_KW: Regex =
+        Regex("""\b(function|if|for|while|repeat|do|end|until)\b""")
 
-    /** Walk forward from [from] balancing `function`/`end` keywords starting at
-     *  depth=1, return the offset of the `end` that returns depth to 0, or null
-     *  when the body never closes (file ends mid-handler, common while typing). */
+    /** Walk forward from [from] balancing every Lua block opener against its
+     *  closing `end` / `until`. Tracking only `function`/`end` would treat
+     *  the `end` of an `if`, `for`, `while`, or `do` block inside the handler
+     *  body as the handler's own `end`, truncating the body span and breaking
+     *  every diagnostic that scans it (e.g. handler-no-pull would fire even
+     *  when `job:pull` is called past a guard clause).
+     *
+     *  `do` matters because vanilla `for` and `while` use `for … do … end`
+     *  with `do` as a separator, which would push without a matching close.
+     *  We only push for standalone `do` blocks, the loop-introducing `do`s
+     *  follow a `for` or `while` opener that already pushed the scope, so
+     *  we skip them in that case. */
     private fun findMatchingHandlerEnd(text: String, from: Int): Int? {
         var depth = 1
-        for (m in FUNCTION_OR_END_KW.findAll(text, startIndex = from)) {
-            if (m.value == "function") {
-                depth++
-            } else {
-                depth--
-                if (depth == 0) return m.range.first
+        var pendingLoopDo = false
+        for (m in BLOCK_BOUNDARY_KW.findAll(text, startIndex = from)) {
+            when (m.value) {
+                "function", "if", "repeat" -> depth++
+                "for", "while" -> { depth++; pendingLoopDo = true }
+                "do" -> if (pendingLoopDo) pendingLoopDo = false else depth++
+                "end", "until" -> {
+                    depth--
+                    if (depth == 0) return m.range.first
+                }
             }
         }
         return null

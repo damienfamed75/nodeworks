@@ -422,8 +422,6 @@ class AutocompletePopup(
             Regex("""\bfunction\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
 
         // Snippet-balance / cursor-position helpers.
-        private val FUNCTION_OPEN_KEYWORD: Regex = Regex("""\bfunction\s*\w*\s*\(""")
-        private val END_KEYWORD: Regex = Regex("""\bend\b""")
         private val HANDLE_LOOKBACK: Regex = Regex("""network:handle\s*\(\s*"([^"]+)"\s*,\s*$""")
         private val HANDLE_FN_PARTIAL: Regex =
             Regex("""network:handle\(\s*"([^"]+)"\s*,\s*(\w*)$""")
@@ -2913,29 +2911,33 @@ class AutocompletePopup(
     private fun findEnclosingHandlerApi(
         beforeCursor: String
     ): damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? {
-        data class Event(val pos: Int, val isFuncOpen: Boolean)
-
-        val events = mutableListOf<Event>()
-        val funcPattern = FUNCTION_OPEN_KEYWORD
-        val endPattern = END_KEYWORD
-        for (m in funcPattern.findAll(beforeCursor)) events.add(Event(m.range.first, true))
-        for (m in endPattern.findAll(beforeCursor)) events.add(Event(m.range.first, false))
-        events.sortBy { it.pos }
-
+        // Track every Lua block opener so its `end` / `until` pops the right scope.
+        // Tracking only `function` and `end` would let an `if … end` or `for … end`
+        // inside the handler body pop the function scope, dropping the cursor out
+        // of the handler for autocomplete purposes (the InputItems suggestions
+        // disappear after any conditional in the body).
+        val tokenPattern = Regex(
+            """\bfunction\s*\w*\s*\(|\bif\b|\bfor\b|\bwhile\b|\brepeat\b|\bend\b|\buntil\b"""
+        )
         val scopeStack = mutableListOf<String?>()
         val handleLookback = HANDLE_LOOKBACK
-        for (event in events) {
-            if (event.isFuncOpen) {
-                // Lookback must comfortably fit a full canonical recipe id (which can run
-                // hundreds of chars for recipes with many slots, 9 inputs + 3 outputs
-                // with modded namespaces can hit ~600 chars). 4096 covers any realistic
-                // recipe and keeps regex cost bounded.
-                val lookbackStart = (event.pos - 4096).coerceAtLeast(0)
-                val lookback = beforeCursor.substring(lookbackStart, event.pos)
-                val match = handleLookback.find(lookback)
-                scopeStack.add(match?.groupValues?.get(1))
-            } else {
-                if (scopeStack.isNotEmpty()) scopeStack.removeLast()
+        for (match in tokenPattern.findAll(beforeCursor)) {
+            val text = match.value
+            when {
+                text.startsWith("function") -> {
+                    // Lookback must comfortably fit a full canonical recipe id (which can run
+                    // hundreds of chars for recipes with many slots, 9 inputs + 3 outputs
+                    // with modded namespaces can hit ~600 chars). 4096 covers any realistic
+                    // recipe and keeps regex cost bounded.
+                    val lookbackStart = (match.range.first - 4096).coerceAtLeast(0)
+                    val lookback = beforeCursor.substring(lookbackStart, match.range.first)
+                    val handleMatch = handleLookback.find(lookback)
+                    scopeStack.add(handleMatch?.groupValues?.get(1))
+                }
+                text == "if" || text == "for" || text == "while" || text == "repeat" ->
+                    scopeStack.add(null)
+                text == "end" || text == "until" ->
+                    if (scopeStack.isNotEmpty()) scopeStack.removeLast()
             }
         }
 

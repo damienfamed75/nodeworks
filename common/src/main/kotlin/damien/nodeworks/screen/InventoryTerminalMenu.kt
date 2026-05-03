@@ -1222,8 +1222,9 @@ class InventoryTerminalMenu(
 
         val itemName = net.minecraft.resources.Identifier.tryParse(itemId)?.path?.replace('_', ' ') ?: itemId
 
-        // Create queue entry (pending until the whole job completes)
-        val entry = CraftQueueManager.addEntry(player.uuid, itemId, itemName, count)
+        // Create queue entry (pending until the whole job completes), scoped to the
+        // network that owns this craft so other networks' terminals don't display it.
+        val entry = CraftQueueManager.addEntry(player.uuid, snap.networkId, itemId, itemName, count)
 
         try {
             // CraftingHelper.craft does feasibility-aware CPU selection across every CPU on
@@ -1333,11 +1334,15 @@ class InventoryTerminalMenu(
     override fun removed(player: Player) {
         super.removed(player)
         drainCraftingGridOnClose(player)
-        // Mark completed queue entries as seen so they're cleared on next open
-        val queue = CraftQueueManager.getQueue(player.uuid)
-        for (entry in queue) {
-            if (entry.isComplete) {
-                entry.seenComplete = true
+        // Mark completed queue entries as seen so they're cleared on next open.
+        // Scoped to the current network, closing this terminal shouldn't acknowledge
+        // jobs on other networks the player has open queues for.
+        val networkId = snapshot?.networkId
+        if (networkId != null) {
+            for (entry in CraftQueueManager.getQueue(player.uuid)) {
+                if (entry.networkId == networkId && entry.isComplete) {
+                    entry.seenComplete = true
+                }
             }
         }
     }
@@ -1379,6 +1384,10 @@ class InventoryTerminalMenu(
         val snap = snapshot ?: return
         val queue = CraftQueueManager.getQueue(player.uuid)
         val entry = queue.firstOrNull { it.id == entryId } ?: return
+        // Reject extract requests for entries that belong to another network. The
+        // client only ever sees this network's slice of the queue, but a malicious
+        // client could try to drain a craft sitting in a different network's CPU.
+        if (entry.networkId != snap.networkId) return
         if (entry.availableCount <= 0) return
 
         val identifier = net.minecraft.resources.Identifier.tryParse(entry.itemId) ?: return
@@ -1467,15 +1476,19 @@ class InventoryTerminalMenu(
             }
         }
 
-        val queue = CraftQueueManager.getQueue(serverPlayer.uuid)
-
-        // On first sync: purge acknowledged entries
+        // On first sync: purge acknowledged entries from the player's full queue
+        // (across networks, since seenComplete only flips for the current-network
+        // entries inside [removed], so this is correct cleanup either way).
         if (needsFullSync) {
-            queue.removeAll { it.seenComplete }
+            CraftQueueManager.getQueue(serverPlayer.uuid).removeAll { it.seenComplete }
         }
 
-        // Build reserved count deduction map
-        val reserved = CraftQueueManager.getReservedCounts(serverPlayer.uuid)
+        // Scope the displayed queue + reserved deductions to this terminal's network.
+        // Without this, opening a portable terminal on Network A would show jobs queued
+        // on Network B in the pinned row and incorrectly deduct items B reserved.
+        val networkId = snapshot?.networkId
+        val queue = CraftQueueManager.getQueueForNetwork(serverPlayer.uuid, networkId)
+        val reserved = CraftQueueManager.getReservedCounts(serverPlayer.uuid, networkId)
         val c = cache
 
         if (needsFullSync) {

@@ -80,7 +80,7 @@ object VariableHandle {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.NUMBER, "increment")
-                return LuaValue.valueOf(entity.increment(arg.checkdouble()))
+                return LuaValue.valueOf(entity.increment(arg.optdouble(1.0)))
             }
         })
 
@@ -88,7 +88,7 @@ object VariableHandle {
             override fun call(self: LuaValue, arg: LuaValue): LuaValue {
                 val entity = getEntity()
                 checkType(entity, VariableType.NUMBER, "decrement")
-                return LuaValue.valueOf(entity.decrement(arg.checkdouble()))
+                return LuaValue.valueOf(entity.decrement(arg.optdouble(1.0)))
             }
         })
 

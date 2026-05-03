@@ -15,6 +15,10 @@ object CraftQueueManager {
 
     data class CraftQueueEntry(
         val id: Int,
+        /** Network the craft was submitted to. Used to scope queue display so a
+         *  portable terminal opened on Network A doesn't show jobs queued from
+         *  Network B. Null only for legacy entries from before the field existed. */
+        val networkId: UUID?,
         val itemId: String,
         val itemName: String,
         var totalRequested: Int,
@@ -30,18 +34,31 @@ object CraftQueueManager {
     private val queues = HashMap<UUID, MutableList<CraftQueueEntry>>()
     private val nextId = AtomicInteger(0)
 
+    /** Full per-player queue across every network. Used by craft-completion
+     *  callbacks (which know an entry's id, not its network) to update state. */
     fun getQueue(playerUUID: UUID): MutableList<CraftQueueEntry> {
         return queues.getOrPut(playerUUID) { mutableListOf() }
     }
 
+    /** Per-player queue scoped to one network. The portable inventory terminal's
+     *  pinned row uses this so players don't see jobs from networks they aren't
+     *  currently looking at. */
+    fun getQueueForNetwork(playerUUID: UUID, networkId: UUID?): List<CraftQueueEntry> {
+        if (networkId == null) return emptyList()
+        val queue = queues[playerUUID] ?: return emptyList()
+        return queue.filter { it.networkId == networkId }
+    }
+
     fun addEntry(
         playerUUID: UUID,
+        networkId: UUID?,
         itemId: String,
         itemName: String,
         totalRequested: Int
     ): CraftQueueEntry {
         val entry = CraftQueueEntry(
             id = nextId.incrementAndGet(),
+            networkId = networkId,
             itemId = itemId,
             itemName = itemName,
             totalRequested = totalRequested
@@ -51,13 +68,16 @@ object CraftQueueManager {
     }
 
     /**
-     * Get total available (ready but not taken) counts per itemId for a player.
-     * Used by the menu to deduct reserved counts from inventory sync.
+     * Available (ready but not taken) counts per itemId, scoped to one network.
+     * Reserved items live in that network's CPU buffer / storage, so deducting
+     * them from a *different* network's inventory display would be wrong.
      */
-    fun getReservedCounts(playerUUID: UUID): Map<String, Int> {
+    fun getReservedCounts(playerUUID: UUID, networkId: UUID?): Map<String, Int> {
+        if (networkId == null) return emptyMap()
         val queue = queues[playerUUID] ?: return emptyMap()
         val result = HashMap<String, Int>()
         for (entry in queue) {
+            if (entry.networkId != networkId) continue
             if (entry.availableCount > 0) {
                 result[entry.itemId] = (result[entry.itemId] ?: 0) + entry.availableCount
             }
