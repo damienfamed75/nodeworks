@@ -327,7 +327,9 @@ object NodeConnectionHelper {
         entityB?.removeConnection(posA)
         // A hard disconnect severs the pair for good, purge any stale blocked-state entry so
         // a later `connect` on the same endpoints starts fresh (live LOS check will re-populate it).
-        blockedPairs(level).remove(pairKey(posA, posB))
+        // Routed through [setPairBlocked] for the SavedData dirty flag, otherwise the removal
+        // wouldn't survive a save/restart and the stale entry would reappear from disk.
+        setPairBlocked(level, posA, posB, false)
         // Re-propagate networkId for both sides (one side may have lost its controller)
         if (entityA != null) propagateNetworkId(level, posA)
         if (entityB != null) propagateNetworkId(level, posB)
@@ -383,10 +385,12 @@ object NodeConnectionHelper {
     fun removeAllConnections(level: ServerLevel, entity: Connectable) {
         val pos = entity.getBlockPos()
         val neighbors = entity.getConnections().toList()
-        val blocked = blockedPairs(level)
         for (neighborPos in neighbors) {
             getConnectable(level, neighborPos)?.removeConnection(pos)
-            blocked.remove(pairKey(pos, neighborPos))
+            // Routed through [setPairBlocked] so the SavedData dirty flag flips, a direct
+            // set-mutation here was leaving stale blocked entries that came back from disk
+            // on restart referencing this destroyed pos.
+            setPairBlocked(level, pos, neighborPos, false)
         }
         for (neighborPos in neighbors) {
             entity.removeConnection(neighborPos)
@@ -500,7 +504,10 @@ object NodeConnectionHelper {
         splicer.addConnection(posB)
         entityA.removeConnection(posB)
         entityB.removeConnection(posA)
-        blockedPairs(level).remove(pairKey(posA, posB))
+        // Routed through [setPairBlocked] for the SavedData dirty flag, otherwise the
+        // stale A↔B blocked entry comes back from disk on restart and a future reconnect
+        // of those same endpoints would BFS-skip the edge as if still LOS-blocked.
+        setPairBlocked(level, posA, posB, false)
 
         propagateNetworkId(level, splicerPos)
         return true
