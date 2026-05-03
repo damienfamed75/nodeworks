@@ -137,17 +137,19 @@ class TerminalBlockEntity(
     }
 
     /**
-     * Returns the best starting position for network discovery, or null if the
-     * terminal has no path onto a network. NetworkDiscovery walks adjacency
-     * from this position, so the terminal's own [worldPosition] is a valid
-     * start whenever it has a laser connection or any face-adjacent
-     * Connectable neighbour.
+     * Returns the terminal's own position when [NetworkDiscovery] can actually walk
+     * out from it, or null otherwise. Mirrors the discovery rule, an adjacency-only
+     * path requires the neighbour to opt in via [Connectable.usesAdjacency], so a
+     * terminal touching only a Node returns null and the caller short-circuits with
+     * the clear "not connected" message instead of failing later with a misleading
+     * controller-conflict error.
      */
     fun getNetworkStartPos(): BlockPos? {
         if (connections.isNotEmpty()) return worldPosition
         val lvl = level ?: return null
         for (dir in Direction.entries) {
-            if (lvl.getBlockEntity(worldPosition.relative(dir)) is Connectable) return worldPosition
+            val neighbor = lvl.getBlockEntity(worldPosition.relative(dir)) as? Connectable ?: continue
+            if (neighbor.usesAdjacency()) return worldPosition
         }
         return null
     }
