@@ -20,4 +20,18 @@ interface Connectable {
     var networkId: UUID?
 
     var blockDestroyed: Boolean
+
+    /** Whether this block joins the network through face-adjacency. Full-block
+     *  Connectables return true. Nodes opt out because they're a small fixture
+     *  inside the block and the player can't see them touching a neighbour, so
+     *  reaching the network through `Node next to Controller` would be invisible. */
+    fun usesAdjacency(): Boolean = true
+
+    /** Render colour resolved from [networkId]. Null id (no controller, or a
+     *  multi-controller conflict) renders grey. Trusts the cached BE state, no
+     *  BFS fallback, propagate is the sole arbiter of membership. */
+    fun networkColor(): Int {
+        val id = networkId ?: return damien.nodeworks.render.NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        return NetworkSettingsRegistry.getColor(id)
+    }
 }

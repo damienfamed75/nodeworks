@@ -2,7 +2,6 @@ package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.network.Connectable
-import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
@@ -91,23 +90,8 @@ abstract class ConnectableBER<T, S : ConnectableRenderState>(
 
     override fun shouldRenderOffScreen(): Boolean = true
 
-    /**
-     * Look up the current network color for [blockEntity], falling back to the neutral
-     * grey default when the block is unreachable in the live network.
-     *
-     * In GuideME scene renders the level isn't `Minecraft.getInstance().level` and the
-     * reachability BFS has never run, in that case we skip the reachability gate and
-     * always resolve through [NodeConnectionRenderer.findNetworkColor] so preview scenes
-     * stay vibrant.
-     */
-    protected fun resolveNetworkColor(blockEntity: T): Int {
-        val pos = blockEntity.getBlockPos()
-        val level = blockEntity.level ?: return NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        val isMainWorld = level === Minecraft.getInstance().level
-        return if (isMainWorld && !NodeConnectionRenderer.isReachable(pos)) {
-            NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        } else {
-            NodeConnectionRenderer.findNetworkColor(level, pos)
-        }
-    }
+    /** Network colour for [blockEntity]. Defers to [Connectable.networkColor], which
+     *  trusts the propagated [Connectable.networkId]. GuideME scene blocks must set
+     *  networkId at scene-construction time, otherwise they render grey. */
+    protected fun resolveNetworkColor(blockEntity: T): Int = blockEntity.networkColor()
 }

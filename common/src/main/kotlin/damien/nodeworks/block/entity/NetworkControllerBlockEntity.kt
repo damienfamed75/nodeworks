@@ -36,8 +36,15 @@ class NetworkControllerBlockEntity(
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
 
-    /** The network's unique identity. Generated on first placement. */
-    override var networkId: UUID? = UUID.randomUUID()
+    /** Persistent identity. Generated on first placement, never changed by propagate.
+     *  Survives conflict / restoration cycles, so disconnecting one of two warring
+     *  controllers cleanly restores the other's network using its preserved id. */
+    var permanentId: UUID = UUID.randomUUID()
+        private set
+
+    /** Current membership. Equal to [permanentId] in normal operation, null when
+     *  propagate detected a multi-controller conflict in this subgraph. */
+    override var networkId: UUID? = permanentId
 
     // --- Network Settings ---
 
@@ -176,10 +183,9 @@ class NetworkControllerBlockEntity(
             }
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
-            networkId?.let {
-                damien.nodeworks.script.NetworkInventoryCache.removeByUUID(it)
-                damien.nodeworks.network.NetworkSettingsRegistry.remove(it)
-            }
+            // Key on permanentId since networkId is null mid-conflict.
+            damien.nodeworks.script.NetworkInventoryCache.removeByUUID(permanentId)
+            damien.nodeworks.network.NetworkSettingsRegistry.remove(permanentId)
         }
         super.setRemoved()
     }
@@ -247,6 +253,8 @@ class NetworkControllerBlockEntity(
 
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
+        output.putString("permanentId", permanentId.toString())
+        // Omitting networkId when null is intentional, absence on load means "in conflict".
         networkId?.let { output.putString("networkId", it.toString()) }
         output.putInt("networkColor", networkColor)
         output.putString("networkName", networkName)
@@ -262,13 +270,25 @@ class NetworkControllerBlockEntity(
 
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
-        val idStr = input.getStringOr("networkId", "")
-        if (idStr.isNotEmpty()) {
+        // Legacy worlds stored identity under "networkId". Fall back to that key on
+        // the first post-upgrade load and let propagate decide membership on revalidation.
+        val permIdStr = input.getStringOr("permanentId", "")
+        val networkIdStr = input.getStringOr("networkId", "")
+        val identityStr = permIdStr.takeIf { it.isNotEmpty() } ?: networkIdStr
+        if (identityStr.isNotEmpty()) {
             try {
-                networkId = UUID.fromString(idStr)
+                permanentId = UUID.fromString(identityStr)
             } catch (_: IllegalArgumentException) {
-                networkId = UUID.randomUUID()
+                permanentId = UUID.randomUUID()
             }
+        }
+        networkId = if (permIdStr.isNotEmpty()) {
+            // Post-upgrade: missing networkId key means "in conflict".
+            if (networkIdStr.isEmpty()) null
+            else try { UUID.fromString(networkIdStr) } catch (_: IllegalArgumentException) { null }
+        } else {
+            // Legacy save without permanentId, propagate will recheck on revalidation.
+            permanentId
         }
         networkColor = input.getIntOr("networkColor", 0x83E086)
         networkName = input.getStringOr("networkName", "")
@@ -282,19 +302,21 @@ class NetworkControllerBlockEntity(
         for (packed in input.getLongList("claimedChunks")) claimedChunks.add(packed)
         connections.clear()
         connections.addAll(input.getBlockPosList("connections"))
-        // Push loaded settings into client-visible registry so the renderer + GUI see
-        // the persisted values immediately on reload, not just after the next sync.
-        networkId?.let {
-            damien.nodeworks.network.NetworkSettingsRegistry.update(
-                it,
-                damien.nodeworks.network.NetworkSettingsRegistry.NetworkSettings(
-                    color = networkColor,
-                    glowStyle = nodeGlowStyle,
-                    laserEnabled = laserEnabled,
-                    laserMode = laserMode,
-                )
+        // Seed the client-visible registry on reload so renderer + GUI pick up persisted
+        // settings without waiting for the next sync. Keyed on permanentId so the entry
+        // survives a conflict cycle.
+        damien.nodeworks.network.NetworkSettingsRegistry.update(
+            permanentId,
+            damien.nodeworks.network.NetworkSettingsRegistry.NetworkSettings(
+                color = networkColor,
+                glowStyle = nodeGlowStyle,
+                laserEnabled = laserEnabled,
+                laserMode = laserMode,
             )
-        }
+        )
+        // Invalidate the chunk tint cache when membership flipped to/from null but
+        // colour settings stayed identical, [update] above doesn't fire onChanged then.
+        damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
     }
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

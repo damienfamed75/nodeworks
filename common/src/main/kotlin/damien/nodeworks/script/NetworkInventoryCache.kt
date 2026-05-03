@@ -21,8 +21,20 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class NetworkInventoryCache(
     private val level: ServerLevel,
-    private val networkEntryNode: BlockPos
+    private var networkEntryNode: BlockPos
 ) {
+    /** Reseat the BFS entry point and re-poll synchronously. Used when a UI consumer
+     *  opens against a cache built earlier by a now-destroyed consumer, the stale entry
+     *  point resolves to a missing BE so the natural cycle would empty [entries].
+     *  Mirroring [init]'s scan here populates the cache before the caller returns. */
+    fun rebindEntryPoint(pos: BlockPos) {
+        if (networkEntryNode == pos) return
+        networkEntryNode = pos
+        val cards = snapshotCardsForCycle()
+        for (card in cards) pollCard(card)
+        finalizeAndDiff()
+    }
+
     data class SerialEntry(
         val serial: Long,
         val info: ItemInfo
@@ -83,14 +95,24 @@ class NetworkInventoryCache(
         private val caches = ConcurrentHashMap<String, NetworkInventoryCache>()
 
         fun getOrCreate(level: ServerLevel, networkEntryNode: BlockPos): NetworkInventoryCache {
-            // Discover network to find the controller UUID for the key
+            // Key on controller permanentId so all consumers of one network share a cache.
             val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, networkEntryNode)
             val key = if (snapshot.networkId != null) {
                 snapshot.networkId.toString()
             } else {
                 "${level.dimension().toString()}:${networkEntryNode.asLong()}"
             }
-            return caches.getOrPut(key) { NetworkInventoryCache(level, networkEntryNode) }
+            val existing = caches[key]
+            if (existing != null) {
+                // The cached entry point may belong to a consumer that's since been
+                // destroyed, adopt the live caller's pos so the next cycle's BFS starts
+                // from a still-loaded Connectable.
+                existing.rebindEntryPoint(networkEntryNode)
+                return existing
+            }
+            val fresh = NetworkInventoryCache(level, networkEntryNode)
+            caches[key] = fresh
+            return fresh
         }
 
         fun removeByUUID(uuid: java.util.UUID) {

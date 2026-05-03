@@ -57,10 +57,9 @@ object NodeConnectionRenderer {
         for (conn in startConnectable.getConnections()) {
             if (!isConnectionBlocked(startPos, conn) && visited.add(conn)) queue.add(conn)
         }
-        // Seed cluster-adjacency edges from the start position, same reasoning as
-        // the server BFS, trailing cluster storages have no laser connections so
-        // they'd otherwise be unreachable from here.
-        enqueueClusterNeighbors(level, startPos, startEntity, visited, queue)
+        // Seed face-adjacent Connectable neighbours, blocks that touch each
+        // other share a network even with no laser connection between them.
+        enqueueAdjacentConnectables(level, startPos, startEntity, visited, queue)
         while (queue.isNotEmpty() && visited.size < 32) {
             val pos = queue.removeFirst()
             val entity = level.getBlockEntity(pos) ?: continue
@@ -69,50 +68,39 @@ object NodeConnectionRenderer {
             for (conn in connectable.getConnections()) {
                 if (!isConnectionBlocked(pos, conn) && visited.add(conn)) queue.add(conn)
             }
-            enqueueClusterNeighbors(level, pos, entity, visited, queue)
+            enqueueAdjacentConnectables(level, pos, entity, visited, queue)
         }
         return null
     }
 
-    /** Enqueue face-adjacent cluster siblings of a storage BE. No-op for non-storage
-     *  BEs. Used by both [bfsReachable] and [findController] to walk the
-     *  adjacency-based connections that Instruction/Processing Storage blocks form. */
-    private fun enqueueClusterNeighbors(
+    /** Enqueue face-adjacent Connectable BEs. No-op when [entity] isn't a Connectable
+     *  or either endpoint opts out via [Connectable.usesAdjacency] (Nodes). */
+    private fun enqueueAdjacentConnectables(
         level: net.minecraft.world.level.Level,
         pos: BlockPos,
         entity: net.minecraft.world.level.block.entity.BlockEntity?,
         visited: MutableSet<BlockPos>,
         queue: ArrayDeque<BlockPos>,
     ) {
-        val instr = entity is damien.nodeworks.block.entity.InstructionStorageBlockEntity
-        val proc = entity is damien.nodeworks.block.entity.ProcessingStorageBlockEntity
-        if (!instr && !proc) return
+        if (entity !is damien.nodeworks.network.Connectable) return
+        if (!entity.usesAdjacency()) return
         for (dir in Direction.entries) {
             val neighbor = pos.relative(dir)
             if (neighbor in visited) continue
             if (!level.isLoaded(neighbor)) continue
-            val neighborBe = level.getBlockEntity(neighbor)
-            val sameCluster =
-                (instr && neighborBe is damien.nodeworks.block.entity.InstructionStorageBlockEntity) ||
-                        (proc && neighborBe is damien.nodeworks.block.entity.ProcessingStorageBlockEntity)
-            if (sameCluster) {
-                visited.add(neighbor)
-                queue.add(neighbor)
-            }
+            val neighborBe = level.getBlockEntity(neighbor) as? damien.nodeworks.network.Connectable ?: continue
+            if (!neighborBe.usesAdjacency()) continue
+            visited.add(neighbor)
+            queue.add(neighbor)
         }
     }
 
-    /** Convenience: find the network color for a position. Checks registry first, falls back to BFS. */
+    /** Network colour for the Connectable BE at [startPos]. Defers to
+     *  [Connectable.networkColor] so screens and renderers all key off the same
+     *  state propagate writes. */
     fun findNetworkColor(level: net.minecraft.world.level.Level?, startPos: BlockPos): Int {
-        // Try registry first (O(1), works even if controller is unloaded)
         val connectable = level?.getBlockEntity(startPos) as? damien.nodeworks.network.Connectable
-        val networkId = connectable?.networkId
-        if (networkId != null) {
-            val regColor = damien.nodeworks.network.NetworkSettingsRegistry.getColor(networkId)
-            if (regColor != DEFAULT_NETWORK_COLOR) return regColor
-        }
-        // Fallback to BFS
-        return findController(level, startPos)?.networkColor ?: DEFAULT_NETWORK_COLOR
+        return connectable?.networkColor() ?: DEFAULT_NETWORK_COLOR
     }
 
     /** Whether a specific connection is blocked (no line-of-sight). Uses cache. */
@@ -228,14 +216,10 @@ object NodeConnectionRenderer {
                 reachablePositions.add(targetPos)
                 queue.add(targetPos)
             }
-            // Cluster-storage adjacency: Instruction/Processing Storages cluster
-            // via face adjacency, not lasers. Without this walk, only the storage
-            // laser-wired to a Node would be reachable, trailing storages in a
-            // CNSSS chain would fail the `isReachable` gate in
-            // ConnectableBER.resolveNetworkColor and render with the default grey
-            // color despite having a correctly synced networkId. Mirrors the
-            // server-side cluster traversal in NodeConnectionHelper.propagateNetworkId.
-            enqueueClusterNeighbors(level, pos, entity, reachablePositions, queue)
+            // Face-adjacent Connectables count as reachable too, so a device
+            // touching a wired Node inherits the network color even without a
+            // laser between them.
+            enqueueAdjacentConnectables(level, pos, entity, reachablePositions, queue)
         }
     }
 

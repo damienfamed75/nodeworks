@@ -1,7 +1,6 @@
 package damien.nodeworks.block
 
 import com.mojang.serialization.MapCodec
-import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.TerminalOpenData
@@ -32,17 +31,6 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
     companion object {
         val CODEC: MapCodec<TerminalBlock> = simpleCodec(::TerminalBlock)
         val FACING = BlockStateProperties.HORIZONTAL_FACING
-
-        /** Scans adjacent blocks for a node to connect to. */
-        fun findAdjacentNode(level: Level, terminalPos: BlockPos): BlockPos? {
-            for (dir in Direction.entries) {
-                val adj = terminalPos.relative(dir)
-                if (level.getBlockEntity(adj) is NodeBlockEntity) {
-                    return adj
-                }
-            }
-            return null
-        }
     }
 
     init {
@@ -100,6 +88,14 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
         val serverPlayer = player as ServerPlayer
         val serverLevel = level as ServerLevel
 
+        // Null controller means no controller in the subgraph or a multi-controller
+        // conflict, scripts can't run and the sidebar would be empty either way.
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, startPos)
+        if (snapshot.controller == null) {
+            player.sendSystemMessage(Component.translatable("message.nodeworks.terminal_controller_conflict"))
+            return InteractionResult.SUCCESS
+        }
+
         // 1.0 scoping decision: only one player can edit a terminal at a time.
         // Skips the headache of real-time collaborative editing (OT/CRDT, cursor
         // sync, edit-conflict resolution) for the typical multi-player flow,
@@ -120,14 +116,12 @@ class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
             return InteractionResult.SUCCESS
         }
 
-        // Walk the server-side network and pull any cross-dim remote Processing APIs
-        // (reached via Receiver Antennas paired to a remote Broadcast Antenna). The
-        // client can't read these itself because the broadcast BE lives in another
-        // dimension, surface them in openData so the script editor's autocomplete
-        // can suggest remote recipe names in network:craft("..."). Local APIs are
-        // still scanned client-side in TerminalScreen, we only ship what the client
-        // genuinely can't reach.
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(serverLevel, startPos)
+        // Pull any cross-dim remote Processing APIs (reached via Receiver Antennas
+        // paired to a remote Broadcast Antenna). The client can't read these itself
+        // because the broadcast BE lives in another dimension, surface them in
+        // openData so the script editor's autocomplete can suggest remote recipe
+        // names in network:craft("..."). Local APIs are still scanned client-side
+        // in TerminalScreen, we only ship what the client genuinely can't reach.
         val remoteApis = snapshot.processingApis
             .filter { it.remoteDimension != null }
             .flatMap { it.apis }

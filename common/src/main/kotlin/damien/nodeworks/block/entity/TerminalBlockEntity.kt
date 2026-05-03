@@ -2,6 +2,7 @@ package damien.nodeworks.block.entity
 
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.network.Connectable
+import net.minecraft.core.Direction
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModBlockEntities
@@ -136,21 +137,19 @@ class TerminalBlockEntity(
     }
 
     /**
-     * Finds the adjacent node this terminal connects through.
-     * Scanned on demand, not cached or persisted.
-     */
-    fun getConnectedNodePos(): BlockPos? {
-        val currentLevel = level ?: return null
-        return TerminalBlock.findAdjacentNode(currentLevel, worldPosition)
-    }
-
-    /**
-     * Returns the best starting position for network discovery.
-     * Prefers laser connections (own pos), falls back to adjacent node.
+     * Returns the best starting position for network discovery, or null if the
+     * terminal has no path onto a network. NetworkDiscovery walks adjacency
+     * from this position, so the terminal's own [worldPosition] is a valid
+     * start whenever it has a laser connection or any face-adjacent
+     * Connectable neighbour.
      */
     fun getNetworkStartPos(): BlockPos? {
         if (connections.isNotEmpty()) return worldPosition
-        return getConnectedNodePos()
+        val lvl = level ?: return null
+        for (dir in Direction.entries) {
+            if (lvl.getBlockEntity(worldPosition.relative(dir)) is Connectable) return worldPosition
+        }
+        return null
     }
 
     // --- Connectable ---

@@ -331,6 +331,11 @@ class NodeBlockEntity(
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
 
+    /** Nodes don't bridge networks through face-adjacency, only via lasers. The
+     *  Node is a small fixture inside the block so adjacency through it would be
+     *  invisible to the player. */
+    override fun usesAdjacency(): Boolean = false
+
     override fun setRemoved() {
         nodeTracker?.onNodeChanged(worldPosition, false)
         val currentLevel = level

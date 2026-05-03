@@ -1,9 +1,7 @@
 package damien.nodeworks.network
 
 import damien.nodeworks.block.NodeBlock
-import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
-import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.resources.ResourceKey
@@ -68,7 +66,17 @@ object NodeConnectionHelper {
         val data = blockedData(level)
         val key = pairKey(a, b)
         val changed = if (blocked) data.pairs.add(key) else data.pairs.remove(key)
-        if (changed) data.setDirty()
+        if (changed) {
+            data.setDirty()
+            // Drop dedup for both endpoints, any propagate this tick decided BFS edge
+            // crossings against the OLD cache value. Without this, destroying an
+            // LOS-blocking block runs setRemoved's propagate first (with the still-blocked
+            // cache, dead-ending at the LOS edge), then onBlockChanged → checkNodeConnections
+            // clears the pair and re-calls propagate which dedup-skips, leaving the orphan
+            // side stuck on null forever.
+            propagatedThisTick(level).remove(a.asLong())
+            propagatedThisTick(level).remove(b.asLong())
+        }
     }
 
     /**
@@ -233,11 +241,15 @@ object NodeConnectionHelper {
             val pos = queue.removeFirst()
             val entity = getConnectable(level, pos) ?: continue
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
-                return entity.networkId
+                // Stable identity, the transient networkId may be null mid-conflict.
+                return entity.permanentId
             }
             for (conn in entity.getConnections()) {
                 if (!level.isLoaded(conn)) continue
                 if (visited.add(conn)) queue.add(conn)
+            }
+            for (adjacentPos in adjacentConnectableNeighbors(level, pos, entity)) {
+                if (visited.add(adjacentPos)) queue.add(adjacentPos)
             }
         }
         return null
@@ -256,11 +268,6 @@ object NodeConnectionHelper {
         val coveredThisTick = propagatedThisTick(level)
         if (!coveredThisTick.add(startPos.asLong())) return
 
-        val dbgStartBe = level.getBlockEntity(startPos)
-        org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
-            "propagateNetworkId start={} startEntity={}",
-            startPos, dbgStartBe?.javaClass?.simpleName ?: "null"
-        )
         val visited = LinkedHashSet<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         visited.add(startPos)
@@ -274,60 +281,41 @@ object NodeConnectionHelper {
                 if (isPairBlocked(level, pos, conn)) continue
                 if (visited.add(conn)) queue.add(conn)
             }
-            // Cluster-storage adjacency is a connection for network-color purposes
-            // even though there's no laser between neighboring Instruction/Processing
-            // Storage blocks. Without this step, only the storage that touches a
-            // Node via laser inherits the color, trailing storages in a CNSSS
-            // chain stay default-grey. Mirrors the cluster BFS in
-            // InstructionStorageBlockEntity.getAllInstructionSets /
-            // ProcessingStorageBlockEntity.getAllProcessingApis so the visual
-            // matches the logical recipe/API pool.
-            val clusterNeighbors = clusterNeighborsOf(level, pos, entity)
-            if (clusterNeighbors.isNotEmpty()) {
-                org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
-                    "  cluster step at {} ({}) -> {} neighbors: {}",
-                    pos, entity.javaClass.simpleName, clusterNeighbors.size, clusterNeighbors
-                )
-            }
-            for (clusterPos in clusterNeighbors) {
-                if (visited.add(clusterPos)) queue.add(clusterPos)
+            // Face-adjacent Connectables join the network without a laser between them.
+            for (adjacentPos in adjacentConnectableNeighbors(level, pos, entity)) {
+                if (visited.add(adjacentPos)) queue.add(adjacentPos)
             }
         }
 
-        // Record everything we reached so subsequent calls in this tick from inside this
-        // subgraph can skip cheaply.
         for (p in visited) coveredThisTick.add(p.asLong())
 
-        // Find controller in the visited set
+        // Two+ controllers in one subgraph is a conflict (e.g. [Controller][Device][Controller]
+        // wired together via adjacency or a wrench bridge). Assigns null so every block goes
+        // grey and downstream operations refuse to run, rather than latching onto an arbitrary
+        // controller. Reads permanentId so a controller currently null-mid-conflict still
+        // contributes the right id when the conflict resolves.
         var foundId: java.util.UUID? = null
+        var controllerCount = 0
         for (pos in visited) {
             val entity = getConnectable(level, pos)
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
-                foundId = entity.networkId
-                break
+                controllerCount++
+                if (controllerCount == 1) foundId = entity.permanentId
+                else { foundId = null; break }
             }
         }
 
-        org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
-            "propagateNetworkId visited={} foundControllerId={}",
-            visited.size, foundId
-        )
-
-        // Update all visited nodes and sync to client
+        // UPDATE_ALL matches the pattern other Connectable BE setters use, the BE NBT sync
+        // piggybacks on the chunk-broadcast pass after setChanged.
         for (pos in visited) {
             val entity = getConnectable(level, pos) ?: continue
             if (entity.networkId != foundId) {
-                val before = entity.networkId
                 entity.networkId = foundId
                 val be = entity as? net.minecraft.world.level.block.entity.BlockEntity
                 if (be != null) {
                     be.setChanged()
-                    level.sendBlockUpdated(pos, be.blockState, be.blockState, net.minecraft.world.level.block.Block.UPDATE_CLIENTS)
+                    level.sendBlockUpdated(pos, be.blockState, be.blockState, net.minecraft.world.level.block.Block.UPDATE_ALL)
                 }
-                org.slf4j.LoggerFactory.getLogger("nodeworks-netcolor").info(
-                    "  assigned networkId at {} ({}): {} -> {}",
-                    pos, be?.javaClass?.simpleName, before, foundId
-                )
             }
         }
     }
@@ -346,70 +334,50 @@ object NodeConnectionHelper {
         return entityA != null || entityB != null
     }
 
-    /** Re-raycast every connection of the given connectable whose opposite endpoint is already loaded,
-     *  and reconcile the [blockedPairs] cache with live LOS. Used to catch the edge case where a block
-     *  was placed between two endpoints while one of them was in an unloaded chunk, in that window
-     *  the mixin's onBlockChanged couldn't reach the orphaned node, so the cache entry was never
-     *  written.
-     *
-     *  Designed to run from each [Connectable]'s `setLevel`, *after* the chunk has registered the BE.
-     *  We accept the entity directly (rather than resolving it via level.getBlockEntity) because
-     *  setLevel runs while the BE is being wired into the chunk, a lookup at this point would try
-     *  to construct a fresh instance and recurse into setLevel → StackOverflow.
-     *
-     *  If any cache entry changed, a propagate is queued, per-tick dedup means N connectables in one
-     *  subgraph loading in the same tick only BFS that subgraph once. */
-    /** Face-adjacent positions whose BlockEntity is the same cluster-storage class
-     *  as [entity]. Empty for non-cluster connectables. Loaded-chunk check folded in. */
-    private fun clusterNeighborsOf(level: ServerLevel, pos: BlockPos, entity: Connectable): List<BlockPos> {
-        val clusterClass: Class<out BlockEntity> = when (entity) {
-            is InstructionStorageBlockEntity -> InstructionStorageBlockEntity::class.java
-            is ProcessingStorageBlockEntity -> ProcessingStorageBlockEntity::class.java
-            else -> return emptyList()
-        }
+    /** Face-adjacent Connectable BEs. Both endpoints must opt into adjacency, so a
+     *  Node next to a Controller doesn't silently bridge two networks through it. */
+    private fun adjacentConnectableNeighbors(level: ServerLevel, pos: BlockPos, entity: Connectable): List<BlockPos> {
+        if (!entity.usesAdjacency()) return emptyList()
         val out = ArrayList<BlockPos>(6)
         for (dir in Direction.entries) {
             val neighbor = pos.relative(dir)
             if (!level.isLoaded(neighbor)) continue
-            if (clusterClass.isInstance(level.getBlockEntity(neighbor))) out.add(neighbor)
+            val neighborBe = level.getBlockEntity(neighbor) as? Connectable ?: continue
+            if (!neighborBe.usesAdjacency()) continue
+            out.add(neighbor)
         }
         return out
     }
 
+    /** Re-raycast every connection of [self] whose opposite endpoint is already loaded
+     *  and reconcile the [blockedPairs] cache. Catches the edge case where a block was
+     *  placed between two endpoints while one of them was in an unloaded chunk, the mixin
+     *  couldn't reach the orphan to write the cache entry.
+     *
+     *  Runs from each [Connectable]'s `setLevel` after the chunk registered the BE. Takes
+     *  the entity directly because looking it up via level.getBlockEntity mid-setLevel
+     *  would recurse into setLevel and stack-overflow. */
     fun revalidateOnLoad(level: ServerLevel, self: Connectable) {
         val pos = self.getBlockPos()
         val connections = self.getConnections()
-        // Cluster storages have adjacency-based connectivity that isn't captured
-        // in [connections], a newly-placed storage in the middle of a cluster
-        // has zero laser edges but still needs a propagate to inherit the network
-        // color from its cluster siblings. Always run a propagate for them and
-        // return before the LOS-cache-healing path below (which is pointless
-        // without laser connections to reconcile).
-        val isClusterStorage = self is InstructionStorageBlockEntity || self is ProcessingStorageBlockEntity
+        // Every Connectable can pick up adjacency-based connectivity not captured in
+        // [connections], so always propagate on load.
         if (connections.isEmpty()) {
-            if (isClusterStorage) propagateNetworkId(level, pos)
+            propagateNetworkId(level, pos)
             return
         }
 
-        var anyChanged = false
         for (targetPos in connections) {
-            // Only compare to a loaded endpoint. If the far side isn't loaded yet, its own
-            // revalidateOnLoad call will cover this pair later.
             if (!level.isLoaded(targetPos)) continue
-            if (!isLessThan(pos, targetPos)) continue  // handle each pair from the canonical side
+            if (!isLessThan(pos, targetPos)) continue  // canonical side handles each pair once
 
             val wasBlocked = isPairBlocked(level, pos, targetPos)
             val hasLos = checkLineOfSight(level, pos, targetPos)
             if (hasLos == wasBlocked) {
                 setPairBlocked(level, pos, targetPos, !hasLos)
-                anyChanged = true
             }
         }
-        // Cluster storages also need a propagate when LOS didn't flip, so a
-        // storage that loaded attached to a live network picks up the color for
-        // its cluster siblings. The per-tick dedup in propagateNetworkId keeps
-        // a run of loading cluster blocks from re-BFSing the same network.
-        if (anyChanged || isClusterStorage) propagateNetworkId(level, pos)
+        propagateNetworkId(level, pos)
     }
 
     fun removeAllConnections(level: ServerLevel, entity: Connectable) {
@@ -436,6 +404,16 @@ object NodeConnectionHelper {
         if (entity.blockDestroyed) {
             for (neighborPos in neighbors) {
                 propagateNetworkId(level, neighborPos)
+            }
+            // Re-propagate from every face-neighbour Connectable. Catches both
+            // adjacency-using neighbours that just lost a path to a controller and
+            // non-adjacency neighbours (Nodes) holding a stale networkId from a
+            // prior walk that did include them.
+            for (dir in Direction.entries) {
+                val adjPos = pos.relative(dir)
+                if (!level.isLoaded(adjPos)) continue
+                if (level.getBlockEntity(adjPos) !is Connectable) continue
+                propagateNetworkId(level, adjPos)
             }
         }
     }

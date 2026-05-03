@@ -33,6 +33,9 @@ object NetworkDiscovery {
         val processingApis = mutableListOf<ProcessingApiSnapshot>()
         val terminalPositions = mutableListOf<BlockPos>()
         var controller: ControllerSnapshot? = null
+        // A second controller in the same subgraph drops the snapshot's controller, the
+        // network reads as offline so downstream consumers refuse to run.
+        var controllerCount = 0
 
         queue.add(startPos)
         visited.add(startPos)
@@ -76,7 +79,12 @@ object NetworkDiscovery {
                     }
                 }
                 is TerminalBlockEntity -> terminalPositions.add(connectable.blockPos)
-                is NetworkControllerBlockEntity -> controller = ControllerSnapshot(connectable.blockPos, connectable.networkId)
+                is NetworkControllerBlockEntity -> {
+                    controllerCount++
+                    controller = if (controllerCount == 1)
+                        ControllerSnapshot(connectable.blockPos, connectable.permanentId)
+                    else null
+                }
                 is CraftingCoreBlockEntity -> cpus.add(CpuSnapshot(
                     connectable.blockPos, connectable.bufferUsed, connectable.bufferCapacity, connectable.isCrafting
                 ))
@@ -119,6 +127,20 @@ object NetworkDiscovery {
                 if (!NodeConnectionHelper.checkLineOfSight(level, pos, connection)) continue
                 visited.add(connection)
                 queue.add(connection)
+            }
+            // Face-adjacent Connectables share the subgraph without a laser between
+            // them. Both endpoints must opt in via [Connectable.usesAdjacency], so a
+            // Node next to a Controller doesn't silently bridge two networks.
+            if (connectable.usesAdjacency()) {
+                for (dir in Direction.entries) {
+                    val adjPos = pos.relative(dir)
+                    if (adjPos in visited) continue
+                    if (!level.isLoaded(adjPos)) continue
+                    val neighbor = level.getBlockEntity(adjPos) as? Connectable ?: continue
+                    if (!neighbor.usesAdjacency()) continue
+                    visited.add(adjPos)
+                    queue.add(adjPos)
+                }
             }
         }
 

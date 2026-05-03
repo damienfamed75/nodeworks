@@ -500,13 +500,41 @@ class TerminalScreen(
         if (clientLevel != null) {
             val termPos = menu.getTerminalPos()
             val termEntity = clientLevel.getBlockEntity(termPos)
-            if (termEntity is damien.nodeworks.network.Connectable) {
+            // Null networkId means no controller or a multi-controller conflict, the
+            // sidebar should be empty in both cases.
+            val termNetworkId = (termEntity as? damien.nodeworks.network.Connectable)?.networkId
+            if (termEntity is damien.nodeworks.network.Connectable && termNetworkId != null) {
                 val visited = mutableSetOf<net.minecraft.core.BlockPos>()
                 val queue = ArrayDeque<net.minecraft.core.BlockPos>()
                 visited.add(termPos)
-                for (conn in termEntity.getConnections()) {
-                    if (visited.add(conn)) queue.add(conn)
+                // Mirrors the server's [NetworkDiscovery] walk, filtered on networkId so
+                // a stray block from a neighbouring network never bleeds into the sidebar.
+                fun tryEnqueueLaser(p: net.minecraft.core.BlockPos): Boolean {
+                    if (p in visited) return false
+                    if (!clientLevel.isLoaded(p)) return false
+                    val be = clientLevel.getBlockEntity(p) as? damien.nodeworks.network.Connectable
+                        ?: return false
+                    if (be.networkId != termNetworkId) return false
+                    visited.add(p)
+                    queue.add(p)
+                    return true
                 }
+                fun tryEnqueueAdjacent(from: damien.nodeworks.network.Connectable, p: net.minecraft.core.BlockPos): Boolean {
+                    if (!from.usesAdjacency()) return false
+                    if (p in visited) return false
+                    if (!clientLevel.isLoaded(p)) return false
+                    val be = clientLevel.getBlockEntity(p) as? damien.nodeworks.network.Connectable
+                        ?: return false
+                    if (!be.usesAdjacency()) return false
+                    if (be.networkId != termNetworkId) return false
+                    visited.add(p)
+                    queue.add(p)
+                    return true
+                }
+                for (conn in termEntity.getConnections()) tryEnqueueLaser(conn)
+                // Face-adjacent seed so layouts like [Term] [Controller] [Node] reach the
+                // network without the terminal itself having a laser.
+                for (dir in net.minecraft.core.Direction.entries) tryEnqueueAdjacent(termEntity, termPos.relative(dir))
                 while (queue.isNotEmpty() && visited.size < 128) {
                     val pos = queue.removeFirst()
                     if (!clientLevel.isLoaded(pos)) continue
@@ -594,9 +622,8 @@ class TerminalScreen(
                     }
 
                     val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
-                    for (conn in connectable.getConnections()) {
-                        if (visited.add(conn)) queue.add(conn)
-                    }
+                    for (conn in connectable.getConnections()) tryEnqueueLaser(conn)
+                    for (dir in net.minecraft.core.Direction.entries) tryEnqueueAdjacent(connectable, pos.relative(dir))
                 }
             }
         }

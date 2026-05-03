@@ -36,7 +36,7 @@ object NetworkSettingsRegistry {
      * The hook is `null` on the logical server since this registry is also populated
      * from BE NBT load there, NeoForgeClientSetup wires it up at client init.
      */
-    var onChanged: ((UUID) -> Unit)? = null
+    var onChanged: ((UUID?) -> Unit)? = null
 
     /** Register or update settings for a network. Called by controllers on client sync. */
     fun update(networkId: UUID, settings: NetworkSettings) {
@@ -45,14 +45,13 @@ object NetworkSettingsRegistry {
     }
 
     /**
-     * Fire the [onChanged] hook for [networkId] without mutating the registry. Called
-     * from non-controller Connectable BEs (Node, Terminal, Variable, …) after their
-     * `loadAdditional` runs on the client, so that newly-connected blocks get their
-     * tint cache refreshed in the same frame the BE syncs. No-op on the logical
-     * server because [onChanged] is only set by [NodeConnectionRenderer.register].
+     * Fire [onChanged] without mutating the registry. Called from Connectable BE
+     * `loadAdditional` so newly-synced blocks get their tint cache refreshed in
+     * the same frame. Fires for null too, so a block going from coloured to grey
+     * (controller removed, conflict entered) doesn't keep rendering the stale colour.
      */
     fun notifyConnectableChanged(networkId: UUID?) {
-        if (networkId != null) onChanged?.invoke(networkId)
+        onChanged?.invoke(networkId)
     }
 
     /** Update just the color for a network. */

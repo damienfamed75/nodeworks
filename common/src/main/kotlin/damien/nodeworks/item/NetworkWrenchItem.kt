@@ -1,6 +1,5 @@
 package damien.nodeworks.item
 
-import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.network.NodeConnectionHelper
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
@@ -123,15 +122,6 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
 
         // Connect-only validations.
         if (!isDisconnect) {
-            // Devices wire through the Node graph, never directly to each
-            // other, so a connect needs at least one Node endpoint.
-            val selectedIsNode = level.getBlockState(selectedPos).block is NodeBlock
-            val clickedIsNode = level.getBlockState(pos).block is NodeBlock
-            if (!selectedIsNode && !clickedIsNode) {
-                player.sendSystemMessage(Component.translatable("message.nodeworks.device_to_device"))
-                return InteractionResult.SUCCESS
-            }
-
             // Check for duplicate controllers before connecting. Walk the structural topology
             // (ignoring LOS) rather than NetworkDiscovery so an LOS-blocked orphan, which still
             // holds its connection to the old controller on-the-books, is correctly treated as
