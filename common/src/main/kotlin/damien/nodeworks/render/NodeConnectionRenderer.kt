@@ -236,6 +236,13 @@ object NodeConnectionRenderer {
         // layer) and only refreshes when the section is marked dirty, setSectionDirty
         // forces a re-query of NetworkColorTintSource.colorInWorld next frame.
         damien.nodeworks.network.NetworkSettingsRegistry.onChanged = label@{ networkId ->
+            // Short-circuit on null: a batch of disconnected BEs (networkId == null)
+            // loading at once previously caused O(n²) chunk re-renders, every load
+            // iterated knownNodes and dirtied every disconnected BE's section. The
+            // null case carries no useful colour change (disconnected BEs all render
+            // the default grey from the same fallback path) and the chunk is being
+            // built anyway, so skipping it here is correctness-neutral.
+            if (networkId == null) return@label
             val mc = Minecraft.getInstance()
             val level = mc.level ?: return@label
             val renderer = mc.levelRenderer
