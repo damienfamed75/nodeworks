@@ -97,11 +97,22 @@ class NetworkInventoryCache(
         fun getOrCreate(level: ServerLevel, networkEntryNode: BlockPos): NetworkInventoryCache {
             // Key on controller permanentId so all consumers of one network share a cache.
             val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, networkEntryNode)
-            val key = if (snapshot.networkId != null) {
-                snapshot.networkId.toString()
-            } else {
-                "${level.dimension().toString()}:${networkEntryNode.asLong()}"
+            val uuidKey = snapshot.networkId?.toString()
+            val fallbackKey = "${level.dimension().toString()}:${networkEntryNode.asLong()}"
+
+            // Self-heal orphans from a prior multi-controller conflict period: a
+            // consumer that opened during the conflict was keyed on dim:pos because
+            // [snapshot.networkId] was null. Once the conflict resolves, that orphan
+            // would never be evicted, controller cleanup only fires removeByUUID and
+            // the dim:pos entry stays in [caches] ticking forever. Migrate this
+            // caller's-position orphan onto the UUID key so the consumer's next call
+            // self-heals without requiring multiple opens.
+            if (uuidKey != null) {
+                val orphan = caches.remove(fallbackKey)
+                if (orphan != null) caches.putIfAbsent(uuidKey, orphan)
             }
+
+            val key = uuidKey ?: fallbackKey
             val existing = caches[key]
             if (existing != null) {
                 // The cached entry point may belong to a consumer that's since been
