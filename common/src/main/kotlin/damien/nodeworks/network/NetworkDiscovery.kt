@@ -21,6 +21,15 @@ import java.util.UUID
  */
 object NetworkDiscovery {
 
+    /** Per-thread guard against unbounded recursion through paired antennas. Two
+     *  networks linked by Broadcast/Receiver pairs in both directions, then merged
+     *  via adjacency, would otherwise bounce [discoverNetwork] back and forth via
+     *  [BroadcastAntennaBlockEntity.getProviderTerminalPositions] until the stack
+     *  overflows. Skipping any antenna already mid-walk is safe, the in-flight
+     *  outer walk already covers that network. */
+    private val activeProviderWalks: ThreadLocal<MutableSet<BlockPos>> =
+        ThreadLocal.withInitial { mutableSetOf() }
+
     fun discoverNetwork(level: ServerLevel, startPos: BlockPos): NetworkSnapshot {
         val visited = mutableSetOf<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
@@ -33,9 +42,13 @@ object NetworkDiscovery {
         val processingApis = mutableListOf<ProcessingApiSnapshot>()
         val terminalPositions = mutableListOf<BlockPos>()
         var controller: ControllerSnapshot? = null
-        // A second controller in the same subgraph drops the snapshot's controller, the
-        // network reads as offline so downstream consumers refuse to run.
+        // A second controller in the same subgraph drops the snapshot's controller so
+        // the network reads as offline and downstream consumers refuse to run.
         var controllerCount = 0
+        // Cluster anchors so each multi-block storage's recipes get recorded once,
+        // not once per cluster member the BFS happens to visit.
+        val processingClustersSeen = mutableSetOf<BlockPos>()
+        val instructionClustersSeen = mutableSetOf<BlockPos>()
 
         queue.add(startPos)
         visited.add(startPos)
@@ -47,34 +60,42 @@ object NetworkDiscovery {
             when (connectable) {
                 is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
                 is InstructionStorageBlockEntity -> {
-                    // Storage block connected via laser, scan its cluster for all recipes
-                    val clusterSets = connectable.getAllInstructionSets()
-                    if (clusterSets.isNotEmpty()) {
-                        crafters.add(CrafterSnapshot(connectable.blockPos, clusterSets))
+                    if (instructionClustersSeen.add(connectable.getClusterAnchor())) {
+                        val clusterSets = connectable.getAllInstructionSets()
+                        if (clusterSets.isNotEmpty()) {
+                            crafters.add(CrafterSnapshot(connectable.blockPos, clusterSets))
+                        }
                     }
                 }
                 is ProcessingStorageBlockEntity -> {
-                    val clusterApis = connectable.getAllProcessingApis()
-                    if (clusterApis.isNotEmpty()) {
-                        processingApis.add(ProcessingApiSnapshot(connectable.blockPos, clusterApis))
+                    if (processingClustersSeen.add(connectable.getClusterAnchor())) {
+                        val clusterApis = connectable.getAllProcessingApis()
+                        if (clusterApis.isNotEmpty()) {
+                            processingApis.add(ProcessingApiSnapshot(connectable.blockPos, clusterApis))
+                        }
                     }
                 }
                 is ReceiverAntennaBlockEntity -> {
                     val serverLevel = level
                     val broadcast = connectable.getBroadcastAntenna(serverLevel)
-                    if (broadcast != null) {
-                        val remoteApis = broadcast.getAvailableApis()
-                        if (remoteApis.isNotEmpty()) {
-                            val remoteTerminals = broadcast.getProviderTerminalPositions()
-                            val broadcastLevel = broadcast.level as? ServerLevel
-                            processingApis.add(
-                                ProcessingApiSnapshot(
-                                    broadcast.blockPos,
-                                    remoteApis,
-                                    remoteTerminals,
-                                    broadcastLevel?.dimension()
+                    val activeWalks = activeProviderWalks.get()
+                    if (broadcast != null && activeWalks.add(broadcast.blockPos)) {
+                        try {
+                            val remoteApis = broadcast.getAvailableApis()
+                            if (remoteApis.isNotEmpty()) {
+                                val remoteTerminals = broadcast.getProviderTerminalPositions()
+                                val broadcastLevel = broadcast.level as? ServerLevel
+                                processingApis.add(
+                                    ProcessingApiSnapshot(
+                                        broadcast.blockPos,
+                                        remoteApis,
+                                        remoteTerminals,
+                                        broadcastLevel?.dimension()
+                                    )
                                 )
-                            )
+                            }
+                        } finally {
+                            activeWalks.remove(broadcast.blockPos)
                         }
                     }
                 }

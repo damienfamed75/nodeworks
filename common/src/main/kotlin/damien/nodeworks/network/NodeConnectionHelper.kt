@@ -461,9 +461,8 @@ object NodeConnectionHelper {
 
             if (!flipped && !inconsistent) continue
 
-            // Auto-splice: LOS just broke (was clear, now blocked) and the obstruction
-            // is itself a fresh splicer. Rewire A↔B → A↔C↔B instead of marking
-            // the pair LOS-blocked.
+            // LOS just broke and the obstruction itself is a fresh splicer Connectable?
+            // Rewire A↔B → A↔C↔B instead of marking the pair blocked.
             if (!wasBlocked && !hasLos && trySplice(level, nodePos, targetPos, changedPos)) {
                 continue
             }
@@ -478,13 +477,12 @@ object NodeConnectionHelper {
     }
 
     /** Rewire A↔B into A↔C↔B when [splicerPos] holds a freshly placed splicer that
-     *  blocks the line. Both new segments must be in range and have clear LOS, the
-     *  splicer must opt in via [Connectable.autoSpliceOnPlace] and have no prior
-     *  connections (so we don't hijack a Connectable placed via piston / /setblock
-     *  with restored data). Mutates connections atomically and propagates once,
-     *  going through [connect] / [disconnect] would interleave three propagates and
-     *  cover the splicer pos in [propagatedThisTickByDim] before the final graph
-     *  was settled. Returns true if the rewire happened. */
+     *  blocks the laser. Splicer must opt in via [Connectable.autoSpliceOnPlace] and
+     *  have no prior connections, otherwise a piston-pushed or /setblock-restored
+     *  Connectable would get hijacked. Mutates connections atomically and propagates
+     *  once at the end, going through [connect]/[disconnect] would interleave three
+     *  propagates and cover the splicer pos in [propagatedThisTickByDim] before the
+     *  final graph was settled. */
     private fun trySplice(level: ServerLevel, posA: BlockPos, posB: BlockPos, splicerPos: BlockPos): Boolean {
         val splicer = getConnectable(level, splicerPos) ?: return false
         if (!splicer.autoSpliceOnPlace()) return false
@@ -504,7 +502,6 @@ object NodeConnectionHelper {
         entityB.removeConnection(posA)
         blockedPairs(level).remove(pairKey(posA, posB))
 
-        // Single propagate from the splicer covers everyone now wired through it.
         propagateNetworkId(level, splicerPos)
         return true
     }

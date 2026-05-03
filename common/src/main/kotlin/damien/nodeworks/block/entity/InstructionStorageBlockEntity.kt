@@ -61,32 +61,40 @@ class InstructionStorageBlockEntity(
         return result
     }
 
-    /**
-     * Returns all Instruction Sets from this block AND all adjacent Instruction Storage blocks
-     * in the cluster (BFS through adjacent InstructionStorageBlockEntity blocks).
-     */
+    /** All Instruction Sets from this block plus every face-adjacent InstructionStorage in the cluster. */
     fun getAllInstructionSets(): List<InstructionSetInfo> {
         val lvl = level ?: return getInstructionSets()
         val all = mutableListOf<InstructionSetInfo>()
-        val visited = mutableSetOf(worldPosition)
-        val queue = ArrayDeque<BlockPos>()
-        queue.add(worldPosition)
-
-        while (queue.isNotEmpty()) {
-            val pos = queue.removeFirst()
+        for (pos in clusterPositions(lvl)) {
             val entity = lvl.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: continue
             all.addAll(entity.getInstructionSets())
-
-            for (dir in Direction.entries) {
-                val neighbor = pos.relative(dir)
-                if (neighbor in visited) continue
-                visited.add(neighbor)
-                if (lvl.isLoaded(neighbor) && lvl.getBlockEntity(neighbor) is InstructionStorageBlockEntity) {
-                    queue.add(neighbor)
-                }
-            }
         }
         return all
+    }
+
+    /** Lex-lowest position in this cluster. Stable cluster identity for network-walk
+     *  consumers that need to enumerate each cluster exactly once. */
+    fun getClusterAnchor(): BlockPos {
+        val lvl = level ?: return worldPosition
+        return clusterPositions(lvl).minByOrNull { it.asLong() } ?: worldPosition
+    }
+
+    private fun clusterPositions(lvl: net.minecraft.world.level.Level): Set<BlockPos> {
+        val cluster = mutableSetOf(worldPosition)
+        val queue = ArrayDeque<BlockPos>()
+        queue.add(worldPosition)
+        while (queue.isNotEmpty()) {
+            val pos = queue.removeFirst()
+            for (dir in Direction.entries) {
+                val neighbor = pos.relative(dir)
+                if (neighbor in cluster) continue
+                if (!lvl.isLoaded(neighbor)) continue
+                if (lvl.getBlockEntity(neighbor) !is InstructionStorageBlockEntity) continue
+                cluster.add(neighbor)
+                queue.add(neighbor)
+            }
+        }
+        return cluster
     }
 
     data class InstructionSetInfo(

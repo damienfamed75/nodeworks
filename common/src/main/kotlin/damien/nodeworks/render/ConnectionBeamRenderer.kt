@@ -63,20 +63,17 @@ object ConnectionBeamRenderer {
     /**
      * Collect the beams this [Connectable] should render this frame. Called from each
      * BER's `extractRenderState`. Each pair is emitted from the lex-lower endpoint
-     * only, so a connection appears exactly once across the pair's two BERs without
-     * needing cross-BER dedup state. If the lower endpoint's chunk is unloaded its
-     * BER won't run, but the target block isn't visible then either, so dropping
-     * the beam matches what the player sees.
+     * only, so a connection renders exactly once across both ends. If the lower
+     * endpoint's chunk is unloaded the beam goes missing, but the target block
+     * isn't visible there either, so it matches what the player sees.
      */
     fun extract(connectable: Connectable): List<Beam> {
         val be = connectable as? net.minecraft.world.level.block.entity.BlockEntity ?: return emptyList()
         val level = be.level ?: return emptyList()
         val myPos = be.blockPos
 
-        // Per-network laser toggles. When the source network has lasers disabled,
-        // skip the entire extract: no beam allocations, no dedup bookkeeping.
-        // Nodes + glows render through a separate path (NodeConnectionRenderer)
-        // so they remain visible.
+        // Skip when the source network has lasers disabled. Nodes + glows render
+        // through [NodeConnectionRenderer] and stay visible regardless.
         val networkId = connectable.networkId
         val mySettings = NetworkSettingsRegistry.get(networkId)
         if (networkId != null && !mySettings.laserEnabled) return emptyList()
@@ -84,17 +81,13 @@ object ConnectionBeamRenderer {
         val myNetworkColor = if (networkId != null) mySettings.color
             else NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
 
-        // The LOS cache + reachability BFS that drives [blocked] only run against the main
-        // client level via NodeConnectionRenderer's world-render hook, GuideME scenes and
-        // any other offscreen preview pass render BEs from a different level where that
-        // cache is never populated, which would flip every beam to the blocked-red style.
-        // Short-circuit the gate for non-main-world renders so preview scenes always show
-        // beams as fully connected.
+        // GuideME scenes and other non-main-world renders never populate the LOS cache or
+        // reachability BFS, so without this gate every preview beam would flip to the
+        // blocked-red style.
         val isMainWorld = level === Minecraft.getInstance().level
 
         val beams = mutableListOf<Beam>()
         for (targetPos in connectable.getConnections()) {
-            // Each pair handled exactly once, by the lex-lower endpoint.
             if (!isLessThan(myPos, targetPos)) continue
             val targetBe = level.getBlockEntity(targetPos) as? Connectable ?: continue
 

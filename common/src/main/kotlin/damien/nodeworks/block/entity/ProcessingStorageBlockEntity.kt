@@ -74,32 +74,40 @@ class ProcessingStorageBlockEntity(
         return result
     }
 
-    /**
-     * Returns all Processing Sets from this block AND all adjacent Processing Storage blocks
-     * in the cluster (BFS through adjacent ProcessingStorageBlockEntity blocks).
-     */
+    /** All Processing Sets from this block plus every face-adjacent ProcessingStorage in the cluster. */
     fun getAllProcessingApis(): List<ProcessingApiInfo> {
         val lvl = level ?: return getProcessingApis()
         val all = mutableListOf<ProcessingApiInfo>()
-        val visited = mutableSetOf(worldPosition)
-        val queue = ArrayDeque<BlockPos>()
-        queue.add(worldPosition)
-
-        while (queue.isNotEmpty()) {
-            val pos = queue.removeFirst()
+        for (pos in clusterPositions(lvl)) {
             val entity = lvl.getBlockEntity(pos) as? ProcessingStorageBlockEntity ?: continue
             all.addAll(entity.getProcessingApis())
-
-            for (dir in Direction.entries) {
-                val neighbor = pos.relative(dir)
-                if (neighbor in visited) continue
-                visited.add(neighbor)
-                if (lvl.isLoaded(neighbor) && lvl.getBlockEntity(neighbor) is ProcessingStorageBlockEntity) {
-                    queue.add(neighbor)
-                }
-            }
         }
         return all
+    }
+
+    /** Lex-lowest position in this cluster. Stable cluster identity for network-walk
+     *  consumers that need to enumerate each cluster exactly once. */
+    fun getClusterAnchor(): BlockPos {
+        val lvl = level ?: return worldPosition
+        return clusterPositions(lvl).minByOrNull { it.asLong() } ?: worldPosition
+    }
+
+    private fun clusterPositions(lvl: net.minecraft.world.level.Level): Set<BlockPos> {
+        val cluster = mutableSetOf(worldPosition)
+        val queue = ArrayDeque<BlockPos>()
+        queue.add(worldPosition)
+        while (queue.isNotEmpty()) {
+            val pos = queue.removeFirst()
+            for (dir in Direction.entries) {
+                val neighbor = pos.relative(dir)
+                if (neighbor in cluster) continue
+                if (!lvl.isLoaded(neighbor)) continue
+                if (lvl.getBlockEntity(neighbor) !is ProcessingStorageBlockEntity) continue
+                cluster.add(neighbor)
+                queue.add(neighbor)
+            }
+        }
+        return cluster
     }
 
     data class ProcessingApiInfo(

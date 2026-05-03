@@ -495,6 +495,11 @@ class TerminalScreen(
             mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
         val scannedProcessable = mutableListOf<String>()
         val scannedCraftable = mutableListOf<String>()
+        // Cluster anchors so each multi-block storage's recipes get enumerated once
+        // even when the BFS visits multiple members, [getAllProcessingApis] /
+        // [getAllInstructionSets] each return the full cluster from any member.
+        val processingClustersSeen = mutableSetOf<net.minecraft.core.BlockPos>()
+        val instructionClustersSeen = mutableSetOf<net.minecraft.core.BlockPos>()
         val mc = net.minecraft.client.Minecraft.getInstance()
         val clientLevel = mc.level
         if (clientLevel != null) {
@@ -573,16 +578,20 @@ class TerminalScreen(
                         }
 
                         is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> {
-                            for (info in entity.getAllInstructionSets()) {
-                                if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
+                            if (instructionClustersSeen.add(entity.getClusterAnchor())) {
+                                for (info in entity.getAllInstructionSets()) {
+                                    if (info.outputItemId.isNotEmpty()) scannedCraftable.add(info.outputItemId)
+                                }
                             }
                         }
 
                         is damien.nodeworks.block.entity.ProcessingStorageBlockEntity -> {
-                            for (api in entity.getAllProcessingApis()) {
-                                scannedLocal.add(api.name)
-                                scannedLocalApis.add(api)
-                                scannedProcessable.addAll(api.outputItemIds)
+                            if (processingClustersSeen.add(entity.getClusterAnchor())) {
+                                for (api in entity.getAllProcessingApis()) {
+                                    scannedLocal.add(api.name)
+                                    scannedLocalApis.add(api)
+                                    scannedProcessable.addAll(api.outputItemIds)
+                                }
                             }
                         }
 
