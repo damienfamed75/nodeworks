@@ -285,6 +285,14 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     damien.nodeworks.screen.PlacerMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.IMPORT_CHEST = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "import_chest")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.ImportChestOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.ImportChestMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -451,6 +459,17 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                         when (payload.key) {
                             "name" -> entity.deviceName = payload.strValue
                             "channel" -> if (newColor != null) entity.channel = newColor
+                        }
+                    }
+                    is damien.nodeworks.block.entity.ImportChestBlockEntity -> {
+                        when (payload.key) {
+                            "channel" -> entity.channel = damien.nodeworks.network.ChannelFilter.fromNbtInt(payload.intValue)
+                            "redstone" -> entity.redstoneMode = payload.intValue.coerceIn(0, 2)
+                            "roundRobin" -> entity.roundRobin = payload.intValue != 0
+                            "tickInterval" -> entity.tickInterval = payload.intValue.coerceIn(
+                                damien.nodeworks.block.entity.ImportChestBlockEntity.MIN_TICK_INTERVAL,
+                                damien.nodeworks.block.entity.ImportChestBlockEntity.MAX_TICK_INTERVAL,
+                            )
                         }
                     }
                 }

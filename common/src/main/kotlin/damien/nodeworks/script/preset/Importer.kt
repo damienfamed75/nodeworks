@@ -56,6 +56,11 @@ internal sealed class ResolvedRef {
         val snapshot: CardSnapshot,
         val faceOverride: net.minecraft.core.Direction? = null,
     ) : ResolvedRef()
+
+    /** Subset of [Pool] scoped to one channel's storage cards. Move dispatch
+     *  routes through [ChannelFilter.Color] so only the matching cards are
+     *  walked at tick time. */
+    data class ChannelPool(val color: net.minecraft.world.item.DyeColor) : ResolvedRef()
 }
 
 /** Expand a single [CardRef] into zero-or-more [ResolvedRef]s. Supports `*`
@@ -64,6 +69,7 @@ internal sealed class ResolvedRef {
  *  the preset silently skips it and retries on the next snapshot change. */
 internal fun expandCardRef(snapshot: NetworkSnapshot, ref: CardRef): List<ResolvedRef> = when (ref) {
     is CardRef.Pool -> listOf(ResolvedRef.Pool)
+    is CardRef.Channel -> listOf(ResolvedRef.ChannelPool(ref.color))
     is CardRef.Named -> {
         if (!ref.alias.contains('*')) {
             val card = snapshot.findByAlias(ref.alias)
@@ -277,16 +283,74 @@ class ImporterBuilder(
                     }
                     is ResolvedRef.Pool -> NetworkStorageHelper.insertItems(
                         level, snapshot, srcStorage, filter,
-                        maxCount, engine.routeTable, null, engine.inventoryCache
+                        maxCount, engine.routeTable, null, engine.inventoryCache,
+                        damien.nodeworks.network.ChannelFilter.All,
+                    )
+                    is ResolvedRef.ChannelPool -> NetworkStorageHelper.insertItems(
+                        level, snapshot, srcStorage, filter,
+                        maxCount, engine.routeTable, null, engine.inventoryCache,
+                        damien.nodeworks.network.ChannelFilter.Color(target.color),
                     )
                 }
             }
             is ResolvedRef.Pool -> when (target) {
                 // Pool to Pool is a no-op, items would just shuffle between storage cards.
                 is ResolvedRef.Pool -> 0L
-                is ResolvedRef.Card -> movePoolToCard(snapshot, level, target, filterPred, maxCount)
+                is ResolvedRef.Card -> movePoolToCard(snapshot, level, target, filterPred, maxCount, damien.nodeworks.network.ChannelFilter.All)
+                is ResolvedRef.ChannelPool -> movePoolBetween(
+                    snapshot, level, filterPred, maxCount,
+                    sourceChannel = damien.nodeworks.network.ChannelFilter.All,
+                    targetChannel = damien.nodeworks.network.ChannelFilter.Color(target.color),
+                )
+            }
+            is ResolvedRef.ChannelPool -> when (target) {
+                is ResolvedRef.Pool -> movePoolBetween(
+                    snapshot, level, filterPred, maxCount,
+                    sourceChannel = damien.nodeworks.network.ChannelFilter.Color(source.color),
+                    targetChannel = damien.nodeworks.network.ChannelFilter.All,
+                )
+                is ResolvedRef.ChannelPool -> {
+                    if (source.color == target.color) 0L
+                    else movePoolBetween(
+                        snapshot, level, filterPred, maxCount,
+                        sourceChannel = damien.nodeworks.network.ChannelFilter.Color(source.color),
+                        targetChannel = damien.nodeworks.network.ChannelFilter.Color(target.color),
+                    )
+                }
+                is ResolvedRef.Card -> movePoolToCard(
+                    snapshot, level, target, filterPred, maxCount,
+                    damien.nodeworks.network.ChannelFilter.Color(source.color),
+                )
             }
         }
+    }
+
+    /** Move items between two channel-scoped (or All-scoped) subsets of network
+     *  storage. Walks source-side cards extracting matching items, inserts via
+     *  the channel-aware helper so target-side cards filter correctly. */
+    private fun movePoolBetween(
+        snapshot: NetworkSnapshot,
+        level: net.minecraft.server.level.ServerLevel,
+        filterPred: (String) -> Boolean,
+        maxCount: Long,
+        sourceChannel: damien.nodeworks.network.ChannelFilter,
+        targetChannel: damien.nodeworks.network.ChannelFilter,
+    ): Long {
+        var remaining = maxCount
+        var totalMoved = 0L
+        for (srcCard in NetworkStorageHelper.getStorageCards(snapshot)) {
+            if (remaining <= 0L) break
+            if (!sourceChannel.matches(srcCard.channel)) continue
+            val srcStorage = NetworkStorageHelper.getStorage(level, srcCard) ?: continue
+            val moved = NetworkStorageHelper.insertItems(
+                level, snapshot, srcStorage, filter,
+                remaining, engine.routeTable, null, engine.inventoryCache,
+                targetChannel,
+            )
+            totalMoved += moved
+            remaining -= moved
+        }
+        return totalMoved
     }
 
     /** Pull from the Network Storage pool into a specific card. Walks Storage Cards
@@ -304,6 +368,7 @@ class ImporterBuilder(
         target: ResolvedRef.Card,
         filterPred: (String) -> Boolean,
         maxCount: Long,
+        sourceChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ): Long {
         val destStorage = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
         val cache = engine.inventoryCache
@@ -311,6 +376,7 @@ class ImporterBuilder(
         var totalMoved = 0L
         for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
+            if (!sourceChannel.matches(poolCard.channel)) continue
             val poolStorage = NetworkStorageHelper.getStorage(level, poolCard) ?: continue
             val infos = PlatformServices.storage.findAllItemInfo(poolStorage) { filterPred(it) }
             for (info in infos) {

@@ -9,6 +9,7 @@ import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.AntennaSegmentBlock
 import damien.nodeworks.block.BreakerBlock
 import damien.nodeworks.block.BroadcastAntennaBlock
+import damien.nodeworks.block.ImportChestBlock
 import damien.nodeworks.block.PlacerBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CoProcessorBlock
@@ -230,6 +231,17 @@ object ModBlocks {
         ::InventoryTerminalBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    /** Import Chest. Buffer + network input device. Uses copper-chest sound type
+     *  to match the metallic visual planned for the texture. */
+    val IMPORT_CHEST: Block = register(
+        "import_chest",
+        ::ImportChestBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .sound(net.minecraft.world.level.block.SoundType.COPPER_GRATE)
             .requiresCorrectToolForDrops()
     )
 

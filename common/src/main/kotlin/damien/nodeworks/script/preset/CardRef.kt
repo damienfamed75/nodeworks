@@ -1,6 +1,7 @@
 package damien.nodeworks.script.preset
 
 import net.minecraft.core.Direction
+import net.minecraft.world.item.DyeColor
 import org.luaj.vm2.LuaError
 import org.luaj.vm2.LuaTable
 import org.luaj.vm2.LuaValue
@@ -29,6 +30,12 @@ sealed class CardRef {
      *  members were face-overridden. */
     data class Named(val alias: String, val faceOverride: Direction? = null) : CardRef()
     data object Pool : CardRef()
+
+    /** A channel-scoped subset of the network storage pool. Resolves at tick
+     *  time to the storage cards whose own channel matches [color]. Produced
+     *  when a preset's `:from(...)` / `:to(...)` receives the table returned
+     *  by `network:channel("color")`. */
+    data class Channel(val color: DyeColor) : CardRef()
 }
 
 object CardRefs {
@@ -41,13 +48,20 @@ object CardRefs {
         if (v.istable()) {
             val tbl = v.checktable()
             if (tbl.get("_isNetworkPool") == LuaValue.TRUE) return CardRef.Pool
+            if (tbl.get("_isChannelRef") == LuaValue.TRUE) {
+                val id = tbl.get("_channelColorId")
+                if (id.isnumber()) {
+                    val color = runCatching { DyeColor.byId(id.checkint()) }.getOrNull()
+                    if (color != null) return CardRef.Channel(color)
+                }
+            }
             val cardName = tbl.get("_cardRefName")
             if (cardName.isstring()) {
                 val face = readFaceOverride(tbl)
                 return CardRef.Named(cardName.checkjstring(), face)
             }
         }
-        throw LuaError("expected card alias, CardHandle, or network")
+        throw LuaError("expected card alias, CardHandle, network, or network:channel(color)")
     }
 
     /** Read the `_cardRefFace` marker (a Direction.ordinal) off a CardHandle table.

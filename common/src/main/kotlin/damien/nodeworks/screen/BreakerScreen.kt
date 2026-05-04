@@ -66,7 +66,9 @@ class BreakerScreen(
         val initialChannel = runCatching { DyeColor.byId(menu.channelId) }.getOrDefault(DyeColor.WHITE)
         lastSyncedChannel = initialChannel.id
         picker = ChannelPickerWidget(controlX, rowY(1) + 3, initialChannel) { color ->
-            sendUpdate("channel", color.id, "")
+            // canBeNone = false here, so color is never null in practice. Guard
+            // anyway so a future flip of canBeNone = true doesn't NPE.
+            if (color != null) sendUpdate("channel", color.id, "")
         }
         addRenderableWidget(picker!!)
     }

@@ -15,6 +15,7 @@ import damien.nodeworks.block.entity.CraftingStorageBlockEntity
 import damien.nodeworks.block.entity.StabilizerBlockEntity
 import damien.nodeworks.block.entity.SubstrateBlockEntity
 import damien.nodeworks.block.entity.BreakerBlockEntity
+import damien.nodeworks.block.entity.ImportChestBlockEntity
 import damien.nodeworks.block.entity.PlacerBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
@@ -111,6 +112,11 @@ object ModBlockEntities {
     val PLACER: BlockEntityType<PlacerBlockEntity> = register(
         "placer",
         PlatformServices.blockEntity.createBlockEntityType(::PlacerBlockEntity, ModBlocks.PLACER)
+    )
+
+    val IMPORT_CHEST: BlockEntityType<ImportChestBlockEntity> = register(
+        "import_chest",
+        PlatformServices.blockEntity.createBlockEntityType(::ImportChestBlockEntity, ModBlocks.IMPORT_CHEST)
     )
 
     private fun <T : BlockEntity> register(

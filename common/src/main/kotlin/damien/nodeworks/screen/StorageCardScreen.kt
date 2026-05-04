@@ -277,6 +277,7 @@ class StorageCardScreen(
         val initialChannel = menu.getChannel()
         lastSyncedChannel = initialChannel.id
         picker = ChannelPickerWidget(leftPos + pickerX, pickerY, initialChannel) { color ->
+            if (color == null) return@ChannelPickerWidget
             playClickSound()
             Minecraft.getInstance().gameMode?.handleInventoryButtonClick(menu.containerId, 2000 + color.id)
         }

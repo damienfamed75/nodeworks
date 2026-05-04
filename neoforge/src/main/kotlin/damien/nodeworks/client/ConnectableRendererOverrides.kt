@@ -98,3 +98,8 @@ class NeoPlacerRenderer(ctx: BlockEntityRendererProvider.Context) : PlacerRender
     override fun getRenderBoundingBox(blockEntity: PlacerBlockEntity): AABB =
         ConnectionBeamRenderer.computeBoundingBox(blockEntity)
 }
+
+class NeoImportChestRenderer(ctx: BlockEntityRendererProvider.Context) : damien.nodeworks.render.ImportChestRenderer(ctx) {
+    override fun getRenderBoundingBox(blockEntity: damien.nodeworks.block.entity.ImportChestBlockEntity): AABB =
+        ConnectionBeamRenderer.computeBoundingBox(blockEntity)
+}

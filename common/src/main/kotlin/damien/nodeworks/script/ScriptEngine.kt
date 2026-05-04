@@ -868,6 +868,13 @@ class ScriptEngine(
         val t = LuaTable()
         val selfRef = this
 
+        // Marker fields so [CardRefs.fromLua] can recognise this table as a channel
+        // pool reference when passed to `importer:from(channel)` / `:to(channel)` /
+        // `stocker:from(channel)` / `:to(channel)`. The color id round-trips back to
+        // a DyeColor on the Kotlin side.
+        t.set("_isChannelRef", LuaValue.TRUE)
+        t.set("_channelColorId", LuaValue.valueOf(color.id))
+
         // :getFirst(type), first card or variable matching [type] AND this channel,
         // or nil. Renamed from `:first` to keep every "fetch" method in the API on
         // the `:get*` prefix (`network:get`, `network:getAll`, `Channel:get`).
@@ -956,6 +963,132 @@ class ScriptEngine(
                 throw LuaError("No member named '$alias' on the ${color.name.lowercase()} channel")
             }
         })
+
+        // :count(filter), :find(filter), :findEach(filter), :insert(handle, count?),
+        // :tryInsert(handle, count?). Mirror the Network:* methods but scoped to this
+        // channel's storage cards. All five route through the same helpers Network
+        // uses, just with a non-default [ChannelFilter.Color] argument so non-matching
+        // cards are skipped during scan/insert.
+        val channelFilter = damien.nodeworks.network.ChannelFilter.Color(color)
+
+        t.set("count", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val total = NetworkStorageHelper.countResource(level, snapshot, filter, channelFilter)
+                return LuaValue.valueOf(total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            }
+        })
+
+        t.set("find", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val (kindGate, _) = CardHandle.parseFilterKind(filter)
+                if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.ITEM) {
+                    val itemResult = NetworkStorageHelper.findFirstItemInfoAcrossNetwork(level, snapshot, filter, channelFilter)
+                    if (itemResult != null) {
+                        val (info, _) = itemResult
+                        val totalCount = NetworkStorageHelper.countItems(level, snapshot, filter, channelFilter)
+                        val aggregated = info.copy(count = totalCount)
+                        val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                            NetworkStorageHelper.getStorageCards(snapshot)
+                                .filter { channelFilter.matches(it.channel) }
+                                .firstNotNullOfOrNull { card ->
+                                    val storage = NetworkStorageHelper.getStorage(level, card)
+                                    if (storage != null) {
+                                        val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) {
+                                            CardHandle.matchesFilter(it, damien.nodeworks.platform.ResourceKind.ITEM, filter)
+                                        }
+                                        if (has > 0) storage else null
+                                    } else null
+                                }
+                        }
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregated, filter, sourceStorage, level))
+                    }
+                }
+                if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
+                    val fluidResult = NetworkStorageHelper.findFirstFluidInfoAcrossNetwork(level, snapshot, filter, channelFilter)
+                    if (fluidResult != null) {
+                        val (info, _) = fluidResult
+                        val totalAmount = NetworkStorageHelper.countFluid(level, snapshot, filter, channelFilter)
+                        val aggregated = damien.nodeworks.platform.FluidInfo(info.fluidId, info.name, totalAmount)
+                        val fluidSource: () -> damien.nodeworks.platform.FluidStorageHandle? = {
+                            NetworkStorageHelper.getStorageCards(snapshot)
+                                .filter { channelFilter.matches(it.channel) }
+                                .firstNotNullOfOrNull { card ->
+                                    val storage = NetworkStorageHelper.getFluidStorage(level, card)
+                                    if (storage != null) {
+                                        val has = damien.nodeworks.platform.PlatformServices.storage.countFluid(storage) { it == info.fluidId }
+                                        if (has > 0) storage else null
+                                    } else null
+                                }
+                        }
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level))
+                    }
+                }
+                return LuaValue.NIL
+            }
+        })
+
+        t.set("findEach", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, filterArg: LuaValue): LuaValue {
+                val filter = filterArg.checkjstring()
+                val (kindGate, _) = CardHandle.parseFilterKind(filter)
+                val result = LuaTable()
+                var idx = 1
+                if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.ITEM) {
+                    val allItems = NetworkStorageHelper.findAllItemInfoAcrossNetwork(level, snapshot, filter, channelFilter)
+                    if (allItems.size > MAX_FINDEACH_RESULTS) {
+                        throw LuaError(
+                            "Channel('${color.name.lowercase()}'):findEach('$filter') matched ${allItems.size} distinct items, " +
+                            "above the $MAX_FINDEACH_RESULTS cap. Narrow the filter or use :count(filter) for an aggregate."
+                        )
+                    }
+                    for ((info, _) in allItems) {
+                        val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = {
+                            NetworkStorageHelper.getStorageCards(snapshot)
+                                .filter { channelFilter.matches(it.channel) }
+                                .firstNotNullOfOrNull { card ->
+                                    val storage = NetworkStorageHelper.getStorage(level, card)
+                                    if (storage != null) {
+                                        val has = damien.nodeworks.platform.PlatformServices.storage.countItems(storage) { it == info.itemId }
+                                        if (has > 0) storage else null
+                                    } else null
+                                }
+                        }
+                        val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                        result.set(idx++, ItemsHandle.toLuaTable(handle))
+                    }
+                }
+                if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
+                    val allFluids = NetworkStorageHelper.findAllFluidInfoAcrossNetwork(level, snapshot, filter, channelFilter)
+                    if (idx - 1 + allFluids.size > MAX_FINDEACH_RESULTS) {
+                        throw LuaError(
+                            "Channel('${color.name.lowercase()}'):findEach('$filter') matched ${idx - 1 + allFluids.size} distinct resources, " +
+                            "above the $MAX_FINDEACH_RESULTS cap. Narrow the filter or use :count(filter)."
+                        )
+                    }
+                    for ((info, _) in allFluids) {
+                        val fluidSource: () -> damien.nodeworks.platform.FluidStorageHandle? = {
+                            NetworkStorageHelper.getStorageCards(snapshot)
+                                .filter { channelFilter.matches(it.channel) }
+                                .firstNotNullOfOrNull { card ->
+                                    val storage = NetworkStorageHelper.getFluidStorage(level, card)
+                                    if (storage != null) {
+                                        val has = damien.nodeworks.platform.PlatformServices.storage.countFluid(storage) { it == info.fluidId }
+                                        if (has > 0) storage else null
+                                    } else null
+                                }
+                        }
+                        val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level)
+                        result.set(idx++, ItemsHandle.toLuaTable(handle))
+                    }
+                }
+                return result
+            }
+        })
+
+        t.set("insert", buildNetworkInsertFn(snapshot, atomic = true, channel = channelFilter))
+        t.set("tryInsert", buildNetworkInsertFn(snapshot, atomic = false, channel = channelFilter))
 
         return t
     }
@@ -1071,7 +1204,11 @@ class ScriptEngine(
      * network as a whole. `routeTable` / `inventoryCache` are read from `this` at call
      * time so routes registered mid-script via `network:route` take effect.
      */
-    private fun buildNetworkInsertFn(snapshot: NetworkSnapshot, atomic: Boolean): VarArgFunction {
+    private fun buildNetworkInsertFn(
+        snapshot: NetworkSnapshot,
+        atomic: Boolean,
+        channel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
+    ): VarArgFunction {
         return object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
                 val itemsTable = args.checktable(2)
@@ -1091,9 +1228,9 @@ class ScriptEngine(
                 }
 
                 return if (itemsHandle.kind == damien.nodeworks.platform.ResourceKind.FLUID) {
-                    invokeFluid(snapshot, itemsHandle, requested, atomic)
+                    invokeFluid(snapshot, itemsHandle, requested, atomic, channel)
                 } else {
-                    invokeItems(snapshot, itemsHandle, requested, atomic)
+                    invokeItems(snapshot, itemsHandle, requested, atomic, channel)
                 }
             }
         }
@@ -1114,7 +1251,8 @@ class ScriptEngine(
         snapshot: NetworkSnapshot,
         itemsHandle: ItemsHandle,
         requested: Long,
-        atomic: Boolean
+        atomic: Boolean,
+        channel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ): LuaValue {
         val sourceFluid = itemsHandle.fluidSourceStorage()
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
@@ -1125,6 +1263,7 @@ class ScriptEngine(
             var capacity = 0L
             for (card in storageCards) {
                 if (capacity >= requested) break
+                if (!channel.matches(card.channel)) continue
                 val dest = NetworkStorageHelper.getFluidStorage(level, card) ?: continue
                 capacity += try {
                     damien.nodeworks.platform.PlatformServices.storage.simulateInsertFluid(
@@ -1147,7 +1286,7 @@ class ScriptEngine(
                 return LuaValue.FALSE
             }
             val placed = NetworkStorageHelper.insertFluidAcrossNetwork(
-                level, snapshot, itemsHandle.itemId, drained, inventoryCache
+                level, snapshot, itemsHandle.itemId, drained, inventoryCache, channel
             )
             if (placed < drained) {
                 // Commit diverged from sim, refund the shortfall to source.
@@ -1165,7 +1304,7 @@ class ScriptEngine(
         )
         if (drained <= 0L) return LuaValue.valueOf(0)
         val placed = NetworkStorageHelper.insertFluidAcrossNetwork(
-            level, snapshot, itemsHandle.itemId, drained, inventoryCache
+            level, snapshot, itemsHandle.itemId, drained, inventoryCache, channel
         )
         if (placed < drained) {
             damien.nodeworks.platform.PlatformServices.storage.insertFluid(
@@ -1184,14 +1323,15 @@ class ScriptEngine(
         snapshot: NetworkSnapshot,
         itemsHandle: ItemsHandle,
         requested: Long,
-        atomic: Boolean
+        atomic: Boolean,
+        channel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ): LuaValue {
         // Buffer-backed handle (e.g. the one passed to a `:craft():connect(...)` callback):
         // drain from the CPU buffer into network storage stack-by-stack instead of going
         // through `sourceStorage()`, which is null for buffer-only handles.
         val bufSrc = itemsHandle.bufferSource
         if (bufSrc != null) {
-            return invokeItemsFromBuffer(snapshot, bufSrc, requested, atomic)
+            return invokeItemsFromBuffer(snapshot, bufSrc, requested, atomic, channel)
         }
         val sourceStorage = itemsHandle.sourceStorage()
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
@@ -1217,14 +1357,14 @@ class ScriptEngine(
         return if (atomic) {
             val ok = NetworkStorageHelper.tryInsertItemsAcrossNetwork(
                 level, snapshot, sourceStorage, itemsHandle.filter,
-                clamped, routeTable, inventoryCache
+                clamped, routeTable, inventoryCache, channel
             )
             if (ok) budget.noteItemsMoved(tick, clamped)
             LuaValue.valueOf(ok)
         } else {
             val moved = NetworkStorageHelper.insertItems(
                 level, snapshot, sourceStorage, itemsHandle.filter,
-                clamped, routeTable, null, inventoryCache
+                clamped, routeTable, null, inventoryCache, channel
             )
             budget.noteItemsMoved(tick, moved)
             LuaValue.valueOf(moved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
@@ -1240,7 +1380,8 @@ class ScriptEngine(
         snapshot: NetworkSnapshot,
         bufSrc: damien.nodeworks.script.BufferSource,
         requested: Long,
-        atomic: Boolean
+        atomic: Boolean,
+        channel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ): LuaValue {
         val id = net.minecraft.resources.Identifier.tryParse(bufSrc.itemId)
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
@@ -1274,7 +1415,7 @@ class ScriptEngine(
             while (remaining > 0L) {
                 val batch = minOf(remaining, maxStack).toInt()
                 val stack = net.minecraft.world.item.ItemStack(item, batch)
-                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache).toLong()
+                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache, channel).toLong()
                 totalInserted += inserted
                 remaining -= inserted
                 if (inserted == 0L) break

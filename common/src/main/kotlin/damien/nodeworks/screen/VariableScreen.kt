@@ -111,7 +111,7 @@ class VariableScreen(
         val initialChannel = runCatching { DyeColor.byId(menu.channelId) }.getOrDefault(DyeColor.WHITE)
         lastSyncedChannel = initialChannel.id
         picker = ChannelPickerWidget(controlX, rowY(3) + 3, initialChannel) { color ->
-            sendUpdate("channel", color.id, "")
+            if (color != null) sendUpdate("channel", color.id, "")
         }
         addRenderableWidget(picker!!)
     }

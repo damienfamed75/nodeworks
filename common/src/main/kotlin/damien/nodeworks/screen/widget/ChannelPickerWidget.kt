@@ -26,15 +26,28 @@ import net.minecraft.world.item.DyeColor
  * moment the user picks a colour and the host's menu syncs the new value to the
  * server. The widget itself only owns transient UI state ([currentColor],
  * [expanded]).
+ *
+ * Setting [canBeNone] adds a 17th option centred at the bottom of the popup,
+ * rendered as a black square with a red X. Picking it sets [isNone] = true and
+ * fires `onChange(null)`. Hosts that don't need a "no channel" state pass the
+ * default `canBeNone = false` and the callback is guaranteed to receive a
+ * non-null colour.
  */
 class ChannelPickerWidget(
     x: Int,
     y: Int,
     initialColor: DyeColor,
-    private val onChange: (DyeColor) -> Unit,
+    private val canBeNone: Boolean = false,
+    initialIsNone: Boolean = false,
+    private val onChange: (DyeColor?) -> Unit,
 ) : AbstractWidget(x, y, SWATCH, SWATCH, Component.literal("Channel")) {
 
     var currentColor: DyeColor = initialColor
+        private set
+
+    /** True when the picker is in the "no channel" state. Always false when
+     *  [canBeNone] is false. */
+    var isNone: Boolean = initialIsNone && canBeNone
         private set
 
     /** True while the popup is open. Host screens read this to decide whether to
@@ -44,6 +57,12 @@ class ChannelPickerWidget(
 
     fun setColor(color: DyeColor) {
         currentColor = color
+        isNone = false
+    }
+
+    fun setNone() {
+        if (!canBeNone) return
+        isNone = true
     }
 
     /** Programmatically close the popup. Host screens call this on key-Escape or
@@ -60,11 +79,16 @@ class ChannelPickerWidget(
         mouseY: Int,
         partialTick: Float,
     ) {
-        // Slot frame, then a 14×14 fill of the current dye colour. Border looks the
-        // same as Storage Card's priority slot, keeps the GUI visually consistent.
+        // Slot frame, then either the dye-coloured fill or the "none" black-with-X
+        // glyph. Border looks the same as Storage Card's priority slot, keeps the
+        // GUI visually consistent.
         NineSlice.SLOT.draw(graphics, x, y, SWATCH, SWATCH)
-        val rgb = currentColor.textureDiffuseColor or 0xFF000000.toInt()
-        graphics.fill(x + 1, y + 1, x + SWATCH - 1, y + SWATCH - 1, rgb)
+        if (isNone) {
+            drawNoneGlyph(graphics, x, y, SWATCH)
+        } else {
+            val rgb = currentColor.textureDiffuseColor or 0xFF000000.toInt()
+            graphics.fill(x + 1, y + 1, x + SWATCH - 1, y + SWATCH - 1, rgb)
+        }
 
         // Hover outline so the player knows the swatch is interactive.
         if (isHovered) {
@@ -86,20 +110,32 @@ class ChannelPickerWidget(
 
     // ---- Popup overlay (host-driven render + click) ----
 
-    /** Bounds of the 4×4 popup grid as (x, y, w, h). The popup hangs DOWN from the
-     *  swatch by default, but flips upward when the swatch is too close to the
-     *  screen's bottom edge to fit a full grid below it. Used by [renderOverlay]
-     *  and [handleOverlayClick] so the two stay in sync without recomputing the
-     *  layout in two places. */
+    /** Bounds of the popup as (x, y, w, h). Includes the 4×4 colour grid, plus a
+     *  17th centred "none" cell at the bottom when [canBeNone] is true. The popup
+     *  hangs DOWN from the swatch by default, but flips upward when the swatch is
+     *  too close to the screen's bottom edge. Used by [renderOverlay] and
+     *  [handleOverlayClick] so the two stay in sync. */
     private fun popupBounds(): IntArray {
         val w = POPUP_COLS * CELL + POPUP_PAD * 2
-        val h = POPUP_ROWS * CELL + POPUP_PAD * 2
+        val gridH = POPUP_ROWS * CELL
+        val noneH = if (canBeNone) NONE_GAP + CELL else 0
+        val h = gridH + noneH + POPUP_PAD * 2
         val px = x
         val screenH = Minecraft.getInstance().window.guiScaledHeight
         val belowY = y + SWATCH + 2
         val aboveY = y - h - 2
         val py = if (belowY + h <= screenH) belowY else aboveY.coerceAtLeast(0)
         return intArrayOf(px, py, w, h)
+    }
+
+    /** Bounds of the centred "none" cell within the popup, or null when
+     *  [canBeNone] is false. (px, py, cellSize) shaped like grid cells. */
+    private fun noneCellBounds(): IntArray? {
+        if (!canBeNone) return null
+        val (px, py, pw, _) = popupBounds().toList()
+        val cellX = px + (pw - CELL) / 2
+        val cellY = py + POPUP_PAD + POPUP_ROWS * CELL + NONE_GAP
+        return intArrayOf(cellX, cellY, CELL, CELL)
     }
 
     /** Host screens must call this AFTER rendering their other widgets so the popup
@@ -122,7 +158,7 @@ class ChannelPickerWidget(
             graphics.fill(cellX + 1, cellY + 1, cellX + CELL - 1, cellY + CELL - 1, rgb)
 
             val hovered = mouseX in cellX..(cellX + CELL) && mouseY in cellY..(cellY + CELL)
-            val selected = color == currentColor
+            val selected = !isNone && color == currentColor
             if (hovered || selected) {
                 val outline = if (selected) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
                 graphics.fill(cellX, cellY, cellX + CELL, cellY + 1, outline)
@@ -141,6 +177,48 @@ class ChannelPickerWidget(
                 graphics.drawString(font, name, tx, ty, 0xFFFFFFFF.toInt(), false)
             }
         }
+
+        // 17th "none" cell, centred under the grid.
+        val noneCell = noneCellBounds()
+        if (noneCell != null) {
+            val (cellX, cellY, _, _) = noneCell.toList()
+            drawNoneGlyph(graphics, cellX, cellY, CELL)
+            val hovered = mouseX in cellX..(cellX + CELL) && mouseY in cellY..(cellY + CELL)
+            val selected = isNone
+            if (hovered || selected) {
+                val outline = if (selected) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
+                graphics.fill(cellX, cellY, cellX + CELL, cellY + 1, outline)
+                graphics.fill(cellX, cellY + CELL - 1, cellX + CELL, cellY + CELL, outline)
+                graphics.fill(cellX, cellY, cellX + 1, cellY + CELL, outline)
+                graphics.fill(cellX + CELL - 1, cellY, cellX + CELL, cellY + CELL, outline)
+            }
+            if (hovered) {
+                val font = Minecraft.getInstance().font
+                val name = "none"
+                val tw = font.width(name) + 4
+                val tx = (cellX - tw / 2 + CELL / 2).coerceIn(2, Minecraft.getInstance().window.guiScaledWidth - tw - 2)
+                val ty = (py - font.lineHeight - 2).coerceAtLeast(2)
+                graphics.fill(tx - 2, ty - 1, tx + tw - 2, ty + font.lineHeight + 1, 0xCC000000.toInt())
+                graphics.drawString(font, name, tx, ty, 0xFFFFFFFF.toInt(), false)
+            }
+        }
+    }
+
+    /** Black square + red X. Used both on the swatch (when [isNone]) and as the
+     *  17th popup cell. [size] should match the cell, the X is sized
+     *  proportionally so it reads at both 12px (popup cell) and 16px (swatch). */
+    private fun drawNoneGlyph(graphics: GuiGraphicsExtractor, x0: Int, y0: Int, size: Int) {
+        graphics.fill(x0 + 1, y0 + 1, x0 + size - 1, y0 + size - 1, 0xFF1A1A1A.toInt())
+        // Two diagonal lines, 1px thick, drawn as a series of fills so we don't
+        // pull in a stroke API. Inset 2px from the cell edge so the X has visible
+        // breathing room against the frame.
+        val inset = 2
+        val red = 0xFFE53935.toInt()
+        val xn = size - inset * 2
+        for (i in 0 until xn) {
+            graphics.fill(x0 + inset + i, y0 + inset + i, x0 + inset + i + 1, y0 + inset + i + 1, red)
+            graphics.fill(x0 + inset + i, y0 + size - inset - 1 - i, x0 + inset + i + 1, y0 + size - inset - i, red)
+        }
     }
 
     /** Host screens call this BEFORE forwarding clicks to other widgets while
@@ -150,7 +228,7 @@ class ChannelPickerWidget(
         if (!expanded) return false
         val (px, py, pw, ph) = popupBounds().toList()
 
-        // Inside the grid → pick the swatch.
+        // Inside the colour grid → pick the swatch.
         val gridX0 = px + POPUP_PAD
         val gridY0 = py + POPUP_PAD
         if (mouseX >= gridX0 && mouseY >= gridY0 &&
@@ -161,13 +239,28 @@ class ChannelPickerWidget(
             val idx = row * POPUP_COLS + col
             if (idx in 0 until POPUP_COLS * POPUP_ROWS) {
                 val picked = DyeColor.byId(idx)
-                if (picked != currentColor) {
+                if (picked != currentColor || isNone) {
                     currentColor = picked
+                    isNone = false
                     onChange(picked)
                 }
             }
             expanded = false
             return true
+        }
+
+        // 17th "none" cell.
+        val noneCell = noneCellBounds()
+        if (noneCell != null) {
+            val (ncX, ncY, ncW, ncH) = noneCell.toList()
+            if (mouseX >= ncX && mouseY >= ncY && mouseX < ncX + ncW && mouseY < ncY + ncH) {
+                if (!isNone) {
+                    isNone = true
+                    onChange(null)
+                }
+                expanded = false
+                return true
+            }
         }
 
         // Outside grid (and outside swatch) → close. Returning true so the host
@@ -188,5 +281,7 @@ class ChannelPickerWidget(
         private const val POPUP_ROWS = 4
         private const val CELL = 12
         private const val POPUP_PAD = 4
+        /** Vertical gap between the 4×4 colour grid and the 17th "none" cell. */
+        private const val NONE_GAP = 3
     }
 }

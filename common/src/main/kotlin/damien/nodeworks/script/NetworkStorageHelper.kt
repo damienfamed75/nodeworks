@@ -2,6 +2,7 @@ package damien.nodeworks.script
 
 import damien.nodeworks.card.StorageSideCapability
 import damien.nodeworks.network.CardSnapshot
+import damien.nodeworks.network.ChannelFilter
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.FluidInfo
 import damien.nodeworks.platform.FluidStorageHandle
@@ -39,18 +40,30 @@ object NetworkStorageHelper {
         return PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, cap.defaultFace)
     }
 
-    fun countItems(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Long {
+    fun countItems(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Long {
         var total = 0L
         for (card in getStorageCards(snapshot)) {
+            if (!channel.matches(card.channel)) continue
             val storage = getStorage(level, card) ?: continue
             total += PlatformServices.storage.countItems(storage) { CardHandle.matchesFilter(it, ResourceKind.ITEM, filter) }
         }
         return total
     }
 
-    fun countFluid(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Long {
+    fun countFluid(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Long {
         var total = 0L
         for (card in getStorageCards(snapshot)) {
+            if (!channel.matches(card.channel)) continue
             val storage = getFluidStorage(level, card) ?: continue
             total += PlatformServices.storage.countFluid(storage) { CardHandle.matchesFilter(it, ResourceKind.FLUID, filter) }
         }
@@ -61,16 +74,27 @@ object NetworkStorageHelper {
      * Count items + fluids matching [filter] across the network.
      * A filter like `item:*` skips fluids, `fluid:*` skips items, bare filters sum both.
      */
-    fun countResource(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Long {
+    fun countResource(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Long {
         val (kindGate, _) = CardHandle.parseFilterKind(filter)
         var total = 0L
-        if (kindGate == null || kindGate == ResourceKind.ITEM) total += countItems(level, snapshot, filter)
-        if (kindGate == null || kindGate == ResourceKind.FLUID) total += countFluid(level, snapshot, filter)
+        if (kindGate == null || kindGate == ResourceKind.ITEM) total += countItems(level, snapshot, filter, channel)
+        if (kindGate == null || kindGate == ResourceKind.FLUID) total += countFluid(level, snapshot, filter, channel)
         return total
     }
 
-    fun findFirstFluidInfoAcrossNetwork(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Pair<FluidInfo, CardSnapshot>? {
+    fun findFirstFluidInfoAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Pair<FluidInfo, CardSnapshot>? {
         for (card in getStorageCards(snapshot)) {
+            if (!channel.matches(card.channel)) continue
             val storage = getFluidStorage(level, card) ?: continue
             val info = PlatformServices.storage.findFirstFluidInfo(storage) { CardHandle.matchesFilter(it, ResourceKind.FLUID, filter) }
             if (info != null) return Pair(info, card)
@@ -83,12 +107,14 @@ object NetworkStorageHelper {
         snapshot: NetworkSnapshot,
         fluidId: String,
         amount: Long,
-        cache: NetworkInventoryCache? = null
+        cache: NetworkInventoryCache? = null,
+        channel: ChannelFilter = ChannelFilter.All,
     ): Long {
         if (amount <= 0L) return 0L
         var remaining = amount
         for (card in getStorageCards(snapshot)) {
             if (remaining <= 0L) break
+            if (!channel.matches(card.channel)) continue
             val storage = getFluidStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertFluid(storage, fluidId, remaining)
             remaining -= inserted
@@ -122,7 +148,8 @@ object NetworkStorageHelper {
         filter: String,
         requested: Long,
         routeTable: RouteTable? = null,
-        cache: NetworkInventoryCache? = null
+        cache: NetworkInventoryCache? = null,
+        channel: ChannelFilter = ChannelFilter.All,
     ): Boolean {
         if (requested <= 0L) return true
 
@@ -147,7 +174,7 @@ object NetworkStorageHelper {
         // real-world case where capacity is tight enough that two types compete for the
         // same slot, routing at commit time handles the allocation, worst-case we trip the
         // shortfall guard below and return false without a bad partial state.
-        val storageCards = getStorageCards(snapshot)
+        val storageCards = getStorageCards(snapshot).filter { channel.matches(it.channel) }
         for ((itemId, need) in demand) {
             val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: return false
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return false
@@ -167,7 +194,7 @@ object NetworkStorageHelper {
         // vanilla IItemHandler but defensive for modded storages), we treat the shortfall
         // as a hard failure and unwind by reverse-moving the committed items back to
         // source. This keeps the atomic contract even on pathological edge cases.
-        val moved = insertItems(level, snapshot, source, filter, requested, routeTable, null, cache)
+        val moved = insertItems(level, snapshot, source, filter, requested, routeTable, null, cache, channel)
         if (moved == requested) return true
 
         // Unexpected shortfall, unwind. Since source was just drained of at most `moved`
@@ -255,10 +282,12 @@ object NetworkStorageHelper {
     fun findAllFluidInfoAcrossNetwork(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
-        filter: String
+        filter: String,
+        channel: ChannelFilter = ChannelFilter.All,
     ): List<Pair<FluidInfo, CardSnapshot>> {
         val aggregated = LinkedHashMap<String, Pair<FluidInfo, CardSnapshot>>()
         for (card in getStorageCards(snapshot)) {
+            if (!channel.matches(card.channel)) continue
             val storage = getFluidStorage(level, card) ?: continue
             val fluids = PlatformServices.storage.findAllFluidInfo(storage) {
                 CardHandle.matchesFilter(it, ResourceKind.FLUID, filter)
@@ -287,8 +316,14 @@ object NetworkStorageHelper {
     }
 
     /** Find the first item info across all Storage Cards matching the filter, with its source card. */
-    fun findFirstItemInfoAcrossNetwork(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): Pair<ItemInfo, CardSnapshot>? {
+    fun findFirstItemInfoAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Pair<ItemInfo, CardSnapshot>? {
         for (card in getStorageCards(snapshot)) {
+            if (!channel.matches(card.channel)) continue
             val storage = getStorage(level, card) ?: continue
             val info = PlatformServices.storage.findFirstItemInfo(storage) { CardHandle.matchesFilter(it, filter) }
             if (info != null) return Pair(info, card)
@@ -297,10 +332,16 @@ object NetworkStorageHelper {
     }
 
     /** Find all unique item types across all Storage Cards matching the filter, with their source cards. */
-    fun findAllItemInfoAcrossNetwork(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): List<Pair<ItemInfo, CardSnapshot>> {
+    fun findAllItemInfoAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): List<Pair<ItemInfo, CardSnapshot>> {
         val results = mutableListOf<Pair<ItemInfo, CardSnapshot>>()
         val seen = mutableSetOf<String>()
         for (card in getStorageCards(snapshot)) {
+            if (!channel.matches(card.channel)) continue
             val storage = getStorage(level, card) ?: continue
             val items = PlatformServices.storage.findAllItemInfo(storage) { CardHandle.matchesFilter(it, filter) }
             for (info in items) {
@@ -330,7 +371,13 @@ object NetworkStorageHelper {
      *  any card with an ALLOW-mode whitelist would still receive every item
      *  the network produced (the filter would only gate the Lua-API
      *  `:insert` paths). */
-    fun insertItemStack(level: ServerLevel, snapshot: NetworkSnapshot, stack: net.minecraft.world.item.ItemStack, cache: NetworkInventoryCache? = null): Int {
+    fun insertItemStack(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        stack: net.minecraft.world.item.ItemStack,
+        cache: NetworkInventoryCache? = null,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Int {
         var remaining = stack.count
         val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
         // ItemStack carries its own NBT-presence state, so the filter check
@@ -338,6 +385,7 @@ object NetworkStorageHelper {
         val hasData = !stack.componentsPatch.isEmpty
         for (card in getStorageCards(snapshot)) {
             if (remaining <= 0) break
+            if (!channel.matches(card.channel)) continue
             val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
             if (cap != null && itemId != null && !cap.acceptsItem(itemId, hasData)) continue
             val storage = getStorage(level, card) ?: continue
@@ -365,13 +413,14 @@ object NetworkStorageHelper {
         maxCount: Long,
         routeTable: RouteTable? = null,
         onInsertCallback: ((String, Long) -> ItemStorageHandle?)? = null,
-        cache: NetworkInventoryCache? = null
+        cache: NetworkInventoryCache? = null,
+        channel: ChannelFilter = ChannelFilter.All,
     ): Long {
         if (routeTable == null && onInsertCallback == null) {
             // No routing, fast path, use all storages
-            return insertItemsDefault(level, snapshot, source, filter, maxCount, cache)
+            return insertItemsDefault(level, snapshot, source, filter, maxCount, cache, channel)
         }
-        return insertItemsRouted(level, snapshot, source, filter, maxCount, routeTable, onInsertCallback, cache)
+        return insertItemsRouted(level, snapshot, source, filter, maxCount, routeTable, onInsertCallback, cache, channel)
     }
 
     /**
@@ -386,7 +435,8 @@ object NetworkStorageHelper {
         maxCount: Long,
         routeTable: RouteTable?,
         onInsertCallback: ((String, Long) -> ItemStorageHandle?)?,
-        cache: NetworkInventoryCache? = null
+        cache: NetworkInventoryCache? = null,
+        channel: ChannelFilter = ChannelFilter.All,
     ): Long {
         var totalMoved = 0L
         var remaining = maxCount
@@ -451,7 +501,7 @@ object NetworkStorageHelper {
                     val fallbackMoved = if (routeTable != null) {
                         routeTable.insertDefault(source, itemId, toMove - moved)
                     } else {
-                        insertItemsDefault(level, snapshot, source, itemId, toMove - moved, cache)
+                        insertItemsDefault(level, snapshot, source, itemId, toMove - moved, cache, channel)
                     }
                     if (fallbackMoved > 0) cache?.onInserted(itemId, hasData, fallbackMoved, itemInfo.componentsPatch)
                     totalMoved += fallbackMoved
@@ -464,7 +514,7 @@ object NetworkStorageHelper {
             val defaultMoved = if (routeTable != null) {
                 routeTable.insertDefault(source, itemId, toMove)
             } else {
-                insertItemsDefault(level, snapshot, source, itemId, toMove, cache)
+                insertItemsDefault(level, snapshot, source, itemId, toMove, cache, channel)
             }
             if (defaultMoved > 0) cache?.onInserted(itemId, hasData, defaultMoved, itemInfo.componentsPatch)
             totalMoved += defaultMoved
@@ -481,12 +531,14 @@ object NetworkStorageHelper {
         source: ItemStorageHandle,
         filter: String,
         maxCount: Long,
-        cache: NetworkInventoryCache? = null
+        cache: NetworkInventoryCache? = null,
+        channel: ChannelFilter = ChannelFilter.All,
     ): Long {
         var totalMoved = 0L
         var remaining = maxCount
         for (card in getStorageCards(snapshot)) {
             if (remaining <= 0) break
+            if (!channel.matches(card.channel)) continue
             val destStorage = getStorage(level, card) ?: continue
             // Per-card filter gate, see [RouteTable.insertDefault] for the rationale.
             // An ALLOW-mode card with empty rules + ANY/ANY gates accepts anything

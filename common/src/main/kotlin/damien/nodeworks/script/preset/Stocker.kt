@@ -111,10 +111,11 @@ class StockerBuilder(
     // chest_*" has ambiguous semantics that a power user can express with multiple
     // stockers if they really want it.
     private var resolvedSources: List<ResolvedRef> = emptyList()
-    // Target stays single (no wildcard expansion). Stored as a [ResolvedRef.Card] so
-    // the face override (if any) carried in by a face-overridden CardHandle survives
-    // through to the storage lookup, same as on the source side.
-    private var resolvedTarget: ResolvedRef.Card? = null
+    // Target stays single (no wildcard expansion). May be either a specific [Card]
+    // (preserves face override) or a [ChannelPool] when the user passed a
+    // `network:channel(color)` reference. [Pool] target is allowed too (keep N
+    // items in network storage pool).
+    private var resolvedTarget: ResolvedRef? = null
 
     override val presetName = "stocker"
 
@@ -158,7 +159,9 @@ class StockerBuilder(
             is CardRef.Named -> snapshot.findByAlias(t.alias)?.let {
                 ResolvedRef.Card(it, t.faceOverride)
             }
-            else -> null
+            is CardRef.Channel -> ResolvedRef.ChannelPool(t.color)
+            is CardRef.Pool -> ResolvedRef.Pool
+            null -> null
         }
     }
 
@@ -171,8 +174,12 @@ class StockerBuilder(
         // 1. Figure out current stock in the target.
         val current = when (targetRef) {
             is CardRef.Pool -> NetworkStorageHelper.countItems(level, snapshot, filter).toInt()
+            is CardRef.Channel -> NetworkStorageHelper
+                .countItems(level, snapshot, filter, damien.nodeworks.network.ChannelFilter.Color(targetRef.color))
+                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             is CardRef.Named -> {
-                val storage = resolvedTarget?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) } ?: return
+                val card = resolvedTarget as? ResolvedRef.Card ?: return
+                val storage = CardStorage.forCard(level, card.snapshot, card.faceOverride) ?: return
                 PlatformServices.storage.countItems(storage, filterPred)
                     .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             }
@@ -187,12 +194,13 @@ class StockerBuilder(
             if (need <= 0) return
         }
 
-        // 2b. CRAFT_ONLY with a Named target: the CPU writes craft output back into the
-        // network pool, so we still have to drain pool → target each tick or the items
+        // 2b. CRAFT_ONLY with a Named/Channel target: the CPU writes craft output back into
+        // the network pool, so we still have to drain pool → target each tick or the items
         // pile up in storage and never reach the named card. POOL_OR_CRAFT already does
         // this implicitly through its `[Pool]` source in step 2, CRAFT_ONLY has empty
-        // sources so it needs the explicit move.
-        if (mode == StockerMode.CRAFT_ONLY && targetRef is CardRef.Named) {
+        // sources so it needs the explicit move. Pool target needs no drain (CPU's flush
+        // already lands in the pool).
+        if (mode == StockerMode.CRAFT_ONLY && (targetRef is CardRef.Named || targetRef is CardRef.Channel)) {
             val drained = movePoolToTarget(snapshot, level, targetRef, filterPred, need.toLong())
             need = (need - drained.toInt()).coerceAtLeast(0)
             if (need <= 0) return
@@ -227,6 +235,12 @@ class StockerBuilder(
                     need -= movePoolToTarget(snapshot, level, targetRef, filterPred, need.toLong())
                         .toInt().coerceAtLeast(0)
                 }
+                is ResolvedRef.ChannelPool -> {
+                    need -= movePoolToTarget(
+                        snapshot, level, targetRef, filterPred, need.toLong(),
+                        sourceChannel = damien.nodeworks.network.ChannelFilter.Color(source.color),
+                    ).toInt().coerceAtLeast(0)
+                }
             }
         }
         return need.coerceAtLeast(0)
@@ -241,13 +255,20 @@ class StockerBuilder(
         maxCount: Long,
     ): Long = when (targetRef) {
         is CardRef.Named -> {
-            val destStorage = resolvedTarget?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) }
+            val card = resolvedTarget as? ResolvedRef.Card
+            val destStorage = card?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) }
             if (destStorage == null) 0L
             else PlatformServices.storage.moveItems(source, destStorage, filterPred, maxCount)
         }
         is CardRef.Pool -> NetworkStorageHelper.insertItems(
             level, snapshot, source, filter,
-            maxCount, engine.routeTable, null, engine.inventoryCache
+            maxCount, engine.routeTable, null, engine.inventoryCache,
+            damien.nodeworks.network.ChannelFilter.All,
+        )
+        is CardRef.Channel -> NetworkStorageHelper.insertItems(
+            level, snapshot, source, filter,
+            maxCount, engine.routeTable, null, engine.inventoryCache,
+            damien.nodeworks.network.ChannelFilter.Color(targetRef.color),
         )
     }
 
@@ -257,15 +278,46 @@ class StockerBuilder(
         targetRef: CardRef,
         filterPred: (String) -> Boolean,
         maxCount: Long,
+        sourceChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ): Long {
-        if (targetRef is CardRef.Pool) return 0L
-        val destStorage = resolvedTarget?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) } ?: return 0L
+        // Whole-pool target with whole-pool source is a no-op (items would shuffle).
+        // Channel target with same-channel source is also a no-op.
+        if (targetRef is CardRef.Pool && sourceChannel == damien.nodeworks.network.ChannelFilter.All) return 0L
+        if (targetRef is CardRef.Channel && sourceChannel is damien.nodeworks.network.ChannelFilter.Color &&
+            sourceChannel.color == targetRef.color) return 0L
+
+        // Channel/Pool target: route source items through the channel-aware insert.
+        if (targetRef is CardRef.Pool || targetRef is CardRef.Channel) {
+            val targetChannel = if (targetRef is CardRef.Channel)
+                damien.nodeworks.network.ChannelFilter.Color(targetRef.color)
+            else damien.nodeworks.network.ChannelFilter.All
+            var remaining = maxCount
+            var totalMoved = 0L
+            for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
+                if (remaining <= 0L) break
+                if (!sourceChannel.matches(card.channel)) continue
+                val srcStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                val moved = NetworkStorageHelper.insertItems(
+                    level, snapshot, srcStorage, filter,
+                    remaining, engine.routeTable, null, engine.inventoryCache,
+                    targetChannel,
+                )
+                totalMoved += moved
+                remaining -= moved
+            }
+            return totalMoved
+        }
+
+        // Card target.
+        val card = resolvedTarget as? ResolvedRef.Card ?: return 0L
+        val destStorage = CardStorage.forCard(level, card.snapshot, card.faceOverride) ?: return 0L
         val cache = engine.inventoryCache
         var remaining = maxCount
         var totalMoved = 0L
-        for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
+        for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
-            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            if (!sourceChannel.matches(poolCard.channel)) continue
+            val storage = NetworkStorageHelper.getStorage(level, poolCard) ?: continue
             // Per (itemId, hasData) move so the cache gets a paired onExtracted for
             // each item that leaves the pool. See [Importer.movePoolToCard] for the
             // full rationale, same orphan-entry leak applies here.
