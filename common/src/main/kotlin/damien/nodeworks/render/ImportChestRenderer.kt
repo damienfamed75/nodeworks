@@ -37,6 +37,7 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
     class RenderState : ConnectableRenderState() {
         var openness: Float = 0f
         var facing: Direction = Direction.SOUTH
+        var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
     }
 
     private data class FaceUv(val u0: Float, val v0: Float, val u1: Float, val v1: Float)
@@ -55,6 +56,12 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
         private val LID_TEXTURE: Identifier =
             Identifier.fromNamespaceAndPath("nodeworks", "textures/block/import_chest.png")
 
+        // Placeholder, point at the same texture so the lock area samples copper
+        // pixels and they get tinted by the network color. Swap to a dedicated
+        // emissive PNG (with only the lock-glow pixels opaque) when art lands.
+        private val LOCK_EMISSIVE_TEXTURE: Identifier =
+            Identifier.fromNamespaceAndPath("nodeworks", "textures/block/import_chest.png")
+
         private val LID_RENDER_TYPE: RenderType = run {
             val safe = LID_TEXTURE.path.replace('/', '_').replace('.', '_')
             RenderType.create(
@@ -66,6 +73,14 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
                     .createRenderSetup()
             )
         }
+
+        private val LOCK_EMISSIVE_RENDER_TYPE: RenderType =
+            EmissiveCubeRenderer.renderType(LOCK_EMISSIVE_TEXTURE)
+
+        // Outset the emissive lock outward by a hair so it doesn't z-fight with
+        // the regular lock geometry underneath, mirrors EmissiveCubeRenderer's
+        // INSET trick for emissive cube overlays.
+        private const val EMISSIVE_OUTSET = 0.0006f
 
         private const val BODY_X0 = 1f / 16f
         private const val BODY_X1 = 15f / 16f
@@ -115,6 +130,7 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
     ) {
         state.openness = blockEntity.getOpenNess(partialTicks)
         state.facing = blockEntity.blockState.getValue(ImportChestBlock.FACING)
+        state.networkColor = resolveNetworkColor(blockEntity)
     }
 
     override fun submitConnectable(
@@ -125,6 +141,8 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
     ) {
         val openness = state.openness
         val light = state.lightCoords
+        val networkColor = state.networkColor
+        val connected = networkColor != NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         // Vanilla ChestRenderer: lid.xRot = -openness * π/2, body and lid both
         // rotated by -toYRot() around the block centre to align FACING.
         val angleDeg = -easeOutCubic(openness) * MAX_OPEN_DEG
@@ -142,6 +160,7 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
                 emitBox(p, vc, light, BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
                 emitLid(p, vc, light)
             }
+            if (connected) emitLockEmissive(poseStack, submitNodeCollector, networkColor)
         } else {
             // Lid + lock need their own pose frame (hinge X rotation), body emits flat.
             submitNodeCollector.submitCustomGeometry(poseStack, LID_RENDER_TYPE) { p, vc ->
@@ -154,10 +173,35 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
             submitNodeCollector.submitCustomGeometry(poseStack, LID_RENDER_TYPE) { p, vc ->
                 emitLid(p, vc, light)
             }
+            // Emissive lock follows the lid X rotation by living inside the same push.
+            if (connected) emitLockEmissive(poseStack, submitNodeCollector, networkColor)
             poseStack.popPose()
         }
 
         poseStack.popPose()
+    }
+
+    /** Emissive lock overlay tinted with the network color. Slightly outset so
+     *  it doesn't z-fight the regular lock geometry, drawn fullbright via the
+     *  EYES pipeline (same render type as the breaker / controller glows). */
+    private fun emitLockEmissive(
+        poseStack: PoseStack,
+        submitNodeCollector: SubmitNodeCollector,
+        networkColor: Int,
+    ) {
+        val r = (networkColor shr 16) and 0xFF
+        val g = (networkColor shr 8) and 0xFF
+        val b = networkColor and 0xFF
+        val out = EMISSIVE_OUTSET
+        submitNodeCollector.submitCustomGeometry(poseStack, LOCK_EMISSIVE_RENDER_TYPE) { p, vc ->
+            emitBox(
+                p, vc, RenderUtils.FULL_BRIGHT,
+                LOCK_X0 - out, LOCK_Y0 - out, LOCK_Z0 - out,
+                LOCK_X1 + out, LOCK_Y1 + out, LOCK_Z1 + out,
+                LOCK_UV, skipMinusZ = true,
+                tintR = r, tintG = g, tintB = b,
+            )
+        }
     }
 
     private fun emitLid(p: PoseStack.Pose, vc: VertexConsumer, light: Int) {
@@ -174,11 +218,13 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
         mxx: Float, mxy: Float, mxz: Float,
         uv: BoxUv,
         skipMinusZ: Boolean,
+        tintR: Int = 255, tintG: Int = 255, tintB: Int = 255, tintA: Int = 255,
     ) {
         val ov = OverlayTexture.NO_OVERLAY
-        // White vertex color, ENTITY_SOLID's shader handles diffuse, multiplying
-        // per-face here would double-dim the side faces relative to vanilla.
-        val r = 255; val g = 255; val b = 255; val a = 255
+        // Vertex color tints the texture sample, default white means ENTITY_SOLID's
+        // shader-side diffuse is the only brightness modifier (matches vanilla).
+        // The emissive lock overlay passes the network color here.
+        val r = tintR; val g = tintG; val b = tintB; val a = tintA
 
         run {
             val f = uv.south

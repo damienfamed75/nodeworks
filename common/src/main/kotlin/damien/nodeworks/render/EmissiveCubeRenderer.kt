@@ -1,6 +1,13 @@
 package damien.nodeworks.render
 
+import com.mojang.blaze3d.pipeline.BlendFunction
+import com.mojang.blaze3d.pipeline.ColorTargetState
+import com.mojang.blaze3d.pipeline.DepthStencilState
+import com.mojang.blaze3d.pipeline.RenderPipeline
+import com.mojang.blaze3d.platform.CompareOp
+import com.mojang.blaze3d.vertex.DefaultVertexFormat
 import com.mojang.blaze3d.vertex.PoseStack
+import com.mojang.blaze3d.vertex.VertexFormat
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.rendertype.RenderSetup
@@ -10,18 +17,17 @@ import net.minecraft.core.Direction
 import net.minecraft.resources.Identifier
 
 /**
- * Shared helper for BERs that render an emissive "glow" cube over the block's base
- * model using the vanilla EYES pipeline (EMISSIVE + NO_CARDINAL_LIGHTING + NO_OVERLAY
- * + TRANSLUCENT blend). Gives every emissive-overlay block the same true fullbright
- * glow you get on mob eyes, unlike a plain `light_emission: 15` on a model face,
- * which just cranks the packed light but still samples the block-atlas shader.
+ * Shared helper for BERs that render an emissive "glow" cube over the block's
+ * base model. Mirrors vanilla `RenderPipelines.EYES` (`core/entity` shader
+ * with EMISSIVE / NO_OVERLAY / NO_CARDINAL_LIGHTING) but swaps TRANSLUCENT
+ * blend for [BlendFunction.ADDITIVE] so the glow brightens the underlying
+ * pixels instead of replacing them. Same approach `PinHighlightRenderType`
+ * uses for the wrench-selection halo, which is why it actually pops on screen.
  *
- * Use [renderType] to get a memoized EYES render type for a direct texture path and
- * [submit] to emit the selected faces of the 1×1×1 block with per-face culling.
- *
- * Replaces the old `light_emission: 15` overlay elements on every Nodeworks block
- * model, the BER takes over the emissive element, the JSON model keeps the solid
- * base cube.
+ * The pipeline reuses `MATRICES_FOG_SNIPPET` directly (exposed via AT) so the
+ * shader gets the exact uniform-buffer wiring it expects. Reconstructing those
+ * uniforms by hand looked equivalent but produced silent no-output, the
+ * snippet must carry binding metadata the bare uniform names don't.
  */
 object EmissiveCubeRenderer {
 
@@ -62,19 +68,39 @@ object EmissiveCubeRenderer {
     private val renderTypeCache = HashMap<Identifier, RenderType>()
 
     /**
-     * Memoized EYES-pipeline [RenderType] that samples [texture] directly (not via the
-     * block atlas, the texture is looked up as `assets/<ns>/<path>` at upload time).
-     * The same [RenderType] instance is returned for repeat calls with the same texture
-     * so the render-queue batches BER submissions across blocks.
+     * [BlendFunction.LIGHTNING] is `(SRC_ALPHA, ONE)`, alpha-modulated additive,
+     * the same blend mode vanilla uses for lightning bolts and beacon-beam
+     * flares. Transparent texture pixels (`alpha=0`) contribute zero, only the
+     * lit pixels add to the framebuffer, so the texture's transparency is
+     * respected the same way as the old TRANSLUCENT EYES path. Pure
+     * [BlendFunction.ADDITIVE] is `(ONE, ONE)` and ignores alpha entirely
+     * which made the whole quad glow instead of just the lit areas.
+     */
+    private val ADDITIVE_EMISSIVE_PIPELINE: RenderPipeline =
+        RenderPipeline.builder(RenderPipelines.MATRICES_FOG_SNIPPET)
+            .withLocation(Identifier.fromNamespaceAndPath("nodeworks", "pipeline/additive_emissive"))
+            .withVertexShader("core/entity")
+            .withFragmentShader("core/entity")
+            .withShaderDefine("EMISSIVE")
+            .withShaderDefine("NO_OVERLAY")
+            .withShaderDefine("NO_CARDINAL_LIGHTING")
+            .withSampler("Sampler0")
+            .withColorTargetState(ColorTargetState(BlendFunction.LIGHTNING))
+            .withVertexFormat(DefaultVertexFormat.ENTITY, VertexFormat.Mode.QUADS)
+            .withDepthStencilState(DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false))
+            .build()
+
+    /**
+     * Memoized additive-emissive [RenderType] that samples [texture] directly
+     * (not via the block atlas). The same [RenderType] instance is returned
+     * for repeat calls with the same texture so the render-queue batches BER
+     * submissions across blocks.
      */
     fun renderType(texture: Identifier): RenderType = renderTypeCache.getOrPut(texture) {
-        // Include the texture in the name so each cached RenderType gets a unique
-        // debug label, the vanilla RenderType.create registry doesn't dedupe by name
-        // but the labels make profiler output readable.
         val safe = texture.path.replace('/', '_').replace('.', '_')
         RenderType.create(
             "nodeworks_emissive_${texture.namespace}_${safe}",
-            RenderSetup.builder(RenderPipelines.EYES)
+            RenderSetup.builder(ADDITIVE_EMISSIVE_PIPELINE)
                 .withTexture("Sampler0", texture)
                 .createRenderSetup()
         )
