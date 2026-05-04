@@ -234,14 +234,14 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
     )
 
-    /** Import Chest. Buffer + network input device. Uses copper-chest sound type
+    /** Import Chest. Buffer + network input device. Uses copper sound type
      *  to match the metallic visual planned for the texture. */
     val IMPORT_CHEST: Block = register(
         "import_chest",
         ::ImportChestBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
-            .sound(net.minecraft.world.level.block.SoundType.COPPER_GRATE)
+            .sound(net.minecraft.world.level.block.SoundType.COPPER)
             .requiresCorrectToolForDrops()
     )
 

@@ -4,6 +4,7 @@ import damien.nodeworks.network.ChannelFilter
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
 import damien.nodeworks.registry.ModBlockEntities
+import damien.nodeworks.screen.ImportChestMenu
 import damien.nodeworks.script.NetworkStorageHelper
 import net.minecraft.core.BlockPos
 import net.minecraft.core.HolderLookup
@@ -13,12 +14,20 @@ import net.minecraft.network.protocol.Packet
 import net.minecraft.network.protocol.game.ClientGamePacketListener
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.sounds.SoundEvent
+import net.minecraft.sounds.SoundEvents
+import net.minecraft.sounds.SoundSource
 import net.minecraft.world.Container
 import net.minecraft.world.ContainerHelper
+import net.minecraft.world.entity.ContainerUser
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
+import net.minecraft.world.level.block.entity.ChestLidController
+import net.minecraft.world.level.block.entity.ContainerOpenersCounter
+import net.minecraft.world.level.block.entity.LidBlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
@@ -46,7 +55,7 @@ import java.util.UUID
 class ImportChestBlockEntity(
     pos: BlockPos,
     state: BlockState,
-) : BlockEntity(ModBlockEntities.IMPORT_CHEST, pos, state), Container, Connectable {
+) : BlockEntity(ModBlockEntities.IMPORT_CHEST, pos, state), Container, Connectable, LidBlockEntity {
 
     companion object {
         const val SLOT_COUNT = 9
@@ -59,12 +68,17 @@ class ImportChestBlockEntity(
         const val REDSTONE_LOW = 1
         const val REDSTONE_HIGH = 2
 
-        /** Decide whether the chest should run a tick given its mode and signal. */
+        const val EVENT_LID = 1
+
         fun shouldRunForRedstone(mode: Int, isPowered: Boolean): Boolean = when (mode) {
             REDSTONE_LOW -> !isPowered
             REDSTONE_HIGH -> isPowered
             else -> true
         }
+    }
+
+    fun lidAnimateTick() {
+        chestLidController.tickLid()
     }
 
     private val items: NonNullList<ItemStack> = NonNullList.withSize(SLOT_COUNT, ItemStack.EMPTY)
@@ -101,11 +115,42 @@ class ImportChestBlockEntity(
             markDirtyAndSync()
         }
 
-    /** Counter increments each server tick, gates the actual insert on
-     *  [tickInterval]. Not persisted, so a freshly-loaded chest waits up to
-     *  [tickInterval] ticks before its first insert (acceptable). */
+    // Not persisted, so a freshly-loaded chest waits up to [tickInterval]
+    // ticks before its first insert.
     @Transient
     private var tickCounter: Int = 0
+
+    @Transient
+    private val chestLidController = ChestLidController()
+
+    @Transient
+    private val openersCounter: ContainerOpenersCounter = object : ContainerOpenersCounter() {
+        override fun onOpen(level: Level, pos: BlockPos, state: BlockState) {
+            playLidSound(level, pos, SoundEvents.COPPER_CHEST_OPEN)
+        }
+        override fun onClose(level: Level, pos: BlockPos, state: BlockState) {
+            playLidSound(level, pos, SoundEvents.COPPER_CHEST_CLOSE)
+        }
+        override fun openerCountChanged(
+            level: Level, pos: BlockPos, state: BlockState, prevCount: Int, newCount: Int,
+        ) {
+            level.blockEvent(pos, state.block, EVENT_LID, newCount)
+        }
+        override fun isOwnContainer(player: Player): Boolean {
+            val menu = player.containerMenu
+            return menu is ImportChestMenu && menu.devicePos == worldPosition
+        }
+    }
+
+    private fun playLidSound(level: Level, pos: BlockPos, sound: SoundEvent) {
+        val pitch = 0.9f + level.random.nextFloat() * 0.1f
+        level.playSound(
+            null,
+            pos.x + 0.5, pos.y + 0.5, pos.z + 0.5,
+            sound, SoundSource.BLOCKS,
+            0.5f, pitch,
+        )
+    }
 
     private fun markDirtyAndSync() {
         setChanged()
@@ -114,6 +159,9 @@ class ImportChestBlockEntity(
 
     /** Server tick. Caller (block ticker) checks the level is server-side. */
     fun serverTick(level: ServerLevel) {
+        // Recheck every tick so disconnected players don't strand the lid open.
+        recheckOpen()
+
         tickCounter++
         if (tickCounter < tickInterval) return
         tickCounter = 0
@@ -272,6 +320,43 @@ class ImportChestBlockEntity(
     override fun clearContent() {
         items.clear()
         setChanged()
+    }
+
+    override fun startOpen(user: ContainerUser) {
+        if (isRemoved) return
+        val living = user.livingEntity ?: return
+        if (living is Player && living.isSpectator) return
+        val lvl = level ?: return
+        openersCounter.incrementOpeners(
+            living, lvl, worldPosition, blockState,
+            user.containerInteractionRange,
+        )
+    }
+
+    override fun stopOpen(user: ContainerUser) {
+        if (isRemoved) return
+        val living = user.livingEntity ?: return
+        if (living is Player && living.isSpectator) return
+        val lvl = level ?: return
+        openersCounter.decrementOpeners(living, lvl, worldPosition, blockState)
+    }
+
+    fun recheckOpen() {
+        if (isRemoved) return
+        val lvl = level ?: return
+        openersCounter.recheckOpeners(lvl, worldPosition, blockState)
+    }
+
+    override fun getOpenNess(partialTick: Float): Float =
+        chestLidController.getOpenness(partialTick)
+
+    override fun triggerEvent(id: Int, type: Int): Boolean {
+        return if (id == EVENT_LID) {
+            chestLidController.shouldBeOpen(type > 0)
+            true
+        } else {
+            super.triggerEvent(id, type)
+        }
     }
 
     // --- Serialization ---

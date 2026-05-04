@@ -66,6 +66,9 @@ class ImportChestMenu(
             playerInventory: Inventory,
             entity: ImportChestBlockEntity,
         ): ImportChestMenu {
+            // Drives the open sound + lid-open block-event broadcast.
+            // Paired with chestInventory.stopOpen() in removed() below.
+            entity.startOpen(playerInventory.player)
             val data = object : ContainerData {
                 override fun get(index: Int): Int = when (index) {
                     DATA_CHANNEL -> entity.channel.toNbtInt()
@@ -123,4 +126,11 @@ class ImportChestMenu(
     }
 
     override fun stillValid(player: Player): Boolean = chestInventory.stillValid(player)
+
+    // Client side, chestInventory is a SimpleContainer dummy whose default
+    // stopOpen is a no-op. Only the server BE actually decrements.
+    override fun removed(player: Player) {
+        super.removed(player)
+        chestInventory.stopOpen(player)
+    }
 }
