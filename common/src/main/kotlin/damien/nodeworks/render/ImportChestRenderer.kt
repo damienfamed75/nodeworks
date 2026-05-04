@@ -56,11 +56,13 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
         private val LID_TEXTURE: Identifier =
             Identifier.fromNamespaceAndPath("nodeworks", "textures/block/import_chest.png")
 
-        // Placeholder, point at the same texture so the lock area samples copper
-        // pixels and they get tinted by the network color. Swap to a dedicated
-        // emissive PNG (with only the lock-glow pixels opaque) when art lands.
+        // Same vanilla cube-unwrap layout as [LID_TEXTURE], but only the lock-
+        // glow pixels should be opaque, the rest transparent. Same convention
+        // every other emissive in the mod uses (e.g. breaker_side_emissive.png).
+        // Placeholder ships as a copy of import_chest.png so the lock simply
+        // glows fully until a proper emissive PNG is dropped in.
         private val LOCK_EMISSIVE_TEXTURE: Identifier =
-            Identifier.fromNamespaceAndPath("nodeworks", "textures/block/import_chest.png")
+            Identifier.fromNamespaceAndPath("nodeworks", "textures/block/import_chest_emissive.png")
 
         private val LID_RENDER_TYPE: RenderType = run {
             val safe = LID_TEXTURE.path.replace('/', '_').replace('.', '_')
@@ -160,12 +162,25 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
                 emitBox(p, vc, light, BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
                 emitLid(p, vc, light)
             }
-            if (connected) emitLockEmissive(poseStack, submitNodeCollector, networkColor)
+            if (connected) {
+                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                    BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
+                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                    LID_X0, LID_Y0, LID_Z0, LID_X1, LID_Y1, LID_Z1, LID_UV, skipMinusZ = false)
+                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                    LOCK_X0, LOCK_Y0, LOCK_Z0, LOCK_X1, LOCK_Y1, LOCK_Z1, LOCK_UV, skipMinusZ = true)
+            }
         } else {
             // Lid + lock need their own pose frame (hinge X rotation), body emits flat.
             submitNodeCollector.submitCustomGeometry(poseStack, LID_RENDER_TYPE) { p, vc ->
                 emitBox(p, vc, light, BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
             }
+            // Body emissive emits at the same flat pose level the body does.
+            if (connected) {
+                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                    BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
+            }
+
             poseStack.pushPose()
             poseStack.translate(HINGE_X, HINGE_Y, HINGE_Z)
             poseStack.mulPose(Axis.XP.rotationDegrees(angleDeg))
@@ -173,21 +188,32 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
             submitNodeCollector.submitCustomGeometry(poseStack, LID_RENDER_TYPE) { p, vc ->
                 emitLid(p, vc, light)
             }
-            // Emissive lock follows the lid X rotation by living inside the same push.
-            if (connected) emitLockEmissive(poseStack, submitNodeCollector, networkColor)
+            // Lid + lock emissive follow the X rotation push so the glow rotates with them.
+            if (connected) {
+                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                    LID_X0, LID_Y0, LID_Z0, LID_X1, LID_Y1, LID_Z1, LID_UV, skipMinusZ = false)
+                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                    LOCK_X0, LOCK_Y0, LOCK_Z0, LOCK_X1, LOCK_Y1, LOCK_Z1, LOCK_UV, skipMinusZ = true)
+            }
             poseStack.popPose()
         }
 
         poseStack.popPose()
     }
 
-    /** Emissive lock overlay tinted with the network color. Slightly outset so
-     *  it doesn't z-fight the regular lock geometry, drawn fullbright via the
-     *  EYES pipeline (same render type as the breaker / controller glows). */
-    private fun emitLockEmissive(
+    /** Emissive overlay for one box, tinted with the network color. Slightly
+     *  outset so it doesn't z-fight the regular geometry underneath. Drawn
+     *  fullbright through the LIGHTNING-blend EYES pipeline so transparent
+     *  pixels in the emissive PNG drop out cleanly and only the lit pixels
+     *  add to the framebuffer. */
+    private fun emitEmissive(
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
         networkColor: Int,
+        mnx: Float, mny: Float, mnz: Float,
+        mxx: Float, mxy: Float, mxz: Float,
+        uv: BoxUv,
+        skipMinusZ: Boolean,
     ) {
         val r = (networkColor shr 16) and 0xFF
         val g = (networkColor shr 8) and 0xFF
@@ -196,9 +222,9 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
         submitNodeCollector.submitCustomGeometry(poseStack, LOCK_EMISSIVE_RENDER_TYPE) { p, vc ->
             emitBox(
                 p, vc, RenderUtils.FULL_BRIGHT,
-                LOCK_X0 - out, LOCK_Y0 - out, LOCK_Z0 - out,
-                LOCK_X1 + out, LOCK_Y1 + out, LOCK_Z1 + out,
-                LOCK_UV, skipMinusZ = true,
+                mnx - out, mny - out, mnz - out,
+                mxx + out, mxy + out, mxz + out,
+                uv, skipMinusZ,
                 tintR = r, tintG = g, tintB = b,
             )
         }
