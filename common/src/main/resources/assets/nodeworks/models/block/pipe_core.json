@@ -1,0 +1,23 @@
+{
+	"format_version": "1.21.11",
+	"credit": "Made with Blockbench",
+	"render_type": "cutout",
+	"textures": {
+		"particle": "nodeworks:block/pipe",
+		"side": "nodeworks:block/pipe"
+	},
+	"elements": [
+		{
+			"from": [5, 5, 5],
+			"to": [11, 11, 11],
+			"faces": {
+				"north": {"uv": [10, 6, 16, 12], "texture": "#side"},
+				"east": {"uv": [10, 6, 16, 12], "texture": "#side"},
+				"south": {"uv": [10, 6, 16, 12], "texture": "#side"},
+				"west": {"uv": [10, 6, 16, 12], "texture": "#side"},
+				"up": {"uv": [10, 6, 16, 12], "texture": "#side"},
+				"down": {"uv": [10, 6, 16, 12], "texture": "#side"}
+			}
+		}
+	]
+}

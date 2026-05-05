@@ -1,6 +1,7 @@
 package damien.nodeworks.network
 
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import java.util.UUID
 
 /**
@@ -34,11 +35,20 @@ interface Connectable {
      *  The helper rejects the pair when *either* side returns false. */
     fun canConnectAdjacentTo(other: Connectable): Boolean = true
 
-    /** Whether placing this block in the LOS path of an existing laser auto-rewires
-     *  the connection through it (A↔B becomes A↔this↔B). Default false. Nodes opt
-     *  in so a player can extend a network by dropping a Node onto an existing
-     *  laser without having to wrench it manually. */
-    fun autoSpliceOnPlace(): Boolean = false
+    /** Whether the player has wrench-blocked the connection on [side]. Default
+     *  false (no per-face block). Pipe and Node BEs override with persistent
+     *  bit-packed state, every other Connectable defers to the default since
+     *  the user-facing wrench flow only touches Pipe/Node faces. The adjacency
+     *  walk and the model `pipe_*` flag computation reject the pair when either
+     *  side reports the touching face blocked. */
+    fun forcedPipeBlocked(@Suppress("UNUSED_PARAMETER") side: Direction): Boolean = false
+
+    /** Toggle the force-block on [side]. Default no-op. Pipe and Node override
+     *  to flip the bit, mark the BE dirty, and emit a block update so the
+     *  multipart blockstate re-evaluates. Wrench calls this on the BE the
+     *  player clicked, the neighbour's blockstate is rebuilt separately so
+     *  both sides drop their pipe stub. */
+    fun toggleForcedPipeBlock(@Suppress("UNUSED_PARAMETER") side: Direction) {}
 
     /** Render colour resolved from [networkId]. Null id (no controller, or a
      *  multi-controller conflict) renders grey. Trusts the cached BE state, no

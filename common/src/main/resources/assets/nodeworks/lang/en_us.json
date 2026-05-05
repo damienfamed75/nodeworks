@@ -1,5 +1,6 @@
 {
   "block.nodeworks.node": "Node",
+  "block.nodeworks.pipe": "Pipe",
   "item.nodeworks.network_wrench": "Network Wrench",
   "message.nodeworks.endpoint_selected": "Selected (%s, %s, %s)",
   "message.nodeworks.no_selection": "No selection. Shift + right-click a Node or device first.",

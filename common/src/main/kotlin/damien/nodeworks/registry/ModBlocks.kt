@@ -4,6 +4,7 @@ import damien.nodeworks.block.InstructionStorageBlock
 import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
 import damien.nodeworks.block.NodeBlock
+import damien.nodeworks.block.PipeBlock
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.AntennaSegmentBlock
@@ -35,6 +36,17 @@ object ModBlocks {
         ::NodeBlock,
         BlockBehaviour.Properties.of()
             .strength(2.0f, 6.0f)
+            .noOcclusion()
+            .requiresCorrectToolForDrops(),
+        // Node items only place by replacing an existing Pipe, see NodeBlockItem.
+        itemFactory = { block, props -> damien.nodeworks.item.NodeBlockItem(block, props) },
+    )
+
+    val PIPE: Block = register(
+        "pipe",
+        ::PipeBlock,
+        BlockBehaviour.Properties.of()
+            .strength(1.5f, 4.0f)
             .noOcclusion()
             .requiresCorrectToolForDrops()
     )

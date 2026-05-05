@@ -13,30 +13,18 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.phys.Vec3
 
 /**
- * Base render state for every [ConnectableBER]. Holds the fields [ConnectionBeamRenderer]
- * needs (block pos + per-frame extracted beam list) so concrete BER states don't have to
- * redeclare them and wire them up by hand.
+ * Base render state for every [ConnectableBER]. Just the position now, all the
+ * laser-beam plumbing is gone since networks form via face-adjacency.
  */
 open class ConnectableRenderState : BlockEntityRenderState() {
     var pos: BlockPos = BlockPos.ZERO
-    var connectionBeams: List<ConnectionBeamRenderer.Beam> = emptyList()
 }
 
 /**
- * Abstract BER for every Connectable block. Captures the three pieces of shared laser
- * plumbing in one place so subclasses can't silently forget any of them:
- *
- *   1. Extract the outgoing connection-beam list once per frame (driven off the
- *      BE's own [Connectable.getConnections]).
- *   2. Submit beam geometry before any BE-specific geometry, so beams draw
- *      beneath / behind the block's own visual layers.
- *   3. Return `true` from [shouldRenderOffScreen], pairs with the neoforge subclass's
- *      `getRenderBoundingBox` override to keep the BER alive whenever any beam it draws
- *      is in frame, not just when the source block itself is.
- *
- * Subclasses implement [extractConnectable] / [submitConnectable] for their block-specific
- * logic, the top-level `extractRenderState` / `submit` overrides are `final` so the
- * scaffolding can't accidentally be bypassed.
+ * Abstract BER for every Connectable block. Provides the shared scaffolding so concrete
+ * subclasses don't have to duplicate the position-extract step. Subclasses implement
+ * [extractConnectable] / [submitConnectable] for their block-specific logic, the top-level
+ * `extractRenderState` / `submit` overrides are `final` so the scaffolding can't be bypassed.
  *
  * [resolveNetworkColor] is the shared network-color lookup that degrades correctly in
  * GuideME scene renders (where the main world's reachability BFS hasn't populated its
@@ -56,7 +44,6 @@ abstract class ConnectableBER<T, S : ConnectableRenderState>(
     ) {
         BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
         state.pos = blockEntity.getBlockPos()
-        state.connectionBeams = ConnectionBeamRenderer.extract(blockEntity)
         extractConnectable(blockEntity, state, partialTicks, cameraPosition, breakProgress)
     }
 
@@ -66,7 +53,6 @@ abstract class ConnectableBER<T, S : ConnectableRenderState>(
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
-        ConnectionBeamRenderer.submit(state.connectionBeams, poseStack, submitNodeCollector, state.pos, camera.pos)
         submitConnectable(state, poseStack, submitNodeCollector, camera)
     }
 

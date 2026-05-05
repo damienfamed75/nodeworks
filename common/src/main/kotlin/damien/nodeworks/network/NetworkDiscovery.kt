@@ -147,8 +147,7 @@ object NetworkDiscovery {
 
             for (connection in connectable.getConnections()) {
                 if (connection in visited) continue
-                // Only mark visited after LOS passes, another path may have clear LOS
-                if (!NodeConnectionHelper.checkLineOfSight(level, pos, connection)) continue
+                if (!level.isLoaded(connection)) continue
                 visited.add(connection)
                 queue.add(connection)
             }
@@ -168,6 +167,8 @@ object NetworkDiscovery {
                     if (!neighbor.usesAdjacency()) continue
                     if (!connectable.canConnectAdjacentTo(neighbor)) continue
                     if (!neighbor.canConnectAdjacentTo(connectable)) continue
+                    if (connectable.forcedPipeBlocked(dir)) continue
+                    if (neighbor.forcedPipeBlocked(dir.opposite)) continue
                     visited.add(adjPos)
                     queue.add(adjPos)
                 }

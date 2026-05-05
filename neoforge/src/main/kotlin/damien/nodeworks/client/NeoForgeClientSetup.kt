@@ -5,15 +5,19 @@ import damien.nodeworks.platform.ClientNetworkingService
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.registry.ModBlockEntities
+import damien.nodeworks.render.BreakerRenderer
 import damien.nodeworks.render.ControllerRenderer
 import damien.nodeworks.render.CoProcessorRenderer
 import damien.nodeworks.render.CraftingCoreRenderer
 import damien.nodeworks.render.CraftingStorageRenderer
+import damien.nodeworks.render.ExportChestRenderer
+import damien.nodeworks.render.ImportChestRenderer
 import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.InventoryTerminalRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.NodeRenderer
+import damien.nodeworks.render.PlacerRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.ReceiverAntennaRenderer
 import damien.nodeworks.render.TerminalRenderer
@@ -72,7 +76,6 @@ object NeoForgeClientSetup {
         }
         NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingOut ->
             damien.nodeworks.recipe.SoulSandInfusionClientCache.clear()
-            damien.nodeworks.item.NetworkWrenchItem.clientSelectedPos = null
         }
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
@@ -121,22 +124,24 @@ object NeoForgeClientSetup {
     }
 
     private fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
-        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NeoNodeRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::NeoMonitorRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::NeoControllerRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::NeoVariableRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::NeoTerminalRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::NeoProcessingStorageRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::NeoInstructionStorageRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.RECEIVER_ANTENNA, ::NeoReceiverAntennaRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_CORE, ::NeoCraftingCoreRenderer)
+        // Direct registration without the laser-bounding-box wrappers, all neighbours
+        // are now visible via adjacency, no off-screen-laser-visibility concern.
+        event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NodeRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.RECEIVER_ANTENNA, ::ReceiverAntennaRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_CORE, ::CraftingCoreRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CRAFTING_STORAGE, ::CraftingStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.CO_PROCESSOR, ::CoProcessorRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::NeoInventoryTerminalRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.BREAKER, ::NeoBreakerRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.PLACER, ::NeoPlacerRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.IMPORT_CHEST, ::NeoImportChestRenderer)
-        event.registerBlockEntityRenderer(ModBlockEntities.EXPORT_CHEST, ::NeoExportChestRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::InventoryTerminalRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.BREAKER, ::BreakerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PLACER, ::PlacerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.IMPORT_CHEST, ::ImportChestRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.EXPORT_CHEST, ::ExportChestRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }

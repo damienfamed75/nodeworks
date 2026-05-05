@@ -10,27 +10,119 @@ import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.util.RandomSource
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.inventory.ContainerLevelAccess
+import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.LevelAccessor
+import net.minecraft.world.level.LevelReader
+import net.minecraft.world.level.ScheduledTickAccess
 import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.block.state.properties.BooleanProperty
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
+import net.minecraft.world.phys.shapes.Shapes
 import net.minecraft.world.phys.shapes.VoxelShape
 
 class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
+    init {
+        registerDefaultState(
+            stateDefinition.any()
+                .setValue(PIPE_DOWN, false)
+                .setValue(PIPE_UP, false)
+                .setValue(PIPE_NORTH, false)
+                .setValue(PIPE_SOUTH, false)
+                .setValue(PIPE_WEST, false)
+                .setValue(PIPE_EAST, false)
+        )
+    }
+
     companion object {
         val CODEC: MapCodec<NodeBlock> = simpleCodec(::NodeBlock)
 
-        // 6x6x6 pixel centered cube (5..11 on each axis)
-        val NODE_SHAPE: VoxelShape = Block.box(5.0, 5.0, 5.0, 11.0, 11.0, 11.0)
+        /** 8×8×8 outer wireframe (pixels 4..12) for hit-testing and collision.
+         *  Visually the Node fills only the inner 6×6×6 core (5..11) plus the
+         *  wireframe edges around it, but the collision box uses the full 4..12
+         *  so the player can interact with the wireframe edges. Bigger than
+         *  the 6×6×6 pipe junction so a Node placed in the middle of a pipe
+         *  run reads as the "fat" piece. */
+        val NODE_CORE_SHAPE: VoxelShape = Block.box(4.0, 4.0, 4.0, 12.0, 12.0, 12.0)
+
+        // Node-side stub geometry. Same 4×4×5 shape the [PipeBlock] stubs use:
+        // the visible Node core sits at pixels 5..11 (6×6×6), so the stub spans
+        // from the block face (0/16) to the core boundary at 5/11. Sharing the
+        // pipe stub dimensions lets the Node multipart reuse pipe_stub_* models
+        // verbatim, no Node-specific stub assets needed.
+        private val STUB_DOWN: VoxelShape = Block.box(6.0, 0.0, 6.0, 10.0, 5.0, 10.0)
+        private val STUB_UP: VoxelShape = Block.box(6.0, 11.0, 6.0, 10.0, 16.0, 10.0)
+        private val STUB_NORTH: VoxelShape = Block.box(6.0, 6.0, 0.0, 10.0, 10.0, 5.0)
+        private val STUB_SOUTH: VoxelShape = Block.box(6.0, 6.0, 11.0, 10.0, 10.0, 16.0)
+        private val STUB_WEST: VoxelShape = Block.box(0.0, 6.0, 6.0, 5.0, 10.0, 10.0)
+        private val STUB_EAST: VoxelShape = Block.box(11.0, 6.0, 6.0, 16.0, 10.0, 10.0)
+        private val STUB_BY_DIR: Array<VoxelShape> = arrayOf(
+            STUB_DOWN, STUB_UP, STUB_NORTH, STUB_SOUTH, STUB_WEST, STUB_EAST,
+        )
+
+        val PIPE_DOWN: BooleanProperty = BooleanProperty.create("pipe_down")
+        val PIPE_UP: BooleanProperty = BooleanProperty.create("pipe_up")
+        val PIPE_NORTH: BooleanProperty = BooleanProperty.create("pipe_north")
+        val PIPE_SOUTH: BooleanProperty = BooleanProperty.create("pipe_south")
+        val PIPE_WEST: BooleanProperty = BooleanProperty.create("pipe_west")
+        val PIPE_EAST: BooleanProperty = BooleanProperty.create("pipe_east")
+
+        /** Indexed by [Direction.ordinal]. */
+        private val PIPE_PROPS: Array<BooleanProperty> = arrayOf(
+            PIPE_DOWN, PIPE_UP, PIPE_NORTH, PIPE_SOUTH, PIPE_WEST, PIPE_EAST,
+        )
+
+        fun propFor(side: Direction): BooleanProperty = PIPE_PROPS[side.ordinal]
+
+        /** Whether the Node at [pos] should render a pipe stub on [side]. True
+         *  when the neighbour is a Connectable BE (Pipe, Node, Controller,
+         *  Terminal, antennas, ImportChest, ExportChest), and neither side has
+         *  wrench-blocked the touching face. Same rule as
+         *  [PipeBlock.computePipeFlag], the two block types share the
+         *  Connectable-as-source-of-truth contract. */
+        fun computePipeFlag(level: BlockGetter, pos: BlockPos, side: Direction): Boolean {
+            val neighborPos = pos.relative(side)
+            val neighborBe = level.getBlockEntity(neighborPos) as? damien.nodeworks.network.Connectable
+                ?: return false
+            val selfBe = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable
+            if (selfBe?.forcedPipeBlocked(side) == true) return false
+            if (neighborBe.forcedPipeBlocked(side.opposite)) return false
+            return true
+        }
+
+        /** Recompute the 6 directional booleans against current neighbours. */
+        fun rebuildState(level: BlockGetter, pos: BlockPos, base: BlockState): BlockState {
+            var state = base
+            for (dir in Direction.entries) {
+                state = state.setValue(propFor(dir), computePipeFlag(level, pos, dir))
+            }
+            return state
+        }
+
+        /** Composed VoxelShape: 8×8×8 core plus a stub for each PIPE-roled
+         *  face. Cached implicitly via the blockstate identity (vanilla
+         *  caches per-state shape lookups). */
+        fun shapeFor(state: BlockState): VoxelShape {
+            var combined: VoxelShape = NODE_CORE_SHAPE
+            for (dir in Direction.entries) {
+                if (state.getValue(propFor(dir))) {
+                    combined = Shapes.or(combined, STUB_BY_DIR[dir.ordinal])
+                }
+            }
+            return combined
+        }
 
         /** A resolved placement: which node, and which side of it. */
         data class PlacementTarget(val nodePos: BlockPos, val side: Direction)
@@ -70,12 +162,21 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
             val state = level.getBlockState(pos)
             if (state.block is NodeBlock) {
                 val side = if (shiftHeld) clickedFace.opposite else clickedFace
-                return PlacementTarget(pos, side)
+                return rejectIfPipeFace(level, pos, side)
             }
             val adjPos = pos.relative(clickedFace)
             val adjState = level.getBlockState(adjPos)
             if (adjState.block !is NodeBlock) return null
-            return PlacementTarget(adjPos, clickedFace.opposite)
+            return rejectIfPipeFace(level, adjPos, clickedFace.opposite)
+        }
+
+        /** Card placement is gated on face role: PIPE faces are consumed by
+         *  the network connection and refuse cards. Returns the target on
+         *  DEVICE / FREE faces, null on PIPE. */
+        private fun rejectIfPipeFace(level: Level, nodePos: BlockPos, side: Direction): PlacementTarget? {
+            val be = level.getBlockEntity(nodePos) as? NodeBlockEntity ?: return null
+            if (be.faceRole(side) == NodeBlockEntity.FaceRole.PIPE) return null
+            return PlacementTarget(nodePos, side)
         }
 
         /** Quick-place a card into the first empty slot on the targeted face of a
@@ -156,19 +257,37 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
 
+    override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
+        builder.add(PIPE_DOWN, PIPE_UP, PIPE_NORTH, PIPE_SOUTH, PIPE_WEST, PIPE_EAST)
+    }
+
+    override fun getStateForPlacement(ctx: BlockPlaceContext): BlockState =
+        rebuildState(ctx.level, ctx.clickedPos, defaultBlockState())
+
+    override fun updateShape(
+        state: BlockState,
+        level: LevelReader,
+        ticks: ScheduledTickAccess,
+        pos: BlockPos,
+        dir: Direction,
+        neighborPos: BlockPos,
+        neighborState: BlockState,
+        random: RandomSource,
+    ): BlockState = rebuildState(level, pos, state)
+
     override fun getShape(
         state: BlockState,
         level: BlockGetter,
         pos: BlockPos,
         context: CollisionContext
-    ): VoxelShape = NODE_SHAPE
+    ): VoxelShape = shapeFor(state)
 
     override fun getCollisionShape(
         state: BlockState,
         level: BlockGetter,
         pos: BlockPos,
         context: CollisionContext
-    ): VoxelShape = NODE_SHAPE
+    ): VoxelShape = shapeFor(state)
 
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
 
@@ -192,7 +311,17 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         // Shift+Right Click opens the opposite side. Track the key state, not
         // the crouch pose, so creative flight (shift descends, no crouch pose)
         // still flips the GUI to the far face.
-        val openSide = if (player.isShiftKeyDown) side.opposite else side
+        val initialSide = if (player.isShiftKeyDown) side.opposite else side
+        // Pipe-roled faces (touching another Connectable) have no card slots,
+        // skip to the first non-pipe face. Defensive PASS if every face is
+        // pipe-roled (a Node fully surrounded by Connectables, in which case
+        // there's no useful GUI to open).
+        val openSide = if (blockEntity.faceRole(initialSide) != NodeBlockEntity.FaceRole.PIPE) {
+            initialSide
+        } else {
+            Direction.entries.firstOrNull { blockEntity.faceRole(it) != NodeBlockEntity.FaceRole.PIPE }
+                ?: return InteractionResult.PASS
+        }
         val serverPlayer = player as ServerPlayer
         val sideName = openSide.name.replaceFirstChar { it.uppercase() }
         PlatformServices.menu.openExtendedMenu(

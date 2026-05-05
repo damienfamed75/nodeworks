@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CCC",
+    "GGG",
+    "CCC"
+  ],
+  "key": {
+    "C": "minecraft:copper_ingot",
+    "G": "#c:glass_panes"
+  },
+  "result": {
+    "id": "nodeworks:pipe",
+    "count": 8
+  }
+}

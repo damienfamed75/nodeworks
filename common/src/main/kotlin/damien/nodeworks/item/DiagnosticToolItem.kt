@@ -169,11 +169,8 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             blocks.add(DiagnosticOpenData.NetworkBlock(blockPos, type, connections, cards, details))
 
             for (conn in connections) {
-                if (visited.add(conn)) {
-                    if (NodeConnectionHelper.checkLineOfSight(level, blockPos, conn)) {
-                        queue.add(conn)
-                    }
-                }
+                // LOS gate is gone, networks reach via adjacency now.
+                if (visited.add(conn)) queue.add(conn)
             }
         }
 

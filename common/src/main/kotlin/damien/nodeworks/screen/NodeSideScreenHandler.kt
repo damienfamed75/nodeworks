@@ -75,6 +75,13 @@ class NodeSideScreenHandler(
 
     /** Switch the active side, repositions slots so only the new side is visible. */
     fun switchSide(newSide: Direction) {
+        // Reject switches to a pipe-roled face. The face is consumed by the
+        // network connection and has no card slots, switching there would just
+        // hide every visible slot and present an empty grid. Cast is null on
+        // the client (dummy SimpleContainer), the screen already gates the
+        // click locally so the guard only matters server-side.
+        val be = nodeInventory as? NodeBlockEntity
+        if (be?.faceRole(newSide) == NodeBlockEntity.FaceRole.PIPE) return
         activeSide = newSide
         // 26.1: the vanilla jar common/ compiles against has Slot.x / Slot.y as
         //  `public final int` even though the NeoForge patch makes them mutable at

@@ -149,10 +149,16 @@ class NodeSideScreen(
         val startX = leftPos + 3
         val tabY = topPos + TAB_ROW_Y
 
+        val nodeBe = net.minecraft.client.Minecraft.getInstance().level?.getBlockEntity(menu.getNodePos())
+            as? damien.nodeworks.block.entity.NodeBlockEntity
+
         for (i in 0 until tabCount) {
             val tx = startX + i * tabW
             val isActive = i == currentSide
-            val isHovered = !isActive && mouseX >= tx && mouseX < tx + tabW && mouseY >= tabY && mouseY < tabY + TAB_H
+            val isPipe = nodeBe?.faceRole(Direction.entries[i]) ==
+                damien.nodeworks.block.entity.NodeBlockEntity.FaceRole.PIPE
+            val isHovered = !isActive && !isPipe &&
+                mouseX >= tx && mouseX < tx + tabW && mouseY >= tabY && mouseY < tabY + TAB_H
 
             val slice = when {
                 isActive -> NineSlice.TAB_ACTIVE
@@ -166,7 +172,11 @@ class NodeSideScreen(
             }
 
             val label = SIDE_LABELS[i]
-            val labelColor = if (isActive) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
+            val labelColor = when {
+                isPipe -> 0xFF555555.toInt()       // dim, this side is consumed by a pipe
+                isActive -> 0xFFFFFFFF.toInt()
+                else -> 0xFFAAAAAA.toInt()
+            }
             // 2-px nudge down so the letter optically sits in the lower half
             // of the tab, off the active-tab bevel highlight at the top.
             val labelY = tabY + (TAB_H - font.lineHeight) / 2 + 2
@@ -239,10 +249,18 @@ class NodeSideScreen(
             val startX = leftPos + 3
             val tabY = topPos + TAB_ROW_Y
 
+            val nodeBe = net.minecraft.client.Minecraft.getInstance().level?.getBlockEntity(menu.getNodePos())
+                as? damien.nodeworks.block.entity.NodeBlockEntity
             for (i in 0 until tabCount) {
                 if (i == currentSide) continue
                 val tx = startX + i * tabW
                 if (mouseX >= tx && mouseX < tx + tabW && mouseY >= tabY && mouseY < tabY + TAB_H) {
+                    // Refuse switching to a pipe-roled face, the server-side
+                    // handler also guards but the click should feel unresponsive
+                    // here too rather than fire a doomed payload.
+                    if (nodeBe?.faceRole(Direction.entries[i]) ==
+                        damien.nodeworks.block.entity.NodeBlockEntity.FaceRole.PIPE
+                    ) return true
                     switchToSide(Direction.entries[i])
                     return true
                 }

@@ -1,0 +1,15 @@
+{
+  "multipart": [
+    { "when": { "pipe_axis": "x" }, "apply": { "model": "nodeworks:block/pipe_straight_x" } },
+    { "when": { "pipe_axis": "y" }, "apply": { "model": "nodeworks:block/pipe_straight_y" } },
+    { "when": { "pipe_axis": "z" }, "apply": { "model": "nodeworks:block/pipe_straight_z" } },
+    { "when": { "pipe_axis": "none" }, "apply": { "model": "nodeworks:block/pipe_core" } },
+    { "when": { "pipe_axis": "junction" }, "apply": { "model": "nodeworks:block/pipe_core" } },
+    { "when": { "pipe_axis": "junction", "pipe_north": "true" }, "apply": { "model": "nodeworks:block/pipe_stub_north" } },
+    { "when": { "pipe_axis": "junction", "pipe_south": "true" }, "apply": { "model": "nodeworks:block/pipe_stub_south" } },
+    { "when": { "pipe_axis": "junction", "pipe_east":  "true" }, "apply": { "model": "nodeworks:block/pipe_stub_east"  } },
+    { "when": { "pipe_axis": "junction", "pipe_west":  "true" }, "apply": { "model": "nodeworks:block/pipe_stub_west"  } },
+    { "when": { "pipe_axis": "junction", "pipe_up":    "true" }, "apply": { "model": "nodeworks:block/pipe_stub_up"    } },
+    { "when": { "pipe_axis": "junction", "pipe_down":  "true" }, "apply": { "model": "nodeworks:block/pipe_stub_down"  } }
+  ]
+}

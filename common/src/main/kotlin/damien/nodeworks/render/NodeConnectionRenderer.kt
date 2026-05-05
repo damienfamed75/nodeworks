@@ -23,17 +23,6 @@ object NodeConnectionRenderer {
     /** Default network color (RGB, no alpha). Used as fallback when no controller is found. */
     const val DEFAULT_NETWORK_COLOR = 0x888888
 
-    /** Max raycasts per tick during incremental LOS refresh. */
-    private const val LOS_RAYCASTS_PER_TICK = 10
-
-    // Line-of-sight cache: (min(a,b), max(a,b)) → blocked?
-    private val losCache = HashMap<Long, Boolean>()
-    private var losRefreshTick = 0L
-    private var losRefreshIndex = 0  // tracks progress through incremental refresh
-
-    // Set of block positions reachable from any controller through unblocked connections
-    private val reachablePositions = HashSet<BlockPos>()
-
     /** Global tracker, any Connectable block entity can register/unregister here. */
     fun trackConnectable(pos: BlockPos, loaded: Boolean) {
         if (loaded) knownNodes.add(pos) else knownNodes.remove(pos)
@@ -55,10 +44,10 @@ object NodeConnectionRenderer {
         visited.add(startPos)
         val startConnectable = startEntity as? damien.nodeworks.network.Connectable ?: return null
         for (conn in startConnectable.getConnections()) {
-            if (!isConnectionBlocked(startPos, conn) && visited.add(conn)) queue.add(conn)
+            if (visited.add(conn)) queue.add(conn)
         }
         // Seed face-adjacent Connectable neighbours, blocks that touch each
-        // other share a network even with no laser connection between them.
+        // other share a network through pure adjacency.
         enqueueAdjacentConnectables(level, startPos, startEntity, visited, queue)
         while (queue.isNotEmpty() && visited.size < 32) {
             val pos = queue.removeFirst()
@@ -66,7 +55,7 @@ object NodeConnectionRenderer {
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) return entity
             val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
             for (conn in connectable.getConnections()) {
-                if (!isConnectionBlocked(pos, conn) && visited.add(conn)) queue.add(conn)
+                if (visited.add(conn)) queue.add(conn)
             }
             enqueueAdjacentConnectables(level, pos, entity, visited, queue)
         }
@@ -74,7 +63,7 @@ object NodeConnectionRenderer {
     }
 
     /** Enqueue face-adjacent Connectable BEs. No-op when [entity] isn't a Connectable
-     *  or either endpoint opts out via [Connectable.usesAdjacency] (Nodes). */
+     *  or either endpoint opts out via [Connectable.usesAdjacency]. */
     private fun enqueueAdjacentConnectables(
         level: net.minecraft.world.level.Level,
         pos: BlockPos,
@@ -103,124 +92,15 @@ object NodeConnectionRenderer {
         return connectable?.networkColor() ?: DEFAULT_NETWORK_COLOR
     }
 
-    /** Whether a specific connection is blocked (no line-of-sight). Uses cache. */
-    fun isConnectionBlocked(a: BlockPos, b: BlockPos): Boolean {
-        val key = connectionKey(a, b)
-        return losCache[key] ?: false
-    }
-
-    /** Whether a block position is reachable from a controller through unblocked connections. */
-    fun isReachable(pos: BlockPos): Boolean = reachablePositions.contains(pos)
-
-    private fun connectionKey(a: BlockPos, b: BlockPos): Long {
-        val (lo, hi) = if (isLessThan(a, b)) a to b else b to a
-        return lo.asLong() xor (hi.asLong() * 31)
-    }
-
-    private fun isLessThan(a: BlockPos, b: BlockPos): Boolean {
-        if (a.x != b.x) return a.x < b.x
-        if (a.y != b.y) return a.y < b.y
-        return a.z < b.z
-    }
-
-    /**
-     * Incrementally refresh the LOS cache, processes a limited number of raycasts per tick
-     * to avoid frame spikes. When all connections are checked, rebuilds reachability via BFS.
-     */
-    private fun refreshLosCache(level: net.minecraft.world.level.Level) {
-        val pairs = mutableListOf<Pair<BlockPos, BlockPos>>()
-        for (nodePos in knownNodes) {
-            if (!level.isLoaded(nodePos)) continue
-            val connectable = level.getBlockEntity(nodePos) as? damien.nodeworks.network.Connectable ?: continue
-            for (targetPos in connectable.getConnections()) {
-                if (!isLessThan(nodePos, targetPos)) continue
-                pairs.add(nodePos to targetPos)
-            }
-        }
-
-        var count = 0
-        while (losRefreshIndex < pairs.size && count < LOS_RAYCASTS_PER_TICK) {
-            val (a, b) = pairs[losRefreshIndex]
-            val key = connectionKey(a, b)
-            if (!level.isLoaded(b)) {
-                losCache[key] = true
-            } else {
-                val blocked = !damien.nodeworks.network.NodeConnectionHelper.checkLineOfSight(level, a, b)
-                losCache[key] = blocked
-            }
-            losRefreshIndex++
-            count++
-        }
-
-        if (losRefreshIndex >= pairs.size) {
-            losRefreshIndex = 0
-            val validKeys = pairs.map { connectionKey(it.first, it.second) }.toHashSet()
-            losCache.keys.retainAll(validKeys)
-
-            // Snapshot the previous reachable set before rebuilding so we can diff
-            // and invalidate chunk sections for any block whose reachability flipped.
-            // Every network-tint-driven emissive texture (controller / terminal /
-            // variable / receiver antenna / processing & instruction storage, plus
-            // any future block in the BlockTintSources list) goes through a
-            // NetworkColorTintSource that only re-evaluates on section rebuild,
-            // so LOS changes that don't move a block between chunks otherwise go
-            // visually unnoticed until an unrelated chunk reload.
-            val previousReachable = reachableSnapshot
-            reachablePositions.clear()
-            for (nodePos in knownNodes) {
-                if (!level.isLoaded(nodePos)) continue
-                val entity = level.getBlockEntity(nodePos)
-                if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
-                    bfsReachable(level, nodePos)
-                }
-            }
-            invalidateChangedSections(previousReachable, reachablePositions)
-            reachableSnapshot = HashSet(reachablePositions)
-        }
-    }
-
-    /** Snapshot of [reachablePositions] taken after each LOS-refresh cycle so the next
-     *  cycle can diff against it and issue chunk rebuilds only for blocks that flipped. */
-    private var reachableSnapshot: HashSet<BlockPos> = HashSet()
-
-    private fun invalidateChangedSections(before: Set<BlockPos>, after: Set<BlockPos>) {
-        val mc = net.minecraft.client.Minecraft.getInstance()
-        val changed = HashSet<BlockPos>()
-        for (pos in before) if (pos !in after) changed.add(pos)
-        for (pos in after) if (pos !in before) changed.add(pos)
-        if (changed.isEmpty()) return
-        val dirtiedSections = HashSet<Long>()
-        for (pos in changed) {
-            val sx = net.minecraft.core.SectionPos.blockToSectionCoord(pos.x)
-            val sy = net.minecraft.core.SectionPos.blockToSectionCoord(pos.y)
-            val sz = net.minecraft.core.SectionPos.blockToSectionCoord(pos.z)
-            val key = net.minecraft.core.SectionPos.asLong(sx, sy, sz)
-            if (!dirtiedSections.add(key)) continue
-            mc.levelRenderer.setSectionDirtyWithNeighbors(sx, sy, sz)
-        }
-    }
-
-    private fun bfsReachable(level: net.minecraft.world.level.Level, controllerPos: BlockPos) {
-        val queue = ArrayDeque<BlockPos>()
-        queue.add(controllerPos)
-        reachablePositions.add(controllerPos)
-
-        while (queue.isNotEmpty()) {
-            val pos = queue.removeFirst()
-            val entity = level.getBlockEntity(pos)
-            val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
-            for (targetPos in connectable.getConnections()) {
-                if (targetPos in reachablePositions) continue
-                if (isConnectionBlocked(pos, targetPos)) continue
-                if (!level.isLoaded(targetPos)) continue
-                reachablePositions.add(targetPos)
-                queue.add(targetPos)
-            }
-            // Face-adjacent Connectables count as reachable too, so a device
-            // touching a wired Node inherits the network color even without a
-            // laser between them.
-            enqueueAdjacentConnectables(level, pos, entity, reachablePositions, queue)
-        }
+    /** Whether a block position is part of an active network (has a non-null
+     *  networkId after [propagateNetworkId]). With LOS gone, this is just
+     *  "did the BFS reach this from a controller?" — same answer as
+     *  `Connectable.networkId != null`. */
+    fun isReachable(pos: BlockPos): Boolean {
+        val mc = Minecraft.getInstance()
+        val level = mc.level ?: return false
+        val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: return false
+        return be.networkId != null
     }
 
     /** The currently pinned block position (shown highlighted by the Diagnostic Tool), or null. */
@@ -237,11 +117,9 @@ object NodeConnectionRenderer {
         // forces a re-query of NetworkColorTintSource.colorInWorld next frame.
         damien.nodeworks.network.NetworkSettingsRegistry.onChanged = label@{ networkId ->
             // Short-circuit on null: a batch of disconnected BEs (networkId == null)
-            // loading at once previously caused O(n²) chunk re-renders, every load
-            // iterated knownNodes and dirtied every disconnected BE's section. The
-            // null case carries no useful colour change (disconnected BEs all render
-            // the default grey from the same fallback path) and the chunk is being
-            // built anyway, so skipping it here is correctness-neutral.
+            // loading at once previously caused O(n²) chunk re-renders. Skipping is
+            // correctness-neutral since disconnected BEs all render the default grey
+            // from the same fallback path.
             if (networkId == null) return@label
             val mc = Minecraft.getInstance()
             val level = mc.level ?: return@label
@@ -262,7 +140,6 @@ object NodeConnectionRenderer {
             if (poseStack != null && consumers != null) {
                 render(poseStack, consumers, cameraPos)
                 renderPinHighlight(poseStack, consumers, cameraPos)
-                renderSelectionThroughWalls(poseStack, consumers, cameraPos)
             }
         }
     }
@@ -275,49 +152,12 @@ object NodeConnectionRenderer {
         val mc = Minecraft.getInstance()
         val level = mc.level ?: return
 
-        // LOS cache + reachability is computed here (once per tick) so per-BE
-        // connection-beam renderers can read the cached state cheaply. Connection beam
-        // drawing itself moved to ConnectionBeamRenderer (called from each Connectable's
-        // BER) so it also works in GuideME scene renders, which don't fire this event.
-        val tick = mc.level?.gameTime ?: 0L
-        if (tick != losRefreshTick) {
-            losRefreshTick = tick
-            refreshLosCache(level)
-        }
-
-        // Monitor count text, stays here because it wants camera-relative billboarding
+        // Monitor count text, kept here because it wants camera-relative billboarding
         // over the entire knownNodes set, not a per-BER pass.
         poseStack.pushPose()
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
         renderMonitorText(poseStack, consumers, level, cameraPos)
         poseStack.popPose()
-    }
-
-    /** Through-walls highlight on the wrench's selected endpoint. Self-clears
-     *  the selection field if the underlying block has been removed. */
-    fun renderSelectionThroughWalls(
-        poseStack: PoseStack,
-        consumers: MultiBufferSource,
-        cameraPos: net.minecraft.world.phys.Vec3,
-    ) {
-        val pos = NetworkWrenchItem.clientSelectedPos ?: return
-        val mc = Minecraft.getInstance()
-        val player = mc.player ?: return
-        val level = mc.level ?: return
-        // I hate this so much but whatever. Curse my choice of kotlin
-        if (!player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) return
-
-        val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable
-        if (be == null) {
-            NetworkWrenchItem.clientSelectedPos = null
-            return
-        }
-        val color = be.networkId?.let { damien.nodeworks.network.NetworkSettingsRegistry.getColor(it) }
-            ?: DEFAULT_NETWORK_COLOR
-        val r = (color shr 16) and 0xFF
-        val g = (color shr 8) and 0xFF
-        val b = color and 0xFF
-        submitThroughWallsBox(poseStack, consumers, cameraPos, level, pos, r, g, b)
     }
 
     private fun renderMonitorText(
@@ -330,16 +170,10 @@ object NodeConnectionRenderer {
         val font = mc.font
         val bufferSource = mc.renderBuffers().bufferSource()
 
-        // Same 64-block distance cull as the main connection-render loop so text
-        // work scales with nearby monitors, not total monitors on the network.
-        // Applied BEFORE getBlockEntity / font lookups, the squared-distance check
-        // is the cheapest possible gate.
+        // Same 64-block distance cull so text work scales with nearby monitors,
+        // not total monitors on the network.
         val maxDistSq = 64.0 * 64.0
 
-        // Iterate every tracked Connectable (MonitorBlockEntity registers via
-        // trackConnectable in setLevel, `knownNodes` is the full live set despite the
-        // historical name). Non-monitor positions fall through the `as?` cast and
-        // are skipped cheaply.
         for (pos in knownNodes) {
             val dx = pos.x + 0.5 - cameraPos.x
             val dy = pos.y + 0.5 - cameraPos.y
@@ -361,8 +195,6 @@ object NodeConnectionRenderer {
                 pos.z.toDouble() + 0.5
             )
 
-            // Rotate so -Z points out the front face of the block (matches the
-            // MonitorRenderer's icon orientation).
             when (facing) {
                 Direction.SOUTH -> {}
                 Direction.NORTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat()))
@@ -371,8 +203,6 @@ object NodeConnectionRenderer {
                 else -> {}
             }
 
-            // Anchor text just below the centered item icon, on the face of the block
-            // (Z = 0.5 + ~1/32 so it sits flush with the emissive layer).
             poseStack.translate(0.0, -0.22, 0.502)
             poseStack.scale(0.01f, -0.01f, 0.01f)
 
@@ -431,9 +261,7 @@ object NodeConnectionRenderer {
         submitThroughWallsBox(poseStack, consumers, cameraPos, level, pos, r, g, b)
     }
 
-    /** Pulsing through-walls box around [pos] tinted [r,g,b]. Box bounds come
-     *  from the block's outline shape so a Node gets a 6/16 cube and a full
-     *  block gets a 1×1×1 cube. */
+    /** Pulsing through-walls box around [pos] tinted [r,g,b]. */
     private fun submitThroughWallsBox(
         poseStack: PoseStack,
         consumers: MultiBufferSource,
@@ -464,8 +292,6 @@ object NodeConnectionRenderer {
         poseStack.translate(-0.5f, -0.5f, -0.5f)
         val pose = poseStack.last()
 
-        // Modulate vertex color by pulse, additive ignores dst alpha so this is
-        // what drives glow strength.
         val pr = (r * pulse).toInt().coerceIn(0, 255)
         val pg = (g * pulse).toInt().coerceIn(0, 255)
         val pb = (b * pulse).toInt().coerceIn(0, 255)

@@ -5,6 +5,7 @@ import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.MonitorBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.block.entity.PipeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.block.entity.BroadcastAntennaBlockEntity
@@ -33,6 +34,11 @@ object ModBlockEntities {
     val NODE: BlockEntityType<NodeBlockEntity> = register(
         "node",
         PlatformServices.blockEntity.createBlockEntityType(::NodeBlockEntity, ModBlocks.NODE)
+    )
+
+    val PIPE: BlockEntityType<PipeBlockEntity> = register(
+        "pipe",
+        PlatformServices.blockEntity.createBlockEntityType(::PipeBlockEntity, ModBlocks.PIPE)
     )
 
     val TERMINAL: BlockEntityType<TerminalBlockEntity> = register(
