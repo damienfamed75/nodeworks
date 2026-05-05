@@ -36,7 +36,7 @@ abstract class NodeCard(properties: Properties) : Item(properties) {
             context.level,
             context.clickedPos,
             context.clickedFace,
-            player.isCrouching,
+            player.isShiftKeyDown,
         ) ?: return InteractionResult.PASS
         return NodeBlock.tryQuickPlaceCard(
             context.itemInHand,

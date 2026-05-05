@@ -40,28 +40,32 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
          *
          *  Two paths:
          *  1. The clicked block IS a node, side comes from [clickedFace],
-         *     flipped to the opposite when [crouching] (long-standing UX so
+         *     flipped to the opposite when [shiftHeld] (long-standing UX so
          *     hard-to-reach faces still work via shift).
          *  2. The clicked block is *adjacent* to a node in the [clickedFace]
-         *     direction. Crouching is required to disambiguate from the
-         *     player wanting to interact with the clicked block normally
-         *     (right-click a furnace = open the furnace; shift+right-click =
-         *     place on the node above). Side resolves to the node's face
-         *     touching the clicked block, i.e. [clickedFace.opposite]. */
+         *     direction. Shift is required to disambiguate from the player
+         *     wanting to interact with the clicked block normally (right-click
+         *     a furnace = open the furnace, shift+right-click = place on the
+         *     node above). Side resolves to the node's face touching the
+         *     clicked block, i.e. [clickedFace.opposite].
+         *
+         *  We track shift via the key state, not the crouch pose, so creative
+         *  flight (where shift descends instead of crouching) still triggers
+         *  the flip and the adjacent-block path. */
         fun resolvePlacementTarget(
             level: Level,
             pos: BlockPos,
             clickedFace: Direction,
-            crouching: Boolean,
+            shiftHeld: Boolean,
         ): PlacementTarget? {
             val state = level.getBlockState(pos)
             if (state.block is NodeBlock) {
-                val side = if (crouching) clickedFace.opposite else clickedFace
+                val side = if (shiftHeld) clickedFace.opposite else clickedFace
                 return PlacementTarget(pos, side)
             }
             // Adjacent-block path requires shift so a regular right-click on
             // a chest / furnace / etc. still opens the block normally.
-            if (!crouching) return null
+            if (!shiftHeld) return null
             val adjPos = pos.relative(clickedFace)
             val adjState = level.getBlockState(adjPos)
             if (adjState.block !is NodeBlock) return null
@@ -179,8 +183,10 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         val blockEntity = level.getBlockEntity(pos) as? NodeBlockEntity ?: return InteractionResult.PASS
         val side = hitResult.direction
 
-        // Shift+Right Click opens the opposite side
-        val openSide = if (player.isCrouching) side.opposite else side
+        // Shift+Right Click opens the opposite side. Track the key state, not
+        // the crouch pose, so creative flight (shift descends, no crouch pose)
+        // still flips the GUI to the far face.
+        val openSide = if (player.isShiftKeyDown) side.opposite else side
         val serverPlayer = player as ServerPlayer
         val sideName = openSide.name.replaceFirstChar { it.uppercase() }
         PlatformServices.menu.openExtendedMenu(
@@ -213,7 +219,7 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         if (stack.item is NetworkWrenchItem ||
             stack.item is damien.nodeworks.item.DiagnosticToolItem
         ) return InteractionResult.TRY_WITH_EMPTY_HAND
-        val target = resolvePlacementTarget(level, pos, hitResult.direction, player.isCrouching)
+        val target = resolvePlacementTarget(level, pos, hitResult.direction, player.isShiftKeyDown)
             ?: return InteractionResult.TRY_WITH_EMPTY_HAND
         val result = tryQuickPlaceCard(stack, level, target, player)
         // PASS = not a card, fall through to GUI. Other results are returned as-is.

@@ -50,14 +50,20 @@ class ExportChestMenu(
 
         const val SLOT_COUNT = ExportChestBlockEntity.SLOT_COUNT
         const val GRID_X = 8
-        const val GRID_Y = 20
+        const val GRID_Y = 22
         const val INV_X = 8
-        // Inv panel sits below the rule list panel in the GUI (INV_PANEL_Y=180
-        // in the screen), so the slot grid starts at INV_PANEL_Y + 14 = 194.
-        // Hotbar = 3 inv rows + HOTBAR_GAP = 194 + 54 + 4 = 252.
-        const val INV_Y = 194
-        const val HOTBAR_Y = 252
-        const val SLOT_INSET = 0
+        // Inv panel sits below the rule list panel in the GUI (INV_PANEL_Y=144
+        // in the screen with a 3-row rule panel), so the slot grid starts at
+        // INV_PANEL_Y + 14 = 158. Hotbar = 3 inv rows + HOTBAR_GAP =
+        // 158 + 54 + 4 = 216.
+        const val INV_Y = 158
+        const val HOTBAR_Y = 216
+        // Slot rectangles offset inside the player-inventory backplate so they
+        // land in the slot wells rather than flush with the backplate's outer
+        // border. Split into X / Y for symmetry with the chest grid offset
+        // even though they currently match.
+        const val SLOT_INSET_X = 1
+        const val SLOT_INSET_Y = 1
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: ExportChestOpenData): ExportChestMenu {
             val data = SimpleContainerData(DATA_SLOTS)
@@ -111,11 +117,11 @@ class ExportChestMenu(
         }
         for (row in 0 until 3) {
             for (col in 0 until 9) {
-                addSlot(Slot(playerInventory, col + row * 9 + 9, INV_X + SLOT_INSET + col * 18, INV_Y + SLOT_INSET + row * 18))
+                addSlot(Slot(playerInventory, col + row * 9 + 9, INV_X + SLOT_INSET_X + col * 18, INV_Y + SLOT_INSET_Y + row * 18))
             }
         }
         for (col in 0 until 9) {
-            addSlot(Slot(playerInventory, col, INV_X + SLOT_INSET + col * 18, HOTBAR_Y + SLOT_INSET))
+            addSlot(Slot(playerInventory, col, INV_X + SLOT_INSET_X + col * 18, HOTBAR_Y + SLOT_INSET_Y))
         }
         addDataSlots(data)
     }

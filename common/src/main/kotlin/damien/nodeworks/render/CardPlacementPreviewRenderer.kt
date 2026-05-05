@@ -81,7 +81,7 @@ object CardPlacementPreviewRenderer {
         // placement. Covers both clicking the node directly and shift-clicking
         // a block adjacent to one.
         val target = NodeBlock.resolvePlacementTarget(
-            level, hit.blockPos, hit.direction, player.isCrouching,
+            level, hit.blockPos, hit.direction, player.isShiftKeyDown,
         ) ?: return
 
         val color = CARD_COLORS[card.cardType] ?: DEFAULT_COLOR

@@ -51,8 +51,13 @@ class ExportChestScreen(
         private const val NO_RULES_TEXT = "No Rules"
 
         private const val FRAME_W = 176
-        private const val TOP_PANEL_H = 178
-        private const val INV_PANEL_Y = 180
+        // Top panel hosts the 20-px title bar, 18-px chest grid, 16-px
+        // settings strip, the rule list, the add-rule button, and 4 px of
+        // bottom pad. Sized for 3 visible rule rows so the GUI fits on
+        // smaller screens (gui_scale 4 on 1080p still leaves room for the
+        // hotbar).
+        private const val TOP_PANEL_H = 142
+        private const val INV_PANEL_Y = 144
         private const val INV_PANEL_H = 96
         private const val FRAME_H = INV_PANEL_Y + INV_PANEL_H
         private const val TOP_BAR_H = 20
@@ -77,7 +82,7 @@ class ExportChestScreen(
         private const val RULE_PANEL_Y = 64
         private const val RULE_PANEL_W = FRAME_W - 8
         private const val ROW_H = 18
-        private const val VISIBLE_ROWS = 5
+        private const val VISIBLE_ROWS = 3
         private const val RULE_PANEL_INNER_PAD = 2
         private const val RULE_PANEL_H = VISIBLE_ROWS * ROW_H + RULE_PANEL_INNER_PAD * 2
 
