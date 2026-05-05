@@ -17,6 +17,7 @@ import damien.nodeworks.render.InventoryTerminalRenderer
 import damien.nodeworks.render.MonitorRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.NodeRenderer
+import damien.nodeworks.render.PipeRenderer
 import damien.nodeworks.render.PlacerRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.ReceiverAntennaRenderer
@@ -127,6 +128,7 @@ object NeoForgeClientSetup {
         // Direct registration without the laser-bounding-box wrappers, all neighbours
         // are now visible via adjacency, no off-screen-laser-visibility concern.
         event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NodeRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PIPE, ::PipeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
@@ -259,6 +261,7 @@ object NeoForgeClientSetup {
         //  RenderSetup built around it.
         event.registerPipeline(damien.nodeworks.render.PinHighlightRenderType.THROUGH_WALLS_PIPELINE)
         event.registerPipeline(damien.nodeworks.render.CrystalCoreRenderType.CORE_PIPELINE)
+        event.registerPipeline(damien.nodeworks.render.PipeLaserCoreRenderType.PIPELINE)
     }
 
 }

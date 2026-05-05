@@ -2,6 +2,7 @@ package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
 import damien.nodeworks.block.entity.NodeBlockEntity
+import damien.nodeworks.network.NetworkSettingsRegistry
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
@@ -11,6 +12,7 @@ import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.core.Direction
 import net.minecraft.resources.Identifier
 import net.minecraft.world.phys.Vec3
+import java.util.EnumSet
 import kotlin.math.sqrt
 
 /**
@@ -31,6 +33,18 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
 
     class NodeRenderState : ConnectableRenderState() {
         var cardLinks: List<CardLink> = emptyList()
+        /** Faces touching another Connectable. The shared [PipeLaserBeam] uses
+         *  these to draw one half-beam per direction from the Node centre, so
+         *  the laser flows through the Node like a junction pipe. */
+        var pipeDirections: EnumSet<Direction> = EnumSet.noneOf(Direction::class.java)
+        /** Network tint for the through-Node laser. Comes from the BE's
+         *  networkColor() (which already handles null networkId → grey). */
+        var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        var laserMode: Int = NetworkSettingsRegistry.LASER_MODE_FANCY
+        /** False when the Node has no controller. Suppresses the through-Node
+         *  laser, the per-card-link beams stay visible because cards are
+         *  attached locally and don't need a network to be meaningful. */
+        var hasNetwork: Boolean = false
     }
 
     companion object {
@@ -64,6 +78,15 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         cameraPosition: Vec3,
         breakProgress: ModelFeatureRenderer.CrumblingOverlay?,
     ) {
+        state.pipeDirections.clear()
+        for (dir in Direction.entries) {
+            if (blockEntity.faceRole(dir) == NodeBlockEntity.FaceRole.PIPE) state.pipeDirections.add(dir)
+        }
+        val settings = NetworkSettingsRegistry.get(blockEntity.networkId)
+        state.networkColor = settings.color
+        state.laserMode = settings.laserMode
+        state.hasNetwork = blockEntity.networkId != null
+
         val level = blockEntity.level
         if (level != null) {
             val links = mutableListOf<CardLink>()
@@ -98,6 +121,19 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
+        // Through-Node network laser, same per-direction-from-centre layout
+        // pipes use, so the Node reads as a junction in the middle of a run.
+        // Always emit the centre core, the Node body's wireframe geometry
+        // makes even a straight-through configuration's beam-meeting-point
+        // visible enough to want masking.
+        if (state.hasNetwork) {
+            PipeLaserBeam.submit(
+                poseStack, submitNodeCollector, state.pos, camera.pos,
+                state.pipeDirections, state.networkColor,
+                laserMode = state.laserMode,
+                drawCenterCore = state.pipeDirections.isNotEmpty(),
+            )
+        }
         submitCardLinks(state, poseStack, submitNodeCollector, camera)
     }
 
