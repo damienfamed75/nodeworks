@@ -57,8 +57,15 @@ class NodeSideScreen(
         private val SIDE_LABELS = arrayOf("D", "U", "N", "S", "W", "E")
     }
 
-    /** Cached facing block item for rendering. */
-    private var facingBlockStack: ItemStack = ItemStack.EMPTY
+    /** Cached adjacent-block stacks for all six sides, indexed by
+     *  [Direction.ordinal]. Populated on init and refreshed each frame so
+     *  every tab can show its side's facing block at a glance, not just the
+     *  active one. Cheap, the per-frame cost is six `level.getBlockState`
+     *  hash lookups. */
+    private val facingStacks: Array<ItemStack> = Array(6) { ItemStack.EMPTY }
+
+    /** Display name for the active side's facing block, shown under the icon
+     *  in the main panel. Refreshed alongside [facingStacks]. */
     private var facingBlockName: String = ""
 
     /** Displayed title, updated when switching sides. */
@@ -71,20 +78,25 @@ class NodeSideScreen(
 
     override fun init() {
         super.init()
-        updateFacingBlock()
+        updateFacingBlocks()
     }
 
-    private fun updateFacingBlock() {
+    private fun updateFacingBlocks() {
         val mc = net.minecraft.client.Minecraft.getInstance()
         val level = mc.level ?: return
-        val adjacentPos = menu.getNodePos().relative(menu.activeSide)
-        val blockState = level.getBlockState(adjacentPos)
-        val item = blockState.block.asItem()
-        facingBlockStack = if (item != net.minecraft.world.item.Items.AIR) ItemStack(item) else ItemStack.EMPTY
-        facingBlockName = if (!facingBlockStack.isEmpty) {
-            facingBlockStack.hoverName.string
+        val nodePos = menu.getNodePos()
+        for (i in 0 until 6) {
+            val dir = Direction.entries[i]
+            val state = level.getBlockState(nodePos.relative(dir))
+            val item = state.block.asItem()
+            facingStacks[i] = if (item != net.minecraft.world.item.Items.AIR) ItemStack(item) else ItemStack.EMPTY
+        }
+        val activeIdx = menu.activeSide.ordinal
+        val activeStack = facingStacks[activeIdx]
+        facingBlockName = if (!activeStack.isEmpty) {
+            activeStack.hoverName.string
         } else {
-            blockState.block.name.string
+            level.getBlockState(nodePos.relative(menu.activeSide)).block.name.string
         }
     }
 
@@ -98,11 +110,15 @@ class NodeSideScreen(
         val sideName = newSide.name.replaceFirstChar { it.uppercase() }
         sideTitle = Component.translatable("container.nodeworks.node_side", sideName)
 
-        updateFacingBlock()
+        updateFacingBlocks()
     }
 
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
+        // Refresh per frame so the tab icons reflect a player breaking or
+        // placing the adjacent block while the GUI is open. Six chunk hash
+        // lookups per frame, negligible.
+        updateFacingBlocks()
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
 
         val reachable = damien.nodeworks.render.NodeConnectionRenderer.isReachable(menu.getNodePos())
@@ -151,8 +167,33 @@ class NodeSideScreen(
 
             val label = SIDE_LABELS[i]
             val labelColor = if (isActive) 0xFFFFFFFF.toInt() else 0xFFAAAAAA.toInt()
-            val labelX = tx + (tabW - font.width(label)) / 2
-            val labelY = tabY + (TAB_H - font.lineHeight) / 2
+            // 2-px nudge down so the letter optically sits in the lower half
+            // of the tab, off the active-tab bevel highlight at the top.
+            val labelY = tabY + (TAB_H - font.lineHeight) / 2 + 2
+
+            // Tab is split into left half (icon area) and right half (label
+            // area). Letter X is fixed regardless of icon presence so the
+            // letters all line up vertically across the row.
+            val iconAreaW = tabW / 2
+            val labelAreaX = tx + iconAreaW
+            val labelAreaW = tabW - iconAreaW
+            val labelX = labelAreaX + (labelAreaW - font.width(label)) / 2
+
+            val stack = facingStacks[i]
+            if (!stack.isEmpty) {
+                // 12-px icon scaled from 16×16, centred vertically and nudged
+                // 2 px right within the left half.
+                val iconSize = 12
+                val iconX = tx + (iconAreaW - iconSize) / 2 + 2
+                val iconY = tabY + (TAB_H - iconSize) / 2
+                val scale = iconSize / 16f
+                graphics.pose().pushMatrix()
+                graphics.pose().translate(iconX.toFloat(), iconY.toFloat())
+                graphics.pose().scale(scale, scale)
+                graphics.renderItem(stack, 0, 0)
+                graphics.pose().popMatrix()
+            }
+
             graphics.drawString(font, label, labelX, labelY, labelColor)
         }
     }
@@ -163,8 +204,9 @@ class NodeSideScreen(
 
         graphics.drawString(font, "Facing", labelX, topPos + CARD_AREA_Y + 6, 0xFFAAAAAA.toInt())
 
-        if (!facingBlockStack.isEmpty) {
-            graphics.renderItem(facingBlockStack, leftPos + 22, iconY)
+        val activeStack = facingStacks[menu.activeSide.ordinal]
+        if (!activeStack.isEmpty) {
+            graphics.renderItem(activeStack, leftPos + 22, iconY)
         } else {
             graphics.drawString(font, "Air", labelX + 4, iconY + 4, 0xFF666666.toInt())
         }
