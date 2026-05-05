@@ -84,6 +84,11 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
         // INSET trick for emissive cube overlays.
         private const val EMISSIVE_OUTSET = 0.0006f
 
+        /** Fixed emissive tint. The chest's role (import → blue) reads at a
+         *  glance, decoupled from whatever network channel happens to be
+         *  attached. RGB only; the emissive PNG carries its own alpha. */
+        private const val EMISSIVE_TINT = 0x4D9CFF
+
         private const val BODY_X0 = 1f / 16f
         private const val BODY_X1 = 15f / 16f
         private const val BODY_Y0 = 0f / 16f
@@ -163,11 +168,11 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
                 emitLid(p, vc, light)
             }
             if (connected) {
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     LID_X0, LID_Y0, LID_Z0, LID_X1, LID_Y1, LID_Z1, LID_UV, skipMinusZ = false)
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     LOCK_X0, LOCK_Y0, LOCK_Z0, LOCK_X1, LOCK_Y1, LOCK_Z1, LOCK_UV, skipMinusZ = true)
             }
         } else {
@@ -177,7 +182,7 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
             }
             // Body emissive emits at the same flat pose level the body does.
             if (connected) {
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
             }
 
@@ -190,9 +195,9 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
             }
             // Lid + lock emissive follow the X rotation push so the glow rotates with them.
             if (connected) {
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     LID_X0, LID_Y0, LID_Z0, LID_X1, LID_Y1, LID_Z1, LID_UV, skipMinusZ = false)
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     LOCK_X0, LOCK_Y0, LOCK_Z0, LOCK_X1, LOCK_Y1, LOCK_Z1, LOCK_UV, skipMinusZ = true)
             }
             poseStack.popPose()
@@ -201,23 +206,22 @@ open class ImportChestRenderer(context: BlockEntityRendererProvider.Context) :
         poseStack.popPose()
     }
 
-    /** Emissive overlay for one box, tinted with the network color. Slightly
-     *  outset so it doesn't z-fight the regular geometry underneath. Drawn
-     *  fullbright through the LIGHTNING-blend EYES pipeline so transparent
+    /** Emissive overlay for one box, tinted with the fixed [EMISSIVE_TINT].
+     *  Slightly outset so it doesn't z-fight the regular geometry underneath.
+     *  Drawn fullbright through the LIGHTNING-blend EYES pipeline so transparent
      *  pixels in the emissive PNG drop out cleanly and only the lit pixels
      *  add to the framebuffer. */
     private fun emitEmissive(
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        networkColor: Int,
         mnx: Float, mny: Float, mnz: Float,
         mxx: Float, mxy: Float, mxz: Float,
         uv: BoxUv,
         skipMinusZ: Boolean,
     ) {
-        val r = (networkColor shr 16) and 0xFF
-        val g = (networkColor shr 8) and 0xFF
-        val b = networkColor and 0xFF
+        val r = (EMISSIVE_TINT shr 16) and 0xFF
+        val g = (EMISSIVE_TINT shr 8) and 0xFF
+        val b = EMISSIVE_TINT and 0xFF
         val out = EMISSIVE_OUTSET
         submitNodeCollector.submitCustomGeometry(poseStack, LOCK_EMISSIVE_RENDER_TYPE) { p, vc ->
             emitBox(

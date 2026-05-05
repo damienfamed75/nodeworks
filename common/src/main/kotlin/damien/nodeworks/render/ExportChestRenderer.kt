@@ -74,9 +74,12 @@ open class ExportChestRenderer(context: BlockEntityRendererProvider.Context) :
 
         private val PUSH_RENDER_TYPE: RenderType = run {
             val safe = PUSH_INDICATOR_TEXTURE.path.replace('/', '_').replace('.', '_')
+            // ENTITY_TRANSLUCENT_CULL respects the texture's alpha channel
+            // (ENTITY_SOLID would treat sub-1.0 alpha as opaque, eating the
+            // transparent pixels around the indicator art).
             RenderType.create(
                 "nodeworks_chest_push_${PUSH_INDICATOR_TEXTURE.namespace}_$safe",
-                RenderSetup.builder(RenderPipelines.ENTITY_SOLID)
+                RenderSetup.builder(RenderPipelines.ENTITY_TRANSLUCENT_CULL)
                     .withTexture("Sampler0", PUSH_INDICATOR_TEXTURE)
                     .useLightmap()
                     .useOverlay()
@@ -85,6 +88,11 @@ open class ExportChestRenderer(context: BlockEntityRendererProvider.Context) :
         }
 
         private const val EMISSIVE_OUTSET = 0.0006f
+
+        /** Fixed emissive tint. The chest's role (export → orange) reads at a
+         *  glance, decoupled from whatever network channel happens to be
+         *  attached. RGB only; the emissive PNG carries its own alpha. */
+        private const val EMISSIVE_TINT = 0xFF9933
         /** Slight outset so the indicator quad doesn't z-fight with the body
          *  / lid texture underneath. Same magnitude as the emissive overlay. */
         private const val PUSH_OUTSET = 0.001f
@@ -168,11 +176,11 @@ open class ExportChestRenderer(context: BlockEntityRendererProvider.Context) :
                 emitLid(p, vc, light)
             }
             if (connected) {
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     LID_X0, LID_Y0, LID_Z0, LID_X1, LID_Y1, LID_Z1, LID_UV, skipMinusZ = false)
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     LOCK_X0, LOCK_Y0, LOCK_Z0, LOCK_X1, LOCK_Y1, LOCK_Z1, LOCK_UV, skipMinusZ = true)
             }
         } else {
@@ -180,7 +188,7 @@ open class ExportChestRenderer(context: BlockEntityRendererProvider.Context) :
                 emitBox(p, vc, light, BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
             }
             if (connected) {
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     BODY_X0, BODY_Y0, BODY_Z0, BODY_X1, BODY_Y1, BODY_Z1, BODY_UV, skipMinusZ = false)
             }
 
@@ -192,29 +200,143 @@ open class ExportChestRenderer(context: BlockEntityRendererProvider.Context) :
                 emitLid(p, vc, light)
             }
             if (connected) {
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     LID_X0, LID_Y0, LID_Z0, LID_X1, LID_Y1, LID_Z1, LID_UV, skipMinusZ = false)
-                emitEmissive(poseStack, submitNodeCollector, networkColor,
+                emitEmissive(poseStack, submitNodeCollector,
                     LOCK_X0, LOCK_Y0, LOCK_Z0, LOCK_X1, LOCK_Y1, LOCK_Z1, LOCK_UV, skipMinusZ = true)
             }
             poseStack.popPose()
         }
 
+        // Auto-push indicator: small textured quad on the local face that maps
+        // to the BE's pushFace. Drawn after the body so it overlays the
+        // existing texture, slightly outset to dodge z-fighting. Uses the
+        // post-rotation pose so converting world pushFace -> local face is a
+        // pure direction-mapping (no extra transforms).
+        //
+        // The UP indicator rides on the lid surface, so we re-use the lid's
+        // hinge rotation. angleDeg is 0 when closed → identity transform.
+        val pushFace = state.pushFace
+        if (pushFace != null) {
+            val localFace = localPushFace(pushFace, state.facing)
+            if (localFace == Direction.UP) {
+                poseStack.pushPose()
+                poseStack.translate(HINGE_X, HINGE_Y, HINGE_Z)
+                poseStack.mulPose(Axis.XP.rotationDegrees(angleDeg))
+                poseStack.translate(-HINGE_X, -HINGE_Y, -HINGE_Z)
+                submitNodeCollector.submitCustomGeometry(poseStack, PUSH_RENDER_TYPE) { p, vc ->
+                    emitPushIndicator(p, vc, light, localFace)
+                }
+                poseStack.popPose()
+            } else {
+                submitNodeCollector.submitCustomGeometry(poseStack, PUSH_RENDER_TYPE) { p, vc ->
+                    emitPushIndicator(p, vc, light, localFace)
+                }
+            }
+        }
+
         poseStack.popPose()
+    }
+
+    /** World pushFace → local face on the unrotated model. The model's local
+     *  +Z (SOUTH) is the lock side, which the YP rotation in [submitConnectable]
+     *  aligns with the chest's [Direction] FACING. */
+    private fun localPushFace(worldFace: Direction, facing: Direction): Direction = when {
+        worldFace == Direction.UP -> Direction.UP
+        worldFace == Direction.DOWN -> Direction.DOWN
+        worldFace == facing -> Direction.SOUTH
+        worldFace == facing.opposite -> Direction.NORTH
+        facing.axis.isHorizontal && worldFace == facing.counterClockWise -> Direction.EAST
+        facing.axis.isHorizontal && worldFace == facing.clockWise -> Direction.WEST
+        else -> Direction.SOUTH
+    }
+
+    /** Centred indicator quad on [localFace] of the chest's outer envelope.
+     *  Footprint is [PUSH_PX] (~8 pixels) on each side, outset by [PUSH_OUTSET]
+     *  past the body / lid surface. UV spans the full texture (0..1). */
+    private fun emitPushIndicator(
+        p: PoseStack.Pose,
+        vc: VertexConsumer,
+        light: Int,
+        localFace: Direction,
+    ) {
+        val ov = OverlayTexture.NO_OVERLAY
+        val r = 255; val g = 255; val b = 255; val a = 255
+        val half = PUSH_PX / 2f
+        val out = PUSH_OUTSET
+        val center = 0.5f
+        val bodyCenterY = (BODY_Y0 + BODY_Y1) / 2f
+
+        when (localFace) {
+            Direction.UP -> {
+                val y = LID_Y1 + out
+                val nx = center - half; val xx = center + half
+                val nz = center - half; val xz = center + half
+                vc.addVertex(p, nx, y, nz).setUv(0f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 1f, 0f)
+                vc.addVertex(p, nx, y, xz).setUv(0f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 1f, 0f)
+                vc.addVertex(p, xx, y, xz).setUv(1f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 1f, 0f)
+                vc.addVertex(p, xx, y, nz).setUv(1f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 1f, 0f)
+            }
+            Direction.DOWN -> {
+                val y = BODY_Y0 - out
+                val nx = center - half; val xx = center + half
+                val nz = center - half; val xz = center + half
+                vc.addVertex(p, nx, y, nz).setUv(0f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, -1f, 0f)
+                vc.addVertex(p, xx, y, nz).setUv(1f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, -1f, 0f)
+                vc.addVertex(p, xx, y, xz).setUv(1f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, -1f, 0f)
+                vc.addVertex(p, nx, y, xz).setUv(0f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, -1f, 0f)
+            }
+            Direction.SOUTH -> {
+                val z = BODY_Z1 + out
+                val nx = center - half; val xx = center + half
+                val ny = bodyCenterY - half; val xy = bodyCenterY + half
+                vc.addVertex(p, xx, ny, z).setUv(1f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 0f, 1f)
+                vc.addVertex(p, xx, xy, z).setUv(1f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 0f, 1f)
+                vc.addVertex(p, nx, xy, z).setUv(0f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 0f, 1f)
+                vc.addVertex(p, nx, ny, z).setUv(0f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 0f, 1f)
+            }
+            Direction.NORTH -> {
+                val z = BODY_Z0 - out
+                val nx = center - half; val xx = center + half
+                val ny = bodyCenterY - half; val xy = bodyCenterY + half
+                vc.addVertex(p, nx, ny, z).setUv(1f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 0f, -1f)
+                vc.addVertex(p, nx, xy, z).setUv(1f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 0f, -1f)
+                vc.addVertex(p, xx, xy, z).setUv(0f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 0f, -1f)
+                vc.addVertex(p, xx, ny, z).setUv(0f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 0f, 0f, -1f)
+            }
+            Direction.EAST -> {
+                val x = BODY_X1 + out
+                val ny = bodyCenterY - half; val xy = bodyCenterY + half
+                val nz = center - half; val xz = center + half
+                vc.addVertex(p, x, ny, nz).setUv(1f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 1f, 0f, 0f)
+                vc.addVertex(p, x, xy, nz).setUv(1f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 1f, 0f, 0f)
+                vc.addVertex(p, x, xy, xz).setUv(0f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 1f, 0f, 0f)
+                vc.addVertex(p, x, ny, xz).setUv(0f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, 1f, 0f, 0f)
+            }
+            Direction.WEST -> {
+                val x = BODY_X0 - out
+                val ny = bodyCenterY - half; val xy = bodyCenterY + half
+                val nz = center - half; val xz = center + half
+                vc.addVertex(p, x, ny, xz).setUv(1f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, -1f, 0f, 0f)
+                vc.addVertex(p, x, xy, xz).setUv(1f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, -1f, 0f, 0f)
+                vc.addVertex(p, x, xy, nz).setUv(0f, 0f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, -1f, 0f, 0f)
+                vc.addVertex(p, x, ny, nz).setUv(0f, 1f).setColor(r, g, b, a).setOverlay(ov).setLight(light).setNormal(p, -1f, 0f, 0f)
+            }
+            else -> Unit
+        }
     }
 
     private fun emitEmissive(
         poseStack: PoseStack,
         submitNodeCollector: SubmitNodeCollector,
-        networkColor: Int,
         mnx: Float, mny: Float, mnz: Float,
         mxx: Float, mxy: Float, mxz: Float,
         uv: BoxUv,
         skipMinusZ: Boolean,
     ) {
-        val r = (networkColor shr 16) and 0xFF
-        val g = (networkColor shr 8) and 0xFF
-        val b = networkColor and 0xFF
+        val r = (EMISSIVE_TINT shr 16) and 0xFF
+        val g = (EMISSIVE_TINT shr 8) and 0xFF
+        val b = EMISSIVE_TINT and 0xFF
         val out = EMISSIVE_OUTSET
         submitNodeCollector.submitCustomGeometry(poseStack, EMISSIVE_RENDER_TYPE) { p, vc ->
             emitBox(
