@@ -22,8 +22,11 @@ import kotlin.math.sqrt
  * three placement entry points routed through [NodeBlock.resolvePlacementTarget]:
  *  1. Aim at a node face. Preview on that face.
  *  2. Aim at a node face while crouching. Preview slides to the opposite face.
- *  3. Aim at a block adjacent to a node while crouching. Preview hops to the
- *     node's face touching that block.
+ *  3. Aim at a block adjacent to a node. Preview hops to the node's face
+ *     touching that block. Shown regardless of shift since vanilla's
+ *     use-order takes care of the interactable-block case (chests open
+ *     normally, the card placement only fires on non-interactable blocks
+ *     unless the player holds shift to bypass).
  *
  * No-op when the player isn't holding a card, the crosshair has no block, or
  * the hit doesn't resolve to a node face.

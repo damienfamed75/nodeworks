@@ -43,15 +43,24 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
          *     flipped to the opposite when [shiftHeld] (long-standing UX so
          *     hard-to-reach faces still work via shift).
          *  2. The clicked block is *adjacent* to a node in the [clickedFace]
-         *     direction. Shift is required to disambiguate from the player
-         *     wanting to interact with the clicked block normally (right-click
-         *     a furnace = open the furnace, shift+right-click = place on the
-         *     node above). Side resolves to the node's face touching the
-         *     clicked block, i.e. [clickedFace.opposite].
+         *     direction. Side resolves to the node's face touching the clicked
+         *     block, i.e. [clickedFace.opposite].
+         *
+         *  Vanilla's own use-order handles the "is this block interactable"
+         *  gate for us: if the player right-clicks a chest with a card,
+         *  [ChestBlock.useItemOn] consumes the click and [Item.useOn] is never
+         *  called, so we never get a chance to place on the adjacent node.
+         *  For non-interactable blocks (stone, dirt, glass, ...) the block's
+         *  useItemOn returns PASS and the click reaches us, so the card lands
+         *  on the node behind it without the player needing to hold shift.
+         *  Shift is still useful as the explicit override that bypasses
+         *  [Block.useItemOn] entirely (for placing through interactable
+         *  neighbours), and to flip onto the opposite face when targeting the
+         *  node directly.
          *
          *  We track shift via the key state, not the crouch pose, so creative
          *  flight (where shift descends instead of crouching) still triggers
-         *  the flip and the adjacent-block path. */
+         *  the flip. */
         fun resolvePlacementTarget(
             level: Level,
             pos: BlockPos,
@@ -63,9 +72,6 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
                 val side = if (shiftHeld) clickedFace.opposite else clickedFace
                 return PlacementTarget(pos, side)
             }
-            // Adjacent-block path requires shift so a regular right-click on
-            // a chest / furnace / etc. still opens the block normally.
-            if (!shiftHeld) return null
             val adjPos = pos.relative(clickedFace)
             val adjState = level.getBlockState(adjPos)
             if (adjState.block !is NodeBlock) return null
