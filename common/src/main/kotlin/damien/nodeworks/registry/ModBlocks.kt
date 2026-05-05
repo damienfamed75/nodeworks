@@ -9,6 +9,7 @@ import damien.nodeworks.block.ProcessingStorageBlock
 import damien.nodeworks.block.AntennaSegmentBlock
 import damien.nodeworks.block.BreakerBlock
 import damien.nodeworks.block.BroadcastAntennaBlock
+import damien.nodeworks.block.ExportChestBlock
 import damien.nodeworks.block.ImportChestBlock
 import damien.nodeworks.block.PlacerBlock
 import damien.nodeworks.block.CraftingCoreBlock
@@ -239,6 +240,16 @@ object ModBlocks {
     val IMPORT_CHEST: Block = register(
         "import_chest",
         ::ImportChestBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .sound(net.minecraft.world.level.block.SoundType.COPPER)
+            .requiresCorrectToolForDrops()
+    )
+
+    /** Export Chest. Buffer + network output device. Mirror of [IMPORT_CHEST]. */
+    val EXPORT_CHEST: Block = register(
+        "export_chest",
+        ::ExportChestBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .sound(net.minecraft.world.level.block.SoundType.COPPER)

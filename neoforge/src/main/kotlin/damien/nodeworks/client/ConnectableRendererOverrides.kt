@@ -103,3 +103,8 @@ class NeoImportChestRenderer(ctx: BlockEntityRendererProvider.Context) : damien.
     override fun getRenderBoundingBox(blockEntity: damien.nodeworks.block.entity.ImportChestBlockEntity): AABB =
         ConnectionBeamRenderer.computeBoundingBox(blockEntity)
 }
+
+class NeoExportChestRenderer(ctx: BlockEntityRendererProvider.Context) : damien.nodeworks.render.ExportChestRenderer(ctx) {
+    override fun getRenderBoundingBox(blockEntity: damien.nodeworks.block.entity.ExportChestBlockEntity): AABB =
+        ConnectionBeamRenderer.computeBoundingBox(blockEntity)
+}

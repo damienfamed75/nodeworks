@@ -50,6 +50,8 @@
   "container.nodeworks.placer": "Placer Settings",
   "block.nodeworks.import_chest": "Import Chest",
   "container.nodeworks.import_chest": "Import Chest",
+  "block.nodeworks.export_chest": "Export Chest",
+  "container.nodeworks.export_chest": "Export Chest",
   "block.nodeworks.crafting_core": "Crafting Core",
   "container.nodeworks.crafting_core": "Crafting CPU",
   "block.nodeworks.crafting_storage": "Crafting Buffer",

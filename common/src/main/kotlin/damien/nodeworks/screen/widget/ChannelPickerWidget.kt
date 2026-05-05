@@ -1,6 +1,7 @@
 package damien.nodeworks.screen.widget
 
 import damien.nodeworks.compat.drawString
+import damien.nodeworks.screen.Icons
 import damien.nodeworks.screen.NineSlice
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -204,21 +205,11 @@ class ChannelPickerWidget(
         }
     }
 
-    /** Black square + red X. Used both on the swatch (when [isNone]) and as the
-     *  17th popup cell. [size] should match the cell, the X is sized
-     *  proportionally so it reads at both 12px (popup cell) and 16px (swatch). */
+    /** "Any channel" glyph. Drawn at the swatch (when [isNone]) and on the
+     *  17th popup cell. Backed by [Icons.ANY_CHANNEL] which scales to whichever
+     *  size the host hands in (12 px in the popup, 16 px on the swatch). */
     private fun drawNoneGlyph(graphics: GuiGraphicsExtractor, x0: Int, y0: Int, size: Int) {
-        graphics.fill(x0 + 1, y0 + 1, x0 + size - 1, y0 + size - 1, 0xFF1A1A1A.toInt())
-        // Two diagonal lines, 1px thick, drawn as a series of fills so we don't
-        // pull in a stroke API. Inset 2px from the cell edge so the X has visible
-        // breathing room against the frame.
-        val inset = 2
-        val red = 0xFFE53935.toInt()
-        val xn = size - inset * 2
-        for (i in 0 until xn) {
-            graphics.fill(x0 + inset + i, y0 + inset + i, x0 + inset + i + 1, y0 + inset + i + 1, red)
-            graphics.fill(x0 + inset + i, y0 + size - inset - 1 - i, x0 + inset + i + 1, y0 + size - inset - i, red)
-        }
+        Icons.ANY_CHANNEL.draw(graphics, x0, y0, size)
     }
 
     /** Host screens call this BEFORE forwarding clicks to other widgets while

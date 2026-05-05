@@ -155,6 +155,10 @@ object NetworkDiscovery {
             // Face-adjacent Connectables share the subgraph without a laser between
             // them. Both endpoints must opt in via [Connectable.usesAdjacency], so a
             // Node next to a Controller doesn't silently bridge two networks.
+            // Both endpoints must also accept the pair via [Connectable.canConnectAdjacentTo],
+            // so leaves like the import/export chests don't auto-bridge each other's
+            // networks just by sitting face-to-face. Mirrors the gate in
+            // [NodeConnectionHelper.adjacentConnectableNeighbors].
             if (connectable.usesAdjacency()) {
                 for (dir in Direction.entries) {
                     val adjPos = pos.relative(dir)
@@ -162,6 +166,8 @@ object NetworkDiscovery {
                     if (!level.isLoaded(adjPos)) continue
                     val neighbor = level.getBlockEntity(adjPos) as? Connectable ?: continue
                     if (!neighbor.usesAdjacency()) continue
+                    if (!connectable.canConnectAdjacentTo(neighbor)) continue
+                    if (!neighbor.canConnectAdjacentTo(connectable)) continue
                     visited.add(adjPos)
                     queue.add(adjPos)
                 }

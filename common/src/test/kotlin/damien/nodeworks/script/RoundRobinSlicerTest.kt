@@ -37,6 +37,12 @@ class RoundRobinSlicerTest {
 
             Case("large positive cycle wraps", 6, 3, 100, listOf(2, 3)),
             Case("negative cycle wraps positively", 6, 3, -1, listOf(4, 5)),
+
+            // Regression: size=6, slices=5 → chunkSize ceils to 2, slot 3 starts
+            // at 6 (== size, empty), slot 4 would start at 8 (> size). Both
+            // must return an empty slice without throwing IllegalArgumentException.
+            Case("ceiling overshoot empty slot", 6, 5, 3, listOf()),
+            Case("ceiling overshoot beyond size", 6, 5, 4, listOf()),
         )
 
         val tests = ArrayList<DynamicTest>()

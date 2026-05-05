@@ -715,6 +715,38 @@ data class SetStorageCardFilterRulesPayload(val containerId: Int, val rules: Lis
 }
 
 /**
+ * C2S: Push the full Export Chest filter rule list to the server. Same shape
+ * as [SetStorageCardFilterRulesPayload] but addressed at the chest's BE via
+ * its menu container ID, so the server-side handler can route to the right
+ * [damien.nodeworks.block.entity.ExportChestBlockEntity] without needing
+ * the world position in the payload.
+ */
+data class SetExportChestFilterRulesPayload(val containerId: Int, val rules: List<String>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetExportChestFilterRulesPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "set_export_chest_filter_rules")
+        )
+        const val MAX_RULES = SetStorageCardFilterRulesPayload.MAX_RULES
+        const val MAX_RULE_LENGTH = SetStorageCardFilterRulesPayload.MAX_RULE_LENGTH
+        val CODEC: StreamCodec<FriendlyByteBuf, SetExportChestFilterRulesPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                val cropped = p.rules.take(MAX_RULES)
+                buf.writeVarInt(cropped.size)
+                for (rule in cropped) buf.writeUtf(rule.take(MAX_RULE_LENGTH), MAX_RULE_LENGTH)
+            },
+            { buf ->
+                val id = buf.readVarInt()
+                val count = buf.readVarInt().coerceIn(0, MAX_RULES)
+                val rules = (0 until count).map { buf.readUtf(MAX_RULE_LENGTH) }
+                SetExportChestFilterRulesPayload(id, rules)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
  * C2S: Rename the held card from its settings GUI. Server-side handler walks
  * `player.containerMenu` and writes the new name onto the held stack via the
  * menu's own `setCardName` helper, an empty string clears the name back to the

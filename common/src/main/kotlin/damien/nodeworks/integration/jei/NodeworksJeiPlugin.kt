@@ -8,6 +8,7 @@ import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.screen.ProcessingSetScreen
 import damien.nodeworks.screen.ProcessingSetScreenHandler
+import damien.nodeworks.screen.ExportChestScreen
 import damien.nodeworks.screen.StorageCardScreen
 import mezz.jei.api.IModPlugin
 import mezz.jei.api.JeiPlugin
@@ -101,6 +102,10 @@ class NodeworksJeiPlugin : IModPlugin {
         registration.addGhostIngredientHandler(
             StorageCardScreen::class.java,
             StorageCardGhostHandler()
+        )
+        registration.addGhostIngredientHandler(
+            ExportChestScreen::class.java,
+            ExportChestGhostHandler()
         )
     }
 
@@ -478,6 +483,38 @@ class StorageCardGhostHandler : IGhostIngredientHandler<StorageCardScreen> {
 
     private class StorageCardRuleTarget<I : Any>(
         private val gui: StorageCardScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+        override fun getArea(): Rect2i = area
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
+            gui.acceptGhostItem(itemId)
+        }
+    }
+}
+
+/**
+ * Mirror of [StorageCardGhostHandler] for the Export Chest GUI: a single drop
+ * area covering the rule list panel appends the dropped item's id as a new
+ * filter rule.
+ */
+class ExportChestGhostHandler : IGhostIngredientHandler<ExportChestScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: ExportChestScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val rect = gui.rulePanelDropArea() ?: return emptyList()
+        return listOf(ExportChestRuleTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
+    }
+
+    override fun onComplete() {}
+
+    private class ExportChestRuleTarget<I : Any>(
+        private val gui: ExportChestScreen,
         private val area: Rect2i,
     ) : IGhostIngredientHandler.Target<I> {
         override fun getArea(): Rect2i = area

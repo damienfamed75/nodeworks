@@ -365,7 +365,9 @@ object NodeConnectionHelper {
     }
 
     /** Face-adjacent Connectable BEs. Both endpoints must opt into adjacency, so a
-     *  Node next to a Controller doesn't silently bridge two networks through it. */
+     *  Node next to a Controller doesn't silently bridge two networks through it.
+     *  Both endpoints must also accept the pair via [Connectable.canConnectAdjacentTo],
+     *  used by leaves (import/export chests) to refuse other leaves. */
     private fun adjacentConnectableNeighbors(level: ServerLevel, pos: BlockPos, entity: Connectable): List<BlockPos> {
         if (!entity.usesAdjacency()) return emptyList()
         val out = ArrayList<BlockPos>(6)
@@ -374,6 +376,8 @@ object NodeConnectionHelper {
             if (!level.isLoaded(neighbor)) continue
             val neighborBe = level.getBlockEntity(neighbor) as? Connectable ?: continue
             if (!neighborBe.usesAdjacency()) continue
+            if (!entity.canConnectAdjacentTo(neighborBe)) continue
+            if (!neighborBe.canConnectAdjacentTo(entity)) continue
             out.add(neighbor)
         }
         return out

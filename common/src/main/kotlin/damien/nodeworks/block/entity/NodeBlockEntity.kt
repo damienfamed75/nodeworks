@@ -163,8 +163,12 @@ class NodeBlockEntity(
                     val filterRules = damien.nodeworks.card.StorageCard.getFilterRules(stack)
                     val stackability = damien.nodeworks.card.StorageCard.getStackabilityFilter(stack)
                     val nbtFilter = damien.nodeworks.card.StorageCard.getNbtFilter(stack)
+                    // Player-chosen side override resolves against the card's
+                    // mounted node face. Null = use the default touching-face.
+                    val customSide = damien.nodeworks.card.StorageCard.getCustomSide(stack)
+                    val resolvedFace = customSide?.resolve(side) ?: accessFace
                     StorageSideCapability(
-                        adjacentPos, accessFace, priority,
+                        adjacentPos, resolvedFace, priority,
                         filterMode, filterRules, stackability, nbtFilter,
                     )
                 }

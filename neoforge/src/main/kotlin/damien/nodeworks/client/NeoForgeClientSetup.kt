@@ -136,6 +136,7 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.BREAKER, ::NeoBreakerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PLACER, ::NeoPlacerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.IMPORT_CHEST, ::NeoImportChestRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.EXPORT_CHEST, ::NeoExportChestRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
         }
@@ -237,6 +238,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.IMPORT_CHEST) { menu, inventory, title ->
             damien.nodeworks.screen.ImportChestScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.EXPORT_CHEST) { menu, inventory, title ->
+            damien.nodeworks.screen.ExportChestScreen(menu, inventory, title)
         }
     }
 

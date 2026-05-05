@@ -23,6 +23,9 @@ data class StorageCardOpenData(
     val nbtFilter: Int,
     val filterRules: List<String>,
     val cardName: String,
+    /** Player-chosen side override. -1 = no override (use default face),
+     *  0..5 = [damien.nodeworks.screen.widget.RelDir] ordinal. */
+    val customSideOrdinal: Int = -1,
 ) {
     companion object {
         /** Per-rule string cap. The filter syntax (`*`, `#tag`, `/regex/`,
@@ -49,7 +52,8 @@ data class StorageCardOpenData(
                     val rules = ArrayList<String>(count)
                     for (i in 0 until count) rules.add(buf.readUtf(MAX_RULE_LENGTH))
                     val name = buf.readUtf(MAX_NAME_LENGTH)
-                    return StorageCardOpenData(hand, mode, stack, nbt, rules, name)
+                    val side = buf.readVarInt()
+                    return StorageCardOpenData(hand, mode, stack, nbt, rules, name, side)
                 }
 
                 override fun encode(buf: FriendlyByteBuf, data: StorageCardOpenData) {
@@ -61,6 +65,7 @@ data class StorageCardOpenData(
                     buf.writeVarInt(cropped.size)
                     for (rule in cropped) buf.writeUtf(rule.take(MAX_RULE_LENGTH), MAX_RULE_LENGTH)
                     buf.writeUtf(data.cardName.take(MAX_NAME_LENGTH), MAX_NAME_LENGTH)
+                    buf.writeVarInt(data.customSideOrdinal)
                 }
             }
     }

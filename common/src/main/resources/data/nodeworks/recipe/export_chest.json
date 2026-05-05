@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CCC",
+    "HCH",
+    "CCC"
+  ],
+  "key": {
+    "C": "minecraft:copper_ingot",
+    "H": "minecraft:hopper"
+  },
+  "result": {
+    "id": "nodeworks:export_chest",
+    "count": 1
+  }
+}

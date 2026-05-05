@@ -35,7 +35,13 @@ object RoundRobinSlicer {
         // slot gets the remainder rather than overflowing into a phantom slot.
         val chunkSize = (items.size + effectiveSlices - 1) / effectiveSlices
         val slot = Math.floorMod(cycleIndex, effectiveSlices)
-        val start = slot * chunkSize
+        // Clamp start to items.size so trailing slots that overshoot return an
+        // empty slice rather than throwing. Overshoot happens when ceiling
+        // division rounds chunkSize up: e.g. size=6, slices=5 → chunkSize=2,
+        // but effectiveSlices*chunkSize = 10 > size, so slot 4 starts at 8.
+        // Every item is still visited at least once across effectiveSlices
+        // cycles, the empty trailing slots are just no-op ticks.
+        val start = (slot * chunkSize).coerceAtMost(items.size)
         val end = minOf(start + chunkSize, items.size)
         return items.subList(start, end)
     }

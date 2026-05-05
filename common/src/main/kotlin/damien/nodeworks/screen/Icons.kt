@@ -209,5 +209,9 @@ class Icons private constructor(val col: Int, val row: Int) {
         // drawn via [drawTopLeft] inside the button on the Instruction Set GUI.
         val SUBSTITUTIONS_ON = Icons(12, 4)
         val SUBSTITUTIONS_OFF = Icons(13, 4)
+        /** Replaces the red-X "none" glyph on the channel picker, signalling
+         *  "any channel". Drawn at the cell's full size by
+         *  [damien.nodeworks.screen.widget.ChannelPickerWidget]. */
+        val ANY_CHANNEL = Icons(14, 4)
     }
 }

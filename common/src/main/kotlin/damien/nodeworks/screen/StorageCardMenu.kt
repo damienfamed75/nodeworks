@@ -20,6 +20,7 @@ class StorageCardMenu(
     initialNbtFilter: StorageCard.Companion.NbtFilter = StorageCard.Companion.NbtFilter.ANY,
     initialFilterRules: List<String> = emptyList(),
     val initialName: String = "",
+    initialCustomSide: damien.nodeworks.screen.widget.RelDir? = null,
 ) : AbstractContainerMenu(ModScreenHandlers.STORAGE_CARD, syncId) {
 
     val priorityData = SimpleContainerData(1)
@@ -35,6 +36,9 @@ class StorageCardMenu(
     val filterModeData = SimpleContainerData(1)
     val stackabilityData = SimpleContainerData(1)
     val nbtFilterData = SimpleContainerData(1)
+
+    /** -1 = no override (use default face), 0..5 = [RelDir] ordinal. */
+    val customSideData = SimpleContainerData(1)
 
     /** Authoritative server-side filter rules. The screen's add/edit/delete
      *  affordances send mutations as [SetStorageCardFilterRulesPayload], the
@@ -64,21 +68,25 @@ class StorageCardMenu(
                 stackabilityData.set(0, StorageCard.getStackabilityFilter(stack).ordinal)
                 nbtFilterData.set(0, StorageCard.getNbtFilter(stack).ordinal)
                 filterRules = StorageCard.getFilterRules(stack).toMutableList()
+                customSideData.set(0, StorageCard.getCustomSide(stack)?.ordinal ?: -1)
             } else {
                 filterModeData.set(0, initialFilterMode.ordinal)
                 stackabilityData.set(0, initialStackability.ordinal)
                 nbtFilterData.set(0, initialNbtFilter.ordinal)
+                customSideData.set(0, initialCustomSide?.ordinal ?: -1)
             }
         } else {
             filterModeData.set(0, initialFilterMode.ordinal)
             stackabilityData.set(0, initialStackability.ordinal)
             nbtFilterData.set(0, initialNbtFilter.ordinal)
+            customSideData.set(0, initialCustomSide?.ordinal ?: -1)
         }
         addDataSlots(priorityData)
         addDataSlots(channelData)
         addDataSlots(filterModeData)
         addDataSlots(stackabilityData)
         addDataSlots(nbtFilterData)
+        addDataSlots(customSideData)
     }
 
     fun getPriority(): Int = priorityData.get(0)
@@ -102,6 +110,19 @@ class StorageCardMenu(
         val ord = nbtFilterData.get(0)
         return StorageCard.Companion.NbtFilter.entries.getOrNull(ord)
             ?: StorageCard.Companion.NbtFilter.ANY
+    }
+
+    fun getCustomSide(): damien.nodeworks.screen.widget.RelDir? {
+        val ord = customSideData.get(0)
+        if (ord < 0) return null
+        return damien.nodeworks.screen.widget.RelDir.entries.getOrNull(ord)
+    }
+
+    fun setCustomSide(side: damien.nodeworks.screen.widget.RelDir?) {
+        val target = side?.ordinal ?: -1
+        if (customSideData.get(0) == target) return
+        customSideData.set(0, target)
+        dirty = true
     }
 
     /** Server-side accessors used by the network payload handlers. The screen
@@ -180,6 +201,13 @@ class StorageCardMenu(
             id == 3000 -> toggleFilterMode()
             id == 3001 -> cycleStackability()
             id == 3002 -> cycleNbtFilter()
+            // Side picker: 4000 = clear (use default face),
+            // 4001..(4000 + RelDir.entries.size) = pick a RelDir (id - 4001).
+            id == 4000 -> setCustomSide(null)
+            id in 4001..(4000 + damien.nodeworks.screen.widget.RelDir.entries.size) -> {
+                val rel = damien.nodeworks.screen.widget.RelDir.entries.getOrNull(id - 4001)
+                setCustomSide(rel)
+            }
         }
         return true
     }
@@ -197,6 +225,7 @@ class StorageCardMenu(
             StorageCard.setStackabilityFilter(stack, getStackabilityFilter())
             StorageCard.setNbtFilter(stack, getNbtFilter())
             StorageCard.setFilterRules(stack, filterRules)
+            StorageCard.setCustomSide(stack, getCustomSide())
         }
     }
 
@@ -217,7 +246,9 @@ class StorageCardMenu(
                 ?: StorageCard.Companion.StackabilityFilter.ANY
             val nbt = StorageCard.Companion.NbtFilter.entries.getOrNull(data.nbtFilter)
                 ?: StorageCard.Companion.NbtFilter.ANY
-            return StorageCardMenu(syncId, playerInventory, hand, mode, stackability, nbt, data.filterRules, data.cardName)
+            val side = if (data.customSideOrdinal < 0) null
+                else damien.nodeworks.screen.widget.RelDir.entries.getOrNull(data.customSideOrdinal)
+            return StorageCardMenu(syncId, playerInventory, hand, mode, stackability, nbt, data.filterRules, data.cardName, side)
         }
     }
 }

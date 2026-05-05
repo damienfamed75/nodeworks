@@ -3,10 +3,13 @@ package damien.nodeworks.block.entity
 import damien.nodeworks.network.ChannelFilter
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
+import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModBlockEntities
-import damien.nodeworks.screen.ImportChestMenu
+import damien.nodeworks.screen.ExportChestMenu
+import damien.nodeworks.script.CardHandle
 import damien.nodeworks.script.NetworkStorageHelper
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.core.HolderLookup
 import net.minecraft.core.NonNullList
 import net.minecraft.nbt.CompoundTag
@@ -37,25 +40,24 @@ import damien.nodeworks.compat.putBlockPosList
 import java.util.UUID
 
 /**
- * Import Chest. A small 9-slot buffer chest that's also a Connectable network
- * device. Items dropped into it (manually, via hopper, or via pipes from other
- * mods) are pushed into network storage on a configurable tick cadence. When
- * the network can't accept an item (filters, full, etc.) it stays visible in
- * the chest so the player can see exactly what's stuck.
+ * Export Chest. Mirror of [ImportChestBlockEntity] but pulls FROM the network
+ * INTO the buffer (filtered by a Storage-Card-style pattern expression), then
+ * optionally auto-pushes from the buffer to the inventory adjacent to the
+ * configured [pushFace].
  *
- * Settings (edited in the GUI):
- *  * [channel] scopes inserts to one channel of storage cards (or all).
- *  * [redstoneMode] 0 ignored / 1 active on low / 2 active on high. Same
- *    semantics as [NetworkControllerBlockEntity.redstoneMode].
- *  * [roundRobin] when on, advances [roundRobinIndex] each insert so items
- *    spread across destination storage cards instead of filling first-fit.
- *  * [tickInterval] ticks between insert attempts. Default 20 (1Hz). Bounded
- *    [MIN_TICK_INTERVAL]..[MAX_TICK_INTERVAL].
+ * Two flows per server tick:
+ *  1. Pull: walk the network's storage cards, extract items matching [filter]
+ *     into our 9-slot buffer until full.
+ *  2. Push: if [pushFace] is set, drain the buffer into the adjacent
+ *     inventory's item-handler capability on that face.
+ *
+ * Either flow can be a no-op without the other. The buffer is visible in the
+ * GUI so players see exactly what's queued for export.
  */
-class ImportChestBlockEntity(
+class ExportChestBlockEntity(
     pos: BlockPos,
     state: BlockState,
-) : BlockEntity(ModBlockEntities.IMPORT_CHEST, pos, state), Container, Connectable, LidBlockEntity {
+) : BlockEntity(ModBlockEntities.EXPORT_CHEST, pos, state), Container, Connectable, LidBlockEntity {
 
     companion object {
         const val SLOT_COUNT = 9
@@ -63,7 +65,6 @@ class ImportChestBlockEntity(
         const val MIN_TICK_INTERVAL = 1
         const val MAX_TICK_INTERVAL = 600
 
-        /** [redstoneMode] values. 0 = ignored, 1 = active on low, 2 = active on high. */
         const val REDSTONE_IGNORED = 0
         const val REDSTONE_LOW = 1
         const val REDSTONE_HIGH = 2
@@ -86,7 +87,27 @@ class ImportChestBlockEntity(
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
 
+    /** Storage-Card-style filter rules, whitelist semantics. Each line is a
+     *  single [CardHandle.matchesFilter] pattern, an item passes if it
+     *  matches any rule. Empty list = no auto-pull (fresh chest doesn't
+     *  drain the network). */
+    var filterRules: List<String> = emptyList()
+        set(value) {
+            field = value.toList()
+            markDirtyAndSync()
+        }
+
+    /** Channel scope for the network-pull side. ALL pulls from every storage
+     *  card on the network, [ChannelFilter.Color] restricts to one channel. */
     var channel: ChannelFilter = ChannelFilter.All
+        set(value) {
+            field = value
+            markDirtyAndSync()
+        }
+
+    /** Adjacent face to auto-push the buffer toward, or null = no auto-push
+     *  (player must drain manually via hopper / pipe). */
+    var pushFace: Direction? = null
         set(value) {
             field = value
             markDirtyAndSync()
@@ -98,25 +119,12 @@ class ImportChestBlockEntity(
             markDirtyAndSync()
         }
 
-    var roundRobin: Boolean = false
-        set(value) {
-            field = value
-            markDirtyAndSync()
-        }
-
-    var roundRobinIndex: Int = 0
-        // No setChanged on increment so the per-tick index update doesn't constantly
-        // mark the chunk dirty. Persisted on save anyway.
-        private set
-
     var tickInterval: Int = DEFAULT_TICK_INTERVAL
         set(value) {
             field = value.coerceIn(MIN_TICK_INTERVAL, MAX_TICK_INTERVAL)
             markDirtyAndSync()
         }
 
-    // Not persisted, so a freshly-loaded chest waits up to [tickInterval]
-    // ticks before its first insert.
     @Transient
     private var tickCounter: Int = 0
 
@@ -138,7 +146,7 @@ class ImportChestBlockEntity(
         }
         override fun isOwnContainer(player: Player): Boolean {
             val menu = player.containerMenu
-            return menu is ImportChestMenu && menu.devicePos == worldPosition
+            return menu is ExportChestMenu && menu.devicePos == worldPosition
         }
     }
 
@@ -159,7 +167,6 @@ class ImportChestBlockEntity(
 
     /** Server tick. Caller (block ticker) checks the level is server-side. */
     fun serverTick(level: ServerLevel) {
-        // Recheck every tick so disconnected players don't strand the lid open.
         recheckOpen()
 
         tickCounter++
@@ -171,89 +178,110 @@ class ImportChestBlockEntity(
             if (!shouldRunForRedstone(redstoneMode, powered)) return
         }
 
-        if (isEmpty) return
+        // Empty rule list = no auto-pull (fresh chest doesn't drain the
+        // network). Push side is independent so a buffer with manually-placed
+        // items still drains even with no rules.
+        if (filterRules.isNotEmpty()) pullFromNetwork(level)
+        if (pushFace != null) pushToAdjacent(level, pushFace!!)
+    }
+
+    /** Whitelist match: any rule hits = accept. */
+    private fun matchesFilter(itemId: String): Boolean =
+        filterRules.any { rule -> CardHandle.matchesFilter(itemId, rule) }
+
+    /** Walk the network's storage cards, extract filter-matched items into
+     *  our buffer until either the buffer is full or the network is empty of
+     *  matches. Filter syntax matches the Storage Card filter (delegates to
+     *  [CardHandle.matchesFilter]) so the script-side autocomplete and the
+     *  Export Chest's UI both speak the same dialect. */
+    private fun pullFromNetwork(level: ServerLevel) {
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
         if (snapshot.controller == null) return
 
-        // The cache lookup here is best-effort, used to fire onInserted hooks for the
-        // Inventory Terminal's delta sync. Null when no consumer has opened a cache yet,
-        // the helpers tolerate that.
-        val cache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(level, worldPosition)
-
-        if (roundRobin) {
-            insertRoundRobin(level, snapshot, cache)
-        } else {
-            insertDefault(level, snapshot, cache)
-        }
-    }
-
-    /** Default insertion: walk slots, push each via [NetworkStorageHelper.insertItemStack]
-     *  which uses storage-card priority order. */
-    private fun insertDefault(
-        level: ServerLevel,
-        snapshot: damien.nodeworks.network.NetworkSnapshot,
-        cache: damien.nodeworks.script.NetworkInventoryCache?,
-    ) {
-        var changed = false
+        var totalSpace = 0L
         for (i in 0 until SLOT_COUNT) {
-            val stack = items[i]
-            if (stack.isEmpty) continue
-            val moved = NetworkStorageHelper.insertItemStack(level, snapshot, stack, cache, channel)
-            if (moved > 0) {
-                stack.shrink(moved)
-                changed = true
+            val slot = items[i]
+            totalSpace += if (slot.isEmpty) 64L else (slot.maxStackSize - slot.count).toLong()
+        }
+        if (totalSpace <= 0L) return
+
+        val cache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(level, worldPosition)
+        val filterPred: (String) -> Boolean = ::matchesFilter
+        var changed = false
+        for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
+            if (totalSpace <= 0L) break
+            if (!channel.matches(card.channel)) continue
+            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val extracted = PlatformServices.storage.extractItemStacksMatching(storage, filterPred, totalSpace)
+            for (stack in extracted) {
+                if (stack.isEmpty) continue
+                val placed = placeIntoBuffer(stack)
+                if (placed > 0) {
+                    val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                        .getKey(stack.item)?.toString()
+                    if (itemId != null) cache?.onExtracted(itemId, !stack.componentsPatch.isEmpty, placed.toLong())
+                    totalSpace -= placed
+                    changed = true
+                }
+                if (placed < stack.count) {
+                    // Buffer filled mid-stack, return the leftover to the network.
+                    // Rare since we pre-computed totalSpace, but covers edge cases
+                    // where slot stack-size is tighter than the texture's 64-default.
+                    val leftover = stack.copyWithCount(stack.count - placed)
+                    NetworkStorageHelper.insertItemStack(level, snapshot, leftover, cache)
+                }
             }
         }
         if (changed) setChanged()
     }
 
-    /** Round-robin insertion: each item that moves advances the destination
-     *  index, so items spread across storage cards instead of stacking on the
-     *  highest-priority card. Cards that don't accept (channel mismatch, filter)
-     *  are skipped without consuming a step. */
-    private fun insertRoundRobin(
-        level: ServerLevel,
-        snapshot: damien.nodeworks.network.NetworkSnapshot,
-        cache: damien.nodeworks.script.NetworkInventoryCache?,
-    ) {
-        val cards = NetworkStorageHelper.getStorageCards(snapshot)
-            .filter { channel.matches(it.channel) }
-        if (cards.isEmpty()) return
-
-        var changed = false
-        for (slot in 0 until SLOT_COUNT) {
-            val stack = items[slot]
-            if (stack.isEmpty) continue
-            // Move ONE item per round-robin step. The chest's tick cadence (default 20)
-            // bounds the cost, and per-item distribution matches `:roundrobin(1)`.
-            while (!stack.isEmpty) {
-                val startIndex = roundRobinIndex.mod(cards.size)
-                var placed = false
-                for (offset in 0 until cards.size) {
-                    val idx = (startIndex + offset).mod(cards.size)
-                    val card = cards[idx]
-                    val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-                    val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                        .getKey(stack.item)?.toString()
-                    val hasData = !stack.componentsPatch.isEmpty
-                    if (cap != null && itemId != null && !cap.acceptsItem(itemId, hasData)) continue
-                    val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                    val moved = damien.nodeworks.platform.PlatformServices.storage.insertItemStack(
-                        storage, stack.copyWithCount(1)
-                    )
-                    if (moved > 0) {
-                        stack.shrink(moved)
-                        if (itemId != null) {
-                            cache?.onInserted(itemId, hasData, moved.toLong(), stack.componentsPatch)
-                        }
-                        roundRobinIndex = (idx + 1).mod(cards.size)
-                        changed = true
-                        placed = true
-                        break
-                    }
+    /** Try to merge [stack] into the buffer: stack-merge first, then fill empty
+     *  slots. Returns the count actually placed (always <= stack.count). */
+    private fun placeIntoBuffer(stack: ItemStack): Int {
+        var remaining = stack.count
+        for (i in 0 until SLOT_COUNT) {
+            if (remaining <= 0) break
+            val slot = items[i]
+            if (!slot.isEmpty && ItemStack.isSameItemSameComponents(slot, stack)) {
+                val space = slot.maxStackSize - slot.count
+                val toAdd = minOf(remaining, space)
+                if (toAdd > 0) {
+                    slot.grow(toAdd)
+                    remaining -= toAdd
                 }
-                if (!placed) break // network has no room for this item, leave in chest
             }
+        }
+        for (i in 0 until SLOT_COUNT) {
+            if (remaining <= 0) break
+            if (items[i].isEmpty) {
+                val cap = minOf(remaining, stack.maxStackSize)
+                items[i] = stack.copyWithCount(cap)
+                remaining -= cap
+            }
+        }
+        return stack.count - remaining
+    }
+
+    /** Drain buffer into the inventory adjacent to [face]. Uses the platform's
+     *  item-storage handle (Fabric Transfer / NeoForge ItemHandler) so vanilla
+     *  inventories, modded machines, and pipes all work. */
+    private fun pushToAdjacent(level: ServerLevel, face: Direction) {
+        val adjPos = worldPosition.relative(face)
+        val dest = PlatformServices.storage.getItemStorage(level, adjPos, face.opposite) ?: return
+        var changed = false
+        for (i in 0 until SLOT_COUNT) {
+            val slot = items[i]
+            if (slot.isEmpty) continue
+            val before = slot.count
+            val inserted = PlatformServices.storage.insertItemStack(dest, slot)
+            if (inserted > 0) {
+                slot.shrink(inserted)
+                changed = true
+            }
+            // Defensive, insertItemStack mutates the stack passed in OR returns
+            // count, depending on platform. The shrink above handles the latter,
+            // catch the former with a same-count check.
+            if (slot.count != before - inserted && slot.count < before) changed = true
         }
         if (changed) setChanged()
     }
@@ -369,10 +397,12 @@ class ImportChestBlockEntity(
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
         ContainerHelper.saveAllItems(output, items)
+        // Filter rules persist as a newline-joined string, simpler than wiring
+        // a list codec and bounded by [SetExportChestFilterRulesPayload.MAX_RULES].
+        output.putString("filterRules", filterRules.joinToString("\n"))
         output.putInt("channel", channel.toNbtInt())
+        pushFace?.let { output.putString("pushFace", it.name) }
         output.putInt("redstoneMode", redstoneMode)
-        output.putBoolean("roundRobin", roundRobin)
-        output.putInt("roundRobinIndex", roundRobinIndex)
         output.putInt("tickInterval", tickInterval)
         networkId?.let { output.putString("networkId", it.toString()) }
         output.putBlockPosList("connections", connections)
@@ -382,10 +412,15 @@ class ImportChestBlockEntity(
         super.loadAdditional(input)
         items.clear()
         ContainerHelper.loadAllItems(input, items)
+        filterRules = input.getStringOrNull("filterRules")
+            ?.split("\n")
+            ?.filter { it.isNotEmpty() }
+            ?: emptyList()
         channel = ChannelFilter.fromNbtInt(input.getIntOr("channel", -1))
+        pushFace = input.getStringOrNull("pushFace")?.let {
+            runCatching { Direction.valueOf(it) }.getOrNull()?.takeIf { dir -> dir.axis.isHorizontal || dir.axis.isVertical }
+        }
         redstoneMode = input.getIntOr("redstoneMode", REDSTONE_IGNORED).coerceIn(0, 2)
-        roundRobin = input.getBooleanOr("roundRobin", false)
-        roundRobinIndex = input.getIntOr("roundRobinIndex", 0)
         tickInterval = input.getIntOr("tickInterval", DEFAULT_TICK_INTERVAL)
             .coerceIn(MIN_TICK_INTERVAL, MAX_TICK_INTERVAL)
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {

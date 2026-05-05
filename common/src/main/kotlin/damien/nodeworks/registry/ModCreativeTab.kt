@@ -30,6 +30,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.BREAKER)
                 output.accept(ModBlocks.PLACER)
                 output.accept(ModBlocks.IMPORT_CHEST)
+                output.accept(ModBlocks.EXPORT_CHEST)
                 output.accept(ModBlocks.INSTRUCTION_STORAGE)
                 output.accept(ModBlocks.PROCESSING_STORAGE)
                 output.accept(ModBlocks.CRAFTING_CORE)

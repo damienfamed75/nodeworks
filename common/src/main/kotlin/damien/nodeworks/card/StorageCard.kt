@@ -43,6 +43,7 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
             nbtFilter = getNbtFilter(stack).ordinal,
             filterRules = getFilterRules(stack),
             cardName = cardName,
+            customSideOrdinal = getCustomSide(stack)?.ordinal ?: -1,
         )
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
@@ -65,6 +66,11 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         private const val FILTER_RULES_KEY = "filterRules"
         private const val FILTER_STACK_KEY = "filterStack"
         private const val FILTER_NBT_KEY = "filterNbt"
+        /** Optional player-chosen face override. Persisted as the [RelDir.name]
+         *  string (e.g. "UP" / "FRONT"). Absent key = use the default face
+         *  ([NodeBlockEntity.getSideCapabilities] resolves to the node-side's
+         *  opposite, the face touching the node). */
+        private const val CUSTOM_SIDE_KEY = "customSide"
 
         /** Filter mode controls whether the rule list whitelists or blacklists items.
          *  An empty rule list means "accept everything" regardless of mode, so the
@@ -175,6 +181,26 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
             } else {
                 tag.putString(FILTER_NBT_KEY, mode.name)
             }
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+        }
+
+        /** Player-chosen face override. Null = use the default (face touching
+         *  the node). Persisted as [damien.nodeworks.screen.widget.RelDir.name]
+         *  in CUSTOM_DATA. The actual world [net.minecraft.core.Direction] is
+         *  resolved at capability build-time using the node side the card is
+         *  mounted on. */
+        fun getCustomSide(stack: ItemStack): damien.nodeworks.screen.widget.RelDir? {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return null
+            val raw = customData.copyTag().getStringOr(CUSTOM_SIDE_KEY, "")
+            if (raw.isEmpty()) return null
+            return runCatching { damien.nodeworks.screen.widget.RelDir.valueOf(raw) }.getOrNull()
+        }
+
+        fun setCustomSide(stack: ItemStack, side: damien.nodeworks.screen.widget.RelDir?) {
+            if (getCustomSide(stack) == side) return
+            val tag = stack.get(DataComponents.CUSTOM_DATA)?.copyTag() ?: CompoundTag()
+            if (side == null) tag.remove(CUSTOM_SIDE_KEY)
+            else tag.putString(CUSTOM_SIDE_KEY, side.name)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
     }
