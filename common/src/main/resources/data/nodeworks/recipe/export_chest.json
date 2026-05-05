@@ -1,13 +1,16 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "CCC",
-    "HCH",
-    "CCC"
+    "CPC",
+    "DHD",
+    "CNC"
   ],
   "key": {
     "C": "minecraft:copper_ingot",
-    "H": "minecraft:hopper"
+    "H": "#c:chests/wooden",
+    "P": "minecraft:piston",
+    "D": "minecraft:deepslate",
+    "N": "nodeworks:node"
   },
   "result": {
     "id": "nodeworks:export_chest",

@@ -1,13 +1,16 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "CCC",
-    "CHC",
-    "CCC"
+    "CPC",
+    "DHD",
+    "CNC"
   ],
   "key": {
-    "C": "minecraft:copper_ingot",
-    "H": "minecraft:hopper"
+    "P": "minecraft:sticky_piston",
+    "C": "minecraft:lapis_lazuli",
+    "H": "#c:chests/wooden",
+    "D": "minecraft:deepslate",
+    "N": "nodeworks:node"
   },
   "result": {
     "id": "nodeworks:import_chest",

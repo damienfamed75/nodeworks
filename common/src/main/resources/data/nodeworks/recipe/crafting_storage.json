@@ -1,8 +1,8 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "DWD",
-    "WCW",
+    "DCD",
+    "CWC",
     "DSD"
   ],
   "key": {
@@ -13,7 +13,7 @@
       "minecraft:weathered_copper_bulb",
       "minecraft:oxidized_copper_bulb"
     ],
-    "C": "minecraft:chest",
+    "C": "minecraft:copper_chest",
     "S": "nodeworks:storage_card"
   },
   "result": {
