@@ -59,9 +59,62 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         super.appendHoverText(stack, context, display, tooltip, flag)
         val priority = getPriority(stack)
         tooltip.accept(Component.literal("Priority: $priority").withStyle(ChatFormatting.GRAY))
+
+        // Face override is opt-in, omit the line entirely when the player
+        // hasn't picked one (so the default-touching-face card stays clean).
+        val customSide = getCustomSide(stack)
+        if (customSide != null) {
+            tooltip.accept(
+                Component.literal("Face: ${customSide.displayName}")
+                    .withStyle(ChatFormatting.GRAY),
+            )
+        }
+
+        // Single-line summary of the three filter dimensions so a quick hover
+        // reads at a glance whether the card is configured. All three default
+        // to "Any" / "Allow", so an unconfigured card reads cleanly too.
+        val mode = formatEnum(getFilterMode(stack).name)
+        val nbt = formatEnum(getNbtFilter(stack).name)
+        val stacking = formatEnum(getStackabilityFilter(stack).name)
+        tooltip.accept(
+            Component.literal("Mode=$mode  NBT=$nbt  Stacking=$stacking")
+                .withStyle(ChatFormatting.GRAY),
+        )
+
+        // Rules: omitted entirely on an unconfigured card. Cap at 3 visible
+        // entries with a trailing "..." so a 32-rule card doesn't blow the
+        // tooltip off the screen.
+        val rules = getFilterRules(stack)
+        if (rules.isNotEmpty()) {
+            tooltip.accept(Component.literal("Rules:").withStyle(ChatFormatting.GRAY))
+            val visible = rules.take(MAX_TOOLTIP_RULES)
+            for (rule in visible) {
+                tooltip.accept(
+                    Component.literal("    $rule").withStyle(ChatFormatting.DARK_GRAY),
+                )
+            }
+            if (rules.size > MAX_TOOLTIP_RULES) {
+                tooltip.accept(
+                    Component.literal("    ...").withStyle(ChatFormatting.DARK_GRAY),
+                )
+            }
+        }
     }
 
+    /** "ALLOW" → "Allow", "HAS_DATA" → "Has Data". Single helper so the three
+     *  filter dimensions render with the same casing convention. */
+    private fun formatEnum(name: String): String =
+        name.split('_').joinToString(" ") { word ->
+            word.lowercase().replaceFirstChar { it.uppercase() }
+        }
+
     companion object {
+        /** Cap on rules shown in the item tooltip. Anything beyond this is
+         *  collapsed into a trailing "..." so a card with the full
+         *  [StorageCardOpenData.MAX_RULES] worth of patterns doesn't push the
+         *  tooltip off-screen. */
+        private const val MAX_TOOLTIP_RULES = 3
+
         private const val FILTER_MODE_KEY = "filterMode"
         private const val FILTER_RULES_KEY = "filterRules"
         private const val FILTER_STACK_KEY = "filterStack"
