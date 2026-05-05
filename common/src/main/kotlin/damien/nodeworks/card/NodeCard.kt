@@ -19,25 +19,30 @@ abstract class NodeCard(properties: Properties) : Item(properties) {
     abstract val cardType: String
 
     /** Quick-place into a Node's empty slot when the card is right-clicked on
-     *  one. Vanilla bypasses [NodeBlock.useItemOn] when the player crouches
-     *  with an item in hand (sneaking routes straight to item.useOn), so the
-     *  shift+right-click "place on opposite face" path has to live on the
-     *  item side. Both paths funnel through [NodeBlock.tryQuickPlaceCard], so
-     *  the shift-flip and item-frame sound stay consistent.
+     *  one, or shift+right-clicked on a block adjacent to one. Vanilla
+     *  bypasses [NodeBlock.useItemOn] when the player crouches with an item in
+     *  hand (sneaking routes straight to item.useOn), so both the
+     *  shift+opposite-face path and the shift+adjacent-block path live here.
+     *  Resolution is delegated to [NodeBlock.resolvePlacementTarget] so the
+     *  preview renderer and the click handler can't disagree about where the
+     *  card will land.
      *
-     *  Returns PASS for non-Node targets, which lets each subclass's [use]
-     *  open its settings GUI as before when right-clicked elsewhere.
-     */
+     *  Returns PASS for non-Node, non-adjacent targets, which lets each
+     *  subclass's [use] open its settings GUI / lets vanilla open the clicked
+     *  block normally. */
     override fun useOn(context: UseOnContext): InteractionResult {
-        val state = context.level.getBlockState(context.clickedPos)
-        if (state.block !is NodeBlock) return InteractionResult.PASS
         val player = context.player ?: return InteractionResult.PASS
+        val target = NodeBlock.resolvePlacementTarget(
+            context.level,
+            context.clickedPos,
+            context.clickedFace,
+            player.isCrouching,
+        ) ?: return InteractionResult.PASS
         return NodeBlock.tryQuickPlaceCard(
             context.itemInHand,
             context.level,
-            context.clickedPos,
+            target,
             player,
-            context.clickedFace,
         )
     }
 }

@@ -32,45 +32,77 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         // 6x6x6 pixel centered cube (5..11 on each axis)
         val NODE_SHAPE: VoxelShape = Block.box(5.0, 5.0, 5.0, 11.0, 11.0, 11.0)
 
+        /** A resolved placement: which node, and which side of it. */
+        data class PlacementTarget(val nodePos: BlockPos, val side: Direction)
+
+        /** Resolve a click into a card-placement target, or null when the click
+         *  doesn't target a node face (directly or through an adjacent block).
+         *
+         *  Two paths:
+         *  1. The clicked block IS a node, side comes from [clickedFace],
+         *     flipped to the opposite when [crouching] (long-standing UX so
+         *     hard-to-reach faces still work via shift).
+         *  2. The clicked block is *adjacent* to a node in the [clickedFace]
+         *     direction. Crouching is required to disambiguate from the
+         *     player wanting to interact with the clicked block normally
+         *     (right-click a furnace = open the furnace; shift+right-click =
+         *     place on the node above). Side resolves to the node's face
+         *     touching the clicked block, i.e. [clickedFace.opposite]. */
+        fun resolvePlacementTarget(
+            level: Level,
+            pos: BlockPos,
+            clickedFace: Direction,
+            crouching: Boolean,
+        ): PlacementTarget? {
+            val state = level.getBlockState(pos)
+            if (state.block is NodeBlock) {
+                val side = if (crouching) clickedFace.opposite else clickedFace
+                return PlacementTarget(pos, side)
+            }
+            // Adjacent-block path requires shift so a regular right-click on
+            // a chest / furnace / etc. still opens the block normally.
+            if (!crouching) return null
+            val adjPos = pos.relative(clickedFace)
+            val adjState = level.getBlockState(adjPos)
+            if (adjState.block !is NodeBlock) return null
+            return PlacementTarget(adjPos, clickedFace.opposite)
+        }
+
         /** Quick-place a card into the first empty slot on the targeted face of a
-         *  Node. Shared between [useItemOn] (no-shift right click) and the
-         *  [damien.nodeworks.card.NodeCard.useOn] override (shift right click,
-         *  since vanilla bypasses block.useItemOn when the player crouches with
-         *  an item in hand). Shift flips to the opposite face. Returns:
+         *  Node. Shared between [useItemOn] (no-shift right click on the node),
+         *  the [damien.nodeworks.card.NodeCard.useOn] override (shift right click,
+         *  on either the node or any block adjacent to it). Returns:
          *
          *    * [InteractionResult.SUCCESS] when a card was placed.
          *    * [InteractionResult.TRY_WITH_EMPTY_HAND] when the targeted face is
          *      full, so the surrounding chain can fall through to the GUI.
-         *    * [InteractionResult.PASS] when the stack isn't a card or the
-         *      target isn't a node (callers route to whatever comes next). */
+         *    * [InteractionResult.PASS] when the stack isn't a card. */
         fun tryQuickPlaceCard(
             stack: net.minecraft.world.item.ItemStack,
             level: Level,
-            pos: BlockPos,
+            target: PlacementTarget,
             player: Player,
-            clickedFace: Direction,
         ): InteractionResult {
             if (stack.item !is damien.nodeworks.card.NodeCard) return InteractionResult.PASS
-            val be = level.getBlockEntity(pos) as? NodeBlockEntity ?: return InteractionResult.PASS
-            val targetSide = if (player.isCrouching) clickedFace.opposite else clickedFace
+            val be = level.getBlockEntity(target.nodePos) as? NodeBlockEntity ?: return InteractionResult.PASS
             var emptySlot = -1
             for (i in 0 until NodeBlockEntity.SLOTS_PER_SIDE) {
-                if (be.getStack(targetSide, i).isEmpty) {
+                if (be.getStack(target.side, i).isEmpty) {
                     emptySlot = i
                     break
                 }
             }
             if (emptySlot == -1) return InteractionResult.TRY_WITH_EMPTY_HAND
             if (level.isClientSide) return InteractionResult.SUCCESS
-            be.setStack(targetSide, emptySlot, stack.copyWithCount(1))
+            be.setStack(target.side, emptySlot, stack.copyWithCount(1))
             if (!player.abilities.instabuild) stack.shrink(1)
             level.playSound(
-                null, pos,
+                null, target.nodePos,
                 net.minecraft.sounds.SoundEvents.ITEM_FRAME_ADD_ITEM,
                 net.minecraft.sounds.SoundSource.BLOCKS,
                 1.0f, 1.0f,
             )
-            spawnCardPlacementPuff(level, pos, targetSide, stack.item as damien.nodeworks.card.NodeCard)
+            spawnCardPlacementPuff(level, target.nodePos, target.side, stack.item as damien.nodeworks.card.NodeCard)
             return InteractionResult.SUCCESS
         }
 
@@ -164,10 +196,10 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     /** Quick-place: right-click a Node while holding a Card drops the card into
      *  the first empty slot on the clicked face without opening the GUI. The
-     *  shift+right-click variant lives in [damien.nodeworks.card.NodeCard.useOn]
-     *  because vanilla bypasses block.useItemOn when the player crouches with
-     *  an item in hand, both paths share [tryQuickPlaceCard].
-     */
+     *  shift+right-click variant (and the place-via-adjacent-block variant)
+     *  live in [damien.nodeworks.card.NodeCard.useOn] because vanilla bypasses
+     *  block.useItemOn when the player crouches with an item in hand. Both
+     *  paths funnel through [resolvePlacementTarget] + [tryQuickPlaceCard]. */
     override fun useItemOn(
         stack: net.minecraft.world.item.ItemStack,
         state: BlockState,
@@ -181,7 +213,9 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         if (stack.item is NetworkWrenchItem ||
             stack.item is damien.nodeworks.item.DiagnosticToolItem
         ) return InteractionResult.TRY_WITH_EMPTY_HAND
-        val result = tryQuickPlaceCard(stack, level, pos, player, hitResult.direction)
+        val target = resolvePlacementTarget(level, pos, hitResult.direction, player.isCrouching)
+            ?: return InteractionResult.TRY_WITH_EMPTY_HAND
+        val result = tryQuickPlaceCard(stack, level, target, player)
         // PASS = not a card, fall through to GUI. Other results are returned as-is.
         return if (result == InteractionResult.PASS) InteractionResult.TRY_WITH_EMPTY_HAND
         else result

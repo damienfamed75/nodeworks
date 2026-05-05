@@ -18,10 +18,15 @@ import kotlin.math.sqrt
  * Live preview of which face of a Node a held Card will land on.
  *
  * Wireframe box in the card's tint colour, drawn slightly larger than the node
- * body so the player can see at a glance which side is targeted, including the
- * shift+right-click "opposite face" case where the preview slides to the other
- * side of the node as the player crouches. No-op when the player isn't holding
- * a card or isn't aiming at a node.
+ * body so the player can see at a glance which side is targeted. Covers the
+ * three placement entry points routed through [NodeBlock.resolvePlacementTarget]:
+ *  1. Aim at a node face. Preview on that face.
+ *  2. Aim at a node face while crouching. Preview slides to the opposite face.
+ *  3. Aim at a block adjacent to a node while crouching. Preview hops to the
+ *     node's face touching that block.
+ *
+ * No-op when the player isn't holding a card, the crosshair has no block, or
+ * the hit doesn't resolve to a node face.
  */
 object CardPlacementPreviewRenderer {
 
@@ -68,24 +73,23 @@ object CardPlacementPreviewRenderer {
         val held = player.mainHandItem
         val card = held.item as? NodeCard ?: return
 
-        // Crosshair target. Anything other than a Node block bails out.
         val hit = mc.hitResult as? BlockHitResult ?: return
         if (hit.type != HitResult.Type.BLOCK) return
-        val pos = hit.blockPos
-        val state = level.getBlockState(pos)
-        if (state.block !is NodeBlock) return
 
-        // Shift flips to the opposite side, matching the placement rule in
-        // [NodeBlock.tryQuickPlaceCard] so the preview never lies about where
-        // the card will go.
-        val face = if (player.isCrouching) hit.direction.opposite else hit.direction
+        // Single source of truth for where the card will land. Same helper the
+        // click handlers use, so the highlight can never lie about the
+        // placement. Covers both clicking the node directly and shift-clicking
+        // a block adjacent to one.
+        val target = NodeBlock.resolvePlacementTarget(
+            level, hit.blockPos, hit.direction, player.isCrouching,
+        ) ?: return
 
         val color = CARD_COLORS[card.cardType] ?: DEFAULT_COLOR
         val buffer = consumers.getBuffer(RenderTypes.LINES)
 
         poseStack.pushPose()
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
-        drawFaceSlab(poseStack, buffer, pos, face, color)
+        drawFaceSlab(poseStack, buffer, target.nodePos, target.side, color)
         poseStack.popPose()
     }
 
