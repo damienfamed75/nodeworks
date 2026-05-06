@@ -13,11 +13,15 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.phys.Vec3
 
 /**
- * Base render state for every [ConnectableBER]. Just the position now, all the
- * laser-beam plumbing is gone since networks form via face-adjacency.
+ * Base render state for every [ConnectableBER]. Holds the source position
+ * plus the per-frame extracted inter-block beam list driven off the BE's
+ * own [Connectable.getConnections]. Regular Nodes / Pipes never populate
+ * `getConnections` so the list is empty and zero geometry emits — only
+ * Focus Nodes pay the cost.
  */
 open class ConnectableRenderState : BlockEntityRenderState() {
     var pos: BlockPos = BlockPos.ZERO
+    var connectionBeams: List<FocusBeamRenderer.Beam> = emptyList()
 }
 
 /**
@@ -44,6 +48,7 @@ abstract class ConnectableBER<T, S : ConnectableRenderState>(
     ) {
         BlockEntityRenderState.extractBase(blockEntity, state, breakProgress)
         state.pos = blockEntity.getBlockPos()
+        state.connectionBeams = FocusBeamRenderer.extract(blockEntity)
         extractConnectable(blockEntity, state, partialTicks, cameraPosition, breakProgress)
     }
 
@@ -53,6 +58,7 @@ abstract class ConnectableBER<T, S : ConnectableRenderState>(
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
+        FocusBeamRenderer.submit(state.connectionBeams, poseStack, submitNodeCollector, state.pos, camera.pos)
         submitConnectable(state, poseStack, submitNodeCollector, camera)
     }
 

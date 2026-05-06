@@ -77,6 +77,7 @@ object NeoForgeClientSetup {
         }
         NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingOut ->
             damien.nodeworks.recipe.SoulSandInfusionClientCache.clear()
+            damien.nodeworks.item.NetworkWrenchItem.clientSelectedPos = null
         }
 
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
@@ -128,6 +129,7 @@ object NeoForgeClientSetup {
         // Direct registration without the laser-bounding-box wrappers, all neighbours
         // are now visible via adjacency, no off-screen-laser-visibility concern.
         event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NodeRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.FOCUS_NODE, ::FocusNodeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PIPE, ::PipeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)

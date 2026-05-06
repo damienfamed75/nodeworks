@@ -140,8 +140,39 @@ object NodeConnectionRenderer {
             if (poseStack != null && consumers != null) {
                 render(poseStack, consumers, cameraPos)
                 renderPinHighlight(poseStack, consumers, cameraPos)
+                renderSelectionThroughWalls(poseStack, consumers, cameraPos)
             }
         }
+    }
+
+    /** Through-walls halo on the wrench's pending Focus Node selection. Reads
+     *  the selected pos from [NetworkWrenchItem.clientSelectedPos], self-clears
+     *  the selection field if the underlying block was destroyed mid-selection. */
+    fun renderSelectionThroughWalls(
+        poseStack: PoseStack,
+        consumers: MultiBufferSource,
+        cameraPos: net.minecraft.world.phys.Vec3,
+    ) {
+        val pos = NetworkWrenchItem.clientSelectedPos ?: return
+        val mc = Minecraft.getInstance()
+        val player = mc.player ?: return
+        val level = mc.level ?: return
+        // Only show the halo while the wrench is in hand. The user might have
+        // started a selection then swapped tools, the rendered halo confuses
+        // more than it helps.
+        if (!player.mainHandItem.`is`(ModItems.NETWORK_WRENCH)) return
+
+        val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable
+        if (be == null) {
+            NetworkWrenchItem.clientSelectedPos = null
+            return
+        }
+        val color = be.networkId?.let { damien.nodeworks.network.NetworkSettingsRegistry.getColor(it) }
+            ?: DEFAULT_NETWORK_COLOR
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        submitThroughWallsBox(poseStack, consumers, cameraPos, level, pos, r, g, b)
     }
 
     private fun render(

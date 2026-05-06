@@ -23,6 +23,7 @@ object ModCreativeTab {
             .displayItems { _, output ->
                 // Blocks
                 output.accept(ModBlocks.NODE)
+                output.accept(ModBlocks.FOCUS_NODE)
                 output.accept(ModBlocks.PIPE)
                 output.accept(ModBlocks.NETWORK_CONTROLLER)
                 output.accept(ModBlocks.TERMINAL)

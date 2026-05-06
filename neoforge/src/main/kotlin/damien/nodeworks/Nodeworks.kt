@@ -77,6 +77,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // Register game events on the NeoForge event bus
         NeoForge.EVENT_BUS.addListener(::onServerTick)
         NeoForge.EVENT_BUS.addListener(::onServerStopping)
+        NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
         NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
         NeoForge.EVENT_BUS.addListener(::onRegisterCommands)
         NeoForge.EVENT_BUS.addListener(::onDatapackSync)
@@ -771,6 +772,10 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // Drop per-network rate-limit budgets so a quit-and-rejoin doesn't carry
         // stale tick counters into the new session.
         damien.nodeworks.script.NetworkRateLimits.clearAll()
+    }
+
+    private fun onPlayerDisconnect(event: net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent) {
+        damien.nodeworks.item.NetworkWrenchItem.clearSelection(event.entity.uuid)
     }
 
     private fun onRightClickBlock(event: net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock) {

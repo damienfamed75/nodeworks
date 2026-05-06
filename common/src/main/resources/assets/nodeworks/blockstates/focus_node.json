@@ -1,0 +1,11 @@
+{
+  "multipart": [
+    { "apply": { "model": "nodeworks:block/focus_node" } },
+    { "when": { "pipe_north": "true" }, "apply": { "model": "nodeworks:block/pipe_stub_north" } },
+    { "when": { "pipe_south": "true" }, "apply": { "model": "nodeworks:block/pipe_stub_south" } },
+    { "when": { "pipe_east":  "true" }, "apply": { "model": "nodeworks:block/pipe_stub_east"  } },
+    { "when": { "pipe_west":  "true" }, "apply": { "model": "nodeworks:block/pipe_stub_west"  } },
+    { "when": { "pipe_up":    "true" }, "apply": { "model": "nodeworks:block/pipe_stub_up"    } },
+    { "when": { "pipe_down":  "true" }, "apply": { "model": "nodeworks:block/pipe_stub_down"  } }
+  ]
+}

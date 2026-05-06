@@ -40,10 +40,16 @@ import java.util.UUID
  * - Flat inventory array with O(1) side-to-slot mapping
  * - Only marks dirty on actual changes
  */
-class NodeBlockEntity(
+open class NodeBlockEntity(
+    type: net.minecraft.world.level.block.entity.BlockEntityType<*>,
     pos: BlockPos,
-    state: BlockState
-) : BlockEntity(ModBlockEntities.NODE, pos, state), WorldlyContainer, damien.nodeworks.network.Connectable {
+    state: BlockState,
+) : BlockEntity(type, pos, state), WorldlyContainer, damien.nodeworks.network.Connectable {
+
+    /** Convenience constructor used by the regular Node block entity registration.
+     *  Subclasses (e.g. Advanced Node) call the [BlockEntityType]-taking primary
+     *  constructor so they can pass their own type. */
+    constructor(pos: BlockPos, state: BlockState) : this(ModBlockEntities.NODE, pos, state)
 
     companion object {
         private val logger = LoggerFactory.getLogger("nodeworks-node")
@@ -66,10 +72,11 @@ class NodeBlockEntity(
     }
 
     private val items: NonNullList<ItemStack> = NonNullList.withSize(TOTAL_SLOTS, ItemStack.EMPTY)
-    // Lasers are gone. Nodes connect to neighbours via face-adjacency only,
-    // so this set stays empty for new placements. Old saves are migrated by
-    // discarding the persisted laser links on load (see loadAdditional).
-    private val connections: LinkedHashSet<BlockPos> = linkedSetOf()
+    // Regular Nodes connect via face-adjacency only and never populate this
+    // set, but the [Focus Node][damien.nodeworks.block.entity.FocusNodeBlockEntity]
+    // subclass uses it for laser links. `protected` so the subclass can write
+    // and persist it.
+    protected val connections: LinkedHashSet<BlockPos> = linkedSetOf()
 
     /** Per-face wrench-block flags. Bit i = forced-blocked on
      *  Direction.entries[i]. Persisted as a single int in NBT. */

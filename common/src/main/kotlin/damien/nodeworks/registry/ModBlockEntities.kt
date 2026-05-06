@@ -1,5 +1,6 @@
 package damien.nodeworks.registry
 
+import damien.nodeworks.block.entity.FocusNodeBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.MonitorBlockEntity
@@ -34,6 +35,11 @@ object ModBlockEntities {
     val NODE: BlockEntityType<NodeBlockEntity> = register(
         "node",
         PlatformServices.blockEntity.createBlockEntityType(::NodeBlockEntity, ModBlocks.NODE)
+    )
+
+    val FOCUS_NODE: BlockEntityType<FocusNodeBlockEntity> = register(
+        "focus_node",
+        PlatformServices.blockEntity.createBlockEntityType(::FocusNodeBlockEntity, ModBlocks.FOCUS_NODE)
     )
 
     val PIPE: BlockEntityType<PipeBlockEntity> = register(

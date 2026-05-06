@@ -3,7 +3,8 @@
 	"package": "damien.nodeworks.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"ExampleMixin"
+		"ExampleMixin",
+		"ServerLevelSetBlockMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

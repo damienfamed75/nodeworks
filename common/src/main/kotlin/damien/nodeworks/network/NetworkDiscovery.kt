@@ -148,6 +148,9 @@ object NetworkDiscovery {
             for (connection in connectable.getConnections()) {
                 if (connection in visited) continue
                 if (!level.isLoaded(connection)) continue
+                if (level is net.minecraft.server.level.ServerLevel
+                    && NodeConnectionHelper.isPairBlocked(level, pos, connection)
+                ) continue
                 visited.add(connection)
                 queue.add(connection)
             }

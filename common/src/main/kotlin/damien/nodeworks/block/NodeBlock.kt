@@ -32,7 +32,7 @@ import net.minecraft.world.phys.shapes.CollisionContext
 import net.minecraft.world.phys.shapes.Shapes
 import net.minecraft.world.phys.shapes.VoxelShape
 
-class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
+open class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     init {
         registerDefaultState(
@@ -111,11 +111,12 @@ class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
             return state
         }
 
-        /** Composed VoxelShape: 8×8×8 core plus a stub for each PIPE-roled
-         *  face. Cached implicitly via the blockstate identity (vanilla
-         *  caches per-state shape lookups). */
-        fun shapeFor(state: BlockState): VoxelShape {
-            var combined: VoxelShape = NODE_CORE_SHAPE
+        /** Composed VoxelShape: [core] plus a stub for each PIPE-roled face.
+         *  Cached implicitly via the blockstate identity (vanilla caches
+         *  per-state shape lookups). [core] defaults to the regular Node's
+         *  8×8×8 cube; subclasses (Focus Node) pass their own. */
+        fun shapeFor(state: BlockState, core: VoxelShape = NODE_CORE_SHAPE): VoxelShape {
+            var combined: VoxelShape = core
             for (dir in Direction.entries) {
                 if (state.getValue(propFor(dir))) {
                     combined = Shapes.or(combined, STUB_BY_DIR[dir.ordinal])

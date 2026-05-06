@@ -3,6 +3,7 @@ package damien.nodeworks.registry
 import damien.nodeworks.block.InstructionStorageBlock
 import damien.nodeworks.block.InventoryTerminalBlock
 import damien.nodeworks.block.NetworkControllerBlock
+import damien.nodeworks.block.FocusNodeBlock
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.PipeBlock
 import damien.nodeworks.block.TerminalBlock
@@ -39,6 +40,18 @@ object ModBlocks {
             .noOcclusion()
             .requiresCorrectToolForDrops(),
         // Node items only place by replacing an existing Pipe, see NodeBlockItem.
+        itemFactory = { block, props -> damien.nodeworks.item.NodeBlockItem(block, props) },
+    )
+
+    val FOCUS_NODE: Block = register(
+        "focus_node",
+        ::FocusNodeBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 8.0f)
+            .noOcclusion()
+            .requiresCorrectToolForDrops(),
+        // Reuses NodeBlockItem so the same swap-onto-Pipe / shift-place-adjacent
+        // behaviour applies. Standard placement still works on any block too.
         itemFactory = { block, props -> damien.nodeworks.item.NodeBlockItem(block, props) },
     )
 

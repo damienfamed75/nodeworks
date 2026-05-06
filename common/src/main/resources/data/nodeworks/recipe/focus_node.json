@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "EDE",
+    "DND",
+    "EDE"
+  ],
+  "key": {
+    "E": "minecraft:ender_pearl",
+    "D": "minecraft:diamond",
+    "N": "nodeworks:node"
+  },
+  "result": {
+    "id": "nodeworks:focus_node",
+    "count": 1
+  }
+}
