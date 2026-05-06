@@ -14,6 +14,7 @@ import damien.nodeworks.block.BroadcastAntennaBlock
 import damien.nodeworks.block.ExportChestBlock
 import damien.nodeworks.block.ImportChestBlock
 import damien.nodeworks.block.PlacerBlock
+import damien.nodeworks.block.UserBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CoProcessorBlock
 import damien.nodeworks.block.CraftingStorageBlock
@@ -129,6 +130,14 @@ object ModBlocks {
     val PLACER: Block = register(
         "placer",
         ::PlacerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val USER: Block = register(
+        "user",
+        ::UserBlock,
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()

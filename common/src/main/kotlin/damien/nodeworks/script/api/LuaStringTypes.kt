@@ -140,6 +140,22 @@ val PlacerAlias: LuaType.StringDomain = LuaType.StringDomain(
     sourceKey = "placer-alias",
 )
 
+/** Effective alias of a User on the network. */
+val UserAlias: LuaType.StringDomain = LuaType.StringDomain(
+    name = "UserAlias",
+    description = "An alias of a User device on this network.",
+    sourceKey = "user-alias",
+)
+
+/** Closed enum of the User device's two trigger modes. Matches the Lua
+ *  `UserMode.INSTANT` / `UserMode.HOLD` constants and the BE's
+ *  [damien.nodeworks.block.entity.UserBlockEntity.UseMode] values. */
+val UserMode: LuaType.StringEnum = LuaType.StringEnum(
+    name = "UserMode",
+    values = listOf("instant", "hold"),
+    description = "User device trigger mode. `instant` fires once per `:use()`, `hold` runs across multiple ticks until `:stop()` (or 30 s timeout).",
+)
+
 /** Variable name as defined in the Variable block. Resolves to current network's
  *  declared variables. */
 val VariableName: LuaType.StringDomain = LuaType.StringDomain(
@@ -152,17 +168,17 @@ val VariableName: LuaType.StringDomain = LuaType.StringDomain(
  *  `Channel:getFirst`. Closed enum, the runtime dispatches on these literals. */
 val NetworkAccessorType: LuaType.StringEnum = LuaType.StringEnum(
     name = "NetworkAccessorType",
-    values = listOf("io", "storage", "redstone", "observer", "variable", "breaker", "placer"),
+    values = listOf("io", "storage", "redstone", "observer", "variable", "breaker", "placer", "user"),
     description = "The capability or device type to filter `network:getAll` / `Channel:getAll` queries by.",
 )
 
 /** Composite name accepted by `network:get` and `Channel:get`. Cards, variables,
- *  breakers, and placers all share the network's bare-name namespace, the union
- *  walks every part's source so all surfaces appear in autocomplete. */
+ *  breakers, placers, and users all share the network's bare-name namespace, the
+ *  union walks every part's source so all surfaces appear in autocomplete. */
 val NetworkName: LuaType.Union = LuaType.Union(
     name = "NetworkName",
-    parts = listOf(CardAlias, VariableName, BreakerAlias, PlacerAlias),
-    description = "Any addressable name on the network, a card alias, variable, breaker, or placer.",
+    parts = listOf(CardAlias, VariableName, BreakerAlias, PlacerAlias, UserAlias),
+    description = "Any addressable name on the network, a card alias, variable, breaker, placer, or user.",
 )
 
 /** Composite filter string accepted by `find` / `findEach` / `count` / `matches`.
@@ -204,6 +220,8 @@ internal val ALL_STRING_TYPES: List<LuaType> = listOf(
     InventoryCardAlias,
     BreakerAlias,
     PlacerAlias,
+    UserAlias,
+    UserMode,
     VariableName,
     DyeColor,
     NetworkAccessorType,

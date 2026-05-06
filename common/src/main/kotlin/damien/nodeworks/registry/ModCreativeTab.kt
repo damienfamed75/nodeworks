@@ -31,6 +31,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.VARIABLE)
                 output.accept(ModBlocks.BREAKER)
                 output.accept(ModBlocks.PLACER)
+                output.accept(ModBlocks.USER)
                 output.accept(ModBlocks.IMPORT_CHEST)
                 output.accept(ModBlocks.EXPORT_CHEST)
                 output.accept(ModBlocks.INSTRUCTION_STORAGE)

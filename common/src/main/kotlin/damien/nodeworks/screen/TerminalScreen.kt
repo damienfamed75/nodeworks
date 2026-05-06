@@ -35,6 +35,8 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.player.Inventory
 
+private data class WrappedLine(val text: String, val color: Int, val clickable: Boolean = false)
+
 class TerminalScreen(
     menu: TerminalScreenHandler,
     playerInventory: Inventory,
@@ -105,12 +107,14 @@ class TerminalScreen(
      *  can narrow `x` to BreakerHandle. */
     private val breakerAliases: List<String>
     private val placerAliases: List<String>
+    private val userAliases: List<String>
 
-    /** (alias, channel) per Breaker / Placer for the sidebar render, keeps the pip
-     *  rendering consistent with cards/variables. The alias-only [breakerAliases] /
-     *  [placerAliases] fields stay because AutocompletePopup just needs the names. */
+    /** (alias, channel) per Breaker / Placer / User for the sidebar render, keeps
+     *  the pip rendering consistent with cards/variables. The alias-only fields
+     *  stay because AutocompletePopup just needs the names. */
     private val breakerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
     private val placerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
+    private val userEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
 
     /** Literal names that appear ≥2 times across cards / breakers / placers on
      *  this network. Drives the script editor's `ambiguous-card-name` HINT for
@@ -478,6 +482,15 @@ class TerminalScreen(
             get() = assignedAlias ?: literalName ?: "placer"
     }
 
+    private class UserAliasHolder(
+        val literalName: String?,
+        val channel: net.minecraft.world.item.DyeColor,
+    ) {
+        var assignedAlias: String? = null
+        val effectiveAlias: String
+            get() = assignedAlias ?: literalName ?: "user"
+    }
+
     init {
         damien.nodeworks.compat.AcsCompat.setImageSize(this, currentLayout.w, currentLayout.h)
 
@@ -490,6 +503,7 @@ class TerminalScreen(
         // (`breaker_N`) below, mirroring the server-side discovery pass.
         val scannedBreakers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
         val scannedPlacers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
+        val scannedUsers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
         val scannedLocal = mutableListOf<String>()
         val scannedLocalApis =
             mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
@@ -577,6 +591,10 @@ class TerminalScreen(
                             scannedPlacers.add(entity.deviceName to entity.channel)
                         }
 
+                        is damien.nodeworks.block.entity.UserBlockEntity -> {
+                            scannedUsers.add(entity.deviceName to entity.channel)
+                        }
+
                         is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> {
                             if (instructionClustersSeen.add(entity.getClusterAnchor())) {
                                 for (info in entity.getAllInstructionSets()) {
@@ -662,6 +680,9 @@ class TerminalScreen(
         val placerAliasHolders = scannedPlacers.map { (name, channel) ->
             PlacerAliasHolder(name.takeIf { it.isNotEmpty() }, channel)
         }
+        val userAliasHolders = scannedUsers.map { (name, channel) ->
+            UserAliasHolder(name.takeIf { it.isNotEmpty() }, channel)
+        }
         val slots = mutableListOf<damien.nodeworks.network.AliasSlot>()
         for (card in scannedCards) {
             slots.add(
@@ -690,11 +711,22 @@ class TerminalScreen(
                 )
             )
         }
+        for (h in userAliasHolders) {
+            slots.add(
+                damien.nodeworks.network.AliasSlot(
+                    literalName = h.literalName,
+                    baseWhenUnnamed = damien.nodeworks.network.autoAliasPrefix("user"),
+                    setAutoAlias = { h.assignedAlias = it },
+                )
+            )
+        }
         damien.nodeworks.network.assignAliasSuffixes(slots)
         val scannedBreakerEntries = breakerAliasHolders.map { it.effectiveAlias to it.channel }
         val scannedPlacerEntries = placerAliasHolders.map { it.effectiveAlias to it.channel }
+        val scannedUserEntries = userAliasHolders.map { it.effectiveAlias to it.channel }
         val scannedBreakerAliases = scannedBreakerEntries.map { it.first }
         val scannedPlacerAliases = scannedPlacerEntries.map { it.first }
+        val scannedUserAliases = scannedUserEntries.map { it.first }
 
         // Item + fluid tag/id lists from the client registry, 26.1 replaces `getTagNames()`
         // (Stream<TagKey>) with `getTags()` (Stream<HolderSet.Named<T>>), the
@@ -735,8 +767,10 @@ class TerminalScreen(
         variableChannels = scannedVarChannels
         breakerAliases = scannedBreakerAliases
         placerAliases = scannedPlacerAliases
+        userAliases = scannedUserAliases
         breakerEntries = scannedBreakerEntries
         placerEntries = scannedPlacerEntries
+        userEntries = scannedUserEntries
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
@@ -753,6 +787,8 @@ class TerminalScreen(
         for ((name, _) in scannedBreakers) if (name.isNotEmpty())
             nameCounts.merge(name, 1, Int::plus)
         for ((name, _) in scannedPlacers) if (name.isNotEmpty())
+            nameCounts.merge(name, 1, Int::plus)
+        for ((name, _) in scannedUsers) if (name.isNotEmpty())
             nameCounts.merge(name, 1, Int::plus)
         ambiguousNetworkNames = nameCounts.filterValues { it >= 2 }.keys
     }
@@ -905,7 +941,7 @@ class TerminalScreen(
             AutocompletePopup(
                 font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis,
                 itemIds, fluidIds, fluidTags, blockIds,
-                breakerAliases, placerAliases,
+                breakerAliases, placerAliases, userAliases,
             ) { scripts }
         // Position popups directly under the cursor's text row. Using yBottomOfLine
         // (instead of yTopOfLine of the next line) deliberately excludes any decoration
@@ -1092,6 +1128,10 @@ class TerminalScreen(
             val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
             entries.add(SidebarEntry(alias, 0xFF6BBCD0.toInt(), 96, 16, "placer", ch))
         }
+        for ((alias, channel) in userEntries) {
+            val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(alias, 0xFF79E324.toInt(), 112, 16, "user", ch))
+        }
 
         // Sidebar entries (scrollable)
         val cardListTop = cardStartY + 12
@@ -1126,6 +1166,7 @@ class TerminalScreen(
                 "var" -> Icons.VARIABLE
                 "breaker" -> Icons.BREAKER
                 "placer" -> Icons.PLACER
+                "user" -> Icons.USER
                 else -> Icons.IO_CARD
             }
             // Channel pip, 2×9 vertical stripe LEFT of the icon when the row is
@@ -1304,9 +1345,6 @@ class TerminalScreen(
             val logLineHeight = font.lineHeight + 1
             val logTextAreaHeight = logContentBottom - logContentTop
             val maxLogWidth = logW - 6
-
-            // Build wrapped lines
-            data class WrappedLine(val text: String, val color: Int, val clickable: Boolean = false)
 
             val wrappedLines = mutableListOf<WrappedLine>()
             for (entry in logs) {
@@ -2106,12 +2144,13 @@ class TerminalScreen(
                     "var" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "var")
                     "breaker" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "breaker")
                     "placer" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "placer")
+                    "user" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "user")
                     else -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "x")
                 }
                 val line = when (entry.type) {
                     // Cards, variables, and devices all ride the unified `network:get`
                     // accessor, same generated line shape for any click-to-import.
-                    "card", "var", "breaker", "placer" ->
+                    "card", "var", "breaker", "placer", "user" ->
                         "local $ident = network:get(\"${entry.name}\")"
 
                     else -> null

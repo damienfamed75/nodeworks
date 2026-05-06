@@ -678,24 +678,39 @@ class ScriptEngine(
         }
     }
 
-    /** Build a Lua table for a placer device with `:place(...)` rate-limited via
-     *  [placementLimiter]. Centralised here because [PlacerHandle.create] has
-     *  five call sites and we want consistent rate-limiting across all of them. */
+    /** Wrap a method on [table] with the network's placement budget. No-op
+     *  when [methodName] isn't a function (e.g. nil'd at handle creation). */
+    private fun wrapWithPlacementLimit(table: LuaTable, opLabel: String, methodName: String) {
+        val orig = table.get(methodName)
+        if (!orig.isfunction()) return
+        table.set(methodName, networkRateLimited(
+            opLabel,
+            consume = { b, tick -> b.tryConsumePlacement(tick) },
+            warnOp = NetworkBudget.WARN_PLACEMENT,
+            orig,
+            onLimit = LuaValue.FALSE,
+        ))
+    }
+
     private fun createPlacerTable(
         snapshot: damien.nodeworks.network.PlacerSnapshot,
         networkSnapshot: damien.nodeworks.network.NetworkSnapshot,
     ): LuaTable {
         val table = PlacerHandle.create(snapshot, networkSnapshot, level)
-        val origPlace = table.get("place")
-        if (origPlace.isfunction()) {
-            table.set("place", networkRateLimited(
-                "placer:place",
-                consume = { b, tick -> b.tryConsumePlacement(tick) },
-                warnOp = NetworkBudget.WARN_PLACEMENT,
-                origPlace,
-                onLimit = LuaValue.FALSE,
-            ))
-        }
+        wrapWithPlacementLimit(table, "placer:place", "place")
+        return table
+    }
+
+    /** [UserHandle.use] drives a FakePlayer interaction so it shares the
+     *  placement budget. [UserHandle.stop] is a release / cleanup -- gating
+     *  it on the budget would leave the User stuck holding right-click when
+     *  the bucket is empty, so it's intentionally unbounded. */
+    private fun createUserTable(
+        snapshot: damien.nodeworks.network.UserSnapshot,
+        networkSnapshot: damien.nodeworks.network.NetworkSnapshot,
+    ): LuaTable {
+        val table = damien.nodeworks.script.UserHandle.create(snapshot, networkSnapshot, level)
+        wrapWithPlacementLimit(table, "user:use", "use")
         return table
     }
 
@@ -893,6 +908,10 @@ class ScriptEngine(
                     val p = snapshot.placers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
                     return createPlacerTable(p, snapshot)
                 }
+                if (type == "user") {
+                    val u = snapshot.users.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    return createUserTable(u, snapshot)
+                }
                 val card = snapshot.allCards().firstOrNull {
                     it.channel == color && it.capability.type == type
                 } ?: return LuaValue.NIL
@@ -931,7 +950,13 @@ class ScriptEngine(
                         members.add(createPlacerTable(p, snapshot))
                     }
                 }
-                if (type != "variable" && type != "breaker" && type != "placer") {
+                if (type == null || type == "user") {
+                    for (u in snapshot.users) {
+                        if (u.channel != color) continue
+                        members.add(createUserTable(u, snapshot))
+                    }
+                }
+                if (type != "variable" && type != "breaker" && type != "placer" && type != "user") {
                     for (card in snapshot.allCards()) {
                         if (card.channel != color) continue
                         if (type != null && card.capability.type != type) continue
@@ -960,6 +985,8 @@ class ScriptEngine(
                 if (b != null) return BreakerHandle.create(b, snapshot, level)
                 val p = snapshot.placers.firstOrNull { it.channel == color && it.effectiveAlias == alias }
                 if (p != null) return createPlacerTable(p, snapshot)
+                val u = snapshot.users.firstOrNull { it.channel == color && it.effectiveAlias == alias }
+                if (u != null) return createUserTable(u, snapshot)
                 throw LuaError("No member named '$alias' on the ${color.name.lowercase()} channel")
             }
         })
@@ -1473,6 +1500,7 @@ class ScriptEngine(
                 snapshot.findVariable(alias)?.let { return createVariableTable(it) }
                 snapshot.findBreaker(alias)?.let { return BreakerHandle.create(it, snapshot, level) }
                 snapshot.findPlacer(alias)?.let { return createPlacerTable(it, snapshot) }
+                snapshot.findUser(alias)?.let { return createUserTable(it, snapshot) }
                 throw LuaError("Not found on network: '$alias'")
             }
         })
@@ -1509,6 +1537,15 @@ class ScriptEngine(
                     return createHandleListTable(
                         members,
                         HandleListMethods.methodsForCapabilityType("placer"),
+                    )
+                }
+                if (type == "user") {
+                    val members = snapshot.users.map {
+                        createUserTable(it, snapshot) as LuaValue
+                    }
+                    return createHandleListTable(
+                        members,
+                        HandleListMethods.methodsForCapabilityType("user"),
                     )
                 }
                 val cards = snapshot.allCards().filter { it.capability.type == type }
@@ -1577,6 +1614,7 @@ class ScriptEngine(
                 snapshot.variables.forEach { seen.add(it.channel) }
                 snapshot.breakers.forEach { seen.add(it.channel) }
                 snapshot.placers.forEach { seen.add(it.channel) }
+                snapshot.users.forEach { seen.add(it.channel) }
                 val result = LuaTable()
                 for ((i, color) in seen.withIndex()) {
                     result.set(i + 1, LuaValue.valueOf(color.name.lowercase()))
@@ -2051,6 +2089,11 @@ class ScriptEngine(
         })
 
         g.set("network", networkTable)
+
+        val userModeTable = LuaTable()
+        userModeTable.set("INSTANT", LuaValue.valueOf("instant"))
+        userModeTable.set("HOLD", LuaValue.valueOf("hold"))
+        g.set("UserMode", userModeTable)
 
         // importer / stocker presets, declarative builders that compile down to
         // scheduler tasks. See damien/nodeworks/script/preset/*.kt.

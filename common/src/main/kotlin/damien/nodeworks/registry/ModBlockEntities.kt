@@ -20,6 +20,7 @@ import damien.nodeworks.block.entity.BreakerBlockEntity
 import damien.nodeworks.block.entity.ExportChestBlockEntity
 import damien.nodeworks.block.entity.ImportChestBlockEntity
 import damien.nodeworks.block.entity.PlacerBlockEntity
+import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.Registry
@@ -125,6 +126,11 @@ object ModBlockEntities {
     val PLACER: BlockEntityType<PlacerBlockEntity> = register(
         "placer",
         PlatformServices.blockEntity.createBlockEntityType(::PlacerBlockEntity, ModBlocks.PLACER)
+    )
+
+    val USER: BlockEntityType<UserBlockEntity> = register(
+        "user",
+        PlatformServices.blockEntity.createBlockEntityType(::UserBlockEntity, ModBlocks.USER)
     )
 
     val IMPORT_CHEST: BlockEntityType<ImportChestBlockEntity> = register(

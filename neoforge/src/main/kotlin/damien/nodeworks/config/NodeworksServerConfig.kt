@@ -32,6 +32,7 @@ object NodeworksServerConfig {
     val MAX_CALLBACKS_PER_KIND: ModConfigSpec.IntValue
     val ENABLED_MODULES: ModConfigSpec.ConfigValue<List<String>>
     val DISABLED_METHODS: ModConfigSpec.ConfigValue<List<String>>
+    val USER_DENIED_ITEMS: ModConfigSpec.ConfigValue<List<String>>
 
     val SPEC: ModConfigSpec
 
@@ -324,6 +325,29 @@ object NodeworksServerConfig {
             ) { it is String }
 
         builder.pop()
+        builder
+            .comment(
+                " Device policy controls.",
+                " Per-device safety limits that aren't script-execution related."
+            )
+            .push("devices")
+
+        USER_DENIED_ITEMS = builder
+            .comment(
+                " Items the User device refuses to drive. Bare ids match exactly,",
+                " entries starting with `#` match an item tag (resolved against the",
+                " active level's registry, so modded tags work without extra setup).",
+                " Defaults block food and ranged-weapon abuse (auto-feed, auto-bow",
+                " farms). Add `#c:tools/melee_weapon` to also block sword automation.",
+                " Empty list = no restrictions."
+            )
+            .defineListAllowEmpty(
+                "userDeniedItems",
+                ServerSafetySettings.Defaults.userDeniedItems,
+                { "#c:foods" },
+            ) { it is String }
+
+        builder.pop()
         SPEC = builder.build()
     }
 
@@ -351,5 +375,6 @@ object NodeworksServerConfig {
         maxCallbacksPerKind = MAX_CALLBACKS_PER_KIND.get(),
         enabledModules = ENABLED_MODULES.get().toSet(),
         disabledMethods = DISABLED_METHODS.get().toSet(),
+        userDeniedItems = USER_DENIED_ITEMS.get().toList(),
     )
 }

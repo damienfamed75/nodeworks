@@ -40,6 +40,7 @@ object NetworkDiscovery {
         val variables = mutableListOf<VariableSnapshot>()
         val breakers = mutableListOf<BreakerSnapshot>()
         val placers = mutableListOf<PlacerSnapshot>()
+        val users = mutableListOf<UserSnapshot>()
         val processingApis = mutableListOf<ProcessingApiSnapshot>()
         val terminalPositions = mutableListOf<BlockPos>()
         var controller: ControllerSnapshot? = null
@@ -143,6 +144,15 @@ object NetworkDiscovery {
                         )
                     )
                 }
+                is damien.nodeworks.block.entity.UserBlockEntity -> {
+                    users.add(
+                        UserSnapshot(
+                            connectable.blockPos,
+                            connectable.deviceName.takeIf { it.isNotEmpty() },
+                            connectable.channel,
+                        )
+                    )
+                }
             }
 
             for (connection in connectable.getConnections()) {
@@ -179,11 +189,11 @@ object NetworkDiscovery {
         }
 
         // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1) AND
-        // unnamed devices (breaker_1, placer_1, ...). Devices share the same counter
-        // namespace as cards so the alias prefix uniquely identifies the type.
-        assignAutoAliases(nodes, breakers, placers)
+        // unnamed devices (breaker_1, placer_1, user_1, ...). Devices share the same
+        // counter namespace as cards so the alias prefix uniquely identifies the type.
+        assignAutoAliases(nodes, breakers, placers, users)
 
-        return NetworkSnapshot(nodes, crafters, variables, breakers, placers, cpus, processingApis, terminalPositions, controller)
+        return NetworkSnapshot(nodes, crafters, variables, breakers, placers, users, cpus, processingApis, terminalPositions, controller)
     }
 
     /** Assign `<base>_N` auto-aliases so every card / breaker / placer on the
@@ -196,6 +206,7 @@ object NetworkDiscovery {
         nodes: List<NodeSnapshot>,
         breakers: List<BreakerSnapshot>,
         placers: List<PlacerSnapshot>,
+        users: List<UserSnapshot>,
     ) {
         val slots = mutableListOf<AliasSlot>()
         for (node in nodes) {
@@ -221,6 +232,13 @@ object NetworkDiscovery {
                 literalName = p.name,
                 baseWhenUnnamed = autoAliasPrefix("placer"),
                 setAutoAlias = { p.autoAlias = it },
+            ))
+        }
+        for (u in users) {
+            slots.add(AliasSlot(
+                literalName = u.name,
+                baseWhenUnnamed = autoAliasPrefix("user"),
+                setAutoAlias = { u.autoAlias = it },
             ))
         }
         assignAliasSuffixes(slots)
@@ -291,6 +309,15 @@ data class PlacerSnapshot(
     val effectiveAlias: String get() = autoAlias ?: name ?: "placer"
 }
 
+data class UserSnapshot(
+    val pos: BlockPos,
+    val name: String?,
+    val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
+) {
+    var autoAlias: String? = null
+    val effectiveAlias: String get() = autoAlias ?: name ?: "user"
+}
+
 data class ProcessingApiSnapshot(
     val pos: BlockPos,
     val apis: List<ProcessingStorageBlockEntity.ProcessingApiInfo>,
@@ -310,6 +337,7 @@ data class NetworkSnapshot(
     val variables: List<VariableSnapshot> = emptyList(),
     val breakers: List<BreakerSnapshot> = emptyList(),
     val placers: List<PlacerSnapshot> = emptyList(),
+    val users: List<UserSnapshot> = emptyList(),
     val cpus: List<CpuSnapshot> = emptyList(),
     val processingApis: List<ProcessingApiSnapshot> = emptyList(),
     val terminalPositions: List<BlockPos> = emptyList(),
@@ -356,6 +384,13 @@ data class NetworkSnapshot(
         map
     }
 
+    private val userByAlias: Map<String, UserSnapshot> by lazy {
+        val map = HashMap<String, UserSnapshot>(users.size * 2)
+        for (u in users) u.name?.let { map.putIfAbsent(it, u) }
+        for (u in users) map.putIfAbsent(u.effectiveAlias, u)
+        map
+    }
+
     /** Find a variable by name. */
     fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
 
@@ -369,6 +404,9 @@ data class NetworkSnapshot(
     /** Find a Placer by alias. Same literal-first / auto-suffixed-fallback rule
      *  as [findBreaker]. */
     fun findPlacer(alias: String): PlacerSnapshot? = placerByAlias[alias]
+
+    /** Find a User by alias. Same resolution rule as [findBreaker] / [findPlacer]. */
+    fun findUser(alias: String): UserSnapshot? = userByAlias[alias]
 
     /** Find an available (not busy) Crafting CPU with enough buffer capacity. */
     fun findAvailableCpu(requiredCapacity: Long = 0L): CpuSnapshot? =

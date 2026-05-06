@@ -50,6 +50,7 @@ object HandleListMethods {
         // be a syntax error) and over `:destroy` (suggests drops are deleted).
         "breaker" to setOf("mine", "cancel"),
         "placer" to setOf("place"),
+        "user" to setOf("setFilter", "setMode", "use", "stop"),
     )
 
     /**

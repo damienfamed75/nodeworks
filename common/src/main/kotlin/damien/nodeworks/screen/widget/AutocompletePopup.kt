@@ -36,6 +36,8 @@ class AutocompletePopup(
     private val breakerAliases: List<String> = emptyList(),
     /** Effective aliases of every Placer on the network. */
     private val placerAliases: List<String> = emptyList(),
+    /** Effective aliases of every User on the network. */
+    private val userAliases: List<String> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     /**
@@ -1166,6 +1168,7 @@ class AutocompletePopup(
         "variable" -> "VariableHandle"
         "breaker" -> "BreakerHandle"
         "placer" -> "PlacerHandle"
+        "user" -> "UserHandle"
         "io", "storage" -> "CardHandle"
         else -> null
     }
@@ -1196,6 +1199,7 @@ class AutocompletePopup(
         }
         if (alias in breakerAliases) return "BreakerHandle"
         if (alias in placerAliases) return "PlacerHandle"
+        if (alias in userAliases) return "UserHandle"
         return null
     }
 
@@ -1562,6 +1566,10 @@ class AutocompletePopup(
                 }
                 if (alias in placerAliases) {
                     symbols[varName] = "PlacerHandle"
+                    return@forEach
+                }
+                if (alias in userAliases) {
+                    symbols[varName] = "UserHandle"
                     return@forEach
                 }
                 // Nothing matched, fall back to CardHandle so chained methods at
@@ -2334,6 +2342,11 @@ class AutocompletePopup(
             placerAliases.map { suggest(it, "$it (placer)", Kind.STRING) },
         )
 
+        "user-alias" -> FuzzyMatch.filter(
+            partial,
+            userAliases.map { suggest(it, "$it (user)", Kind.STRING) },
+        )
+
         "variable-name" -> {
             val typeLabels = arrayOf("number", "string", "bool")
             FuzzyMatch.filter(
@@ -2713,9 +2726,21 @@ class AutocompletePopup(
                     autoImport = "local $ident = network:get(\"$alias\")"
                 )
             }
+        val userImports = userAliases
+            .distinct()
+            .mapNotNull { alias ->
+                val ident = damien.nodeworks.script.LuaIdent.toLuaIdentifier(alias, "user")
+                if (ident in declared) return@mapNotNull null
+                Suggestion(
+                    insertText = ident,
+                    displayText = "$ident  $alias (user)",
+                    kind = Kind.VARIABLE,
+                    autoImport = "local $ident = network:get(\"$alias\")"
+                )
+            }
 
         val all = (apiFunctions + requireSuggest + keywords + userVars + userFuncs +
-                cardImports + variableImports + breakerImports + placerImports)
+                cardImports + variableImports + breakerImports + placerImports + userImports)
             .distinctBy { it.insertText }
         val matches = FuzzyMatch.filter(partial, all).filter { it.insertText != partial }
         return matches

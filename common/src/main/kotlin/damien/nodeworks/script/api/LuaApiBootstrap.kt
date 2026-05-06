@@ -57,6 +57,7 @@ object LuaApiBootstrap {
         LuaApiRegistry.register(BreakerHandleApi)
         LuaApiRegistry.register(BreakBuilderApi)
         LuaApiRegistry.register(PlacerHandleApi)
+        LuaApiRegistry.register(UserHandleApi)
         LuaApiRegistry.register(VariableHandleApi)
         LuaApiRegistry.register(NumberVariableHandleApi)
         LuaApiRegistry.register(StringVariableHandleApi)

@@ -145,6 +145,14 @@ data class ServerSafetySettings(
      *    `"Network:insert"`, `"CardHandle:insert"`, `"PlacerHandle:place"`,
      *    `"VariableHandle:set"`, `"RedstoneCard:set"`, `"Scheduler:tick"`. */
     val disabledMethods: Set<String> = emptySet(),
+
+    /** Item ids and `#namespace:tag` patterns the User device refuses to drive.
+     *  Stops automation from spamming food consumption (auto-feed exploits) or
+     *  ranged-weapon shots (auto-bow farms) by default. Resolved by
+     *  [damien.nodeworks.device.UserDenyList] which caches tag lookups against
+     *  the active level's registry. Format: `"minecraft:bow"` for exact items,
+     *  `"#c:foods"` for tags. */
+    val userDeniedItems: List<String> = listOf("#c:foods", "#c:tools/ranged_weapon"),
 ) {
     companion object {
         /** Compiled-in defaults, used as the seed values when generating the

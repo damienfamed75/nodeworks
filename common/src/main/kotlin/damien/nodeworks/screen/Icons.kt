@@ -192,6 +192,7 @@ class Icons private constructor(val col: Int, val row: Int) {
         val OBSERVER_CARD = Icons(0, 4)
         val BREAKER = Icons(1, 4)
         val PLACER = Icons(2, 4)
+
         // Storage Card filter toggles (9×9 in top-left of each cell), drawn
         // via [drawTopLeft] inside the cycle buttons on the Storage Card GUI.
         val FILTER_ALLOW = Icons(3, 4)
@@ -202,16 +203,22 @@ class Icons private constructor(val col: Int, val row: Int) {
         val FILTER_NBT = Icons(8, 4)
         val FILTER_NO_NBT = Icons(9, 4)
         val FILTER_ANY_NBT = Icons(10, 4)
+
         // 9×9 question mark in the top-left of its cell, used by the
         // Storage Card GUI's [?] guidebook-link button.
         val QUESTION_9 = Icons(11, 4)
+
         // Instruction Set substitution toggle (9×9 in top-left of each cell),
         // drawn via [drawTopLeft] inside the button on the Instruction Set GUI.
         val SUBSTITUTIONS_ON = Icons(12, 4)
         val SUBSTITUTIONS_OFF = Icons(13, 4)
-        /** Replaces the red-X "none" glyph on the channel picker, signalling
-         *  "any channel". Drawn at the cell's full size by
-         *  [damien.nodeworks.screen.widget.ChannelPickerWidget]. */
+
+        // Replaces the red-X "none" glyph on the channel picker, signalling
+        // "any channel". Drawn at the cell's full size by
+        // [damien.nodeworks.screen.widget.ChannelPickerWidget]
         val ANY_CHANNEL = Icons(14, 4)
+
+        // User device sidebar icon
+        val USER = Icons(15, 4)
     }
 }
