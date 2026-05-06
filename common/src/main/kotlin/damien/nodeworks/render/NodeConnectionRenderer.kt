@@ -92,9 +92,7 @@ object NodeConnectionRenderer {
         return connectable?.networkColor() ?: DEFAULT_NETWORK_COLOR
     }
 
-    /** Whether a block position is part of an active network (has a non-null
-     *  networkId after [propagateNetworkId]). With LOS gone, this is just
-     *  "did the BFS reach this from a controller?" — same answer as
+    /** Whether [pos] is part of an active network. Same answer as
      *  `Connectable.networkId != null`. */
     fun isReachable(pos: BlockPos): Boolean {
         val mc = Minecraft.getInstance()

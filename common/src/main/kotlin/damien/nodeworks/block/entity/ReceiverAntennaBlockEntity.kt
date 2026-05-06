@@ -4,6 +4,7 @@ import damien.nodeworks.item.BroadcastSourceKind
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NodeConnectionHelper
+import damien.nodeworks.network.WirelessBroadcastRegistry
 import damien.nodeworks.registry.ModBlockEntities
 import net.minecraft.core.BlockPos
 import net.minecraft.core.HolderLookup
@@ -60,20 +61,26 @@ class ReceiverAntennaBlockEntity(
      *  "wrong source kind" status and the receiver stays dark. */
     private var pairedKind: BroadcastSourceKind? = null
 
+    /** The frequencyId we last registered ourselves under in the wireless
+     *  registry. Tracked so we can `unregister(prev)` then `register(new)`
+     *  on a crystal swap without leaving stale entries pointing at us. */
+    private var registeredWirelessFreq: UUID? = null
+
     val isPaired: Boolean get() = pairedPos != null && pairedFrequencyId != null
 
     /** 0=not linked, 1=linked, 2=out of range, 3=broadcast not found, 4=freq mismatch,
      *  5=not loaded, 6=dimension mismatch (broadcast lacks Multi-Dimension upgrade),
-     *  7=wrong source kind (crystal is paired to a Network Controller, not a Processing
-     *  Storage, Receiver Antennas only consume processing-set broadcasts). */
+     *  7=wrong source kind (Receiver Antennas only consume Processing Storage and
+     *  Export Chest broadcasts). */
     fun getConnectionStatus(level: ServerLevel): Int {
         val pos = pairedPos ?: return 0
         val dim = pairedDimension ?: return 0
         val freq = pairedFrequencyId ?: return 0
         val kind = pairedKind ?: return 0
-        // Type-check the crystal before we touch the target dimension, a wrong-kind
-        // crystal is invalid regardless of where the broadcast is.
-        if (kind != BroadcastSourceKind.PROCESSING_STORAGE) return 7
+        // PROCESSING_STORAGE (Set fan-out) and EXPORT_CHEST (wireless item
+        // conveyor) are the two accepted kinds. NETWORK_CONTROLLER is for
+        // Handheld Inventory Terminals only and never resolves here.
+        if (kind != BroadcastSourceKind.PROCESSING_STORAGE && kind != BroadcastSourceKind.EXPORT_CHEST) return 7
         val targetLevel = level.server.getLevel(dim) ?: return 3
         if (!targetLevel.isLoaded(pos)) return 5
         val broadcast = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return 3
@@ -94,14 +101,15 @@ class ReceiverAntennaBlockEntity(
     }
 
     /** Load the paired Broadcast Antenna if in range, same/allowed dimension, matching
-     *  frequency, AND the crystal's kind is [BroadcastSourceKind.PROCESSING_STORAGE].
-     *  A wrong-kind crystal (e.g. paired to a Network Controller) resolves to null here
-     *  so no caller of this method ever receives a broadcast it wasn't meant to consume. */
+     *  frequency, AND the crystal's kind is one the Receiver Antenna consumes
+     *  (PROCESSING_STORAGE for Set fan-out, EXPORT_CHEST for wireless item conveyor).
+     *  A wrong-kind crystal resolves to null here so no caller receives a broadcast
+     *  it wasn't meant to consume. */
     fun getBroadcastAntenna(level: ServerLevel): BroadcastAntennaBlockEntity? {
         val pos = pairedPos ?: return null
         val dim = pairedDimension ?: return null
         val freq = pairedFrequencyId ?: return null
-        if (pairedKind != BroadcastSourceKind.PROCESSING_STORAGE) return null
+        if (pairedKind != BroadcastSourceKind.PROCESSING_STORAGE && pairedKind != BroadcastSourceKind.EXPORT_CHEST) return null
 
         val targetLevel = level.server.getLevel(dim) ?: return null
         if (!targetLevel.isLoaded(pos)) return null
@@ -123,7 +131,9 @@ class ReceiverAntennaBlockEntity(
 
     /** Read pairing data from the chip in the slot. All four pairing fields move
      *  together, any transition through here leaves them either all-set-consistently
-     *  or all-null, never a half-populated state. */
+     *  or all-null, never a half-populated state. Also updates wireless-registry
+     *  membership so an Export Chest broadcast finds (or stops finding) this
+     *  receiver as soon as the crystal flips. */
     private fun updatePairingFromChip() {
         val wasPaired = isPaired
         val stack = items[0]
@@ -132,6 +142,7 @@ class ReceiverAntennaBlockEntity(
             pairedDimension = null
             pairedFrequencyId = null
             pairedKind = null
+            syncWirelessRegistration()
             if (wasPaired != isPaired) updateSegmentConnectedState()
             return
         }
@@ -147,7 +158,31 @@ class ReceiverAntennaBlockEntity(
             pairedFrequencyId = null
             pairedKind = null
         }
+        syncWirelessRegistration()
         if (wasPaired != isPaired) updateSegmentConnectedState()
+    }
+
+    /** Register / unregister this receiver in [WirelessBroadcastRegistry]
+     *  to match its current pairing. Idempotent on repeated calls with the
+     *  same pairing (we track [registeredWirelessFreq] to skip re-adds).
+     *  Only fires for EXPORT_CHEST-kind crystals on a ServerLevel. */
+    private fun syncWirelessRegistration() {
+        val lvl = level as? ServerLevel
+        val freq = pairedFrequencyId
+        val kind = pairedKind
+        val shouldRegister = lvl != null && freq != null && kind == BroadcastSourceKind.EXPORT_CHEST
+
+        if (registeredWirelessFreq == freq && shouldRegister) return
+        // Drop previous registration first.
+        val prev = registeredWirelessFreq
+        if (prev != null && lvl != null) {
+            WirelessBroadcastRegistry.unregister(prev, lvl.dimension(), worldPosition)
+        }
+        registeredWirelessFreq = null
+        if (shouldRegister) {
+            WirelessBroadcastRegistry.register(freq!!, lvl!!.dimension(), worldPosition)
+            registeredWirelessFreq = freq
+        }
     }
 
     // --- Connectable ---
@@ -207,6 +242,9 @@ class ReceiverAntennaBlockEntity(
         if (level is ServerLevel) {
             NodeConnectionHelper.trackNode(level, worldPosition)
             NodeConnectionHelper.queueRevalidation(level, worldPosition)
+            // Registry is per-server-session (not persisted), so a chunk
+            // load after save needs to re-add us.
+            syncWirelessRegistration()
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
     }
@@ -221,6 +259,11 @@ class ReceiverAntennaBlockEntity(
         if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
+            val freq = registeredWirelessFreq
+            if (freq != null) {
+                WirelessBroadcastRegistry.unregister(freq, lvl.dimension(), worldPosition)
+                registeredWirelessFreq = null
+            }
         }
     }
 

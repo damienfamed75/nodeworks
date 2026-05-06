@@ -205,9 +205,10 @@ object PipeLaserBeam {
         val len = sqrt(dx * dx + dy * dy + dz * dz)
         if (len < 0.01f) return
 
-        // Axis-keyed perpendicular basis. (a1, a2) span the plane normal to
-        // [dir]'s axis, picked so opposite directions on the same axis share
-        // identical bases — that's what keeps adjacent pipes' prisms in phase.
+        // Axis-keyed perpendicular basis. (a1, a2) span the plane normal
+        // to [dir]'s axis, picked so opposite directions on the same axis
+        // share identical bases. That's what keeps adjacent pipes' prisms
+        // rotating in phase across the joint.
         var a1x: Float;
         var a1y: Float;
         var a1z: Float

@@ -14,10 +14,8 @@ import net.minecraft.world.phys.Vec3
 
 /**
  * Base render state for every [ConnectableBER]. Holds the source position
- * plus the per-frame extracted inter-block beam list driven off the BE's
- * own [Connectable.getConnections]. Regular Nodes / Pipes never populate
- * `getConnections` so the list is empty and zero geometry emits — only
- * Focus Nodes pay the cost.
+ * plus the per-frame extracted inter-block beam list. Only Focus Nodes
+ * populate `getConnections`, so the cost is zero for every other Connectable.
  */
 open class ConnectableRenderState : BlockEntityRenderState() {
     var pos: BlockPos = BlockPos.ZERO

@@ -34,13 +34,11 @@ object NodeConnectionHelper {
         }
 
     /** Stable, order-independent 64-bit key for a pair of positions. The
-     *  lex-lower endpoint goes in the high 32 bits, so `pairKey(a, b) ==
-     *  pairKey(b, a)`. Two BlockPos pairs at the same coords always hash to
-     *  the same long, even if the encoding loses the absolute world position
-     *  detail (only the bottom 16 bits of each axis are used; collisions across
-     *  far-apart pairs are theoretically possible but the link range cap of
-     *  ~32 blocks plus the "both endpoints must be Advanced Nodes" gate makes
-     *  them practically unreachable in real worlds). */
+     *  lex-lower endpoint goes in the high 32 bits so `pairKey(a, b) ==
+     *  pairKey(b, a)`. Only the bottom 16 bits of each axis are used, so
+     *  collisions across far-apart pairs are theoretically possible. The
+     *  32-block link range cap plus the "both endpoints must be Focus
+     *  Nodes" gate makes that practically unreachable. */
     fun pairKey(a: BlockPos, b: BlockPos): Long {
         val (lo, hi) = if (isLessThan(a, b)) a to b else b to a
         val loPacked = ((lo.x.toLong() and 0xFFFF) shl 32) or
@@ -114,9 +112,9 @@ object NodeConnectionHelper {
         val from = posA.center
         val to = posB.center
         val direction = to.subtract(from).normalize()
-        // Inset both endpoints by ~0.87 so the raycast starts and ends just
-        // outside each Advanced Node's own shape; otherwise self-collision flips
-        // every check to "blocked".
+        // Inset both endpoints by ~0.87 so the raycast starts and ends
+        // just outside each Focus Node's own shape, otherwise self-collision
+        // flips every check to "blocked".
         val offsetFrom = from.add(direction.scale(0.87))
         val offsetTo = to.subtract(direction.scale(0.87))
         val result = level.clip(
@@ -150,17 +148,16 @@ object NodeConnectionHelper {
         losThisTickByDim.clear()
         blockedDataCache.clear()
         nodesByDimension.clear()
+        WirelessBroadcastRegistry.clear()
     }
 
     // --- Per-dimension Connectable chunk index, used by [onBlockChanged] ---
     //
-    // Indexed by 16-block chunk key so a block change only re-validates the
-    // links of Connectables in the 3×3 neighbourhood of the changed pos. The
-    // index is populated for every Connectable that calls [trackNode] from
-    // its `setLevel`, but [checkNodeConnections] short-circuits the moment it
-    // sees `getConnections().isEmpty()` — so only Focus Nodes (the only BE
-    // type that actually populates the connection set in the new pipe-network
-    // design) pay the recheck cost.
+    // Indexed by 16-block chunk key so a block change only re-validates
+    // links in the 3×3 chunk neighbourhood of the changed pos. Every
+    // Connectable's setLevel calls trackNode, but checkNodeConnections
+    // short-circuits on empty getConnections so only Focus Nodes pay the
+    // recheck cost.
 
     private val nodesByDimension = ConcurrentHashMap<ResourceKey<Level>, ConcurrentHashMap<Long, MutableSet<BlockPos>>>()
 
@@ -216,18 +213,16 @@ object NodeConnectionHelper {
         }
     }
 
-    /** Add a Connectable to the per-dimension chunk index so [onBlockChanged]
-     *  can find it when a block changes nearby. Called from each Connectable
-     *  BE's `setLevel`. Cheap — one set add. */
+    /** Add a Connectable to the chunk index so [onBlockChanged] can find it
+     *  when a block changes nearby. Called from each Connectable's `setLevel`. */
     fun trackNode(level: ServerLevel, pos: BlockPos) {
         chunkIndex(level).computeIfAbsent(chunkKeyOf(pos)) {
             java.util.Collections.newSetFromMap(ConcurrentHashMap())
         }.add(pos)
     }
 
-    /** Remove a Connectable from the chunk index. Called from `setRemoved`
-     *  and from `onChunkUnloaded`. The set is left in place even when empty;
-     *  cleanup happens lazily on the next [trackNode] in the chunk. */
+    /** Remove a Connectable from the chunk index. The chunk's set is left
+     *  in place when empty, cleanup happens lazily on the next [trackNode]. */
     fun untrackNode(level: ServerLevel, pos: BlockPos) {
         val chunks = nodesByDimension[level.dimension()] ?: return
         val key = chunkKeyOf(pos)
@@ -328,7 +323,7 @@ object NodeConnectionHelper {
         val entityB = getConnectable(level, posB)
         entityA?.removeConnection(posB)
         entityB?.removeConnection(posA)
-        // Drop the persisted blocked-pair record too — disconnection invalidates it.
+        // Disconnection invalidates the persisted blocked-pair record.
         setPairBlocked(level, posA, posB, false)
         if (entityA != null) propagateNetworkId(level, posA)
         if (entityB != null) propagateNetworkId(level, posB)
@@ -354,10 +349,9 @@ object NodeConnectionHelper {
             }
             for (conn in entity.getConnections()) {
                 if (!level.isLoaded(conn)) continue
-                // Lazy LOS recheck: re-raycast on first walk through this pair
-                // per tick, persisted result skips the raycast on subsequent
-                // walks. Blocked pairs are silently skipped — the link still
-                // exists in both BEs but doesn't propagate network membership.
+                // Lazy LOS recheck on first walk through this pair per tick.
+                // Blocked pairs stay in both BEs' connection sets but skip
+                // network propagation here.
                 if (!checkLineOfSightCached(level, pos, conn)) continue
                 if (visited.add(conn)) queue.add(conn)
             }
@@ -368,12 +362,12 @@ object NodeConnectionHelper {
         return null
     }
 
-    /** BFS from a position to find a controller and propagate its networkId to all reachable
-     *  connectables. With lasers gone, the graph is just `getConnections()` (legacy wrench
-     *  links on non-Node Connectables) plus face-adjacency. No LOS gating required.
+    /** BFS to find a controller and propagate its networkId to all reachable
+     *  Connectables. Walks both `getConnections()` (Focus Node laser links)
+     *  and face-adjacency, gated on LOS for the laser side.
      *
-     *  Per-tick dedup via [propagatedThisTickByDim]: a second call in the same tick whose
-     *  startPos was already covered by a prior propagate's BFS is a no-op. Keeps cost
+     *  Per-tick dedup via [propagatedThisTickByDim]: a second call whose
+     *  startPos was already covered by a prior propagate's BFS no-ops. Keeps cost
      *  bounded when many blocks change near a large network in a single tick. */
     fun propagateNetworkId(level: ServerLevel, startPos: BlockPos) {
         val coveredThisTick = propagatedThisTick(level)
@@ -455,21 +449,18 @@ object NodeConnectionHelper {
         return out
     }
 
-    /** Re-propagate from this position when a Connectable's chunk loads. Adjacency is the
-     *  source of truth now, no LOS reconciliation needed. */
+    /** Re-propagate from this position when a Connectable's chunk loads. */
     fun revalidateOnLoad(level: ServerLevel, self: Connectable) {
         propagateNetworkId(level, self.getBlockPos())
     }
 
     // --- Block-change driven LOS revalidation ---
     //
-    // Mixin into Level.setBlock fires this on every block change server-side.
-    // We walk the chunk index in the 3×3 neighbourhood of the changed pos,
-    // re-raycast each link that passes near here, and update blocked-pair
-    // state + propagate accordingly. Identical flow to the pre-pipe-refactor
-    // Node behaviour; the only difference is "Connectable" now means Focus
-    // Node in practice (other BEs have empty getConnections so the loop
-    // skips them).
+    // Fired by [ServerLevelSetBlockMixin] on every block change. Walks the
+    // 3×3 chunk neighbourhood, re-raycasts each link passing near here,
+    // updates blocked-pair state + propagates. Connectables with empty
+    // getConnections (everything but Focus Nodes) short-circuit, so this
+    // only does real work for the small fraction of BEs that have laser links.
 
     fun onBlockChanged(level: ServerLevel, changedPos: BlockPos) {
         val chunks = nodesByDimension[level.dimension()] ?: return
@@ -491,36 +482,32 @@ object NodeConnectionHelper {
         if (connections.isEmpty()) return
 
         for (targetPos in connections) {
-            // Each pair handled from its lex-lower endpoint, so we don't
-            // double-process A↔B from both A and B's checkNodeConnections.
+            // Process each pair from its lex-lower endpoint to avoid the
+            // A→B + B→A double-walk.
             if (!isLessThan(nodePos, targetPos)) continue
-            // Only the 3-block-thick AABB around the link can possibly
-            // affect LOS, skip the raycast for changes outside it.
+            // Skip raycast for changes outside the link's bounding AABB.
             if (!isInsideConnectionBounds(nodePos, targetPos, changedPos)) continue
 
             val wasBlocked = isPairBlocked(level, nodePos, targetPos)
             val hasLos = checkLineOfSight(level, nodePos, targetPos)
             val flipped = hasLos == wasBlocked
 
-            // Stale-cache heal: on server load the blocked-set starts empty,
-            // so a "restored LOS" event can look like no change (wasBlocked=
-            // false, hasLos=true). Detect by cross-checking endpoint network
-            // ids; if LOS is clear but they don't agree on the same network,
-            // a propagate is needed.
+            // Stale-cache heal: on first server load the blocked-set is
+            // empty so a "restored LOS" event looks like no change. Detect
+            // by cross-checking endpoint networkIds, mismatch with clear LOS
+            // means propagate is needed.
             val targetEntity = getConnectable(level, targetPos)
             val inconsistent = hasLos && targetEntity != null && entity.networkId != targetEntity.networkId
 
             if (!flipped && !inconsistent) continue
 
-            // LOS just broke and the obstruction is itself a fresh Focus
-            // Node? Splice A↔B → A↔C↔B instead of marking blocked.
+            // Auto-splice when the new obstruction is itself a fresh Focus Node.
             if (!wasBlocked && !hasLos && trySplice(level, nodePos, targetPos, changedPos)) continue
 
             setPairBlocked(level, nodePos, targetPos, !hasLos)
             propagateNetworkId(level, nodePos)
-            // LOS-break: the far end may have just orphaned its controller;
-            // the BFS from nodePos won't reach it through the now-blocked
-            // edge, so propagate from the other side too.
+            // BFS from nodePos can't cross the now-blocked edge, so the far
+            // end (which may have lost its controller) needs its own propagate.
             if (!hasLos) propagateNetworkId(level, targetPos)
         }
     }
@@ -552,9 +539,8 @@ object NodeConnectionHelper {
         splicer.addConnection(posB)
         entityA.removeConnection(posB)
         entityB.removeConnection(posA)
-        // Persisted blocked-set update routed through [setPairBlocked] for
-        // the dirty flag; otherwise a stale A↔B blocked entry would come
-        // back from disk on restart.
+        // Routed through [setPairBlocked] for the dirty flag, otherwise
+        // a stale A->B blocked entry would come back from disk on restart.
         setPairBlocked(level, posA, posB, false)
 
         propagateNetworkId(level, splicerPos)

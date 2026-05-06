@@ -13,11 +13,11 @@ import net.minecraft.world.phys.Vec3
 import java.util.EnumSet
 
 /**
- * Renders the network-tinted laser inside Pipe blocks. Geometry comes from
- * [PipeLaserBeam], one half-beam per connected face emanating from the block
- * centre. Pipe.networkColor() is hardcoded to grey on purpose so the body
- * texture stays neutral copper, the laser tint comes from a direct registry
- * lookup against the propagated networkId.
+ * Inside-pipe network laser. Pulls the connected directions off the
+ * blockstate, the colour and mode out of [NetworkSettingsRegistry], hands
+ * everything to [PipeLaserBeam]. PipeBlockEntity.networkColor() is
+ * hardcoded grey so the model stays neutral copper, the laser tint goes
+ * through a direct registry lookup instead.
  */
 class PipeRenderer(context: BlockEntityRendererProvider.Context) :
     ConnectableBER<PipeBlockEntity, PipeRenderer.RenderState>(context) {
@@ -26,9 +26,8 @@ class PipeRenderer(context: BlockEntityRendererProvider.Context) :
         var directions: EnumSet<Direction> = EnumSet.noneOf(Direction::class.java)
         var color: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         var laserMode: Int = NetworkSettingsRegistry.LASER_MODE_FANCY
-        /** False when the pipe has no controller (orphan or pre-network).
-         *  Suppresses the inner laser entirely so disconnected cables read as
-         *  inert hardware rather than glowing-but-grey. */
+        /** False on orphaned pipes (no controller). Suppresses the inner
+         *  laser so disconnected cables read as inert hardware. */
         var hasNetwork: Boolean = false
     }
 
@@ -61,13 +60,9 @@ class PipeRenderer(context: BlockEntityRendererProvider.Context) :
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
-        // No laser at all on orphaned pipes. The pipe body itself is still
-        // rendered by the JSON model.
         if (!state.hasNetwork) return
-        // Centre-core mask is only useful where multiple half-beams meet.
-        // A clean straight pipe (two opposite directions) draws as a single
-        // continuous line so the centre cube would just stick out for no
-        // reason, skip it there.
+        // Skip the centre cube on straight runs, the two half-beams form one
+        // continuous line so there's no seam to mask.
         val drawCenterCore = state.directions.isNotEmpty() && !isStraightLine(state.directions)
         PipeLaserBeam.submit(
             poseStack, submitNodeCollector, state.pos, camera.pos,

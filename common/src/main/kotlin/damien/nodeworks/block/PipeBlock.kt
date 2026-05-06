@@ -78,9 +78,9 @@ class PipeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
         fun propFor(side: Direction): BooleanProperty = PIPE_PROPS[side.ordinal]
 
-        /** Whether the pipe at [pos] should connect to its neighbour in [side].
-         *  True when the neighbour is a [Connectable] BE — Pipes, Nodes,
-         *  Controllers, Terminals, antennas, ImportChest, ExportChest, etc. */
+        /** Whether the pipe at [pos] should connect to its neighbour in
+         *  [side]. True when the neighbour is any [Connectable] BE and
+         *  neither side has wrench-blocked the touching face. */
         fun computePipeFlag(level: BlockGetter, pos: BlockPos, side: Direction): Boolean {
             val neighborPos = pos.relative(side)
             val neighborBe = level.getBlockEntity(neighborPos) as? Connectable ?: return false

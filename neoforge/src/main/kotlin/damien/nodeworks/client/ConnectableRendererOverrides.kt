@@ -7,21 +7,15 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.world.phys.AABB
 
 /**
- * NeoForge-only BER subclasses that override `getRenderBoundingBox(BE)` to
- * encompass every block this Connectable has a laser link to. The default
- * unit-cube box causes the frustum culler to drop the BER — and thus the
- * connection beams it submits — the moment the source block leaves the
- * viewport, making long-range lasers vanish whenever the player looks away
- * from the source endpoint.
+ * NeoForge-only BER override of `getRenderBoundingBox(BE)` so the frustum
+ * culler keeps the BER alive whenever any of its laser links is on screen.
+ * The default unit-cube box drops the BER (and its beams) the moment the
+ * source block leaves the viewport.
  *
- * The override lives here (not in `:common`) because `getRenderBoundingBox`
- * comes from `IBlockEntityRendererExtension`, a NeoForge-only extension of
- * `BlockEntityRenderer`; `:common` compiles against pure NeoForm and can't
- * see that interface.
- *
- * Scoped to the Focus Node renderer only — regular Nodes / Pipes / etc. have
- * empty `getConnections()` so [FocusBeamRenderer.computeBoundingBox] would
- * collapse to a unit cube anyway. No reason to wrap their renderers.
+ * Scoped to Focus Nodes only because every other Connectable has an empty
+ * connection set, so [FocusBeamRenderer.computeBoundingBox] would collapse
+ * to a unit cube anyway. Lives in `:neoforge` because `getRenderBoundingBox`
+ * comes from `IBlockEntityRendererExtension`, a NeoForge-only interface.
  */
 class FocusNodeRenderer(ctx: BlockEntityRendererProvider.Context) : NodeRenderer(ctx) {
     override fun getRenderBoundingBox(blockEntity: NodeBlockEntity): AABB =

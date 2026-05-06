@@ -8,16 +8,10 @@ import net.minecraft.world.level.saveddata.SavedData
 import net.minecraft.world.level.saveddata.SavedDataType
 
 /**
- * Per-dimension persisted set of LOS-blocked Advanced Node link pairs, keyed
- * by [NodeConnectionHelper.pairKey]. Saved via the vanilla SavedData mechanism
- * so the cache survives a world reload and propagate doesn't have to re-raycast
- * every link to self-heal — that scales poorly to networks with many
- * Advanced Nodes.
- *
- * The pipe-network refactor narrowed the scope: only Advanced-Node-to-Advanced-Node
- * laser links live here. Pipe and Node adjacency carries no LOS check, so the
- * pair set's size is bounded by the count of explicit wrench-linked pairs, not
- * by total network size.
+ * Per-dimension persisted set of LOS-blocked Focus Node link pairs, keyed
+ * by [NodeConnectionHelper.pairKey]. Persisting it lets propagate skip the
+ * raycast on most ticks, only re-checking when the block-change mixin or
+ * the lazy gate fires.
  */
 class BlockedPairsData : SavedData {
     val pairs: MutableSet<Long> = HashSet()

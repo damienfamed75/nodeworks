@@ -29,6 +29,13 @@ import java.util.function.Consumer
 enum class BroadcastSourceKind {
     PROCESSING_STORAGE,
     NETWORK_CONTROLLER,
+
+    /** Broadcast Antenna sits on top of an Export Chest. The chest broadcasts
+     *  its outgoing items to any Receiver Antenna paired with this frequency.
+     *  Receivers must have an Import Chest below them; items round-robin
+     *  across all paired receivers. Used to wirelessly bridge networks
+     *  without a controller-level link. */
+    EXPORT_CHEST,
 }
 
 /**
@@ -51,6 +58,7 @@ class LinkCrystalItem(properties: Properties) : Item(properties) {
         val kindLabel = when (data.kind) {
             BroadcastSourceKind.PROCESSING_STORAGE -> "Processing Storage"
             BroadcastSourceKind.NETWORK_CONTROLLER -> "Network Controller"
+            BroadcastSourceKind.EXPORT_CHEST -> "Export Chest"
         }
         tooltip.accept(
             Component.literal("Paired to $kindLabel at (${data.pos.x}, ${data.pos.y}, ${data.pos.z})")

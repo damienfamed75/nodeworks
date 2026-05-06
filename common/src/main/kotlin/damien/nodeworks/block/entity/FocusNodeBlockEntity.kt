@@ -12,15 +12,11 @@ import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
 
 /**
- * Focus Node block entity. Inherits all the regular Node behaviour
- * (cards, faces, redstone, container, capabilities) and adds persisted
- * focused-laser-link connections to other Focus Nodes.
- *
- * The link set lives on the inherited [connections] field, so existing
- * `Connectable` machinery (`getConnections`, `addConnection`,
- * `removeConnection`, `hasConnection`) just works without override. Only
- * persistence needs the subclass touch — regular Nodes deliberately don't
- * write the set to NBT to keep the on-disk footprint minimal, this BE does.
+ * Focus Node block entity. Inherits all the regular Node behaviour and
+ * adds persisted focused-laser-link connections. Uses the inherited
+ * [connections] set so the existing Connectable machinery just works.
+ * Regular Nodes don't write that set to NBT to keep their footprint
+ * minimal, this BE does.
  */
 class FocusNodeBlockEntity(
     pos: BlockPos,
@@ -36,17 +32,13 @@ class FocusNodeBlockEntity(
 
     override fun loadAdditional(input: ValueInput) {
         super.loadAdditional(input)
-        // Parent's loadAdditional has already cleared `connections` (regular
-        // Nodes use that path to drop legacy laser links). Re-populate from
-        // the persisted list so wrench-linked endpoints survive a reload.
+        // Parent loadAdditional already cleared `connections` to drop legacy
+        // laser links from regular Nodes. Repopulate from the persisted list.
         connections.addAll(input.getBlockPosList("connections"))
     }
 
     override fun setLevel(newLevel: Level) {
         super.setLevel(newLevel)
-        // Register in the per-dimension chunk index so the
-        // [ServerLevelSetBlockMixin] hook can find this Focus Node when a
-        // block changes nearby and re-validate its laser links.
         if (newLevel is ServerLevel) {
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
         }

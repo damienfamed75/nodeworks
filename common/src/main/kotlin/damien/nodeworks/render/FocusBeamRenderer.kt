@@ -20,15 +20,13 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Per-BlockEntity laser rendering for the inter-block beams between linked
- * Focus Nodes. Only Focus Nodes populate `getConnections()` in the new
- * pipe-network design, so this implicitly scopes itself to those without
- * needing an explicit type check.
+ * Inter-block laser beams between linked Focus Nodes. Only Focus Nodes
+ * populate `getConnections()`, so this implicitly scopes itself to them
+ * with no explicit type check.
  *
- * Lex-lower endpoint draws the beam — each pair renders exactly once even
- * though both BEs independently extract their own beam list. Use the same
- * [LASER_TEXTURE] + beacon-beam render type as [PipeLaserBeam] so the inside
- * a Focus Node and its outgoing laser look continuous.
+ * Each pair is rendered once from its lex-lower endpoint. Reuses the same
+ * laser texture and beacon-beam render type as [PipeLaserBeam] so the
+ * inside-pipe and outgoing beams read as continuous.
  */
 object FocusBeamRenderer {
 
@@ -43,12 +41,9 @@ object FocusBeamRenderer {
     private const val BEAM_WIDTH = 1f / 16f
     private const val BEAM_SCROLL_SPEED = 0.8f
 
-    /** Pre-extracted render data for one beam, all coordinates **block-relative**
-     *  so the BER's pose transform (already centered on the source block) renders
-     *  it without an additional translate. [mode] follows the source network's
-     *  laser-mode setting so a Fancy network shows the prism + glow combo, a
-     *  Fast network shows the thin billboard. [blocked] flips the colour to a
-     *  red warning tint. */
+    /** Pre-extracted render data for one beam. Coordinates are block-relative
+     *  so the BER's pose transform (already at the source block) renders
+     *  without an extra translate. [blocked] flips the colour to red. */
     data class Beam(
         val toDx: Float,
         val toDy: Float,
@@ -60,11 +55,10 @@ object FocusBeamRenderer {
         val mode: Int = NetworkSettingsRegistry.LASER_MODE_FANCY,
     )
 
-    /** Collect the inter-block beams this [Connectable] should render this
-     *  frame. Each pair is emitted from the lex-lower endpoint only so the
-     *  beam draws exactly once across both ends. If the lower endpoint's
-     *  chunk is unloaded the beam is missing — but the target block isn't
-     *  visible there either, so this matches what the player sees. */
+    /** Collect the inter-block beams to render this frame. Each pair emits
+     *  from its lex-lower endpoint so the beam draws once across both ends.
+     *  An unloaded lower endpoint drops the beam, but the target isn't
+     *  visible from there either, so this matches what the player sees. */
     fun extract(connectable: Connectable): List<Beam> {
         val be = connectable as? net.minecraft.world.level.block.entity.BlockEntity ?: return emptyList()
         val level = be.level ?: return emptyList()
@@ -88,12 +82,9 @@ object FocusBeamRenderer {
                 else -> NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
             }
 
-            // Fresh client-side raycast per frame so the red "blocked" tint
-            // reacts to the player walling off / mining out the line in real
-            // time, no server packet sync required. [checkLineOfSight] takes
-            // a plain [Level] so it runs identically on both ClientLevel and
-            // ServerLevel; per-pair cost is one VISUAL clip, dominated by the
-            // adjacent-block early-out for short links.
+            // Fresh client-side raycast each frame so the red "blocked" tint
+            // reacts immediately to the player walling off the line. No server
+            // packet sync needed since [checkLineOfSight] runs on either side.
             val blocked = !NodeConnectionHelper.checkLineOfSight(level, myPos, targetPos)
 
             beams.add(
@@ -112,11 +103,9 @@ object FocusBeamRenderer {
         return beams
     }
 
-    /** Emit geometry for each extracted [Beam]. Submitted before any
-     *  block-specific BER geometry so the inter-block beam draws under the
-     *  block's own model. Two render-type batches max — opaque (fancy prism
-     *  core) and translucent (fancy outer glow + fast thin quad) — to keep
-     *  pipeline switches minimal. */
+    /** Emit geometry for each extracted [Beam]. Two render-type batches max:
+     *  opaque (fancy prism core) and translucent (fancy outer glow + fast
+     *  billboard), so pipeline switches stay minimal. */
     fun submit(
         beams: List<Beam>,
         poseStack: PoseStack,
@@ -142,9 +131,8 @@ object FocusBeamRenderer {
         val (fastBeams, fancyBeams) = beams.partition { it.mode == NetworkSettingsRegistry.LASER_MODE_FAST }
 
         if (fancyBeams.isNotEmpty()) {
-            // Pass 1: opaque rotating white prism core. Skip blocked beams —
-            // the absence of a core sells "this link is dead" alongside the
-            // red glow.
+            // Pass 1: opaque rotating white prism core. Blocked beams skip
+            // this so the missing core reads as "this link is dead".
             submitNodeCollector.submitCustomGeometry(poseStack, OPAQUE_TYPE) { pose, vc ->
                 for (beam in fancyBeams) {
                     if (beam.blocked) continue
@@ -216,11 +204,9 @@ object FocusBeamRenderer {
         }
     }
 
-    /** AABB encompassing this Connectable plus every block it has a
-     *  connection to. BERs use this as `getRenderBoundingBox` so the
-     *  frustum culler keeps the BER alive whenever any beam it draws is
-     *  visible — the default unit-cube box culls the BER (and thus its
-     *  beams) the moment the source block leaves the frustum. */
+    /** AABB encompassing this Connectable plus every block it has a link
+     *  to. BERs feed this into `getRenderBoundingBox` so the frustum culler
+     *  keeps the BER alive whenever any beam it draws is on screen. */
     fun computeBoundingBox(connectable: Connectable): AABB {
         val be = connectable as? net.minecraft.world.level.block.entity.BlockEntity
             ?: return AABB(BlockPos.ZERO)

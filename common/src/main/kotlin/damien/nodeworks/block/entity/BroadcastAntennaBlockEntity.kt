@@ -86,10 +86,9 @@ class BroadcastAntennaBlockEntity(
      */
     fun detectSource(): Pair<BroadcastSourceKind, BlockPos>? {
         val lvl = level ?: return null
-        // First pass: Controller wins because it's the more general source. A player who
-        // deliberately wants the processing-set broadcast can still get it by siting the
-        // antenna away from the Controller, the Controller grabs priority only when both
-        // blocks happen to be adjacent to the same antenna.
+        // Priority: Controller (most general) > Processing Storage > Export
+        // Chest. Players who want a lower-priority broadcast can place the
+        // antenna away from higher-priority sources.
         for (dir in Direction.entries) {
             val neighbor = worldPosition.relative(dir)
             if (!lvl.isLoaded(neighbor)) continue
@@ -104,6 +103,14 @@ class BroadcastAntennaBlockEntity(
             val entity = lvl.getBlockEntity(neighbor)
             if (entity is ProcessingStorageBlockEntity) {
                 return BroadcastSourceKind.PROCESSING_STORAGE to neighbor
+            }
+        }
+        for (dir in Direction.entries) {
+            val neighbor = worldPosition.relative(dir)
+            if (!lvl.isLoaded(neighbor)) continue
+            val entity = lvl.getBlockEntity(neighbor)
+            if (entity is ExportChestBlockEntity) {
+                return BroadcastSourceKind.EXPORT_CHEST to neighbor
             }
         }
         return null

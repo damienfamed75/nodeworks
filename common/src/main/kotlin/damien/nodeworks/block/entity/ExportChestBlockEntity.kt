@@ -128,6 +128,12 @@ class ExportChestBlockEntity(
     @Transient
     private var tickCounter: Int = 0
 
+    /** Round-robin cursor across paired wireless receivers. Advances by one
+     *  per slot pushed in [pushWireless], so a chest with 2 receivers + 4
+     *  loaded slots distributes 2 slots to each receiver per active tick. */
+    @Transient
+    private var wirelessReceiverCursor: Int = 0
+
     @Transient
     private val chestLidController = ChestLidController()
 
@@ -183,6 +189,11 @@ class ExportChestBlockEntity(
         // items still drains even with no rules.
         if (filterRules.isNotEmpty()) pullFromNetwork(level)
         if (pushFace != null) pushToAdjacent(level, pushFace!!)
+        // Wireless dispatch: if a Broadcast Antenna is sitting next to this
+        // chest, fan items out to every Receiver Antenna paired with that
+        // antenna's frequency. Independent of the local pushFace so a chest
+        // can do both at once.
+        pushWireless(level)
     }
 
     /** Whitelist match: any rule hits = accept. */
@@ -260,6 +271,83 @@ class ExportChestBlockEntity(
             }
         }
         return stack.count - remaining
+    }
+
+    /** Wireless dispatch via an adjacent Broadcast Antenna. Fans the chest's
+     *  slots out round-robin to every paired Receiver Antenna that has an
+     *  Import Chest below it. Two receivers split a 9-slot chest 5/4 per tick. */
+    private fun pushWireless(level: ServerLevel) {
+        val broadcast = adjacentBroadcastAntenna(level) ?: return
+        val freq = broadcast.frequencyId
+        val receivers = damien.nodeworks.network.WirelessBroadcastRegistry.getReceivers(freq)
+        if (receivers.isEmpty()) return
+
+        // Snapshot so the cursor sees a stable index space across the loop.
+        val targets = receivers.mapNotNull { resolveWirelessTarget(level, broadcast, it) }
+        if (targets.isEmpty()) return
+
+        var changed = false
+        for (i in 0 until SLOT_COUNT) {
+            val slot = items[i]
+            if (slot.isEmpty) continue
+            val target = targets[wirelessReceiverCursor % targets.size]
+            wirelessReceiverCursor = (wirelessReceiverCursor + 1) % targets.size
+            val before = slot.count
+            val inserted = PlatformServices.storage.insertItemStack(target, slot)
+            if (inserted > 0) {
+                slot.shrink(inserted)
+                changed = true
+            }
+            // Some platforms mutate the stack instead of returning a count.
+            if (slot.count != before - inserted && slot.count < before) changed = true
+        }
+        if (changed) setChanged()
+    }
+
+    /** Find an adjacent Broadcast Antenna whose detected source resolves
+     *  back to this chest. Symmetric to [BroadcastAntennaBlockEntity.detectSource]. */
+    private fun adjacentBroadcastAntenna(level: ServerLevel): BroadcastAntennaBlockEntity? {
+        for (dir in Direction.entries) {
+            val neighborPos = worldPosition.relative(dir)
+            if (!level.isLoaded(neighborPos)) continue
+            val be = level.getBlockEntity(neighborPos) as? BroadcastAntennaBlockEntity ?: continue
+            val source = be.detectSource() ?: continue
+            if (source.first == damien.nodeworks.item.BroadcastSourceKind.EXPORT_CHEST
+                && source.second == worldPosition) return be
+        }
+        return null
+    }
+
+    /** Resolve a registry entry to a writable item-storage handle, gated
+     *  on range, dimension, chunk-load, and "Import Chest below the receiver". */
+    private fun resolveWirelessTarget(
+        level: ServerLevel,
+        broadcast: BroadcastAntennaBlockEntity,
+        receiver: damien.nodeworks.network.WirelessBroadcastRegistry.Receiver,
+    ): damien.nodeworks.platform.ItemStorageHandle? {
+        val targetLevel = level.server.getLevel(receiver.dimension) ?: return null
+        if (!targetLevel.isLoaded(receiver.pos)) return null
+        val recvBe = targetLevel.getBlockEntity(receiver.pos) as? ReceiverAntennaBlockEntity ?: return null
+        // Receiver lost its crystal mid-broadcast?
+        if (!recvBe.isPaired) return null
+
+        // Cross-dimension gating mirrors ReceiverAntennaBlockEntity.getBroadcastAntenna.
+        val sameDim = broadcast.level?.dimension() == receiver.dimension
+        if (!sameDim && !broadcast.allowsCrossDimension) return null
+        if (sameDim) {
+            val dx = broadcast.blockPos.x - receiver.pos.x.toDouble()
+            val dy = broadcast.blockPos.y - receiver.pos.y.toDouble()
+            val dz = broadcast.blockPos.z - receiver.pos.z.toDouble()
+            val range = broadcast.effectiveRange
+            if (dx * dx + dy * dy + dz * dz > range * range) return null
+        }
+
+        // Receiver Antenna sits directly above its destination Import Chest.
+        val destPos = receiver.pos.below()
+        if (!targetLevel.isLoaded(destPos)) return null
+        val destBe = targetLevel.getBlockEntity(destPos)
+        if (destBe !is ImportChestBlockEntity) return null
+        return PlatformServices.storage.getItemStorage(targetLevel, destPos, Direction.UP)
     }
 
     /** Drain buffer into the inventory adjacent to [face]. Uses the platform's

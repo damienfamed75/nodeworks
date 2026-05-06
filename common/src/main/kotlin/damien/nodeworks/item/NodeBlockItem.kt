@@ -9,16 +9,10 @@ import net.minecraft.world.item.context.UseOnContext
 import net.minecraft.world.level.block.Block
 
 /**
- * BlockItem for the Node block. Two placement paths:
- *
- *  - **Right-click a [PipeBlock]**: swap the pipe in place for a Node, the
- *    Node inherits the pipe's connection booleans so the network stays
- *    intact through the substitution. This is the natural "upgrade pipe to
- *    node" flow.
- *  - **Shift+right-click a Pipe, or right-click anything else**: fall through
- *    to the standard [BlockItem.place] flow, which drops the Node at the
- *    adjacent position (or wherever vanilla decides). Lets players plant a
- *    standalone Node next to an existing pipe run without consuming it.
+ * BlockItem for the Node block. Plain right-click on a Pipe swaps it
+ * in-place for a Node (preserving connection booleans), shift+right-click
+ * on a Pipe or right-click on anything else falls through to vanilla's
+ * standard adjacent-placement flow.
  */
 class NodeBlockItem(block: Block, properties: Properties) : BlockItem(block, properties) {
 
@@ -28,25 +22,18 @@ class NodeBlockItem(block: Block, properties: Properties) : BlockItem(block, pro
         val state = level.getBlockState(pos)
         val player = context.player
 
-        // Only the non-shift, click-on-pipe case triggers the in-place swap.
-        // Shift override + non-pipe clicks both fall through to BlockItem's
-        // default place flow.
         val swapPath = state.block is PipeBlock && player != null && !player.isShiftKeyDown
         if (!swapPath) return super.useOn(context)
 
         if (level.isClientSide) return InteractionResult.SUCCESS
 
-        // Compute the Node state directly against the pipe's neighbours.
-        // Going through BlockPlaceContext.getStateForPlacement would query
-        // neighbours of `clickedPos.relative(clickedFace)` (the offset
-        // placement position vanilla would use for non-replaceable blocks),
-        // not of the pipe's actual position, so we'd see the wrong adjacency.
+        // Computing state via BlockPlaceContext.getStateForPlacement would
+        // query neighbours of `clickedPos.relative(clickedFace)` (the offset
+        // position used for non-replaceable blocks), not the pipe's own pos.
         val nodeState = NodeBlock.rebuildState(level, pos, block.defaultBlockState())
 
-        // setBlock with UPDATE_ALL so the previous PipeBlockEntity is removed
-        // (Block.setBlock detaches the BE on type change) and the new
-        // NodeBlockEntity is created with a fresh networkId, the propagate
-        // pass below repopulates it.
+        // UPDATE_ALL ensures the old PipeBlockEntity detaches and the new
+        // NodeBlockEntity gets a fresh networkId for the propagate below.
         level.setBlock(pos, nodeState, Block.UPDATE_ALL)
         if (!player!!.abilities.instabuild) context.itemInHand.shrink(1)
 

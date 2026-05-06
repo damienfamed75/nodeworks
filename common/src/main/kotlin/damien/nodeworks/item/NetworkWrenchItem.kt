@@ -75,9 +75,8 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         else plainClick(level, pos, player, be)
     }
 
-    /** Plain right-click flow: connect this Focus Node to the pending
-     *  selection. No selection → hint message. Non-Focus-Node click → no-op
-     *  (vanilla blocks fall through to their own right-click behaviour). */
+    /** Plain right-click on a Focus Node: link/unlink it against the pending
+     *  selection. Non-Focus-Node clicks PASS so vanilla blocks behave normally. */
     private fun plainClick(
         level: Level,
         pos: BlockPos,
@@ -103,9 +102,9 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         }
 
         val result = NodeConnectionHelper.toggleConnection(serverLevel, pending.pos, pos)
-        // Keep the selection on success so the player can chain-link from one
-        // source to many targets. Drop on InvalidEndpoint (the source BE
-        // disappeared mid-flow) so they're not stuck pointing at nothing.
+        // Keep the selection across successful links so the player can
+        // chain-bind one source to many targets. Drop only when the source
+        // BE itself vanished mid-flow.
         if (result is NodeConnectionHelper.ConnectResult.InvalidEndpoint) {
             selections.remove(player.uuid)
         }
@@ -113,12 +112,9 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         return InteractionResult.SUCCESS
     }
 
-    /** Shift-click flow. Routes between two paths based on what the clicked
-     *  face touches:
-     *   * Focus Node face that ISN'T touching another Connectable → select.
-     *     The face has nothing else to do (no pipe stub there) so we
-     *     repurpose the gesture for picking a link source.
-     *   * Anything else → standard per-face force-block toggle. */
+    /** Shift-click flow. Free-face Focus Node clicks select that node as the
+     *  link source. Every other case falls through to the per-face
+     *  force-block toggle (the original disconnect path). */
     private fun shiftClick(
         context: UseOnContext,
         level: Level,
@@ -169,9 +165,8 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         player.sendSystemMessage(msg)
     }
 
-    /** Per-face force-block toggle. Symmetric — clearing the flag on either
-     *  side reconnects, setting on either side disconnects. Lets the player
-     *  break a connection from one side and re-connect from either. */
+    /** Per-face force-block toggle. Symmetric: clearing the flag on either
+     *  side reconnects, setting on either side disconnects. */
     private fun faceToggle(level: Level, pos: BlockPos, side: Direction, be: Connectable): InteractionResult {
         if (level.isClientSide) return InteractionResult.SUCCESS
 
@@ -197,12 +192,11 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         return InteractionResult.SUCCESS
     }
 
-    /** Pick the direction the player meant by clicking. Stubs are small and
-     *  off-axis (e.g. the top face of an east-going stub returns UP from
-     *  vanilla's hit-face). Vector from block centre to hit point points
-     *  outward in the direction of the clicked stub or face, so the
-     *  dominant-magnitude axis is the right answer for both stub-side and
-     *  bare-core clicks. */
+    /** Resolve which direction the player aimed at. Vanilla's hit-face is
+     *  unreliable for thin stubs (clicking the top of an east-going stub
+     *  returns UP), so we use the dominant-magnitude axis of the
+     *  centre-to-hit-point vector instead. Works for stub sides, stub ends,
+     *  and bare core faces. */
     private fun resolveClickedSide(pos: BlockPos, hit: Vec3): Direction {
         val dx = hit.x - (pos.x + 0.5)
         val dy = hit.y - (pos.y + 0.5)
@@ -215,9 +209,9 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
         }
     }
 
-    /** Recompute Pipe / Node multipart booleans against current `forcedPipeBlocked`
-     *  state. Skip non-Pipe / non-Node Connectables, they have no `pipe_*`
-     *  properties (Controller / Terminal / chests render their own model). */
+    /** Recompute Pipe / Node multipart booleans against current
+     *  `forcedPipeBlocked` state. Other Connectables have no `pipe_*`
+     *  properties so we skip them. */
     private fun refreshPipeState(level: ServerLevel, pos: BlockPos) {
         if (!level.isLoaded(pos)) return
         val state = level.getBlockState(pos)
