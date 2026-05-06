@@ -1,12 +1,12 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "DGD",
-    "GCG",
-    "DGD"
+    "ICI",
+    "CGC",
+    "ICI"
   ],
   "key": {
-    "D": "minecraft:deepslate",
+    "I": "minecraft:iron_ingot",
     "C": "nodeworks:celestine_shard",
     "G": "#c:glass_panes"
   },

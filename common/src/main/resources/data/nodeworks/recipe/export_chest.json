@@ -6,7 +6,7 @@
     "CNC"
   ],
   "key": {
-    "C": "minecraft:copper_ingot",
+    "C": "minecraft:redstone",
     "H": "#c:chests/wooden",
     "P": "minecraft:piston",
     "D": "minecraft:deepslate",

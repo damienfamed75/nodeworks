@@ -2,14 +2,13 @@
   "type": "minecraft:crafting_shaped",
   "pattern": [
     "CCC",
-    "DED",
-    "DOD"
+    "DOD",
+    "DDD"
   ],
   "key": {
     "C": "nodeworks:celestine_shard",
     "D": "minecraft:deepslate",
-    "O": "minecraft:observer",
-    "E": "minecraft:emerald"
+    "O": "minecraft:observer"
   },
   "result": {
     "id": "nodeworks:diagnostic_tool",

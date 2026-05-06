@@ -6,8 +6,8 @@
     "EDE"
   ],
   "key": {
-    "E": "minecraft:ender_pearl",
-    "D": "minecraft:diamond",
+    "E": "minecraft:popped_chorus_fruit",
+    "D": "minecraft:deepslate",
     "N": "nodeworks:node"
   },
   "result": {

@@ -3,13 +3,13 @@
   "pattern": [
     " R ",
     "ETE",
-    "NNN"
+    "DDD"
   ],
   "key": {
     "R": "nodeworks:celestine_receiver_dish",
-    "E": "minecraft:ender_eye",
+    "E": "minecraft:popped_chorus_fruit",
     "T": "nodeworks:inventory_terminal",
-    "N": "minecraft:netherite_ingot"
+    "D": "minecraft:deepslate"
   },
   "result": {
     "id": "nodeworks:portable_inventory_terminal",

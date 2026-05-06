@@ -1,16 +1,17 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "CCC",
-    "GGG",
-    "CCC"
+    "DGD",
+    "DCD",
+    "DGD"
   ],
   "key": {
-    "C": "minecraft:copper_ingot",
+    "C": "nodeworks:celestine_shard",
+    "D": "minecraft:deepslate",
     "G": "#c:glass_panes"
   },
   "result": {
     "id": "nodeworks:pipe",
-    "count": 8
+    "count": 4
   }
 }
