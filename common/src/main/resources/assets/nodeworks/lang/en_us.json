@@ -1,7 +1,7 @@
 {
   "block.nodeworks.node": "Node",
   "block.nodeworks.focus_node": "Focus Node",
-  "block.nodeworks.pipe": "Pipe",
+  "block.nodeworks.pipe": "Vacuum Pipe",
   "item.nodeworks.network_wrench": "Network Wrench",
   "message.nodeworks.endpoint_selected": "Selected Focus Node at (%s, %s, %s)",
   "message.nodeworks.no_selection": "No selection. Shift + right-click a Focus Node's free face first.",
