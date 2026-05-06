@@ -1,0 +1,8 @@
+{
+  "comment": "Emissive overlay for the User device's main body. Inherits all geometry from `nodeworks:block/user` and only overrides the `#0` texture binding to point at user_emissive.png. Adding a new element / face in user.json (Blockbench) propagates here automatically -- as long as the new element references `#0` and the corresponding pixels exist in user_emissive.png. The BER renders this baked model through the additive-glow pipeline with the network colour as a vertex tint.",
+  "parent": "nodeworks:block/user",
+  "textures": {
+    "0": "nodeworks:block/user_emissive",
+    "particle": "nodeworks:block/user_emissive"
+  }
+}

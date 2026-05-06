@@ -1,0 +1,110 @@
+{
+	"format_version": "1.21.11",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"texture_size": [64, 64],
+	"textures": {
+		"0": "nodeworks:block/user",
+		"particle": "nodeworks:block/user"
+	},
+	"elements": [
+		{
+			"name": "rod",
+			"from": [6.25, 6.25, -2],
+			"to": [9.75, 9.75, 6],
+			"rotation": {"angle": 0, "axis": "y", "origin": [0, 0, -1]},
+			"faces": {
+				"east": {"uv": [4, 14, 5, 16], "rotation": 90, "texture": "#0"},
+				"west": {"uv": [5, 16, 4, 14], "rotation": 90, "texture": "#0"},
+				"up": {"uv": [4, 14, 5, 16], "texture": "#0"},
+				"down": {"uv": [5, 16, 4, 14], "texture": "#0"}
+			}
+		},
+		{
+			"name": "holder",
+			"from": [3.5, 3.5, 6],
+			"to": [12.5, 12.5, 8],
+			"rotation": {"angle": 0, "axis": "y", "origin": [7, 7, 6]},
+			"faces": {
+				"north": {"uv": [9.75, 13.75, 12, 16], "texture": "#0"},
+				"east": {"uv": [9.25, 13.75, 9.75, 16], "texture": "#0"},
+				"south": {"uv": [7, 13.75, 9.25, 16], "texture": "#0"},
+				"west": {"uv": [9.75, 13.75, 9.25, 16], "texture": "#0"},
+				"up": {"uv": [9.75, 13.75, 9.25, 16], "rotation": 90, "texture": "#0"},
+				"down": {"uv": [9.25, 13.75, 9.75, 16], "rotation": 90, "texture": "#0"}
+			}
+		},
+		{
+			"name": "slime",
+			"from": [8.25, 4.75, 7.75],
+			"to": [10.75, 7.25, 8.75],
+			"rotation": {"angle": 0, "axis": "y", "origin": [8.5, 5, 7]},
+			"faces": {
+				"north": {"uv": [5.25, 13.75, 6, 14.5], "texture": "#0"},
+				"east": {"uv": [5.25, 14.5, 6, 15], "rotation": 90, "texture": "#0"},
+				"south": {"uv": [5.25, 13.75, 6, 14.5], "texture": "#0"},
+				"west": {"uv": [5.25, 14.5, 6, 15], "rotation": 90, "texture": "#0"},
+				"up": {"uv": [5.25, 14.5, 6, 15], "texture": "#0"},
+				"down": {"uv": [5.25, 14.5, 6, 15], "texture": "#0"}
+			}
+		},
+		{
+			"name": "slime",
+			"from": [8.5, 9.75, 7.75],
+			"to": [10.5, 11.75, 8.75],
+			"rotation": {"angle": 0, "axis": "y", "origin": [8.75, 9.5, 7]},
+			"faces": {
+				"north": {"uv": [5.25, 13.75, 6, 14.5], "texture": "#0"},
+				"east": {"uv": [5.25, 14.5, 6, 15], "rotation": 90, "texture": "#0"},
+				"south": {"uv": [5.25, 13.75, 6, 14.5], "texture": "#0"},
+				"west": {"uv": [5.25, 14.5, 6, 15], "rotation": 90, "texture": "#0"},
+				"up": {"uv": [5.25, 14.5, 6, 15], "texture": "#0"},
+				"down": {"uv": [5.25, 14.5, 6, 15], "texture": "#0"}
+			}
+		},
+		{
+			"name": "slime",
+			"from": [6.75, 8, 7.75],
+			"to": [9.25, 10.5, 8.75],
+			"rotation": {"angle": 45, "axis": "z", "origin": [7, 8.25, 7]},
+			"faces": {
+				"north": {"uv": [5.25, 13.75, 6, 14.5], "texture": "#0"},
+				"east": {"uv": [5.25, 14.5, 6, 15], "rotation": 90, "texture": "#0"},
+				"south": {"uv": [5.25, 13.75, 6, 14.5], "texture": "#0"},
+				"west": {"uv": [5.25, 14.5, 6, 15], "rotation": 90, "texture": "#0"},
+				"up": {"uv": [5.25, 14.5, 6, 15], "texture": "#0"},
+				"down": {"uv": [5.25, 14.5, 6, 15], "texture": "#0"}
+			}
+		},
+		{
+			"name": "slime",
+			"from": [4.75, 5.75, 7.5],
+			"to": [8.25, 9.25, 8.5],
+			"rotation": {"angle": -22.5, "axis": "z", "origin": [5, 7, 6.75]},
+			"faces": {
+				"north": {"uv": [6, 13.25, 7, 14.25], "texture": "#0"},
+				"east": {"uv": [5.25, 13.75, 5.75, 14.75], "texture": "#0"},
+				"south": {"uv": [6, 13.25, 7, 14.25], "texture": "#0"},
+				"west": {"uv": [5.25, 13.75, 5.75, 14.75], "texture": "#0"},
+				"up": {"uv": [5.25, 13.75, 5.75, 14.75], "rotation": 90, "texture": "#0"},
+				"down": {"uv": [5.25, 13.75, 5.75, 14.75], "rotation": 90, "texture": "#0"}
+			}
+		},
+		{
+			"name": "slime",
+			"from": [8, 6.5, 8],
+			"to": [11.5, 10, 9],
+			"rotation": {"angle": 0, "axis": "y", "origin": [8.25, 7.75, 7.25]},
+			"faces": {
+				"north": {"uv": [6, 13.25, 7, 14.25], "texture": "#0"},
+				"east": {"uv": [5.25, 13.75, 5.75, 14.75], "texture": "#0"},
+				"south": {"uv": [6, 13.25, 7, 14.25], "texture": "#0"},
+				"west": {"uv": [5.25, 13.75, 5.75, 14.75], "texture": "#0"},
+				"up": {"uv": [5.25, 13.75, 5.75, 14.75], "rotation": 90, "texture": "#0"},
+				"down": {"uv": [5.25, 13.75, 5.75, 14.75], "rotation": 90, "texture": "#0"}
+			}
+		}
+	],
+	"display": {},
+	"comment": "Temporary User-device arm. ~7 px long, 3 px thick, oriented along +Z so the BER can extend it outward by translating in the local +Z direction. Edit in Blockbench: keep the long axis aligned to +Z and centred on X=8/Y=8 so the BER's transform math stays simple. Replace the texture reference with an authored nodeworks:textures/block/user_arm.png when art lands."
+}

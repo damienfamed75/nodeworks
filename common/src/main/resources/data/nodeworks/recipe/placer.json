@@ -11,7 +11,7 @@
     "I": "minecraft:diamond",
     "O": "nodeworks:observer_card",
     "D": "minecraft:deepslate",
-    "N": "nodeworks:node"
+    "N": "nodeworks:device_frame"
   },
   "result": {
     "id": "nodeworks:placer",

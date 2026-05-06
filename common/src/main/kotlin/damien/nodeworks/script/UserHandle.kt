@@ -100,15 +100,14 @@ object UserHandle {
             }
         })
 
-        // :stop() -> bool. Releases an in-progress hold. Returns false (not
-        // an error) when the User is idle so a script can call :stop()
-        // unconditionally without guards.
+        // :stop() -> bool. Cancels a pending apex fire (extend phase) OR
+        // releases an in-progress hold. Returns false (not an error) when
+        // the User is idle so a script can call :stop() unconditionally
+        // without guards. Retract phase is non-cancellable -- it's the
+        // animated return of the reserved stack to network storage.
         table.setGuarded("UserHandle", "stop", object : OneArgFunction() {
-            override fun call(self: LuaValue): LuaValue {
-                val entity = getEntity()
-                if (!entity.isUsing) return LuaValue.FALSE
-                return LuaValue.valueOf(entity.endHold(level))
-            }
+            override fun call(self: LuaValue): LuaValue =
+                LuaValue.valueOf(getEntity().stop(level))
         })
 
         // :isUsing() -> bool. True while a hold is active.

@@ -22,6 +22,7 @@ import damien.nodeworks.render.PlacerRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.ReceiverAntennaRenderer
 import damien.nodeworks.render.TerminalRenderer
+import damien.nodeworks.render.UserRenderer
 import damien.nodeworks.render.VariableRenderer
 import net.neoforged.neoforge.client.event.EntityRenderersEvent
 import damien.nodeworks.screen.NodeSideScreen
@@ -53,6 +54,7 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterSelectItemModelProperties)
         modBus.addListener(::onRegisterItemTintSources)
         modBus.addListener(::onRegisterRenderPipelines)
+        modBus.addListener(::onRegisterStandaloneModels)
 
         // Register the in-game guide synchronously during mod construction, NOT inside
         // FMLClientSetupEvent.enqueueWork. GuideME hooks the item-tooltip "Hold G" hint
@@ -144,10 +146,52 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.INVENTORY_TERMINAL, ::InventoryTerminalRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.BREAKER, ::BreakerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PLACER, ::PlacerRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.USER, ::UserRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.IMPORT_CHEST, ::ImportChestRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.EXPORT_CHEST, ::ExportChestRenderer)
         event.registerEntityRenderer(damien.nodeworks.registry.ModEntityTypes.MILKY_SOUL_BALL) { ctx ->
             net.minecraft.client.renderer.entity.ThrownItemRenderer(ctx)
+        }
+    }
+
+    /** Standalone-model registration. The User device's arm geometry comes
+     *  from `models/block/user_arm.json` so it can be edited in Blockbench
+     *  without touching code. NeoForge's standalone-model system handles
+     *  loading + baking; the renderer fetches the result via [UserArmModel]'s
+     *  fetcher lambda which we wire up to the live ModelManager here. */
+    private val USER_ARM_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:user_arm" }
+
+    /** Emissive overlay model. Inherits geometry from `nodeworks:block/user`
+     *  via JSON parent and only swaps `#0` to user_emissive.png, so any
+     *  face the artist paints in user_emissive.png lights up at the
+     *  network colour with the SAME per-face UV layout user.json uses. */
+    private val USER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:user_emissive" }
+
+    private fun onRegisterStandaloneModels(
+        event: net.neoforged.neoforge.client.event.ModelEvent.RegisterStandalone
+    ) {
+        val armId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/user_arm")
+        event.register(
+            USER_ARM_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(armId),
+        )
+        damien.nodeworks.client.UserArmModel.fetcher = {
+            net.minecraft.client.Minecraft.getInstance()
+                .modelManager
+                .getStandaloneModel(USER_ARM_MODEL_KEY)
+        }
+
+        val emissiveId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/user_emissive")
+        event.register(
+            USER_EMISSIVE_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(emissiveId),
+        )
+        damien.nodeworks.client.UserEmissiveModel.fetcher = {
+            net.minecraft.client.Minecraft.getInstance()
+                .modelManager
+                .getStandaloneModel(USER_EMISSIVE_MODEL_KEY)
         }
     }
 

@@ -28,6 +28,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.NETWORK_CONTROLLER)
                 output.accept(ModBlocks.TERMINAL)
                 output.accept(ModBlocks.INVENTORY_TERMINAL)
+                output.accept(ModBlocks.DEVICE_FRAME)
                 output.accept(ModBlocks.VARIABLE)
                 output.accept(ModBlocks.BREAKER)
                 output.accept(ModBlocks.PLACER)

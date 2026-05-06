@@ -143,6 +143,21 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
     )
 
+    /** Crafting-only frame block. Combines the common ingredients shared by
+     *  the Variable / Breaker / Placer / User device recipes (deepslate
+     *  shell, node core, blank card, celestine shard) into one ingredient
+     *  so each device's recipe can drop the boilerplate and focus on its
+     *  device-specific parts. Has no in-world behaviour beyond placing as
+     *  a regular cube; the registry entry exists so it shows up in JEI and
+     *  the creative tab as a tangible craft target. */
+    val DEVICE_FRAME: Block = registerDirect(
+        "device_frame",
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .sound(net.minecraft.world.level.block.SoundType.METAL)
+            .requiresCorrectToolForDrops()
+    ) { props -> net.minecraft.world.level.block.Block(props) }
+
     val CRAFTING_STORAGE: Block = register(
         "crafting_storage",
         ::CraftingStorageBlock,

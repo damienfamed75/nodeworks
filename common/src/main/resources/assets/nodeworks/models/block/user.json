@@ -1,23 +1,121 @@
 {
-  "parent": "minecraft:block/block",
-  "textures": {
-    "particle": "nodeworks:block/placer_front",
-    "front":    "nodeworks:block/placer_front",
-    "back":     "nodeworks:block/placer_back",
-    "side":     "nodeworks:block/placer_side"
-  },
-  "elements": [
-    {
-      "from": [0, 0, 0],
-      "to":   [16, 16, 16],
-      "faces": {
-        "north": {"uv": [0, 0, 16, 16], "texture": "#front", "cullface": "north"},
-        "south": {"uv": [0, 0, 16, 16], "texture": "#back",  "cullface": "south"},
-        "up":    {"uv": [0, 0, 16, 16], "texture": "#side",  "cullface": "up"},
-        "down":  {"uv": [0, 0, 16, 16], "texture": "#side",  "cullface": "down",  "rotation": 180},
-        "east":  {"uv": [0, 0, 16, 16], "texture": "#side",  "cullface": "east",  "rotation": 90},
-        "west":  {"uv": [0, 0, 16, 16], "texture": "#side",  "cullface": "west",  "rotation": 270}
-      }
-    }
-  ]
+	"format_version": "1.21.11",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"texture_size": [64, 64],
+	"textures": {
+		"0": "nodeworks:block/user",
+		"particle": "nodeworks:block/user"
+	},
+	"elements": [
+		{
+			"name": "outer_shell",
+			"from": [0, 0, 0],
+			"to": [16, 16, 16],
+			"faces": {
+				"east": {"uv": [0, 8, 4, 12], "rotation": 90, "texture": "#0", "cullface": "east"},
+				"south": {"uv": [0, 12, 4, 16], "texture": "#0", "cullface": "south"},
+				"west": {"uv": [0, 8, 4, 12], "rotation": 270, "texture": "#0", "cullface": "west"},
+				"up": {"uv": [0, 8, 4, 12], "texture": "#0", "cullface": "up"},
+				"down": {"uv": [4, 12, 0, 8], "texture": "#0", "cullface": "down"}
+			}
+		},
+		{
+			"name": "inner_cube",
+			"from": [3, 3, 6],
+			"to": [13, 13, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 6]},
+			"faces": {
+				"north": {"uv": [0.75, 3.25, 3.25, 5.75], "texture": "#0"},
+				"east": {"uv": [0.75, 5.75, 3.25, 7.25], "rotation": 90, "texture": "#0"},
+				"west": {"uv": [0.75, 5.75, 3.25, 7.25], "rotation": 270, "texture": "#0"},
+				"up": {"uv": [0.75, 5.75, 3.25, 7.25], "texture": "#0"},
+				"down": {"uv": [3.25, 7.25, 0.75, 5.75], "texture": "#0"}
+			}
+		},
+		{
+			"name": "lip_1",
+			"from": [0, 0, 0],
+			"to": [16, 3, 0],
+			"faces": {
+				"north": {"uv": [0, 7.25, 4, 8], "texture": "#0"}
+			}
+		},
+		{
+			"name": "lip_2",
+			"from": [0, 13, 0],
+			"to": [16, 16, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [0, 13, 0]},
+			"faces": {
+				"north": {"uv": [4, 8, 0, 7.25], "texture": "#0"}
+			}
+		},
+		{
+			"name": "lip_3",
+			"from": [13, 3, 0],
+			"to": [16, 13, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [0, 7, 0]},
+			"faces": {
+				"north": {"uv": [0.75, 7.25, 3.25, 8], "rotation": 90, "texture": "#0"}
+			}
+		},
+		{
+			"name": "lip_4",
+			"from": [0, 3, 0],
+			"to": [3, 13, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [-13, 7, 0]},
+			"faces": {
+				"north": {"uv": [3.25, 8, 0.75, 7.25], "rotation": 90, "texture": "#0"}
+			}
+		},
+		{
+			"name": "outer_lip_1",
+			"from": [1.5, 1.5, -1],
+			"to": [3.5, 14.5, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [-11.5, 7, -1]},
+			"faces": {
+				"north": {"uv": [6, 7.25, 6.5, 4], "rotation": 180, "texture": "#0"},
+				"east": {"uv": [6.75, 7.25, 7, 4], "rotation": 180, "texture": "#0"},
+				"west": {"uv": [6.25, 7.25, 6.5, 4], "rotation": 180, "texture": "#0"},
+				"up": {"uv": [6, 3.75, 6.5, 4], "rotation": 180, "texture": "#0"},
+				"down": {"uv": [6, 7, 6.5, 7.25], "rotation": 180, "texture": "#0"}
+			}
+		},
+		{
+			"name": "outer_lip_2",
+			"from": [12.5, 1.5, -1],
+			"to": [14.5, 14.5, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [-1.5, 6.5, -1]},
+			"faces": {
+				"north": {"uv": [3.75, 7.25, 3.25, 4], "rotation": 180, "texture": "#0"},
+				"east": {"uv": [3.25, 7.25, 3.5, 4], "rotation": 180, "texture": "#0"},
+				"west": {"uv": [6.5, 7.25, 6.75, 4], "rotation": 180, "texture": "#0"},
+				"up": {"uv": [3.25, 3.75, 3.75, 4], "rotation": 180, "texture": "#0"},
+				"down": {"uv": [3.25, 7, 3.75, 7.25], "rotation": 180, "texture": "#0"}
+			}
+		},
+		{
+			"name": "outer_lip_3",
+			"from": [3.5, 12.5, -1],
+			"to": [12.5, 14.5, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [-1.5, 7.5, -1]},
+			"faces": {
+				"north": {"uv": [6, 4, 3.75, 4.5], "texture": "#0"},
+				"up": {"uv": [3.75, 3.75, 6, 4], "texture": "#0"},
+				"down": {"uv": [6.75, 4.5, 7, 6.75], "rotation": 90, "texture": "#0"}
+			}
+		},
+		{
+			"name": "outer_lip_4",
+			"from": [3.5, 1.5, -1],
+			"to": [12.5, 3.5, 0],
+			"rotation": {"angle": 0, "axis": "y", "origin": [-1.5, -2.5, -1]},
+			"faces": {
+				"north": {"uv": [6, 7.25, 3.75, 6.75], "rotation": 180, "texture": "#0"},
+				"up": {"uv": [6.5, 4.5, 6.75, 6.75], "rotation": 90, "texture": "#0"},
+				"down": {"uv": [3.75, 7, 6, 7.25], "rotation": 180, "texture": "#0"}
+			}
+		}
+	],
+	"comment": "Temporary sideways-cauldron approximation. Hollow shell with the opening on the north (-Z) face of the unrotated model so the BER's arm extends out of it. Replace this JSON in Blockbench when authoring the final art. Uses vanilla cauldron textures as placeholders."
 }

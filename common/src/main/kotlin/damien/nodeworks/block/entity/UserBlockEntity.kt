@@ -69,6 +69,22 @@ class UserBlockEntity(
          *  vanilla brush takes 200 ticks for one full pass, so 600 is roughly
          *  three full passes -- enough for any reasonable use case. */
         const val HOLD_TIMEOUT_TICKS = 600
+
+        /** Extend (or retract) half-duration for the BER animation. 10 ticks
+         *  @ 20 TPS = 0.5 s. The world effect fires at apex (`scheduleUse`
+         *  trigger + EXTEND_TICKS), so a use cycle is `0.5 s extend → effect
+         *  → 0.5 s retract` for INSTANT and `0.5 s extend → enter hold` for
+         *  HOLD. */
+        const val EXTEND_TICKS = 10
+
+        /** Hold-at-apex pause (3 ticks @ 20 TPS = 0.15 s) inserted between
+         *  the apex fire and the retract animation. Without this the arm
+         *  whips through the peak too fast to read as a hit -- it looks
+         *  like a teleport between extending and retracting. Only applied
+         *  to the INSTANT-mode fire path; HOLD-mode is already static at
+         *  apex while the hold runs, and cancel-mid-extend retracts from
+         *  current position so an apex pause would be incongruous. */
+        const val APEX_HOLD_TICKS = 3
     }
 
     private val connections = LinkedHashSet<BlockPos>()
@@ -138,16 +154,45 @@ class UserBlockEntity(
     var holdingTicks: Int = 0
 
     /** Server-tick the latest use animation started, syncs to client. The
-     *  client BER reads this to time the arm extend/retract. */
+     *  client BER reads this to time the arm extend / retract curve. */
     var animStartTick: Long = Long.MIN_VALUE
+        private set
+
+    /** Server-tick when the most recent use ended, drives the retract phase
+     *  of the BER animation. Set on apex-fire completion (INSTANT) or on
+     *  [endHold] (HOLD). [Long.MIN_VALUE] = no recent end. */
+    var animEndTick: Long = Long.MIN_VALUE
+        private set
+
+    /** When set, the world effect fires at this game tick (extend animation
+     *  apex). Until then the device is in "extending" state: [heldStack] is
+     *  reserved from the network but the FakePlayer hand is still empty. */
+    var pendingFireTick: Long = Long.MIN_VALUE
+        private set
+
+    /** Mode the pending fire will execute as. Lets [serverTick] dispatch the
+     *  right path at apex without re-deriving from the BE's current [mode]
+     *  (which the script could have flipped between trigger and apex). */
+    var pendingFireMode: UseMode? = null
         private set
 
     fun markUseStarted(tick: Long) {
         animStartTick = tick
+        animEndTick = Long.MIN_VALUE
         markDirtyAndSync()
     }
 
-    val isUsing: Boolean get() = !heldStack.isEmpty
+    /** True while the User has work in flight: EXTENDING (pending apex),
+     *  HOLDING (active hold), or RETRACTING (any stack, including empty
+     *  for bare-hand uses). The flag is the public "is this device busy"
+     *  signal -- scripts and the redstone driver both consult it before
+     *  sending a fresh trigger. Without the [animEndTick] check, a bare-
+     *  hand RETRACT (heldStack empty) would silently allow a new trigger
+     *  mid-animation and clobber the in-flight retract. */
+    val isUsing: Boolean get() =
+        pendingFireTick != Long.MIN_VALUE
+            || !heldStack.isEmpty
+            || animEndTick != Long.MIN_VALUE
 
     private fun markDirtyAndSync() {
         setChanged()
@@ -182,20 +227,50 @@ class UserBlockEntity(
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
         val lvl = level
         if (lvl is ServerLevel) {
-            // Only drain on actual destruction (blockDestroyed is set by
-            // [UserBlock.playerWillDestroy]). Chunk-unload calls setRemoved
-            // too, but saveAdditional has already snapshotted heldStack to
-            // NBT by that point, so draining here would duplicate the stack
-            // on the next chunk load (NBT restore + tickHold drain). Letting
-            // the unload path skip the drain keeps the stack in NBT and the
-            // first post-load tick routes it to storage cleanly.
-            if (blockDestroyed && isUsing) endHold(lvl)
+            // Block destroyed by a player -> synchronously return any
+            // reserved stack to network (or drop on ground). Chunk-unload
+            // also calls setRemoved but saveAdditional has already snapped
+            // heldStack into NBT by that point, so draining here would
+            // duplicate the stack on the next chunk load (NBT restore +
+            // forced finishRetract). Skipping the drain on chunk-unload
+            // lets the post-load serverTick resume the cycle cleanly.
+            if (blockDestroyed) {
+                if (fp(lvl).isUsingItem) fp(lvl).releaseUsingItem()
+                drainFakePlayerInventoryExceptMainHand(lvl, fp(lvl))
+                fp(lvl).setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY)
+                if (!heldStack.isEmpty) {
+                    val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
+                    val inserted = if (snapshot.controller != null) {
+                        NetworkStorageHelper.insertItemStack(lvl, snapshot, heldStack)
+                    } else 0
+                    if (inserted < heldStack.count) {
+                        val leftover = heldStack.copyWithCount(heldStack.count - inserted)
+                        lvl.addFreshEntity(
+                            net.minecraft.world.entity.item.ItemEntity(
+                                lvl,
+                                worldPosition.x + 0.5,
+                                worldPosition.y + 0.5,
+                                worldPosition.z + 0.5,
+                                leftover,
+                            )
+                        )
+                    }
+                }
+            }
             NodeConnectionHelper.removeAllConnections(lvl, this)
             NodeConnectionHelper.untrackNode(lvl, worldPosition)
         }
-        if (blockDestroyed) heldStack = ItemStack.EMPTY
+        if (blockDestroyed) {
+            heldStack = ItemStack.EMPTY
+            pendingFireTick = Long.MIN_VALUE
+            pendingFireMode = null
+            animEndTick = Long.MIN_VALUE
+        }
         super.setRemoved()
     }
+
+    private fun fp(lvl: ServerLevel): net.minecraft.server.level.ServerPlayer =
+        PlatformServices.fakePlayer.get(lvl, ownerUuid)
 
     // --- Serialization ---
     override fun saveAdditional(output: ValueOutput) {
@@ -206,6 +281,10 @@ class UserBlockEntity(
         output.putInt("redstoneMode", redstoneMode)
         output.putString("mode", mode.name)
         if (!heldStack.isEmpty) output.store("heldStack", ItemStack.OPTIONAL_CODEC, heldStack)
+        output.putLong("animStartTick", animStartTick)
+        output.putLong("animEndTick", animEndTick)
+        output.putLong("pendingFireTick", pendingFireTick)
+        pendingFireMode?.let { output.putString("pendingFireMode", it.name) }
         networkId?.let { output.putString("networkId", it.toString()) }
         ownerUuid?.let { output.putString("ownerUuid", it.toString()) }
         output.putBlockPosList("connections", connections)
@@ -220,6 +299,11 @@ class UserBlockEntity(
         mode = runCatching { UseMode.valueOf(input.getStringOr("mode", UseMode.INSTANT.name)) }
             .getOrDefault(UseMode.INSTANT)
         heldStack = input.read("heldStack", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY)
+        animStartTick = input.getLongOr("animStartTick", Long.MIN_VALUE)
+        animEndTick = input.getLongOr("animEndTick", Long.MIN_VALUE)
+        pendingFireTick = input.getLongOr("pendingFireTick", Long.MIN_VALUE)
+        pendingFireMode = input.getStringOrNull("pendingFireMode")
+            ?.let { runCatching { UseMode.valueOf(it) }.getOrNull() }
         networkId = input.getStringOrNull("networkId")?.takeIf { it.isNotEmpty() }?.let {
             try { UUID.fromString(it) } catch (_: Exception) { null }
         }
@@ -236,19 +320,66 @@ class UserBlockEntity(
         ClientboundBlockEntityDataPacket.create(this)
 
     // --- Use flow ---
+    //
+    // State machine (a User is in exactly one phase at any tick, encoded by
+    // [pendingFireTick] / [heldStack] / [animEndTick]):
+    //
+    //   IDLE          MIN / empty / MIN
+    //   EXTENDING     set / reserved / MIN
+    //   HOLDING       MIN / live / MIN
+    //   RETRACTING    MIN / post-use (or empty) / recent
+    //
+    // Invariant: while [heldStack] is non-empty OR [pendingFireTick] is set,
+    // the reserved stack belongs to THIS device. Other Users querying the
+    // network see one fewer item (the network's storage cards have already
+    // been mutated) and cannot claim it until this device's RETRACTING phase
+    // completes and [finishRetract] inserts the item back.
 
-    /** Per-tick driver. INSTANT mode repeats [tryUse] at 1Hz (gated by
-     *  [USE_COOLDOWN_TICKS]) while the redstone condition holds. HOLD mode
-     *  starts a hold when the gate opens, advances [Item.onUseTick] each
-     *  tick, and releases when the gate closes, the item breaks, or
-     *  [HOLD_TIMEOUT_TICKS] elapses. IGNORED leaves the device Lua-driven
-     *  (Phase 5) but still ticks an in-progress hold so a script-started
-     *  hold completes correctly. */
+    /** Per-tick driver. Walks the state machine in priority order so each
+     *  tick advances at most one phase (modulo the strict "transition to
+     *  RETRACTING" cases where the apex / cancel in the same tick still
+     *  yields back to the redstone driver via the `isUsing` guard). */
     fun serverTick(level: ServerLevel) {
-        if (isUsing) {
+        // 1. Redstone-fall while EXTENDING -> cancel into RETRACTING.
+        if (pendingFireTick != Long.MIN_VALUE
+            && redstoneMode != REDSTONE_IGNORED
+            && !redstoneAllows(level)
+        ) {
+            cancelPending(level)
+        }
+
+        // 2. Apex dispatch when EXTENDING reaches its scheduled fire tick.
+        if (pendingFireTick != Long.MIN_VALUE && level.gameTime >= pendingFireTick) {
+            fireScheduledUse(level)
+        }
+
+        // 3. RETRACTING end -> drain heldStack back to network. Returning
+        //    here yields the rest of the tick to other BEs so a second User
+        //    waiting on the freshly-returned item can grab it before this
+        //    device re-schedules. Without the yield, this device would
+        //    finishRetract -> immediately re-schedule -> monopolise the
+        //    shared item, defeating fair turn-taking.
+        if (pendingFireTick == Long.MIN_VALUE
+            && animEndTick != Long.MIN_VALUE
+            && level.gameTime - animEndTick >= EXTEND_TICKS
+        ) {
+            finishRetract(level)
+            return
+        }
+
+        // 4. HOLDING: drive per-tick onUseTick on the held item.
+        if (pendingFireTick == Long.MIN_VALUE
+            && !heldStack.isEmpty
+            && animEndTick == Long.MIN_VALUE
+        ) {
             tickHold(level)
             return
         }
+
+        // 5. IDLE -> respond to fresh redstone triggers. EXTENDING and
+        //    RETRACTING-with-stack both flag isUsing, blocking fresh uses
+        //    until the cycle completes.
+        if (isUsing) return
         if (redstoneMode == REDSTONE_IGNORED) return
         if (!redstoneAllows(level)) return
         when (mode) {
@@ -257,93 +388,199 @@ class UserBlockEntity(
         }
     }
 
-    /** Pull one stack matching [filterRule] from network storage, drive the
-     *  FakePlayer through Item.useOn / interactLivingEntity / Item.use against
-     *  whatever's in front, drain the result back to the network. Returns
-     *  true when a use actually fired. Cooldown-gated to 1Hz. Hold mode is
-     *  added in Phase 3, deny list in Phase 4. */
-    fun tryUse(level: ServerLevel): Boolean {
-        if (level.gameTime - lastUseTick < USE_COOLDOWN_TICKS) return false
-        if (filterRule.isEmpty()) return false
-        if (!redstoneAllows(level)) return false
+    /** Schedule an INSTANT use at the next animation apex. */
+    fun tryUse(level: ServerLevel): Boolean = scheduleUse(level, UseMode.INSTANT)
 
+    /** Schedule a HOLD use at the next animation apex. Whether the item
+     *  actually enters using-item state is decided at apex by
+     *  [fireScheduledUse]; one-shot items (flint+steel, dye) fall back to
+     *  the INSTANT path automatically. */
+    fun tryStartHold(level: ServerLevel): Boolean = scheduleUse(level, UseMode.HOLD)
+
+    private fun scheduleUse(level: ServerLevel, fireMode: UseMode): Boolean {
+        if (level.gameTime - lastUseTick < USE_COOLDOWN_TICKS) return false
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
         if (snapshot.controller == null) return false
 
-        val pulled = pullStackFromNetwork(level, snapshot) ?: return false
-        if (UserDenyList.isDenied(pulled, level)) {
-            // Silent no-op so a script (or a misconfigured filter) doesn't
-            // stack-trace on every fire. Push back to network so the item
-            // doesn't disappear into the cooldown gap.
-            NetworkStorageHelper.insertItemStack(level, snapshot, pulled)
-            return false
+        // Empty filter -> bare-hand use. No item to reserve, no deny-list
+        // applies (no item to deny). The apex dispatches through the empty-
+        // hand entry points (Block.useWithoutItem, Entity.interact with
+        // empty mainhand), which covers buttons, doors, mounting horses,
+        // and any other "right-click with no item" interactions.
+        if (filterRule.isEmpty()) {
+            heldStack = ItemStack.EMPTY
+        } else {
+            val pulled = pullStackFromNetwork(level, snapshot) ?: return false
+            if (UserDenyList.isDenied(pulled, level)) {
+                // Silent no-op: refund the pull so a misconfigured filter
+                // doesn't strand the item between snapshots.
+                NetworkStorageHelper.insertItemStack(level, snapshot, pulled)
+                return false
+            }
+            heldStack = pulled
         }
-
-        val fp = PlatformServices.fakePlayer.get(level, ownerUuid)
-        positionFakePlayer(fp)
-        fp.setItemInHand(InteractionHand.MAIN_HAND, pulled)
-
-        val target = resolveTarget(level)
-        val fired = when (target) {
-            is UseTarget.Entity -> performUseOnEntity(fp, target.entity)
-            is UseTarget.Block -> performUseOnBlock(level, fp, target)
-            UseTarget.Air -> performUseOnAir(level, fp)
-        }
-
-        drainFakePlayerInventory(level, snapshot, fp)
-        fp.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY)
-
-        if (fired) {
-            lastUseTick = level.gameTime
-            markUseStarted(level.gameTime)
-        }
-        return fired
+        pendingFireTick = level.gameTime + EXTEND_TICKS
+        pendingFireMode = fireMode
+        animEndTick = Long.MIN_VALUE
+        lastUseTick = level.gameTime
+        markUseStarted(level.gameTime)
+        markDirtyAndSync()
+        return true
     }
 
-    /** HOLD-mode entry. Pulls a stack, sets it on the FakePlayer, dispatches
-     *  the initial use to enter `isUsingItem` state. If the item doesn't
-     *  enter hold mode (instant-use item like flint+steel), drains the FP
-     *  and bails so HOLD on the wrong item gracefully no-ops. Per-tick
-     *  advancement happens in [tickHold]. */
-    fun tryStartHold(level: ServerLevel): Boolean {
-        if (level.gameTime - lastUseTick < USE_COOLDOWN_TICKS) return false
-        if (filterRule.isEmpty()) return false
-
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-        if (snapshot.controller == null) return false
-
-        val pulled = pullStackFromNetwork(level, snapshot) ?: return false
-        if (UserDenyList.isDenied(pulled, level)) {
-            NetworkStorageHelper.insertItemStack(level, snapshot, pulled)
-            return false
-        }
+    /** Apex dispatch. Positions the FP, sets the reserved stack on the main
+     *  hand, fires the right `Item.useOn` / `interactLivingEntity` / `Item.use`
+     *  branch. INSTANT and HOLD-fallback transition straight to RETRACTING
+     *  (the post-use stack stays reserved on the BE through the retract
+     *  animation, then drains in [finishRetract]). HOLD with using-item
+     *  flag transitions to HOLDING. */
+    private fun fireScheduledUse(level: ServerLevel) {
+        val mode = pendingFireMode ?: UseMode.INSTANT
+        pendingFireTick = Long.MIN_VALUE
+        pendingFireMode = null
+        // Empty heldStack is a valid state for bare-hand uses (filterRule
+        // empty -> [scheduleUse] reserved nothing). Don't short-circuit.
 
         val fp = PlatformServices.fakePlayer.get(level, ownerUuid)
         positionFakePlayer(fp)
-        fp.setItemInHand(InteractionHand.MAIN_HAND, pulled)
+        fp.setItemInHand(InteractionHand.MAIN_HAND, heldStack)
 
         val target = resolveTarget(level)
         when (target) {
-            is UseTarget.Block -> performUseOnBlock(level, fp, target)
             is UseTarget.Entity -> performUseOnEntity(fp, target.entity)
+            is UseTarget.Block -> performUseOnBlock(level, fp, target)
             UseTarget.Air -> performUseOnAir(level, fp)
         }
 
-        // Item entered hold state if isUsingItem flips to true (brush,
-        // spyglass, bow, food, etc.). Otherwise it was a one-shot, drain and
-        // exit so HOLD on flint+steel acts the same as INSTANT.
-        if (!fp.isUsingItem) {
-            drainFakePlayerInventory(level, snapshot, fp)
-            fp.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY)
-            return false
+        if (mode == UseMode.HOLD && fp.isUsingItem) {
+            // HOLDING: keep the live FP-hand stack as the BE's heldStack
+            // mirror so the renderer + tickHold both see the same data. Drain
+            // any non-main-hand inventory immediately (drops the item already
+            // produced, e.g. shears + sheep wool) so they're not pinned to
+            // the FP across our hold's lifetime.
+            heldStack = fp.getItemInHand(InteractionHand.MAIN_HAND).copy()
+            holdingTicks = 0
+            drainFakePlayerInventoryExceptMainHand(level, fp)
+            markDirtyAndSync()
+            return
         }
 
-        heldStack = fp.getItemInHand(InteractionHand.MAIN_HAND)
-        holdingTicks = 0
-        lastUseTick = level.gameTime
-        markUseStarted(level.gameTime)
-        setChanged()
+        // INSTANT or HOLD fallback. The post-use stack stays reserved on the
+        // BE (heldStack) so:
+        //   * the renderer continues showing the item through retract
+        //   * other Users querying the network still see "no item" until
+        //     [finishRetract] re-inserts at the end of the retract window
+        // Non-main-hand inventory drains now (the use's drops). FP main hand
+        // is cleared so a future apex on the shared FakePlayer doesn't see
+        // a leftover stack.
+        val postUse = fp.getItemInHand(InteractionHand.MAIN_HAND).copy()
+        fp.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY)
+        drainFakePlayerInventoryExceptMainHand(level, fp)
+        heldStack = postUse
+        // animEndTick set into the future by APEX_HOLD_TICKS so the renderer
+        // pauses the arm at full extension for that long before starting
+        // the retract ramp. The serverTick retract-end check uses
+        // `gameTime - animEndTick >= EXTEND_TICKS`, so finishRetract triggers
+        // at apex + APEX_HOLD_TICKS + EXTEND_TICKS, naturally accounting
+        // for the pause.
+        animEndTick = level.gameTime + APEX_HOLD_TICKS
+        markDirtyAndSync()
+    }
+
+    /** Cancel a pending (EXTENDING-phase) use. Transitions to RETRACTING with
+     *  the reserved stack still held; [finishRetract] drains it at the end
+     *  of the retract animation. Returns true when there was a pending use
+     *  to cancel. */
+    fun cancelPending(level: ServerLevel): Boolean {
+        if (pendingFireTick == Long.MIN_VALUE) return false
+        pendingFireTick = Long.MIN_VALUE
+        pendingFireMode = null
+        // Smooth-retract from wherever the extend animation currently sits
+        // by back-dating animEndTick. The renderer's retract formula is
+        // `1 - sinceEnd/EXTEND_TICKS`, so to make it return the current
+        // linear extension `e` at this tick we set animEndTick such that
+        // `sinceEnd = EXTEND_TICKS * (1 - e)`. Total retract duration then
+        // scales with `e`, so the arm retracts at the same speed it was
+        // extending instead of teleporting to full and falling.
+        val sinceStart = (level.gameTime - animStartTick).coerceAtLeast(0L).toFloat()
+        val rawExtension = (sinceStart / EXTEND_TICKS).coerceIn(0f, 1f)
+        animEndTick = level.gameTime - (EXTEND_TICKS * (1f - rawExtension)).toLong()
+        // heldStack stays reserved through retract -- network sees no item
+        // available until [finishRetract] returns it.
+        markDirtyAndSync()
         return true
+    }
+
+    /** Single Lua-facing stop that picks the right transition based on
+     *  current phase. EXTENDING -> cancelPending. HOLDING -> endHold.
+     *  Anything else (idle, retract) -> false. */
+    fun stop(level: ServerLevel): Boolean {
+        if (pendingFireTick != Long.MIN_VALUE) return cancelPending(level)
+        if (!heldStack.isEmpty && animEndTick == Long.MIN_VALUE) return endHold(level)
+        return false
+    }
+
+    /** Drain the BE's [heldStack] back to network at the end of RETRACTING.
+     *  Inserts what fits into storage, drops the rest as ItemEntities at
+     *  the User's centre so the item is never lost regardless of network
+     *  state. Resets the BE to IDLE. */
+    private fun finishRetract(level: ServerLevel) {
+        if (!heldStack.isEmpty) {
+            val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
+            val inserted = if (snapshot.controller != null) {
+                NetworkStorageHelper.insertItemStack(level, snapshot, heldStack)
+            } else 0
+            if (inserted < heldStack.count) {
+                val leftover = heldStack.copyWithCount(heldStack.count - inserted)
+                level.addFreshEntity(
+                    net.minecraft.world.entity.item.ItemEntity(
+                        level,
+                        worldPosition.x + 0.5,
+                        worldPosition.y + 0.5,
+                        worldPosition.z + 0.5,
+                        leftover,
+                    )
+                )
+            }
+        }
+        heldStack = ItemStack.EMPTY
+        animEndTick = Long.MIN_VALUE
+        markDirtyAndSync()
+    }
+
+    /** Drain every FP inventory slot EXCEPT the main hand. Used at apex /
+     *  endHold to push drops back to network without disturbing the
+     *  reserved [heldStack] mirror. Spillover drops as ItemEntities at the
+     *  User's centre. */
+    private fun drainFakePlayerInventoryExceptMainHand(
+        level: ServerLevel,
+        fp: net.minecraft.server.level.ServerPlayer,
+    ) {
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
+        val inv = fp.inventory
+        val mainHandSlot = inv.getSelectedSlot()
+        for (slot in 0 until inv.containerSize) {
+            if (slot == mainHandSlot) continue
+            val stack = inv.getItem(slot)
+            if (stack.isEmpty) continue
+            val inserted = if (snapshot.controller != null) {
+                NetworkStorageHelper.insertItemStack(level, snapshot, stack)
+            } else 0
+            val leftover = stack.count - inserted
+            if (leftover > 0) {
+                val drop = stack.copyWithCount(leftover)
+                level.addFreshEntity(
+                    net.minecraft.world.entity.item.ItemEntity(
+                        level,
+                        worldPosition.x + 0.5,
+                        worldPosition.y + 0.5,
+                        worldPosition.z + 0.5,
+                        drop,
+                    )
+                )
+            }
+            inv.setItem(slot, ItemStack.EMPTY)
+        }
     }
 
     /** Per-tick driver while [isUsing] is true. Manually invokes
@@ -397,37 +634,41 @@ class UserBlockEntity(
         heldStack = fp.getItemInHand(InteractionHand.MAIN_HAND)
     }
 
-    /** Stop an in-progress hold. Calls `releaseUsingItem` so vanilla items
-     *  that fire on release (bow, brush at backswing) trigger correctly,
-     *  drains the FP inventory back to the network, clears local state.
-     *  Safe to call when not holding. */
+    /** Stop an in-progress hold. Transitions HOLDING -> RETRACTING with the
+     *  post-hold stack reserved on the BE; [finishRetract] drains it at the
+     *  end of the retract animation. Calls `releaseUsingItem` first so
+     *  vanilla items that fire on release (bow, brush at backswing) trigger
+     *  correctly. Safe to call when not holding. [lastUseTick] is NOT
+     *  updated here -- the cooldown anchors to the start of the use, so a
+     *  200-tick brush has long since exhausted the 20-tick cooldown by the
+     *  time it ends. */
     fun endHold(level: ServerLevel): Boolean {
         if (heldStack.isEmpty) return false
         val fp = PlatformServices.fakePlayer.get(level, ownerUuid)
         if (fp.isUsingItem) fp.releaseUsingItem()
-        // Restore the buffered stack to the FP's hand if the FP doesn't
-        // already have it. Covers the post-reload case where heldStack came
-        // back from NBT but the freshly-fetched FakePlayer has empty hands,
-        // and the FP-hijack case where another system overwrote our slot.
+
+        // Capture the post-hold stack. If the FP's hand was hijacked or the
+        // item broke, fall back to the BE's last-known mirror so we never
+        // forget what was reserved.
         val current = fp.getItemInHand(InteractionHand.MAIN_HAND)
-        if (current.isEmpty || !ItemStack.isSameItemSameComponents(current, heldStack)) {
-            fp.setItemInHand(InteractionHand.MAIN_HAND, heldStack.copy())
+        val resolved = when {
+            !current.isEmpty -> current.copy()
+            else -> heldStack.copy()
         }
-        // Always drain. drainFakePlayerInventory inserts what fits into the
-        // network and drops the rest as ItemEntities, so a missing controller
-        // (network broken when the BE is removed) just falls through to the
-        // ground drop instead of silently losing the stack.
-        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-        drainFakePlayerInventory(level, snapshot, fp)
+
+        // Drain non-main-hand inventory now (drops produced during the hold).
+        // Main hand is cleared so a future apex on the shared FakePlayer
+        // doesn't see a leftover stack.
+        drainFakePlayerInventoryExceptMainHand(level, fp)
         fp.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY)
-        heldStack = ItemStack.EMPTY
+
+        // Reserve the post-hold result for the retract animation. The item
+        // stays on this BE -- still invisible to other Users querying the
+        // network -- until [finishRetract] drains it at retract end.
+        heldStack = resolved
         holdingTicks = 0
-        // [lastUseTick] intentionally NOT touched here. The cooldown anchors
-        // to the start of the use ([tryUse] / [tryStartHold]), so a 200-tick
-        // brush exhausts the 20-tick cooldown long before it ends. Resetting
-        // here would force an extra 20-tick wait every cycle, which feels
-        // like dropped events when the world has clearly moved on.
-        setChanged()
+        animEndTick = level.gameTime
+        markDirtyAndSync()
         return true
     }
 
@@ -557,9 +798,29 @@ class UserBlockEntity(
         target: UseTarget.Block,
     ): Boolean {
         val hit = BlockHitResult(hitVecOnFace(target.pos, target.hitFace), target.hitFace, target.pos, false)
-        val ctx = UseOnContext(fp, InteractionHand.MAIN_HAND, hit)
-        val result: InteractionResult = fp.getItemInHand(InteractionHand.MAIN_HAND).useOn(ctx)
-        return result.consumesAction()
+        val stack = fp.getItemInHand(InteractionHand.MAIN_HAND)
+        val state = level.getBlockState(target.pos)
+
+        // Mirror vanilla's right-click dispatch order so block- and item-
+        // driven interactions both fire correctly:
+        //
+        //   1. BlockState.useItemOn -- the block's response to being clicked
+        //      with `stack`. TNT priming on flint+steel, composter intake,
+        //      anvil rename, etc. live here. For empty stacks the default
+        //      impl returns PASS so step 3 (useWithoutItem) is reached.
+        //   2. ItemStack.useOn -- the item's own behaviour on a block.
+        //      Flint+steel placing fire, hoes tilling dirt, dyes on signs.
+        //   3. BlockState.useWithoutItem -- the canonical empty-hand entry.
+        //      Door open / close, button press, lever toggle, container
+        //      open. Only fires when `stack` is empty (otherwise step 2
+        //      already consumed the action or returned a meaningful PASS).
+        val blockResult = state.useItemOn(stack, level, fp, InteractionHand.MAIN_HAND, hit)
+        if (blockResult.consumesAction()) return true
+        if (!stack.isEmpty) {
+            val ctx = UseOnContext(fp, InteractionHand.MAIN_HAND, hit)
+            return stack.useOn(ctx).consumesAction()
+        }
+        return state.useWithoutItem(level, fp, hit).consumesAction()
     }
 
     /** Centre-of-face hit position so items that read the exact Vec3 (some

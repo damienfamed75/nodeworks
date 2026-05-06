@@ -107,6 +107,24 @@ object EmissiveCubeRenderer {
     }
 
     /**
+     * Single shared additive-emissive [RenderType] that samples from the
+     * block atlas. Use this for rendering BakedModel quads (which carry
+     * atlas-relative UVs) through the additive-glow pipeline -- e.g. the
+     * User device's emissive overlay, where the underlying model's per-
+     * face UVs need to be respected rather than stretching one tile per
+     * face the way [submit] / [submitSides] do.
+     */
+    val BLOCK_ATLAS_RENDER_TYPE: RenderType by lazy {
+        RenderType.create(
+            "nodeworks_emissive_block_atlas",
+            RenderSetup.builder(ADDITIVE_EMISSIVE_PIPELINE)
+                .withTexture("Sampler0", net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS)
+                .createRenderSetup()
+        )
+    }
+
+
+    /**
      * Emit the 4 faces perpendicular to [facing] with each face's UV rotated so the
      * texture's top edge points toward [facing] in world space, the same piston-style
      * convention used by `_side.png` block models (Breaker, Placer). Use this when the

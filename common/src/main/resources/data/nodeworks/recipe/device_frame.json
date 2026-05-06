@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ICI",
+    "DBD",
+    "INI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "C": "nodeworks:celestine_shard",
+    "D": "minecraft:deepslate",
+    "B": "nodeworks:blank_card",
+    "N": "nodeworks:node"
+  },
+  "result": {
+    "id": "nodeworks:device_frame",
+    "count": 1
+  }
+}

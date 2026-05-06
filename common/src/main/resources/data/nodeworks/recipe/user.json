@@ -1,17 +1,17 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "PEP",
-    "IOI",
-    "DND"
+    "GPG",
+    "SQS",
+    "DBD"
   ],
   "key": {
-    "P": "minecraft:piston",
-    "E": "minecraft:dispenser",
-    "I": "minecraft:diamond",
-    "O": "nodeworks:observer_card",
-    "D": "minecraft:deepslate",
-    "N": "nodeworks:node"
+    "G": "minecraft:gold_ingot",
+    "P": "minecraft:sticky_piston",
+    "S": "nodeworks:milky_soul_ball",
+    "B": "minecraft:gold_block",
+    "Q": "nodeworks:device_frame",
+    "D": "minecraft:deepslate"
   },
   "result": {
     "id": "nodeworks:user",
