@@ -10,7 +10,10 @@ import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.platform.ResourceKind
+import net.minecraft.core.BlockPos
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.world.Container
 
 /**
  * Utility for querying items across all Storage Cards on a network.
@@ -47,12 +50,93 @@ object NetworkStorageHelper {
         channel: ChannelFilter = ChannelFilter.All,
     ): Long {
         var total = 0L
+        val visited = HashSet<BlockPos>()
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
-            val storage = getStorage(level, card) ?: continue
-            total += PlatformServices.storage.countItems(storage) { CardHandle.matchesFilter(it, ResourceKind.ITEM, filter) }
+            val cap = card.capability as? StorageSideCapability ?: continue
+            // Multiple cards on different faces of the same block view the
+            // same physical inventory through different slot subsets, so
+            // dedup by adjacentPos to avoid double-counting overlapping slots.
+            if (!visited.add(cap.adjacentPos)) continue
+            total += countItemsAt(level, cap.adjacentPos, card, filter)
         }
         return total
+    }
+
+    /** [List] of [CardSnapshot]s deduped by adjacentPos. Higher-priority
+     *  cards win on a tie. Use this anywhere the same physical inventory
+     *  shouldn't be counted/visited twice when the player has cards on
+     *  multiple faces of one block. */
+    fun getDedupedStorageCards(snapshot: NetworkSnapshot): List<CardSnapshot> {
+        val seen = HashSet<BlockPos>()
+        val out = mutableListOf<CardSnapshot>()
+        for (card in getStorageCards(snapshot)) {
+            val cap = card.capability as? StorageSideCapability ?: continue
+            if (seen.add(cap.adjacentPos)) out.add(card)
+        }
+        return out
+    }
+
+    /** Find items at [pos] matching [filter], walking the underlying vanilla
+     *  [Container] when present so all slots are visible regardless of
+     *  which face [card] targets. Falls back to [card]'s face-restricted
+     *  handle for modded inventories. Used by the inventory cache so multi-
+     *  card setups on a single block report the actual item counts. */
+    fun findAllItemInfoAt(
+        level: ServerLevel,
+        pos: BlockPos,
+        card: CardSnapshot,
+        filter: (String) -> Boolean,
+    ): List<ItemInfo> {
+        val be = level.getBlockEntity(pos)
+        if (be is Container) {
+            val aggregated = LinkedHashMap<String, ItemInfo>()
+            for (slot in 0 until be.containerSize) {
+                val stack = be.getItem(slot)
+                if (stack.isEmpty) continue
+                val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+                if (!filter(itemId)) continue
+                val hasData = stack.componentsPatch.size() > 0
+                val cacheKey = "$itemId:$hasData"
+                val existing = aggregated[cacheKey]
+                if (existing != null) {
+                    aggregated[cacheKey] = existing.copy(count = existing.count + stack.count)
+                } else {
+                    aggregated[cacheKey] = ItemInfo(
+                        itemId = itemId,
+                        name = stack.hoverName.string,
+                        count = stack.count.toLong(),
+                        maxStackSize = stack.item.getDefaultMaxStackSize(),
+                        hasData = hasData,
+                        componentsPatch = stack.componentsPatch,
+                    )
+                }
+            }
+            return aggregated.values.toList()
+        }
+        val storage = getStorage(level, card) ?: return emptyList()
+        return PlatformServices.storage.findAllItemInfo(storage, filter)
+    }
+
+    /** Count items at [pos] matching [filter], using the underlying vanilla
+     *  [Container] when the BE implements it so all slots are visible
+     *  regardless of which face [card] targets. Falls back to [card]'s
+     *  face-restricted handle for modded inventories that only expose
+     *  IItemHandler / Storage. */
+    fun countItemsAt(level: ServerLevel, pos: BlockPos, card: CardSnapshot, filter: String): Long {
+        val be = level.getBlockEntity(pos)
+        if (be is Container) {
+            var total = 0L
+            for (slot in 0 until be.containerSize) {
+                val stack = be.getItem(slot)
+                if (stack.isEmpty) continue
+                val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+                if (CardHandle.matchesFilter(itemId, ResourceKind.ITEM, filter)) total += stack.count
+            }
+            return total
+        }
+        val storage = getStorage(level, card) ?: return 0L
+        return PlatformServices.storage.countItems(storage) { CardHandle.matchesFilter(it, ResourceKind.ITEM, filter) }
     }
 
     fun countFluid(
@@ -62,8 +146,13 @@ object NetworkStorageHelper {
         channel: ChannelFilter = ChannelFilter.All,
     ): Long {
         var total = 0L
+        val visited = HashSet<BlockPos>()
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
+            val cap = card.capability as? StorageSideCapability ?: continue
+            // Same dedup reasoning as [countItems]. No vanilla equivalent of
+            // [Container] for fluids, so we accept the face-restricted view.
+            if (!visited.add(cap.adjacentPos)) continue
             val storage = getFluidStorage(level, card) ?: continue
             total += PlatformServices.storage.countFluid(storage) { CardHandle.matchesFilter(it, ResourceKind.FLUID, filter) }
         }

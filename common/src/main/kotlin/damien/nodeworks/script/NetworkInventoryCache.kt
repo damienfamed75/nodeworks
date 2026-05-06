@@ -199,13 +199,15 @@ class NetworkInventoryCache(
     }
 
     /** Start a new poll cycle: clear the front buffers, capture the network
-     *  snapshot for the cycle, return the frozen card list to scan. */
+     *  snapshot for the cycle, return the frozen card list to scan. Cards are
+     *  deduped by adjacentPos so multi-face setups on one block don't poll
+     *  the inventory more than once per cycle. */
     private fun snapshotCardsForCycle(): List<CardSnapshot> {
         frontBuffer.clear()
         fluidFrontBuffer.clear()
         val snapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
         cycleSnapshot = snapshot
-        return NetworkStorageHelper.getStorageCards(snapshot).toList()
+        return NetworkStorageHelper.getDedupedStorageCards(snapshot)
     }
 
     /** Read one storage card's items and fluids into the front buffers. Called
@@ -213,7 +215,16 @@ class NetworkInventoryCache(
     private fun pollCard(card: CardSnapshot) {
         val storage = NetworkStorageHelper.getStorage(level, card)
         if (storage != null) {
-            val items = PlatformServices.storage.findAllItemInfo(storage) { true }
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+            // findAllItemInfoAt walks the underlying Container directly when
+            // available so all slots are visible regardless of [card]'s
+            // face. Falls back to [storage] (face-restricted handle) for
+            // modded inventories.
+            val items = if (cap != null) {
+                NetworkStorageHelper.findAllItemInfoAt(level, cap.adjacentPos, card) { true }
+            } else {
+                PlatformServices.storage.findAllItemInfo(storage) { true }
+            }
             for (info in items) {
                 val key = cacheKey(info.itemId, info.hasData)
                 val existing = frontBuffer[key]
