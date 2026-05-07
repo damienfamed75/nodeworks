@@ -27,7 +27,7 @@ object PlacerHandle {
 
     fun create(
         snapshot: PlacerSnapshot,
-        networkSnapshot: damien.nodeworks.network.NetworkSnapshot,
+        networkSnapshotFn: () -> damien.nodeworks.network.NetworkSnapshot,
         level: ServerLevel,
     ): LuaTable {
         val pos = snapshot.pos
@@ -72,7 +72,7 @@ object PlacerHandle {
                 val ok = PlatformServices.fakePlayer.tryPlace(
                     level, target, placedAgainst, entity.ownerUuid,
                     mutate = {
-                        if (!extractOneFromNetwork(level, networkSnapshot, itemId)) return@tryPlace false
+                        if (!extractOneFromNetwork(level, networkSnapshotFn(), itemId)) return@tryPlace false
                         pulled = true
                         level.setBlock(target, newState, Block.UPDATE_ALL)
 
@@ -89,7 +89,7 @@ object PlacerHandle {
                     onRollback = {
                         if (pulled) {
                             val refund = net.minecraft.world.item.ItemStack(item, 1)
-                            damien.nodeworks.script.NetworkStorageHelper.insertItemStack(level, networkSnapshot, refund)
+                            damien.nodeworks.script.NetworkStorageHelper.insertItemStack(level, networkSnapshotFn(), refund)
                         }
                     },
                 )

@@ -87,6 +87,9 @@ class PlacerBlockEntity(
     var previewArea: Boolean = false
         set(value) {
             field = value
+            if (level?.isClientSide == true) {
+                damien.nodeworks.render.UserPreviewRenderer.TrackedPlacers.setPreview(this, value)
+            }
             markDirtyAndSync()
         }
 
@@ -107,7 +110,7 @@ class PlacerBlockEntity(
     }
 
     // --- Connectable ---
-    override fun getConnections(): Set<BlockPos> = connections.toSet()
+    override fun getConnections(): Set<BlockPos> = connections
     override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
         markDirtyAndSync()
@@ -127,13 +130,19 @@ class PlacerBlockEntity(
             NodeConnectionHelper.trackNode(level, worldPosition)
             NodeConnectionHelper.queueRevalidation(level, worldPosition)
         }
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
-        damien.nodeworks.render.UserPreviewRenderer.TrackedPlacers.add(this)
+        // Client-only render trackers, see UserBlockEntity.setLevel for
+        // the rationale.
+        if (level.isClientSide) {
+            damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
+            damien.nodeworks.render.UserPreviewRenderer.TrackedPlacers.add(this)
+        }
     }
 
     override fun setRemoved() {
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
-        damien.nodeworks.render.UserPreviewRenderer.TrackedPlacers.remove(worldPosition)
+        if (level?.isClientSide == true) {
+            damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
+            damien.nodeworks.render.UserPreviewRenderer.TrackedPlacers.remove(worldPosition)
+        }
         val lvl = level
         if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)

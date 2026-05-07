@@ -375,7 +375,7 @@ class ExportChestBlockEntity(
     }
 
     // --- Connectable ---
-    override fun getConnections(): Set<BlockPos> = connections.toSet()
+    override fun getConnections(): Set<BlockPos> = connections
     override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
         markDirtyAndSync()
@@ -401,11 +401,11 @@ class ExportChestBlockEntity(
             NodeConnectionHelper.trackNode(newLevel, worldPosition)
             NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
         }
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
     }
 
     override fun setRemoved() {
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
         val lvl = level
         if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)

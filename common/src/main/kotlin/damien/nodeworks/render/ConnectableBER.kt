@@ -78,7 +78,10 @@ abstract class ConnectableBER<T, S : ConnectableRenderState>(
         camera: CameraRenderState,
     )
 
-    override fun shouldRenderOffScreen(): Boolean = true
+    /** Per-frame laser geometry stays inside the unit cube, so frustum culling
+     *  is correct. Focus Nodes widen [getRenderBoundingBox] so the culler
+     *  honours their long-range beams. */
+    override fun shouldRenderOffScreen(): Boolean = false
 
     /** Network colour for [blockEntity]. Defers to [Connectable.networkColor], which
      *  trusts the propagated [Connectable.networkId]. GuideME scene blocks must set

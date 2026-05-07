@@ -77,6 +77,9 @@ class BreakerBlockEntity(
     var previewArea: Boolean = false
         set(value) {
             field = value
+            if (level?.isClientSide == true) {
+                damien.nodeworks.render.UserPreviewRenderer.TrackedBreakers.setPreview(this, value)
+            }
             markDirtyAndSync()
         }
 
@@ -124,6 +127,11 @@ class BreakerBlockEntity(
      *  to detect mid-break drift (player swap, world physics) and abort if so. */
     private var targetSnapshot: BlockState? = null
 
+    /** Last idle-tick we ran [tryAutoStart] on. Negative-init so the first
+     *  tick post-load always polls. */
+    @Transient
+    private var lastIdlePollTick: Long = -IDLE_POLL_INTERVAL_TICKS.toLong()
+
     /** Begin a break of the block at [targetPos]. No-op when already breaking, the
      *  target is air / unbreakable, or above-tier (silent, the API contract says
      *  diamond pickaxe equivalence is the cap). Returns true when a break actually
@@ -159,11 +167,13 @@ class BreakerBlockEntity(
     /** Per-tick advance. Called from [BreakerBlock.getTicker]'s server-side ticker. */
     fun serverTick(level: ServerLevel) {
         if (!isBreaking) {
-            // Idle: if the player set a filter and the redstone gate allows,
-            // auto-start a break against the front block whenever it matches.
-            // Lua-driven breaks ([BreakerHandle.break]) set a [pendingHandler]
-            // and reach this same path through [startBreak] below; the auto-
-            // path leaves the handler null so drops route to network storage.
+            // Idle: poll the front block on a [IDLE_POLL_INTERVAL_TICKS]
+            // cadence. The block at targetPos almost never changes between
+            // ticks, so running the registry lookup + filter regex every
+            // tick is wasted work. Lua-driven breaks ([BreakerHandle.break])
+            // bypass this path, they call startBreak directly.
+            if (level.gameTime - lastIdlePollTick < IDLE_POLL_INTERVAL_TICKS) return
+            lastIdlePollTick = level.gameTime
             tryAutoStart(level)
             return
         }
@@ -279,7 +289,7 @@ class BreakerBlockEntity(
     }
 
     // --- Connectable ---
-    override fun getConnections(): Set<BlockPos> = connections.toSet()
+    override fun getConnections(): Set<BlockPos> = connections
     override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
         markDirtyAndSync()
@@ -299,13 +309,19 @@ class BreakerBlockEntity(
             NodeConnectionHelper.trackNode(level, worldPosition)
             NodeConnectionHelper.queueRevalidation(level, worldPosition)
         }
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
-        damien.nodeworks.render.UserPreviewRenderer.TrackedBreakers.add(this)
+        // Client-only render trackers, see UserBlockEntity.setLevel for
+        // the rationale.
+        if (level.isClientSide) {
+            damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
+            damien.nodeworks.render.UserPreviewRenderer.TrackedBreakers.add(this)
+        }
     }
 
     override fun setRemoved() {
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
-        damien.nodeworks.render.UserPreviewRenderer.TrackedBreakers.remove(worldPosition)
+        if (level?.isClientSide == true) {
+            damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
+            damien.nodeworks.render.UserPreviewRenderer.TrackedBreakers.remove(worldPosition)
+        }
         val lvl = level
         if (lvl is ServerLevel) {
             // Wipe any leftover crack overlay if we're mid-break when the breaker is broken.
@@ -364,6 +380,13 @@ class BreakerBlockEntity(
         const val REDSTONE_LOW = 1
         const val REDSTONE_HIGH = 2
 
+        /** Idle-poll cadence (ticks) for the auto-break scan. Avoids running
+         *  the registry lookup + filter regex every tick when the front
+         *  block hasn't changed; matches PlacerBlockEntity's PLACE_INTERVAL_TICKS
+         *  rate so a Breaker + Placer pair gated by the same redstone fires
+         *  in lockstep. */
+        const val IDLE_POLL_INTERVAL_TICKS = 20
+
         /** Pick a diamond / wooden tool pair appropriate for [state]. Tries
          *  pickaxe, axe, then shovel and returns the first whose diamond
          *  variant is the correct tool for drops. Null when none of the three
@@ -394,11 +417,23 @@ class BreakerBlockEntity(
             val (_, woodenTool) = pickToolPair(state) ?: return null
             val hardness = state.getDestroySpeed(level, pos)
             if (hardness < 0f) return null
-            // Wooden-tier speed is 0 for blocks it doesn't apply to. Floor at 1.0
-            // so we still produce a finite tick count via the slow-path divisor.
-            val woodSpeed = woodenTool.getDestroySpeed(state).coerceAtLeast(1f)
+            val rawWoodSpeed = woodenTool.getDestroySpeed(state)
+            // Floor at 1.0 so a 0-speed reading (modded edges where the tool's
+            // class doesn't apply at all) still yields a finite tick count.
+            val woodSpeed = rawWoodSpeed.coerceAtLeast(1f)
             val canHarvestWithWood = woodenTool.isCorrectToolForDrops(state)
-            val divisor = if (canHarvestWithWood) 30f else 100f
+            // Three-tier divisor scales the per-tick damage:
+            //   - wooden harvests fully (e.g., cobblestone): fast path (30)
+            //   - wooden's class applies but wrong tier (vanilla iron ore, obsidian): 100
+            //   - wooden doesn't apply at all (modded above-tier blocks where
+            //     even the tool class is wrong): extra-slow (200) so the floor
+            //     above doesn't accidentally make them as fast as tier-applicable
+            //     blocks of the same hardness.
+            val divisor = when {
+                canHarvestWithWood -> 30f
+                rawWoodSpeed > 0f -> 100f
+                else -> 200f
+            }
             val damagePerTick = woodSpeed / (hardness * divisor)
             if (damagePerTick <= 0f) return null
             return ceil(1f / damagePerTick).toInt().coerceAtLeast(1)

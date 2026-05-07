@@ -33,6 +33,12 @@ class CardHandle private constructor(
      *  the card is on a network without a controller (rare/transient), the
      *  rate limiter falls back to its NO_NETWORK_UUID bucket. */
     private val networkId: UUID?,
+    /** Live network snapshot accessor. Each storage-resolving call walks the
+     *  current snapshot to confirm the card still occupies the same slot it
+     *  did at handle creation, so removing or moving the card surfaces as a
+     *  clear LuaError instead of silently writing to the original chest.
+     *  Null skips the check (preconstructed handles in GuideME scenes). */
+    private val snapshotFn: (() -> damien.nodeworks.network.NetworkSnapshot)?,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger("nodeworks-cardhandle")
@@ -108,8 +114,13 @@ class CardHandle private constructor(
             return resourceId == filter
         }
 
-        fun create(card: CardSnapshot, level: ServerLevel, networkId: UUID? = null): LuaTable {
-            return CardHandle(card, level, null, null, networkId).toLuaTable()
+        fun create(
+            card: CardSnapshot,
+            level: ServerLevel,
+            networkId: UUID? = null,
+            snapshotFn: (() -> damien.nodeworks.network.NetworkSnapshot)? = null,
+        ): LuaTable {
+            return CardHandle(card, level, null, null, networkId, snapshotFn).toLuaTable()
         }
 
         private fun faceName(name: String): Direction? = when (name.lowercase()) {
@@ -349,7 +360,28 @@ class CardHandle private constructor(
         }
     }
 
+    /** Confirm this handle's underlying card still occupies the same physical
+     *  slot it did at creation. Identity is `(adjacentPos, slotIndex,
+     *  capability.type)`, so renaming or filter edits are tolerated but
+     *  removal or moving the card to a different node throws. No-op when
+     *  [snapshotFn] is null (legacy / GuideME callers). */
+    private fun verifyCardOnNetwork() {
+        val fn = snapshotFn ?: return
+        val ourPos = card.capability.adjacentPos
+        val ourType = card.capability.type
+        val ourSlot = card.slotIndex
+        val stillThere = fn().allCards().any { c ->
+            c.capability.adjacentPos == ourPos &&
+                c.capability.type == ourType &&
+                c.slotIndex == ourSlot
+        }
+        if (!stillThere) {
+            throw LuaError("Card '${card.effectiveAlias}' is no longer on the network")
+        }
+    }
+
     private fun getItemStorage(): ItemStorageHandle? {
+        verifyCardOnNetwork()
         val cap = card.capability
         val targetPos = cap.adjacentPos
         val face = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
@@ -362,6 +394,7 @@ class CardHandle private constructor(
     }
 
     private fun getFluidStorage(): FluidStorageHandle? {
+        verifyCardOnNetwork()
         val cap = card.capability
         val targetPos = cap.adjacentPos
         val face = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
@@ -388,7 +421,7 @@ class CardHandle private constructor(
             override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
                 val dir = faceName(name) ?: throw LuaError("Unknown face: $name")
-                return CardHandle(card, level, dir, slotFilter, networkId).toLuaTable()
+                return CardHandle(card, level, dir, slotFilter, networkId, snapshotFn).toLuaTable()
             }
         })
 
@@ -399,7 +432,7 @@ class CardHandle private constructor(
                 for (i in 2..args.narg()) {
                     slots.add(args.checkint(i) - 1) // Lua 1-indexed → 0-indexed
                 }
-                return CardHandle(card, level, accessFace, slots, networkId).toLuaTable()
+                return CardHandle(card, level, accessFace, slots, networkId, snapshotFn).toLuaTable()
             }
         })
 

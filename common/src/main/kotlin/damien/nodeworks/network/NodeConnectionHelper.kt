@@ -149,6 +149,7 @@ object NodeConnectionHelper {
         blockedDataCache.clear()
         nodesByDimension.clear()
         WirelessBroadcastRegistry.clear()
+        NetworkDiscovery.invalidateAll()
     }
 
     // --- Per-dimension Connectable chunk index, used by [onBlockChanged] ---
@@ -412,19 +413,29 @@ object NodeConnectionHelper {
             }
         }
 
-        // UPDATE_ALL matches the pattern other Connectable BE setters use, the BE NBT sync
-        // piggybacks on the chunk-broadcast pass after setChanged.
+        // `markUnsaved` persists the new id without queuing the BE for the
+        // standard per-BE sync broadcast. Clients receive the batched payload below.
+        val changedPositions = ArrayList<BlockPos>()
+        val previousIds = HashSet<java.util.UUID>()
         for (pos in visited) {
             val entity = getConnectable(level, pos) ?: continue
             if (entity.networkId != foundId) {
+                entity.networkId?.let { previousIds.add(it) }
                 entity.networkId = foundId
-                val be = entity as? net.minecraft.world.level.block.entity.BlockEntity
-                if (be != null) {
-                    be.setChanged()
-                    level.sendBlockUpdated(pos, be.blockState, be.blockState, net.minecraft.world.level.block.Block.UPDATE_ALL)
-                }
+                changedPositions.add(pos)
+                level.getChunk(pos).markUnsaved()
             }
         }
+
+        if (changedPositions.isNotEmpty()) {
+            damien.nodeworks.platform.PlatformServices.serverNetworking.sendToPlayersInDimension(
+                level,
+                NetworkIdBatchPayload(foundId, changedPositions),
+            )
+        }
+
+        foundId?.let { NetworkDiscovery.invalidate(it) }
+        for (id in previousIds) NetworkDiscovery.invalidate(id)
     }
 
     /** Face-adjacent Connectable BEs. Both endpoints must opt into adjacency, and both

@@ -13,6 +13,8 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.MultiBufferSource
 import net.minecraft.client.renderer.rendertype.RenderTypes
 import net.minecraft.core.BlockPos
+import net.minecraft.world.level.block.entity.BlockEntity
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
 
 /**
@@ -56,7 +58,6 @@ object UserPreviewRenderer {
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
 
         TrackedUsers.forEach { pos, entity ->
-            if (!entity.previewArea) return@forEach
             val state = level.getBlockState(pos)
             if (state.block !is UserBlock) return@forEach
             val facing = state.getValue(UserBlock.FACING)
@@ -70,7 +71,6 @@ object UserPreviewRenderer {
         }
 
         TrackedBreakers.forEach { pos, entity ->
-            if (!entity.previewArea) return@forEach
             val state = level.getBlockState(pos)
             if (state.block !is BreakerBlock) return@forEach
             val facing = state.getValue(BreakerBlock.FACING)
@@ -81,7 +81,6 @@ object UserPreviewRenderer {
         }
 
         TrackedPlacers.forEach { pos, entity ->
-            if (!entity.previewArea) return@forEach
             val state = level.getBlockState(pos)
             if (state.block !is PlacerBlock) return@forEach
             val facing = state.getValue(PlacerBlock.FACING)
@@ -150,58 +149,33 @@ object UserPreviewRenderer {
             .setLineWidth(LINE_WIDTH)
     }
 
-    /** Live UserBlockEntities the renderer iterates each frame, populated by
-     *  the BE's setLevel / setRemoved hooks. Single-thread access (BE
-     *  add/remove and the world-render hook all run on the client main
-     *  thread on Minecraft client) so no locking. */
-    object TrackedUsers {
-        private val byPos: MutableMap<BlockPos, UserBlockEntity> = HashMap()
+    /** Per-BE-type preview-enabled set. The [previewArea] setter on each BE
+     *  pushes into [setPreview] so the per-frame iteration only walks BEs the
+     *  player has actively asked to see, the typical case is empty. Concurrent
+     *  map because NBT load runs on async chunk-IO threads while the renderer
+     *  reads from the render thread. */
+    class PreviewTracker<T : BlockEntity>(private val isEnabled: (T) -> Boolean) {
+        private val previewByPos = ConcurrentHashMap<BlockPos, T>()
 
-        fun add(entity: UserBlockEntity) {
-            byPos[entity.blockPos] = entity
+        fun add(entity: T) {
+            if (isEnabled(entity)) previewByPos[entity.blockPos] = entity
         }
 
         fun remove(pos: BlockPos) {
-            byPos.remove(pos)
+            previewByPos.remove(pos)
         }
 
-        fun forEach(action: (BlockPos, UserBlockEntity) -> Unit) {
-            for ((pos, entity) in byPos) action(pos, entity)
-        }
-    }
-
-    /** Same shape as [TrackedUsers] for the Breaker preview. Single-block
-     *  AABB rendered at the front face. */
-    object TrackedBreakers {
-        private val byPos: MutableMap<BlockPos, BreakerBlockEntity> = HashMap()
-
-        fun add(entity: BreakerBlockEntity) {
-            byPos[entity.blockPos] = entity
+        fun setPreview(entity: T, enabled: Boolean) {
+            if (enabled) previewByPos[entity.blockPos] = entity
+            else previewByPos.remove(entity.blockPos)
         }
 
-        fun remove(pos: BlockPos) {
-            byPos.remove(pos)
-        }
-
-        fun forEach(action: (BlockPos, BreakerBlockEntity) -> Unit) {
-            for ((pos, entity) in byPos) action(pos, entity)
+        fun forEach(action: (BlockPos, T) -> Unit) {
+            for ((pos, entity) in previewByPos) action(pos, entity)
         }
     }
 
-    /** Same shape as [TrackedBreakers] for the Placer preview. */
-    object TrackedPlacers {
-        private val byPos: MutableMap<BlockPos, PlacerBlockEntity> = HashMap()
-
-        fun add(entity: PlacerBlockEntity) {
-            byPos[entity.blockPos] = entity
-        }
-
-        fun remove(pos: BlockPos) {
-            byPos.remove(pos)
-        }
-
-        fun forEach(action: (BlockPos, PlacerBlockEntity) -> Unit) {
-            for ((pos, entity) in byPos) action(pos, entity)
-        }
-    }
+    val TrackedUsers = PreviewTracker<UserBlockEntity> { it.previewArea }
+    val TrackedBreakers = PreviewTracker<BreakerBlockEntity> { it.previewArea }
+    val TrackedPlacers = PreviewTracker<PlacerBlockEntity> { it.previewArea }
 }

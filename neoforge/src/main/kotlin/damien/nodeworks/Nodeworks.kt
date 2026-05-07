@@ -53,6 +53,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         PlatformServices.storage = NeoForgeStorageService()
         PlatformServices.modState = NeoForgeModStateService()
         PlatformServices.fakePlayer = damien.nodeworks.platform.NeoForgeFakePlayerService()
+        PlatformServices.serverNetworking = NeoForgeServerNetworkingService()
 
         // Register the server-scoped config. Per-world file at
         // `serverconfig/nodeworks-server.toml` is auto-generated on first load
@@ -534,10 +535,17 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                             "filter" -> entity.filterRule = payload.strValue
                                 .take(damien.nodeworks.screen.UserOpenData.MAX_FILTER_LENGTH)
                             "redstone" -> entity.redstoneMode = payload.intValue.coerceIn(0, 2)
-                            "mode" -> entity.mode =
-                                if (payload.intValue == damien.nodeworks.block.entity.UserBlockEntity.UseMode.HOLD.ordinal)
-                                    damien.nodeworks.block.entity.UserBlockEntity.UseMode.HOLD
-                                else damien.nodeworks.block.entity.UserBlockEntity.UseMode.INSTANT
+                            "mode" -> {
+                                // Coerce explicitly so an out-of-range payload
+                                // doesn't silently route to INSTANT, matches
+                                // the `redstone` pattern above.
+                                val ord = payload.intValue.coerceIn(
+                                    0,
+                                    damien.nodeworks.block.entity.UserBlockEntity.UseMode.entries.size - 1,
+                                )
+                                entity.mode =
+                                    damien.nodeworks.block.entity.UserBlockEntity.UseMode.entries[ord]
+                            }
                             "preview" -> entity.previewArea = payload.intValue != 0
                         }
                     }
@@ -592,6 +600,11 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val player = context.player()
                 val menu = player.containerMenu as? damien.nodeworks.screen.ExportChestMenu ?: return@enqueueWork
                 if (menu.containerId != payload.containerId) return@enqueueWork
+                // 8 m proximity gate, matches DeviceSettingsPayload's check on
+                // the same chest's other settings. Without it, players up to
+                // the menu's 64 m stillValid range could spam filter-rule
+                // changes from beyond the design's settings range.
+                if (!player.blockPosition().closerThan(menu.devicePos, 8.0)) return@enqueueWork
                 val level = player.level() as? ServerLevel ?: return@enqueueWork
                 val entity = level.getBlockEntity(menu.devicePos) as? damien.nodeworks.block.entity.ExportChestBlockEntity ?: return@enqueueWork
                 entity.filterRules = payload.rules
@@ -762,6 +775,18 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         registrar.playToClient(ServerPolicySyncPayload.TYPE, ServerPolicySyncPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 damien.nodeworks.script.ClientServerPolicy.update(payload.enabledModules, payload.disabledMethods)
+            }
+        }
+
+        registrar.playToClient(NetworkIdBatchPayload.TYPE, NetworkIdBatchPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val level = net.minecraft.client.Minecraft.getInstance().level ?: return@enqueueWork
+                for (pos in payload.positions) {
+                    if (!level.isLoaded(pos)) continue
+                    val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
+                    be.networkId = payload.newId
+                }
+                damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(payload.newId)
             }
         }
     }

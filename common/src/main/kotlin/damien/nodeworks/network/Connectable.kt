@@ -39,7 +39,9 @@ interface Connectable {
     /** Flip the force-block on [side]. Default no-op. */
     fun toggleForcedPipeBlock(@Suppress("UNUSED_PARAMETER") side: Direction) {}
 
-    /** Render colour resolved from [networkId]. Null id renders grey. */
+    /** Client-only. References [damien.nodeworks.render.NodeConnectionRenderer]
+     *  for the default colour fallback. Server code should read [networkId]
+     *  directly and look up the colour via [NetworkSettingsRegistry]. */
     fun networkColor(): Int {
         val id = networkId ?: return damien.nodeworks.render.NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         return NetworkSettingsRegistry.getColor(id)

@@ -58,7 +58,9 @@ val NetworkApi: ApiSurface = api(Network) {
         param("name", NetworkName, description = "Name of a card, variable, breaker, or placer on this network.")
         returns(Any)
         description =
-            "Returns the card, variable, breaker, or placer with this name. Errors if no match. Cards win on collision."
+            "Returns the card, variable, breaker, or placer with this name. Errors if no match. Cards win on collision. " +
+            "The returned handle binds to the entity's slot at lookup time, calling methods on it after the card or " +
+            "device is removed or moved throws. Re-fetch via `network:get` to follow renames."
         guidebookRef = "nodeworks:lua-api/network.md#get"
     }
 

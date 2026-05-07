@@ -92,7 +92,8 @@ class ColorPickerScreen(
         syncCircleToColor()
 
         // Hex input field
-        hexField = EditBox(font, panelX + PICKER_X + 18, panelY + PICKER_Y + PICKER_H + 6, 50, 14, Component.literal("Hex"))
+        hexField =
+            EditBox(font, panelX + PICKER_X + 18, panelY + PICKER_Y + PICKER_H + 6, 50, 14, Component.literal("Hex"))
         hexField.setMaxLength(6)
         hexField.value = String.format("%06X", selectedColor)
         hexField.setResponder { text ->
@@ -103,7 +104,8 @@ class ColorPickerScreen(
                         selectedColor = c
                         syncCircleToColor()
                     }
-                } catch (_: NumberFormatException) {}
+                } catch (_: NumberFormatException) {
+                }
             }
         }
         addRenderableWidget(hexField)
@@ -172,7 +174,14 @@ class ColorPickerScreen(
         )
 
         // Hex label
-        graphics.drawString(font, "#", panelX + PICKER_X + 10, panelY + PICKER_Y + PICKER_H + 9, 0xFFAAAAAA.toInt(), false)
+        graphics.drawString(
+            font,
+            "#",
+            panelX + PICKER_X + 10,
+            panelY + PICKER_Y + PICKER_H + 9,
+            0xFFAAAAAA.toInt(),
+            false
+        )
 
         // Preview swatch with slot border
         val swatchX = panelX + PICKER_X + 72
@@ -183,7 +192,7 @@ class ColorPickerScreen(
         // Buttons
         val btnY = panelY + PANEL_H - BTN_H - 8
 
-        // Random button (replaces Default — rolls the same bright HSV color
+        // Random button (replaces Default, rolls the same bright HSV color
         // generator the Network Controller uses on placement).
         val randX = panelX + 10
         renderButton(graphics, randX, btnY, BTN_W, BTN_H, "Random", mouseX, mouseY)
@@ -195,7 +204,17 @@ class ColorPickerScreen(
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
     }
 
-    private fun renderButton(graphics: GuiGraphicsExtractor, bx: Int, by: Int, bw: Int, bh: Int, label: String, mouseX: Int, mouseY: Int, green: Boolean = false) {
+    private fun renderButton(
+        graphics: GuiGraphicsExtractor,
+        bx: Int,
+        by: Int,
+        bw: Int,
+        bh: Int,
+        label: String,
+        mouseX: Int,
+        mouseY: Int,
+        green: Boolean = false
+    ) {
         val hovered = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + bh
         val slice = if (hovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON
         slice.draw(graphics, bx, by, bw, bh)
@@ -256,7 +275,7 @@ class ColorPickerScreen(
     override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
         if (event.buttonNum == 0 && draggingPicker) {
             // Once the drag starts inside the picker, follow the cursor
-            // anywhere on the screen — clamp to picker bounds so the indicator
+            // anywhere on the screen, clamp to picker bounds so the indicator
             // sticks to the edge instead of flying off-screen.
             val px = panelX + PICKER_X
             val py = panelY + PICKER_Y
@@ -282,7 +301,7 @@ class ColorPickerScreen(
     /** Compute the gradient (x, y) for the current [selectedColor] via
      *  HSB→position. Saturation isn't represented on the gradient (fixed at
      *  0.85 by [createPickerTexture]), so colors with low saturation map to
-     *  an approximate position — close enough for visual feedback. */
+     *  an approximate position, close enough for visual feedback. */
     private fun syncCircleToColor() {
         val r = (selectedColor shr 16) and 0xFF
         val g = (selectedColor shr 8) and 0xFF

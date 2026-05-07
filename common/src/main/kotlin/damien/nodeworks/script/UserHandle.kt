@@ -29,7 +29,6 @@ object UserHandle {
 
     fun create(
         snapshot: UserSnapshot,
-        @Suppress("UNUSED_PARAMETER") networkSnapshot: damien.nodeworks.network.NetworkSnapshot,
         level: ServerLevel,
     ): LuaTable {
         val pos = snapshot.pos

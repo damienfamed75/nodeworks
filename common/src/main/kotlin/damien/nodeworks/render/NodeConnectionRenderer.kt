@@ -20,11 +20,22 @@ object NodeConnectionRenderer {
 
     private val knownNodes: MutableSet<BlockPos> = Collections.newSetFromMap(ConcurrentHashMap())
 
+    /** Network ids pending tint-cache invalidation, drained once per render
+     *  frame by the runnable [flushScheduled] guards. */
+    private val pendingDirtyNetworks: MutableSet<java.util.UUID> =
+        Collections.newSetFromMap(ConcurrentHashMap())
+    private val flushScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** Default network color (RGB, no alpha). Used as fallback when no controller is found. */
     const val DEFAULT_NETWORK_COLOR = 0x888888
 
-    /** Global tracker, any Connectable block entity can register/unregister here. */
-    fun trackConnectable(pos: BlockPos, loaded: Boolean) {
+    /** Global tracker, any Connectable block entity can register/unregister here.
+     *  Gated on [Level.isClientSide]: the [knownNodes] set drives the client
+     *  reachability render, server-side BEs in single-player or on a dedicated
+     *  server have no need to participate (and writing the same global map
+     *  from the integrated-server thread races the render thread). */
+    fun trackConnectable(level: net.minecraft.world.level.Level?, pos: BlockPos, loaded: Boolean) {
+        if (level == null || !level.isClientSide) return
         if (loaded) knownNodes.add(pos) else knownNodes.remove(pos)
     }
 
@@ -106,31 +117,22 @@ object NodeConnectionRenderer {
 
     fun register() {
         NodeBlockEntity.nodeTracker = NodeBlockEntity.NodeTracker { pos, loaded ->
-            trackConnectable(pos, loaded)
+            // [register] only fires client-side (NeoForgeClientSetup), so the
+            // tracker callback runs on the client; pass the client's level so
+            // the gate inside [trackConnectable] sees `isClientSide == true`.
+            trackConnectable(Minecraft.getInstance().level, pos, loaded)
         }
 
-        // Invalidate the BlockTintCache for every Connectable block belonging to a
-        // network whose settings just changed. The cache is keyed on (section, pos,
-        // layer) and only refreshes when the section is marked dirty, setSectionDirty
-        // forces a re-query of NetworkColorTintSource.colorInWorld next frame.
+        // Invalidate the BlockTintCache via setSectionDirty for every Connectable
+        // belonging to a network whose settings just changed. Coalesced through
+        // [pendingDirtyNetworks] + [flushDirtyNetworks] so a controller attach
+        // doesn't trigger one flush per Node BE sync. Disconnected BEs (null id)
+        // all render the default grey from the same fallback so no flush needed.
         damien.nodeworks.network.NetworkSettingsRegistry.onChanged = label@{ networkId ->
-            // Short-circuit on null: a batch of disconnected BEs (networkId == null)
-            // loading at once previously caused O(n²) chunk re-renders. Skipping is
-            // correctness-neutral since disconnected BEs all render the default grey
-            // from the same fallback path.
             if (networkId == null) return@label
-            val mc = Minecraft.getInstance()
-            val level = mc.level ?: return@label
-            val renderer = mc.levelRenderer
-            for (pos in knownNodes) {
-                if (!level.isLoaded(pos)) continue
-                val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
-                if (be.networkId != networkId) continue
-                renderer.setSectionDirty(
-                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.x),
-                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.y),
-                    net.minecraft.core.SectionPos.blockToSectionCoord(pos.z)
-                )
+            pendingDirtyNetworks.add(networkId)
+            if (flushScheduled.compareAndSet(false, true)) {
+                Minecraft.getInstance().execute { flushDirtyNetworks() }
             }
         }
 
@@ -140,6 +142,33 @@ object NodeConnectionRenderer {
                 renderPinHighlight(poseStack, consumers, cameraPos)
                 renderSelectionThroughWalls(poseStack, consumers, cameraPos)
             }
+        }
+    }
+
+    /** One-pass walk of [knownNodes] that calls `setSectionDirty` for every
+     *  section containing a BE on a pending-dirty network. Section-level dedup
+     *  collapses a many-node single-network update to a handful of re-renders.
+     *  Runs on the render thread via [Minecraft.execute]. */
+    private fun flushDirtyNetworks() {
+        flushScheduled.set(false)
+        val networks = HashSet(pendingDirtyNetworks)
+        pendingDirtyNetworks.clear()
+        if (networks.isEmpty()) return
+        val mc = Minecraft.getInstance()
+        val level = mc.level ?: return
+        val renderer = mc.levelRenderer
+        val dirtied = java.util.HashSet<Long>()
+        for (pos in knownNodes) {
+            if (!level.isLoaded(pos)) continue
+            val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
+            val id = be.networkId ?: continue
+            if (id !in networks) continue
+            val sx = net.minecraft.core.SectionPos.blockToSectionCoord(pos.x)
+            val sy = net.minecraft.core.SectionPos.blockToSectionCoord(pos.y)
+            val sz = net.minecraft.core.SectionPos.blockToSectionCoord(pos.z)
+            val key = net.minecraft.core.SectionPos.asLong(sx, sy, sz)
+            if (!dirtied.add(key)) continue
+            renderer.setSectionDirty(sx, sy, sz)
         }
     }
 

@@ -26,7 +26,6 @@ object BreakerHandle {
 
     fun create(
         snapshot: BreakerSnapshot,
-        networkSnapshot: damien.nodeworks.network.NetworkSnapshot,
         level: ServerLevel,
     ): LuaTable {
         val pos = snapshot.pos

@@ -49,9 +49,22 @@ object NetworkSettingsRegistry {
      * `loadAdditional` so newly-synced blocks get their tint cache refreshed in
      * the same frame. Fires for null too, so a block going from coloured to grey
      * (controller removed, conflict entered) doesn't keep rendering the stale colour.
+     *
+     * NeoForge runs `loadAdditional` on async chunk-IO threads while the client
+     * is mid-load, so this dispatches the [onChanged] body on the main render
+     * thread. On a dedicated server [Minecraft.getInstance] returns null and
+     * the call no-ops, [onChanged] is wired up only on the client.
      */
     fun notifyConnectableChanged(networkId: UUID?) {
-        onChanged?.invoke(networkId)
+        // Early-return on null `onChanged` so dedicated servers never touch
+        // the [Minecraft] class (it's not on the dedicated server classpath
+        // and would NoClassDefFoundError on first BE NBT load). The hook is
+        // wired up only by NeoForgeClientSetup, so server-side onChanged
+        // stays null forever.
+        val cb = onChanged ?: return
+        val mc = net.minecraft.client.Minecraft.getInstance()
+        if (mc.isSameThread) cb.invoke(networkId)
+        else mc.execute { cb.invoke(networkId) }
     }
 
     /** Update just the color for a network. */

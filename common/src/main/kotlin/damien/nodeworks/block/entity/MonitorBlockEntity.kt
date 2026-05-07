@@ -68,7 +68,7 @@ class MonitorBlockEntity(
 
     // --- Connectable ---
 
-    override fun getConnections(): Set<BlockPos> = connections.toSet()
+    override fun getConnections(): Set<BlockPos> = connections
 
     override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
@@ -93,11 +93,11 @@ class MonitorBlockEntity(
             NodeConnectionHelper.queueRevalidation(newLevel, worldPosition)
             damien.nodeworks.script.MonitorUpdateHelper.trackMonitor(worldPosition)
         }
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
     }
 
     override fun setRemoved() {
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
         val currentLevel = level
         if (currentLevel is ServerLevel) {
             damien.nodeworks.script.MonitorUpdateHelper.untrackMonitor(worldPosition)

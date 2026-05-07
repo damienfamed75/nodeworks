@@ -21,11 +21,7 @@ import net.minecraft.world.Container
  */
 object NetworkStorageHelper {
 
-    fun getStorageCards(snapshot: NetworkSnapshot): List<CardSnapshot> {
-        return snapshot.allCards()
-            .filter { it.capability is StorageSideCapability }
-            .sortedByDescending { (it.capability as StorageSideCapability).priority }
-    }
+    fun getStorageCards(snapshot: NetworkSnapshot): List<CardSnapshot> = snapshot.storageCards
 
     /**
      * Storage cards are fluid-first: if the adjacent block exposes a fluid capability,
@@ -94,7 +90,7 @@ object NetworkStorageHelper {
             for (slot in 0 until be.containerSize) {
                 val stack = be.getItem(slot)
                 if (stack.isEmpty) continue
-                val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+                val itemId = damien.nodeworks.platform.ItemIdCache.get(stack.item) ?: continue
                 if (!filter(itemId)) continue
                 val hasData = stack.componentsPatch.size() > 0
                 val cacheKey = "$itemId:$hasData"
@@ -130,7 +126,7 @@ object NetworkStorageHelper {
             for (slot in 0 until be.containerSize) {
                 val stack = be.getItem(slot)
                 if (stack.isEmpty) continue
-                val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+                val itemId = damien.nodeworks.platform.ItemIdCache.get(stack.item) ?: continue
                 if (CardHandle.matchesFilter(itemId, ResourceKind.ITEM, filter)) total += stack.count
             }
             return total
@@ -468,7 +464,7 @@ object NetworkStorageHelper {
         channel: ChannelFilter = ChannelFilter.All,
     ): Int {
         var remaining = stack.count
-        val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+        val itemId = damien.nodeworks.platform.ItemIdCache.get(stack.item)
         // ItemStack carries its own NBT-presence state, so the filter check
         // can use the actual `hasData` rather than guessing.
         val hasData = !stack.componentsPatch.isEmpty

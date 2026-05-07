@@ -134,7 +134,7 @@ class NetworkControllerBlockEntity(
 
     // --- Connectable ---
 
-    override fun getConnections(): Set<BlockPos> = connections.toSet()
+    override fun getConnections(): Set<BlockPos> = connections
 
     override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
@@ -169,15 +169,16 @@ class NetworkControllerBlockEntity(
                 }
             }
         }
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
     }
 
     override fun setRemoved() {
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
         val lvl = level
         if (lvl is ServerLevel) {
-            // Unclaim chunk-loading ONLY on actual block destruction, chunk unload runs
-            // setRemoved too and we don't want to tear down our own force-loads there.
+            // Only release on player destruction. Detecting other removal paths
+            // (`/setblock air`, etc.) by reading the new block state here would
+            // race with chunk-unload during world save and hang the save.
             if (blockDestroyed && chunkLoadingEnabled) {
                 releaseAllClaims(lvl)
             }

@@ -24,6 +24,7 @@ object PlatformServices {
     lateinit var blockEntity: BlockEntityService
     lateinit var modState: ModStateService
     lateinit var clientNetworking: ClientNetworkingService
+    lateinit var serverNetworking: ServerNetworkingService
     lateinit var clientEvents: ClientEventService
 
     /** FakePlayer factory + permission gate for script-driven block mutations. Defaults
@@ -87,6 +88,16 @@ interface FluidSpriteRenderer {
  */
 interface ClientNetworkingService {
     fun sendToServer(payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload)
+}
+
+/** Abstracts server-side packet sending. Used by `:common` code that pushes
+ *  batched updates to clients without going through per-BE NBT sync. */
+interface ServerNetworkingService {
+    /** Broadcast [payload] to every player in [level]'s dimension. */
+    fun sendToPlayersInDimension(
+        level: ServerLevel,
+        payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload,
+    )
 }
 
 /**

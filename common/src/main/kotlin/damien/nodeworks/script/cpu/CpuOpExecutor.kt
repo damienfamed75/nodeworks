@@ -486,7 +486,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val perBatchInputMap = progress.perBatchInputs
             .groupBy { it.first }
             .mapValues { (_, pairs) -> pairs.sumOf { it.second } }
-        return invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name)
+        return invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name, apiMatch.api.outputs)
     }
 
     /**
@@ -505,7 +505,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         op: Operation.Process,
         state: ProcessState,
         declaredInputs: Map<String, Long>,
-        apiName: String
+        apiName: String,
+        apiOutputs: List<Pair<String, Int>>,
     ): CraftScheduler.OpResult {
         val pre = declaredInputs.mapValues { (id, _) -> cpu.getBufferCount(id) }
 
@@ -522,7 +523,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         } catch (e: org.luaj.vm2.LuaError) {
             logger.warn("Processing handler error for '{}': {}", apiName, e.message)
             cancelInvocationPulls(state)
-            return CraftScheduler.OpResult.Failed("Handler threw: ${e.message}")
+            val cleanMsg = damien.nodeworks.script.LuaExecGate.stripLuaTraceback(e.message) ?: "lua error"
+            return CraftScheduler.OpResult.Failed("Handler ${formatHandlerLabel(apiName, apiOutputs)} threw: $cleanMsg")
         }
 
         // Explicit false return → immediate retry (handler opted into deferral)
@@ -774,15 +776,56 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val submitter = plan.submitterUuid
         if (!reason.startsWith("Cancelled") && submitter != null && lvl is ServerLevel) {
             val player = lvl.server.playerList.getPlayer(submitter)
+            val networkLabel = formatNetworkLabel(lvl)
             player?.sendSystemMessage(
                 net.minecraft.network.chat.Component.literal(
-                    "[Crafting CPU] ${plan.rootItemId} × ${plan.rootCount} failed: $reason"
+                    "[Crafting CPU $networkLabel] ${plan.rootItemId} × ${plan.rootCount} failed: $reason"
                 ).withStyle(net.minecraft.ChatFormatting.RED)
             )
         }
         cpu.clearAllCraftState()
         cpu.setCrafting(false)
         completionListeners.remove(plan)?.invoke(false)
+    }
+
+    /** Pick a short, player-facing identifier for a processing handler. Prefers
+     *  the output items (what the player thinks of the handler as producing) over
+     *  the api's internal `name` field, which is usually the card alias and means
+     *  nothing in chat. Single-output handlers read as `iron_ingot × 4`, multi-
+     *  output as `iron_ingot × 4 + xp_bottle × 1`. Falls back to the api name
+     *  when outputs are empty (shouldn't happen in practice but keeps the
+     *  formatter total). */
+    private fun formatHandlerLabel(apiName: String, apiOutputs: List<Pair<String, Int>>): String {
+        if (apiOutputs.isEmpty()) return "'$apiName'"
+        val parts = apiOutputs.joinToString(" + ") { (id, count) ->
+            "${id.substringAfter(':').replace('_', ' ')} × $count"
+        }
+        return "'$parts'"
+    }
+
+    /** Identify the network this CPU belongs to for chat-message context. Uses
+     *  the controller's player-set [damien.nodeworks.block.entity.NetworkControllerBlockEntity.networkName]
+     *  when non-empty, otherwise the controller's `(x y z)` so the player knows
+     *  which CPU pinged them when several are online. Falls back to the CPU's
+     *  own pos when the controller can't be reached (orphaned subnet / mid-load).
+     *
+     *  Resolves the controller through the snapshot rather than the client-side
+     *  `NodeConnectionRenderer.findController` so it stays callable from
+     *  [onPlanFailed] on dedicated servers without dragging in client classes. */
+    private fun formatNetworkLabel(lvl: ServerLevel): String {
+        val snapshot = snapshotForTick(lvl)
+        val controllerPos = snapshot.controller?.pos
+        if (controllerPos != null) {
+            val controller = lvl.getBlockEntity(controllerPos)
+                as? damien.nodeworks.block.entity.NetworkControllerBlockEntity
+            if (controller != null) {
+                val name = controller.networkName
+                if (name.isNotEmpty()) return "\"$name\""
+                return "@${controllerPos.x} ${controllerPos.y} ${controllerPos.z}"
+            }
+        }
+        val p = cpu.blockPos
+        return "cpu @${p.x} ${p.y} ${p.z}"
     }
 
     private fun flushBufferToStorage() {

@@ -156,7 +156,7 @@ class TerminalBlockEntity(
 
     // --- Connectable ---
 
-    override fun getConnections(): Set<BlockPos> = connections.toSet()
+    override fun getConnections(): Set<BlockPos> = connections
 
     override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
@@ -189,7 +189,7 @@ class TerminalBlockEntity(
             // so getBestNeighborSignal returns the correct current power level.
             lastRedstoneSignal = newLevel.getBestNeighborSignal(worldPosition)
         }
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
         if (!newLevel.isClientSide && autoRun && scriptText.isNotBlank()) {
             PlatformServices.modState.registerPendingAutoRun(newLevel as ServerLevel, worldPosition)
         }
@@ -197,7 +197,7 @@ class TerminalBlockEntity(
 
 
     override fun setRemoved() {
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
         val currentLevel = level
         if (currentLevel is ServerLevel) {
             PlatformServices.modState.stopScript(currentLevel, worldPosition)

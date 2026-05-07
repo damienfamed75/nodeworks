@@ -816,3 +816,33 @@ data class ServerPolicySyncPayload(
     }
     override fun type() = TYPE
 }
+
+/**
+ * S2C: assign one network id to many Connectable BEs in one packet, for
+ * `propagateNetworkId` to push the result of a graph walk to clients without
+ * a per-BE NBT sync per affected position.
+ */
+data class NetworkIdBatchPayload(val newId: java.util.UUID?, val positions: List<BlockPos>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<NetworkIdBatchPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "network_id_batch")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, NetworkIdBatchPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                if (p.newId != null) {
+                    buf.writeBoolean(true); buf.writeUUID(p.newId)
+                } else buf.writeBoolean(false)
+                buf.writeVarInt(p.positions.size)
+                for (pos in p.positions) buf.writeBlockPos(pos)
+            },
+            { buf ->
+                val id = if (buf.readBoolean()) buf.readUUID() else null
+                val n = buf.readVarInt()
+                val list = ArrayList<BlockPos>(n)
+                repeat(n) { list.add(buf.readBlockPos()) }
+                NetworkIdBatchPayload(id, list)
+            }
+        )
+    }
+    override fun type() = TYPE
+}

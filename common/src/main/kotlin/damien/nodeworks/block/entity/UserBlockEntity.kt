@@ -130,6 +130,11 @@ class UserBlockEntity(
     var previewArea: Boolean = false
         set(value) {
             field = value
+            // Keep the renderer's preview-enabled tracker in sync. Client-only,
+            // server BEs aren't tracked. Skipped during ctor (level == null).
+            if (level?.isClientSide == true) {
+                damien.nodeworks.render.UserPreviewRenderer.TrackedUsers.setPreview(this, value)
+            }
             markDirtyAndSync()
         }
 
@@ -208,7 +213,7 @@ class UserBlockEntity(
     }
 
     // --- Connectable ---
-    override fun getConnections(): Set<BlockPos> = connections.toSet()
+    override fun getConnections(): Set<BlockPos> = connections
     override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
         markDirtyAndSync()
@@ -228,13 +233,22 @@ class UserBlockEntity(
             NodeConnectionHelper.trackNode(level, worldPosition)
             NodeConnectionHelper.queueRevalidation(level, worldPosition)
         }
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
-        damien.nodeworks.render.UserPreviewRenderer.TrackedUsers.add(this)
+        // Tracked-set add gated on the client side: the renderer + the
+        // NodeConnectionRenderer's `knownNodes` set are client-only state.
+        // On a dedicated server with no client thread these would just be
+        // dead memory; in single-player they'd race the integrated server
+        // BE against the client BE writing the same global HashMap.
+        if (level.isClientSide) {
+            damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
+            damien.nodeworks.render.UserPreviewRenderer.TrackedUsers.add(this)
+        }
     }
 
     override fun setRemoved() {
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
-        damien.nodeworks.render.UserPreviewRenderer.TrackedUsers.remove(worldPosition)
+        if (level?.isClientSide == true) {
+            damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
+            damien.nodeworks.render.UserPreviewRenderer.TrackedUsers.remove(worldPosition)
+        }
         val lvl = level
         if (lvl is ServerLevel) {
             // Block destroyed by a player -> synchronously return any
@@ -390,9 +404,13 @@ class UserBlockEntity(
 
         // 5. IDLE -> respond to fresh redstone triggers. EXTENDING and
         //    RETRACTING-with-stack both flag isUsing, blocking fresh uses
-        //    until the cycle completes.
+        //    until the cycle completes. Pre-cooldown gate skips the
+        //    `hasNeighborSignal` 6-direction scan when scheduleUse would
+        //    return false anyway, important for idle Users on a busy
+        //    network where the redstone read alone is the bulk of cost.
         if (isUsing) return
         if (redstoneMode == REDSTONE_IGNORED) return
+        if (level.gameTime - lastUseTick < USE_COOLDOWN_TICKS) return
         if (!redstoneAllows(level)) return
         when (mode) {
             UseMode.INSTANT -> tryUse(level)
@@ -643,7 +661,10 @@ class UserBlockEntity(
             endHold(level)
             return
         }
-        heldStack = fp.getItemInHand(InteractionHand.MAIN_HAND)
+        // Copy so we own the BE-side mirror; without this, a Lua script that
+        // swaps the shared FakePlayer's hand mid-hold would mutate our snapshot
+        // by reference and the BE's view goes out of sync with the live FP stack.
+        heldStack = fp.getItemInHand(InteractionHand.MAIN_HAND).copy()
     }
 
     /** Stop an in-progress hold. Transitions HOLDING -> RETRACTING with the

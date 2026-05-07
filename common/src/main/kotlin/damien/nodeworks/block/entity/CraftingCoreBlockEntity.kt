@@ -192,14 +192,11 @@ class CraftingCoreBlockEntity(
 
     private fun sanitizeFailureReason(raw: String): String {
         if (raw.isEmpty()) return raw
-        // Drop the LuaJ traceback suffix (already stripped at most call sites, belt-
-        // and-braces here in case a path missed it).
-        val noTraceback = raw.substringBefore("\nstack traceback:")
-        // First non-blank line only, exception messages occasionally span multiple
-        // lines and the GUI's single-line label can't render those.
+        // Belt-and-braces: most call sites already strip via LuaExecGate.stripLuaTraceback.
+        val noTraceback = damien.nodeworks.script.LuaExecGate.stripLuaTraceback(raw) ?: raw
+        // First non-blank line only, the GUI's single-line label can't render multi-line.
         val firstLine = noTraceback.lineSequence().firstOrNull { it.isNotBlank() } ?: noTraceback
-        // Strip Java/Kotlin/LuaJ exception class prefixes like
-        // "java.lang.IndexOutOfBoundsException: " so the player sees the message only.
+        // Drop "java.lang.IndexOutOfBoundsException: " etc. so the player sees only the message.
         val prefix = Regex("""\b(?:java|kotlin|org\.luaj)\.[\w.$]+(?:Exception|Error)?:\s*""")
         return prefix.replace(firstLine, "").trim()
     }
@@ -610,7 +607,7 @@ class CraftingCoreBlockEntity(
     // Connectable
     // =====================================================================
 
-    override fun getConnections(): Set<BlockPos> = connections.toSet()
+    override fun getConnections(): Set<BlockPos> = connections
 
     override fun addConnection(pos: BlockPos): Boolean {
         if (!connections.add(pos)) return false
@@ -660,7 +657,7 @@ class CraftingCoreBlockEntity(
                 )
             }
         }
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
     }
 
     /**
@@ -780,7 +777,7 @@ class CraftingCoreBlockEntity(
     }
 
     override fun setRemoved() {
-        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
+        damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
         val lvl = level
         if (lvl is ServerLevel) {
             NodeConnectionHelper.removeAllConnections(lvl, this)

@@ -31,7 +31,44 @@ object NetworkDiscovery {
     private val activeProviderWalks: ThreadLocal<MutableSet<Pair<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, BlockPos>>> =
         ThreadLocal.withInitial { mutableSetOf() }
 
+    /** Per-tick snapshot cache keyed by `(dimension, network UUID)`. Concurrent
+     *  because [Connectable.loadAdditional] runs on async chunk IO threads. */
+    private val cache: java.util.concurrent.ConcurrentHashMap<
+        Pair<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>, UUID>,
+        CachedSnapshot,
+    > = java.util.concurrent.ConcurrentHashMap()
+
+    private data class CachedSnapshot(val tick: Long, val snapshot: NetworkSnapshot)
+
+    fun invalidate(networkId: UUID) {
+        cache.entries.removeIf { it.key.second == networkId }
+    }
+
+    fun invalidateAll() {
+        cache.clear()
+    }
+
     fun discoverNetwork(level: ServerLevel, startPos: BlockPos): NetworkSnapshot {
+        val callerEntity = NodeConnectionHelper.getConnectable(level, startPos)
+        val callerId = callerEntity?.networkId
+        if (callerId != null) {
+            val cached = cache[level.dimension() to callerId]
+            if (cached != null && cached.tick == level.gameTime) return cached.snapshot
+        }
+
+        val snapshot = doDiscoverNetwork(level, startPos)
+
+        // Key by the resolved controller id (stable across conflicts) so all
+        // BEs on the network converge on the same cache entry regardless of
+        // which startPos was passed in.
+        val cacheId = snapshot.controller?.networkId ?: callerId
+        if (cacheId != null) {
+            cache[level.dimension() to cacheId] = CachedSnapshot(level.gameTime, snapshot)
+        }
+        return snapshot
+    }
+
+    private fun doDiscoverNetwork(level: ServerLevel, startPos: BlockPos): NetworkSnapshot {
         val visited = mutableSetOf<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         val nodes = mutableListOf<NodeSnapshot>()
@@ -356,6 +393,15 @@ data class NetworkSnapshot(
      *  in cards rather than O(N × ops). */
     private val flattenedCards: List<CardSnapshot> by lazy {
         nodes.flatMap { node -> node.sides.values.flatten() }
+    }
+
+    /** Storage cards on this network, sorted by priority (descending). Lazy
+     *  because [damien.nodeworks.script.NetworkStorageHelper.getStorageCards]
+     *  is called many times per Lua command and per device tick. */
+    val storageCards: List<CardSnapshot> by lazy {
+        flattenedCards
+            .filter { it.capability is damien.nodeworks.card.StorageSideCapability }
+            .sortedByDescending { (it.capability as damien.nodeworks.card.StorageSideCapability).priority }
     }
 
     /** Alias → card lookup, populated on first read. The literal [CardSnapshot.alias]

@@ -109,7 +109,7 @@ open class NodeBlockEntity(
 
     // --- Network connections ---
 
-    override fun getConnections(): List<BlockPos> = connections.toList()
+    override fun getConnections(): Collection<BlockPos> = connections
 
     override fun hasConnection(pos: BlockPos): Boolean = pos in connections
 
@@ -260,6 +260,7 @@ open class NodeBlockEntity(
     fun setStack(side: Direction, slot: Int, stack: ItemStack) {
         require(slot in 0 until SLOTS_PER_SIDE) { "Slot $slot out of range for side" }
         items[sideOffset(side) + slot] = stack
+        clearRedstoneIfNoCard(side)
         markDirtyAndSync()
     }
 
@@ -273,16 +274,22 @@ open class NodeBlockEntity(
 
     override fun removeItem(slot: Int, amount: Int): ItemStack {
         val result = ContainerHelper.removeItem(items, slot, amount)
-        if (!result.isEmpty) markDirtyAndSync()
+        if (!result.isEmpty) {
+            clearRedstoneIfNoCard(sideForSlot(slot))
+            markDirtyAndSync()
+        }
         return result
     }
 
     override fun removeItemNoUpdate(slot: Int): ItemStack {
-        return ContainerHelper.takeItem(items, slot)
+        val taken = ContainerHelper.takeItem(items, slot)
+        if (!taken.isEmpty) clearRedstoneIfNoCard(sideForSlot(slot))
+        return taken
     }
 
     override fun setItem(slot: Int, stack: ItemStack) {
         items[slot] = stack
+        clearRedstoneIfNoCard(sideForSlot(slot))
         markDirtyAndSync()
     }
 
@@ -292,7 +299,22 @@ open class NodeBlockEntity(
 
     override fun clearContent() {
         items.clear()
+        for (dir in Direction.entries) clearRedstoneIfNoCard(dir)
         markDirtyAndSync()
+    }
+
+    private fun sideForSlot(slot: Int): Direction = Direction.entries[slot / SLOTS_PER_SIDE]
+
+    /** Drop the side's emitted redstone strength when no Redstone Card remains
+     *  in any of its slots, so pulling the card kills the signal it was driving. */
+    private fun clearRedstoneIfNoCard(side: Direction) {
+        if (redstoneOutputs[side.ordinal] == 0) return
+        val offset = sideOffset(side)
+        for (i in 0 until SLOTS_PER_SIDE) {
+            val stack = items[offset + i]
+            if (stack.item is damien.nodeworks.card.RedstoneCard) return
+        }
+        setRedstoneOutput(side, 0)
     }
 
     // --- WorldlyContainer: controls which slots are accessible from each direction ---
