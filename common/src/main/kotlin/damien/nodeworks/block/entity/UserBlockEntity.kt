@@ -125,6 +125,14 @@ class UserBlockEntity(
             markDirtyAndSync()
         }
 
+    /** Toggles the [UserPreviewRenderer] wireframe over the User's reach
+     *  AABB. Persisted so preview survives chunk unload. */
+    var previewArea: Boolean = false
+        set(value) {
+            field = value
+            markDirtyAndSync()
+        }
+
     /** Position the User is targeting, one block away in the FACING direction. */
     val targetPos: BlockPos
         get() = worldPosition.relative(blockState.getValue(UserBlock.FACING))
@@ -221,10 +229,12 @@ class UserBlockEntity(
             NodeConnectionHelper.queueRevalidation(level, worldPosition)
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
+        damien.nodeworks.render.UserPreviewRenderer.TrackedUsers.add(this)
     }
 
     override fun setRemoved() {
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
+        damien.nodeworks.render.UserPreviewRenderer.TrackedUsers.remove(worldPosition)
         val lvl = level
         if (lvl is ServerLevel) {
             // Block destroyed by a player -> synchronously return any
@@ -280,6 +290,7 @@ class UserBlockEntity(
         output.putString("filterRule", filterRule)
         output.putInt("redstoneMode", redstoneMode)
         output.putString("mode", mode.name)
+        output.putBoolean("previewArea", previewArea)
         if (!heldStack.isEmpty) output.store("heldStack", ItemStack.OPTIONAL_CODEC, heldStack)
         output.putLong("animStartTick", animStartTick)
         output.putLong("animEndTick", animEndTick)
@@ -298,6 +309,7 @@ class UserBlockEntity(
         redstoneMode = input.getIntOr("redstoneMode", REDSTONE_IGNORED).coerceIn(0, 2)
         mode = runCatching { UseMode.valueOf(input.getStringOr("mode", UseMode.INSTANT.name)) }
             .getOrDefault(UseMode.INSTANT)
+        previewArea = input.getBooleanOr("previewArea", false)
         heldStack = input.read("heldStack", ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY)
         animStartTick = input.getLongOr("animStartTick", Long.MIN_VALUE)
         animEndTick = input.getLongOr("animEndTick", Long.MIN_VALUE)
@@ -845,33 +857,6 @@ class UserBlockEntity(
     ): Boolean {
         val result = fp.getItemInHand(InteractionHand.MAIN_HAND).use(level, fp, InteractionHand.MAIN_HAND)
         return result.consumesAction()
-    }
-
-    /** Walk every slot in the FakePlayer's inventory after a use, push each
-     *  non-empty stack back to network storage. Stacks that don't fit fall
-     *  through to ground drop at the User block. */
-    private fun drainFakePlayerInventory(
-        level: ServerLevel,
-        snapshot: damien.nodeworks.network.NetworkSnapshot,
-        fp: net.minecraft.server.level.ServerPlayer,
-    ) {
-        val inv = fp.inventory
-        for (slot in 0 until inv.containerSize) {
-            val stack = inv.getItem(slot)
-            if (stack.isEmpty) continue
-            val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack)
-            val leftover = stack.count - inserted
-            if (leftover > 0) {
-                val drop = stack.copyWithCount(leftover)
-                val item = net.minecraft.world.entity.item.ItemEntity(
-                    level,
-                    worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5,
-                    drop,
-                )
-                level.addFreshEntity(item)
-            }
-            inv.setItem(slot, ItemStack.EMPTY)
-        }
     }
 
     /** Gate based on the persisted redstone mode. IGNORED always passes,

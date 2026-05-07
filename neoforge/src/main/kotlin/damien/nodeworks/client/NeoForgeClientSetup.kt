@@ -124,6 +124,7 @@ object NeoForgeClientSetup {
 
             NodeConnectionRenderer.register()
             damien.nodeworks.render.CardPlacementPreviewRenderer.init()
+            damien.nodeworks.render.UserPreviewRenderer.init()
         }
     }
 
@@ -294,6 +295,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.EXPORT_CHEST) { menu, inventory, title ->
             damien.nodeworks.screen.ExportChestScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.USER) { menu, inventory, title ->
+            damien.nodeworks.screen.UserScreen(menu, inventory, title)
         }
     }
 

@@ -357,10 +357,6 @@ class ExportChestScreen(
         ICON_BTN_SIZE, ICON_BTN_SIZE,
     )
 
-    private fun pickerRect(): ButtonRect = ButtonRect(
-        leftPos + LABEL_X, topPos + ROW_SETTINGS_Y, ICON_BTN_SIZE, ICON_BTN_SIZE,
-    )
-
     private fun pushPickerRect(): ButtonRect = ButtonRect(
         leftPos + pushPickerX(), topPos + ROW_SETTINGS_Y, ICON_BTN_SIZE, ICON_BTN_SIZE,
     )
@@ -446,18 +442,7 @@ class ExportChestScreen(
     }
 
     private fun drawSettingsRow(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        // Channel swatch hover tooltip, picker draws itself as a registered
-        // widget, we just queue the tooltip when the cursor's over its rect.
-        val pickRect = pickerRect()
-        if (pickRect.contains(mouseX, mouseY) && picker?.expanded != true) {
-            val channelLabel = when (val ch = menu.channel) {
-                is ChannelFilter.All -> "All channels"
-                is ChannelFilter.Color -> "Channel: ${ch.color.name.lowercase().replaceFirstChar { it.uppercase() }}"
-            }
-            queueTooltip(mouseX, mouseY, channelLabel, "Click to change.")
-        }
-
-        // Push picker hover tooltip, same shape. Resolve the current world
+        // Push picker hover tooltip. Resolve the current world
         // direction so the tooltip reads "Push: Right (East)" rather than
         // forcing the player to map RelDir → world themselves.
         val pushRect = pushPickerRect()

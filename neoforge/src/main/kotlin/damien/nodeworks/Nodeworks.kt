@@ -305,6 +305,14 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     damien.nodeworks.screen.ExportChestMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.USER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "user")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.UserOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.UserMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -509,6 +517,20 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                                 damien.nodeworks.block.entity.ExportChestBlockEntity.MIN_TICK_INTERVAL,
                                 damien.nodeworks.block.entity.ExportChestBlockEntity.MAX_TICK_INTERVAL,
                             )
+                        }
+                    }
+                    is damien.nodeworks.block.entity.UserBlockEntity -> {
+                        when (payload.key) {
+                            "name" -> entity.deviceName = payload.strValue
+                            "channel" -> if (newColor != null) entity.channel = newColor
+                            "filter" -> entity.filterRule = payload.strValue
+                                .take(damien.nodeworks.screen.UserOpenData.MAX_FILTER_LENGTH)
+                            "redstone" -> entity.redstoneMode = payload.intValue.coerceIn(0, 2)
+                            "mode" -> entity.mode =
+                                if (payload.intValue == damien.nodeworks.block.entity.UserBlockEntity.UseMode.HOLD.ordinal)
+                                    damien.nodeworks.block.entity.UserBlockEntity.UseMode.HOLD
+                                else damien.nodeworks.block.entity.UserBlockEntity.UseMode.INSTANT
+                            "preview" -> entity.previewArea = payload.intValue != 0
                         }
                     }
                 }

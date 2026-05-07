@@ -3,10 +3,14 @@ package damien.nodeworks.block
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.item.NetworkWrenchItem
+import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.screen.UserMenu
+import damien.nodeworks.screen.UserOpenData
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
+import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.LivingEntity
@@ -70,8 +74,10 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties) {
     }
 
     /** Right-click with an item, sets the User's filter to that item's id.
-     *  Test-path stub until the GUI / Lua handle land in a later phase.
-     *  Doesn't consume the held stack. */
+     *  Convenience shortcut so a player can configure the filter without
+     *  opening the GUI when they already have the item in hand. Falls through
+     *  to the empty-hand path (which opens the GUI) when the held item is a
+     *  Wrench / Diagnostic tool so those keep their own block interactions. */
     override fun useItemOn(
         stack: ItemStack,
         state: BlockState,
@@ -93,9 +99,7 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties) {
         return InteractionResult.SUCCESS
     }
 
-    /** Right-click with empty hand cycles redstone mode IGNORED -> HIGH ->
-     *  LOW. Sneak+right-click cycles use mode INSTANT <-> HOLD. Both are
-     *  pre-GUI test paths until the proper screen lands. */
+    /** Right-click with empty hand opens the settings GUI. */
     override fun useWithoutItem(
         state: BlockState,
         level: Level,
@@ -107,25 +111,24 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties) {
             player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem
         ) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
-        val be = level.getBlockEntity(pos) as? UserBlockEntity ?: return InteractionResult.PASS
 
-        if (player.isShiftKeyDown) {
-            be.mode = if (be.mode == UserBlockEntity.UseMode.INSTANT) {
-                UserBlockEntity.UseMode.HOLD
-            } else {
-                UserBlockEntity.UseMode.INSTANT
-            }
-            player.sendSystemMessage(Component.literal("User mode: ${be.mode.name}"))
-            return InteractionResult.SUCCESS
-        }
-
-        be.redstoneMode = (be.redstoneMode + 1) % 3
-        val label = when (be.redstoneMode) {
-            UserBlockEntity.REDSTONE_LOW -> "LOW (repeats while unpowered)"
-            UserBlockEntity.REDSTONE_HIGH -> "HIGH (repeats while powered)"
-            else -> "IGNORED (Lua only)"
-        }
-        player.sendSystemMessage(Component.literal("User redstone: $label, filter: '${be.filterRule.ifEmpty { "(none)" }}'"))
+        val entity = level.getBlockEntity(pos) as? UserBlockEntity ?: return InteractionResult.PASS
+        val serverPlayer = player as ServerPlayer
+        PlatformServices.menu.openExtendedMenu(
+            serverPlayer,
+            Component.translatable("container.nodeworks.user"),
+            UserOpenData(
+                pos = pos,
+                deviceName = entity.deviceName,
+                channelId = entity.channel.id,
+                filterRule = entity.filterRule,
+                redstoneMode = entity.redstoneMode,
+                modeOrdinal = entity.mode.ordinal,
+                previewArea = entity.previewArea,
+            ),
+            UserOpenData.STREAM_CODEC,
+            { syncId, inv, _ -> UserMenu.createServer(syncId, inv, entity) },
+        )
         return InteractionResult.SUCCESS
     }
 

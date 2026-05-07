@@ -564,18 +564,6 @@ class StorageCardScreen(
                 queueTooltip(mouseX, mouseY, "Side: ${side.displayName}", "Click to change.")
             }
         }
-        val channelLeft = leftPos + pickerX
-        if (mouseX in channelLeft until channelLeft + ChannelPickerWidget.SWATCH &&
-            mouseY in swatchY until swatchY + ChannelPickerWidget.SWATCH &&
-            picker?.expanded != true
-        ) {
-            val ch = menu.getChannel()
-            queueTooltip(
-                mouseX, mouseY,
-                "Channel: ${ch.name.lowercase().replaceFirstChar { it.uppercase() }}",
-                "Click to change.",
-            )
-        }
     }
 
     private fun renderFilterHeader(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {

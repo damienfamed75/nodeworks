@@ -10,6 +10,7 @@ import damien.nodeworks.screen.ProcessingSetScreen
 import damien.nodeworks.screen.ProcessingSetScreenHandler
 import damien.nodeworks.screen.ExportChestScreen
 import damien.nodeworks.screen.StorageCardScreen
+import damien.nodeworks.screen.UserScreen
 import mezz.jei.api.IModPlugin
 import mezz.jei.api.JeiPlugin
 import mezz.jei.api.constants.RecipeTypes
@@ -106,6 +107,10 @@ class NodeworksJeiPlugin : IModPlugin {
         registration.addGhostIngredientHandler(
             ExportChestScreen::class.java,
             ExportChestGhostHandler()
+        )
+        registration.addGhostIngredientHandler(
+            UserScreen::class.java,
+            UserGhostHandler()
         )
     }
 
@@ -515,6 +520,37 @@ class ExportChestGhostHandler : IGhostIngredientHandler<ExportChestScreen> {
 
     private class ExportChestRuleTarget<I : Any>(
         private val gui: ExportChestScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+        override fun getArea(): Rect2i = area
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
+            gui.acceptGhostItem(itemId)
+        }
+    }
+}
+
+/**
+ * Ghost-ingredient handler for the User device GUI. The filter row (icon + EditBox)
+ * is the single drop target; dropping replaces the filter with the dropped item's id.
+ */
+class UserGhostHandler : IGhostIngredientHandler<UserScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: UserScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val rect = gui.filterDropArea() ?: return emptyList()
+        return listOf(UserFilterTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
+    }
+
+    override fun onComplete() {}
+
+    private class UserFilterTarget<I : Any>(
+        private val gui: UserScreen,
         private val area: Rect2i,
     ) : IGhostIngredientHandler.Target<I> {
         override fun getArea(): Rect2i = area

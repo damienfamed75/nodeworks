@@ -1,6 +1,7 @@
 package damien.nodeworks.screen.widget
 
 import damien.nodeworks.compat.drawString
+import damien.nodeworks.compat.renderComponentTooltip
 import damien.nodeworks.screen.Icons
 import damien.nodeworks.screen.NineSlice
 import net.minecraft.client.Minecraft
@@ -140,10 +141,14 @@ class ChannelPickerWidget(
     }
 
     /** Host screens must call this AFTER rendering their other widgets so the popup
-     *  layers above buttons / labels rendered by the screen frame. No-op when the
-     *  popup is not open. */
+     *  + hover tooltip layer above buttons / labels rendered by the screen frame.
+     *  When the popup is closed, draws a "Channel: <name>" hover tooltip; when
+     *  open, draws the swatch grid. */
     fun renderOverlay(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        if (!expanded) return
+        if (!expanded) {
+            renderSwatchTooltip(graphics, mouseX, mouseY)
+            return
+        }
         val (px, py, pw, ph) = popupBounds().toList()
 
         // Frame + interior dim so individual swatches read clearly against any
@@ -210,6 +215,22 @@ class ChannelPickerWidget(
      *  size the host hands in (12 px in the popup, 16 px on the swatch). */
     private fun drawNoneGlyph(graphics: GuiGraphicsExtractor, x0: Int, y0: Int, size: Int) {
         Icons.ANY_CHANNEL.draw(graphics, x0, y0, size)
+    }
+
+    /** Channel-name + "Click to change." vanilla-style tooltip rendered when
+     *  the cursor's over the collapsed swatch. Hosts get this for free by
+     *  calling [renderOverlay] each frame, no per-screen tooltip plumbing. */
+    private fun renderSwatchTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
+        if (mouseX !in x until x + width || mouseY !in y until y + height) return
+        val font = Minecraft.getInstance().font
+        val firstLine = if (isNone) "All channels"
+            else "Channel: ${currentColor.name.lowercase().replaceFirstChar { it.uppercase() }}"
+        graphics.renderComponentTooltip(
+            font,
+            listOf(Component.literal(firstLine), Component.literal("Click to change.")),
+            mouseX,
+            mouseY,
+        )
     }
 
     /** Host screens call this BEFORE forwarding clicks to other widgets while
