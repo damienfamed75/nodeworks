@@ -3,8 +3,10 @@ package damien.nodeworks.item
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.PipeBlock
 import damien.nodeworks.network.NodeConnectionHelper
+import damien.nodeworks.registry.ModBlocks
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.item.BlockItem
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.context.UseOnContext
 import net.minecraft.world.level.block.Block
 
@@ -39,6 +41,16 @@ class NodeBlockItem(block: Block, properties: Properties) : BlockItem(block, pro
 
         if (level is net.minecraft.server.level.ServerLevel) {
             NodeConnectionHelper.propagateNetworkId(level, pos)
+        }
+
+        // Refund the displaced Pipe to the player's inventory, falling back to
+        // a tossed item entity when there's no room. Skipped in creative since
+        // the source item didn't decrement either.
+        if (!player.abilities.instabuild) {
+            val pipeStack = ItemStack(ModBlocks.PIPE.asItem(), 1)
+            if (!player.inventory.add(pipeStack)) {
+                player.drop(pipeStack, false)
+            }
         }
 
         val placeSound = nodeState.soundType.placeSound
