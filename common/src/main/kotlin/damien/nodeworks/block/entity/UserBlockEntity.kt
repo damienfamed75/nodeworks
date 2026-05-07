@@ -22,6 +22,7 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.item.BlockItem
 import net.minecraft.world.item.DyeColor
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.context.UseOnContext
@@ -850,6 +851,12 @@ class UserBlockEntity(
         val blockResult = state.useItemOn(stack, level, fp, InteractionHand.MAIN_HAND, hit)
         if (blockResult.consumesAction()) return true
         if (!stack.isEmpty) {
+            // Block placement is the Placer's job. Skip step 2 for BlockItems
+            // so a User holding cobblestone can still trigger interactions on
+            // the targeted block (step 1 above) but won't drop the cobblestone
+            // into the world. Item-driven interactions on non-BlockItems
+            // (flint+steel, hoes, dyes, buckets) are unaffected.
+            if (stack.item is BlockItem) return false
             val ctx = UseOnContext(fp, InteractionHand.MAIN_HAND, hit)
             return stack.useOn(ctx).consumesAction()
         }
