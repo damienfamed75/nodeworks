@@ -3,8 +3,10 @@ package damien.nodeworks.render
 import com.mojang.blaze3d.vertex.PoseStack
 import com.mojang.blaze3d.vertex.VertexConsumer
 import damien.nodeworks.block.BreakerBlock
+import damien.nodeworks.block.PlacerBlock
 import damien.nodeworks.block.UserBlock
 import damien.nodeworks.block.entity.BreakerBlockEntity
+import damien.nodeworks.block.entity.PlacerBlockEntity
 import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.client.Minecraft
@@ -73,6 +75,16 @@ object UserPreviewRenderer {
             if (state.block !is BreakerBlock) return@forEach
             val facing = state.getValue(BreakerBlock.FACING)
             // Breaker only ever targets the single block at facing+1.
+            val target = pos.relative(facing, 1)
+            val color = entity.channel.textureDiffuseColor or 0xFF000000.toInt()
+            drawAabb(poseStack, buffer, target, target, color)
+        }
+
+        TrackedPlacers.forEach { pos, entity ->
+            if (!entity.previewArea) return@forEach
+            val state = level.getBlockState(pos)
+            if (state.block !is PlacerBlock) return@forEach
+            val facing = state.getValue(PlacerBlock.FACING)
             val target = pos.relative(facing, 1)
             val color = entity.channel.textureDiffuseColor or 0xFF000000.toInt()
             drawAabb(poseStack, buffer, target, target, color)
@@ -172,6 +184,23 @@ object UserPreviewRenderer {
         }
 
         fun forEach(action: (BlockPos, BreakerBlockEntity) -> Unit) {
+            for ((pos, entity) in byPos) action(pos, entity)
+        }
+    }
+
+    /** Same shape as [TrackedBreakers] for the Placer preview. */
+    object TrackedPlacers {
+        private val byPos: MutableMap<BlockPos, PlacerBlockEntity> = HashMap()
+
+        fun add(entity: PlacerBlockEntity) {
+            byPos[entity.blockPos] = entity
+        }
+
+        fun remove(pos: BlockPos) {
+            byPos.remove(pos)
+        }
+
+        fun forEach(action: (BlockPos, PlacerBlockEntity) -> Unit) {
             for ((pos, entity) in byPos) action(pos, entity)
         }
     }

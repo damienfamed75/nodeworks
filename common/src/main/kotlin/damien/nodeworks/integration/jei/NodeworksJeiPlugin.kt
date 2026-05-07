@@ -10,6 +10,7 @@ import damien.nodeworks.screen.ProcessingSetScreen
 import damien.nodeworks.screen.ProcessingSetScreenHandler
 import damien.nodeworks.screen.BreakerScreen
 import damien.nodeworks.screen.ExportChestScreen
+import damien.nodeworks.screen.PlacerScreen
 import damien.nodeworks.screen.StorageCardScreen
 import damien.nodeworks.screen.UserScreen
 import mezz.jei.api.IModPlugin
@@ -116,6 +117,10 @@ class NodeworksJeiPlugin : IModPlugin {
         registration.addGhostIngredientHandler(
             BreakerScreen::class.java,
             BreakerGhostHandler()
+        )
+        registration.addGhostIngredientHandler(
+            PlacerScreen::class.java,
+            PlacerGhostHandler()
         )
     }
 
@@ -589,6 +594,36 @@ class BreakerGhostHandler : IGhostIngredientHandler<BreakerScreen> {
 
     private class BreakerFilterTarget<I : Any>(
         private val gui: BreakerScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+        override fun getArea(): Rect2i = area
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
+            gui.acceptGhostItem(itemId)
+        }
+    }
+}
+
+/**
+ * Mirror of [BreakerGhostHandler] for the Placer GUI.
+ */
+class PlacerGhostHandler : IGhostIngredientHandler<PlacerScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: PlacerScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val rect = gui.filterDropArea() ?: return emptyList()
+        return listOf(PlacerFilterTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
+    }
+
+    override fun onComplete() {}
+
+    private class PlacerFilterTarget<I : Any>(
+        private val gui: PlacerScreen,
         private val area: Rect2i,
     ) : IGhostIngredientHandler.Target<I> {
         override fun getArea(): Rect2i = area

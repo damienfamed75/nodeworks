@@ -83,11 +83,31 @@ class PlacerBlock(properties: Properties) : BaseEntityBlock(properties) {
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.placer"),
-            PlacerOpenData(pos, entity.deviceName, entity.channel.id),
+            PlacerOpenData(
+                pos = pos,
+                deviceName = entity.deviceName,
+                channelId = entity.channel.id,
+                filterRule = entity.filterRule,
+                redstoneMode = entity.redstoneMode,
+                previewArea = entity.previewArea,
+            ),
             PlacerOpenData.STREAM_CODEC,
             { syncId, inv, _ -> PlacerMenu.createServer(syncId, inv, entity) },
         )
         return InteractionResult.SUCCESS
+    }
+
+    override fun <T : net.minecraft.world.level.block.entity.BlockEntity> getTicker(
+        level: Level,
+        state: BlockState,
+        blockEntityType: net.minecraft.world.level.block.entity.BlockEntityType<T>,
+    ): net.minecraft.world.level.block.entity.BlockEntityTicker<T>? {
+        if (level.isClientSide) return null
+        return net.minecraft.world.level.block.entity.BlockEntityTicker { lvl, _, _, be ->
+            if (be is PlacerBlockEntity && lvl is net.minecraft.server.level.ServerLevel) {
+                be.serverTick(lvl)
+            }
+        }
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
