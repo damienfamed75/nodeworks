@@ -68,11 +68,18 @@ class PlacerScreen(
 
         private const val SLOT_OUTSET = 1
 
+        private const val LABEL_ROW_H = 8
+        private const val LABEL_TOP_PAD = 3
+        private const val LABEL_BOTTOM_PAD = 2
+
         private const val NAME_ROW_Y = OUTER_PAD + 1
-        private const val FILTER_PANEL_Y = NAME_ROW_Y + 16 + OUTER_PAD - 1
+        private const val FILTER_LABEL_Y = NAME_ROW_Y + 16 + LABEL_TOP_PAD
+        private const val FILTER_PANEL_Y = FILTER_LABEL_Y + LABEL_ROW_H + LABEL_BOTTOM_PAD
         private const val SETTINGS_PANEL_Y = FILTER_PANEL_Y + FILTER_PANEL_H + OUTER_PAD
 
         private const val IMAGE_H = SETTINGS_PANEL_Y + SETTINGS_PANEL_H + OUTER_PAD
+
+        private const val FILTER_LABEL_TEXT = "Block(s) to Place:"
 
         private const val TAG_CYCLE_PERIOD_MS = 1200L
     }
@@ -203,6 +210,8 @@ class PlacerScreen(
         }
 
         drawSetButton(graphics, nameSetBtnX, topPos + NAME_ROW_Y, mouseX, mouseY)
+
+        graphics.drawString(font, FILTER_LABEL_TEXT, leftPos + OUTER_PAD + 2, topPos + FILTER_LABEL_Y, 0xFFAAAAAA.toInt())
 
         NineSlice.PANEL_INSET.draw(graphics, filterPanelX, topPos + FILTER_PANEL_Y, filterPanelW, FILTER_PANEL_H)
         NineSlice.SLOT.draw(
