@@ -77,7 +77,11 @@ class NetworkControllerScreen(
     private val properties = listOf(
         Property("Name", PropertyType.NAME),
         Property("Color", PropertyType.COLOR),
-        Property("Redstone", PropertyType.REDSTONE),
+        // "Redstone" mode has no consumer, the controller's redstoneMode field
+        // is set/persisted/synced but never gates any behaviour. Hidden until
+        // a real use lands. REDSTONE rendering / click / payload kept intact
+        // below so re-adding the row is one-line.
+        // Property("Redstone", PropertyType.REDSTONE),
         // "Node Glow" is hidden for now while the visual design is in flux.
         // GLOW_STYLE rendering / click handling / payload plumbing stays intact
         // below so re-adding the row is one-line.

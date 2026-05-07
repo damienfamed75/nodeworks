@@ -33,25 +33,30 @@ import net.minecraft.sounds.SoundEvents
 import java.awt.Color
 
 /**
- * Color picker popup, dark themed to match the Network Controller GUI.
+ * Color picker popup, dark themed to match the Network Controller GUI. Plain
+ * [NineSlice.WINDOW_FRAME] with no title bar, the [Icons.COLOR_PICKING_CIRCLE]
+ * indicator overlays the gradient at the current selection and follows the
+ * cursor while left-click is held.
  */
 class ColorPickerScreen(
     private val parentScreen: net.minecraft.client.gui.screens.Screen,
     private val initialColor: Int,
-    private val defaultColor: Int,
+    @Suppress("UNUSED_PARAMETER") defaultColor: Int,
     private val onConfirm: (Int) -> Unit
 ) : net.minecraft.client.gui.screens.Screen(Component.literal("Color Picker")) {
 
     companion object {
         private const val PANEL_W = 180
-        private const val PANEL_H = 140
-        private const val TOP_BAR_H = 20
+        private const val PANEL_H = 120
         private const val PICKER_W = 160
         private const val PICKER_H = 60
         private const val PICKER_X = 10
-        private const val PICKER_Y = 24
+        private const val PICKER_Y = 8
         private const val BTN_W = 50
         private const val BTN_H = 16
+
+        /** Indicator size, drawn centred on the selected gradient pixel. */
+        private const val INDICATOR_SIZE = 8
     }
 
     private var selectedColor: Int = initialColor
@@ -60,7 +65,18 @@ class ColorPickerScreen(
     private var panelX = 0
     private var panelY = 0
     private var updatingField = false
-    private var ignoreFirstClick = true
+
+    /** Indicator position in picker-local coords (0..PICKER_W, 0..PICKER_H).
+     *  Snapped to the gradient pixel matching the current [selectedColor] on
+     *  open + on hex-field edits, and follows the cursor while [draggingPicker]
+     *  is true. */
+    private var circleX: Int = 0
+    private var circleY: Int = 0
+
+    /** True between mouseDown-on-picker and mouseUp. While true, mouseDragged
+     *  follows the cursor anywhere on the screen (clamped to picker bounds)
+     *  rather than only firing while the cursor is over the gradient. */
+    private var draggingPicker: Boolean = false
 
     override fun init() {
         super.init()
@@ -71,6 +87,10 @@ class ColorPickerScreen(
             pickerTextureId = createPickerTexture()
         }
 
+        // Snap the indicator to the gradient pixel matching the initial color
+        // so it appears at the right spot when the screen opens.
+        syncCircleToColor()
+
         // Hex input field
         hexField = EditBox(font, panelX + PICKER_X + 18, panelY + PICKER_Y + PICKER_H + 6, 50, 14, Component.literal("Hex"))
         hexField.setMaxLength(6)
@@ -79,7 +99,10 @@ class ColorPickerScreen(
             if (!updatingField) {
                 try {
                     val c = text.toInt(16)
-                    if (c in 0..0xFFFFFF) selectedColor = c
+                    if (c in 0..0xFFFFFF) {
+                        selectedColor = c
+                        syncCircleToColor()
+                    }
                 } catch (_: NumberFormatException) {}
             }
         }
@@ -127,11 +150,8 @@ class ColorPickerScreen(
         // Dim background (no blur)
         graphics.fill(0, 0, width, height, 0x88000000.toInt())
 
-        // Panel frame
+        // Panel frame, no top bar.
         NineSlice.WINDOW_FRAME.draw(graphics, panelX, panelY, PANEL_W, PANEL_H)
-
-        // Top bar
-        NineSlice.drawTitleBar(graphics, font, title, panelX, panelY, PANEL_W, TOP_BAR_H, selectedColor)
 
         // Color palette with border frame
         val px = panelX + PICKER_X
@@ -140,6 +160,16 @@ class ColorPickerScreen(
             graphics.blit(texId, px, py, 0f, 0f, PICKER_W, PICKER_H, PICKER_W, PICKER_H)
         }
         NineSlice.CONTENT_BORDER.draw(graphics, px - 2, py - 2, PICKER_W + 4, PICKER_H + 4)
+
+        // Indicator circle, centred on the selected gradient pixel so half
+        // sits above and half below the click point. Drawn after the gradient
+        // + border so it overlays both.
+        Icons.COLOR_PICKING_CIRCLE.draw(
+            graphics,
+            px + circleX - INDICATOR_SIZE / 2,
+            py + circleY - INDICATOR_SIZE / 2,
+            INDICATOR_SIZE,
+        )
 
         // Hex label
         graphics.drawString(font, "#", panelX + PICKER_X + 10, panelY + PICKER_Y + PICKER_H + 9, 0xFFAAAAAA.toInt(), false)
@@ -153,9 +183,10 @@ class ColorPickerScreen(
         // Buttons
         val btnY = panelY + PANEL_H - BTN_H - 8
 
-        // Default button
-        val defX = panelX + 10
-        renderButton(graphics, defX, btnY, BTN_W, BTN_H, "Default", mouseX, mouseY)
+        // Random button (replaces Default — rolls the same bright HSV color
+        // generator the Network Controller uses on placement).
+        val randX = panelX + 10
+        renderButton(graphics, randX, btnY, BTN_W, BTN_H, "Random", mouseX, mouseY)
 
         // Confirm button
         val confX = panelX + PANEL_W - BTN_W - 10
@@ -180,17 +211,14 @@ class ColorPickerScreen(
         val mouseX = event.mouseX
         val mouseY = event.mouseY
         val button = event.buttonNum
-        if (ignoreFirstClick) {
-            ignoreFirstClick = false
-            return true
-        }
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
 
-        // Color picker click
+        // Color picker click, snaps the indicator + arms drag-follow.
         val px = panelX + PICKER_X
         val py = panelY + PICKER_Y
-        if (mx >= px && mx < px + PICKER_W && my >= py && my < py + PICKER_H) {
+        if (button == 0 && mx >= px && mx < px + PICKER_W && my >= py && my < py + PICKER_H) {
+            draggingPicker = true
             pickColorAt((mx - px).toDouble(), (my - py).toDouble())
             return true
         }
@@ -198,10 +226,11 @@ class ColorPickerScreen(
         // Button clicks
         val btnY = panelY + PANEL_H - BTN_H - 8
 
-        // Default button
-        val defX = panelX + 10
-        if (mx >= defX && mx < defX + BTN_W && my >= btnY && my < btnY + BTN_H) {
-            selectedColor = defaultColor
+        // Random button
+        val randX = panelX + 10
+        if (mx >= randX && mx < randX + BTN_W && my >= btnY && my < btnY + BTN_H) {
+            selectedColor = rollRandomBrightColor()
+            syncCircleToColor()
             updateHexField()
             playClick()
             return true
@@ -219,26 +248,62 @@ class ColorPickerScreen(
         return super.mouseClicked(event, doubleClick)
     }
 
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        if (event.buttonNum == 0) draggingPicker = false
+        return super.mouseReleased(event)
+    }
+
     override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
-        val mouseX = event.mouseX
-        val mouseY = event.mouseY
-        val button = event.buttonNum
-        val mx = mouseX.toInt()
-        val my = mouseY.toInt()
-        val px = panelX + PICKER_X
-        val py = panelY + PICKER_Y
-        if (button == 0 && mx >= px && mx < px + PICKER_W && my >= py && my < py + PICKER_H) {
-            pickColorAt((mx - px).toDouble(), (my - py).toDouble())
+        if (event.buttonNum == 0 && draggingPicker) {
+            // Once the drag starts inside the picker, follow the cursor
+            // anywhere on the screen — clamp to picker bounds so the indicator
+            // sticks to the edge instead of flying off-screen.
+            val px = panelX + PICKER_X
+            val py = panelY + PICKER_Y
+            val relX = (event.mouseX.toInt() - px).coerceIn(0, PICKER_W - 1).toDouble()
+            val relY = (event.mouseY.toInt() - py).coerceIn(0, PICKER_H - 1).toDouble()
+            pickColorAt(relX, relY)
             return true
         }
         return super.mouseDragged(event, dragX, dragY)
     }
 
     private fun pickColorAt(relX: Double, relY: Double) {
-        val hue = (relX / PICKER_W).toFloat().coerceIn(0f, 1f)
-        val brightness = (1.0f - (relY / PICKER_H).toFloat() * 0.8f).coerceIn(0.2f, 1f)
+        val cx = relX.toInt().coerceIn(0, PICKER_W - 1)
+        val cy = relY.toInt().coerceIn(0, PICKER_H - 1)
+        circleX = cx
+        circleY = cy
+        val hue = (cx.toFloat() / PICKER_W).coerceIn(0f, 1f)
+        val brightness = (1.0f - (cy.toFloat() / PICKER_H) * 0.8f).coerceIn(0.2f, 1f)
         selectedColor = Color.HSBtoRGB(hue, 0.85f, brightness) and 0xFFFFFF
         updateHexField()
+    }
+
+    /** Compute the gradient (x, y) for the current [selectedColor] via
+     *  HSB→position. Saturation isn't represented on the gradient (fixed at
+     *  0.85 by [createPickerTexture]), so colors with low saturation map to
+     *  an approximate position — close enough for visual feedback. */
+    private fun syncCircleToColor() {
+        val r = (selectedColor shr 16) and 0xFF
+        val g = (selectedColor shr 8) and 0xFF
+        val b = selectedColor and 0xFF
+        val hsb = Color.RGBtoHSB(r, g, b, null)
+        val hue = hsb[0]
+        val brightness = hsb[2]
+        circleX = (hue * PICKER_W).toInt().coerceIn(0, PICKER_W - 1)
+        circleY = ((1f - brightness) / 0.8f * PICKER_H).toInt().coerceIn(0, PICKER_H - 1)
+    }
+
+    /** Same bright-HSV roll the Network Controller uses on placement
+     *  ([NetworkControllerBlock.rollRandomBrightColor]). Inlined here rather
+     *  than exposing the controller helper to keep the picker self-contained. */
+    private fun rollRandomBrightColor(): Int {
+        val rng = java.util.concurrent.ThreadLocalRandom.current()
+        val hue = rng.nextFloat() * 360f
+        val saturation = 0.35f + rng.nextFloat() * 0.5f
+        val value = 0.85f + rng.nextFloat() * 0.15f
+        val rgb = Color.HSBtoRGB(hue / 360f, saturation, value)
+        return rgb and 0xFFFFFF
     }
 
     private fun updateHexField() {
