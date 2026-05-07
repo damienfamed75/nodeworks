@@ -10,6 +10,7 @@ import damien.nodeworks.compat.renderItem
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.ChannelPickerWidget
 import damien.nodeworks.screen.widget.FilterRuleAutocomplete
+import damien.nodeworks.screen.widget.RedstoneCycleButton
 import net.minecraft.ChatFormatting
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -99,13 +100,12 @@ class UserScreen(
 
         /** Tag-icon cycle period, shared with [StorageCardScreen]. */
         private const val TAG_CYCLE_PERIOD_MS = 1200L
-
-        private val REDSTONE_LABELS = arrayOf("Ignored", "Active Low", "Active High")
     }
 
     private lateinit var nameField: EditBox
     private lateinit var filterField: EditBox
     private var picker: ChannelPickerWidget? = null
+    private var redstoneButton: RedstoneCycleButton? = null
 
     private var lastSyncedChannel: Int = -1
 
@@ -206,6 +206,11 @@ class UserScreen(
         }
         addRenderableWidget(picker!!)
 
+        redstoneButton = RedstoneCycleButton(iconColumnX, settingsRow2Y, menu.redstoneMode) { mode ->
+            sendUpdate("redstone", mode, "")
+        }
+        addRenderableWidget(redstoneButton!!)
+
         filterField = EditBox(
             font, filterFieldX, filterFieldY, filterFieldW, FIELD_H, Component.literal("Filter")
         ).also {
@@ -245,7 +250,7 @@ class UserScreen(
         drawClearButton(graphics, mouseX, mouseY)
 
         NineSlice.WINDOW_RECESSED.draw(graphics, settingsPanelX, topPos + SETTINGS_PANEL_Y, settingsPanelW, SETTINGS_PANEL_H)
-        drawRedstoneButton(graphics, mouseX, mouseY)
+        redstoneButton?.setMode(menu.redstoneMode)
         drawToggleControls(graphics, mouseX, mouseY)
     }
 
@@ -253,6 +258,7 @@ class UserScreen(
         updateAutocomplete()
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         picker?.renderOverlay(graphics, mouseX, mouseY)
+        redstoneButton?.renderTooltip(graphics, mouseX, mouseY)
         autocomplete.render(graphics, mouseX, mouseY)
         if (pendingTooltipLines.isNotEmpty()) {
             graphics.renderComponentTooltip(font, pendingTooltipLines, pendingTooltipX, pendingTooltipY)
@@ -320,24 +326,6 @@ class UserScreen(
         if (hovered) queueTooltip(mouseX, mouseY, "Clear filter")
     }
 
-    private fun drawRedstoneButton(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        val rect = redstoneRect()
-        val hovered = rect.contains(mouseX, mouseY)
-        (if (hovered) NineSlice.BUTTON_HOVER else NineSlice.BUTTON)
-            .draw(graphics, rect.x, rect.y, rect.w, rect.h)
-        val rsIcon = when (menu.redstoneMode) {
-            1 -> Icons.REDSTONE_INACTIVE
-            2 -> Icons.REDSTONE_ACTIVE
-            else -> Icons.REDSTONE_IGNORE
-        }
-        rsIcon.draw(graphics, rect.x, rect.y)
-        if (hovered) queueTooltip(
-            mouseX, mouseY,
-            "Redstone: ${REDSTONE_LABELS[menu.redstoneMode.coerceIn(0, 2)]}",
-            "Click to cycle.",
-        )
-    }
-
     private fun drawToggleControls(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         val labelColor = 0xFFAAAAAA.toInt()
         val row1LabelY = settingsRow1Y + (ICON_BTN_SIZE - 8) / 2 + 1
@@ -375,7 +363,6 @@ class UserScreen(
         fun contains(mx: Int, my: Int) = mx in x until x + w && my in y until y + h
     }
 
-    private fun redstoneRect(): Rect = Rect(iconColumnX, settingsRow2Y, ICON_BTN_SIZE, ICON_BTN_SIZE)
     private fun modeToggleRect(): Rect = Rect(toggleX, settingsRow1Y, TOGGLE_W, TOGGLE_H)
     private fun previewToggleRect(): Rect = Rect(toggleX, settingsRow2Y, TOGGLE_W, TOGGLE_H)
     private fun nameSetRect(): Rect = Rect(nameSetBtnX, topPos + NAME_ROW_Y, SET_BTN_W, SET_BTN_H)
@@ -512,11 +499,6 @@ class UserScreen(
             playClickSound()
             if (focused === filterField) setFocused(null) else filterField.isFocused = false
             autocompleteDismissed = true
-            return true
-        }
-        if (redstoneRect().contains(mx, my)) {
-            sendUpdate("redstone", (menu.redstoneMode + 1) % 3, "")
-            playClickSound()
             return true
         }
         if (modeToggleRect().contains(mx, my)) {

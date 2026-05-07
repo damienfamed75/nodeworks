@@ -9,6 +9,7 @@ import damien.nodeworks.compat.renderComponentTooltip
 import damien.nodeworks.network.ChannelFilter
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.ChannelPickerWidget
+import damien.nodeworks.screen.widget.RedstoneCycleButton
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
@@ -97,14 +98,13 @@ class ImportChestScreen(
         /** Left edge of column 2's labels. */
         private const val COL2_LABEL_X = 76
 
-        private val REDSTONE_LABELS = arrayOf("Ignored", "Active Low", "Active High")
-
         // Tick stepper increments. Matches the ProcessingSet convention.
         private const val TICK_STEP = 1
         private const val TICK_STEP_SHIFT = 5
     }
 
     private var picker: ChannelPickerWidget? = null
+    private var redstoneButton: RedstoneCycleButton? = null
     private var lastSyncedChannelNbt: Int = Int.MIN_VALUE
     private var tickBox: EditBox? = null
     private var lastSyncedTick: Int = -1
@@ -139,6 +139,15 @@ class ImportChestScreen(
             sendChannelUpdate(color)
         }
         addRenderableWidget(picker!!)
+
+        redstoneButton = RedstoneCycleButton(
+            leftPos + COL1_RIGHT - REDSTONE_BTN_SIZE,
+            topPos + ROW_REDSTONE_Y,
+            menu.redstoneMode,
+        ) { mode ->
+            sendUpdate("redstone", mode, "")
+        }
+        addRenderableWidget(redstoneButton!!)
 
         // Tick interval entry. Manual typing accepts 1..MAX_TICK_INTERVAL.
         tickBox = EditBox(
@@ -213,29 +222,10 @@ class ImportChestScreen(
         graphics.drawString(font, "Round-robin", x + COL2_LABEL_X, y + ROW_ROUND_ROBIN_Y + 5, LABEL_COLOR)
         graphics.drawString(font, "Ticks", x + COL2_LABEL_X, y + ROW_TICK_Y + 5, LABEL_COLOR)
 
-        // Channel picker swatch is rendered by the [ChannelPickerWidget] itself,
-        // including the black-with-X "none" glyph when matching all channels.
-
-        // Redstone control: 16×16 icon button. The mode label is moved to a hover
-        // tooltip ([Storage Card]'s filter-button pattern) so the row stays compact.
-        val redstoneRect = redstoneButtonRect()
-        val redstoneHover = redstoneRect.contains(mouseX, mouseY)
-        (if (redstoneHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON)
-            .draw(graphics, redstoneRect.x, redstoneRect.y, redstoneRect.w, redstoneRect.h)
-        val rsIcon = when (menu.redstoneMode) {
-            1 -> Icons.REDSTONE_INACTIVE
-            2 -> Icons.REDSTONE_ACTIVE
-            else -> Icons.REDSTONE_IGNORE
-        }
-        rsIcon.draw(graphics, redstoneRect.x, redstoneRect.y)
-        if (redstoneHover) {
-            queueTooltip(
-                mouseX,
-                mouseY,
-                "Redstone: ${REDSTONE_LABELS[menu.redstoneMode.coerceIn(0, 2)]}",
-                "Click to cycle."
-            )
-        }
+        // Channel picker swatch + redstone cycle button are rendered by their
+        // widgets directly, including the channel "none" glyph and redstone
+        // hover tooltip.
+        redstoneButton?.setMode(menu.redstoneMode)
 
         // Round-robin: 16×16 icon button with CHECKMARK/X. Same size and column
         // as the channel swatch / redstone icon for the table-style alignment.
@@ -279,6 +269,7 @@ class ImportChestScreen(
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         picker?.renderOverlay(graphics, mouseX, mouseY)
+        redstoneButton?.renderTooltip(graphics, mouseX, mouseY)
         // Tooltips queued during the background pass, render after the picker
         // overlay so they layer on top of every other GUI element.
         if (pendingTooltipLines.isNotEmpty()) {
@@ -297,15 +288,6 @@ class ImportChestScreen(
 
     /** Channel row, col 1: picker swatch flush right at [COL1_RIGHT]. */
     private fun pickerX(): Int = COL1_RIGHT - SWATCH
-
-    /** Redstone row, col 1: 16×16 icon button flush right at [COL1_RIGHT], so
-     *  it lines up vertically with the channel swatch above it. Mode label is
-     *  rendered as a hover tooltip rather than inline. */
-    private fun redstoneButtonRect(): ButtonRect = ButtonRect(
-        leftPos + COL1_RIGHT - REDSTONE_BTN_SIZE,
-        topPos + ROW_REDSTONE_Y,
-        REDSTONE_BTN_SIZE, REDSTONE_BTN_SIZE,
-    )
 
     /** Round-robin row, col 2: 16×16 icon button (CHECKMARK / X) flush right at
      *  [controlsRight], so it lines up vertically with the tick [+] below. */
@@ -357,12 +339,6 @@ class ImportChestScreen(
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
 
-        if (redstoneButtonRect().contains(mx, my)) {
-            val next = (menu.redstoneMode + 1) % 3
-            sendUpdate("redstone", next, "")
-            playClickSound()
-            return true
-        }
         if (roundRobinButtonRect().contains(mx, my)) {
             sendUpdate("roundRobin", if (menu.roundRobin) 0 else 1, "")
             playClickSound()

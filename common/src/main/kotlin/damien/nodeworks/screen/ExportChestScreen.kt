@@ -14,6 +14,7 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.widget.ChannelPickerWidget
 import damien.nodeworks.screen.widget.FacePickerWidget
 import damien.nodeworks.screen.widget.FilterRuleAutocomplete
+import damien.nodeworks.screen.widget.RedstoneCycleButton
 import damien.nodeworks.screen.widget.RelDir
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -107,7 +108,6 @@ class ExportChestScreen(
         /** Tag-icon cycle period, shared with [StorageCardScreen]. */
         private const val TAG_CYCLE_PERIOD_MS = 1200L
 
-        private val REDSTONE_LABELS = arrayOf("Ignored", "Active Low", "Active High")
         private const val TICK_STEP = 1
         private const val TICK_STEP_SHIFT = 5
 
@@ -138,6 +138,7 @@ class ExportChestScreen(
 
     private var picker: ChannelPickerWidget? = null
     private var pushPicker: FacePickerWidget? = null
+    private var redstoneButton: RedstoneCycleButton? = null
     private var lastSyncedChannel: Int = Int.MIN_VALUE
     private var lastSyncedPushFace: Int = Int.MIN_VALUE
     private var tickBox: EditBox? = null
@@ -198,6 +199,15 @@ class ExportChestScreen(
             sendIntUpdate("pushFace", world?.ordinal ?: -1)
         }
         addRenderableWidget(pushPicker!!)
+
+        redstoneButton = RedstoneCycleButton(
+            leftPos + redstoneButtonX(),
+            topPos + ROW_SETTINGS_Y,
+            menu.redstoneMode,
+        ) { mode ->
+            sendIntUpdate("redstone", mode)
+        }
+        addRenderableWidget(redstoneButton!!)
 
         tickBox = EditBox(
             font, leftPos + tickEntryX(), topPos + ROW_SETTINGS_Y + 2,
@@ -351,12 +361,6 @@ class ExportChestScreen(
     private fun pushPickerX(): Int = LABEL_X + ICON_BTN_SIZE + CONTROL_GAP
     private fun redstoneButtonX(): Int = pushPickerX() + ICON_BTN_SIZE + CONTROL_GAP
 
-    private fun redstoneButtonRect(): ButtonRect = ButtonRect(
-        leftPos + redstoneButtonX(),
-        topPos + ROW_SETTINGS_Y,
-        ICON_BTN_SIZE, ICON_BTN_SIZE,
-    )
-
     private fun pushPickerRect(): ButtonRect = ButtonRect(
         leftPos + pushPickerX(), topPos + ROW_SETTINGS_Y, ICON_BTN_SIZE, ICON_BTN_SIZE,
     )
@@ -458,21 +462,7 @@ class ExportChestScreen(
             }
         }
 
-        val redstoneRect = redstoneButtonRect()
-        val redstoneHover = redstoneRect.contains(mouseX, mouseY)
-        (if (redstoneHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON)
-            .draw(graphics, redstoneRect.x, redstoneRect.y, redstoneRect.w, redstoneRect.h)
-        val rsIcon = when (menu.redstoneMode) {
-            1 -> Icons.REDSTONE_INACTIVE
-            2 -> Icons.REDSTONE_ACTIVE
-            else -> Icons.REDSTONE_IGNORE
-        }
-        rsIcon.draw(graphics, redstoneRect.x, redstoneRect.y)
-        if (redstoneHover) queueTooltip(
-            mouseX, mouseY,
-            "Redstone: ${REDSTONE_LABELS[menu.redstoneMode.coerceIn(0, 2)]}",
-            "Click to cycle.",
-        )
+        redstoneButton?.setMode(menu.redstoneMode)
 
         // "Ticks:" label flush left against the [-] button. Vertically centred
         // against the 16-tall settings row.
@@ -593,6 +583,7 @@ class ExportChestScreen(
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         picker?.renderOverlay(graphics, mouseX, mouseY)
         pushPicker?.renderOverlay(graphics, mouseX, mouseY)
+        redstoneButton?.renderTooltip(graphics, mouseX, mouseY)
         autocomplete.render(graphics, mouseX, mouseY)
         if (pendingTooltipLines.isNotEmpty()) {
             graphics.renderComponentTooltip(font, pendingTooltipLines, pendingTooltipX, pendingTooltipY)
@@ -743,11 +734,6 @@ class ExportChestScreen(
         // but we do need to route the picker hit here too if picking is closed
         // and the player clicked the swatch.
 
-        if (redstoneButtonRect().contains(mx, my)) {
-            sendIntUpdate("redstone", (menu.redstoneMode + 1) % 3)
-            playClickSound()
-            return true
-        }
         if (tickMinusRect().contains(mx, my)) {
             applyTickStep(-currentTickStep())
             playClickSound()
