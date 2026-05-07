@@ -1,6 +1,7 @@
 package damien.nodeworks.screen.widget
 
 import damien.nodeworks.compat.drawString
+import damien.nodeworks.screen.Icons
 import damien.nodeworks.screen.NineSlice
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -103,15 +104,7 @@ class FacePickerWidget(
         if (face == null) {
             drawNoneGlyph(graphics, x, y, SWATCH)
         } else {
-            graphics.fill(x + 1, y + 1, x + SWATCH - 1, y + SWATCH - 1, FACE_BG)
-            val font = Minecraft.getInstance().font
-            val letter = face.letter
-            graphics.drawString(
-                font, letter,
-                x + (SWATCH - font.width(letter)) / 2,
-                y + (SWATCH - font.lineHeight) / 2 + 1,
-                0xFFFFFFFF.toInt(),
-            )
+            drawFaceCell(graphics, x, y, SWATCH, face)
         }
 
         if (isHovered) {
@@ -174,14 +167,7 @@ class FacePickerWidget(
                 if (isClear) {
                     drawNoneGlyph(graphics, cellX, cellY, CELL)
                 } else {
-                    graphics.fill(cellX + 1, cellY + 1, cellX + CELL - 1, cellY + CELL - 1, FACE_BG)
-                    val letter = rel!!.letter
-                    graphics.drawString(
-                        font, letter,
-                        cellX + (CELL - font.width(letter)) / 2,
-                        cellY + (CELL - font.lineHeight) / 2 + 1,
-                        0xFFFFFFFF.toInt(),
-                    )
+                    drawFaceCell(graphics, cellX, cellY, CELL, rel!!)
                 }
 
                 if (hovered || selected) {
@@ -205,18 +191,35 @@ class FacePickerWidget(
         }
     }
 
-    /** Black square + red X, shared by the swatch (when current face is null)
-     *  and the popup's clear-cell. Same proportions as
-     *  [ChannelPickerWidget.drawNoneGlyph]. */
+    /** Furnace face texture inset 1 px inside the slot frame, with the
+     *  RelDir's [letter] glyph centred on top. The letter draws white with a
+     *  drop shadow so it stays legible against the light-grey furnace texture
+     *  (the slot frame's dark border alone isn't enough contrast). */
+    private fun drawFaceCell(graphics: GuiGraphicsExtractor, x0: Int, y0: Int, size: Int, face: RelDir) {
+        val inset = 1
+        iconFor(face).draw(graphics, x0 + inset, y0 + inset, size - inset * 2)
+        val font = Minecraft.getInstance().font
+        val letter = face.letter
+        graphics.drawString(
+            font, letter,
+            x0 + (size - font.width(letter)) / 2,
+            y0 + (size - font.lineHeight) / 2 + 1,
+            0xFFFFFFFF.toInt(),
+            true,
+        )
+    }
+
+    private fun iconFor(face: RelDir): Icons = when (face) {
+        RelDir.UP -> Icons.FACE_TOP
+        RelDir.DOWN -> Icons.FACE_BOTTOM
+        RelDir.FRONT -> Icons.FACE_FRONT
+        RelDir.BACK, RelDir.LEFT, RelDir.RIGHT -> Icons.FACE_SIDE
+    }
+
+    /** Atlas X glyph, shared by the swatch (when current face is null) and the
+     *  popup's clear-cell. */
     private fun drawNoneGlyph(graphics: GuiGraphicsExtractor, x0: Int, y0: Int, size: Int) {
-        graphics.fill(x0 + 1, y0 + 1, x0 + size - 1, y0 + size - 1, 0xFF1A1A1A.toInt())
-        val inset = 2
-        val red = 0xFFE53935.toInt()
-        val xn = size - inset * 2
-        for (i in 0 until xn) {
-            graphics.fill(x0 + inset + i, y0 + inset + i, x0 + inset + i + 1, y0 + inset + i + 1, red)
-            graphics.fill(x0 + inset + i, y0 + size - inset - 1 - i, x0 + inset + i + 1, y0 + size - inset - i, red)
-        }
+        Icons.X.draw(graphics, x0, y0, size)
     }
 
     fun handleOverlayClick(mouseX: Double, mouseY: Double): Boolean {
@@ -267,7 +270,6 @@ class FacePickerWidget(
         private const val POPUP_GRID = 3
         private const val CELL = 16
         private const val POPUP_PAD = 4
-        private const val FACE_BG = 0xFF3A3A3A.toInt()
 
         /** Fixed cube-unfold layout. Row 0 col 2 is the X clear-cell (handled
          *  via [isClearCell]), the two `null` slots in row 0 col 0 and row 2
