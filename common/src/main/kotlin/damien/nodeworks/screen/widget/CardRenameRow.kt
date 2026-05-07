@@ -23,6 +23,10 @@ import net.minecraft.sounds.SoundEvents
  * [Set] button, sized to fit inside the existing title-bar height so card
  * GUIs don't have to grow taller. The host screen forwards [mouseClicked] and
  * [keyPressed] in before its own handlers so Enter / clicking Set commits.
+ *
+ * [requestDefocus] is invoked when the user clicks outside the field while
+ * focused. Hosts pass `{ setFocused(null) }` to opt into click-off-deselect
+ * (matches the per-rule-field defocus pattern in [StorageCardScreen]).
  */
 class CardRenameRow(
     private val font: Font,
@@ -31,6 +35,7 @@ class CardRenameRow(
     private val imageWidth: Int,
     initialName: String,
     private val sendRename: (String) -> Unit,
+    private val requestDefocus: () -> Unit = {},
 ) {
     companion object {
         private const val ROW_Y = 4
@@ -58,6 +63,10 @@ class CardRenameRow(
         it.value = initialName
     }
 
+    /** Last value committed to the server. Skips redundant rename packets when
+     *  the field's value hasn't changed since the last commit. */
+    private var lastSent: String = initialName
+
     fun addToScreen(register: (AbstractWidget) -> Unit) {
         register(nameField)
     }
@@ -79,13 +88,24 @@ class CardRenameRow(
 
     /** Returns true when the click landed on the Set button. Field clicks
      *  fall through to vanilla's widget dispatch (the EditBox is registered
-     *  as a screen widget). */
+     *  as a screen widget). Clicks outside the field while focused trigger a
+     *  silent commit + [requestDefocus] callback so the host can clear focus
+     *  via `setFocused(null)`; that path doesn't claim the event so it can
+     *  still propagate to other widgets. */
     fun mouseClicked(event: MouseButtonEvent): Boolean {
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
         if (mx in setBtnX until setBtnX + SET_BTN_W && my in setBtnY until setBtnY + SET_BTN_H) {
-            commit()
+            commit(playSound = true)
             return true
+        }
+        if (nameField.isFocused) {
+            val inField = mx in nameField.x until nameField.x + nameField.width &&
+                my in nameField.y until nameField.y + nameField.height
+            if (!inField) {
+                commit(playSound = false)
+                requestDefocus()
+            }
         }
         return false
     }
@@ -101,7 +121,7 @@ class CardRenameRow(
     fun keyPressed(event: KeyEvent): Boolean {
         if (!nameField.isFocused) return false
         if (event.keyCode == InputConstants.KEY_RETURN) {
-            commit()
+            commit(playSound = true)
             return true
         }
         if (event.keyCode == InputConstants.KEY_ESCAPE) return false
@@ -109,11 +129,16 @@ class CardRenameRow(
         return true
     }
 
-    private fun commit() {
-        Minecraft.getInstance().soundManager.play(
-            SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0f)
-        )
-        sendRename(nameField.value)
+    private fun commit(playSound: Boolean) {
+        if (playSound) {
+            Minecraft.getInstance().soundManager.play(
+                SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0f)
+            )
+        }
+        if (nameField.value != lastSent) {
+            sendRename(nameField.value)
+            lastSent = nameField.value
+        }
         nameField.isFocused = false
     }
 }

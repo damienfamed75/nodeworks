@@ -412,7 +412,7 @@ class NetworkControllerScreen(
             if (keyCode == 256) return super.keyPressed(event) // ESC
             if (keyCode == 257) { // ENTER, apply name
                 sendNameUpdate(this.nameField.value)
-                this.nameField.isFocused = false
+                clearNameFocus()
                 nameCheckmarkTime = net.minecraft.client.Minecraft.getInstance().level?.gameTime ?: 0
                 return true
             }
@@ -449,7 +449,7 @@ class NetworkControllerScreen(
             val inNameField = mx >= controlX && mx < controlX + 100 && my >= controlY && my < controlY + 16
             val inSetBtn = mx >= setBtnX && mx < setBtnX + setBtnW && my >= controlY && my < controlY + 16
             if (!inNameField && !inSetBtn) {
-                nameField.isFocused = false
+                clearNameFocus()
             }
         }
 
@@ -532,7 +532,7 @@ class NetworkControllerScreen(
                     val setBtnH = 16
                     if (mx >= setBtnX && mx < setBtnX + setBtnW && my >= controlY && my < controlY + setBtnH) {
                         sendNameUpdate(this.nameField.value)
-                        nameField.isFocused = false
+                        clearNameFocus()
                         nameCheckmarkTime = net.minecraft.client.Minecraft.getInstance().level?.gameTime ?: 0
                         minecraft?.player?.playSound(
                             net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.value(),
@@ -619,6 +619,16 @@ class NetworkControllerScreen(
         super.removed()
         sendNameUpdate(nameField.value)
         commitRetryField()
+    }
+
+    /** Drop focus from the name field. Routes through [setFocused(null)] when
+     *  the screen still considers the field focused; otherwise just clears
+     *  the EditBox's local flag. Without [setFocused(null)] the screen keeps
+     *  `focused = nameField` after the EditBox's own flag is flipped, and
+     *  vanilla's [setFocused] equality short-circuit blocks re-focusing the
+     *  field on subsequent clicks. */
+    private fun clearNameFocus() {
+        if (focused === nameField) setFocused(null) else nameField.isFocused = false
     }
 
     private fun sendColorUpdate(color: Int) {

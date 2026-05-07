@@ -217,7 +217,7 @@ class UserScreen(
             it.setMaxLength(UserOpenData.MAX_FILTER_LENGTH)
             it.setBordered(true)
             it.setTextColor(0xFFFFFFFF.toInt())
-            it.setHint(Component.literal("Item / tag / pattern").withStyle(ChatFormatting.DARK_GRAY))
+            it.setHint(Component.literal("item id / tag / pattern").withStyle(ChatFormatting.DARK_GRAY))
             it.value = menu.initialFilter
         }
         addRenderableWidget(filterField)

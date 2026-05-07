@@ -240,6 +240,7 @@ class StorageCardScreen(
                     damien.nodeworks.network.SetCardNamePayload(menu.containerId, name)
                 )
             },
+            requestDefocus = { setFocused(null) },
         )
         renameRow.addToScreen { addRenderableWidget(it) }
     }
@@ -368,6 +369,7 @@ class StorageCardScreen(
             val boxX = listInteriorX + iconColumnW
             val box = EditBox(font, boxX, boxY, fieldW, 12, Component.literal("Rule"))
             box.setMaxLength(SetStorageCardFilterRulesPayload.MAX_RULE_LENGTH)
+            box.setHint(Component.literal("item id / tag / pattern").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
             box.value = localRules[ruleIdx]
             box.setResponder { _ -> /* commit on blur / enter / close */ }
             addRenderableWidget(box)
@@ -730,15 +732,26 @@ class StorageCardScreen(
 
             if (ruleIdx >= localRules.size) continue
 
-            // Item icon on the left of the row, vertically centred against
-            // the visible row interior. Skipped (just empty space) when the
-            // rule resolves to no concrete item, e.g. `*` / `/regex/` /
-            // namespace wildcards. Tag rules (`#minecraft:logs`) cycle
-            // through members on a shared timer, see [resolveRowIcon].
+            // Slot-backed item icon on the left of the row, vertically centred
+            // against the visible row interior. Slot is 16×16 with the icon
+            // scaled to 14×14 so the slot fits inside the 16-tall row without
+            // clipping the SEPARATOR. Slot draws regardless of whether the
+            // rule resolves to a concrete item (`*` / `/regex/` / namespace
+            // wildcards leave it empty), matching the User device's filter row.
+            // Tag rules (`#minecraft:logs`) cycle members on a shared timer,
+            // see [resolveRowIcon].
+            val slotSize = ROW_ICON_SIZE
+            val iconDrawSize = slotSize - 2
+            val slotX = interiorX + ROW_ICON_PAD
+            val slotY = rowY + (ROW_H - SEPARATOR_OVERLAP - slotSize) / 2
+            NineSlice.SLOT.draw(graphics, slotX, slotY, slotSize, slotSize)
             resolveRowIcon(localRules[ruleIdx])?.let { iconStack ->
-                val iconX = interiorX + ROW_ICON_PAD
-                val iconY = rowY + (ROW_H - SEPARATOR_OVERLAP - ROW_ICON_SIZE) / 2
-                graphics.renderItem(iconStack, iconX, iconY)
+                val scale = iconDrawSize / 16f
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((slotX + 1).toFloat(), (slotY + 1).toFloat())
+                graphics.pose().scale(scale, scale)
+                graphics.renderItem(iconStack, 0, 0)
+                graphics.pose().popMatrix()
             }
 
             // Delete button on the right of the row. Top edge stays anchored

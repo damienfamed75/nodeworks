@@ -250,6 +250,7 @@ class ExportChestScreen(
             val boxY = rowY + (ROW_H - SEPARATOR_OVERLAP - 12) / 2
             val box = EditBox(font, boxX, boxY, fieldW, 12, Component.literal("Rule"))
             box.setMaxLength(SetExportChestFilterRulesPayload.MAX_RULE_LENGTH)
+            box.setHint(Component.literal("item id / tag / pattern").withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
             box.value = localRules[ruleIdx]
             box.setResponder { _ -> /* commit on blur / enter / scroll / close */ }
             addRenderableWidget(box)
@@ -511,12 +512,22 @@ class ExportChestScreen(
 
             if (ruleIdx >= localRules.size) continue
 
-            // Item icon on the left of the row, vertically centred against the
-            // visible row interior.
+            // Slot-backed item icon on the left of the row, vertically centred
+            // against the visible row interior. Slot is 16×16 with the icon
+            // scaled to 14×14 so it fits inside the 16-tall row without
+            // clipping the SEPARATOR.
+            val slotSize = ROW_ICON_SIZE
+            val iconDrawSize = slotSize - 2
+            val slotX = interiorX + ROW_ICON_PAD
+            val slotY = rowY + (ROW_H - SEPARATOR_OVERLAP - slotSize) / 2
+            NineSlice.SLOT.draw(graphics, slotX, slotY, slotSize, slotSize)
             resolveRowIcon(localRules[ruleIdx])?.let { iconStack ->
-                val iconX = interiorX + ROW_ICON_PAD
-                val iconY = rowY + (ROW_H - SEPARATOR_OVERLAP - ROW_ICON_SIZE) / 2
-                graphics.renderItem(iconStack, iconX, iconY)
+                val scale = iconDrawSize / 16f
+                graphics.pose().pushMatrix()
+                graphics.pose().translate((slotX + 1).toFloat(), (slotY + 1).toFloat())
+                graphics.pose().scale(scale, scale)
+                graphics.renderItem(iconStack, 0, 0)
+                graphics.pose().popMatrix()
             }
 
             val del = deleteButtonRect(visibleIdx)
@@ -862,7 +873,18 @@ class ExportChestScreen(
     }
 
     override fun removed() {
-        if (commitAllRuleFields()) sendRulesToServer()
+        var dirty = commitAllRuleFields()
+        // Drop "+ Add rule" entries the player created and never typed into,
+        // matching the Storage Card behaviour where blank rules are stripped
+        // by the data layer on persist. Done client-side here because the
+        // Export Chest BE has no equivalent setter-side filter.
+        val pruned = localRules.filter { it.isNotBlank() }
+        if (pruned.size != localRules.size) {
+            localRules.clear()
+            localRules.addAll(pruned)
+            dirty = true
+        }
+        if (dirty) sendRulesToServer()
         super.removed()
     }
 

@@ -87,6 +87,7 @@ class CardSettingsScreen(
                     damien.nodeworks.network.SetCardNamePayload(menu.containerId, name)
                 )
             },
+            requestDefocus = { setFocused(null) },
         )
         renameRow.addToScreen { addRenderableWidget(it) }
     }
