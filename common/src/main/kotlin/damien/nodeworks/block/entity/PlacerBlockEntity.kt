@@ -159,6 +159,10 @@ class PlacerBlockEntity(
      *  placement via [PlacerHandle] is unaffected and ignores this loop. */
     fun serverTick(level: ServerLevel) {
         if (filterRule.isEmpty()) return
+        // Ignored = script-only, mirrors UserBlockEntity. Auto-place stays off
+        // until the player switches to LOW or HIGH; Lua [PlacerHandle.place]
+        // bypasses this gate by calling the placement helpers directly.
+        if (redstoneMode == REDSTONE_IGNORED) return
         if (level.gameTime - lastAttemptTick < PLACE_INTERVAL_TICKS) return
         if (!redstoneAllows(level)) return
         val target = targetPos

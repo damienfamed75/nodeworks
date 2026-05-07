@@ -13,7 +13,6 @@ import damien.nodeworks.platform.ResourceKind
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.server.level.ServerLevel
-import net.minecraft.world.Container
 
 /**
  * Utility for querying items across all Storage Cards on a network.
@@ -73,64 +72,28 @@ object NetworkStorageHelper {
         return out
     }
 
-    /** Find items at [pos] matching [filter], walking the underlying vanilla
-     *  [Container] when present so all slots are visible regardless of
-     *  which face [card] targets. Falls back to [card]'s face-restricted
-     *  handle for modded inventories. Used by the inventory cache so multi-
-     *  card setups on a single block report the actual item counts. */
+    /** Find items at [pos] matching [filter] via [card]'s capability-resolved
+     *  storage handle. Routes through `level.getCapability(Capabilities.Item.BLOCK,
+     *  pos, face)` which returns the merged view for vanilla double chests
+     *  (NeoForge's `CapabilityHooks` wraps `ChestBlock.combine` so the same
+     *  combined handler is returned from every face) and the controller's
+     *  aggregate inventory for Sophisticated Storage. The earlier BE-Container
+     *  fast-path missed both cases because it walked only the BE at [pos],
+     *  which is half a double chest. */
     fun findAllItemInfoAt(
         level: ServerLevel,
         pos: BlockPos,
         card: CardSnapshot,
         filter: (String) -> Boolean,
     ): List<ItemInfo> {
-        val be = level.getBlockEntity(pos)
-        if (be is Container) {
-            val aggregated = LinkedHashMap<String, ItemInfo>()
-            for (slot in 0 until be.containerSize) {
-                val stack = be.getItem(slot)
-                if (stack.isEmpty) continue
-                val itemId = damien.nodeworks.platform.ItemIdCache.get(stack.item) ?: continue
-                if (!filter(itemId)) continue
-                val hasData = stack.componentsPatch.size() > 0
-                val cacheKey = "$itemId:$hasData"
-                val existing = aggregated[cacheKey]
-                if (existing != null) {
-                    aggregated[cacheKey] = existing.copy(count = existing.count + stack.count)
-                } else {
-                    aggregated[cacheKey] = ItemInfo(
-                        itemId = itemId,
-                        name = stack.hoverName.string,
-                        count = stack.count.toLong(),
-                        maxStackSize = stack.item.getDefaultMaxStackSize(),
-                        hasData = hasData,
-                        componentsPatch = stack.componentsPatch,
-                    )
-                }
-            }
-            return aggregated.values.toList()
-        }
         val storage = getStorage(level, card) ?: return emptyList()
         return PlatformServices.storage.findAllItemInfo(storage, filter)
     }
 
-    /** Count items at [pos] matching [filter], using the underlying vanilla
-     *  [Container] when the BE implements it so all slots are visible
-     *  regardless of which face [card] targets. Falls back to [card]'s
-     *  face-restricted handle for modded inventories that only expose
-     *  IItemHandler / Storage. */
+    /** Count items at [pos] matching [filter] via [card]'s capability-resolved
+     *  storage handle. See [findAllItemInfoAt] for the double-chest /
+     *  Sophisticated Storage rationale. */
     fun countItemsAt(level: ServerLevel, pos: BlockPos, card: CardSnapshot, filter: String): Long {
-        val be = level.getBlockEntity(pos)
-        if (be is Container) {
-            var total = 0L
-            for (slot in 0 until be.containerSize) {
-                val stack = be.getItem(slot)
-                if (stack.isEmpty) continue
-                val itemId = damien.nodeworks.platform.ItemIdCache.get(stack.item) ?: continue
-                if (CardHandle.matchesFilter(itemId, ResourceKind.ITEM, filter)) total += stack.count
-            }
-            return total
-        }
         val storage = getStorage(level, card) ?: return 0L
         return PlatformServices.storage.countItems(storage) { CardHandle.matchesFilter(it, ResourceKind.ITEM, filter) }
     }

@@ -204,6 +204,10 @@ class BreakerBlockEntity(
      *  filter is the explicit idle signal (no auto-break). */
     private fun tryAutoStart(level: ServerLevel) {
         if (filterRule.isEmpty()) return
+        // Ignored = script-only, mirrors UserBlockEntity. Auto-break stays off
+        // until the player switches to LOW or HIGH; Lua [BreakerHandle.mine]
+        // calls [startBreak] directly and bypasses this gate.
+        if (redstoneMode == REDSTONE_IGNORED) return
         if (!redstoneAllows(level)) return
         val target = targetPos
         val state = level.getBlockState(target)

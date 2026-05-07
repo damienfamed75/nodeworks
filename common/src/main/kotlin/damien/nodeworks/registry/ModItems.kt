@@ -10,6 +10,7 @@ import damien.nodeworks.item.DiagnosticToolItem
 import damien.nodeworks.item.LinkCrystalItem
 import damien.nodeworks.item.MilkySoulBallItem
 import damien.nodeworks.item.NetworkWrenchItem
+import damien.nodeworks.item.NodeworksBookItem
 import damien.nodeworks.item.PortableInventoryTerminalItem
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -136,6 +137,17 @@ object ModItems {
         "portable_inventory_terminal",
         ::PortableInventoryTerminalItem,
         Item.Properties().stacksTo(1),
+    )
+
+    val NODEWORKS_BOOK: Item = register(
+        "nodeworks_book",
+        ::NodeworksBookItem,
+        Item.Properties()
+            .stacksTo(1)
+            // Fire-resistant matches Patchouli convention. The book is pure UI,
+            // losing it to lava is just an annoyance with no gameplay payoff.
+            .fireResistant()
+            .rarity(net.minecraft.world.item.Rarity.RARE),
     )
 
     private fun register(

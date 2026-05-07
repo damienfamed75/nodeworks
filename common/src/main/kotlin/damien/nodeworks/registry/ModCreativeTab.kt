@@ -55,6 +55,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.SMALL_CELESTINE_BUD)
 
                 // Items
+                output.accept(ModItems.NODEWORKS_BOOK)
                 output.accept(ModItems.NETWORK_WRENCH)
                 output.accept(ModItems.DIAGNOSTIC_TOOL)
                 output.accept(ModItems.PORTABLE_INVENTORY_TERMINAL)

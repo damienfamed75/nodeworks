@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:book",
+    "nodeworks:celestine_shard"
+  ],
+  "result": {
+    "id": "nodeworks:nodeworks_book",
+    "count": 1
+  }
+}
