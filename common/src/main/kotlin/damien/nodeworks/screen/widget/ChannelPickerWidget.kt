@@ -88,8 +88,12 @@ class ChannelPickerWidget(
         if (isNone) {
             drawNoneGlyph(graphics, x, y, SWATCH)
         } else {
-            val rgb = currentColor.textureDiffuseColor or 0xFF000000.toInt()
-            graphics.fill(x + 1, y + 1, x + SWATCH - 1, y + SWATCH - 1, rgb)
+            // White wool tinted with the dye colour fills the slot interior
+            // (1 px inset on every side so the slot frame still reads). Gives
+            // the swatch a wool texture instead of a flat fill while staying
+            // chromatically identical to the picker grid below.
+            val rgb = currentColor.textureDiffuseColor and 0xFFFFFF
+            Icons.WHITE_WOOL.drawTinted(graphics, x + 1, y + 1, SWATCH - 2, rgb)
         }
 
         // Hover outline so the player knows the swatch is interactive.
@@ -160,8 +164,8 @@ class ChannelPickerWidget(
             val color = DyeColor.byId(i)
             val cellX = px + POPUP_PAD + (i % POPUP_COLS) * CELL
             val cellY = py + POPUP_PAD + (i / POPUP_COLS) * CELL
-            val rgb = color.textureDiffuseColor or 0xFF000000.toInt()
-            graphics.fill(cellX + 1, cellY + 1, cellX + CELL - 1, cellY + CELL - 1, rgb)
+            val rgb = color.textureDiffuseColor and 0xFFFFFF
+            Icons.WHITE_WOOL.drawTinted(graphics, cellX + 1, cellY + 1, CELL - 2, rgb)
 
             val hovered = mouseX in cellX..(cellX + CELL) && mouseY in cellY..(cellY + CELL)
             val selected = !isNone && color == currentColor

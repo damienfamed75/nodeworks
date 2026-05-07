@@ -220,5 +220,11 @@ class Icons private constructor(val col: Int, val row: Int) {
 
         // User device sidebar icon
         val USER = Icons(15, 4)
+
+        val WHITE_WOOL = Icons(0, 5)
+        val FACE_BOTTOM = Icons(1, 5)
+        val FACE_FRONT = Icons(2, 5)
+        val FACE_SIDE = Icons(3, 5)
+        val FACE_TOP = Icons(4, 5)
     }
 }
