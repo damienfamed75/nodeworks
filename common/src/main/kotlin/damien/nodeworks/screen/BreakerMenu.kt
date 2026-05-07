@@ -11,27 +11,34 @@ import net.minecraft.world.inventory.SimpleContainerData
 import net.minecraft.world.item.ItemStack
 
 /**
- * Settings menu for the Breaker device. Mirrors [VariableMenu] at a reduced
- * footprint, just channel id sync via [ContainerData] (the device name is
- * one-shot via [BreakerOpenData] and round-trips through the settings payload
- * the same way Variable's name does, so it doesn't need a slot here).
+ * Settings menu for the Breaker device. Live-syncing fields (channel,
+ * redstoneMode) ride on [ContainerData] so external mutations (other player
+ * editing, scripts) reflect in the open screen. Non-syncing fields
+ * (deviceName, filterRule) seed from [BreakerOpenData] and use commit-style
+ * updates via [DeviceSettingsPayload], last-write-wins.
  */
 class BreakerMenu(
     syncId: Int,
     val devicePos: BlockPos,
-    val initialName: String = "",
+    val initialName: String,
+    val initialFilter: String,
     private val data: ContainerData = SimpleContainerData(DATA_SLOTS),
 ) : AbstractContainerMenu(ModScreenHandlers.BREAKER, syncId), BlockBackedMenu {
 
     override val blockBackingPos: BlockPos get() = devicePos
 
     companion object {
-        const val DATA_SLOTS = 1 // 0 = channelId
+        const val DATA_SLOTS = 3
+        private const val DATA_CHANNEL = 0
+        private const val DATA_REDSTONE = 1
+        private const val DATA_PREVIEW = 2
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: BreakerOpenData): BreakerMenu {
             val data = SimpleContainerData(DATA_SLOTS)
-            data.set(0, openData.channelId)
-            return BreakerMenu(syncId, openData.pos, openData.deviceName, data)
+            data.set(DATA_CHANNEL, openData.channelId)
+            data.set(DATA_REDSTONE, openData.redstoneMode)
+            data.set(DATA_PREVIEW, if (openData.previewArea) 1 else 0)
+            return BreakerMenu(syncId, openData.pos, openData.deviceName, openData.filterRule, data)
         }
 
         fun createServer(
@@ -41,17 +48,21 @@ class BreakerMenu(
         ): BreakerMenu {
             val data = object : ContainerData {
                 override fun get(index: Int): Int = when (index) {
-                    0 -> entity.channel.id
+                    DATA_CHANNEL -> entity.channel.id
+                    DATA_REDSTONE -> entity.redstoneMode
+                    DATA_PREVIEW -> if (entity.previewArea) 1 else 0
                     else -> 0
                 }
                 override fun set(index: Int, value: Int) {}
                 override fun getCount(): Int = DATA_SLOTS
             }
-            return BreakerMenu(syncId, entity.blockPos, entity.deviceName, data)
+            return BreakerMenu(syncId, entity.blockPos, entity.deviceName, entity.filterRule, data)
         }
     }
 
-    val channelId: Int get() = data.get(0)
+    val channelId: Int get() = data.get(DATA_CHANNEL)
+    val redstoneMode: Int get() = data.get(DATA_REDSTONE)
+    val previewArea: Boolean get() = data.get(DATA_PREVIEW) != 0
 
     init {
         addDataSlots(data)

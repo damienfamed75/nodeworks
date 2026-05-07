@@ -110,7 +110,14 @@ class BreakerBlock(properties: Properties) : BaseEntityBlock(properties) {
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.breaker"),
-            BreakerOpenData(pos, entity.deviceName, entity.channel.id),
+            BreakerOpenData(
+                pos = pos,
+                deviceName = entity.deviceName,
+                channelId = entity.channel.id,
+                filterRule = entity.filterRule,
+                redstoneMode = entity.redstoneMode,
+                previewArea = entity.previewArea,
+            ),
             BreakerOpenData.STREAM_CODEC,
             { syncId, inv, _ -> BreakerMenu.createServer(syncId, inv, entity) },
         )

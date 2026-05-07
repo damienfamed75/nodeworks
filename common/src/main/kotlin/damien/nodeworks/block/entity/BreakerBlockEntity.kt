@@ -56,6 +56,30 @@ class BreakerBlockEntity(
             markDirtyAndSync()
         }
 
+    /** Block-id / tag / pattern that gates the auto-break loop. Empty string
+     *  leaves the Breaker idle (Lua-only). When non-empty, [serverTick]
+     *  starts a break against the front block whenever its registry id
+     *  matches the filter and the [redstoneMode] gate allows it. */
+    var filterRule: String = ""
+        set(value) {
+            field = value
+            markDirtyAndSync()
+        }
+
+    var redstoneMode: Int = REDSTONE_IGNORED
+        set(value) {
+            field = value.coerceIn(0, 2)
+            markDirtyAndSync()
+        }
+
+    /** Toggles the [UserPreviewRenderer] wireframe over the single block at
+     *  [targetPos]. Persisted so preview survives chunk unload. */
+    var previewArea: Boolean = false
+        set(value) {
+            field = value
+            markDirtyAndSync()
+        }
+
     /** Tick counter for the in-progress break (0 = idle). When this reaches
      *  [breakDurationTicks] the block actually breaks, while `> 0`, the breaker
      *  pushes per-stage destroy-progress to the level so the vanilla crack overlay
@@ -134,7 +158,15 @@ class BreakerBlockEntity(
 
     /** Per-tick advance. Called from [BreakerBlock.getTicker]'s server-side ticker. */
     fun serverTick(level: ServerLevel) {
-        if (!isBreaking) return
+        if (!isBreaking) {
+            // Idle: if the player set a filter and the redstone gate allows,
+            // auto-start a break against the front block whenever it matches.
+            // Lua-driven breaks ([BreakerHandle.break]) set a [pendingHandler]
+            // and reach this same path through [startBreak] below; the auto-
+            // path leaves the handler null so drops route to network storage.
+            tryAutoStart(level)
+            return
+        }
 
         // Detect target drift, if the block has changed underneath us (player
         // swapped it, piston pushed something else into place), abort cleanly.
@@ -154,6 +186,30 @@ class BreakerBlockEntity(
 
         if (breakProgress >= breakDurationTicks) {
             completeBreak(level, target, current)
+        }
+    }
+
+    /** Filter + redstone gate check, fires [startBreak] when both pass and the
+     *  front block resolves to a registry id matching [filterRule]. Empty
+     *  filter is the explicit idle signal (no auto-break). */
+    private fun tryAutoStart(level: ServerLevel) {
+        if (filterRule.isEmpty()) return
+        if (!redstoneAllows(level)) return
+        val target = targetPos
+        val state = level.getBlockState(target)
+        if (state.isAir) return
+        val blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.block).toString()
+        if (!damien.nodeworks.script.CardHandle.matchesFilter(blockId, filterRule)) return
+        startBreak(level, handler = null)
+    }
+
+    private fun redstoneAllows(level: ServerLevel): Boolean {
+        if (redstoneMode == REDSTONE_IGNORED) return true
+        val powered = level.hasNeighborSignal(worldPosition)
+        return when (redstoneMode) {
+            REDSTONE_LOW -> !powered
+            REDSTONE_HIGH -> powered
+            else -> true
         }
     }
 
@@ -244,10 +300,12 @@ class BreakerBlockEntity(
             NodeConnectionHelper.queueRevalidation(level, worldPosition)
         }
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, true)
+        damien.nodeworks.render.UserPreviewRenderer.TrackedBreakers.add(this)
     }
 
     override fun setRemoved() {
         damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(worldPosition, false)
+        damien.nodeworks.render.UserPreviewRenderer.TrackedBreakers.remove(worldPosition)
         val lvl = level
         if (lvl is ServerLevel) {
             // Wipe any leftover crack overlay if we're mid-break when the breaker is broken.
@@ -263,6 +321,9 @@ class BreakerBlockEntity(
         super.saveAdditional(output)
         output.putString("deviceName", deviceName)
         output.putInt("channel", channel.id)
+        output.putString("filterRule", filterRule)
+        output.putInt("redstoneMode", redstoneMode)
+        output.putBoolean("previewArea", previewArea)
         output.putInt("breakProgress", breakProgress)
         output.putInt("breakDurationTicks", breakDurationTicks)
         networkId?.let { output.putString("networkId", it.toString()) }
@@ -274,6 +335,9 @@ class BreakerBlockEntity(
         super.loadAdditional(input)
         deviceName = input.getStringOr("deviceName", "")
         channel = runCatching { DyeColor.byId(input.getIntOr("channel", 0)) }.getOrDefault(DyeColor.WHITE)
+        filterRule = input.getStringOr("filterRule", "")
+        redstoneMode = input.getIntOr("redstoneMode", REDSTONE_IGNORED).coerceIn(0, 2)
+        previewArea = input.getBooleanOr("previewArea", false)
         breakProgress = input.getIntOr("breakProgress", 0)
         breakDurationTicks = input.getIntOr("breakDurationTicks", 0)
         // pendingHandler intentionally not loaded, LuaFunction can't serialise.
@@ -296,6 +360,10 @@ class BreakerBlockEntity(
         ClientboundBlockEntityDataPacket.create(this)
 
     companion object {
+        const val REDSTONE_IGNORED = 0
+        const val REDSTONE_LOW = 1
+        const val REDSTONE_HIGH = 2
+
         /** Pick a diamond / wooden tool pair appropriate for [state]. Tries
          *  pickaxe, axe, then shovel and returns the first whose diamond
          *  variant is the correct tool for drops. Null when none of the three

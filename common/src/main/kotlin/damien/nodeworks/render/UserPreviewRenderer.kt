@@ -2,7 +2,9 @@ package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
 import com.mojang.blaze3d.vertex.VertexConsumer
+import damien.nodeworks.block.BreakerBlock
 import damien.nodeworks.block.UserBlock
+import damien.nodeworks.block.entity.BreakerBlockEntity
 import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.client.Minecraft
@@ -63,6 +65,17 @@ object UserPreviewRenderer {
             val far = pos.relative(facing, UserBlockEntity.REACH)
             val color = entity.channel.textureDiffuseColor or 0xFF000000.toInt()
             drawAabb(poseStack, buffer, near, far, color)
+        }
+
+        TrackedBreakers.forEach { pos, entity ->
+            if (!entity.previewArea) return@forEach
+            val state = level.getBlockState(pos)
+            if (state.block !is BreakerBlock) return@forEach
+            val facing = state.getValue(BreakerBlock.FACING)
+            // Breaker only ever targets the single block at facing+1.
+            val target = pos.relative(facing, 1)
+            val color = entity.channel.textureDiffuseColor or 0xFF000000.toInt()
+            drawAabb(poseStack, buffer, target, target, color)
         }
 
         poseStack.popPose()
@@ -141,6 +154,24 @@ object UserPreviewRenderer {
         }
 
         fun forEach(action: (BlockPos, UserBlockEntity) -> Unit) {
+            for ((pos, entity) in byPos) action(pos, entity)
+        }
+    }
+
+    /** Same shape as [TrackedUsers] for the Breaker preview. Single-block
+     *  AABB rendered at the front face. */
+    object TrackedBreakers {
+        private val byPos: MutableMap<BlockPos, BreakerBlockEntity> = HashMap()
+
+        fun add(entity: BreakerBlockEntity) {
+            byPos[entity.blockPos] = entity
+        }
+
+        fun remove(pos: BlockPos) {
+            byPos.remove(pos)
+        }
+
+        fun forEach(action: (BlockPos, BreakerBlockEntity) -> Unit) {
             for ((pos, entity) in byPos) action(pos, entity)
         }
     }

@@ -8,6 +8,7 @@ import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.InstructionSetScreenHandler
 import damien.nodeworks.screen.ProcessingSetScreen
 import damien.nodeworks.screen.ProcessingSetScreenHandler
+import damien.nodeworks.screen.BreakerScreen
 import damien.nodeworks.screen.ExportChestScreen
 import damien.nodeworks.screen.StorageCardScreen
 import damien.nodeworks.screen.UserScreen
@@ -111,6 +112,10 @@ class NodeworksJeiPlugin : IModPlugin {
         registration.addGhostIngredientHandler(
             UserScreen::class.java,
             UserGhostHandler()
+        )
+        registration.addGhostIngredientHandler(
+            BreakerScreen::class.java,
+            BreakerGhostHandler()
         )
     }
 
@@ -551,6 +556,39 @@ class UserGhostHandler : IGhostIngredientHandler<UserScreen> {
 
     private class UserFilterTarget<I : Any>(
         private val gui: UserScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+        override fun getArea(): Rect2i = area
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
+            gui.acceptGhostItem(itemId)
+        }
+    }
+}
+
+/**
+ * Mirror of [UserGhostHandler] for the Breaker GUI: a single drop area
+ * covering the filter row replaces the Breaker's filter with the dropped
+ * item's id (the registry id of the block that drops the item, in most
+ * cases - users typing block ids directly remains the explicit path).
+ */
+class BreakerGhostHandler : IGhostIngredientHandler<BreakerScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: BreakerScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val rect = gui.filterDropArea() ?: return emptyList()
+        return listOf(BreakerFilterTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
+    }
+
+    override fun onComplete() {}
+
+    private class BreakerFilterTarget<I : Any>(
+        private val gui: BreakerScreen,
         private val area: Rect2i,
     ) : IGhostIngredientHandler.Target<I> {
         override fun getArea(): Rect2i = area

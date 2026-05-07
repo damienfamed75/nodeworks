@@ -488,6 +488,10 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                         when (payload.key) {
                             "name" -> entity.deviceName = payload.strValue
                             "channel" -> if (newColor != null) entity.channel = newColor
+                            "filter" -> entity.filterRule = payload.strValue
+                                .take(damien.nodeworks.screen.BreakerOpenData.MAX_FILTER_LENGTH)
+                            "redstone" -> entity.redstoneMode = payload.intValue.coerceIn(0, 2)
+                            "preview" -> entity.previewArea = payload.intValue != 0
                         }
                     }
                     is damien.nodeworks.block.entity.PlacerBlockEntity -> {
