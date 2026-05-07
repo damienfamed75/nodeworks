@@ -229,9 +229,13 @@ class NetworkControllerBlockEntity(
         claimedChunks.clear()
     }
 
-    /** BFS through the full topological connection graph (LOS-blocked pairs included,
-     *  we want every physically-connected block's chunk loaded regardless of temporary
-     *  obstructions) and return the set of packed ChunkPos longs. */
+    /** BFS through the full topological connection graph and return the set
+     *  of packed ChunkPos longs. Walks both [Connectable.getConnections] (the
+     *  legacy laser-link graph) AND face-adjacency neighbours (the pipe-based
+     *  graph) so every device, node, pipe, antenna, etc. that participates
+     *  in the network gets its chunk claimed regardless of which connection
+     *  model it uses. LOS-blocked pairs are included since chunk loading
+     *  shouldn't depend on transient line-of-sight state. */
     private fun gatherTopologyChunks(lvl: ServerLevel): Set<Long> {
         val visited = HashSet<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
@@ -244,6 +248,19 @@ class NetworkControllerBlockEntity(
             val entity = NodeConnectionHelper.getConnectable(lvl, pos) ?: continue
             for (conn in entity.getConnections()) {
                 if (visited.add(conn)) queue.add(conn)
+            }
+            if (entity.usesAdjacency()) {
+                for (dir in net.minecraft.core.Direction.entries) {
+                    val neighbor = pos.relative(dir)
+                    if (!lvl.isLoaded(neighbor)) continue
+                    val neighborBe = lvl.getBlockEntity(neighbor) as? damien.nodeworks.network.Connectable ?: continue
+                    if (!neighborBe.usesAdjacency()) continue
+                    if (!entity.canConnectAdjacentTo(neighborBe)) continue
+                    if (!neighborBe.canConnectAdjacentTo(entity)) continue
+                    if (entity.forcedPipeBlocked(dir)) continue
+                    if (neighborBe.forcedPipeBlocked(dir.opposite)) continue
+                    if (visited.add(neighbor)) queue.add(neighbor)
+                }
             }
         }
         return chunks
