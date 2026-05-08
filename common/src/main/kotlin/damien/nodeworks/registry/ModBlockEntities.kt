@@ -20,6 +20,7 @@ import damien.nodeworks.block.entity.BreakerBlockEntity
 import damien.nodeworks.block.entity.ExportChestBlockEntity
 import damien.nodeworks.block.entity.ImportChestBlockEntity
 import damien.nodeworks.block.entity.PlacerBlockEntity
+import damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
 import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.platform.PlatformServices
@@ -141,6 +142,11 @@ object ModBlockEntities {
     val EXPORT_CHEST: BlockEntityType<ExportChestBlockEntity> = register(
         "export_chest",
         PlatformServices.blockEntity.createBlockEntityType(::ExportChestBlockEntity, ModBlocks.EXPORT_CHEST)
+    )
+
+    val PROCESSING_HANDLER: BlockEntityType<ProcessingHandlerBlockEntity> = register(
+        "processing_handler",
+        PlatformServices.blockEntity.createBlockEntityType(::ProcessingHandlerBlockEntity, ModBlocks.PROCESSING_HANDLER)
     )
 
     private fun <T : BlockEntity> register(

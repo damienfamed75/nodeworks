@@ -79,11 +79,14 @@ class PipeBlock(properties: Properties) : BaseEntityBlock(properties) {
         fun propFor(side: Direction): BooleanProperty = PIPE_PROPS[side.ordinal]
 
         /** Whether the pipe at [pos] should connect to its neighbour in
-         *  [side]. True when the neighbour is any [Connectable] BE and
-         *  neither side has wrench-blocked the touching face. */
+         *  [side]. True when the neighbour is any [Connectable] BE that
+         *  accepts a connection on the touching face and neither side has
+         *  wrench-blocked it. The face-acceptance check is what hides
+         *  pipe stubs on Processing Handler's inert side faces. */
         fun computePipeFlag(level: BlockGetter, pos: BlockPos, side: Direction): Boolean {
             val neighborPos = pos.relative(side)
             val neighborBe = level.getBlockEntity(neighborPos) as? Connectable ?: return false
+            if (!neighborBe.adjacencyFaceAllowed(side.opposite, null)) return false
             // Wrench force-block on either side hides the stub. Both sides are
             // queried independently because each BE owns its own per-face flag,
             // toggling one without consulting the other would leave a half-stub.

@@ -70,7 +70,10 @@ object NetworkDiscovery {
 
     private fun doDiscoverNetwork(level: ServerLevel, startPos: BlockPos): NetworkSnapshot {
         val visited = mutableSetOf<BlockPos>()
-        val queue = ArrayDeque<BlockPos>()
+        // BFS threads `entryFace` so boundary Connectables (Processing Handler)
+        // can hide their other-side neighbors. See [NodeConnectionHelper.propagateNetworkId]
+        // for the same shape.
+        val queue = ArrayDeque<Pair<BlockPos, Direction?>>()
         val nodes = mutableListOf<NodeSnapshot>()
         val crafters = mutableListOf<CrafterSnapshot>()
         val cpus = mutableListOf<CpuSnapshot>()
@@ -89,11 +92,11 @@ object NetworkDiscovery {
         val processingClustersSeen = mutableSetOf<BlockPos>()
         val instructionClustersSeen = mutableSetOf<BlockPos>()
 
-        queue.add(startPos)
+        queue.add(startPos to null)
         visited.add(startPos)
 
         while (queue.isNotEmpty()) {
-            val pos = queue.removeFirst()
+            val (pos, entryFace) = queue.removeFirst()
             val connectable = NodeConnectionHelper.getConnectable(level, pos) ?: continue
 
             when (connectable) {
@@ -192,14 +195,14 @@ object NetworkDiscovery {
                 }
             }
 
-            for (connection in connectable.getConnections()) {
+            for (connection in connectable.connectionsFromFace(entryFace)) {
                 if (connection in visited) continue
                 if (!level.isLoaded(connection)) continue
                 if (level is net.minecraft.server.level.ServerLevel
                     && NodeConnectionHelper.isPairBlocked(level, pos, connection)
                 ) continue
                 visited.add(connection)
-                queue.add(connection)
+                queue.add(connection to faceFromTo(connection, pos))
             }
             // Face-adjacent Connectables share the subgraph without a laser between
             // them. Both endpoints must opt in via [Connectable.usesAdjacency], so a
@@ -210,17 +213,19 @@ object NetworkDiscovery {
             // [NodeConnectionHelper.adjacentConnectableNeighbors].
             if (connectable.usesAdjacency()) {
                 for (dir in Direction.entries) {
+                    if (!connectable.adjacencyFaceAllowed(dir, entryFace)) continue
                     val adjPos = pos.relative(dir)
                     if (adjPos in visited) continue
                     if (!level.isLoaded(adjPos)) continue
                     val neighbor = level.getBlockEntity(adjPos) as? Connectable ?: continue
                     if (!neighbor.usesAdjacency()) continue
+                    if (!neighbor.adjacencyFaceAllowed(dir.opposite, dir.opposite)) continue
                     if (!connectable.canConnectAdjacentTo(neighbor)) continue
                     if (!neighbor.canConnectAdjacentTo(connectable)) continue
                     if (connectable.forcedPipeBlocked(dir)) continue
                     if (neighbor.forcedPipeBlocked(dir.opposite)) continue
                     visited.add(adjPos)
-                    queue.add(adjPos)
+                    queue.add(adjPos to dir.opposite)
                 }
             }
         }
@@ -279,6 +284,24 @@ object NetworkDiscovery {
             ))
         }
         assignAliasSuffixes(slots)
+    }
+
+    /** Direction from [from] to [to], or null when they're not face-adjacent.
+     *  Same shape as the helper in [NodeConnectionHelper]; used to thread
+     *  entry-face through the BFS queue. */
+    private fun faceFromTo(from: BlockPos, to: BlockPos): Direction? {
+        val dx = to.x - from.x
+        val dy = to.y - from.y
+        val dz = to.z - from.z
+        return when {
+            dx == 1 && dy == 0 && dz == 0 -> Direction.EAST
+            dx == -1 && dy == 0 && dz == 0 -> Direction.WEST
+            dx == 0 && dy == 1 && dz == 0 -> Direction.UP
+            dx == 0 && dy == -1 && dz == 0 -> Direction.DOWN
+            dx == 0 && dy == 0 && dz == 1 -> Direction.SOUTH
+            dx == 0 && dy == 0 && dz == -1 -> Direction.NORTH
+            else -> null
+        }
     }
 
     private fun snapshotNode(entity: NodeBlockEntity): NodeSnapshot {

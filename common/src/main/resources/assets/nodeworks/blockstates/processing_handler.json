@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "facing=up":    {"model": "nodeworks:block/processing_handler", "x": 270},
+    "facing=down":  {"model": "nodeworks:block/processing_handler", "x": 90},
+    "facing=north": {"model": "nodeworks:block/processing_handler"},
+    "facing=south": {"model": "nodeworks:block/processing_handler", "y": 180},
+    "facing=east":  {"model": "nodeworks:block/processing_handler", "y": 90},
+    "facing=west":  {"model": "nodeworks:block/processing_handler", "y": 270}
+  }
+}

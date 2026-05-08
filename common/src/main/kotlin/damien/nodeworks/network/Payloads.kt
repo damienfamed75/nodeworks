@@ -818,6 +818,106 @@ data class ServerPolicySyncPayload(
 }
 
 /**
+ * C2S: bind a Processing Handler to a named Processing Set on its parent
+ * network. Server validates the name appears in the parent's snapshot and
+ * has no existing handler (Lua or block) before committing.
+ */
+data class ProcessingHandlerBindPayload(val pos: BlockPos, val processingApiName: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ProcessingHandlerBindPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "phandler_bind")
+        )
+        // Canonical id length matches [ProcessingHandlerOpenData.MAX_API_NAME]:
+        // 9-input + 3-output recipes can exceed the old 256 cap.
+        val CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerBindPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.processingApiName, 4096) },
+            { buf -> ProcessingHandlerBindPayload(buf.readBlockPos(), buf.readUtf(4096)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: clear the Handler's binding. Returns the GUI to the picker view. */
+data class ProcessingHandlerUnbindPayload(val pos: BlockPos) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ProcessingHandlerUnbindPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "phandler_unbind")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerUnbindPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos) },
+            { buf -> ProcessingHandlerUnbindPayload(buf.readBlockPos()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: change the channel for a single input itemId. */
+data class ProcessingHandlerSetInputChannelPayload(
+    val pos: BlockPos,
+    val itemId: String,
+    val channelId: Int,
+) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ProcessingHandlerSetInputChannelPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "phandler_set_input_channel")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerSetInputChannelPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.itemId, 256); buf.writeVarInt(p.channelId) },
+            { buf -> ProcessingHandlerSetInputChannelPayload(buf.readBlockPos(), buf.readUtf(256), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: change every input channel at once (the "Inputs header" click path). */
+data class ProcessingHandlerSetAllInputsPayload(val pos: BlockPos, val channelId: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ProcessingHandlerSetAllInputsPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "phandler_set_all_inputs")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerSetAllInputsPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeVarInt(p.channelId) },
+            { buf -> ProcessingHandlerSetAllInputsPayload(buf.readBlockPos(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: change the output channel (single-value, no per-output editing). */
+data class ProcessingHandlerSetOutputPayload(val pos: BlockPos, val channelId: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ProcessingHandlerSetOutputPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "phandler_set_output")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerSetOutputPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeVarInt(p.channelId) },
+            { buf -> ProcessingHandlerSetOutputPayload(buf.readBlockPos(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
+ * S2C: refresh the open Processing Handler menu's snapshot fields after a
+ * server-side bind / unbind so the screen sees the new bound recipe (with
+ * outputs + counts) and the updated picker availability without the player
+ * having to close + reopen the GUI. Sent only to the player who currently
+ * has the menu open.
+ */
+data class ProcessingHandlerStateSyncPayload(val data: damien.nodeworks.screen.ProcessingHandlerOpenData) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<ProcessingHandlerStateSyncPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "phandler_state_sync")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerStateSyncPayload> = CustomPacketPayload.codec(
+            { p, buf -> damien.nodeworks.screen.ProcessingHandlerOpenData.STREAM_CODEC.encode(buf, p.data) },
+            { buf -> ProcessingHandlerStateSyncPayload(damien.nodeworks.screen.ProcessingHandlerOpenData.STREAM_CODEC.decode(buf)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
  * S2C: assign one network id to many Connectable BEs in one packet, for
  * `propagateNetworkId` to push the result of a graph walk to clients without
  * a per-BE NBT sync per affected position.

@@ -338,26 +338,23 @@ object NodeConnectionHelper {
      */
     fun findTopologyController(level: ServerLevel, startPos: BlockPos): java.util.UUID? {
         val visited = HashSet<BlockPos>()
-        val queue = ArrayDeque<BlockPos>()
+        val queue = ArrayDeque<Pair<BlockPos, Direction?>>()
         visited.add(startPos)
-        queue.add(startPos)
+        queue.add(startPos to null)
         while (queue.isNotEmpty()) {
-            val pos = queue.removeFirst()
+            val (pos, entryFace) = queue.removeFirst()
             val entity = getConnectable(level, pos) ?: continue
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
                 // Stable identity, the transient networkId may be null mid-conflict.
                 return entity.permanentId
             }
-            for (conn in entity.getConnections()) {
+            for (conn in entity.connectionsFromFace(entryFace)) {
                 if (!level.isLoaded(conn)) continue
-                // Lazy LOS recheck on first walk through this pair per tick.
-                // Blocked pairs stay in both BEs' connection sets but skip
-                // network propagation here.
                 if (!checkLineOfSightCached(level, pos, conn)) continue
-                if (visited.add(conn)) queue.add(conn)
+                if (visited.add(conn)) queue.add(conn to faceFromTo(conn, pos))
             }
-            for (adjacentPos in adjacentConnectableNeighbors(level, pos, entity)) {
-                if (visited.add(adjacentPos)) queue.add(adjacentPos)
+            for (adjacentPos in adjacentConnectableNeighbors(level, pos, entity, entryFace)) {
+                if (visited.add(adjacentPos)) queue.add(adjacentPos to faceFromTo(adjacentPos, pos))
             }
         }
         return null
@@ -374,58 +371,150 @@ object NodeConnectionHelper {
         val coveredThisTick = propagatedThisTick(level)
         if (!coveredThisTick.add(startPos.asLong())) return
 
-        val visited = LinkedHashSet<BlockPos>()
-        val queue = ArrayDeque<BlockPos>()
-        visited.add(startPos)
-        queue.add(startPos)
+        // Boundary at start: split into two side-specific propagations.
+        // Starting the BFS at a Processing Handler with null entry face would
+        // walk BOTH sides (per [adjacencyFaceAllowed]'s null-entryFace = "any
+        // face permitted" rule) and false-positive the boundary-double-visit
+        // conflict check below. The recursion routes the work to each side's
+        // neighbor pos so the BFS enters the Handler with a definite face.
+        val startEntity = getConnectable(level, startPos)
+        if (startEntity is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity) {
+            propagateNetworkId(level, startPos.relative(startEntity.backFace))
+            propagateNetworkId(level, startPos.relative(startEntity.frontFace))
+            return
+        }
+
+        // BFS threads `entryFace` through the queue so boundary Connectables
+        // (Processing Handler) can hide their other-side neighbors. The
+        // visited map records the SET of entry faces each position has been
+        // visited through; for symmetric Connectables the set is always size
+        // 1 (one face is enough). For boundary Connectables that opt in via
+        // [Connectable.allowsRepeatVisitAcrossFaces], a second visit through
+        // a different face is allowed so a parent-side BFS reaching the
+        // PHandler from its back AND a micro-side BFS reaching it from its
+        // front (both via a player-built bridge) each contribute their face
+        // to the set, which is how we detect the parent / micro mix conflict.
+        val visited = LinkedHashMap<BlockPos, MutableSet<Direction?>>()
+        val queue = ArrayDeque<Pair<BlockPos, Direction?>>()
+        visited[startPos] = mutableSetOf(null)
+        queue.add(startPos to null)
 
         while (queue.isNotEmpty()) {
-            val pos = queue.removeFirst()
+            val (pos, entryFace) = queue.removeFirst()
             val entity = getConnectable(level, pos) ?: continue
-            for (conn in entity.getConnections()) {
+            for (conn in entity.connectionsFromFace(entryFace)) {
                 if (!level.isLoaded(conn)) continue
-                // Lazy LOS recheck on Advanced Node laser links, see
-                // [findTopologyController] for the same gate.
                 if (!checkLineOfSightCached(level, pos, conn)) continue
-                if (visited.add(conn)) queue.add(conn)
+                val face = faceFromTo(conn, pos)
+                if (registerVisit(level, conn, face, visited)) queue.add(conn to face)
             }
-            // Face-adjacent Connectables join the network without an explicit link.
-            for (adjacentPos in adjacentConnectableNeighbors(level, pos, entity)) {
-                if (visited.add(adjacentPos)) queue.add(adjacentPos)
+            for (adjacentPos in adjacentConnectableNeighbors(level, pos, entity, entryFace)) {
+                val face = faceFromTo(adjacentPos, pos)
+                if (registerVisit(level, adjacentPos, face, visited)) queue.add(adjacentPos to face)
             }
         }
 
-        for (p in visited) coveredThisTick.add(p.asLong())
+        for (p in visited.keys) coveredThisTick.add(p.asLong())
 
-        // Two+ controllers in one subgraph is a conflict (e.g. [Controller][Device][Controller]
-        // wired together via adjacency or a wrench bridge). Assigns null so every block goes
-        // grey and downstream operations refuse to run, rather than latching onto an arbitrary
-        // controller. Reads permanentId so a controller currently null-mid-conflict still
-        // contributes the right id when the conflict resolves.
+        // Conflict detection. Three cases produce a null id (network goes grey):
+        //   - Two Network Controllers in the same subgraph (parent network with
+        //     two heart blocks, ambiguous identity).
+        //   - A Network Controller and a micro-network anchor that's been
+        //     visited from its micro face in the same subgraph (parent + micro
+        //     mixed, the player physically bridged around a Processing Handler
+        //     boundary).
+        //   - A boundary Connectable visited from BOTH sides in this BFS, which
+        //     is the same parent / micro mix detected from the boundary's POV.
+        //   - Otherwise, the network's id is the Controller's permanentId when
+        //     present, else the lowest-positioned micro-anchor's permanentId.
         var foundId: java.util.UUID? = null
         var controllerCount = 0
-        for (pos in visited) {
-            val entity = getConnectable(level, pos)
+        var microAnchor: Connectable? = null
+        var boundaryDoubleVisited = false
+        for ((pos, faces) in visited) {
+            val entity = getConnectable(level, pos) ?: continue
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
                 controllerCount++
                 if (controllerCount == 1) foundId = entity.permanentId
                 else { foundId = null; break }
+            } else if (entity.isMicroNetworkAnchor()) {
+                val isPHandler = entity is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
+                if (isPHandler) {
+                    val handler = entity as damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
+                    if (handler.backFace in faces && handler.frontFace in faces) {
+                        boundaryDoubleVisited = true
+                    }
+                    // Only the front-face visit makes it count as a micro anchor;
+                    // the back-face visit just makes it a regular parent member.
+                    if (handler.frontFace !in faces) continue
+                }
+                if (microAnchor == null || pos.asLong() < microAnchor.getBlockPos().asLong()) {
+                    microAnchor = entity
+                }
             }
         }
+        if (boundaryDoubleVisited || (controllerCount >= 1 && microAnchor != null)) {
+            foundId = null
+        } else if (controllerCount == 0 && microAnchor != null) {
+            foundId = microAnchor.microNetworkPermanentId
+        }
 
+        // Apply the new id. For PHandler, the destination field depends on which
+        // face this BFS visited through: back -> parent (`networkId`),
+        // front -> micro (`microNetworkId`). When both sides are in the visited
+        // set (conflict) both fields get assigned. When this BFS only walked
+        // one side, the other side stays untouched here and gets a fresh
+        // propagation queued for the next tick (see [otherSideRequeues] below).
+        //
         // `markUnsaved` persists the new id without queuing the BE for the
         // standard per-BE sync broadcast. Clients receive the batched payload below.
         val changedPositions = ArrayList<BlockPos>()
         val previousIds = HashSet<java.util.UUID>()
-        for (pos in visited) {
+        val otherSideRequeues = ArrayList<BlockPos>()
+        for ((pos, faces) in visited) {
             val entity = getConnectable(level, pos) ?: continue
-            if (entity.networkId != foundId) {
-                entity.networkId?.let { previousIds.add(it) }
-                entity.networkId = foundId
-                changedPositions.add(pos)
-                level.getChunk(pos).markUnsaved()
+            if (entity is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity) {
+                var sideChanged = false
+                if (entity.backFace in faces && entity.networkId != foundId) {
+                    entity.networkId?.let { previousIds.add(it) }
+                    entity.networkId = foundId
+                    changedPositions.add(pos)
+                    level.getChunk(pos).markUnsaved()
+                    sideChanged = true
+                }
+                if (entity.frontFace in faces && entity.microNetworkId != foundId) {
+                    entity.microNetworkId?.let { previousIds.add(it) }
+                    entity.setMicroNetworkId(foundId)
+                    if (pos !in changedPositions) changedPositions.add(pos)
+                    level.getChunk(pos).markUnsaved()
+                    sideChanged = true
+                }
+                // Sync the block-handler registry every visit, even when the
+                // networkId didn't change. Covers world-load: setLevel may
+                // have registered with a stale (or null) networkId before the
+                // controller's chunk resolved, and the no-change short-circuit
+                // in the custom setter would otherwise skip onParentNetworkChanged.
+                damien.nodeworks.script.cpu.BlockHandlerRegistry.syncFromBE(entity)
+                // If only one side was walked this BFS but the side state
+                // changed, queue a propagation for the OTHER side too. Covers
+                // the conflict-resolved case: removing a parent / micro bridge
+                // triggers propagation on the bridge's neighbor (one side
+                // only); the other side needs its own walk to reset from the
+                // shared null id back to its own anchor's id.
+                if (sideChanged) {
+                    if (entity.backFace !in faces) otherSideRequeues.add(pos.relative(entity.backFace))
+                    if (entity.frontFace !in faces) otherSideRequeues.add(pos.relative(entity.frontFace))
+                }
+            } else {
+                if (entity.networkId != foundId) {
+                    entity.networkId?.let { previousIds.add(it) }
+                    entity.networkId = foundId
+                    changedPositions.add(pos)
+                    level.getChunk(pos).markUnsaved()
+                }
             }
         }
+        for (otherPos in otherSideRequeues) queueRevalidation(level, otherPos)
 
         if (changedPositions.isNotEmpty()) {
             damien.nodeworks.platform.PlatformServices.serverNetworking.sendToPlayersInDimension(
@@ -442,15 +531,27 @@ object NodeConnectionHelper {
      *  must accept the pair via [Connectable.canConnectAdjacentTo]. Used by leaves
      *  (import / export chests) to refuse other leaves so two chests don't auto-bridge.
      *  Wrench force-blocks on either side's touching face also break the pair, so
-     *  the network propagation matches what the multipart blockstate is rendering. */
-    private fun adjacentConnectableNeighbors(level: ServerLevel, pos: BlockPos, entity: Connectable): List<BlockPos> {
+     *  the network propagation matches what the multipart blockstate is rendering.
+     *
+     *  [entryFace] is the face of [entity] through which the BFS arrived (or null
+     *  for the start node). Boundary Connectables (Processing Handler) use this
+     *  to gate per-face participation via [Connectable.adjacencyFaceAllowed], so a
+     *  back-side walk doesn't leak into the front-side micro-network. */
+    private fun adjacentConnectableNeighbors(
+        level: ServerLevel,
+        pos: BlockPos,
+        entity: Connectable,
+        entryFace: Direction?,
+    ): List<BlockPos> {
         if (!entity.usesAdjacency()) return emptyList()
         val out = ArrayList<BlockPos>(6)
         for (dir in Direction.entries) {
+            if (!entity.adjacencyFaceAllowed(dir, entryFace)) continue
             val neighbor = pos.relative(dir)
             if (!level.isLoaded(neighbor)) continue
             val neighborBe = level.getBlockEntity(neighbor) as? Connectable ?: continue
             if (!neighborBe.usesAdjacency()) continue
+            if (!neighborBe.adjacencyFaceAllowed(dir.opposite, dir.opposite)) continue
             if (!entity.canConnectAdjacentTo(neighborBe)) continue
             if (!neighborBe.canConnectAdjacentTo(entity)) continue
             if (entity.forcedPipeBlocked(dir)) continue
@@ -458,6 +559,49 @@ object NodeConnectionHelper {
             out.add(neighbor)
         }
         return out
+    }
+
+    /** Record a BFS visit to [pos] through [entryFace] in [visited]. Returns
+     *  true when this visit should be queued for processing, false when it's
+     *  a redundant repeat. Symmetric Connectables only ever return true once
+     *  per pos, boundary Connectables (those with [Connectable.allowsRepeatVisitAcrossFaces])
+     *  return true once per (pos, entryFace) pair. */
+    private fun registerVisit(
+        level: ServerLevel,
+        pos: BlockPos,
+        entryFace: Direction?,
+        visited: LinkedHashMap<BlockPos, MutableSet<Direction?>>,
+    ): Boolean {
+        val faces = visited[pos]
+        if (faces == null) {
+            visited[pos] = mutableSetOf(entryFace)
+            return true
+        }
+        // Already visited at least once. A second visit is only useful for
+        // boundary Connectables and only when it brings a new entry face.
+        val entity = getConnectable(level, pos) ?: return false
+        if (!entity.allowsRepeatVisitAcrossFaces()) return false
+        if (entryFace in faces) return false
+        faces.add(entryFace)
+        return true
+    }
+
+    /** Direction from [from] to [to], or null when they're not face-adjacent.
+     *  Used when threading entry-face through the BFS so boundary Connectables
+     *  see which face their neighbor is contacting. */
+    private fun faceFromTo(from: BlockPos, to: BlockPos): Direction? {
+        val dx = to.x - from.x
+        val dy = to.y - from.y
+        val dz = to.z - from.z
+        return when {
+            dx == 1 && dy == 0 && dz == 0 -> Direction.EAST
+            dx == -1 && dy == 0 && dz == 0 -> Direction.WEST
+            dx == 0 && dy == 1 && dz == 0 -> Direction.UP
+            dx == 0 && dy == -1 && dz == 0 -> Direction.DOWN
+            dx == 0 && dy == 0 && dz == 1 -> Direction.SOUTH
+            dx == 0 && dy == 0 && dz == -1 -> Direction.NORTH
+            else -> null
+        }
     }
 
     /** Re-propagate from this position when a Connectable's chunk loads. */

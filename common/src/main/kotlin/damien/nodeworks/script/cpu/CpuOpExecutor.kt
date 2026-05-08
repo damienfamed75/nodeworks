@@ -277,12 +277,19 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val item = BuiltInRegistries.ITEM.getValue(id)
             ?: return CraftScheduler.OpResult.Failed("Unknown item: ${op.itemId}")
 
+        // Update the network's inventory cache as items land so the Inventory
+        // Terminal's grid count reflects the post-Deliver storage immediately.
+        // Without this, the cache only catches up via its periodic poll, and a
+        // queued craft's reserved-row claim subtracted reservations from a
+        // stale cache count - displaying 0 stock during the gap until the
+        // poll caught up.
+        val deliverCache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(lvl, cpu.blockPos)
         var remaining = removed
         var droppedCount = 0L
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
             val stack = ItemStack(item, batch)
-            val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, null)
+            val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, deliverCache)
             if (inserted == 0) {
                 // Network storage refused, drop the batch on the ground so the finished
                 // items aren't destroyed, and track how many we had to drop. We still fail
@@ -316,6 +323,60 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     // =====================================================================
     // Process, invoke a processing-set Lua handler and await its pulls
     // =====================================================================
+
+    /** Result of [resolveBatchProgress]: either a usable [BatchProgress] or
+     *  the player-facing message to fail the op with when the buffer is short
+     *  on declared inputs. */
+    private sealed class BatchSetup {
+        data class Ok(val progress: BatchProgress) : BatchSetup()
+        data class Insufficient(val message: String) : BatchSetup()
+    }
+
+    /** Resolve (or build + cache) the per-op [BatchProgress] for a processing
+     *  recipe. Shared by the Lua handler path ([executeProcess]) and the
+     *  block handler path ([executeBlockHandler]) so the buffer pre-check
+     *  and per-batch input scaling stay identical. */
+    private fun resolveBatchProgress(
+        op: Operation.Process,
+        apiMatch: damien.nodeworks.network.ProcessingApiMatch,
+        outputItemId: String,
+    ): BatchSetup {
+        processBatchProgress[op.id]?.let { return BatchSetup.Ok(it) }
+        val totalInputs = op.inputs.groupBy({ it.first }, { it.second })
+            .mapValues { (_, counts) -> counts.sum() }
+        val outputTotal = op.outputs.first().second
+        val outputPerBatch = apiMatch.api.outputs
+            .firstOrNull { it.first == outputItemId }?.second?.toLong()?.coerceAtLeast(1L)
+            ?: 1L
+        for ((id, amount) in totalInputs) {
+            if (cpu.getBufferCount(id) < amount) {
+                return BatchSetup.Insufficient(
+                    "Process input missing: $id x$amount (buffer has ${cpu.getBufferCount(id)})"
+                )
+            }
+        }
+        val batches = (outputTotal + outputPerBatch - 1) / outputPerBatch
+        val progress = if (apiMatch.api.serial) {
+            // Serial: one handler invocation per batch. Each invocation receives the
+            // api's per-slot inputs exactly as declared (preserves order + duplicates).
+            val perBatchInputs = apiMatch.api.inputs.map { (id, count) -> id to count.toLong() }
+            BatchProgress(batches, 0L, perBatchInputs, outputItemId, outputPerBatch)
+        } else {
+            // Parallel: one handler invocation handles the whole demand. Scale each
+            // slot's declared count by the number of batches needed to satisfy the
+            // total output, preserving slot order + duplicates.
+            val perBatchInputs = apiMatch.api.inputs.map { (id, count) -> id to (count.toLong() * batches) }
+            BatchProgress(
+                totalBatches = 1L,
+                batchesDone = 0L,
+                perBatchInputs = perBatchInputs,
+                outputItemId = outputItemId,
+                outputPerBatch = outputTotal,
+            )
+        }
+        processBatchProgress[op.id] = progress
+        return BatchSetup.Ok(progress)
+    }
 
     private fun executeProcess(
         op: Operation.Process,
@@ -364,51 +425,26 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val searchPositions = apiMatch.apiStorage.remoteTerminalPositions ?: snapshot.terminalPositions
         val handlerEngine = PlatformServices.modState
             .findProcessingEngine(lvl, searchPositions, apiMatch.api.name, apiMatch.apiStorage.remoteDimension) as? ScriptEngine
-        if (handlerEngine == null) {
-            // Handler not loaded yet, common right after world load, before terminal auto-run.
-            // Back off and retry, handler should appear once the terminal script is running.
-            // Counts against the Controller's retry cap so a truly-missing handler still fails cleanly.
-            return scheduleHandlerWaitRetry(op, "handler engine not yet available")
+        val handler = handlerEngine?.processingHandlers?.get(apiMatch.api.name)
+        if (handlerEngine == null || handler == null) {
+            // No Lua handler. Before backing off, see if a Processing Handler
+            // BLOCK is bound to this api on the parent network. The block path
+            // is a fallback - Lua wins on collision because we check it first.
+            val blockHandlerPos = BlockHandlerRegistry.find(snapshot.networkId, apiMatch.api.name)
+            val handlerBE = blockHandlerPos?.let {
+                lvl.getBlockEntity(it) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
+            }
+            if (handlerBE != null && handlerBE.processingApiName == apiMatch.api.name) {
+                return executeBlockHandler(op, lvl, apiMatch, handlerBE, outputItemId)
+            }
+            return scheduleHandlerWaitRetry(op, "no handler for '${apiMatch.api.name}'")
         }
-        val handler = handlerEngine.processingHandlers[apiMatch.api.name]
-            ?: return scheduleHandlerWaitRetry(op, "handler '${apiMatch.api.name}' not registered yet")
         val scheduler = handlerEngine.scheduler
 
         // FRESH INVOCATION PATH
-        val progress = processBatchProgress.getOrPut(op.id) {
-            val totalInputs = op.inputs.groupBy({ it.first }, { it.second })
-                .mapValues { (_, counts) -> counts.sum() }
-            val outputTotal = op.outputs.first().second
-            val outputPerBatch = apiMatch.api.outputs
-                .firstOrNull { it.first == outputItemId }?.second?.toLong()?.coerceAtLeast(1L)
-                ?: 1L
-            for ((id, amount) in totalInputs) {
-                if (cpu.getBufferCount(id) < amount) {
-                    return CraftScheduler.OpResult.Failed(
-                        "Process input missing: $id x$amount (buffer has ${cpu.getBufferCount(id)})"
-                    )
-                }
-            }
-            if (apiMatch.api.serial) {
-                // Serial: one handler invocation per batch. Each invocation receives the
-                // api's per-slot inputs exactly as declared (preserves order + duplicates).
-                val perBatchInputs = apiMatch.api.inputs.map { (id, count) -> id to count.toLong() }
-                val batches = (outputTotal + outputPerBatch - 1) / outputPerBatch
-                BatchProgress(batches, 0L, perBatchInputs, outputItemId, outputPerBatch)
-            } else {
-                // Parallel: one handler invocation handles the whole demand. Scale each
-                // slot's declared count by the number of batches needed to satisfy the
-                // total output (ceiling division), preserving slot order + duplicates.
-                val batches = (outputTotal + outputPerBatch - 1) / outputPerBatch
-                val perBatchInputs = apiMatch.api.inputs.map { (id, count) -> id to (count.toLong() * batches) }
-                BatchProgress(
-                    totalBatches = 1L,
-                    batchesDone = 0L,
-                    perBatchInputs = perBatchInputs,
-                    outputItemId = outputItemId,
-                    outputPerBatch = outputTotal
-                )
-            }
+        val progress = when (val setup = resolveBatchProgress(op, apiMatch, outputItemId)) {
+            is BatchSetup.Ok -> setup.progress
+            is BatchSetup.Insufficient -> return CraftScheduler.OpResult.Failed(setup.message)
         }
 
         if (apiMatch.api.serial && apiMatch.api.name in CraftingHelper.activeSerialJobsView) {
@@ -585,6 +621,93 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     }
 
     /**
+     * Block-handler dispatch path. Mirrors the Lua-handler shape (same
+     * BatchProgress, serial gate, ProcessState bookkeeping, retry semantics)
+     * but routes inputs through the Processing Handler block's per-channel
+     * configuration instead of calling a Lua function.
+     *
+     * Lua wins on collision: this function is only reached when
+     * [PlatformServices.modState.findProcessingEngine] resolves nothing for
+     * the api, OR the resolved engine doesn't have it in its handler map.
+     */
+    private fun executeBlockHandler(
+        op: Operation.Process,
+        lvl: ServerLevel,
+        apiMatch: damien.nodeworks.network.ProcessingApiMatch,
+        handlerBE: damien.nodeworks.block.entity.ProcessingHandlerBlockEntity,
+        outputItemId: String,
+    ): CraftScheduler.OpResult {
+        val progress = when (val setup = resolveBatchProgress(op, apiMatch, outputItemId)) {
+            is BatchSetup.Ok -> setup.progress
+            is BatchSetup.Insufficient -> return CraftScheduler.OpResult.Failed(setup.message)
+        }
+
+        // Serial gate is global across handler types - a serial recipe can
+        // only run one invocation at a time regardless of whether the handler
+        // is Lua or block.
+        if (apiMatch.api.serial && apiMatch.api.name in CraftingHelper.activeSerialJobsView) {
+            return CraftScheduler.OpResult.InProgress
+        }
+
+        val bulkOutputOverride = if (!apiMatch.api.serial) {
+            listOf(progress.outputItemId to progress.outputPerBatch.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        } else null
+
+        cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
+
+        val invokeResult = BlockProcessingHandler.invoke(
+            cpu = cpu,
+            level = lvl,
+            api = apiMatch.api,
+            handlerBE = handlerBE,
+            perBatchInputs = progress.perBatchInputs,
+            bulkOutputOverride = bulkOutputOverride,
+            opId = op.id,
+        )
+        return when (invokeResult) {
+            is BlockProcessingHandler.InvokeResult.InProgress -> {
+                val state = ProcessState(
+                    pending = invokeResult.pending,
+                    processingJob = invokeResult.job,
+                    handler = null,           // null marks this as the block path
+                    luaArgs = emptyList(),
+                    scheduler = damien.nodeworks.script.ResumeScheduler.scheduler,
+                )
+                processState[op.id] = state
+                CraftScheduler.OpResult.InProgress
+            }
+            is BlockProcessingHandler.InvokeResult.CompletedSync -> {
+                if (invokeResult.pending.success) {
+                    // One batch done. Match the Lua path's batch advancement.
+                    progress.batchesDone++
+                    if (progress.batchesDone >= progress.totalBatches) {
+                        processRetries.remove(op.id)
+                        processBatchProgress.remove(op.id)
+                        CraftScheduler.OpResult.Completed
+                    } else {
+                        CraftScheduler.OpResult.InProgress
+                    }
+                } else {
+                    CraftScheduler.OpResult.Failed("Block handler '${apiMatch.api.name}' completed sync with failure")
+                }
+            }
+            is BlockProcessingHandler.InvokeResult.Retry -> {
+                // Mirrors the Lua "destination unavailable" retry path. The
+                // block path guarantees no buffer mutation on routing failure
+                // (its atomic route + rollback) so no ProcessState exists to
+                // clear - pass null.
+                scheduleRetry(op, null, invokeResult.reason)
+            }
+            is BlockProcessingHandler.InvokeResult.Failed -> {
+                processRetries.remove(op.id)
+                processBatchProgress.remove(op.id)
+                CraftScheduler.OpResult.Failed("Block handler '${apiMatch.api.name}' failed: ${invokeResult.reason}")
+            }
+        }
+    }
+
+
+    /**
      * Resume an in-flight Process op after world reload. The handler's items survived the
      * reload as physical machine contents (e.g. raw iron in a furnace), so we don't re-invoke
      * the handler, we just restart polling against the persisted target coordinates and let
@@ -658,9 +781,11 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         state.processingJob.invocationPulls.clear()
     }
 
-    /** Back off and retry when the processing handler isn't yet registered, typical on
-     *  world load before terminal auto-run finishes. Shares [processRetries] with the
-     *  destination-full retry path so a truly-absent handler fails after the configured cap. */
+    /** Back off and retry when neither a Lua nor a block handler is yet
+     *  registered for the recipe, typical on world load before terminal
+     *  auto-run finishes (Lua) or before a Handler block's chunk loads (block).
+     *  Shares [processRetries] with the destination-full retry path so a
+     *  truly-absent handler fails after the configured cap. */
     private fun scheduleHandlerWaitRetry(op: Operation.Process, reason: String): CraftScheduler.OpResult {
         val count = (processRetries[op.id] ?: 0) + 1
         processRetries[op.id] = count
@@ -670,7 +795,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             processBatchProgress.remove(op.id)
             return CraftScheduler.OpResult.Failed(
                 "Handler '${op.processingApiName}' never appeared after $cap retries ($reason). " +
-                "Check the terminal script is running and registers this API."
+                "Bind a Processing Handler block to this recipe, or run a terminal script that registers it."
             )
         }
         val now = (cpu.level as? ServerLevel)?.gameTime ?: 0L
@@ -678,10 +803,16 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         return CraftScheduler.OpResult.InProgress
     }
 
+    /** Schedule a backoff for an op that was dispatched but couldn't make
+     *  forward progress (Lua handler returned false, inputs didn't move,
+     *  block-handler couldn't route through the micro-network). [state] is
+     *  non-null for the Lua path (where a [ProcessState] was registered and
+     *  needs clearing) and null for the block path (which fails before
+     *  registering state). */
     private fun scheduleRetry(
         op: Operation.Process,
-        state: ProcessState,
-        reason: String
+        state: ProcessState?,
+        reason: String,
     ): CraftScheduler.OpResult {
         val count = (processRetries[op.id] ?: 0) + 1
         processRetries[op.id] = count
@@ -694,22 +825,16 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 "$cap retries ($reason). Destinations may be permanently unavailable."
             )
         }
-        val lvl = cpu.level
-        val now = if (lvl is ServerLevel) lvl.gameTime else 0L
+        val now = (cpu.level as? ServerLevel)?.gameTime ?: 0L
         op.readyAt = now + RETRY_BACKOFF_TICKS
-        // Explicitly remove processState so the next dispatch re-invokes the handler fresh
-        // rather than polling a never-completing pending. state is discarded here, the retry
-        // builds a fresh ProcessingJob + pending next time.
-        processState.remove(op.id)
-        // Also clear per-op resume info set by the handler's job:pull(). Without this, the
-        // next dispatch would take the resume path (startResumePoll polls target coords)
-        // instead of re-invoking the handler, meaning a full machine never gets another
-        // insert attempt. Per-op resume is only meaningful when items actually reached the
-        // machine, on a failed-move retry, we're starting fresh.
+        // Drop the registered state so the next dispatch re-invokes the
+        // handler fresh instead of polling a never-completing pending.
+        if (state != null) processState.remove(op.id)
+        // Per-op resume info is only meaningful when items actually reached
+        // the machine; on a failed-move retry we're starting fresh.
         cpu.clearOpResume(op.id)
-        // Keep the GUI showing "Crafting" through the backoff window. Without this the
-        // Status line can drop to "Idle" between retries if something downstream of the
-        // handler invocation cleared the flag, defensive belt-and-suspenders.
+        // Keep the GUI in "Crafting" through the backoff window so the status
+        // line doesn't flicker to Idle between retries.
         val itemLabel = op.outputs.firstOrNull()?.first
             ?.substringAfter(':')?.replace('_', ' ') ?: cpu.currentCraftItem
         cpu.setCrafting(true, itemLabel)

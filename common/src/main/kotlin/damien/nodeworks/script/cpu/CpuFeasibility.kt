@@ -64,15 +64,16 @@ object CpuFeasibility {
             )
         }
 
-        // Processing recipes exist but no Terminal on the network has a
-        // `network:handle("recipe_id", ...)` registered for them. User-facing: tell them
-        // which recipe needs a handler and where to go to add one.
+        // Processing recipes exist but neither a Terminal script nor a
+        // Processing Handler block claims them. User-facing: tell them which
+        // recipe is unhandled and the two ways to fix it.
         if (noHandler.isNotEmpty()) {
             val summary = noHandler.take(3).joinToString(", ") { it.itemName }
             val extra = if (noHandler.size > 3) " (+${noHandler.size - 3} more)" else ""
             return Result(
                 ok = false,
-                reason = "No handler registered for: $summary$extra. Add a `network:handle(\"recipe\", ...)` call in a connected Terminal's script.",
+                reason = "No handler for: $summary$extra. Bind a Processing Handler block to the recipe, " +
+                    "or add a `network:handle(\"recipe\", ...)` call in a connected Terminal's script.",
                 peakSingleTypeCount = peakSingleType,
                 uniqueTypes = uniqueTypes.size
             )

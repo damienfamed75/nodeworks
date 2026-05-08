@@ -299,6 +299,9 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.USER) { menu, inventory, title ->
             damien.nodeworks.screen.UserScreen(menu, inventory, title)
         }
+        event.register(ModScreenHandlers.PROCESSING_HANDLER) { menu, inventory, title ->
+            damien.nodeworks.screen.ProcessingHandlerScreen(menu, inventory, title)
+        }
     }
 
     private fun onRegisterRenderPipelines(

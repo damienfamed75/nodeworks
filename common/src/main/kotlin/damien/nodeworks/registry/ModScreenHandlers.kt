@@ -42,6 +42,7 @@ object ModScreenHandlers {
     lateinit var IMPORT_CHEST: MenuType<damien.nodeworks.screen.ImportChestMenu>
     lateinit var EXPORT_CHEST: MenuType<damien.nodeworks.screen.ExportChestMenu>
     lateinit var USER: MenuType<damien.nodeworks.screen.UserMenu>
+    lateinit var PROCESSING_HANDLER: MenuType<damien.nodeworks.screen.ProcessingHandlerMenu>
 
     fun initialize() {
         // Platform module must call registerAll() before this

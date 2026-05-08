@@ -2,6 +2,8 @@
   "block.nodeworks.node": "Node",
   "block.nodeworks.focus_node": "Focus Node",
   "block.nodeworks.pipe": "Vacuum Pipe",
+  "block.nodeworks.processing_handler": "Processing Handler",
+  "container.nodeworks.processing_handler": "Processing Handler",
   "item.nodeworks.nodeworks_book": "Nodeworks Book",
   "item.nodeworks.nodeworks_book.tooltip": "Right-click to open the Nodeworks guide.",
   "item.nodeworks.network_wrench": "Network Wrench",

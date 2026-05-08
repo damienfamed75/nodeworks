@@ -37,6 +37,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.EXPORT_CHEST)
                 output.accept(ModBlocks.INSTRUCTION_STORAGE)
                 output.accept(ModBlocks.PROCESSING_STORAGE)
+                output.accept(ModBlocks.PROCESSING_HANDLER)
                 output.accept(ModBlocks.CRAFTING_CORE)
                 output.accept(ModBlocks.CRAFTING_STORAGE)
                 output.accept(ModBlocks.CO_PROCESSOR)

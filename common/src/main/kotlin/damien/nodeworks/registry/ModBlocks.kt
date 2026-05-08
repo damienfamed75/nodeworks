@@ -14,6 +14,7 @@ import damien.nodeworks.block.BroadcastAntennaBlock
 import damien.nodeworks.block.ExportChestBlock
 import damien.nodeworks.block.ImportChestBlock
 import damien.nodeworks.block.PlacerBlock
+import damien.nodeworks.block.ProcessingHandlerBlock
 import damien.nodeworks.block.UserBlock
 import damien.nodeworks.block.CraftingCoreBlock
 import damien.nodeworks.block.CoProcessorBlock
@@ -302,6 +303,17 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .sound(net.minecraft.world.level.block.SoundType.COPPER)
+            .requiresCorrectToolForDrops()
+    )
+
+    /** Processing Handler. Block-based equivalent of `network:handle(...)`. The
+     *  back face joins the parent network so the CPU can find it; the front
+     *  face anchors a micro-network the player wires to feed machines. */
+    val PROCESSING_HANDLER: Block = register(
+        "processing_handler",
+        ::ProcessingHandlerBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()
     )
 

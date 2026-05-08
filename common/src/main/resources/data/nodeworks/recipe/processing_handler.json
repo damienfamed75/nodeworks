@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ICI",
+    "FHF",
+    "ICI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "C": "nodeworks:celestine_shard",
+    "F": "nodeworks:device_frame",
+    "H": "minecraft:hopper"
+  },
+  "result": {
+    "id": "nodeworks:processing_handler",
+    "count": 1
+  }
+}
