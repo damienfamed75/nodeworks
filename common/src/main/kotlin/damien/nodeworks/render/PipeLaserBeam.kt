@@ -38,12 +38,25 @@ object PipeLaserBeam {
 
     private val LASER_TEXTURE: Identifier =
         Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+    /** Hazard-stripe texture for micro-networks anchored by Processing
+     *  Handlers. Used only on the prism core, not the outer glow. */
+    private val MICRO_TEXTURE: Identifier =
+        Identifier.fromNamespaceAndPath("nodeworks", "textures/block/hazard_stripes.png")
 
     /** Translucent (back-faces visible) and opaque variants of the beacon-beam
      *  render type. The fancy outer glow uses translucent for the soft halo,
      *  the prism core uses opaque so the rotating geometry reads as solid. */
     private val TRANSLUCENT_TYPE: RenderType = RenderTypes.beaconBeam(LASER_TEXTURE, true)
     private val OPAQUE_TYPE: RenderType = RenderTypes.beaconBeam(LASER_TEXTURE, false)
+    private val MICRO_OPAQUE_TYPE: RenderType = RenderTypes.beaconBeam(MICRO_TEXTURE, false)
+    private val MICRO_TRANSLUCENT_TYPE: RenderType = RenderTypes.beaconBeam(MICRO_TEXTURE, true)
+
+    /** Glow color used around the prism on micro-networks. Solid yellow so
+     *  the halo reads as a hazard-stripe accent without competing with the
+     *  prism's hazard texture. (#FFDC3B) */
+    private const val MICRO_GLOW_R = 0xFF
+    private const val MICRO_GLOW_G = 0xDC
+    private const val MICRO_GLOW_B = 0x3B
 
     /** Reference width in blocks. The fancy outer glow scales it by
      *  [GLOW_WIDTH_FACTOR] × `sizePulse`, the prism core by
@@ -52,7 +65,7 @@ object PipeLaserBeam {
 
     /** UV-V scroll rate along the beam length (units / sec). Faster = the
      *  streak texture flows past more visibly. */
-    private const val BEAM_SCROLL_SPEED = 0.8f
+    private const val BEAM_SCROLL_SPEED = 0.4f
 
     /** Prism core width as a multiple of [BEAM_WIDTH]. */
     private const val PRISM_WIDTH_FACTOR = 0.5f
@@ -102,6 +115,7 @@ object PipeLaserBeam {
         color: Int,
         laserMode: Int,
         drawCenterCore: Boolean,
+        isMicro: Boolean = false,
     ) {
         if (directions.isEmpty()) return
         val r = (color shr 16) and 0xFF
@@ -118,21 +132,34 @@ object PipeLaserBeam {
         val camLocalY = (cameraPos.y - blockPos.y).toFloat()
         val camLocalZ = (cameraPos.z - blockPos.z).toFloat()
 
+        // Prism uses the hazard texture on micros, standard streak otherwise.
+        val opaqueType = if (isMicro) MICRO_OPAQUE_TYPE else OPAQUE_TYPE
+        // Glow always uses the standard streak texture - the hazard pattern
+        // would compete with the prism's pattern. On micros we tint it yellow
+        // so the halo still reads as a hazard accent.
+        val glowR = if (isMicro) MICRO_GLOW_R else r
+        val glowG = if (isMicro) MICRO_GLOW_G else g
+        val glowB = if (isMicro) MICRO_GLOW_B else b
+
         if (laserMode == NetworkSettingsRegistry.LASER_MODE_FANCY) {
             // Pass 1: opaque rotating white prism core, one per direction.
-            collector.submitCustomGeometry(poseStack, OPAQUE_TYPE) { pose, vc ->
+            // Micros rotate the UV 90° so the hazard stripes run along the
+            // beam instead of perpendicular.
+            collector.submitCustomGeometry(poseStack, opaqueType) { pose, vc ->
                 for (dir in directions) {
                     val (sx, sy, sz, ex, ey, ez) = halfBeamEndpoints(dir)
                     renderPrismBeam(
-                        vc, pose, dir,
+                        vc, pose, dir, blockPos,
                         sx, sy, sz, ex, ey, ez,
                         time,
                         255, 255, 255, 255,
                         BEAM_WIDTH * PRISM_WIDTH_FACTOR,
+                        rotateUv = isMicro,
                     )
                 }
             }
-            // Pass 2: translucent network-tinted billboarded glow.
+            // Pass 2: translucent network-tinted billboarded glow (yellow on micro).
+            // Glow always uses the streak texture - no UV rotation needed.
             collector.submitCustomGeometry(poseStack, TRANSLUCENT_TYPE) { pose, vc ->
                 for (dir in directions) {
                     val (sx, sy, sz, ex, ey, ez) = halfBeamEndpoints(dir)
@@ -141,14 +168,23 @@ object PipeLaserBeam {
                         camLocalX, camLocalY, camLocalZ,
                         sx, sy, sz, ex, ey, ez,
                         time,
-                        r, g, b, glowAlpha,
+                        glowR, glowG, glowB, glowAlpha,
                         BEAM_WIDTH * GLOW_WIDTH_FACTOR * sizePulse,
+                        dir = dir,
+                        blockPos = blockPos,
                     )
                 }
             }
         } else {
             // Fast: one thin billboarded quad per direction, no animation.
-            collector.submitCustomGeometry(poseStack, TRANSLUCENT_TYPE) { pose, vc ->
+            // Micros use the hazard texture on the billboard with white tint
+            // and rotated UV so stripes run along the beam; standard mode
+            // uses the streak texture tinted with the network color.
+            val fastType = if (isMicro) MICRO_TRANSLUCENT_TYPE else TRANSLUCENT_TYPE
+            val fastR = if (isMicro) 255 else r
+            val fastG = if (isMicro) 255 else g
+            val fastB = if (isMicro) 255 else b
+            collector.submitCustomGeometry(poseStack, fastType) { pose, vc ->
                 for (dir in directions) {
                     val (sx, sy, sz, ex, ey, ez) = halfBeamEndpoints(dir)
                     renderBillboardBeam(
@@ -156,16 +192,24 @@ object PipeLaserBeam {
                         camLocalX, camLocalY, camLocalZ,
                         sx, sy, sz, ex, ey, ez,
                         time,
-                        r, g, b, 220,
+                        fastR, fastG, fastB, 220,
                         BEAM_WIDTH * FAST_WIDTH_FACTOR,
+                        dir = dir,
+                        blockPos = blockPos,
+                        rotateUv = isMicro,
                     )
                 }
             }
         }
 
         if (drawCenterCore) {
+            // Yellow centre cube on micros so the junction-mask reads as part
+            // of the same hazard-themed beam; standard nets keep white.
+            val coreR = if (isMicro) MICRO_GLOW_R else 255
+            val coreG = if (isMicro) MICRO_GLOW_G else 255
+            val coreB = if (isMicro) MICRO_GLOW_B else 255
             collector.submitCustomGeometry(poseStack, PipeLaserCoreRenderType.RENDER_TYPE) { pose, vc ->
-                emitCenterCube(pose, vc)
+                emitCenterCube(pose, vc, coreR, coreG, coreB)
             }
         }
     }
@@ -175,6 +219,16 @@ object PipeLaserBeam {
         0.5f, 0.5f, 0.5f,
         0.5f + dir.stepX * 0.5f, 0.5f + dir.stepY * 0.5f, 0.5f + dir.stepZ * 0.5f,
     )
+
+    /** World-space coordinate along [axis] for a block-local point. Used to
+     *  align the V scroll across adjacent pipes so a straight run reads as
+     *  one continuous moving texture. */
+    private fun worldAxisCoord(axis: Direction.Axis, blockPos: BlockPos, lx: Float, ly: Float, lz: Float): Float =
+        when (axis) {
+            Direction.Axis.X -> blockPos.x + lx
+            Direction.Axis.Y -> blockPos.y + ly
+            Direction.Axis.Z -> blockPos.z + lz
+        }
 
     private data class SixFloats(
         val a: Float, val b: Float, val c: Float,
@@ -193,11 +247,13 @@ object PipeLaserBeam {
         vc: VertexConsumer,
         pose: PoseStack.Pose,
         dir: Direction,
+        blockPos: BlockPos,
         fromX: Float, fromY: Float, fromZ: Float,
         toX: Float, toY: Float, toZ: Float,
         time: Float,
         r: Int, g: Int, b: Int, a: Int,
         width: Float,
+        rotateUv: Boolean = false,
     ) {
         val dx = toX - fromX;
         val dy = toY - fromY;
@@ -247,9 +303,17 @@ object PipeLaserBeam {
 
         val hw = width / 2f
         val uMax = 5f / 16f
+        // Anchor V to the WORLD axis coord so adjacent pipes' half-beams
+        // line up at the joint - otherwise each pipe scrolls its own local
+        // 0..0.25 V range and the texture pattern visibly seams every block.
+        // The 0.5 scale matches the previous local-V density (one block of
+        // beam spans 0.5 V, i.e. half a texture repeat at unit-tall textures).
+        // Negative uvScroll term makes the texture flow in the +axis direction
+        // over time; both halves of a junction inherit the same world V at
+        // the shared face so the pattern is continuous across the joint.
         val uvScroll = time * BEAM_SCROLL_SPEED
-        val v0 = uvScroll
-        val v1 = uvScroll + len * 0.5f
+        val v0 = 0.5f * worldAxisCoord(dir.axis, blockPos, fromX, fromY, fromZ) - uvScroll
+        val v1 = 0.5f * worldAxisCoord(dir.axis, blockPos, toX, toY, toZ) - uvScroll
         val o = OverlayTexture.NO_OVERLAY
 
         // 4 corners of the prism's `from` and `to` cross-sections, named by
@@ -281,10 +345,10 @@ object PipeLaserBeam {
 
         // Each side is double-sided: front quad, then back quad with reverse
         // winding so the prism reads from any angle.
-        emitPrismSide(vc, pose, f0x, f0y, f0z, f1x, f1y, f1z, t1x, t1y, t1z, t0x, t0y, t0z, uMax, v0, v1, r, g, b, a, o)
-        emitPrismSide(vc, pose, f1x, f1y, f1z, f2x, f2y, f2z, t2x, t2y, t2z, t1x, t1y, t1z, uMax, v0, v1, r, g, b, a, o)
-        emitPrismSide(vc, pose, f2x, f2y, f2z, f3x, f3y, f3z, t3x, t3y, t3z, t2x, t2y, t2z, uMax, v0, v1, r, g, b, a, o)
-        emitPrismSide(vc, pose, f3x, f3y, f3z, f0x, f0y, f0z, t0x, t0y, t0z, t3x, t3y, t3z, uMax, v0, v1, r, g, b, a, o)
+        emitPrismSide(vc, pose, f0x, f0y, f0z, f1x, f1y, f1z, t1x, t1y, t1z, t0x, t0y, t0z, uMax, v0, v1, r, g, b, a, o, rotateUv)
+        emitPrismSide(vc, pose, f1x, f1y, f1z, f2x, f2y, f2z, t2x, t2y, t2z, t1x, t1y, t1z, uMax, v0, v1, r, g, b, a, o, rotateUv)
+        emitPrismSide(vc, pose, f2x, f2y, f2z, f3x, f3y, f3z, t3x, t3y, t3z, t2x, t2y, t2z, uMax, v0, v1, r, g, b, a, o, rotateUv)
+        emitPrismSide(vc, pose, f3x, f3y, f3z, f0x, f0y, f0z, t0x, t0y, t0z, t3x, t3y, t3z, uMax, v0, v1, r, g, b, a, o, rotateUv)
     }
 
     private fun emitPrismSide(
@@ -296,25 +360,43 @@ object PipeLaserBeam {
         uMax: Float, v0: Float, v1: Float,
         r: Int, g: Int, b: Int, a: Int,
         o: Int,
+        rotateUv: Boolean = false,
     ) {
+        // Default mapping has U=width (a→b) and V=length (a→d). [rotateUv]
+        // swaps those so the texture's natural "horizontal" axis runs along
+        // the beam length - used by the hazard-stripe variant whose source
+        // image has stripes that need to read along the beam, not across.
+        val aU: Float; val aV: Float; val bU: Float; val bV: Float
+        val cU: Float; val cV: Float; val dU: Float; val dV: Float
+        if (rotateUv) {
+            aU = v0;   aV = 0f
+            bU = v0;   bV = uMax
+            cU = v1;   cV = uMax
+            dU = v1;   dV = 0f
+        } else {
+            aU = 0f;   aV = v0
+            bU = uMax; bV = v0
+            cU = uMax; cV = v1
+            dU = 0f;   dV = v1
+        }
         // Front winding.
-        vc.addVertex(pose, ax, ay, az).setUv(0f, v0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
+        vc.addVertex(pose, ax, ay, az).setUv(aU, aV).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
             .setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, bx, by, bz).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
+        vc.addVertex(pose, bx, by, bz).setUv(bU, bV).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
             .setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, cx, cy, cz).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
+        vc.addVertex(pose, cx, cy, cz).setUv(cU, cV).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
             .setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, dx, dy, dz).setUv(0f, v1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
+        vc.addVertex(pose, dx, dy, dz).setUv(dU, dV).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
             .setNormal(pose, 0f, 1f, 0f)
         // Back winding so back-face culling doesn't drop the side when viewed
         // from the prism's interior (the rotating prism shows both faces).
-        vc.addVertex(pose, bx, by, bz).setUv(uMax, v0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
+        vc.addVertex(pose, bx, by, bz).setUv(bU, bV).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
             .setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, ax, ay, az).setUv(0f, v0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
+        vc.addVertex(pose, ax, ay, az).setUv(aU, aV).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
             .setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, dx, dy, dz).setUv(0f, v1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
+        vc.addVertex(pose, dx, dy, dz).setUv(dU, dV).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
             .setNormal(pose, 0f, 1f, 0f)
-        vc.addVertex(pose, cx, cy, cz).setUv(uMax, v1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
+        vc.addVertex(pose, cx, cy, cz).setUv(cU, cV).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240)
             .setNormal(pose, 0f, 1f, 0f)
     }
 
@@ -329,6 +411,9 @@ object PipeLaserBeam {
         time: Float,
         r: Int, g: Int, b: Int, a: Int,
         width: Float,
+        dir: Direction,
+        blockPos: BlockPos,
+        rotateUv: Boolean = false,
     ) {
         val dx = toX - fromX;
         val dy = toY - fromY;
@@ -356,39 +441,50 @@ object PipeLaserBeam {
 
         val uMax = 5f / 16f
         val uvScroll = time * BEAM_SCROLL_SPEED
+        val flow = if (dir == Direction.SOUTH || dir == Direction.EAST || dir == Direction.UP) -1f else 1f
         val v0 = uvScroll
-        val v1 = uvScroll + len * 0.5f
+        val v1 = uvScroll + flow * len * 0.5f
         val o = OverlayTexture.NO_OVERLAY
+
+        // U/V mapping: default is U=width, V=length. [rotateUv] swaps so the
+        // texture's "horizontal" axis runs along the beam (used by hazard
+        // stripes whose pattern needs to read along the beam in fast mode).
+        val fU0: Float; val fV0: Float; val fU1: Float; val fV1: Float
+        val tU0: Float; val tV0: Float; val tU1: Float; val tV1: Float
+        if (rotateUv) {
+            fU0 = v0;   fV0 = 0f;    fU1 = v0;   fV1 = uMax
+            tU0 = v1;   tV0 = uMax;  tU1 = v1;   tV1 = 0f
+        } else {
+            fU0 = 0f;   fV0 = v0;    fU1 = uMax; fV1 = v0
+            tU0 = uMax; tV0 = v1;    tU1 = 0f;   tV1 = v1
+        }
 
         // Front face.
         vc.addVertex(pose, fromX - px, fromY - py, fromZ - pz)
-            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            .setUv(fU0, fV0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, fromX + px, fromY + py, fromZ + pz)
-            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            .setUv(fU1, fV1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX + px, toY + py, toZ + pz)
-            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            .setUv(tU0, tV0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX - px, toY - py, toZ - pz)
-            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            .setUv(tU1, tV1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         // Back face.
         vc.addVertex(pose, fromX + px, fromY + py, fromZ + pz)
-            .setUv(uMax, v0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            .setUv(fU1, fV1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, fromX - px, fromY - py, fromZ - pz)
-            .setUv(0f, v0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            .setUv(fU0, fV0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX - px, toY - py, toZ - pz)
-            .setUv(0f, v1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            .setUv(tU1, tV1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
         vc.addVertex(pose, toX + px, toY + py, toZ + pz)
-            .setUv(uMax, v1).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
+            .setUv(tU0, tV0).setColor(r, g, b, a).setOverlay(o).setUv2(240, 240).setNormal(pose, 0f, 1f, 0f)
     }
 
-    /** White solid cube of half-extent [CORE_HALF] centred at (0.5, 0.5, 0.5).
+    /** Solid cube of half-extent [CORE_HALF] centred at (0.5, 0.5, 0.5).
      *  POSITION_COLOR vertex format (no UV, no normal) since
      *  [PipeLaserCoreRenderType] uses DEBUG_FILLED_SNIPPET. */
-    private fun emitCenterCube(pose: PoseStack.Pose, vc: VertexConsumer) {
+    private fun emitCenterCube(pose: PoseStack.Pose, vc: VertexConsumer, r: Int, g: Int, b: Int) {
         val mn = 0.5f - CORE_HALF
         val mx = 0.5f + CORE_HALF
-        val r = 255;
-        val g = 255;
-        val b = 255;
         val a = 255
         // +Z
         vc.addVertex(pose, mx, mn, mx).setColor(r, g, b, a)

@@ -29,6 +29,9 @@ class PipeRenderer(context: BlockEntityRendererProvider.Context) :
         /** False on orphaned pipes (no controller). Suppresses the inner
          *  laser so disconnected cables read as inert hardware. */
         var hasNetwork: Boolean = false
+        /** True when the pipe's networkId is a Processing Handler micro-net.
+         *  Switches the laser texture to the hazard-stripe variant. */
+        var isMicro: Boolean = false
     }
 
     override fun createRenderState(): RenderState = RenderState()
@@ -52,6 +55,7 @@ class PipeRenderer(context: BlockEntityRendererProvider.Context) :
         state.color = settings.color
         state.laserMode = settings.laserMode
         state.hasNetwork = id != null
+        state.isMicro = MicroNetworkClientRegistry.isMicro(id)
     }
 
     override fun submitConnectable(
@@ -67,6 +71,7 @@ class PipeRenderer(context: BlockEntityRendererProvider.Context) :
         PipeLaserBeam.submit(
             poseStack, submitNodeCollector, state.pos, camera.pos,
             state.directions, state.color, state.laserMode, drawCenterCore,
+            isMicro = state.isMicro,
         )
     }
 

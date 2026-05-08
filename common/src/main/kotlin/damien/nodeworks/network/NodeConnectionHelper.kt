@@ -484,7 +484,7 @@ object NodeConnectionHelper {
                 }
                 if (entity.frontFace in faces && entity.microNetworkId != foundId) {
                     entity.microNetworkId?.let { previousIds.add(it) }
-                    entity.setMicroNetworkId(foundId)
+                    entity.assignMicroNetworkId(foundId)
                     if (pos !in changedPositions) changedPositions.add(pos)
                     level.getChunk(pos).markUnsaved()
                     sideChanged = true

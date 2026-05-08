@@ -19,6 +19,7 @@ import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.NodeRenderer
 import damien.nodeworks.render.PipeRenderer
 import damien.nodeworks.render.PlacerRenderer
+import damien.nodeworks.render.ProcessingHandlerRenderer
 import damien.nodeworks.render.ProcessingStorageRenderer
 import damien.nodeworks.render.ReceiverAntennaRenderer
 import damien.nodeworks.render.TerminalRenderer
@@ -134,6 +135,7 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.NODE, ::NodeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.FOCUS_NODE, ::FocusNodeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PIPE, ::PipeRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_HANDLER, ::ProcessingHandlerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)

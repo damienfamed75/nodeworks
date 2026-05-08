@@ -106,6 +106,7 @@ object EmissiveCubeRenderer {
         )
     }
 
+
     /**
      * Single shared additive-emissive [RenderType] that samples from the
      * block atlas. Use this for rendering BakedModel quads (which carry

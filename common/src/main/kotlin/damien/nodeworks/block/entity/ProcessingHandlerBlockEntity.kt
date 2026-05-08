@@ -65,9 +65,23 @@ class ProcessingHandlerBlockEntity(
     /** The id of the micro-network on the FRONT face. Anchored by THIS
      *  Handler's [permanentId] when the Handler is alone, or by the
      *  lowest-positioned Handler when several merge. Stored separately from
-     *  [networkId] because the two sides are independent networks. */
-    var microNetworkId: UUID? = null
-        private set
+     *  [networkId] because the two sides are independent networks. Custom
+     *  setter keeps the client-side [damien.nodeworks.render.MicroNetworkClientRegistry]
+     *  in sync as the id changes (NBT load on chunk-load, BFS reassignment
+     *  via update packets) so renderers can swap textures for micro nets. */
+    private var _microNetworkId: UUID? = null
+    var microNetworkId: UUID?
+        get() = _microNetworkId
+        private set(value) {
+            if (_microNetworkId == value) return
+            val previous = _microNetworkId
+            _microNetworkId = value
+            val lvl = level
+            if (lvl != null && lvl.isClientSide) {
+                previous?.let { damien.nodeworks.render.MicroNetworkClientRegistry.unregister(it) }
+                value?.let { damien.nodeworks.render.MicroNetworkClientRegistry.register(it) }
+            }
+        }
 
     /** Stable UUID generated on first construction, lives across reload and
      *  through any mid-conflict transitions. Mirrors NetworkController's
@@ -167,8 +181,10 @@ class ProcessingHandlerBlockEntity(
     }
 
     /** Set the micro-network's id. Called by propagateNetworkId when a
-     *  micro-side BFS resolves an anchor. Marks dirty so the new id persists. */
-    fun setMicroNetworkId(id: UUID?) {
+     *  micro-side BFS resolves an anchor. Marks dirty so the new id persists.
+     *  Named `assignMicroNetworkId` (not `setMicroNetworkId`) to avoid a JVM
+     *  signature clash with the property's synthesized private setter. */
+    fun assignMicroNetworkId(id: UUID?) {
         if (microNetworkId == id) return
         microNetworkId = id
         markDirtyAndSync()
@@ -251,12 +267,18 @@ class ProcessingHandlerBlockEntity(
         }
         if (level.isClientSide) {
             damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, true)
+            // Register the loaded micro id (custom setter only triggers on
+            // CHANGE; the initial NBT-load assignment happens before level
+            // is set, so the setter's level==null guard skipped registry
+            // updates and we need to backfill here).
+            _microNetworkId?.let { damien.nodeworks.render.MicroNetworkClientRegistry.register(it) }
         }
     }
 
     override fun setRemoved() {
         if (level?.isClientSide == true) {
             damien.nodeworks.render.NodeConnectionRenderer.trackConnectable(level, worldPosition, false)
+            _microNetworkId?.let { damien.nodeworks.render.MicroNetworkClientRegistry.unregister(it) }
         }
         val lvl = level
         if (lvl is ServerLevel) {

@@ -45,6 +45,9 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
          *  laser, the per-card-link beams stay visible because cards are
          *  attached locally and don't need a network to be meaningful. */
         var hasNetwork: Boolean = false
+        /** True when the Node's networkId is a Processing Handler micro-net.
+         *  Switches the laser texture to the hazard-stripe variant. */
+        var isMicro: Boolean = false
     }
 
     companion object {
@@ -86,6 +89,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         state.networkColor = settings.color
         state.laserMode = settings.laserMode
         state.hasNetwork = blockEntity.networkId != null
+        state.isMicro = MicroNetworkClientRegistry.isMicro(blockEntity.networkId)
 
         val level = blockEntity.level
         if (level != null) {
@@ -132,6 +136,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
                 state.pipeDirections, state.networkColor,
                 laserMode = state.laserMode,
                 drawCenterCore = state.pipeDirections.isNotEmpty(),
+                isMicro = state.isMicro,
             )
         }
         submitCardLinks(state, poseStack, submitNodeCollector, camera)
