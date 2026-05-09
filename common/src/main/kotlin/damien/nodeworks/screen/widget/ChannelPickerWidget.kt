@@ -42,6 +42,11 @@ class ChannelPickerWidget(
     private val canBeNone: Boolean = false,
     initialIsNone: Boolean = false,
     private val swatchSize: Int = SWATCH,
+    /** Optional override for the tooltip's first line. Receives the current
+     *  [DyeColor] and returns the line to render in place of the default
+     *  "Channel: {Color}". Useful when the picker drives a domain-specific
+     *  routing rule (e.g. "Routes to Blue Storage Cards"). */
+    private val tooltipFormatter: ((DyeColor) -> String)? = null,
     private val onChange: (DyeColor?) -> Unit,
 ) : AbstractWidget(x, y, swatchSize, swatchSize, Component.literal("Channel")) {
 
@@ -228,8 +233,11 @@ class ChannelPickerWidget(
     private fun renderSwatchTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (mouseX !in x until x + width || mouseY !in y until y + height) return
         val font = Minecraft.getInstance().font
-        val firstLine = if (isNone) "All channels"
-            else "Channel: ${currentColor.name.lowercase().replaceFirstChar { it.uppercase() }}"
+        val firstLine = when {
+            isNone -> "All channels"
+            tooltipFormatter != null -> tooltipFormatter.invoke(currentColor)
+            else -> "Channel: ${currentColor.name.lowercase().replaceFirstChar { it.uppercase() }}"
+        }
         graphics.renderComponentTooltip(
             font,
             listOf(Component.literal(firstLine), Component.literal("Click to change.")),

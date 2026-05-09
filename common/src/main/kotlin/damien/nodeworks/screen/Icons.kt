@@ -227,5 +227,6 @@ class Icons private constructor(val col: Int, val row: Int) {
         val FACE_SIDE = Icons(3, 5)
         val FACE_TOP = Icons(4, 5)
         val COLOR_PICKING_CIRCLE = Icons(5, 5)
+        val LOCK = Icons(6, 5)
     }
 }

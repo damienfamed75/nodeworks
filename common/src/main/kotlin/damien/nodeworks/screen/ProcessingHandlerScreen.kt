@@ -4,6 +4,7 @@ import damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
 import damien.nodeworks.compat.drawString
 import damien.nodeworks.compat.mouseX
 import damien.nodeworks.compat.mouseY
+import damien.nodeworks.compat.renderComponentTooltip
 import damien.nodeworks.compat.renderItem
 import damien.nodeworks.compat.renderItemDecorations
 import damien.nodeworks.network.ProcessingHandlerBindPayload
@@ -55,9 +56,11 @@ class ProcessingHandlerScreen(
 ) : AbstractContainerScreen<ProcessingHandlerMenu>(menu, playerInventory, title, IMAGE_W, IMAGE_H) {
 
     companion object {
-        private const val IMAGE_W = 220
-        private const val IMAGE_H = 252
-        private const val OUTER_PAD = 4
+        // OUTER_PAD applies to the left, right, and bottom sides (top is
+        // governed by the title bar). IMAGE_W absorbs the extra horizontal
+        // padding so the two interior columns keep their original widths.
+        private const val IMAGE_W = 224
+        private const val OUTER_PAD = 6
         private const val ICON_SIZE = 16
         private const val SLOT_SIZE = 18
 
@@ -65,21 +68,41 @@ class ProcessingHandlerScreen(
          *  InventoryTerminal. Drawn via [NineSlice.drawTitleBar]. */
         private const val TOP_BAR_H = 20
 
-        // Recipe panel: 3×3 input grid + arrow + 3 output column. The panel
-        // doubles as the picker entry point - clicking it opens the dropdown.
-        // The hover effect runs even when bound so it always reads as
-        // interactive.
-        private const val RECIPE_PANEL_Y = TOP_BAR_H + 4
-        private const val RECIPE_GRID_INPUT_W = 3 * SLOT_SIZE
-        private const val RECIPE_GRID_OUTPUT_W = SLOT_SIZE
-        private const val RECIPE_GRID_H = 3 * SLOT_SIZE
-        private const val RECIPE_ARROW_W = 24
-        private const val RECIPE_PANEL_INNER_PAD = 2
-        private const val RECIPE_PANEL_H = RECIPE_GRID_H + RECIPE_PANEL_INNER_PAD * 2 + 6
+        // Two-column body. Left column hosts the vertical recipe panel +
+        // a redstone/unbind button row beneath it. Right column hosts the
+        // Inputs and Outputs scrollboxes stacked.
+        private const val LEFT_X = OUTER_PAD
+        private const val LEFT_COL_W = 60
+        private const val COL_GAP = 4
+        private const val RIGHT_X = LEFT_X + LEFT_COL_W + COL_GAP
+        private const val RIGHT_COL_W = IMAGE_W - RIGHT_X - OUTER_PAD
 
-        /** Unbind-toggle in the top-right corner of the bound recipe panel.
-         *  StorageCard uses the same 11×11 NineSlice.BUTTON for its delete
-         *  glyph so the visual matches. */
+        // Recipe panel: 3×3 input grid stacked above a down arrow stacked
+        // above a 1×3 output row. The panel doubles as the picker entry
+        // point - clicking it opens the dropdown. Hover effect runs even
+        // when bound so it always reads as interactive.
+        private const val RECIPE_PANEL_Y = TOP_BAR_H + 4
+        private const val RECIPE_GRID_W = 3 * SLOT_SIZE                // 54
+        private const val RECIPE_GRID_INPUT_H = 3 * SLOT_SIZE          // 54
+        private const val RECIPE_ARROW_H = 24
+        private const val RECIPE_GRID_OUTPUT_ROW_H = SLOT_SIZE         // 18
+        private const val RECIPE_GRID_VERT_H =
+            RECIPE_GRID_INPUT_H + RECIPE_ARROW_H + RECIPE_GRID_OUTPUT_ROW_H  // 96
+        private const val RECIPE_PANEL_INNER_PAD = 2
+        private const val RECIPE_PANEL_H =
+            RECIPE_GRID_VERT_H + RECIPE_PANEL_INNER_PAD * 2 + 6        // 106
+        private const val RECIPE_PANEL_W = LEFT_COL_W
+
+        // Buttons row beneath the recipe panel: [redstone] [x] (unbind).
+        // Both NineSlice.BUTTON, sized to match the picker close button so
+        // they read as proper actionable controls, not inline glyphs.
+        private const val BUTTON_SIZE = 14
+        private const val BUTTON_GAP = 2
+        private const val BUTTONS_Y = RECIPE_PANEL_Y + RECIPE_PANEL_H + 4
+
+        /** Legacy [x] glyph size, retained because the previous in-panel
+         *  unbind toggle was 11×11. The current button is 14×14 ([BUTTON_SIZE])
+         *  but the constant is left in place pending art alignment. */
         private const val UNBIND_BTN_SIZE = 11
 
         // Section scrollboxes (Inputs / Outputs). Mirror StorageCard's rule
@@ -89,30 +112,49 @@ class ProcessingHandlerScreen(
         private const val ROW_H = 18
         private const val VISIBLE_ROWS = 3
         private const val PANEL_INNER_PAD = 2
-        private const val PANEL_W = IMAGE_W - OUTER_PAD * 2
+        private const val PANEL_W = RIGHT_COL_W
         private const val PANEL_H = VISIBLE_ROWS * ROW_H + PANEL_INNER_PAD * 2
         private const val SCROLL_BAR_W = 6
         private const val SCROLL_BAR_GAP = 2
-        /** Section header row (label + channel picker). 16 px tall so the
-         *  16×16 swatch fits cleanly inside without crowding the scrollbox
-         *  below it. */
+        /** Section header row (label + channel picker). Headers are commented
+         *  out in the new layout, kept as a constant in case header pickers
+         *  are reintroduced. */
         private const val SECTION_HEADER_H = 16
         private const val SEPARATOR_OVERLAP = 2
         private const val ROW_ICON_SIZE = 16
         private const val ROW_ICON_PAD = 2
 
-        private const val INPUTS_HEADER_Y = RECIPE_PANEL_Y + RECIPE_PANEL_H + 4
-        private const val INPUTS_PANEL_Y = INPUTS_HEADER_Y + SECTION_HEADER_H
-        private const val OUTPUTS_HEADER_Y = INPUTS_PANEL_Y + PANEL_H + 4
-        private const val OUTPUTS_PANEL_Y = OUTPUTS_HEADER_Y + SECTION_HEADER_H
+        // No section headers in the two-column layout - inputs / outputs
+        // panels start flush with the top bar gap. Header Y constants are
+        // retained (commented context) so the addSectionHeaderPickers path
+        // can be re-enabled without re-deriving offsets.
+        private const val INPUTS_PANEL_Y = TOP_BAR_H + 4
+        private const val OUTPUTS_PANEL_Y = INPUTS_PANEL_Y + PANEL_H + 4
+        // Headers temporarily disabled - kept for the (currently commented)
+        // addSectionHeaderPickers path.
+        private const val INPUTS_HEADER_Y = INPUTS_PANEL_Y - SECTION_HEADER_H
+        private const val OUTPUTS_HEADER_Y = OUTPUTS_PANEL_Y - SECTION_HEADER_H
 
-        // Picker overlay (full-screen popup from the recipe panel). Each row
-        // is the same 3×3 → 3 grid the bound recipe panel renders, so the
-        // player sees exactly what they're picking.
-        private const val PICKER_ROW_H = RECIPE_GRID_H + 6
-        private const val PICKER_VISIBLE_ROWS = 3
-        private const val PICKER_PANEL_INNER_PAD = 2
-        private const val PICKER_PANEL_H = PICKER_VISIBLE_ROWS * PICKER_ROW_H + PICKER_PANEL_INNER_PAD * 2
+        // IMAGE_H = max(left col bottom, right col bottom). Left col bottom is
+        // BUTTONS_Y + BUTTON_SIZE + OUTER_PAD (taller in the current layout);
+        // right col bottom is OUTPUTS_PANEL_Y + PANEL_H + OUTER_PAD. Hardcoded
+        // because Kotlin requires `const val` initializers to be primitive
+        // expressions, and `maxOf` doesn't qualify.
+        private const val IMAGE_H = BUTTONS_Y + BUTTON_SIZE + OUTER_PAD
+
+        // Picker overlay covers the right column only (Inputs + Outputs).
+        // Each row shows a horizontal recipe thumbnail (3×3 + arrow + 1×3
+        // column) - keeping the thumbnail horizontal lets two rows fit in
+        // the right column's height instead of one cramped vertical row.
+        private const val PICKER_ROW_H = RECIPE_GRID_INPUT_H + 6
+        private const val PICKER_OVERLAY_X = RIGHT_X
+        private const val PICKER_OVERLAY_Y = INPUTS_PANEL_Y
+        private const val PICKER_OVERLAY_W = RIGHT_COL_W
+        private const val PICKER_OVERLAY_H = OUTPUTS_PANEL_Y + PANEL_H - INPUTS_PANEL_Y
+        private const val PICKER_PANEL_INNER_PAD = 0
+        private const val PICKER_VISIBLE_ROWS =
+            (PICKER_OVERLAY_H - PICKER_PANEL_INNER_PAD * 2) / PICKER_ROW_H
+        private const val PICKER_PANEL_H = PICKER_OVERLAY_H
         private const val PICKER_BTN_W = 56
         private const val PICKER_BTN_H = 14
 
@@ -139,6 +181,24 @@ class ProcessingHandlerScreen(
          *  they read as not-clickable while sharing the editable swatch's
          *  texture. */
         private const val GHOST_GRAY_OVERLAY = 0x80808080.toInt()
+
+        /** Guidebook ref opened when the player clicks the `[?]` help button.
+         *  The page itself doesn't exist yet (will be authored separately);
+         *  the click attempts the open and the guidebook handles the missing
+         *  page gracefully. */
+        private const val PROCESSING_HANDLER_GUIDE_REF =
+            "nodeworks:items-blocks/processing_handler.md"
+    }
+
+    private val pendingTooltipLines: MutableList<Component> = mutableListOf()
+    private var pendingTooltipX: Int = 0
+    private var pendingTooltipY: Int = 0
+
+    private fun queueTooltip(mouseX: Int, mouseY: Int, vararg lines: String) {
+        pendingTooltipLines.clear()
+        for (line in lines) pendingTooltipLines.add(Component.literal(line))
+        pendingTooltipX = mouseX
+        pendingTooltipY = mouseY
     }
 
     init {
@@ -193,7 +253,10 @@ class ProcessingHandlerScreen(
         lastInputItemIds = inputIds
         lastInputsScroll = inputsScroll
         if (be.processingApiName.isEmpty()) return
-        addSectionHeaderPickers(be)
+        // Section header channel pickers are commented out for the two-column
+        // layout (no headers rendered). Re-enable both this call and the
+        // drawSectionHeader calls in extractBackground to bring them back.
+        // addSectionHeaderPickers(be)
         addInputRowPickers(be)
     }
 
@@ -241,7 +304,7 @@ class ProcessingHandlerScreen(
 
     private fun addInputRowPickers(be: ProcessingHandlerBlockEntity) {
         val inputChannels = be.snapshotInputChannels().toList()
-        val interiorX = leftPos + OUTER_PAD + PANEL_INNER_PAD
+        val interiorX = leftPos + RIGHT_X + PANEL_INNER_PAD
         val interiorY = topPos + INPUTS_PANEL_Y + PANEL_INNER_PAD
         val interiorW = PANEL_W - PANEL_INNER_PAD * 2 - SCROLL_BAR_W - SCROLL_BAR_GAP
         val pickerX = interiorX + interiorW - ROW_PICKER_RIGHT_PAD - SMALL_SWATCH
@@ -256,6 +319,9 @@ class ProcessingHandlerScreen(
                 y = pickerY,
                 initialColor = color,
                 swatchSize = SMALL_SWATCH,
+                tooltipFormatter = { c ->
+                    "Routes to ${c.name.lowercase().replaceFirstChar { it.uppercase() }} Storage Cards"
+                },
                 onChange = { newColor ->
                     if (newColor != null) {
                         PlatformServices.clientNetworking.sendToServer(
@@ -305,41 +371,97 @@ class ProcessingHandlerScreen(
     override fun extractBackground(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractBackground(graphics, mouseX, mouseY, partialTick)
         syncPickersToBe()
+        pendingTooltipLines.clear()
         NineSlice.WINDOW_FRAME.draw(graphics, leftPos, topPos, imageWidth, imageHeight)
-        // TOP_BAR header tinted with the parent network's color, mirrors
-        // NetworkController + InventoryTerminal so the GUI's top-row chrome
-        // reads consistent with the rest of the mod. Color resolved from the
-        // BE's network id (back face's network); falls back to neutral gray
-        // when the Handler isn't on a network.
         val networkColor = entity()?.networkId?.let {
             damien.nodeworks.network.NetworkSettingsRegistry.getColor(it)
         } ?: 0x888888
         NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor)
         drawRecipePanel(graphics, mouseX, mouseY)
-        drawSectionHeader(graphics, "Inputs", INPUTS_HEADER_Y)
+        drawButtonsRow(graphics, mouseX, mouseY)
+        // Section headers (label + channel picker) are commented out for the
+        // two-column layout - the inputs/outputs panels start flush with the
+        // top bar gap. drawSectionHeader is preserved for re-enabling later.
+        // drawSectionHeader(graphics, "Inputs", INPUTS_HEADER_Y)
+        // drawSectionHeader(graphics, "Outputs", OUTPUTS_HEADER_Y)
         drawSectionScrollbox(graphics, INPUTS_PANEL_Y, isOutputs = false, mouseX, mouseY)
-        drawSectionHeader(graphics, "Outputs", OUTPUTS_HEADER_Y)
         drawSectionScrollbox(graphics, OUTPUTS_PANEL_Y, isOutputs = true, mouseX, mouseY)
+    }
+
+    private fun drawButtonsRow(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
+        val be = entity()
+        val isBound = be != null && be.processingApiName.isNotEmpty() && findBoundSet() != null
+
+        val (rx, ry, rw, rh) = redstoneButtonBounds().toList()
+        val redstoneHover = mouseX in rx until rx + rw && mouseY in ry until ry + rh
+        (if (redstoneHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, rx, ry, rw, rh)
+        Icons.REDSTONE_IGNORE.draw(graphics, rx + (rw - 16) / 2, ry + (rh - 16) / 2)
+        if (redstoneHover) {
+            queueTooltip(mouseX, mouseY, "Redstone control", "(Not implemented yet)")
+        }
+
+        // Unbind only meaningful when bound; render dimmed but in-place when
+        // unbound so the button row layout doesn't reflow.
+        val (bx, by, bw, bh) = unbindButtonBounds().toList()
+        val unbindHover = mouseX in bx until bx + bw && mouseY in by until by + bh
+        val unbindActive = isBound && unbindHover
+        (if (unbindActive) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, bx, by, bw, bh)
+        graphics.drawString(
+            font, "x",
+            bx + (bw - font.width("x")) / 2 + 1,
+            by + (bh - font.lineHeight) / 2,
+            if (isBound) WHITE else LABEL_GRAY,
+        )
+        if (unbindHover) {
+            if (isBound) {
+                queueTooltip(mouseX, mouseY, "Unbind recipe")
+            } else {
+                queueTooltip(mouseX, mouseY, "Unbind recipe", "(No recipe bound)")
+            }
+        }
+
+        val (hx, hy, hw, hh) = helpButtonBounds().toList()
+        val helpHover = mouseX in hx until hx + hw && mouseY in hy until hy + hh
+        (if (helpHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, hx, hy, hw, hh)
+        // QUESTION_9 is a 9×9 glyph - centre it inside the 14×14 button.
+        Icons.QUESTION_9.drawTopLeft(graphics, hx + (hw - 9) / 2, hy + (hh - 9) / 2, 9, 9)
+        if (helpHover) {
+            queueTooltip(mouseX, mouseY, "Open guidebook")
+        }
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
         renderChannelPickerOverlays(graphics, mouseX, mouseY)
         if (pickerOpen) renderPickerOverlay(graphics, mouseX, mouseY)
+        if (pendingTooltipLines.isNotEmpty()) {
+            graphics.renderComponentTooltip(font, pendingTooltipLines, pendingTooltipX, pendingTooltipY)
+        }
     }
 
     // ---- Recipe panel (clickable; opens picker, hosts unbind [x]) ----
 
     private fun recipePanelBounds(): IntArray {
-        return intArrayOf(leftPos + OUTER_PAD, topPos + RECIPE_PANEL_Y, PANEL_W, RECIPE_PANEL_H)
+        return intArrayOf(leftPos + LEFT_X, topPos + RECIPE_PANEL_Y, RECIPE_PANEL_W, RECIPE_PANEL_H)
     }
 
-    private fun unbindButtonBounds(): IntArray {
-        val (px, py, pw, _) = recipePanelBounds().toList()
-        val bx = px + pw - UNBIND_BTN_SIZE - 4
-        val by = py + 4
-        return intArrayOf(bx, by, UNBIND_BTN_SIZE, UNBIND_BTN_SIZE)
+    /** Buttons row beneath the recipe panel: redstone (slot 0) and unbind
+     *  (slot 1). Returns the [x, y, w, h] for the slot at [index]. */
+    private fun buttonRowBounds(index: Int): IntArray {
+        val bx = leftPos + LEFT_X + index * (BUTTON_SIZE + BUTTON_GAP)
+        val by = topPos + BUTTONS_Y
+        return intArrayOf(bx, by, BUTTON_SIZE, BUTTON_SIZE)
     }
+
+    private fun redstoneButtonBounds(): IntArray = buttonRowBounds(0)
+    private fun unbindButtonBounds(): IntArray = buttonRowBounds(1)
+    private fun helpButtonBounds(): IntArray = buttonRowBounds(2)
+
+    private fun inputsPanelBounds(): IntArray =
+        intArrayOf(leftPos + RIGHT_X, topPos + INPUTS_PANEL_Y, PANEL_W, PANEL_H)
+
+    private fun outputsPanelBounds(): IntArray =
+        intArrayOf(leftPos + RIGHT_X, topPos + OUTPUTS_PANEL_Y, PANEL_W, PANEL_H)
 
     private fun drawRecipePanel(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         val (panelX, panelY, panelW, panelH) = recipePanelBounds().toList()
@@ -351,7 +473,7 @@ class ProcessingHandlerScreen(
         val hovering = mouseX in panelX until panelX + panelW &&
             mouseY in panelY until panelY + panelH && !pickerOpen
 
-        drawRecipeGrid(graphics, panelX, panelY, panelW, panelH, recipe)
+        drawRecipeGrid(graphics, panelX, panelY, panelW, panelH, recipe, vertical = true)
 
         val interiorX = panelX + RECIPE_PANEL_INNER_PAD
         val interiorY = panelY + RECIPE_PANEL_INNER_PAD
@@ -365,9 +487,9 @@ class ProcessingHandlerScreen(
             graphics.fill(interiorX, interiorY, interiorRight, interiorBottom, dimColor)
 
             val prompt = if (boundSetMissing && be?.processingApiName?.isNotEmpty() == true) {
-                "Bound recipe is missing, click to pick"
+                "Recipe missing"
             } else {
-                "Click to pick recipe"
+                "Pick recipe"
             }
             val tx = panelX + (panelW - font.width(prompt)) / 2
             val ty = panelY + (panelH - font.lineHeight) / 2
@@ -377,35 +499,21 @@ class ProcessingHandlerScreen(
 
         // Bound: persistent hover overlay so the panel always reads as
         // interactive (clicking opens the picker to change the binding).
+        // [x] unbind moved to the buttons row beneath, so the entire panel
+        // interior gets the hover tint without a cutout.
         if (hovering) {
-            // Skip the [x] unbind hit-rect from the hover overlay so the
-            // button's own hover state isn't fighting the panel-level tint.
-            val (bx, by, bw, bh) = unbindButtonBounds().toList()
-            val overlayLeft = interiorX
-            val overlayTop = interiorY
-            val overlayBottom = interiorBottom
-            // Top strip (above the [x])
-            graphics.fill(overlayLeft, overlayTop, interiorRight, by, BOUND_HOVER_OVERLAY)
-            // Strip beside the [x]
-            graphics.fill(overlayLeft, by, bx, by + bh, BOUND_HOVER_OVERLAY)
-            // Bottom strip (below the [x])
-            graphics.fill(overlayLeft, by + bh, interiorRight, overlayBottom, BOUND_HOVER_OVERLAY)
+            graphics.fill(interiorX, interiorY, interiorRight, interiorBottom, BOUND_HOVER_OVERLAY)
+            queueTooltip(mouseX, mouseY, "Click to change recipe")
         }
-
-        val (bx, by, bw, bh) = unbindButtonBounds().toList()
-        val unbindHover = mouseX in bx until bx + bw && mouseY in by until by + bh
-        (if (unbindHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, bx, by, bw, bh)
-        graphics.drawString(
-            font, "x",
-            bx + (bw - font.width("x")) / 2 + 1,
-            by + 1,
-            WHITE,
-        )
     }
 
-    /** Draw the 3×3 input grid, arrow, and 3-output column inside the given
-     *  bounds. When [recipe] is null the grid renders empty (slot frames only)
-     *  so the panel still reads as a recipe-shaped area pre-binding. */
+    /** Draw the 3×3 input grid, arrow, and outputs inside the given bounds.
+     *  When [vertical] is true the layout is inputs (top) → arrow down →
+     *  output row (1×3 horizontal, bottom); otherwise inputs (left) → arrow
+     *  right → output column (1×3 vertical, right) - the original layout
+     *  used by the picker thumbnails. When [recipe] is null the grid renders
+     *  empty (slot frames only) so the panel still reads as a recipe-shaped
+     *  area pre-binding. */
     private fun drawRecipeGrid(
         graphics: GuiGraphicsExtractor,
         panelX: Int,
@@ -413,11 +521,74 @@ class ProcessingHandlerScreen(
         panelW: Int,
         panelH: Int,
         recipe: ProcessingHandlerOpenData.AvailableSet?,
+        vertical: Boolean = false,
     ) {
-        val blockW = RECIPE_GRID_INPUT_W + RECIPE_ARROW_W + RECIPE_GRID_OUTPUT_W
+        if (vertical) {
+            val blockW = RECIPE_GRID_W
+            val gridX = panelX + (panelW - blockW) / 2
+            val gridY = panelY + (panelH - RECIPE_GRID_VERT_H) / 2
+            val outputY = gridY + RECIPE_GRID_INPUT_H + RECIPE_ARROW_H
+
+            for (row in 0..2) {
+                for (col in 0..2) {
+                    NineSlice.SLOT.draw(
+                        graphics,
+                        gridX + col * SLOT_SIZE, gridY + row * SLOT_SIZE,
+                        SLOT_SIZE, SLOT_SIZE,
+                    )
+                }
+            }
+            for (col in 0..2) {
+                NineSlice.SLOT.draw(
+                    graphics,
+                    gridX + col * SLOT_SIZE, outputY,
+                    SLOT_SIZE, SLOT_SIZE,
+                )
+            }
+
+            // Down arrow: rotate ARROW_RIGHT 90° clockwise around its centre.
+            // pose().rotate is CCW in math coords; screen Y points down so a
+            // math-CCW rotation reads as visually clockwise, mapping right →
+            // down for an arrow pointing right.
+            val arrowX = gridX + (RECIPE_GRID_W - 16) / 2
+            val arrowY = gridY + RECIPE_GRID_INPUT_H + (RECIPE_ARROW_H - 16) / 2
+            val pose = graphics.pose()
+            pose.pushMatrix()
+            pose.translate(arrowX + 8f, arrowY + 8f)
+            pose.rotate((Math.PI / 2.0).toFloat())
+            pose.translate(-8f, -8f)
+            Icons.ARROW_RIGHT.draw(graphics, 0, 0)
+            pose.popMatrix()
+
+            if (recipe == null) return
+            for ((idx, pair) in recipe.inputs.withIndex()) {
+                if (idx >= 9) break
+                val (id, count) = pair
+                val col = idx % 3
+                val row = idx / 3
+                val sx = gridX + col * SLOT_SIZE + 1
+                val sy = gridY + row * SLOT_SIZE + 1
+                val stack = stackOf(id, count)
+                graphics.renderItem(stack, sx, sy)
+                graphics.renderItemDecorations(font, stack, sx, sy)
+            }
+            for ((idx, pair) in recipe.outputs.withIndex()) {
+                if (idx >= 3) break
+                val (id, count) = pair
+                val sx = gridX + idx * SLOT_SIZE + 1
+                val sy = outputY + 1
+                val stack = stackOf(id, count)
+                graphics.renderItem(stack, sx, sy)
+                graphics.renderItemDecorations(font, stack, sx, sy)
+            }
+            return
+        }
+
+        // Horizontal (picker thumbnail).
+        val blockW = RECIPE_GRID_W + RECIPE_ARROW_H + SLOT_SIZE
         val gridX = panelX + (panelW - blockW) / 2
-        val gridY = panelY + (panelH - RECIPE_GRID_H) / 2
-        val outputX = gridX + RECIPE_GRID_INPUT_W + RECIPE_ARROW_W
+        val gridY = panelY + (panelH - RECIPE_GRID_INPUT_H) / 2
+        val outputX = gridX + RECIPE_GRID_W + RECIPE_ARROW_H
 
         for (row in 0..2) {
             for (col in 0..2) {
@@ -428,8 +599,8 @@ class ProcessingHandlerScreen(
             NineSlice.SLOT.draw(graphics, outputX, gridY + row * SLOT_SIZE, SLOT_SIZE, SLOT_SIZE)
         }
 
-        val arrowX = gridX + RECIPE_GRID_INPUT_W + (RECIPE_ARROW_W - 16) / 2
-        val arrowY = gridY + (RECIPE_GRID_H - 16) / 2
+        val arrowX = gridX + RECIPE_GRID_W + (RECIPE_ARROW_H - 16) / 2
+        val arrowY = gridY + (RECIPE_GRID_INPUT_H - 16) / 2
         Icons.ARROW_RIGHT.draw(graphics, arrowX, arrowY)
 
         if (recipe == null) return
@@ -483,7 +654,7 @@ class ProcessingHandlerScreen(
         }
         val scroll = if (isOutputs) outputsScroll else inputsScroll
 
-        val panelX = leftPos + OUTER_PAD
+        val panelX = leftPos + RIGHT_X
         val panelTop = topPos + panelY
         NineSlice.PANEL_INSET.draw(graphics, panelX, panelTop, PANEL_W, PANEL_H)
 
@@ -563,15 +734,18 @@ class ProcessingHandlerScreen(
 
         if (isOutputs) {
             // Read-only ghost swatch, shares the editable swatch's wool icon
-            // and slot frame so the visual matches, then tinted with a
-            // translucent gray to read as not-clickable.
+            // and slot frame so the visual matches. A translucent lock glyph
+            // sits on top to signal "not clickable" without flattening the
+            // channel colour the way the previous gray overlay did.
             val be = entity() ?: return
             val ghostX = interiorX + interiorW - ROW_PICKER_RIGHT_PAD - SMALL_SWATCH
             val ghostY = rowY + (ROW_H - SEPARATOR_OVERLAP - SMALL_SWATCH) / 2
             NineSlice.SLOT.draw(graphics, ghostX, ghostY, SMALL_SWATCH, SMALL_SWATCH)
             val rgb = be.outputChannel.textureDiffuseColor and 0xFFFFFF
             Icons.WHITE_WOOL.drawTinted(graphics, ghostX + 1, ghostY + 1, SMALL_SWATCH - 2, rgb)
-            graphics.fill(ghostX, ghostY, ghostX + SMALL_SWATCH, ghostY + SMALL_SWATCH, GHOST_GRAY_OVERLAY)
+            // Lock is 8×8 in the top-left of its 16×16 atlas cell. Centred
+            // inside the 10×10 swatch (1 px inset).
+            Icons.LOCK.drawTopLeftTinted(graphics, ghostX + 1, ghostY + 1, 8, 8, 0xFFFFFF, alpha = 0.6f)
         }
     }
 
@@ -601,39 +775,25 @@ class ProcessingHandlerScreen(
     // ---- Picker overlay (scrolling dropdown of available recipes) ----
 
     private fun pickerOverlayBounds(): IntArray {
-        val overlayX = leftPos + 4
-        val overlayY = topPos + 4
-        val overlayW = imageWidth - 8
-        // Just-tall-enough: title row + panel + bottom margin. The previous
-        // full-height overlay had ~30 px of dead space below the panel.
-        val overlayH = 22 + PICKER_PANEL_H + 6
-        return intArrayOf(overlayX, overlayY, overlayW, overlayH)
+        return intArrayOf(
+            leftPos + PICKER_OVERLAY_X,
+            topPos + PICKER_OVERLAY_Y,
+            PICKER_OVERLAY_W,
+            PICKER_OVERLAY_H,
+        )
     }
 
     private fun renderPickerOverlay(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         val (overlayX, overlayY, overlayW, overlayH) = pickerOverlayBounds().toList()
-        // Dim everything outside the overlay so the rest of the GUI reads as
-        // disabled while the picker is up.
+        // Dim only the rest of the GUI (left column + top bar). Right column
+        // is replaced by the picker panel itself - clicking anywhere outside
+        // the overlay closes it.
         graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xCC000000.toInt())
-        NineSlice.WINDOW_FRAME.draw(graphics, overlayX, overlayY, overlayW, overlayH)
-        graphics.drawString(
-            font,
-            Component.literal("Pick a Processing Set").withStyle(ChatFormatting.WHITE),
-            overlayX + OUTER_PAD + 2, overlayY + 6, WHITE,
-        )
-        val closeX = overlayX + overlayW - OUTER_PAD - PICKER_BTN_W
-        val closeY = overlayY + 4
-        val closeHover = mouseX in closeX until closeX + PICKER_BTN_W && mouseY in closeY until closeY + PICKER_BTN_H
-        (if (closeHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, closeX, closeY, PICKER_BTN_W, PICKER_BTN_H)
-        graphics.drawString(font, "Close", closeX + (PICKER_BTN_W - font.width("Close")) / 2, closeY + 3, WHITE)
+        NineSlice.PANEL_INSET.draw(graphics, overlayX, overlayY, overlayW, overlayH)
 
-        val panelX = overlayX + OUTER_PAD
-        val panelY = overlayY + 22
-        val panelW = overlayW - OUTER_PAD * 2
-        NineSlice.PANEL_INSET.draw(graphics, panelX, panelY, panelW, PICKER_PANEL_H)
-        val interiorX = panelX + PICKER_PANEL_INNER_PAD
-        val interiorY = panelY + PICKER_PANEL_INNER_PAD
-        val interiorW = panelW - PICKER_PANEL_INNER_PAD * 2 - SCROLL_BAR_W - SCROLL_BAR_GAP
+        val interiorX = overlayX
+        val interiorY = overlayY
+        val interiorW = overlayW - SCROLL_BAR_W - SCROLL_BAR_GAP
 
         if (availableSets.isEmpty()) {
             val text = "No unclaimed Processing Sets."
@@ -641,7 +801,7 @@ class ProcessingHandlerScreen(
                 font,
                 Component.literal(text).withStyle(ChatFormatting.GRAY),
                 interiorX + (interiorW - font.width(text)) / 2,
-                interiorY + (PICKER_PANEL_H - PICKER_PANEL_INNER_PAD * 2 - font.lineHeight) / 2,
+                interiorY + (overlayH - font.lineHeight) / 2,
                 WHITE,
             )
         }
@@ -652,23 +812,17 @@ class ProcessingHandlerScreen(
             val rowY = interiorY + visibleIdx * PICKER_ROW_H
             val hover = mouseX in interiorX..(interiorX + interiorW) &&
                 mouseY in rowY..(rowY + PICKER_ROW_H)
-            // All rows use the darker NineSlice.ROW base; hover gets a small
-            // white tint so the cursor target still reads. The previous
-            // alternating-stripe pattern was too bright against the recipe
-            // grids each row contains.
             NineSlice.ROW.draw(graphics, interiorX, rowY, interiorW, PICKER_ROW_H)
             graphics.fill(interiorX, rowY, interiorX + interiorW, rowY + PICKER_ROW_H, 0x40000000)
             if (hover) {
                 graphics.fill(interiorX, rowY, interiorX + interiorW, rowY + PICKER_ROW_H, 0x33FFFFFF)
             }
-            // Each row is a 3×3 → 3 grid, identical to the bound recipe panel
-            // so what the player picks visually matches what they get.
             drawRecipeGrid(graphics, interiorX, rowY, interiorW, PICKER_ROW_H, set)
         }
 
-        val sbX = panelX + panelW - PICKER_PANEL_INNER_PAD - SCROLL_BAR_W
-        val sbY = panelY + PICKER_PANEL_INNER_PAD
-        val trackH = PICKER_PANEL_H - PICKER_PANEL_INNER_PAD * 2
+        val sbX = overlayX + overlayW - SCROLL_BAR_W
+        val sbY = overlayY
+        val trackH = overlayH
         NineSlice.SCROLLBAR_TRACK.draw(graphics, sbX, sbY, SCROLL_BAR_W, trackH)
         if (availableSets.size > PICKER_VISIBLE_ROWS) {
             val thumbH = maxOf(12, trackH * PICKER_VISIBLE_ROWS / availableSets.size)
@@ -681,10 +835,15 @@ class ProcessingHandlerScreen(
     }
 
     private fun renderChannelPickerOverlays(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        inputsHeaderPicker?.let { if (it.expanded) it.renderOverlay(graphics, mouseX, mouseY) }
-        outputsHeaderPicker?.let { if (it.expanded) it.renderOverlay(graphics, mouseX, mouseY) }
+        // Header pickers commented out alongside addSectionHeaderPickers.
+        // inputsHeaderPicker?.renderOverlay(graphics, mouseX, mouseY)
+        // outputsHeaderPicker?.renderOverlay(graphics, mouseX, mouseY)
+        // renderOverlay handles BOTH the expanded popup and the collapsed
+        // hover tooltip, so it must run every frame regardless of expanded
+        // state - the previous `if (expanded)` gate suppressed the swatch
+        // hover tooltip entirely.
         for (picker in inputPickers.values) {
-            if (picker.expanded) picker.renderOverlay(graphics, mouseX, mouseY)
+            picker.renderOverlay(graphics, mouseX, mouseY)
         }
     }
 
@@ -702,25 +861,42 @@ class ProcessingHandlerScreen(
         val mx = event.mouseX.toInt()
         val my = event.mouseY.toInt()
 
-        // Recipe-panel area: [x] inside it unbinds when bound; clicking
-        // anywhere else opens the picker.
+        // Recipe-panel area: clicking anywhere on it opens the picker.
         val (px, py, pw, ph) = recipePanelBounds().toList()
         if (mx in px until px + pw && my in py until py + ph) {
-            val be = entity()
-            val isBound = be != null && be.processingApiName.isNotEmpty() && findBoundSet() != null
-            if (isBound) {
-                val (bx, by, bw, bh) = unbindButtonBounds().toList()
-                if (mx in bx until bx + bw && my in by until by + bh) {
-                    playClickSound()
-                    PlatformServices.clientNetworking.sendToServer(
-                        ProcessingHandlerUnbindPayload(menu.devicePos)
-                    )
-                    return true
-                }
-            }
             playClickSound()
             pickerOpen = true
             pickerScroll = 0
+            return true
+        }
+
+        // Redstone button (placeholder, no behavior bound yet).
+        val (rx, ry, rw, rh) = redstoneButtonBounds().toList()
+        if (mx in rx until rx + rw && my in ry until ry + rh) {
+            playClickSound()
+            return true
+        }
+
+        // Unbind button - only fires when bound, otherwise the click swallows
+        // silently so the player can't unbind nothing.
+        val (bx, by, bw, bh) = unbindButtonBounds().toList()
+        if (mx in bx until bx + bw && my in by until by + bh) {
+            val be = entity()
+            val isBound = be != null && be.processingApiName.isNotEmpty() && findBoundSet() != null
+            if (isBound) {
+                playClickSound()
+                PlatformServices.clientNetworking.sendToServer(
+                    ProcessingHandlerUnbindPayload(menu.devicePos)
+                )
+            }
+            return true
+        }
+
+        // Help button - opens the Processing Handler guidebook page.
+        val (hx, hy, hw, hh) = helpButtonBounds().toList()
+        if (mx in hx until hx + hw && my in hy until hy + hh) {
+            playClickSound()
+            PlatformServices.guidebook.open(PROCESSING_HANDLER_GUIDE_REF)
             return true
         }
         return super.mouseClicked(event, doubleClick)
@@ -731,25 +907,20 @@ class ProcessingHandlerScreen(
         val mxI = event.mouseX.toInt()
         val myI = event.mouseY.toInt()
 
-        val closeX = overlayX + overlayW - OUTER_PAD - PICKER_BTN_W
-        val closeY = overlayY + 4
-        if (mxI in closeX..(closeX + PICKER_BTN_W) && myI in closeY..(closeY + PICKER_BTN_H)) {
-            playClickSound()
+        // Click outside the right-column overlay closes it - the user's
+        // explicit "click the left side to exit" replacement for the old
+        // Close button.
+        if (mxI !in overlayX..(overlayX + overlayW) || myI !in overlayY..(overlayY + overlayH)) {
             pickerOpen = false
             return true
         }
 
-        val panelX = overlayX + OUTER_PAD
-        val panelY = overlayY + 22
-        val panelW = overlayW - OUTER_PAD * 2
-        val interiorX = panelX + PICKER_PANEL_INNER_PAD
-        val interiorY = panelY + PICKER_PANEL_INNER_PAD
-        val interiorW = panelW - PICKER_PANEL_INNER_PAD * 2 - SCROLL_BAR_W - SCROLL_BAR_GAP
+        val interiorW = overlayW - SCROLL_BAR_W - SCROLL_BAR_GAP
         for (visibleIdx in 0 until PICKER_VISIBLE_ROWS) {
             val setIdx = pickerScroll + visibleIdx
             if (setIdx >= availableSets.size) break
-            val rowY = interiorY + visibleIdx * PICKER_ROW_H
-            if (mxI in interiorX..(interiorX + interiorW) && myI in rowY..(rowY + PICKER_ROW_H)) {
+            val rowY = overlayY + visibleIdx * PICKER_ROW_H
+            if (mxI in overlayX..(overlayX + interiorW) && myI in rowY..(rowY + PICKER_ROW_H)) {
                 playClickSound()
                 PlatformServices.clientNetworking.sendToServer(
                     ProcessingHandlerBindPayload(menu.devicePos, availableSets[setIdx].name)
@@ -757,9 +928,6 @@ class ProcessingHandlerScreen(
                 pickerOpen = false
                 return true
             }
-        }
-        if (mxI !in overlayX..(overlayX + overlayW) || myI !in overlayY..(overlayY + overlayH)) {
-            pickerOpen = false
         }
         return true
     }
@@ -773,13 +941,13 @@ class ProcessingHandlerScreen(
         val be = entity() ?: return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
         val mxI = mouseX.toInt()
         val myI = mouseY.toInt()
-        if (within(mxI, myI, leftPos + OUTER_PAD, topPos + INPUTS_PANEL_Y, PANEL_W, PANEL_H)) {
+        if (within(mxI, myI, leftPos + RIGHT_X, topPos + INPUTS_PANEL_Y, PANEL_W, PANEL_H)) {
             val rowCount = be.snapshotInputChannels().size
             val maxScroll = (rowCount - VISIBLE_ROWS).coerceAtLeast(0)
             inputsScroll = (inputsScroll - scrollY.toInt()).coerceIn(0, maxScroll)
             return true
         }
-        if (within(mxI, myI, leftPos + OUTER_PAD, topPos + OUTPUTS_PANEL_Y, PANEL_W, PANEL_H)) {
+        if (within(mxI, myI, leftPos + RIGHT_X, topPos + OUTPUTS_PANEL_Y, PANEL_W, PANEL_H)) {
             val recipe = findBoundSet()
             val rowCount = recipe?.outputs?.size ?: 0
             val maxScroll = (rowCount - VISIBLE_ROWS).coerceAtLeast(0)
