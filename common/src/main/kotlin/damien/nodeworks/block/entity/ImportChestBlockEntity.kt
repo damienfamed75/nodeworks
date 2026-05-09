@@ -172,8 +172,13 @@ class ImportChestBlockEntity(
         }
 
         if (isEmpty) return
+        // Bail when we're not on any network. Use this BE's own networkId
+        // rather than `snapshot.controller != null`, since micro-networks
+        // (anchored by a Processing Handler instead of a Network Controller)
+        // are real, routable networks too - the controller-only gate
+        // silently disabled the chest on every micro-net.
+        if (networkId == null) return
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-        if (snapshot.controller == null) return
 
         // The cache lookup here is best-effort, used to fire onInserted hooks for the
         // Inventory Terminal's delta sync. Null when no consumer has opened a cache yet,
@@ -209,8 +214,12 @@ class ImportChestBlockEntity(
 
     /** Round-robin insertion: each item that moves advances the destination
      *  index, so items spread across storage cards instead of stacking on the
-     *  highest-priority card. Cards that don't accept (channel mismatch, filter)
-     *  are skipped without consuming a step. */
+     *  highest-priority card. Cards that don't accept (channel mismatch,
+     *  filter rejection, full storage) are skipped without consuming a step
+     *  AND the cursor advances PAST the accepting card via `idx + 1`, so a
+     *  denying card sitting at the cursor's position can't park the rotation
+     *  on a perpetual no-op. (This is the same defensive pattern the
+     *  Importer preset and BlockProcessingHandler use.) */
     private fun insertRoundRobin(
         level: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot,

@@ -37,7 +37,11 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
     companion object {
         val CODEC: MapCodec<NetworkControllerBlock> = simpleCodec(::NetworkControllerBlock)
 
-        val SHAPE: VoxelShape = Block.box(0.0, 0.0, 0.0, 16.0, 16.0, 16.0)
+        // Matches the model: full 16 px tall on Y, 14 px on X and Z (1 px
+        // inset on each horizontal side). Non-cube collision keeps adjacent
+        // blocks from treating the controller as a flush neighbour, which
+        // fixes the per-face darkening when something is placed next to it.
+        val SHAPE: VoxelShape = Block.box(1.0, 0.0, 1.0, 15.0, 16.0, 15.0)
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC

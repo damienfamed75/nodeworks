@@ -85,9 +85,22 @@ interface Connectable {
 
     /** Client-only. References [damien.nodeworks.render.NodeConnectionRenderer]
      *  for the default colour fallback. Server code should read [networkId]
-     *  directly and look up the colour via [NetworkSettingsRegistry]. */
+     *  directly and look up the colour via [NetworkSettingsRegistry].
+     *
+     *  Micro-networks (anchored by a Processing Handler) don't live in
+     *  [NetworkSettingsRegistry] because there's no Network Controller to
+     *  populate per-network settings. Without a special case, every
+     *  Connectable on a micro-net would render as the unconnected grey
+     *  default (which is what made Import Chests on a micro-net read as
+     *  "not connected"). When the id is registered with
+     *  [damien.nodeworks.render.MicroNetworkClientRegistry], return the
+     *  shared hazard yellow so chest bodies, ghost laser stubs, and BER
+     *  overlays all match the in-pipe beam treatment. */
     fun networkColor(): Int {
         val id = networkId ?: return damien.nodeworks.render.NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        if (damien.nodeworks.render.MicroNetworkClientRegistry.isMicro(id)) {
+            return damien.nodeworks.render.MicroNetworkClientRegistry.MICRO_NETWORK_COLOR
+        }
         return NetworkSettingsRegistry.getColor(id)
     }
 }

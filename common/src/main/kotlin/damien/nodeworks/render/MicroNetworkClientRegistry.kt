@@ -15,6 +15,12 @@ import java.util.UUID
  */
 object MicroNetworkClientRegistry {
 
+    /** Tint applied to Connectables on a micro-network when nothing more
+     *  specific is available. Matches [PipeLaserBeam]'s `MICRO_GLOW_R/G/B`
+     *  so the chest body, the in-pipe beam, and the inter-Node beam all read
+     *  as the same hazard yellow (#FFDC3B). */
+    const val MICRO_NETWORK_COLOR: Int = 0xFFDC3B
+
     private val refCounts = HashMap<UUID, Int>()
 
     @Synchronized

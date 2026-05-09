@@ -108,7 +108,7 @@ object BlockProcessingHandler {
         for ((itemId, batchCount) in perBatchInputs) {
             if (batchCount <= 0L) continue
             val color = handlerBE.getInputChannel(itemId)
-            val moveOk = routeInputAtomic(level, microSnapshot, cpu, itemId, batchCount, ChannelFilter.Color(color))
+            val moveOk = routeInputAtomic(level, microSnapshot, cpu, handlerBE, itemId, batchCount, ChannelFilter.Color(color))
             if (moveOk) {
                 rolledBack += itemId to batchCount
                 continue
@@ -146,25 +146,40 @@ object BlockProcessingHandler {
      * cards. Returns true only when the full count fit; on false the buffer
      * is bit-equal to its pre-call state (no partial commit).
      *
-     * Modelled on [damien.nodeworks.script.CardHandle]'s `moveFromBuffer`
-     * atomic path but iterates multiple cards instead of targeting one.
+     * Cards are walked in priority order with each card's filter
+     * ([SideCapability.acceptsItem]) honoured, matching the routing model
+     * `network:insert` uses. A high-priority filtered card (e.g. "bamboo
+     * only") therefore takes its matching ingredient before a generic
+     * unfiltered card on the same channel does.
      */
     private fun routeInputAtomic(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         cpu: CraftingCoreBlockEntity,
+        @Suppress("UNUSED_PARAMETER") handlerBE: ProcessingHandlerBlockEntity,
         itemId: String,
         count: Long,
         channel: ChannelFilter,
     ): Boolean {
         val id = Identifier.tryParse(itemId) ?: return false
         val item = BuiltInRegistries.ITEM.getValue(id) ?: return false
+        val hasData = false  // declared input slots never carry components
 
-        // Capacity probe. Sum simulated insert capacity across qualifying
-        // cards in priority order. Same shape as
-        // [NetworkStorageHelper.tryInsertItemsAcrossNetwork]'s probe.
-        val cards = NetworkStorageHelper.getStorageCards(snapshot).filter { channel.matches(it.channel) }
+        // Filter cards: channel match AND per-card filter accepts this item.
+        // Storage cards are already sorted by priority descending in the
+        // snapshot, so walking in order naturally targets filtered + high
+        // priority cards first.
+        val cards = NetworkStorageHelper.getStorageCards(snapshot).filter { card ->
+            if (!channel.matches(card.channel)) return@filter false
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+                ?: return@filter true
+            cap.acceptsItem(itemId, hasData)
+        }
         if (cards.isEmpty()) return false
+
+        // Capacity probe in priority order. Sum simulateInsertItem across
+        // qualifying cards until either count is satisfied or we exhaust
+        // the list.
         var capacity = 0L
         for (card in cards) {
             if (capacity >= count) break
@@ -184,47 +199,23 @@ object BlockProcessingHandler {
             return false
         }
 
-        // Commit across cards. If real inserts disagree with the sim (which
-        // shouldn't happen single-threaded but we guard for modded handlers),
-        // unwind by returning the unused remainder to the buffer.
+        // Commit in priority order. Each card takes whatever its remaining
+        // free space allows (per-card sim then real insert), and we move on
+        // to the next card with whatever's left. tryInsertAll is per-card
+        // atomic so a card with partial space rejects the full amount; we
+        // fall back to sim-then-insert for spread routing.
         var remaining = extracted
         for (card in cards) {
             if (remaining <= 0L) break
             val dest = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val placed = try {
-                PlatformServices.storage.tryInsertAll(dest, item, remaining)
+            val sim = try {
+                PlatformServices.storage.simulateInsertItem(dest, item, remaining)
+            } catch (_: Exception) { 0L }
+            if (sim <= 0L) continue
+            val ok = try {
+                PlatformServices.storage.tryInsertAll(dest, item, sim)
             } catch (_: Exception) { false }
-            if (placed) {
-                remaining = 0L
-                break
-            }
-            // tryInsertAll is all-or-nothing for a single dest; if it fails
-            // here, fall through to try the next card with the full remaining.
-        }
-        if (remaining > 0L) {
-            // No single card accepted the leftover. The probe summed capacity
-            // ACROSS cards but tryInsertAll is per-card atomic, so a recipe
-            // whose count exceeds any single card's free space will land
-            // here. This is an unusual case; degrade to per-card best-effort
-            // commit instead of failing.
-            for (card in cards) {
-                if (remaining <= 0L) break
-                val dest = NetworkStorageHelper.getStorage(level, card) ?: continue
-                val before = remaining
-                val sim = try {
-                    PlatformServices.storage.simulateInsertItem(dest, item, remaining)
-                } catch (_: Exception) { 0L }
-                if (sim <= 0L) continue
-                val ok = try {
-                    PlatformServices.storage.tryInsertAll(dest, item, sim)
-                } catch (_: Exception) { false }
-                if (ok) remaining -= sim
-                if (remaining == before) {
-                    // No progress on this card despite a positive sim - bail
-                    // to avoid an infinite loop on a misbehaving handle.
-                    break
-                }
-            }
+            if (ok) remaining -= sim
         }
         if (remaining > 0L) {
             // Couldn't place everything despite the sim claiming we could.

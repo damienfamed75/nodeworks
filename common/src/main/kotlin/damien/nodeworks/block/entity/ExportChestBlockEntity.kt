@@ -206,8 +206,11 @@ class ExportChestBlockEntity(
      *  [CardHandle.matchesFilter]) so the script-side autocomplete and the
      *  Export Chest's UI both speak the same dialect. */
     private fun pullFromNetwork(level: ServerLevel) {
+        // Match Import Chest: use this BE's own networkId rather than
+        // `snapshot.controller != null` so micro-networks (Processing
+        // Handler-anchored) participate too.
+        if (networkId == null) return
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
-        if (snapshot.controller == null) return
 
         var totalSpace = 0L
         for (i in 0 until SLOT_COUNT) {
