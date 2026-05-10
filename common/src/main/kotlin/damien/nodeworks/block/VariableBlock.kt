@@ -21,15 +21,25 @@ import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.shapes.CollisionContext
+import net.minecraft.world.phys.shapes.VoxelShape
 
 class VariableBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     companion object {
         val CODEC: MapCodec<VariableBlock> = simpleCodec(::VariableBlock)
+
+        /** Hitbox matches the block's model: 14 px on X and Z (inset 1 px on
+         *  each side), full 16 px on Y. Variable has no FACING so a single
+         *  axis-agnostic shape is enough. */
+        private val SHAPE: VoxelShape = Block.box(1.0, 0.0, 1.0, 15.0, 16.0, 15.0)
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
+
+    override fun getShape(state: BlockState, level: BlockGetter, pos: BlockPos, context: CollisionContext): VoxelShape =
+        SHAPE
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity {
         return VariableBlockEntity(pos, state)

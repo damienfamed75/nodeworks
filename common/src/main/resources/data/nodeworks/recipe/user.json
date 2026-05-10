@@ -1,15 +1,14 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "GPG",
-    "SQS",
-    "DBD"
+    "SES",
+    " V ",
+    "DQD"
   ],
   "key": {
-    "G": "minecraft:gold_ingot",
-    "P": "minecraft:sticky_piston",
+    "E": "minecraft:emerald_block",
     "S": "nodeworks:milky_soul_ball",
-    "B": "minecraft:gold_block",
+    "V": "nodeworks:pipe",
     "Q": "nodeworks:device_frame",
     "D": "minecraft:deepslate"
   },

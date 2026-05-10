@@ -110,6 +110,13 @@ object ModBlocks {
             // Slime-block place/break/step sounds + slime-block bounce behavior wired in
             // VariableBlock's fallOn / updateEntityMovementAfterFallOn / stepOn overrides.
             .sound(net.minecraft.world.level.block.SoundType.SLIME_BLOCK)
+            // The slime_cube element on variable.json is ~60% opaque, which lands the
+            // model in `render_type: translucent`. Without [noOcclusion], the chunk
+            // mesher would treat the block as a full opaque cube and cull faces on
+            // adjacent blocks (you'd see holes through the translucent shell) AND
+            // would skip rendering the Variable's own back faces. Mirrors vanilla
+            // slime_block which is also non-occluding.
+            .noOcclusion()
     )
 
     val CRAFTING_CORE: Block = register(

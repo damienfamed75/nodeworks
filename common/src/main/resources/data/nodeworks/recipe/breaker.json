@@ -1,12 +1,11 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "SPS",
-    "HOA",
+    "HPA",
+    " O ",
     "DND"
   ],
   "key": {
-    "S": "minecraft:sticky_piston",
     "P": "minecraft:diamond_pickaxe",
     "H": "minecraft:diamond_shovel",
     "O": "nodeworks:observer_card",

@@ -1,13 +1,12 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "ICI",
+    "IDI",
     "DBD",
     "INI"
   ],
   "key": {
-    "I": "minecraft:iron_ingot",
-    "C": "nodeworks:celestine_shard",
+    "I": "minecraft:copper_ingot",
     "D": "minecraft:deepslate",
     "B": "nodeworks:blank_card",
     "N": "nodeworks:node"

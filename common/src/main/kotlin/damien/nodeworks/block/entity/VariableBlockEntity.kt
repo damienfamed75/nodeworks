@@ -25,6 +25,13 @@ class VariableBlockEntity(
     state: BlockState
 ) : BlockEntity(ModBlockEntities.VARIABLE, pos, state), Connectable {
 
+    companion object {
+        /** Pre-allocated 5-direction set for [activeFaces]: every face except
+         *  [Direction.UP]. Built once so the BFS hot path doesn't allocate. */
+        private val ACTIVE_FACES_NO_TOP: Set<net.minecraft.core.Direction> =
+            java.util.EnumSet.complementOf(java.util.EnumSet.of(net.minecraft.core.Direction.UP))
+    }
+
     private val connections = LinkedHashSet<BlockPos>()
     override var blockDestroyed: Boolean = false
     override var networkId: UUID? = null
@@ -165,6 +172,13 @@ class VariableBlockEntity(
     }
 
     override fun hasConnection(pos: BlockPos): Boolean = connections.contains(pos)
+
+    /** Variable participates in adjacency BFS on every face EXCEPT the top.
+     *  The top is left inert so the block reads as a "set this on a counter"
+     *  control surface - cables come in from the sides or underneath, the
+     *  top face is the player-facing label / decoration. Computed once
+     *  lazily and cached because the set never changes for this BE. */
+    override fun activeFaces(): Set<net.minecraft.core.Direction> = ACTIVE_FACES_NO_TOP
 
     // --- Lifecycle ---
 

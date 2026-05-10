@@ -1,14 +1,13 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "PEP",
-    "IOI",
+    "EOE",
+    " V ",
     "DND"
   ],
   "key": {
-    "P": "minecraft:piston",
+    "V": "nodeworks:pipe",
     "E": "minecraft:dispenser",
-    "I": "minecraft:diamond",
     "O": "nodeworks:observer_card",
     "D": "minecraft:deepslate",
     "N": "nodeworks:device_frame"

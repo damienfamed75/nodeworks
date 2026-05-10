@@ -1,0 +1,7 @@
+{
+  "comment": "Emissive overlay for the Variable block's body. Inherits all geometry from `nodeworks:block/variable` and only overrides the `#particle` texture binding to point at variable_emissive.png. Mirrors the user_emissive / placer_emissive / breaker_emissive pattern: any face the artist paints in variable_emissive.png lights up at the network colour with the SAME per-face UV layout variable.json uses. The body model is translucent, the emissive overlay routes through the additive-glow pipeline so it sits on top regardless.",
+  "parent": "nodeworks:block/variable",
+  "textures": {
+    "particle": "nodeworks:block/variable_emissive"
+  }
+}
