@@ -7,6 +7,7 @@ import damien.nodeworks.block.UserBlock
 import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.client.UserArmModel
 import damien.nodeworks.client.UserEmissiveModel
+import damien.nodeworks.network.NetworkSettingsRegistry
 import net.minecraft.client.renderer.Sheets
 import net.minecraft.client.renderer.SubmitNodeCollector
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart
@@ -58,6 +59,12 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
          *  no-network grey so disconnected Users render dark instead of
          *  picking up a stale tint. */
         var networkColor: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+
+        /** Network laser mode (FANCY vs FAST) and connectivity flag, mirroring
+         *  the fields PipeRenderer / NodeRenderer cache for [PipeLaserBeam]. */
+        var laserMode: Int = NetworkSettingsRegistry.LASER_MODE_FANCY
+        var hasNetwork: Boolean = false
+        var isMicro: Boolean = false
     }
 
     override fun createRenderState(): RenderState = RenderState()
@@ -71,6 +78,11 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
     ) {
         state.facing = blockEntity.blockState.getValue(UserBlock.FACING)
         state.networkColor = resolveNetworkColor(blockEntity)
+        val id = blockEntity.networkId
+        val settings = NetworkSettingsRegistry.get(id)
+        state.laserMode = settings.laserMode
+        state.hasNetwork = id != null
+        state.isMicro = MicroNetworkClientRegistry.isMicro(id)
 
         // Arm + held item temporarily disabled for an animation-less model
         // test. Re-enable by uncommenting both this block and the matching
@@ -92,6 +104,27 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
+        // Tiny network-coloured laser stub inside the body. Runs from block
+        // centre toward the FRONT face for [INNER_LASER_HALF_LENGTH] block
+        // units, so the visible span sits at pixels 3..8 along the
+        // front-back axis - inside the model's throat region where the
+        // cauldron-style opening lets the player see it. The back half is a
+        // solid 12×12 body element and would hide the beam if we drew it
+        // toward the actual network-connection face.
+        if (state.hasNetwork) {
+            PipeLaserBeam.submitStub(
+                poseStack,
+                submitNodeCollector,
+                state.pos,
+                camera.pos,
+                dir = state.facing,
+                color = state.networkColor,
+                laserMode = state.laserMode,
+                halfLength = INNER_LASER_HALF_LENGTH,
+                isMicro = state.isMicro,
+            )
+        }
+
         // Network-coloured emissive overlay on the body. user_emissive.json
         // inherits user.json's elements + per-face UVs (only the texture
         // ref differs), so iterating its baked quads through the additive-
@@ -289,6 +322,12 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
          *  chunk-rendered body. 1.001 = 1 px offset on a full-block face,
          *  invisible to the eye but enough for the depth test. */
         private const val EMISSIVE_OUTSET = 1.001f
+
+        /** Length of the interior network-laser stub in block units. 5 px
+         *  (= 5/16) runs the beam from block centre (pixel 8) to pixel 3
+         *  along the back-facing axis, sitting just shy of the back face
+         *  where the actual pipe connection lands. */
+        private const val INNER_LASER_HALF_LENGTH = 5f / 16f
 
         /** Local-Z offset of the arm's origin when fully retracted. The arm
          *  model is authored from Z=-1 to Z=9 px so a small negative offset

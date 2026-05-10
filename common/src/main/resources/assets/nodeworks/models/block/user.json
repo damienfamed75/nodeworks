@@ -22,16 +22,25 @@
 			}
 		},
 		{
-			"from": [4, 4, 3],
-			"to": [12, 12, 8],
+			"from": [5, 5, 3],
+			"to": [11, 11, 8],
 			"rotation": {"angle": 0, "axis": "y", "origin": [2, 0, 3]},
 			"faces": {
-				"north": {"uv": [4, 8.5, 6, 10.5], "texture": "#0"},
-				"east": {"uv": [4, 7.25, 6, 8.5], "rotation": 90, "texture": "#0"},
-				"south": {"uv": [4, 8.5, 6, 10.5], "texture": "#0"},
-				"west": {"uv": [4, 7.25, 6, 8.5], "rotation": 90, "texture": "#0"},
-				"up": {"uv": [4, 7.25, 6, 8.5], "texture": "#0"},
-				"down": {"uv": [4, 7.25, 6, 8.5], "texture": "#0"}
+				"east": {"uv": [4.25, 7.25, 5.75, 8.5], "rotation": 90, "texture": "#0"},
+				"west": {"uv": [4.25, 7.25, 5.75, 8.5], "rotation": 90, "texture": "#0"},
+				"up": {"uv": [4.25, 7.25, 5.75, 8.5], "texture": "#0"},
+				"down": {"uv": [4.25, 7.25, 5.75, 8.5], "texture": "#0"}
+			}
+		},
+		{
+			"from": [5, 11, 3],
+			"to": [11, 5, 8],
+			"rotation": {"angle": 0, "axis": "y", "origin": [2, 6, 3]},
+			"faces": {
+				"east": {"uv": [4.25, 7.25, 5.75, 8.5], "rotation": 90, "texture": "#0"},
+				"west": {"uv": [4.25, 7.25, 5.75, 8.5], "rotation": 90, "texture": "#0"},
+				"up": {"uv": [4.25, 7.25, 5.75, 8.5], "texture": "#0"},
+				"down": {"uv": [4.25, 7.25, 5.75, 8.5], "texture": "#0"}
 			}
 		},
 		{
@@ -103,12 +112,13 @@
 		0,
 		1,
 		2,
+		3,
 		{
 			"name": "frame",
 			"origin": [0, 14, 0],
 			"scope": 0,
 			"color": 0,
-			"children": [3, 4, 5, 6]
+			"children": [4, 5, 6, 7]
 		}
 	],
 	"comment": "Temporary sideways-cauldron approximation. Hollow shell with the opening on the north (-Z) face of the unrotated model so the BER's arm extends out of it. Replace this JSON in Blockbench when authoring the final art. Uses vanilla cauldron textures as placeholders."

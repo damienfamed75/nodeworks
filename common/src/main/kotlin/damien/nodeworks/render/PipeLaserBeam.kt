@@ -214,6 +214,95 @@ object PipeLaserBeam {
         }
     }
 
+    /**
+     * Single-direction laser stub from block centre toward [dir] for
+     * [halfLength] block units, instead of the regular half-beam's full 0.5
+     * to the face boundary. Used by directional devices like the User to
+     * surface network connectivity inside the block body without painting a
+     * full pipe-half beam to the face. The cross-section width and the
+     * fancy / fast / hazard-on-micro treatments match [submit] exactly so
+     * the stub reads as a slice of the same beam family.
+     */
+    fun submitStub(
+        poseStack: PoseStack,
+        collector: SubmitNodeCollector,
+        blockPos: BlockPos,
+        cameraPos: Vec3,
+        dir: Direction,
+        color: Int,
+        laserMode: Int,
+        halfLength: Float,
+        isMicro: Boolean = false,
+    ) {
+        if (halfLength <= 0f) return
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        val time = (System.currentTimeMillis() % 100_000) / 1000f
+        val phase = sin(time * GLOW_PULSE_FREQ).toFloat()
+        val glowAlpha = (phase * GLOW_ALPHA_AMP + GLOW_ALPHA_MID).toInt().coerceIn(0, 255)
+        val sizePulse = phase * GLOW_SIZE_AMP + GLOW_SIZE_MID
+
+        val camLocalX = (cameraPos.x - blockPos.x).toFloat()
+        val camLocalY = (cameraPos.y - blockPos.y).toFloat()
+        val camLocalZ = (cameraPos.z - blockPos.z).toFloat()
+
+        val sx = 0.5f
+        val sy = 0.5f
+        val sz = 0.5f
+        val ex = 0.5f + dir.stepX * halfLength
+        val ey = 0.5f + dir.stepY * halfLength
+        val ez = 0.5f + dir.stepZ * halfLength
+
+        val opaqueType = if (isMicro) MICRO_OPAQUE_TYPE else OPAQUE_TYPE
+        val glowR = if (isMicro) MICRO_GLOW_R else r
+        val glowG = if (isMicro) MICRO_GLOW_G else g
+        val glowB = if (isMicro) MICRO_GLOW_B else b
+
+        if (laserMode == NetworkSettingsRegistry.LASER_MODE_FANCY) {
+            collector.submitCustomGeometry(poseStack, opaqueType) { pose, vc ->
+                renderPrismBeam(
+                    vc, pose, dir, blockPos,
+                    sx, sy, sz, ex, ey, ez,
+                    time,
+                    255, 255, 255, 255,
+                    BEAM_WIDTH * PRISM_WIDTH_FACTOR,
+                    rotateUv = isMicro,
+                )
+            }
+            collector.submitCustomGeometry(poseStack, TRANSLUCENT_TYPE) { pose, vc ->
+                renderBillboardBeam(
+                    vc, pose,
+                    camLocalX, camLocalY, camLocalZ,
+                    sx, sy, sz, ex, ey, ez,
+                    time,
+                    glowR, glowG, glowB, glowAlpha,
+                    BEAM_WIDTH * GLOW_WIDTH_FACTOR * sizePulse,
+                    dir = dir,
+                    blockPos = blockPos,
+                )
+            }
+        } else {
+            val fastType = if (isMicro) MICRO_TRANSLUCENT_TYPE else TRANSLUCENT_TYPE
+            val fastR = if (isMicro) 255 else r
+            val fastG = if (isMicro) 255 else g
+            val fastB = if (isMicro) 255 else b
+            collector.submitCustomGeometry(poseStack, fastType) { pose, vc ->
+                renderBillboardBeam(
+                    vc, pose,
+                    camLocalX, camLocalY, camLocalZ,
+                    sx, sy, sz, ex, ey, ez,
+                    time,
+                    fastR, fastG, fastB, 220,
+                    BEAM_WIDTH * FAST_WIDTH_FACTOR,
+                    dir = dir,
+                    blockPos = blockPos,
+                    rotateUv = isMicro,
+                )
+            }
+        }
+    }
+
     /** Half-beam endpoints in block-local coords: centre to face boundary. */
     private fun halfBeamEndpoints(dir: Direction): SixFloats = SixFloats(
         0.5f, 0.5f, 0.5f,
