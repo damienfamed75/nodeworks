@@ -172,6 +172,12 @@ object NeoForgeClientSetup {
     private val USER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:user_emissive" }
 
+    /** Emissive overlay model for the Placer. Same parent-model pattern the
+     *  User uses - inherits `nodeworks:block/placer`'s geometry and only
+     *  swaps `#0` to placer_emissive.png. */
+    private val PLACER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:placer_emissive" }
+
     private fun onRegisterStandaloneModels(
         event: net.neoforged.neoforge.client.event.ModelEvent.RegisterStandalone
     ) {
@@ -195,6 +201,17 @@ object NeoForgeClientSetup {
             net.minecraft.client.Minecraft.getInstance()
                 .modelManager
                 .getStandaloneModel(USER_EMISSIVE_MODEL_KEY)
+        }
+
+        val placerEmissiveId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/placer_emissive")
+        event.register(
+            PLACER_EMISSIVE_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(placerEmissiveId),
+        )
+        damien.nodeworks.client.PlacerEmissiveModel.fetcher = {
+            net.minecraft.client.Minecraft.getInstance()
+                .modelManager
+                .getStandaloneModel(PLACER_EMISSIVE_MODEL_KEY)
         }
     }
 

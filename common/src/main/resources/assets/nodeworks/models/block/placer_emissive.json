@@ -1,0 +1,8 @@
+{
+  "comment": "Emissive overlay for the Placer device's main body. Inherits all geometry from `nodeworks:block/placer` and only overrides the `#0` texture binding to point at placer_emissive.png. Mirrors the user_emissive.json pattern: any face the artist paints in placer_emissive.png lights up at the network colour with the SAME per-face UV layout placer.json uses, and adding a new element / face in placer.json (Blockbench) propagates here automatically as long as it references `#0`.",
+  "parent": "nodeworks:block/placer",
+  "textures": {
+    "0": "nodeworks:block/placer_emissive",
+    "particle": "nodeworks:block/placer_emissive"
+  }
+}

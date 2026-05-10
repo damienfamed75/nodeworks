@@ -123,6 +123,13 @@ class PlacerBlockEntity(
     }
     override fun hasConnection(pos: BlockPos): Boolean = connections.contains(pos)
 
+    /** Placer joins the network through its back face only, mirroring the
+     *  User: the front face is reserved for the placement action so pipes
+     *  there would visually conflict, and routing-wise the player gets a
+     *  clear "cable goes behind the device" rule. */
+    override fun activeFaces(): Set<net.minecraft.core.Direction> =
+        setOf(blockState.getValue(PlacerBlock.FACING).opposite)
+
     // --- Lifecycle ---
     override fun setLevel(level: net.minecraft.world.level.Level) {
         super.setLevel(level)
