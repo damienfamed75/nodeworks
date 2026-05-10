@@ -7,6 +7,7 @@ import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.BreakerMenu
 import damien.nodeworks.screen.BreakerOpenData
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.network.chat.Component
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
@@ -14,6 +15,7 @@ import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.context.BlockPlaceContext
+import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
@@ -25,6 +27,8 @@ import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.shapes.CollisionContext
+import net.minecraft.world.phys.shapes.VoxelShape
 
 /**
  * Breaker, destroys the block at its facing position over time, routes drops
@@ -40,10 +44,17 @@ class BreakerBlock(properties: Properties) : BaseEntityBlock(properties) {
     companion object {
         val CODEC: MapCodec<BreakerBlock> = simpleCodec(::BreakerBlock)
         val FACING = BlockStateProperties.FACING
+
+        // Hitbox matches User / Placer: 14×14 cross-section inset 1 px on
+        // both perpendicular axes, full 16 along the FACING axis. One shape
+        // per axis - NORTH/SOUTH share, EAST/WEST share, UP/DOWN share.
+        private val SHAPE_Z: VoxelShape = Block.box(1.0, 1.0, 0.0, 15.0, 15.0, 16.0)
+        private val SHAPE_X: VoxelShape = Block.box(0.0, 1.0, 1.0, 16.0, 15.0, 15.0)
+        private val SHAPE_Y: VoxelShape = Block.box(1.0, 0.0, 1.0, 15.0, 16.0, 15.0)
     }
 
     init {
-        registerDefaultState(stateDefinition.any().setValue(FACING, net.minecraft.core.Direction.NORTH))
+        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH))
     }
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
@@ -52,6 +63,13 @@ class BreakerBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
+
+    override fun getShape(state: BlockState, level: BlockGetter, pos: BlockPos, context: CollisionContext): VoxelShape =
+        when (state.getValue(FACING).axis) {
+            Direction.Axis.X -> SHAPE_X
+            Direction.Axis.Y -> SHAPE_Y
+            else -> SHAPE_Z
+        }
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState? {
         // Face the side opposite where the player is looking from, same shoulder-mount

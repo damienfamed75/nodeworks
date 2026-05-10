@@ -178,6 +178,12 @@ object NeoForgeClientSetup {
     private val PLACER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:placer_emissive" }
 
+    /** Emissive overlay model for the Breaker. Same parent-model pattern -
+     *  inherits `nodeworks:block/breaker`'s geometry and only swaps `#0` to
+     *  breaker_emissive.png. */
+    private val BREAKER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:breaker_emissive" }
+
     private fun onRegisterStandaloneModels(
         event: net.neoforged.neoforge.client.event.ModelEvent.RegisterStandalone
     ) {
@@ -212,6 +218,17 @@ object NeoForgeClientSetup {
             net.minecraft.client.Minecraft.getInstance()
                 .modelManager
                 .getStandaloneModel(PLACER_EMISSIVE_MODEL_KEY)
+        }
+
+        val breakerEmissiveId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/breaker_emissive")
+        event.register(
+            BREAKER_EMISSIVE_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(breakerEmissiveId),
+        )
+        damien.nodeworks.client.BreakerEmissiveModel.fetcher = {
+            net.minecraft.client.Minecraft.getInstance()
+                .modelManager
+                .getStandaloneModel(BREAKER_EMISSIVE_MODEL_KEY)
         }
     }
 

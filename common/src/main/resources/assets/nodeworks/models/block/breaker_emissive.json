@@ -1,0 +1,8 @@
+{
+  "comment": "Emissive overlay for the Breaker device's main body. Inherits all geometry from `nodeworks:block/breaker` and only overrides the `#0` texture binding to point at breaker_emissive.png. Mirrors the user_emissive.json / placer_emissive.json pattern: any face the artist paints in breaker_emissive.png lights up at the network colour with the SAME per-face UV layout breaker.json uses.",
+  "parent": "nodeworks:block/breaker",
+  "textures": {
+    "0": "nodeworks:block/breaker_emissive",
+    "particle": "nodeworks:block/breaker_emissive"
+  }
+}
