@@ -1,15 +1,15 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    " S ",
-    "DBD",
-    "III"
+    "DND",
+    "ICI",
+    "DND"
   ],
   "key": {
-    "S": "nodeworks:instruction_set",
     "D": "minecraft:deepslate",
-    "B": "minecraft:stone_button",
-    "I": "minecraft:iron_ingot"
+    "I": "minecraft:iron_ingot",
+    "N": "nodeworks:node",
+    "C": "nodeworks:celestine_shard"
   },
   "result": {
     "id": "nodeworks:processing_set",

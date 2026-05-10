@@ -227,6 +227,13 @@ class UserBlockEntity(
     }
     override fun hasConnection(pos: BlockPos): Boolean = connections.contains(pos)
 
+    /** User joins the network through its back face only. The front face
+     *  points at whatever block / entity the device is operating on, so
+     *  letting a pipe land there would visually conflict with the use
+     *  animation and (more importantly) lets the player rule out routing
+     *  ambiguity by placing the cable behind the User. */
+    override fun activeFaces(): Set<Direction> = setOf(facing.opposite)
+
     // --- Lifecycle ---
     override fun setLevel(level: net.minecraft.world.level.Level) {
         super.setLevel(level)

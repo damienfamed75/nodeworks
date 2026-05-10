@@ -154,6 +154,26 @@ class BroadcastAntennaBlockEntity(
         return emptyList()
     }
 
+    /** Provider network's controller UUID, looked up via the adjacent source
+     *  block (NetworkController or ProcessingStorage). Mirrors
+     *  [getProviderTerminalPositions]'s "walk out from any adjacent source"
+     *  pattern. Returns null when the antenna is unsourced or the source
+     *  network has no controller. Consumed by
+     *  [damien.nodeworks.script.cpu.BlockHandlerRegistry] lookups so a
+     *  Receiver Antenna's craft tree can resolve a Processing Handler block
+     *  bound on the provider network. */
+    fun getSourceNetworkId(): UUID? {
+        val lvl = level as? ServerLevel ?: return null
+        for (dir in Direction.entries) {
+            val neighbor = worldPosition.relative(dir)
+            if (!lvl.isLoaded(neighbor)) continue
+            val be = lvl.getBlockEntity(neighbor) as? damien.nodeworks.network.Connectable ?: continue
+            val id = be.networkId ?: continue
+            return id
+        }
+        return null
+    }
+
     // --- Container (slot 0 = chip, slot 1 = upgrade) ---
 
     override fun getContainerSize(): Int = items.size

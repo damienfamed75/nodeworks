@@ -191,8 +191,12 @@ open class NodeBlockEntity(
         // Wrench force-block on either side demotes the face out of PIPE so
         // the player gets card slots back on a face they cut off. Mirrors the
         // gate in [NodeBlock.computePipeFlag] so the GUI state agrees with
-        // what the renderer is showing.
+        // what the renderer is showing. The [adjacencyFaceAllowed] check is
+        // what keeps a User's / Processing Handler's inert sides from being
+        // claimed as PIPE faces, so cards remain valid there and the
+        // through-Node laser doesn't pierce a non-connecting neighbour.
         if (neighborConnectable != null
+            && neighborConnectable.adjacencyFaceAllowed(side.opposite, null)
             && !forcedPipeBlocked(side)
             && !neighborConnectable.forcedPipeBlocked(side.opposite)
         ) return FaceRole.PIPE

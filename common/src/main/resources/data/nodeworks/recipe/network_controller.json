@@ -1,15 +1,14 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "DDD",
-    "CGC",
-    "DQD"
+    "DCD",
+    "CSC",
+    "DCD"
   ],
   "key": {
     "D": "minecraft:deepslate",
     "C": "nodeworks:celestine_shard",
-    "G": "minecraft:diamond",
-    "Q": "minecraft:quartz"
+    "S": "nodeworks:milky_soul_ball"
   },
   "result": {
     "id": "nodeworks:network_controller",

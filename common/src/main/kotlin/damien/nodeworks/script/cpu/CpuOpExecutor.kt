@@ -428,13 +428,25 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val handler = handlerEngine?.processingHandlers?.get(apiMatch.api.name)
         if (handlerEngine == null || handler == null) {
             // No Lua handler. Before backing off, see if a Processing Handler
-            // BLOCK is bound to this api on the parent network. The block path
-            // is a fallback - Lua wins on collision because we check it first.
-            val blockHandlerPos = BlockHandlerRegistry.find(snapshot.networkId, apiMatch.api.name)
+            // BLOCK is bound to this api on the recipe's home network. For a
+            // local recipe that's the cpu's network; for a recipe pulled in
+            // through a Receiver Antenna the handler is registered against the
+            // PROVIDER network and lives in the provider's dimension. Mirrors
+            // the Lua handler resolution above (which already passes
+            // remoteDimension to findProcessingEngine).
+            val handlerNetworkId = apiMatch.apiStorage.remoteNetworkId ?: snapshot.networkId
+            val handlerLevel = apiMatch.apiStorage.remoteDimension
+                ?.let { lvl.server.getLevel(it) } ?: lvl
+            val blockHandlerPos = BlockHandlerRegistry.find(handlerNetworkId, apiMatch.api.name)
             val handlerBE = blockHandlerPos?.let {
-                lvl.getBlockEntity(it) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
+                handlerLevel.getBlockEntity(it) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
             }
             if (handlerBE != null && handlerBE.processingApiName == apiMatch.api.name) {
+                // [executeBlockHandler] still receives the cpu's level - it
+                // gets handed straight to [ProcessingJob] which uses it for
+                // cpu-side network re-discovery on stale-job recovery. The
+                // handler's own dimension is recovered inside
+                // [BlockProcessingHandler.invoke] via [handlerBE.level].
                 return executeBlockHandler(op, lvl, apiMatch, handlerBE, outputItemId)
             }
             return scheduleHandlerWaitRetry(op, "no handler for '${apiMatch.api.name}'")

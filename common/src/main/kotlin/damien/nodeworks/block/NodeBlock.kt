@@ -87,15 +87,17 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         fun propFor(side: Direction): BooleanProperty = PIPE_PROPS[side.ordinal]
 
         /** Whether the Node at [pos] should render a pipe stub on [side]. True
-         *  when the neighbour is a Connectable BE (Pipe, Node, Controller,
-         *  Terminal, antennas, ImportChest, ExportChest), and neither side has
-         *  wrench-blocked the touching face. Same rule as
+         *  when the neighbour is a Connectable BE that accepts a connection
+         *  on the touching face (so a User's inert sides + Processing
+         *  Handler's left/right/top/bottom don't sprout phantom stubs), and
+         *  neither side has wrench-blocked it. Same rule as
          *  [PipeBlock.computePipeFlag], the two block types share the
          *  Connectable-as-source-of-truth contract. */
         fun computePipeFlag(level: BlockGetter, pos: BlockPos, side: Direction): Boolean {
             val neighborPos = pos.relative(side)
             val neighborBe = level.getBlockEntity(neighborPos) as? damien.nodeworks.network.Connectable
                 ?: return false
+            if (!neighborBe.adjacencyFaceAllowed(side.opposite, null)) return false
             val selfBe = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable
             if (selfBe?.forcedPipeBlocked(side) == true) return false
             if (neighborBe.forcedPipeBlocked(side.opposite)) return false

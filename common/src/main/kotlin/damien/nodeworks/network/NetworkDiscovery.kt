@@ -133,7 +133,8 @@ object NetworkDiscovery {
                                             broadcast.blockPos,
                                             remoteApis,
                                             remoteTerminals,
-                                            broadcastLevel.dimension()
+                                            broadcastLevel.dimension(),
+                                            broadcast.getSourceNetworkId(),
                                         )
                                     )
                                 }
@@ -388,7 +389,14 @@ data class ProcessingApiSnapshot(
      *  engine at a remoteTerminalPosition MUST pass this dimension to `findProcessingEngine`
      *, otherwise the engine lookup uses the caller's dimension and returns null, and the
      *  craft tree marks the recipe as `process_no_handler`. */
-    val remoteDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>? = null
+    val remoteDimension: net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>? = null,
+    /** UUID of the remote provider network's controller. Mirrors [remoteDimension]'s role
+     *  but for [damien.nodeworks.script.cpu.BlockHandlerRegistry] lookups: a Processing
+     *  Handler bound on the provider network registers under the provider network's id,
+     *  so the consumer must look it up there rather than under its own id. Null when the
+     *  API is local OR when the provider network has no controller (registry has no entry
+     *  to find anyway). */
+    val remoteNetworkId: UUID? = null,
 )
 
 data class NetworkSnapshot(

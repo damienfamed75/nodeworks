@@ -24,10 +24,13 @@ import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.entity.BlockEntityTicker
 import net.minecraft.world.level.block.entity.BlockEntityType
+import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.shapes.CollisionContext
+import net.minecraft.world.phys.shapes.VoxelShape
 
 /**
  * User device, "right-clicks" with an item from network storage on whatever's
@@ -41,6 +44,13 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties) {
     companion object {
         val CODEC: MapCodec<UserBlock> = simpleCodec(::UserBlock)
         val FACING = BlockStateProperties.FACING
+
+        // Hitbox matches the block model: 14×14 cross-section inset 1 px on
+        // both perpendicular axes, full 16 along the FACING axis. One shape
+        // per axis - NORTH/SOUTH share, EAST/WEST share, UP/DOWN share.
+        private val SHAPE_Z: VoxelShape = Block.box(1.0, 1.0, 0.0, 15.0, 15.0, 16.0)
+        private val SHAPE_X: VoxelShape = Block.box(0.0, 1.0, 1.0, 16.0, 15.0, 15.0)
+        private val SHAPE_Y: VoxelShape = Block.box(1.0, 0.0, 1.0, 15.0, 16.0, 15.0)
     }
 
     init {
@@ -53,6 +63,13 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
+
+    override fun getShape(state: BlockState, level: BlockGetter, pos: BlockPos, context: CollisionContext): VoxelShape =
+        when (state.getValue(FACING).axis) {
+            Direction.Axis.X -> SHAPE_X
+            Direction.Axis.Y -> SHAPE_Y
+            else -> SHAPE_Z
+        }
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState? =
         defaultBlockState().setValue(FACING, context.nearestLookingDirection.opposite)

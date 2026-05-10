@@ -84,11 +84,21 @@ object BlockProcessingHandler {
         bulkOutputOverride: List<Pair<String, Int>>?,
         opId: Int,
     ): InvokeResult {
+        // The cpu and the handler may live on different networks (and even
+        // different dimensions when reached through a Broadcast / Receiver
+        // antenna pair). [level] is the cpu's level, used for [ProcessingJob]'s
+        // stale-recovery network discovery; everything that walks the
+        // handler's micro-network and its storage cards has to use the
+        // HANDLER's level instead.
+        val handlerLevel = handlerBE.level as? ServerLevel ?: return InvokeResult.Failed(
+            "handler block at ${handlerBE.blockPos} has no server level"
+        )
+
         // Discover the FRONT (micro) network from the handler's front-face
         // neighbor. Phase 1's per-side BFS routes the walk into the micro
         // side because the handler's own [adjacencyFaceAllowed] gates entry.
         val frontPos = handlerBE.blockPos.relative(handlerBE.frontFace)
-        val microSnapshot = NetworkDiscovery.discoverNetwork(level, frontPos)
+        val microSnapshot = NetworkDiscovery.discoverNetwork(handlerLevel, frontPos)
 
         // Output cards FIRST so a recipe with no destination fails fast,
         // before we move any items.
@@ -108,14 +118,14 @@ object BlockProcessingHandler {
         for ((itemId, batchCount) in perBatchInputs) {
             if (batchCount <= 0L) continue
             val color = handlerBE.getInputChannel(itemId)
-            val moveOk = routeInputAtomic(level, microSnapshot, cpu, handlerBE, itemId, batchCount, ChannelFilter.Color(color))
+            val moveOk = routeInputAtomic(handlerLevel, microSnapshot, cpu, handlerBE, itemId, batchCount, ChannelFilter.Color(color))
             if (moveOk) {
                 rolledBack += itemId to batchCount
                 continue
             }
             // Couldn't route this input. Unwind anything already moved so the
             // buffer is bit-equal to its pre-invocation state, then retry.
-            unwindRoutedInputs(level, microSnapshot, cpu, handlerBE, rolledBack)
+            unwindRoutedInputs(handlerLevel, microSnapshot, cpu, handlerBE, rolledBack)
             return InvokeResult.Retry(
                 "input ${itemId} (channel ${color.name.lowercase()}) couldn't route to a free destination"
             )
@@ -130,7 +140,7 @@ object BlockProcessingHandler {
         val scheduler = ResumeScheduler.scheduler
         val job = ProcessingJob(api, cpu, level, scheduler, pending, bulkOutputOverride, opId)
         val getters = outputCards.map { card ->
-            CardHandle.StorageGetter { NetworkStorageHelper.getStorage(level, card) }
+            CardHandle.StorageGetter { NetworkStorageHelper.getStorage(handlerLevel, card) }
         }
         job.startPoll(getters)
 

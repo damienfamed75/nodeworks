@@ -48,15 +48,25 @@ interface Connectable {
     fun connectionsFromFace(@Suppress("UNUSED_PARAMETER") entryFace: Direction?): Collection<BlockPos> =
         getConnections()
 
+    /** Faces this Connectable lets pipes / cards / adjacency BFS touch.
+     *  Default is every face. Override when a device should only connect on
+     *  specific faces (User: only its back, machines with one designated
+     *  inlet, etc.) - the default [adjacencyFaceAllowed] consults this set,
+     *  so a `setOf(...)` override is usually enough and the BE doesn't need
+     *  to touch the entry-face logic. Devices with split per-face networks
+     *  (Processing Handler) bypass this and override [adjacencyFaceAllowed]
+     *  directly. */
+    fun activeFaces(): Set<Direction> = ALL_FACES
+
     /** Whether [side] participates in face-adjacency BFS when entered through
-     *  [entryFace]. Default ignores [entryFace] and falls through to
-     *  [usesAdjacency], which means every face joins the same network.
-     *  Processing Handler overrides this so its back face only walks
-     *  back-side neighbors and its front face only walks front-side. */
+     *  [entryFace]. Default ignores [entryFace] and gates on [usesAdjacency]
+     *  + [activeFaces], so every face in the active set joins the same
+     *  network. Processing Handler overrides this so its back face only
+     *  walks back-side neighbors and its front face only walks front-side. */
     fun adjacencyFaceAllowed(
-        @Suppress("UNUSED_PARAMETER") side: Direction,
+        side: Direction,
         @Suppress("UNUSED_PARAMETER") entryFace: Direction?,
-    ): Boolean = usesAdjacency()
+    ): Boolean = usesAdjacency() && side in activeFaces()
 
     /** Anchor for a "micro-network" that lives on one side of a boundary
      *  Connectable. Processing Handler is the canonical example: the front
@@ -102,5 +112,12 @@ interface Connectable {
             return damien.nodeworks.render.MicroNetworkClientRegistry.MICRO_NETWORK_COLOR
         }
         return NetworkSettingsRegistry.getColor(id)
+    }
+
+    companion object {
+        /** Shared "all six directions" set used as the default for
+         *  [activeFaces]. Pre-allocated as an EnumSet so adjacency-BFS hot
+         *  paths can `side in ALL_FACES`-check without allocating each call. */
+        @JvmField val ALL_FACES: Set<Direction> = java.util.EnumSet.allOf(Direction::class.java)
     }
 }
