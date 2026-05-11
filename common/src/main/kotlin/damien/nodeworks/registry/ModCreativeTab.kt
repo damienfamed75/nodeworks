@@ -25,6 +25,19 @@ object ModCreativeTab {
                 output.accept(ModBlocks.NODE)
                 output.accept(ModBlocks.FOCUS_NODE)
                 output.accept(ModBlocks.PIPE)
+                // Covered Pipe ships in the tab with a default Stone camo
+                // attached so the swatch has a recognisable visual and so
+                // /give-bypass placements end up rendering something sensible.
+                // Players who craft the recipe get a Covered Pipe stamped
+                // with whatever block they combined with.
+                output.accept(
+                    net.minecraft.world.item.ItemStack(ModBlocks.COVERED_PIPE.asItem()).also { stack ->
+                        stack.set(
+                            damien.nodeworks.registry.ModDataComponents.CAMO_BLOCK_STATE,
+                            net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(),
+                        )
+                    }
+                )
                 output.accept(ModBlocks.NETWORK_CONTROLLER)
                 output.accept(ModBlocks.TERMINAL)
                 output.accept(ModBlocks.INVENTORY_TERMINAL)

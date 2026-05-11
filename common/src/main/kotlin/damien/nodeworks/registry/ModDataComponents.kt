@@ -4,7 +4,9 @@ import damien.nodeworks.item.InstalledCrystal
 import net.minecraft.core.Registry
 import net.minecraft.core.component.DataComponentType
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.network.codec.ByteBufCodecs
 import net.minecraft.resources.Identifier
+import net.minecraft.world.level.block.state.BlockState
 
 /**
  * Registry object for Nodeworks' custom [DataComponentType]s.
@@ -42,6 +44,19 @@ object ModDataComponents {
         private set
 
     /**
+     * Camouflage [BlockState] carried by a `Covered Vacuum Pipe` item /
+     * block-entity. Drives the in-world renderer (which delegates to the
+     * camo block's baked model) and lets distinct-camo stacks merge
+     * per-camo so a stack of "Covered Pipe (Stone)" stays separate from
+     * "Covered Pipe (Cobblestone)".
+     *
+     * Uses [BlockState.CODEC] for persistence and the registry-aware
+     * stream codec for client sync.
+     */
+    lateinit var CAMO_BLOCK_STATE: DataComponentType<BlockState>
+        private set
+
+    /**
      * Register all component types. Call from the block-registry RegisterEvent after
      * blocks are registered and before items, so any item that wants a component as a
      * default value has the component available.
@@ -57,6 +72,14 @@ object ModDataComponents {
             DataComponentType.builder<InstalledCrystal>()
                 .persistent(InstalledCrystal.CODEC)
                 .networkSynchronized(InstalledCrystal.STREAM_CODEC)
+                .build(),
+        )
+
+        CAMO_BLOCK_STATE = register(
+            "camo_block_state",
+            DataComponentType.builder<BlockState>()
+                .persistent(BlockState.CODEC)
+                .networkSynchronized(ByteBufCodecs.fromCodec(BlockState.CODEC))
                 .build(),
         )
     }

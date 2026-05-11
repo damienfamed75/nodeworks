@@ -66,6 +66,19 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
     )
 
+    val COVERED_PIPE: Block = register(
+        "covered_pipe",
+        { damien.nodeworks.block.CoveredPipeBlock(it) },
+        BlockBehaviour.Properties.of()
+            .strength(1.5f, 4.0f)
+            .requiresCorrectToolForDrops(),
+        // CoveredPipeBlockItem reads the CAMO_BLOCK_STATE data component on
+        // placement and adds a "Disguised as ..." tooltip; distinct-camo
+        // stacks stay separate so the player can keep multiple variants in
+        // hand without merging.
+        itemFactory = { block, props -> damien.nodeworks.item.CoveredPipeBlockItem(block, props) },
+    )
+
     val TERMINAL: Block = register(
         "terminal",
         ::TerminalBlock,

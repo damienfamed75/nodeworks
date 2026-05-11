@@ -1,0 +1,8 @@
+{
+  "comment": "Baseline model for the Covered Vacuum Pipe. The chunk-mesh path swaps this out at bake time (NeoForgeClientSetup.onModifyBakingResult) for CoveredPipeBakedModel, which delegates to the wrapped camo block's quads and appends the indicator overlay below. This file still ships - it controls the breaking-particle texture, the inventory icon's fallback, and any code that bypasses the dynamic-model swap.",
+  "parent": "minecraft:block/cube_all",
+  "render_type": "cutout",
+  "textures": {
+    "all": "nodeworks:block/covered_pipe_indicator"
+  }
+}

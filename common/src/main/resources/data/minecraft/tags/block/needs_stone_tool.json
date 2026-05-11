@@ -4,6 +4,7 @@
     "nodeworks:node",
     "nodeworks:focus_node",
     "nodeworks:pipe",
+    "nodeworks:covered_pipe",
     "nodeworks:terminal",
     "nodeworks:monitor",
     "nodeworks:inventory_terminal",

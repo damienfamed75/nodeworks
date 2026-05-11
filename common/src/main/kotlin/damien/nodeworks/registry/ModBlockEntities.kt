@@ -10,6 +10,7 @@ import damien.nodeworks.block.entity.PipeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.block.entity.BroadcastAntennaBlockEntity
+import damien.nodeworks.block.entity.CoveredPipeBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
 import damien.nodeworks.block.entity.CoProcessorBlockEntity
@@ -47,6 +48,11 @@ object ModBlockEntities {
     val PIPE: BlockEntityType<PipeBlockEntity> = register(
         "pipe",
         PlatformServices.blockEntity.createBlockEntityType(::PipeBlockEntity, ModBlocks.PIPE)
+    )
+
+    val COVERED_PIPE: BlockEntityType<CoveredPipeBlockEntity> = register(
+        "covered_pipe",
+        PlatformServices.blockEntity.createBlockEntityType(::CoveredPipeBlockEntity, ModBlocks.COVERED_PIPE)
     )
 
     val TERMINAL: BlockEntityType<TerminalBlockEntity> = register(

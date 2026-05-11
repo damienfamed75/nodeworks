@@ -1,0 +1,8 @@
+{
+  "comment": "Pipe-connectable indicator overlay for the Covered Vacuum Pipe. Loaded as a standalone model and appended to the dynamic baked model's collectParts output (NeoForgeClientSetup.onModifyBakingResult / CoveredPipeBakedModel). Cube_all gives us 6 faces with the indicator texture; cutout render_type means transparent indicator pixels punch through to the camo quads underneath so the wrapped block stays visible.",
+  "parent": "minecraft:block/cube_all",
+  "render_type": "cutout",
+  "textures": {
+    "all": "nodeworks:block/covered_pipe_indicator"
+  }
+}

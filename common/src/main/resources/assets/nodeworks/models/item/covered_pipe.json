@@ -1,0 +1,7 @@
+{
+  "comment": "Item model for the Covered Vacuum Pipe. Uses a plain full-cube shape with the indicator texture on every face so the inventory icon reads as 'a cube with the pipe indicator marking'. Camo-aware in-world rendering happens in CoveredPipeRenderer (BER) - the item display doesn't dynamically swap textures per camo, the tooltip surfaces the wrapped block's name instead.",
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "nodeworks:block/covered_pipe_indicator"
+  }
+}

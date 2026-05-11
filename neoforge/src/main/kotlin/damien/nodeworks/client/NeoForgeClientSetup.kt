@@ -56,6 +56,7 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterItemTintSources)
         modBus.addListener(::onRegisterRenderPipelines)
         modBus.addListener(::onRegisterStandaloneModels)
+        modBus.addListener(::onModifyBakingResult)
 
         // Register the in-game guide synchronously during mod construction, NOT inside
         // FMLClientSetupEvent.enqueueWork. GuideME hooks the item-tooltip "Hold G" hint
@@ -190,6 +191,13 @@ object NeoForgeClientSetup {
     private val VARIABLE_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:variable_emissive" }
 
+    /** Indicator overlay model for the Covered Pipe. Loaded once at bake
+     *  time and held by the dynamic baked model so every Covered Pipe in
+     *  the chunk can stamp the same baked quads on its faces without
+     *  reloading them per-block. */
+    private val COVERED_PIPE_INDICATOR_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:covered_pipe_indicator" }
+
     private fun onRegisterStandaloneModels(
         event: net.neoforged.neoforge.client.event.ModelEvent.RegisterStandalone
     ) {
@@ -246,6 +254,82 @@ object NeoForgeClientSetup {
             net.minecraft.client.Minecraft.getInstance()
                 .modelManager
                 .getStandaloneModel(VARIABLE_EMISSIVE_MODEL_KEY)
+        }
+
+        val coveredPipeIndicatorId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/covered_pipe_indicator")
+        event.register(
+            COVERED_PIPE_INDICATOR_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(coveredPipeIndicatorId),
+        )
+    }
+
+    /**
+     * Wraps the default baked model for every Covered Vacuum Pipe blockstate
+     * with [damien.nodeworks.client.model.CoveredPipeBakedModel], which
+     * delegates to the wrapped camo block's quads at chunk-mesh time + adds
+     * the indicator overlay. Doing the swap here (rather than via a
+     * [net.neoforged.neoforge.client.model.block.CustomUnbakedBlockStateModel] +
+     * JSON loader) keeps the rest of the model pipeline stock - the
+     * baseline `covered_pipe.json` still loads and provides the indicator-
+     * only fallback the dynamic model uses when there's no level/BE
+     * context (item-frame display, break particles).
+     */
+    private fun onModifyBakingResult(
+        event: net.neoforged.neoforge.client.event.ModelEvent.ModifyBakingResult
+    ) {
+        val bakingResult = event.bakingResult
+        val indicatorPart: net.minecraft.client.renderer.block.dispatch.BlockStateModelPart =
+            bakingResult.standaloneModels().get(COVERED_PIPE_INDICATOR_MODEL_KEY)
+                ?: return  // Indicator failed to bake - leave the baseline in place
+
+        // Block-side swap: every Covered Pipe blockstate's baked model is
+        // replaced with a dynamic delegate that reads the wrapped block
+        // from the BE and routes its quads through chunk meshing.
+        val blockModels = bakingResult.blockStateModels()
+        val coveredPipeStates = damien.nodeworks.registry.ModBlocks.COVERED_PIPE.stateDefinition.possibleStates
+        for (state in coveredPipeStates) {
+            val baselineModel = blockModels[state] ?: continue
+            blockModels[state] = damien.nodeworks.client.model.CoveredPipeBakedModel(
+                indicatorPart = indicatorPart,
+                defaultCamo = baselineModel,
+            )
+        }
+
+        // Item-side swap: the baseline `nodeworks:item/covered_pipe` cube_all
+        // gets replaced with a custom ItemModel that emits the camo's quads
+        // at update-time. We pull ModelRenderProperties off the baseline
+        // (display transforms, particle, etc.) via reflection on
+        // CuboidItemModelWrapper's private `properties` field - cleanest
+        // way to inherit the vanilla block-item perspective/gui transforms
+        // without re-deriving the matrices. If the baseline isn't a
+        // CuboidItemModelWrapper (modded transformation, etc.), bail and
+        // leave the static model in place rather than crash.
+        val itemModels = bakingResult.itemStackModels()
+        val itemId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "covered_pipe")
+        val baselineItem = itemModels[itemId] ?: return
+        val baselineProps = extractItemModelProperties(baselineItem) ?: return
+        itemModels[itemId] = damien.nodeworks.client.model.CoveredPipeItemModel(
+            baselineProperties = baselineProps,
+            indicatorPart = indicatorPart,
+        )
+    }
+
+    /** Pull [net.minecraft.client.renderer.item.ModelRenderProperties] off
+     *  a baked [net.minecraft.client.renderer.item.ItemModel] when it's a
+     *  [net.minecraft.client.renderer.item.CuboidItemModelWrapper] (the
+     *  shape vanilla bakes `cube_all`-style models into). Returns null
+     *  for other ItemModel types so the caller can fall back gracefully. */
+    private fun extractItemModelProperties(
+        model: net.minecraft.client.renderer.item.ItemModel,
+    ): net.minecraft.client.renderer.item.ModelRenderProperties? {
+        if (model !is net.minecraft.client.renderer.item.CuboidItemModelWrapper) return null
+        return try {
+            val field = net.minecraft.client.renderer.item.CuboidItemModelWrapper::class.java
+                .getDeclaredField("properties")
+            field.isAccessible = true
+            field.get(model) as? net.minecraft.client.renderer.item.ModelRenderProperties
+        } catch (e: Exception) {
+            null
         }
     }
 
