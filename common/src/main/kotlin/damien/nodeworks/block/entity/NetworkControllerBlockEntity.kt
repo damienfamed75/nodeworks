@@ -227,7 +227,6 @@ class NetworkControllerBlockEntity(
             for (packed in chunks) {
                 ChunkForceLoadManager.claim(lvl, ChunkPos.getX(packed), ChunkPos.getZ(packed))
             }
-            lastChunkRefreshTick = lvl.gameTime
         } else {
             releaseAllClaims(lvl)
         }
@@ -243,26 +242,30 @@ class NetworkControllerBlockEntity(
         claimedChunks.clear()
     }
 
-    /** Game-tick the controller bumped its refresh sweep on; used to space
-     *  walks at [CHUNK_REFRESH_INTERVAL_TICKS] resolution without per-tick
-     *  bookkeeping. Initialised to -interval so the first chunk-load
-     *  enable + first eligible tick get their own walks. */
-    @Transient
-    private var lastChunkRefreshTick: Long = Long.MIN_VALUE
+    /** Per-controller phase offset so refresh ticks don't pile up. If 50
+     *  chunk-loaded controllers come online on the same gameTime (server
+     *  restart, batch placement, etc.), aligning their refreshes would
+     *  produce a tick spike every interval. Hashing the position spreads
+     *  them deterministically across the window with no extra state.
+     *
+     *  Why: a public server with hundreds of controllers + multi-thousand
+     *  block networks could otherwise stack every refresh into the same
+     *  tick. With this offset, controllers refresh on different ticks
+     *  within [CHUNK_REFRESH_INTERVAL_TICKS] so the cost is amortised. */
+    private val refreshPhase: Long =
+        Math.floorMod(worldPosition.hashCode().toLong(), CHUNK_REFRESH_INTERVAL_TICKS)
 
     /** Per-tick entry point wired by [damien.nodeworks.block.NetworkControllerBlock.getTicker].
      *  No-op when chunk loading is off, so the tick cost for the common
-     *  case is one branch + one comparison. When on, walks the topology
-     *  every [CHUNK_REFRESH_INTERVAL_TICKS] ticks and diff-applies the
-     *  change set against [ChunkForceLoadManager] - so extending the
-     *  network (placing more pipes, attaching a new Processing Handler
-     *  with its own micro-network, ...) auto-claims the new chunks
-     *  without the player toggling chunk loading off and on. */
+     *  case is one branch. When on, walks the topology every
+     *  [CHUNK_REFRESH_INTERVAL_TICKS] ticks and diff-applies the change
+     *  set against [ChunkForceLoadManager] - so extending the network
+     *  (placing more pipes, attaching a new Processing Handler with its
+     *  own micro-network, ...) auto-claims the new chunks without the
+     *  player toggling chunk loading off and on. */
     fun serverTick(lvl: ServerLevel) {
         if (!chunkLoadingEnabled) return
-        val now = lvl.gameTime
-        if (now - lastChunkRefreshTick < CHUNK_REFRESH_INTERVAL_TICKS) return
-        lastChunkRefreshTick = now
+        if (Math.floorMod(lvl.gameTime + refreshPhase, CHUNK_REFRESH_INTERVAL_TICKS) != 0L) return
         refreshClaimedChunks(lvl)
     }
 
