@@ -208,18 +208,15 @@ class ProcessingHandlerBlockEntity(
 
     override fun hasConnection(pos: BlockPos): Boolean = pos in connections
 
-    /** Front-side BFS sees only the front-face neighbor; back-side BFS sees
-     *  only the back-face neighbor. The other four sides are walls. Null
-     *  entry-face = BFS started here, return both sides so the starter walk
-     *  can launch into either network (the per-side ID is then set by
-     *  whichever side's resolved anchor wins).
-     *
-     *  Connection-set-stored connections (laser links from the wrench) are
-     *  treated as back-side: laser links are a parent-network feature and
-     *  the micro-network is supposed to be local pipe / node only. */
-    override fun connectionsFromFace(entryFace: Direction?): Collection<BlockPos> {
-        // Connection-set entries are always back-side.
-        return connections
+    /** Laser-link connections (wrench-placed) are a parent-network feature
+     *  - the micro side is local pipes/nodes only. Expose them when the
+     *  BFS arrived through the back face (or started here, where the
+     *  per-side ID resolver routes them to the back-side anchor); a
+     *  front-side BFS gets nothing back so it can't leak into the parent
+     *  via the laser graph. */
+    override fun connectionsFromFace(entryFace: Direction?): Collection<BlockPos> = when (entryFace) {
+        null, backFace -> connections
+        else -> emptyList()
     }
 
     /** Back face joins parent network, front face joins micro. All four side

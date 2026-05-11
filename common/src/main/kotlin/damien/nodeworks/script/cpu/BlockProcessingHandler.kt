@@ -210,11 +210,14 @@ object BlockProcessingHandler {
         }
 
         // Commit in priority order. Each card takes whatever its remaining
-        // free space allows (per-card sim then real insert), and we move on
-        // to the next card with whatever's left. tryInsertAll is per-card
-        // atomic so a card with partial space rejects the full amount; we
-        // fall back to sim-then-insert for spread routing.
+        // free space allows (per-card sim then real insert). We accumulate
+        // committed (card, amount) pairs so we can reverse them if a later
+        // card's tryInsertAll disagrees with its simulate - otherwise items
+        // already inserted into earlier cards would be silently stranded
+        // there when the outer caller treats this slot's `false` return as
+        // "nothing happened" and skips it in [unwindRoutedInputs].
         var remaining = extracted
+        val committed = ArrayList<Pair<CardSnapshot, Long>>(cards.size)
         for (card in cards) {
             if (remaining <= 0L) break
             val dest = NetworkStorageHelper.getStorage(level, card) ?: continue
@@ -225,11 +228,31 @@ object BlockProcessingHandler {
             val ok = try {
                 PlatformServices.storage.tryInsertAll(dest, item, sim)
             } catch (_: Exception) { false }
-            if (ok) remaining -= sim
+            if (ok) {
+                committed += card to sim
+                remaining -= sim
+            }
         }
         if (remaining > 0L) {
-            // Couldn't place everything despite the sim claiming we could.
-            // Return the orphan back to the buffer and report failure.
+            // Sim claimed more capacity than tryInsertAll actually accepted -
+            // shouldn't happen under a well-behaved single-threaded backend
+            // but is the only edge case that could violate the "buffer
+            // bit-equal on failure" contract this function advertises.
+            // Pull back the items we did place and route them home so the
+            // slot's net effect on buffer + cards is zero.
+            for ((card, amount) in committed) {
+                val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                val pulled = try {
+                    PlatformServices.storage.extractItems(storage, { it == itemId }, amount)
+                } catch (_: Exception) { 0L }
+                if (pulled > 0L) cpu.addToBuffer(itemId, pulled)
+                if (pulled < amount) {
+                    logger.warn(
+                        "Block handler partial-commit rollback shortfall for {}: {} of {} items recovered from card",
+                        itemId, pulled, amount,
+                    )
+                }
+            }
             bufSrc.returnUnused(remaining)
             return false
         }

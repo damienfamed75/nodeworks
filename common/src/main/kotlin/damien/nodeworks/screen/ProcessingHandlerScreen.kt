@@ -116,6 +116,7 @@ class ProcessingHandlerScreen(
         private const val PANEL_H = VISIBLE_ROWS * ROW_H + PANEL_INNER_PAD * 2
         private const val SCROLL_BAR_W = 6
         private const val SCROLL_BAR_GAP = 2
+
         /** Section header row (label + channel picker). Headers are commented
          *  out in the new layout, kept as a constant in case header pickers
          *  are reintroduced. */
@@ -130,6 +131,7 @@ class ProcessingHandlerScreen(
         // can be re-enabled without re-deriving offsets.
         private const val INPUTS_PANEL_Y = TOP_BAR_H + 4
         private const val OUTPUTS_PANEL_Y = INPUTS_PANEL_Y + PANEL_H + 4
+
         // Headers temporarily disabled - kept for the (currently commented)
         // addSectionHeaderPickers path.
         private const val INPUTS_HEADER_Y = INPUTS_PANEL_Y - SECTION_HEADER_H
@@ -173,10 +175,12 @@ class ProcessingHandlerScreen(
          *  without losing the empty-grid visual cue. */
         private const val UNBOUND_DIM = 0xC0000000.toInt()
         private const val UNBOUND_DIM_HOVER = 0x80000000.toInt()
+
         /** Subtle white overlay applied to the recipe panel on hover even when
          *  bound, so the panel always reads as interactive (click = open the
          *  picker to change the binding). */
         private const val BOUND_HOVER_OVERLAY = 0x22FFFFFF
+
         /** Translucent gray laid over the read-only output ghost swatches so
          *  they read as not-clickable while sharing the editable swatch's
          *  texture. */
@@ -471,7 +475,7 @@ class ProcessingHandlerScreen(
         val recipe = if (be != null) findBoundSet() else null
         val isBound = be != null && be.processingApiName.isNotEmpty() && recipe != null
         val hovering = mouseX in panelX until panelX + panelW &&
-            mouseY in panelY until panelY + panelH && !pickerOpen
+                mouseY in panelY until panelY + panelH && !pickerOpen
 
         drawRecipeGrid(graphics, panelX, panelY, panelW, panelH, recipe, vertical = true)
 
@@ -796,7 +800,7 @@ class ProcessingHandlerScreen(
         val interiorW = overlayW - SCROLL_BAR_W - SCROLL_BAR_GAP
 
         if (availableSets.isEmpty()) {
-            val text = "No unclaimed Processing Sets."
+            val text = "No Processing Sets."
             graphics.drawString(
                 font,
                 Component.literal(text).withStyle(ChatFormatting.GRAY),
@@ -811,7 +815,7 @@ class ProcessingHandlerScreen(
             val set = availableSets[setIdx]
             val rowY = interiorY + visibleIdx * PICKER_ROW_H
             val hover = mouseX in interiorX..(interiorX + interiorW) &&
-                mouseY in rowY..(rowY + PICKER_ROW_H)
+                    mouseY in rowY..(rowY + PICKER_ROW_H)
             NineSlice.ROW.draw(graphics, interiorX, rowY, interiorW, PICKER_ROW_H)
             graphics.fill(interiorX, rowY, interiorX + interiorW, rowY + PICKER_ROW_H, 0x40000000)
             if (hover) {
