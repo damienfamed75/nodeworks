@@ -19,6 +19,8 @@ import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
+import net.minecraft.world.level.block.entity.BlockEntityTicker
+import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
@@ -52,6 +54,26 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity {
         return NetworkControllerBlockEntity(pos, state)
+    }
+
+    /** Server-side ticker for the periodic chunk-claim refresh. The BE's
+     *  `serverTick` is a no-op when chunk loading is disabled, so the cost
+     *  for the common case is one method call per tick. When enabled it
+     *  re-walks the network topology every
+     *  [NetworkControllerBlockEntity.CHUNK_REFRESH_INTERVAL_TICKS] ticks
+     *  to pick up newly placed pipes / handlers / micro-networks without
+     *  the player having to toggle chunk loading off and on. */
+    override fun <T : BlockEntity> getTicker(
+        level: Level,
+        state: BlockState,
+        blockEntityType: BlockEntityType<T>,
+    ): BlockEntityTicker<T>? {
+        if (level.isClientSide) return null
+        return BlockEntityTicker { lvl, _, _, be ->
+            if (be is NetworkControllerBlockEntity && lvl is net.minecraft.server.level.ServerLevel) {
+                be.serverTick(lvl)
+            }
+        }
     }
 
     /** Randomize the network colour on fresh placement. Uses HSV with V clamped to

@@ -130,6 +130,14 @@ class NetworkControllerBlockEntity(
         const val GLOW_CREEPER = 3
         const val GLOW_SPIRAL = 4
         const val GLOW_NONE = 5
+
+        /** Interval between [serverTick] chunk-claim refreshes. Each walk
+         *  is O(N) in network size but reads only already-loaded chunks
+         *  (no disk I/O), so even multi-thousand-block networks scan in
+         *  well under a millisecond. The diff-apply only touches
+         *  [ChunkForceLoadManager] for chunks that actually changed
+         *  status since the last refresh. */
+        const val CHUNK_REFRESH_INTERVAL_TICKS = 100L
     }
 
     // --- Connectable ---
@@ -191,14 +199,15 @@ class NetworkControllerBlockEntity(
         super.setRemoved()
     }
 
-    /** Toggle chunk-loading for this controller. Enabling walks the current network
-     *  topology (full connection graph, ignoring LOS) and claims every visited block's
-     *  chunk with [ChunkForceLoadManager]. Disabling releases every previously claimed
-     *  chunk, the manager's refcount ensures chunks still claimed by other enabled
-     *  controllers in the same dimension stay loaded.
+    /** Toggle chunk-loading for this controller. Enabling does a one-shot
+     *  force-loaded walk (chunks get loaded as we visit them so even
+     *  distant micro-networks get included). After that the [serverTick]
+     *  periodic refresh keeps the claim set in sync as players add /
+     *  remove blocks - no manual re-toggle needed.
      *
-     *  Topology is snapshotted at enable-time. Extending the network afterwards does NOT
-     *  auto-claim the new blocks' chunks, re-toggle off/on to refresh. */
+     *  Disabling releases every previously claimed chunk;
+     *  [ChunkForceLoadManager]'s refcount ensures chunks still claimed by
+     *  other enabled controllers in the same dimension stay loaded. */
     fun setChunkLoadingEnabled(enabled: Boolean) {
         if (enabled == chunkLoadingEnabled) return
         val lvl = level as? ServerLevel ?: run {
@@ -209,12 +218,16 @@ class NetworkControllerBlockEntity(
             return
         }
         if (enabled) {
-            val chunks = gatherTopologyChunks(lvl)
+            // First-time walk forces chunks open so the BFS can reach
+            // blocks beyond the player's view distance. Periodic refreshes
+            // in serverTick skip the force-load to stay cheap.
+            val chunks = gatherTopologyChunks(lvl, forceLoadMissing = true)
             claimedChunks.clear()
             claimedChunks.addAll(chunks)
             for (packed in chunks) {
                 ChunkForceLoadManager.claim(lvl, ChunkPos.getX(packed), ChunkPos.getZ(packed))
             }
+            lastChunkRefreshTick = lvl.gameTime
         } else {
             releaseAllClaims(lvl)
         }
@@ -230,14 +243,103 @@ class NetworkControllerBlockEntity(
         claimedChunks.clear()
     }
 
+    /** Game-tick the controller bumped its refresh sweep on; used to space
+     *  walks at [CHUNK_REFRESH_INTERVAL_TICKS] resolution without per-tick
+     *  bookkeeping. Initialised to -interval so the first chunk-load
+     *  enable + first eligible tick get their own walks. */
+    @Transient
+    private var lastChunkRefreshTick: Long = Long.MIN_VALUE
+
+    /** Per-tick entry point wired by [damien.nodeworks.block.NetworkControllerBlock.getTicker].
+     *  No-op when chunk loading is off, so the tick cost for the common
+     *  case is one branch + one comparison. When on, walks the topology
+     *  every [CHUNK_REFRESH_INTERVAL_TICKS] ticks and diff-applies the
+     *  change set against [ChunkForceLoadManager] - so extending the
+     *  network (placing more pipes, attaching a new Processing Handler
+     *  with its own micro-network, ...) auto-claims the new chunks
+     *  without the player toggling chunk loading off and on. */
+    fun serverTick(lvl: ServerLevel) {
+        if (!chunkLoadingEnabled) return
+        val now = lvl.gameTime
+        if (now - lastChunkRefreshTick < CHUNK_REFRESH_INTERVAL_TICKS) return
+        lastChunkRefreshTick = now
+        refreshClaimedChunks(lvl)
+    }
+
+    /** Walk the current topology (loaded chunks only, no I/O) and apply
+     *  the delta to [ChunkForceLoadManager]. Walks Processing Handler
+     *  micro-network boundaries explicitly with a single force-load of
+     *  the front-face chunk so a newly placed handler that spans an
+     *  unclaimed-but-loaded chunk still picks up its micro side. */
+    private fun refreshClaimedChunks(lvl: ServerLevel) {
+        val fresh = gatherTopologyChunks(lvl, forceLoadMissing = false)
+        if (fresh == claimedChunks) return
+        // Newly visible chunks: claim them. Cheap iteration since the
+        // typical refresh tick has zero diff and we just check sizes /
+        // membership.
+        var changed = false
+        for (packed in fresh) {
+            if (claimedChunks.add(packed)) {
+                ChunkForceLoadManager.claim(lvl, ChunkPos.getX(packed), ChunkPos.getZ(packed))
+                changed = true
+            }
+        }
+        // Chunks no longer in the topology: release them. Iterate a copy
+        // so we can mutate [claimedChunks] safely.
+        val stale = claimedChunks.filter { it !in fresh }
+        for (packed in stale) {
+            claimedChunks.remove(packed)
+            ChunkForceLoadManager.unclaim(lvl, ChunkPos.getX(packed), ChunkPos.getZ(packed))
+            changed = true
+        }
+        if (changed) setChanged()
+    }
+
     /** BFS through the full topological connection graph and return the set
      *  of packed ChunkPos longs. Walks both [Connectable.getConnections] (the
      *  legacy laser-link graph) AND face-adjacency neighbours (the pipe-based
      *  graph) so every device, node, pipe, antenna, etc. that participates
      *  in the network gets its chunk claimed regardless of which connection
      *  model it uses. LOS-blocked pairs are included since chunk loading
-     *  shouldn't depend on transient line-of-sight state. */
-    private fun gatherTopologyChunks(lvl: ServerLevel): Set<Long> {
+     *  shouldn't depend on transient line-of-sight state.
+     *
+     *  Chunks are force-loaded as the walk visits each block so the BFS can
+     *  see blocks beyond the player's view distance. Without that, the
+     *  toggle-on walk would silently truncate the moment it hit an unloaded
+     *  chunk and those chunks would never make it into [claimedChunks] - the
+     *  classic "I enabled chunk loading but my far-side micro-network still
+     *  unloads" bug. The toggle is one-shot so the per-claim chunk-load cost
+     *  is fine.
+     *
+     *  Processing Handler micro-networks are crossed explicitly: when the
+     *  walk reaches a [ProcessingHandlerBlockEntity], it enqueues the
+     *  front-face neighbour so the micro-network on the other side of the
+     *  handler gets force-loaded too. The generic adjacency loop would also
+     *  walk that neighbour, but the explicit branch makes the intent clear
+     *  and is robust against any future face-gating changes on the handler. */
+    /** Walk the network topology and return the set of packed chunk keys
+     *  it occupies.
+     *
+     *  [forceLoadMissing] controls the I/O behaviour:
+     *   * `true` (one-shot toggle-on path) - force-loads each visited
+     *     chunk via [ChunkSource.getChunk] so the BFS can reach blocks
+     *     beyond the player's current view distance. Slower (synchronous
+     *     chunk reads) but guarantees the full network is discovered the
+     *     first time the user enables chunk loading.
+     *   * `false` (periodic [serverTick] refresh) - skips force-loading
+     *     entirely. The walk only crosses chunks that are already loaded.
+     *     Since enabling chunk loading already force-loaded every network
+     *     chunk via [ChunkForceLoadManager.claim], the parent network
+     *     stays fully reachable in steady state, and newly-extended
+     *     chunks are by definition loaded (the player is there placing).
+     *     Result: no disk I/O, sub-millisecond even for thousand-block
+     *     networks, so the dynamic refresh has effectively zero overhead.
+     *
+     *  Processing Handler micro-network boundaries always force-load the
+     *  front-face chunk (one chunk per handler at most) so the
+     *  player can add a new handler with its micro side on a non-claimed
+     *  chunk and have it picked up by the next refresh tick. */
+    private fun gatherTopologyChunks(lvl: ServerLevel, forceLoadMissing: Boolean): Set<Long> {
         val visited = HashSet<BlockPos>()
         val queue = ArrayDeque<BlockPos>()
         val chunks = HashSet<Long>()
@@ -245,15 +347,24 @@ class NetworkControllerBlockEntity(
         queue.add(worldPosition)
         while (queue.isNotEmpty()) {
             val pos = queue.removeFirst()
-            chunks.add(ChunkPos.pack(pos.x shr 4, pos.z shr 4))
+            if (forceLoadMissing) {
+                lvl.chunkSource.getChunk(pos.x shr 4, pos.z shr 4, true)
+            }
             val entity = NodeConnectionHelper.getConnectable(lvl, pos) ?: continue
+            // Only record chunks that actually contain a [Connectable] - a
+            // dead-end via the explicit handler branch (no BE on the front
+            // side) shouldn't pollute claimedChunks with a chunk we don't
+            // care about.
+            chunks.add(ChunkPos.pack(pos.x shr 4, pos.z shr 4))
             for (conn in entity.getConnections()) {
                 if (visited.add(conn)) queue.add(conn)
             }
             if (entity.usesAdjacency()) {
                 for (dir in net.minecraft.core.Direction.entries) {
                     val neighbor = pos.relative(dir)
-                    if (!lvl.isLoaded(neighbor)) continue
+                    if (forceLoadMissing) {
+                        lvl.chunkSource.getChunk(neighbor.x shr 4, neighbor.z shr 4, true)
+                    }
                     val neighborBe = lvl.getBlockEntity(neighbor) as? damien.nodeworks.network.Connectable ?: continue
                     if (!neighborBe.usesAdjacency()) continue
                     if (!entity.canConnectAdjacentTo(neighborBe)) continue
@@ -262,6 +373,15 @@ class NetworkControllerBlockEntity(
                     if (neighborBe.forcedPipeBlocked(dir.opposite)) continue
                     if (visited.add(neighbor)) queue.add(neighbor)
                 }
+            }
+            // Processing Handler boundary crossing - always force-load the
+            // front face since a newly placed handler may span into an
+            // unloaded chunk regardless of the wider walk's I/O policy.
+            // At most one extra chunk load per handler in the network.
+            if (entity is ProcessingHandlerBlockEntity) {
+                val frontPos = pos.relative(entity.frontFace)
+                lvl.chunkSource.getChunk(frontPos.x shr 4, frontPos.z shr 4, true)
+                if (visited.add(frontPos)) queue.add(frontPos)
             }
         }
         return chunks
@@ -303,7 +423,11 @@ class NetworkControllerBlockEntity(
         networkId = if (permIdStr.isNotEmpty()) {
             // Post-upgrade: missing networkId key means "in conflict".
             if (networkIdStr.isEmpty()) null
-            else try { UUID.fromString(networkIdStr) } catch (_: IllegalArgumentException) { null }
+            else try {
+                UUID.fromString(networkIdStr)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
         } else {
             // Legacy save without permanentId, propagate will recheck on revalidation.
             permanentId
