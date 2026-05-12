@@ -3,7 +3,6 @@ package damien.nodeworks.item
 import damien.nodeworks.registry.ModRecipeTypes
 import net.minecraft.core.BlockPos
 import net.minecraft.server.level.ServerLevel
-import net.minecraft.world.Containers
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
@@ -69,15 +68,17 @@ object SoulSandInteraction {
             }
         }
 
-        // Drop the result at the block's center. `recipe.result` is an
+        // Add the result to the player's inventory directly. `recipe.result` is an
         // ItemStackTemplate (lenient, component-deferred form), `.create()`
-        // materializes a fresh ItemStack each call so downstream code can
-        // mutate the drop without affecting the recipe's template.
-        Containers.dropItemStack(
-            level,
-            pos.x + 0.5, pos.y + 0.5, pos.z + 0.5,
-            recipe.result.create(),
-        )
+        // materializes a fresh ItemStack each call so downstream code can mutate
+        // without affecting the recipe's template. Going to inventory instead of
+        // a ground entity sidesteps the "ball lands in the wrong spot under a
+        // hopper" problem in automated farms (the User's drain step handles
+        // FakePlayer inventory the same way it does the empty bucket remainder).
+        val resultStack = recipe.result.create()
+        if (!player.inventory.add(resultStack)) {
+            player.drop(resultStack, false)
+        }
 
         return InteractionResult.SUCCESS
     }

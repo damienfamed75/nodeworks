@@ -1,9 +1,12 @@
 package damien.nodeworks.platform
 
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.InteractionResult
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.phys.Vec3
 import java.util.UUID
 
 /**
@@ -48,6 +51,22 @@ interface FakePlayerService {
         mutate: () -> Boolean,
         onRollback: () -> Unit,
     ): Boolean
+
+    /** Fires the platform's right-click-block event so handlers wired to that event
+     *  (e.g. Nodeworks' soul-sand infusion dispatcher, plus any third-party listener
+     *  that reacts to right-click) see a User-driven use as a real interaction.
+     *
+     *  Returns the event's [InteractionResult] when a listener consumed or denied
+     *  the action, null when nothing handled it and the caller should fall through
+     *  to vanilla dispatch. Implementations guard against re-entry so a listener
+     *  that triggers another right-click on the same target doesn't loop. */
+    fun fireRightClickBlock(
+        level: ServerLevel,
+        pos: BlockPos,
+        hitFace: Direction,
+        hitVec: Vec3,
+        ownerUuid: UUID?,
+    ): InteractionResult? = null
 
     companion object {
         /** Deterministic UUID derived from `OfflinePlayer:Nodeworks`, matching Bukkit's

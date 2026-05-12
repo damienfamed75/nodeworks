@@ -9,6 +9,9 @@ description: grows celestine buds on its surface
 item_ids:
 - nodeworks:budding_celestine
 - nodeworks:celestine_cluster
+- nodeworks:large_celestine_bud
+- nodeworks:medium_celestine_bud
+- nodeworks:small_celestine_bud
 ---
 
 # Budding Celestine

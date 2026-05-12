@@ -1,0 +1,811 @@
+{
+    DataVersion: 4790,
+    size: [6, 6, 3],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 0],
+            state: "minecraft:oak_fence{east:true,north:false,south:true,waterlogged:false,west:false}"
+        },
+        {
+            pos: [1, 0, 1],
+            state: "minecraft:oak_fence{east:false,north:true,south:true,waterlogged:false,west:false}"
+        },
+        {
+            pos: [1, 0, 2],
+            state: "minecraft:oak_fence{east:true,north:true,south:false,waterlogged:false,west:false}"
+        },
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:oak_fence{east:true,north:false,south:false,waterlogged:false,west:true}"
+        },
+        {
+            pos: [2, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 0, 2],
+            state: "minecraft:oak_fence{east:true,north:false,south:false,waterlogged:false,west:true}"
+        },
+        {
+            pos: [3, 0, 0],
+            state: "minecraft:oak_fence{east:false,north:false,south:true,waterlogged:false,west:true}"
+        },
+        {
+            pos: [3, 0, 1],
+            state: "minecraft:oak_fence{east:false,north:true,south:true,waterlogged:false,west:false}"
+        },
+        {
+            pos: [3, 0, 2],
+            state: "minecraft:oak_fence{east:false,north:true,south:false,waterlogged:false,west:true}"
+        },
+        {
+            pos: [4, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 0, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 2, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 2, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 2, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 2, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 2, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 2, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 2, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 2, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 2, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 2, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 2, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 3, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 3, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 3, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 3, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 3, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 3, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 3, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 3, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 3, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 3, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 3, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 4, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 4, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 4, 1],
+            state: "minecraft:soul_sand"
+        },
+        {
+            pos: [2, 4, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 4, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 4, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 4, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 4, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 5, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 5, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 5, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 5, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 5, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 5, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 5, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 1],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [5, 0, 1],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                laserEnabled: 1b,
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                permanentId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                laserMode: 0,
+                redstoneMode: 0,
+                networkColor: 6350758
+            }
+        },
+        {
+            pos: [3, 1, 1],
+            state: "nodeworks:user{facing:west}",
+            nbt: {
+                pendingFireMode: "INSTANT",
+                heldStack: {
+                    count: 1,
+                    id: "minecraft:bucket"
+                },
+                components: {},
+                ownerUuid: "380df991-f603-344c-a090-369bad2a924a",
+                channel: 0,
+                deviceName: "",
+                mode: "INSTANT",
+                previewArea: 0b,
+                animEndTick: -9223372036854775808L,
+                filterRule: "minecraft:bucket",
+                animStartTick: 2857205L,
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:user",
+                redstoneMode: 1,
+                pendingFireTick: 2857215L
+            }
+        },
+        {
+            pos: [4, 1, 1],
+            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 45b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [5, 1, 1],
+            state: "minecraft:chest{facing:north,type:single,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 16,
+                        Slot: 0b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 1b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 2b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 3b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 16,
+                        Slot: 4b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 8,
+                        Slot: 5b,
+                        id: "nodeworks:milky_soul_ball"
+                    },
+                    {
+                        count: 21,
+                        Slot: 26b,
+                        id: "minecraft:soul_sand"
+                    }
+                ],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [4, 2, 1],
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [4, 3, 1],
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [0, 4, 1],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [1, 4, 1],
+            state: "nodeworks:placer{facing:east}",
+            nbt: {
+                components: {},
+                ownerUuid: "380df991-f603-344c-a090-369bad2a924a",
+                previewArea: 0b,
+                channel: 0,
+                filterRule: "minecraft:soul_sand",
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:placer",
+                deviceName: "",
+                redstoneMode: 1
+            }
+        },
+        {
+            pos: [3, 4, 1],
+            state: "nodeworks:user{facing:west}",
+            nbt: {
+                components: {},
+                ownerUuid: "380df991-f603-344c-a090-369bad2a924a",
+                channel: 0,
+                deviceName: "",
+                mode: "INSTANT",
+                previewArea: 0b,
+                animEndTick: -9223372036854775808L,
+                filterRule: "minecraft:milk_bucket",
+                animStartTick: 2857182L,
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:user",
+                redstoneMode: 1,
+                pendingFireTick: -9223372036854775808L
+            }
+        },
+        {
+            pos: [4, 4, 1],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [0, 5, 1],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [1, 5, 1],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 5, 1],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [3, 5, 1],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [4, 5, 1],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "bfa852c1-6e06-4803-aa8d-ad52eac0bd23",
+                id: "nodeworks:pipe"
+            }
+        }
+    ],
+    entities: [
+        {
+            nbt: {
+                Motion: [0.0d, 0.0d, 2.2829544881283865e-44d],
+                Health: 5s,
+                Invulnerable: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                PortalCooldown: 0,
+                Rotation: [261.2252197265625f, 0.0f],
+                Item: {
+                    count: 1,
+                    id: "minecraft:milk_bucket"
+                },
+                Pos: [22.125d, 56.0d, 13.736227134313031d],
+                PickupDelay: 0s,
+                Fire: 0s,
+                id: "minecraft:item",
+                UUID: [I; 1646107344, 1681475421, -1114279706, -2068201155],
+                Lifespan: 6000,
+                Age: 727s
+            },
+            blockPos: [4, 0, 1],
+            pos: [4.125d, 0.0d, 1.7362271343130313d]
+        },
+        {
+            nbt: {
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
+                Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:moody",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; -116338850, 1190020648, -1747699881, 801480502],
+                Age: 0,
+                Motion: [0.0d, -0.0784000015258789d, 0.0d],
+                Health: 10.0f,
+                LeftHanded: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                Rotation: [-137.8668975830078f, -27.970497131347656f],
+                current_impulse_context_reset_grace_time: 0,
+                "neoforge:spawn_type": "SPAWN_ITEM_USE",
+                Pos: [20.5d, 56.0d, 13.5d],
+                Fire: 0s,
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:follow_range",
+                        modifiers: [
+                            {
+                                amount: 0.09263269506643992d,
+                                id: "minecraft:random_spawn_bonus",
+                                operation: "add_multiplied_base"
+                            }
+                        ],
+                        base: 16.0d
+                    }
+                ],
+                HurtTime: 0s
+            },
+            blockPos: [2, 0, 1],
+            pos: [2.5d, 0.0d, 1.5d]
+        },
+        {
+            nbt: {
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
+                Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:classic",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; -1596279256, -1739175470, -2082375661, -1428448933],
+                Age: 0,
+                Motion: [0.0d, -0.0784000015258789d, 0.0d],
+                Health: 10.0f,
+                LeftHanded: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                Rotation: [-90.15493774414062f, 0.0f],
+                current_impulse_context_reset_grace_time: 0,
+                "neoforge:spawn_type": "SPAWN_ITEM_USE",
+                Pos: [20.5d, 56.0d, 13.5d],
+                Fire: 0s,
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:follow_range",
+                        modifiers: [
+                            {
+                                amount: -0.1054874581091106d,
+                                id: "minecraft:random_spawn_bonus",
+                                operation: "add_multiplied_base"
+                            }
+                        ],
+                        base: 16.0d
+                    }
+                ],
+                HurtTime: 0s
+            },
+            blockPos: [2, 0, 1],
+            pos: [2.5d, 0.0d, 1.5d]
+        },
+        {
+            nbt: {
+                AgeLocked: 0b,
+                Brain: {
+                    memories: {}
+                },
+                HurtByTimestamp: 0,
+                Invulnerable: 0b,
+                FallFlying: 0b,
+                ForcedAge: 0,
+                sound_variant: "minecraft:classic",
+                PortalCooldown: 0,
+                AbsorptionAmount: 0.0f,
+                InLove: 0,
+                DeathTime: 0s,
+                variant: "minecraft:warm",
+                PersistenceRequired: 0b,
+                id: "minecraft:cow",
+                UUID: [I; 2004746822, 683364117, -1295391824, 38899705],
+                Age: 0,
+                Motion: [0.0d, -0.0784000015258789d, 0.0d],
+                Health: 10.0f,
+                LeftHanded: 0b,
+                fall_distance: 0.0d,
+                Air: 300s,
+                OnGround: 1b,
+                Rotation: [-98.33184814453125f, -27.909648895263672f],
+                current_impulse_context_reset_grace_time: 0,
+                "neoforge:spawn_type": "SPAWN_ITEM_USE",
+                Pos: [20.5d, 56.0d, 13.5d],
+                Fire: 0s,
+                CanPickUpLoot: 0b,
+                attributes: [
+                    {
+                        id: "minecraft:movement_speed",
+                        base: 0.20000000298023224d
+                    },
+                    {
+                        id: "minecraft:follow_range",
+                        modifiers: [
+                            {
+                                amount: -0.06220275530666113d,
+                                id: "minecraft:random_spawn_bonus",
+                                operation: "add_multiplied_base"
+                            }
+                        ],
+                        base: 16.0d
+                    }
+                ],
+                HurtTime: 0s
+            },
+            blockPos: [2, 0, 1],
+            pos: [2.5d, 0.0d, 1.5d]
+        }
+    ],
+    palette: [
+        "minecraft:air",
+        "minecraft:oak_fence{east:true,north:false,south:true,waterlogged:false,west:false}",
+        "minecraft:oak_fence{east:false,north:true,south:true,waterlogged:false,west:false}",
+        "minecraft:oak_fence{east:true,north:true,south:false,waterlogged:false,west:false}",
+        "minecraft:oak_fence{east:true,north:false,south:false,waterlogged:false,west:true}",
+        "minecraft:oak_fence{east:false,north:false,south:true,waterlogged:false,west:true}",
+        "minecraft:oak_fence{east:false,north:true,south:false,waterlogged:false,west:true}",
+        "minecraft:soul_sand",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+        "nodeworks:network_controller",
+        "nodeworks:user{facing:west}",
+        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+        "minecraft:chest{facing:north,type:single,waterlogged:false}",
+        "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+        "nodeworks:placer{facing:east}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}"
+    ]
+}

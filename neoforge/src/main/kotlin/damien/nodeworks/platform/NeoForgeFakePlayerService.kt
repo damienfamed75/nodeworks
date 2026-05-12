@@ -2,10 +2,16 @@ package damien.nodeworks.platform
 
 import com.mojang.authlib.GameProfile
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Direction
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.InteractionResult
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.phys.BlockHitResult
+import net.minecraft.world.phys.Vec3
+import net.neoforged.neoforge.common.CommonHooks
 import net.neoforged.neoforge.common.NeoForge
 import net.neoforged.neoforge.common.util.BlockSnapshot
 import net.neoforged.neoforge.common.util.FakePlayer
@@ -21,6 +27,12 @@ import java.util.UUID
  * as a real player UUID and resolve permissions accordingly.
  */
 class NeoForgeFakePlayerService : FakePlayerService {
+
+    /** Re-entry guard. A listener that reacts to the User's right-click by
+     *  triggering another right-click on the same target would loop forever
+     *  without this. ThreadLocal because the server thread is the only one
+     *  that fires interaction events; per-thread state is enough. */
+    private val firingRightClick = ThreadLocal.withInitial { false }
 
     override fun get(level: ServerLevel, ownerUuid: UUID?): ServerPlayer {
         val uuid = ownerUuid ?: FakePlayerService.NODEWORKS_FALLBACK_UUID
@@ -71,5 +83,24 @@ class NeoForgeFakePlayerService : FakePlayerService {
             return false
         }
         return true
+    }
+
+    override fun fireRightClickBlock(
+        level: ServerLevel,
+        pos: BlockPos,
+        hitFace: Direction,
+        hitVec: Vec3,
+        ownerUuid: UUID?,
+    ): InteractionResult? {
+        if (firingRightClick.get()) return null
+        val player = get(level, ownerUuid)
+        val hit = BlockHitResult(hitVec, hitFace, pos, false)
+        firingRightClick.set(true)
+        val event = try {
+            CommonHooks.onRightClickBlock(player, InteractionHand.MAIN_HAND, pos, hit)
+        } finally {
+            firingRightClick.set(false)
+        }
+        return if (event.isCanceled) event.cancellationResult else null
     }
 }

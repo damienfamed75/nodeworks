@@ -839,6 +839,16 @@ class UserBlockEntity(
         target: UseTarget.Block,
     ): Boolean {
         val hit = BlockHitResult(hitVecOnFace(target.pos, target.hitFace), target.hitFace, target.pos, false)
+
+        // Fire the platform's right-click-block event before the vanilla dispatch
+        // below. Lets recipe-driven interactions (e.g. milk-bucket on soul sand =>
+        // milky soul ball) and any third-party mod listeners see the User's use as
+        // a real right-click instead of bypassing them.
+        val eventResult = PlatformServices.fakePlayer.fireRightClickBlock(
+            level, target.pos, target.hitFace, hit.location, ownerUuid,
+        )
+        if (eventResult != null) return eventResult.consumesAction()
+
         val stack = fp.getItemInHand(InteractionHand.MAIN_HAND)
         val state = level.getBlockState(target.pos)
 

@@ -2,6 +2,8 @@
 navigation:
   title: Overview
   position: 0
+item_ids:
+- nodeworks:nodeworks_book
 ---
 
 # Nodeworks

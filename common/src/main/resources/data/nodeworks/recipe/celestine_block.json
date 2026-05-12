@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CC",
+    "CC"
+  ],
+  "key": {
+    "C": "nodeworks:celestine_shard"
+  },
+  "result": {
+    "id": "nodeworks:celestine_block",
+    "count": 1
+  }
+}

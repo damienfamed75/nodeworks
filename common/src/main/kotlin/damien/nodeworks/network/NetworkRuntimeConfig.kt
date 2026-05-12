@@ -10,7 +10,7 @@ object NetworkRuntimeConfig {
     /** Maximum distance in blocks between two Focus Nodes for a laser link
      *  to be valid. Re-checked whenever a propagate walks through the link,
      *  so a link silently breaks if the endpoints move further apart later. */
-    const val FOCUS_NODE_MAX_DISTANCE: Double = 32.0
+    const val FOCUS_NODE_MAX_DISTANCE: Double = 16.0
 
     const val FOCUS_NODE_MAX_DISTANCE_SQ: Double =
         FOCUS_NODE_MAX_DISTANCE * FOCUS_NODE_MAX_DISTANCE
