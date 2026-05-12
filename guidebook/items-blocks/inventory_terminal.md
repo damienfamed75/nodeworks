@@ -4,7 +4,7 @@ navigation:
   icon: inventory_terminal
   title: Inventory Terminal
 categories:
-  - connectable
+  - terminal
 description: a viewport into [Network Storage](../nodeworks-mechanics/network-storage.md)
 item_ids:
 - nodeworks:inventory_terminal
@@ -15,10 +15,6 @@ item_ids:
 The Inventory Terminal is a viewport into a [network's storage](../nodeworks-mechanics/network-storage.md).
 
 <BlockImage scale="6" id="inventory_terminal" />
-
-> **Note:** The Scripting Terminal is a [Connectable](../nodeworks-mechanics/connectables.md).
-> Use a <ItemLink id="network_wrench" /> to connect it to a node and join that node's
-> network.
 
 ## Browsing the grid
 

@@ -14,25 +14,16 @@ categories:
 <GameScene zoom="4" interactive={true} paddingLeft="30" paddingRight="30">
   <ImportStructure src="../assets/assemblies/celestine_farm.snbt" />
   <IsometricCamera yaw="200" pitch="20" />
-  <BlockAnnotation x="4" z="2">
-    Celestine shards gather in here since it's part of Network Storage
-  </BlockAnnotation>
-  <BoxAnnotation min="4.1 1 2.1" max="4.9 1.25 2.9" color="#AA83E0">
-    <ItemImage id="nodeworks:storage_card" />
-  </BoxAnnotation>
 </GameScene>
 
-<LuaCode>
-```lua
-scheduler:second(function()
-  for _, breaker in network:getAll("breaker") do
-    -- only start mining when the block in front of the breaker is a celestine cluster
-    if breaker:block() == "nodeworks:celestine_cluster" then
-      breaker:mine()
-    end
-  end
-end)
-```
-</LuaCode>
+Or optionally you can use Focus Nodes to connect everything together
 
-This will scan all breakers in your network and check if they're facing a <ItemLink id="celestine_cluster" />
+<GameScene zoom="4" interactive={true} paddingLeft="30" paddingRight="30">
+  <ImportStructure src="../assets/assemblies/celestine_farm_focus_node.snbt" />
+  <IsometricCamera yaw="200" pitch="20" />
+</GameScene>
+
+Then in the GUIs of the Breakers you set them to Low redstone mode which keeps them
+active without a redstone signal. And set each of them to break <ItemLink id="celestine_cluster" />.
+
+They'll break the fully grown celestine clusters and insert them into [network storage](../nodeworks-mechanics/network-storage.md).

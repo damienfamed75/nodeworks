@@ -4,7 +4,6 @@ navigation:
   icon: variable
   title: Variable
 categories:
-  - connectable
   - device
 description: a shared network variable
 item_ids:
@@ -16,11 +15,6 @@ item_ids:
 A Variable block is a value that can be shared across an entire network.
 
 <BlockImage scale="6" id="variable" />
-
-> **Note:** The Variable is a [Connectable](../nodeworks-mechanics/connectables.md)
-> and a [Device](../nodeworks-mechanics/devices.md).
-> Use a <ItemLink id="network_wrench" /> to connect it to a node and join that node's
-> network.
 
 ## Configuration
 

@@ -11,7 +11,8 @@ Auto-Crafting is what turns "I'd like 64 iron pickaxes" into 64 actual iron pick
 You tell the network what recipes exist, the network stocks the ingredients, and
 a <ItemLink id="crafting_core" /> does the work.
 
-<GameScene zoom="2" interactive={true} paddingTop="30" paddingLeft="60" paddingRight="60">
+<GameScene zoom="2" interactive={true} paddingTop="5" paddingLeft="30" paddingRight="30">
+  <IsometricCamera yaw="160" pitch="20" />
   <ImportStructure src="../assets/assemblies/autocrafting_example.snbt" />
 </GameScene>
 
@@ -88,8 +89,34 @@ self-contained, so the CPU knows exactly how to execute them.
 <ItemLink id="processing_set" /> recipes don't. A Processing Set *declares* a
 recipe ("8 raw iron becomes 8 raw iron ingots") but doesn't know **how** that
 transformation actually happens. Somebody has to put the raw iron into a furnace
-and wait for the ingots to come out, and that somebody is a small Lua script on
-a <ItemLink id="terminal" /> called a **handler**.
+and pull the ingots back out, and that somebody is called a **handler**.
+
+You have two ways to register one:
+
+### With a Processing Handler block
+
+<GameScene zoom="5" interactive={true}>
+  <IsometricCamera yaw="200" pitch="20" />
+  <ImportStructure src="../assets/assemblies/basic_processing_handler.snbt" />
+  <BoxAnnotation min="0 2 0" max="1 2.25 1" color="#3C44AA">
+    Blue channel Storage Card pointing at the top of the furnace
+  </BoxAnnotation>
+  <BoxAnnotation min="0 0.75 0" max="1 1 1" color="#B02E26">
+    Red channel Storage Card pointing at the bottom of the furnace
+  </BoxAnnotation>
+</GameScene>
+
+Drop a <ItemLink id="processing_handler" /> on the network and bind it to the
+recipe in its GUI. Wire its back to the parent network, then run a small
+subnet of pipes off its front to whatever machine carries out the recipe.
+The CPU drives the machine for you, no scripting required. This is the
+right pick for almost any "stuff in one side, stuff out the other"
+machine.
+
+### With a scripted handler
+
+For recipes that need custom timing, conditional routing, or multi-step
+flows you can write a Lua handler on a <ItemLink id="terminal" />:
 
 <LuaCode>
 ```lua

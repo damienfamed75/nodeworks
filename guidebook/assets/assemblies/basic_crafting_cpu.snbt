@@ -3,10 +3,6 @@
     size: [4, 2, 1],
     data: [
         {
-            pos: [2, 1, 0],
-            state: "minecraft:air"
-        },
-        {
             pos: [3, 1, 0],
             state: "minecraft:air"
         },
@@ -28,16 +24,11 @@
         },
         {
             pos: [2, 0, 0],
-            state: "nodeworks:node",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
             nbt: {
                 components: {},
-                Items: [],
-                networkId: "b200860d-de54-4943-9eca-6550e8ca6868",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 0, 0],
-                    [I; 1, 1, 0]
-                ]
+                networkId: "3276924a-43d5-44bd-92e2-0b09b0c3807d",
+                id: "nodeworks:pipe"
             }
         },
         {
@@ -46,16 +37,16 @@
             nbt: {
                 chunkLoadingEnabled: 0b,
                 components: {},
+                laserEnabled: 1b,
                 networkName: "",
                 handlerRetryLimit: 50,
-                networkId: "b200860d-de54-4943-9eca-6550e8ca6868",
+                networkId: "3276924a-43d5-44bd-92e2-0b09b0c3807d",
                 nodeGlowStyle: 0,
                 id: "nodeworks:network_controller",
+                permanentId: "3276924a-43d5-44bd-92e2-0b09b0c3807d",
+                laserMode: 0,
                 redstoneMode: 0,
-                connections: [
-                    [I; 2, 0, 0]
-                ],
-                networkColor: 2780660
+                networkColor: 16411061
             }
         },
         {
@@ -80,16 +71,22 @@
                 isFormed: 1b,
                 components: {},
                 currentCraftItem: "",
-                networkId: "b200860d-de54-4943-9eca-6550e8ca6868",
+                networkId: "3276924a-43d5-44bd-92e2-0b09b0c3807d",
                 id: "nodeworks:crafting_core",
-                connections: [
-                    [I; 2, 0, 0]
-                ],
                 bufferState: {
                     countCap: 768L,
                     typesCap: 12,
                     items: {}
                 }
+            }
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "3276924a-43d5-44bd-92e2-0b09b0c3807d",
+                id: "nodeworks:pipe"
             }
         }
     ],
@@ -98,8 +95,9 @@
         "minecraft:air",
         "nodeworks:stabilizer",
         "nodeworks:crafting_storage{formed:true,overheat_level:0}",
-        "nodeworks:node",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
         "nodeworks:network_controller",
-        "nodeworks:crafting_core{formed:true}"
+        "nodeworks:crafting_core{formed:true}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}"
     ]
 }

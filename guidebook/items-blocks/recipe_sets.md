@@ -40,6 +40,11 @@ copy there (no inventory consumption), click an empty slot again to clear.
 The result slot auto-fills whenever the pattern matches a known crafting
 recipe. **Clear All** resets the grid.
 
+The GUI also has a **tag substitutions** toggle. When on (the default),
+the recipe accepts any item from the same tag as the pinned ingredient,
+so an oak plank slot will happily use birch, spruce, or anything else in
+`#minecraft:planks`. Turn it off to lock the recipe to exact item ids.
+
 > **Tip:** JEI's **(+)** recipe-transfer button works on this GUI so you can pick any crafting
 > recipe in JEI and hit (+) to fill the grid in one step
 

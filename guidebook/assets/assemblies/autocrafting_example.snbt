@@ -1,73 +1,93 @@
 {
     DataVersion: 4790,
-    size: [8, 9, 4],
+    size: [8, 8, 4],
     data: [
         {
-            pos: [1, 5, 0],
-            state: "minecraft:stone"
+            pos: [1, 4, 1],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [1, 5, 1],
-            state: "minecraft:stone"
+            pos: [1, 4, 2],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [1, 5, 2],
-            state: "minecraft:andesite"
+            pos: [1, 4, 3],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [2, 5, 0],
-            state: "minecraft:andesite"
+            pos: [2, 4, 1],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [2, 5, 1],
-            state: "minecraft:cobblestone"
+            pos: [2, 4, 2],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [2, 5, 2],
-            state: "minecraft:andesite"
+            pos: [2, 4, 3],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [3, 5, 0],
-            state: "minecraft:glass"
+            pos: [3, 4, 1],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [3, 5, 1],
-            state: "minecraft:andesite"
+            pos: [3, 4, 2],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [3, 5, 2],
-            state: "minecraft:stone"
+            pos: [3, 4, 3],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [4, 5, 0],
-            state: "minecraft:stone"
+            pos: [4, 4, 1],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [4, 5, 1],
-            state: "minecraft:stone"
+            pos: [4, 4, 2],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [4, 5, 2],
-            state: "minecraft:andesite"
+            pos: [4, 4, 3],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [5, 5, 0],
-            state: "minecraft:andesite"
+            pos: [5, 4, 1],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [5, 5, 1],
-            state: "minecraft:cobblestone"
+            pos: [5, 4, 2],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [5, 5, 2],
-            state: "minecraft:stone"
+            pos: [5, 4, 3],
+            state: "minecraft:sandstone"
         },
         {
-            pos: [1, 0, 0],
+            pos: [6, 4, 1],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [6, 4, 2],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [6, 4, 3],
+            state: "minecraft:sandstone"
+        },
+        {
+            pos: [0, 0, 0],
             state: "minecraft:air"
         },
         {
-            pos: [1, 0, 1],
+            pos: [0, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 3],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 0],
             state: "minecraft:air"
         },
         {
@@ -83,19 +103,15 @@
             state: "minecraft:air"
         },
         {
-            pos: [2, 0, 1],
-            state: "minecraft:air"
-        },
-        {
             pos: [2, 0, 3],
             state: "minecraft:air"
         },
         {
-            pos: [4, 0, 0],
+            pos: [3, 0, 0],
             state: "minecraft:air"
         },
         {
-            pos: [4, 0, 1],
+            pos: [4, 0, 0],
             state: "minecraft:air"
         },
         {
@@ -104,10 +120,6 @@
         },
         {
             pos: [5, 0, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 0, 1],
             state: "minecraft:air"
         },
         {
@@ -132,6 +144,14 @@
         },
         {
             pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 3],
             state: "minecraft:air"
         },
         {
@@ -167,7 +187,7 @@
             state: "minecraft:air"
         },
         {
-            pos: [3, 1, 1],
+            pos: [3, 1, 0],
             state: "minecraft:air"
         },
         {
@@ -264,6 +284,10 @@
         },
         {
             pos: [3, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 2, 1],
             state: "minecraft:air"
         },
         {
@@ -459,31 +483,7 @@
             state: "minecraft:air"
         },
         {
-            pos: [1, 4, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [1, 4, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [1, 4, 3],
-            state: "minecraft:air"
-        },
-        {
             pos: [2, 4, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 4, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 4, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 4, 3],
             state: "minecraft:air"
         },
         {
@@ -491,31 +491,7 @@
             state: "minecraft:air"
         },
         {
-            pos: [3, 4, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [3, 4, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [3, 4, 3],
-            state: "minecraft:air"
-        },
-        {
             pos: [4, 4, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [4, 4, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [4, 4, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [4, 4, 3],
             state: "minecraft:air"
         },
         {
@@ -523,31 +499,7 @@
             state: "minecraft:air"
         },
         {
-            pos: [5, 4, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 4, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 4, 3],
-            state: "minecraft:air"
-        },
-        {
             pos: [6, 4, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 4, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 4, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 4, 3],
             state: "minecraft:air"
         },
         {
@@ -583,7 +535,27 @@
             state: "minecraft:air"
         },
         {
+            pos: [1, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 5, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 5, 2],
+            state: "minecraft:air"
+        },
+        {
             pos: [1, 5, 3],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 5, 1],
             state: "minecraft:air"
         },
         {
@@ -591,7 +563,19 @@
             state: "minecraft:air"
         },
         {
-            pos: [3, 5, 3],
+            pos: [3, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 5, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 5, 1],
             state: "minecraft:air"
         },
         {
@@ -599,23 +583,19 @@
             state: "minecraft:air"
         },
         {
+            pos: [5, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 5, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [5, 5, 2],
+            state: "minecraft:air"
+        },
+        {
             pos: [5, 5, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 5, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 5, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 5, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 5, 3],
             state: "minecraft:air"
         },
         {
@@ -675,15 +655,15 @@
             state: "minecraft:air"
         },
         {
-            pos: [2, 6, 2],
-            state: "minecraft:air"
-        },
-        {
             pos: [2, 6, 3],
             state: "minecraft:air"
         },
         {
-            pos: [3, 6, 3],
+            pos: [3, 6, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 6, 1],
             state: "minecraft:air"
         },
         {
@@ -692,10 +672,6 @@
         },
         {
             pos: [4, 6, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [4, 6, 2],
             state: "minecraft:air"
         },
         {
@@ -720,18 +696,6 @@
         },
         {
             pos: [6, 6, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 6, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 6, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 6, 3],
             state: "minecraft:air"
         },
         {
@@ -783,7 +747,11 @@
             state: "minecraft:air"
         },
         {
-            pos: [2, 7, 2],
+            pos: [2, 7, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 7, 1],
             state: "minecraft:air"
         },
         {
@@ -791,15 +759,19 @@
             state: "minecraft:air"
         },
         {
-            pos: [3, 7, 2],
+            pos: [3, 7, 0],
             state: "minecraft:air"
         },
         {
-            pos: [3, 7, 3],
+            pos: [3, 7, 1],
             state: "minecraft:air"
         },
         {
-            pos: [4, 7, 2],
+            pos: [4, 7, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 7, 1],
             state: "minecraft:air"
         },
         {
@@ -815,27 +787,7 @@
             state: "minecraft:air"
         },
         {
-            pos: [5, 7, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 7, 3],
-            state: "minecraft:air"
-        },
-        {
             pos: [6, 7, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 7, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 7, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 7, 3],
             state: "minecraft:air"
         },
         {
@@ -855,372 +807,122 @@
             state: "minecraft:air"
         },
         {
-            pos: [0, 8, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [0, 8, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [0, 8, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [0, 8, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [1, 8, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [1, 8, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [1, 8, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 8, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 8, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [2, 8, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [3, 8, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [4, 8, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [4, 8, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [4, 8, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 8, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 8, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 8, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 8, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 8, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 8, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [6, 8, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [7, 8, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [7, 8, 1],
-            state: "minecraft:air"
-        },
-        {
-            pos: [7, 8, 2],
-            state: "minecraft:air"
-        },
-        {
-            pos: [7, 8, 3],
-            state: "minecraft:air"
-        },
-        {
-            pos: [0, 0, 0],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 0, 0],
-                    [I; 0, 0, 1]
-                ]
-            }
-        },
-        {
             pos: [0, 0, 1],
-            state: "nodeworks:instruction_storage{facing:west}",
+            state: "nodeworks:processing_storage{facing:north}",
             nbt: {
                 components: {},
                 Items: [
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                outputs: ["minecraft:acacia_button"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
                             }
                         },
                         count: 1,
                         Slot: 0b,
-                        id: "nodeworks:instruction_set"
+                        id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                outputs: ["minecraft:acacia_button"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
                             }
                         },
                         count: 1,
                         Slot: 1b,
-                        id: "nodeworks:instruction_set"
+                        id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                outputs: ["minecraft:acacia_button"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
                             }
                         },
                         count: 1,
                         Slot: 2b,
-                        id: "nodeworks:instruction_set"
+                        id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                outputs: ["minecraft:acacia_button"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
                             }
                         },
                         count: 1,
                         Slot: 3b,
-                        id: "nodeworks:instruction_set"
+                        id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                outputs: ["minecraft:acacia_button"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
                             }
                         },
                         count: 1,
                         Slot: 4b,
-                        id: "nodeworks:instruction_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
-                            }
-                        },
-                        count: 1,
-                        Slot: 5b,
-                        id: "nodeworks:instruction_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
-                            }
-                        },
-                        count: 1,
-                        Slot: 6b,
-                        id: "nodeworks:instruction_set"
-                    }
-                ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:instruction_storage",
-                connections: [
-                    [I; 0, 0, 0],
-                    [I; 0, 0, 2]
-                ]
-            }
-        },
-        {
-            pos: [0, 0, 2],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 0, 0, 1],
-                    [I; 0, 0, 3],
-                    [I; 0, 1, 2]
-                ]
-            }
-        },
-        {
-            pos: [0, 0, 3],
-            state: "nodeworks:processing_storage{facing:west}",
-            nbt: {
-                components: {},
-                Items: [
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 0b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 1b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:iron_ingot"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: ["minecraft:raw_iron"],
-                                output_counts: [I; 1],
-                                name: "minecraft:raw_iron@1>>minecraft:iron_ingot@1",
-                                input_slots: [I; 0],
-                                input_counts: [I; 1],
-                                timeout: 3099
-                            }
-                        },
-                        count: 1,
-                        Slot: 2b,
                         id: "nodeworks:processing_set"
                     }
                 ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:processing_storage",
-                connections: [
-                    [I; 0, 0, 2]
-                ]
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:processing_storage"
+            }
+        },
+        {
+            pos: [1, 0, 1],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 0, 1],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
             }
         },
         {
@@ -1232,26 +934,12 @@
             }
         },
         {
-            pos: [3, 0, 0],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 6, 0, 0],
-                    [I; 3, 1, 0],
-                    [I; 0, 0, 0]
-                ]
-            }
-        },
-        {
             pos: [3, 0, 1],
-            state: "nodeworks:substrate",
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
             nbt: {
                 components: {},
-                id: "nodeworks:substrate"
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
             }
         },
         {
@@ -1271,6 +959,15 @@
             }
         },
         {
+            pos: [4, 0, 1],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
             pos: [4, 0, 2],
             state: "nodeworks:substrate",
             nbt: {
@@ -1279,39 +976,41 @@
             }
         },
         {
+            pos: [5, 0, 1],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
             pos: [6, 0, 0],
-            state: "nodeworks:node",
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:focus_node",
                 connections: [
-                    [I; 7, 0, 0],
-                    [I; 3, 0, 0],
-                    [I; 6, 0, 1],
-                    [I; 7, 1, 0]
+                    [I; 6, 5, 0]
                 ]
             }
         },
         {
             pos: [6, 0, 1],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:true}",
             nbt: {
                 components: {},
                 Items: [
                     {
                         count: 1,
-                        Slot: 31b,
+                        Slot: 27b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 6, 1, 1],
-                    [I; 6, 0, 0]
-                ]
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:node"
             }
         },
         {
@@ -1319,13 +1018,7 @@
             state: "minecraft:chest{facing:west,type:right,waterlogged:false}",
             nbt: {
                 components: {},
-                Items: [
-                    {
-                        count: 1,
-                        Slot: 0b,
-                        id: "minecraft:iron_ingot"
-                    }
-                ],
+                Items: [],
                 id: "minecraft:chest"
             }
         },
@@ -1344,39 +1037,40 @@
             nbt: {
                 chunkLoadingEnabled: 0b,
                 components: {},
+                laserEnabled: 1b,
                 networkName: "",
                 handlerRetryLimit: 50,
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
                 nodeGlowStyle: 0,
                 id: "nodeworks:network_controller",
+                permanentId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                laserMode: 0,
                 redstoneMode: 0,
-                connections: [
-                    [I; 6, 0, 0]
-                ],
-                networkColor: 5894527
+                networkColor: 2555716
             }
         },
         {
             pos: [0, 1, 1],
-            state: "nodeworks:instruction_storage{facing:west}",
+            state: "nodeworks:instruction_storage{facing:north}",
             nbt: {
                 components: {},
                 Items: [
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
@@ -1386,18 +1080,19 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
@@ -1407,18 +1102,19 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
@@ -1428,18 +1124,19 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
@@ -1449,18 +1146,19 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
@@ -1470,18 +1168,19 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
@@ -1491,18 +1190,19 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
@@ -1512,18 +1212,19 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
@@ -1533,334 +1234,37 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
+                                output: "minecraft:jungle_trapdoor",
                                 recipe: [
                                     "",
                                     "",
                                     "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks",
+                                    "minecraft:jungle_planks"
+                                ],
+                                allowSubstitutions: 1b
                             }
                         },
                         count: 1,
                         Slot: 8b,
                         id: "nodeworks:instruction_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
-                            }
-                        },
-                        count: 1,
-                        Slot: 9b,
-                        id: "nodeworks:instruction_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
-                            }
-                        },
-                        count: 1,
-                        Slot: 10b,
-                        id: "nodeworks:instruction_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                output: "minecraft:birch_fence",
-                                recipe: [
-                                    "",
-                                    "",
-                                    "",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks",
-                                    "minecraft:birch_planks",
-                                    "minecraft:stick",
-                                    "minecraft:birch_planks"
-                                ]
-                            }
-                        },
-                        count: 1,
-                        Slot: 11b,
-                        id: "nodeworks:instruction_set"
                     }
                 ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
                 id: "nodeworks:instruction_storage"
             }
         },
         {
-            pos: [0, 1, 2],
-            state: "nodeworks:terminal{facing:west}",
+            pos: [3, 1, 1],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
             nbt: {
                 components: {},
-                autoRun: 1b,
-                layoutIndex: 3,
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:terminal",
-                scripts: [
-                    {
-                        name: "main",
-                        text: "local smelter_output = network:get(\"smelter_output\")
-local smelter_input = network:get(\"smelter_input\")
-
-importer
-    :from(network)
-    :to(\"furnace_*\")
-    :filter(\"/.*coal.*/\")
-    :roundrobin()
-    :start()
-
-network:handle(\"minecraft:raw_iron@1>>minecraft:iron_ingot@1\", function(job: Job, items: InputItems)
-    smelter_input:insert(items.rawIron)
-    job:pull(smelter_output)
-end)"
-                    }
-                ],
-                connections: [
-                    [I; 0, 0, 2]
-                ]
-            }
-        },
-        {
-            pos: [0, 1, 3],
-            state: "nodeworks:processing_storage{facing:west}",
-            nbt: {
-                components: {},
-                Items: [
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 0b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 1b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 2b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 3b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 4b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 5b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 6b,
-                        id: "nodeworks:processing_set"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
-                                output_slots: [I; 0],
-                                serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
-                                timeout: 0
-                            }
-                        },
-                        count: 1,
-                        Slot: 7b,
-                        id: "nodeworks:processing_set"
-                    }
-                ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:processing_storage"
-            }
-        },
-        {
-            pos: [3, 1, 0],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 0, 0],
-                    [I; 3, 1, 2],
-                    [I; 3, 7, 0],
-                    [I; 3, 6, 0]
-                ]
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
             }
         },
         {
@@ -1877,14 +1281,11 @@ end)"
                 isFormed: 1b,
                 components: {},
                 currentCraftItem: "",
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
                 id: "nodeworks:crafting_core",
-                connections: [
-                    [I; 3, 1, 0]
-                ],
                 bufferState: {
                     countCap: 1280L,
-                    typesCap: 28,
+                    typesCap: 25,
                     items: {}
                 }
             }
@@ -1899,22 +1300,18 @@ end)"
         },
         {
             pos: [6, 1, 1],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
                         count: 1,
-                        Slot: 31b,
+                        Slot: 27b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 6, 0, 1],
-                    [I; 6, 2, 1]
-                ]
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:node"
             }
         },
         {
@@ -1922,23 +1319,7 @@ end)"
             state: "minecraft:chest{facing:west,type:right,waterlogged:false}",
             nbt: {
                 components: {},
-                Items: [
-                    {
-                        count: 63,
-                        Slot: 0b,
-                        id: "minecraft:raw_iron"
-                    },
-                    {
-                        count: 64,
-                        Slot: 1b,
-                        id: "minecraft:raw_iron"
-                    },
-                    {
-                        count: 54,
-                        Slot: 2b,
-                        id: "minecraft:raw_iron"
-                    }
-                ],
+                Items: [],
                 id: "minecraft:chest"
             }
         },
@@ -1957,23 +1338,12 @@ end)"
             nbt: {
                 components: {},
                 layoutIndex: 0,
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:inventory_terminal",
-                connections: [
-                    [I; 6, 0, 0]
-                ]
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:inventory_terminal"
             }
         },
         {
             pos: [2, 2, 2],
-            state: "nodeworks:substrate",
-            nbt: {
-                components: {},
-                id: "nodeworks:substrate"
-            }
-        },
-        {
-            pos: [3, 2, 1],
             state: "nodeworks:substrate",
             nbt: {
                 components: {},
@@ -2006,21 +1376,18 @@ end)"
         },
         {
             pos: [6, 2, 1],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
                         count: 1,
-                        Slot: 31b,
+                        Slot: 27b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 6, 1, 1]
-                ]
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:node"
             }
         },
         {
@@ -2028,13 +1395,7 @@ end)"
             state: "minecraft:chest{facing:west,type:right,waterlogged:false}",
             nbt: {
                 components: {},
-                Items: [
-                    {
-                        count: 63,
-                        Slot: 1b,
-                        id: "minecraft:coal"
-                    }
-                ],
+                Items: [],
                 id: "minecraft:chest"
             }
         },
@@ -2056,370 +1417,347 @@ end)"
             }
         },
         {
-            pos: [3, 6, 0],
-            state: "nodeworks:node",
+            pos: [2, 5, 2],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
-                        components: {
-                            "minecraft:custom_name": "smelter_output",
-                            "minecraft:custom_data": {
-                                channel: 0
-                            }
-                        },
                         count: 1,
-                        Slot: 27b,
-                        id: "nodeworks:io_card"
+                        Slot: 9b,
+                        id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [3, 5, 2],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 9b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [3, 5, 3],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [4, 5, 2],
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 9b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [6, 5, 0],
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:focus_node",
                 connections: [
-                    [I; 3, 1, 0],
-                    [I; 3, 7, 0]
+                    [I; 6, 0, 0]
                 ]
             }
         },
         {
-            pos: [3, 6, 1],
-            state: "minecraft:barrel{facing:north,open:false}",
+            pos: [6, 5, 1],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:true,pipe_west:false}",
             nbt: {
                 components: {},
-                Items: [
-                    {
-                        count: 10,
-                        Slot: 0b,
-                        id: "minecraft:iron_ingot"
-                    }
-                ],
-                id: "minecraft:barrel"
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [6, 5, 2],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [6, 5, 3],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 6, 2],
+            state: "minecraft:furnace{facing:north,lit:false}",
+            nbt: {
+                lit_total_time: 0,
+                components: {},
+                cooking_time_spent: 0,
+                cooking_total_time: 0,
+                Items: [],
+                id: "minecraft:furnace",
+                lit_time_remaining: 0,
+                RecipesUsed: {}
             }
         },
         {
             pos: [3, 6, 2],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [
-                    {
-                        components: {
-                            "minecraft:custom_name": "output"
-                        },
-                        count: 1,
-                        Slot: 18b,
-                        id: "nodeworks:io_card"
-                    }
-                ],
-                networkId: "14839b14-f9ac-41fe-a8a8-9b0178d7b034",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 8, 2]
-                ]
-            }
-        },
-        {
-            pos: [2, 7, 0],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [
-                    {
-                        components: {
-                            "minecraft:custom_name": "furnace_3"
-                        },
-                        count: 1,
-                        Slot: 27b,
-                        id: "nodeworks:io_card"
-                    }
-                ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 7, 0]
-                ]
-            }
-        },
-        {
-            pos: [2, 7, 1],
             state: "minecraft:furnace{facing:north,lit:false}",
             nbt: {
-                lit_total_time: 1600,
+                lit_total_time: 0,
                 components: {},
                 cooking_time_spent: 0,
-                cooking_total_time: 200,
-                Items: [
-                    {
-                        count: 19,
-                        Slot: 1b,
-                        id: "minecraft:charcoal"
-                    }
-                ],
-                id: "minecraft:furnace",
-                lit_time_remaining: 0,
-                RecipesUsed: {
-                    "minecraft:iron_ingot_from_smelting_raw_iron": 9
-                }
-            }
-        },
-        {
-            pos: [3, 7, 0],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [
-                    {
-                        components: {
-                            "minecraft:custom_name": "smelter_input"
-                        },
-                        count: 1,
-                        Slot: 9b,
-                        id: "nodeworks:io_card"
-                    },
-                    {
-                        components: {
-                            "minecraft:custom_name": "furnace_0"
-                        },
-                        count: 1,
-                        Slot: 27b,
-                        id: "nodeworks:io_card"
-                    }
-                ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 1, 0],
-                    [I; 4, 7, 0],
-                    [I; 2, 7, 0],
-                    [I; 3, 6, 0]
-                ]
-            }
-        },
-        {
-            pos: [3, 7, 1],
-            state: "minecraft:furnace{facing:north,lit:false}",
-            nbt: {
-                lit_total_time: 1600,
-                components: {},
-                cooking_time_spent: 0,
-                cooking_total_time: 200,
-                Items: [
-                    {
-                        count: 21,
-                        Slot: 1b,
-                        id: "minecraft:charcoal"
-                    }
-                ],
-                id: "minecraft:furnace",
-                lit_time_remaining: 0,
-                RecipesUsed: {
-                    "minecraft:iron_ingot_from_smelting_raw_iron": 1
-                }
-            }
-        },
-        {
-            pos: [4, 7, 0],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [
-                    {
-                        components: {
-                            "minecraft:custom_name": "furnace_1"
-                        },
-                        count: 1,
-                        Slot: 27b,
-                        id: "nodeworks:io_card"
-                    }
-                ],
-                networkId: "c56e230c-f2eb-496c-be53-9b691f7f5e5b",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 7, 0]
-                ]
-            }
-        },
-        {
-            pos: [4, 7, 1],
-            state: "minecraft:furnace{facing:north,lit:false}",
-            nbt: {
-                lit_total_time: 1600,
-                components: {},
-                cooking_time_spent: 0,
-                cooking_total_time: 200,
-                Items: [
-                    {
-                        count: 20,
-                        Slot: 1b,
-                        id: "minecraft:charcoal"
-                    }
-                ],
-                id: "minecraft:furnace",
-                lit_time_remaining: 0,
-                RecipesUsed: {
-                    "minecraft:iron_ingot_from_smelting_raw_iron": 1
-                }
-            }
-        },
-        {
-            pos: [1, 8, 1],
-            state: "nodeworks:terminal{facing:north}",
-            nbt: {
-                components: {},
-                autoRun: 1b,
-                layoutIndex: 3,
-                networkId: "14839b14-f9ac-41fe-a8a8-9b0178d7b034",
-                id: "nodeworks:terminal",
-                scripts: [
-                    {
-                        name: "main",
-                        text: "importer
-    :from(network)
-    :to(\"io_*\")
-    :roundrobin(8)
-    :start()
-
-importer
-    :from(network:cards(\"io_*\"):face(\"bottom\"))
-    :to(\"output\")
-    :start()"
-                    }
-                ],
-                connections: [
-                    [I; 2, 8, 1]
-                ]
-            }
-        },
-        {
-            pos: [2, 8, 1],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [
-                    {
-                        count: 1,
-                        Slot: 4b,
-                        id: "nodeworks:io_card"
-                    }
-                ],
-                networkId: "14839b14-f9ac-41fe-a8a8-9b0178d7b034",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 8, 1],
-                    [I; 1, 8, 1]
-                ]
-            }
-        },
-        {
-            pos: [3, 8, 0],
-            state: "minecraft:chest{facing:north,type:single,waterlogged:false}",
-            nbt: {
-                components: {},
+                cooking_total_time: 0,
                 Items: [],
-                id: "minecraft:chest"
+                id: "minecraft:furnace",
+                lit_time_remaining: 0,
+                RecipesUsed: {}
             }
         },
         {
-            pos: [3, 8, 1],
-            state: "nodeworks:node",
+            pos: [3, 6, 3],
+            state: "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [4, 6, 2],
+            state: "minecraft:furnace{facing:north,lit:false}",
+            nbt: {
+                lit_total_time: 0,
+                components: {},
+                cooking_time_spent: 0,
+                cooking_total_time: 0,
+                Items: [],
+                id: "minecraft:furnace",
+                lit_time_remaining: 0,
+                RecipesUsed: {}
+            }
+        },
+        {
+            pos: [6, 6, 1],
+            state: "nodeworks:processing_handler{facing:up}",
+            nbt: {
+                microNetworkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                components: {},
+                outputChannel: 14,
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                processingApiName: "",
+                id: "nodeworks:processing_handler",
+                permanentId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                inputCount: 0
+            }
+        },
+        {
+            pos: [6, 6, 2],
+            state: "nodeworks:processing_handler{facing:up}",
+            nbt: {
+                microNetworkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                components: {},
+                outputChannel: 14,
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                processingApiName: "",
+                id: "nodeworks:processing_handler",
+                permanentId: "8ec11a84-e2f9-4804-a489-29b0e54d3319",
+                inputCount: 0
+            }
+        },
+        {
+            pos: [6, 6, 3],
+            state: "nodeworks:processing_handler{facing:up}",
+            nbt: {
+                microNetworkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                components: {},
+                outputChannel: 14,
+                networkId: "ede9c33c-6480-49e9-847d-3bde61c78aaa",
+                processingApiName: "",
+                id: "nodeworks:processing_handler",
+                permanentId: "144157da-36d7-497b-9f68-9785c7300f4d",
+                inputCount: 0
+            }
+        },
+        {
+            pos: [2, 7, 2],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
                         count: 1,
-                        Slot: 4b,
-                        id: "nodeworks:io_card"
-                    },
-                    {
-                        count: 1,
-                        Slot: 18b,
+                        Slot: 0b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "14839b14-f9ac-41fe-a8a8-9b0178d7b034",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 4, 8, 1],
-                    [I; 2, 8, 1],
-                    [I; 3, 8, 2]
-                ]
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:node"
             }
         },
         {
-            pos: [3, 8, 2],
-            state: "nodeworks:node",
-            nbt: {
-                components: {},
-                Items: [],
-                networkId: "14839b14-f9ac-41fe-a8a8-9b0178d7b034",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 3, 6, 2],
-                    [I; 3, 8, 1]
-                ]
-            }
-        },
-        {
-            pos: [4, 8, 1],
-            state: "nodeworks:node",
+            pos: [3, 7, 2],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:true}",
             nbt: {
                 components: {},
                 Items: [
                     {
                         count: 1,
-                        Slot: 4b,
-                        id: "nodeworks:io_card"
+                        Slot: 0b,
+                        id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "14839b14-f9ac-41fe-a8a8-9b0178d7b034",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 5, 8, 1],
-                    [I; 3, 8, 1]
-                ]
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:node"
             }
         },
         {
-            pos: [5, 8, 1],
-            state: "nodeworks:network_controller",
+            pos: [3, 7, 3],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
             nbt: {
-                chunkLoadingEnabled: 0b,
                 components: {},
-                networkName: "",
-                handlerRetryLimit: 50,
-                networkId: "14839b14-f9ac-41fe-a8a8-9b0178d7b034",
-                nodeGlowStyle: 0,
-                id: "nodeworks:network_controller",
-                redstoneMode: 0,
-                connections: [
-                    [I; 4, 8, 1]
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [4, 7, 2],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:storage_card"
+                    }
                 ],
-                networkColor: 10419194
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [5, 7, 2],
+            state: "nodeworks:import_chest{facing:north}",
+            nbt: {
+                components: {},
+                tickInterval: 20,
+                channel: -1,
+                Items: [],
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                roundRobinIndex: 0,
+                id: "nodeworks:import_chest",
+                redstoneMode: 0,
+                roundRobin: 0b
+            }
+        },
+        {
+            pos: [5, 7, 3],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [6, 7, 1],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [6, 7, 2],
+            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 36b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                forcedPipeBlocked: 16,
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [6, 7, 3],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "2af49649-71c0-49bb-8853-82908337e3e8",
+                id: "nodeworks:pipe"
             }
         }
     ],
     entities: [],
     palette: [
-        "minecraft:stone",
-        "minecraft:andesite",
-        "minecraft:cobblestone",
-        "minecraft:glass",
+        "minecraft:sandstone",
         "minecraft:air",
-        "nodeworks:node",
-        "nodeworks:instruction_storage{facing:west}",
-        "nodeworks:processing_storage{facing:west}",
+        "nodeworks:processing_storage{facing:north}",
+        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
         "nodeworks:substrate",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
         "nodeworks:crafting_storage{formed:true,overheat_level:0}",
         "nodeworks:stabilizer",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:true}",
         "minecraft:chest{facing:west,type:right,waterlogged:false}",
         "minecraft:chest{facing:west,type:left,waterlogged:false}",
         "nodeworks:network_controller",
-        "nodeworks:terminal{facing:west}",
+        "nodeworks:instruction_storage{facing:north}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
         "nodeworks:crafting_core{formed:true}",
+        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
         "nodeworks:inventory_terminal{facing:north}",
-        "minecraft:barrel{facing:north,open:false}",
+        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:true}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:true,pipe_west:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:true,pipe_west:false}",
         "minecraft:furnace{facing:north,lit:false}",
-        "nodeworks:terminal{facing:north}",
-        "minecraft:chest{facing:north,type:single,waterlogged:false}"
+        "nodeworks:pipe{pipe_axis:y,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+        "nodeworks:processing_handler{facing:up}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "nodeworks:import_chest{facing:north}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
+        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:true,pipe_up:false,pipe_west:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:true}"
     ]
 }

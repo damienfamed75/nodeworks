@@ -4,9 +4,8 @@ navigation:
   icon: breaker
   title: Breaker
 categories:
-  - connectable
   - device
-description: a shared network breaker
+description: mines and harvests blocks in front of it
 item_ids:
 - nodeworks:breaker
 ---
@@ -21,16 +20,26 @@ the wooden-pickaxe formula so harder blocks take noticeably longer to break.
 
 <BlockImage scale="6" id="breaker" />
 
-> **Note:** The Breaker is a [Connectable](../nodeworks-mechanics/connectables.md)
-> and a [Device](../nodeworks-mechanics/devices.md).
-> Use a <ItemLink id="network_wrench" /> to connect it to a node and join that node's
-> network.
-
 ## Placing
 
 The Breaker's front face points at whatever you were aiming at when you
 placed it down (same shape as a piston or dispenser). The block in front of
 that face is what `:mine()` will break.
+
+## Target filter
+
+The Breaker's GUI has a filter for which block it should break. Leave it
+empty to break anything in front, or set a block to restrict the Breaker
+to that target.
+
+## Redstone
+
+The GUI's redstone setting controls when the Breaker is allowed to fire:
+
+- **High**: active while powered.
+- **Low**: active while unpowered.
+- **Ignored**: redstone does nothing. The Breaker only fires when a script
+  calls `:mine()`.
 
 ## Channel
 

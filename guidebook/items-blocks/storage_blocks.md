@@ -22,19 +22,15 @@ Each type of Recipe Set has its own Storage Block
 - **Instruction Storage:** holds Instruction Sets
 - **Processing Storage:** holds Processing Sets
 
-> **Note:** Storage Blocks are [Connectables](../nodeworks-mechanics/connectables.md).
-> Use a <ItemLink id="network_wrench" /> to wire one to a <ItemLink id="node" /> and
-> join that node's network.
-
 ## How they work
 
 Wire a Storage Block to a Node and every Recipe Set inside becomes visible to
 the CPU.
 
-<GameScene zoom="5" interactive={true} paddingTop="20" paddingLeft="50" paddingRight="60">
+<GameScene zoom="3.5" interactive={true} paddingTop="20" paddingLeft="50" paddingRight="60">
   <ImportStructure src="../assets/assemblies/processing_storage_cluster.snbt" />
   <BoxAnnotation min="0 0 0" max="3 1 1">
-    A cluster of **connected** Processing Storage
+    A cluster of **connected** Processing Storage all get exported together since they're touching
   </BoxAnnotation>
 </GameScene>
 

@@ -1,0 +1,22 @@
+{
+    DataVersion: 4790,
+    size: [1, 1, 1],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:import_chest{facing:north}",
+            nbt: {
+                components: {},
+                tickInterval: 20,
+                channel: -1,
+                Items: [],
+                roundRobinIndex: 0,
+                id: "nodeworks:import_chest",
+                redstoneMode: 0,
+                roundRobin: 0b
+            }
+        }
+    ],
+    entities: [],
+    palette: ["nodeworks:import_chest{facing:north}"]
+}

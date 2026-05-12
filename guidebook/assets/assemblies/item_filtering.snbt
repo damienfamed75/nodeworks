@@ -23,10 +23,6 @@
             state: "minecraft:air"
         },
         {
-            pos: [2, 0, 2],
-            state: "minecraft:air"
-        },
-        {
             pos: [3, 0, 0],
             state: "minecraft:air"
         },
@@ -44,10 +40,6 @@
         },
         {
             pos: [5, 0, 0],
-            state: "minecraft:air"
-        },
-        {
-            pos: [5, 0, 2],
             state: "minecraft:air"
         },
         {
@@ -222,23 +214,30 @@
         },
         {
             pos: [2, 0, 1],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:true,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_data": {}
+                        },
                         count: 1,
                         Slot: 36b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "132c69f3-e675-46e0-add3-f1ff45071205",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 5, 0, 1],
-                    [I; 3, 0, 2],
-                    [I; 2, 1, 1]
-                ]
+                networkId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [2, 0, 2],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
+                id: "nodeworks:pipe"
             }
         },
         {
@@ -247,17 +246,25 @@
             nbt: {
                 components: {},
                 autoRun: 0b,
-                layoutIndex: 0,
-                networkId: "132c69f3-e675-46e0-add3-f1ff45071205",
+                layoutIndex: 3,
+                networkId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
                 id: "nodeworks:terminal",
                 scripts: [
                     {
                         name: "main",
-                        text: ""
+                        text: "local io_1 = network:get(\"io_1\")
+-- network:route(\"storage_*\", function(items: ItemsHandle)
+--     return items:hasTag(\"minecraft:logs\")
+-- end)
+
+network:route(\"cobblestone_*\")
+    :rule(\"#c:cobblestones\")
+    :stackable()
+    :noNbt()"
                     }
                 ],
                 connections: [
-                    [I; 2, 0, 1]
+                    [I; 3, 0, 2]
                 ]
             }
         },
@@ -267,21 +274,21 @@
             nbt: {
                 chunkLoadingEnabled: 0b,
                 components: {},
+                laserEnabled: 1b,
                 networkName: "",
                 handlerRetryLimit: 50,
-                networkId: "132c69f3-e675-46e0-add3-f1ff45071205",
+                networkId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
                 nodeGlowStyle: 0,
                 id: "nodeworks:network_controller",
+                permanentId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
+                laserMode: 0,
                 redstoneMode: 0,
-                connections: [
-                    [I; 5, 0, 1]
-                ],
-                networkColor: 7660736
+                networkColor: 3246044
             }
         },
         {
             pos: [5, 0, 1],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [
@@ -291,12 +298,17 @@
                         id: "nodeworks:io_card"
                     }
                 ],
-                networkId: "132c69f3-e675-46e0-add3-f1ff45071205",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 4, 0, 2],
-                    [I; 2, 0, 1]
-                ]
+                networkId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [5, 0, 2],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
+                id: "nodeworks:pipe"
             }
         },
         {
@@ -304,6 +316,33 @@
             state: "minecraft:shulker_box{facing:up}",
             nbt: {
                 components: {},
+                Items: [
+                    {
+                        count: 2,
+                        Slot: 0b,
+                        id: "nodeworks:terminal"
+                    },
+                    {
+                        count: 1,
+                        Slot: 1b,
+                        id: "nodeworks:placer"
+                    },
+                    {
+                        count: 64,
+                        Slot: 2b,
+                        id: "minecraft:cobblestone"
+                    },
+                    {
+                        count: 1,
+                        Slot: 3b,
+                        id: "nodeworks:storage_card"
+                    },
+                    {
+                        count: 1,
+                        Slot: 4b,
+                        id: "minecraft:diamond_axe"
+                    }
+                ],
                 id: "minecraft:shulker_box"
             }
         },
@@ -327,22 +366,26 @@
         },
         {
             pos: [2, 1, 1],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_name": "cobblestone",
+                            "minecraft:custom_data": {
+                                filterRules: ["#c:cobblestones"],
+                                filterStack: "STACKABLE",
+                                filterNbt: "NO_DATA"
+                            }
+                        },
                         count: 1,
                         Slot: 36b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "132c69f3-e675-46e0-add3-f1ff45071205",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 2, 0, 1],
-                    [I; 2, 2, 1]
-                ]
+                networkId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
+                id: "nodeworks:node"
             }
         },
         {
@@ -359,27 +402,44 @@
             state: "minecraft:chest{facing:north,type:right,waterlogged:false}",
             nbt: {
                 components: {},
-                Items: [],
+                Items: [
+                    {
+                        components: {
+                            "minecraft:enchantments": {
+                                "minecraft:efficiency": 1
+                            },
+                            "minecraft:repair_cost": 1
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "minecraft:diamond_axe"
+                    }
+                ],
                 id: "minecraft:chest"
             }
         },
         {
             pos: [2, 2, 1],
-            state: "nodeworks:node",
+            state: "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
             nbt: {
                 components: {},
                 Items: [
                     {
+                        components: {
+                            "minecraft:custom_name": "cobblestone",
+                            "minecraft:custom_data": {
+                                filterRules: ["#c:cobblestones"],
+                                filterStack: "STACKABLE",
+                                filterNbt: "NO_DATA"
+                            }
+                        },
                         count: 1,
                         Slot: 36b,
                         id: "nodeworks:storage_card"
                     }
                 ],
-                networkId: "132c69f3-e675-46e0-add3-f1ff45071205",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 2, 1, 1]
-                ]
+                networkId: "e8b42471-cd5c-4bf3-819a-23ae9e978cd7",
+                id: "nodeworks:node"
             }
         }
     ],
@@ -443,9 +503,14 @@
         "minecraft:air",
         "minecraft:chest{facing:north,type:left,waterlogged:false}",
         "minecraft:chest{facing:north,type:right,waterlogged:false}",
-        "nodeworks:node",
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:true,pipe_west:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:false}",
         "nodeworks:terminal{facing:north}",
         "nodeworks:network_controller",
-        "minecraft:shulker_box{facing:up}"
+        "nodeworks:node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:true,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "minecraft:shulker_box{facing:up}",
+        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+        "nodeworks:node{pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}"
     ]
 }

@@ -7,8 +7,6 @@ navigation:
 
 # Devices
 
-A "Device" refers to a [Connectable](./connectables.md) that is scriptable.
-
-Here are the cards:
+A "Device" refers to a connectable block to a network that can be scripted
 
 <CategoryIndexDescriptions category="device" />

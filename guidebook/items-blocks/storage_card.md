@@ -32,6 +32,14 @@ and filters.
 > You can also use [`network:route()`](../lua-api/network.md#route) to bulk set card
 > settings without even touching them.
 
+## Target face
+
+You can pick which face of the adjacent block the card talks to. By
+default the card uses the face the node is pointed at, which is usually
+what you want. Override it for blocks with side-specific slots like
+furnaces, where the top accepts input, the side accepts fuel, and the
+bottom yields output.
+
 ## Channel
 
 The Storage Card's GUI also has a channel picker. See

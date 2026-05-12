@@ -1,0 +1,150 @@
+{
+    DataVersion: 4790,
+    size: [5, 3, 1],
+    data: [
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:antenna_segment{connected:true,facing:north,part:receiver}"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 2, 0],
+            state: "nodeworks:antenna_segment{connected:true,facing:north,part:receiver}"
+        },
+        {
+            pos: [1, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:import_chest{facing:north}",
+            nbt: {
+                components: {},
+                tickInterval: 20,
+                channel: -1,
+                Items: [],
+                networkId: "db84b1d1-6762-425d-934f-13c7f3298c21",
+                roundRobinIndex: 0,
+                id: "nodeworks:import_chest",
+                redstoneMode: 0,
+                roundRobin: 0b
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "db84b1d1-6762-425d-934f-13c7f3298c21",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:receiver_antenna{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                paired_pos: 274877911097L,
+                                paired_dim: "minecraft:overworld",
+                                paired_kind: "PROCESSING_STORAGE",
+                                frequency: "47b4a668-67f1-4825-8cc9-258e16565349"
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:link_crystal"
+                    }
+                ],
+                networkId: "db84b1d1-6762-425d-934f-13c7f3298c21",
+                id: "nodeworks:receiver_antenna"
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "db84b1d1-6762-425d-934f-13c7f3298c21",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [4, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                laserEnabled: 1b,
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "db84b1d1-6762-425d-934f-13c7f3298c21",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                permanentId: "db84b1d1-6762-425d-934f-13c7f3298c21",
+                laserMode: 0,
+                redstoneMode: 0,
+                networkColor: 14298844
+            }
+        },
+        {
+            pos: [0, 1, 0],
+            state: "nodeworks:receiver_antenna{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                paired_pos: -549755809735L,
+                                paired_dim: "minecraft:overworld",
+                                paired_kind: "EXPORT_CHEST",
+                                frequency: "c34c9a45-bae3-4b37-abb5-270d841056e8"
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:link_crystal"
+                    }
+                ],
+                networkId: "db84b1d1-6762-425d-934f-13c7f3298c21",
+                id: "nodeworks:receiver_antenna"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:antenna_segment{connected:true,facing:north,part:receiver}",
+        "nodeworks:import_chest{facing:north}",
+        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "nodeworks:receiver_antenna{facing:north}",
+        "nodeworks:network_controller"
+    ]
+}

@@ -23,9 +23,13 @@ navigation:
 
 <CategoryIndexDescriptions category="infrastructure" />
 
-## Connectables <ItemImage scale="0.5" id="node" />
+## Terminals <ItemImage scale="0.5" id="inventory_terminal" />
 
-<CategoryIndexDescriptions category="connectable" />
+<CategoryIndexDescriptions category="terminal" />
+
+## Devices <ItemImage scale="0.5" id="breaker" />
+
+<CategoryIndexDescriptions category="device" />
 
 ## Autocrafting <ItemImage scale="0.5" id="crafting_core" />
 

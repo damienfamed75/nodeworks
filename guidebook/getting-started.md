@@ -28,7 +28,8 @@ connected chests as you'd like using an Inventory Terminal.
 - This network contains the following:
   - 1x <ItemLink id="network_controller" />
   - 1x <ItemLink id="inventory_terminal" />
-  - 1x <ItemLink id="node" /> to connect all devices together with a <ItemLink id="network_wrench" />
+  - Some <ItemLink id="pipe" />s to connect all devices together
+  - Some <ItemLink id="node" />s to connect external blocks to the network such as chests
   - 1x <ItemLink id="storage_card" /> placed in the Node's face toward the chest
 
 ### Expanding your Nodeworks Network

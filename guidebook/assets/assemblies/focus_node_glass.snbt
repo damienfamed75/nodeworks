@@ -1,0 +1,80 @@
+{
+    DataVersion: 4790,
+    size: [7, 1, 1],
+    data: [
+        {
+            pos: [2, 0, 0],
+            state: "minecraft:glass"
+        },
+        {
+            pos: [3, 0, 0],
+            state: "minecraft:glass"
+        },
+        {
+            pos: [4, 0, 0],
+            state: "minecraft:glass"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:inventory_terminal{facing:north}",
+            nbt: {
+                components: {},
+                layoutIndex: 0,
+                networkId: "254c073a-adf4-4781-a2b4-a5c468cec31f",
+                id: "nodeworks:inventory_terminal"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "254c073a-adf4-4781-a2b4-a5c468cec31f",
+                id: "nodeworks:focus_node",
+                connections: [
+                    [I; 5, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [5, 0, 0],
+            state: "nodeworks:focus_node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                Items: [],
+                networkId: "254c073a-adf4-4781-a2b4-a5c468cec31f",
+                id: "nodeworks:focus_node",
+                connections: [
+                    [I; 1, 0, 0]
+                ]
+            }
+        },
+        {
+            pos: [6, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                laserEnabled: 1b,
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "254c073a-adf4-4781-a2b4-a5c468cec31f",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                permanentId: "254c073a-adf4-4781-a2b4-a5c468cec31f",
+                laserMode: 0,
+                redstoneMode: 0,
+                networkColor: 16136943
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:glass",
+        "nodeworks:inventory_terminal{facing:north}",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "nodeworks:focus_node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+        "nodeworks:network_controller"
+    ]
+}

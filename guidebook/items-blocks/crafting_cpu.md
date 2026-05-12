@@ -1,7 +1,7 @@
 ---
 navigation:
   parent: items-blocks/index.md
-  icon: crafing_core
+  icon: crafting_core
   title: Crafting CPU
 categories:
   - autocrafting
@@ -20,10 +20,6 @@ A Crafting CPU is the brain of the autocrafting system. It reads recipes out of
 [Storage Blocks](./storage_blocks.md) (in network and in broadcasted sub-net Processing Sets)
 and pulls ingredients out of the network, runs the craft, and puts the result back.
 For how to actually *use* a built CPU to run crafts, see [Auto Crafting](../nodeworks-mechanics/autocrafting.md).
-
-> **Note:** The Crafting Core is a [Connectable](../nodeworks-mechanics/connectables.md).
-> Use a <ItemLink id="network_wrench" /> to wire it to a <ItemLink id="node" />
-> and join that node's network.
 
 ## Forming the CPU
 

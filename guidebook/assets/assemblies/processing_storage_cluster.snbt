@@ -1,6 +1,6 @@
 {
     DataVersion: 4790,
-    size: [5, 2, 1],
+    size: [5, 6, 1],
     data: [
         {
             pos: [0, 1, 0],
@@ -11,11 +11,87 @@
             state: "minecraft:air"
         },
         {
-            pos: [2, 1, 0],
+            pos: [3, 1, 0],
             state: "minecraft:air"
         },
         {
-            pos: [3, 1, 0],
+            pos: [0, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 2, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [3, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 3, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [3, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 3, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 4, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:middle}"
+        },
+        {
+            pos: [3, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 4, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 5, 0],
+            state: "nodeworks:antenna_segment{connected:false,facing:north,part:top}"
+        },
+        {
+            pos: [3, 5, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 5, 0],
             state: "minecraft:air"
         },
         {
@@ -27,21 +103,14 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:oak_door"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:oak_planks",
-                                    "minecraft:oak_planks",
-                                    "minecraft:oak_planks",
-                                    "minecraft:oak_planks",
-                                    "minecraft:oak_planks",
-                                    "minecraft:oak_planks"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:oak_planks@1|minecraft:oak_planks@1|minecraft:oak_planks@1|minecraft:oak_planks@1|minecraft:oak_planks@1|minecraft:oak_planks@1>>minecraft:oak_door@3",
-                                input_slots: [I; 0, 1, 3, 4, 6, 7],
-                                input_counts: [I; 1, 1, 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
@@ -52,97 +121,77 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 1b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 2b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 3b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 4b,
                         id: "nodeworks:processing_set"
                     }
                 ],
-                networkId: "6e6c0424-6825-42eb-8847-c246c4b5d5ce",
+                networkId: "e80f6269-061f-404a-b2c9-acf4824302c8",
                 id: "nodeworks:processing_storage"
             }
         },
@@ -155,19 +204,14 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
@@ -178,166 +222,131 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 2,
                         Slot: 1b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 2b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 3b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 4b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 5b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 6b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 32,
+                        count: 1,
                         Slot: 7b,
                         id: "nodeworks:processing_set"
                     }
                 ],
-                networkId: "6e6c0424-6825-42eb-8847-c246c4b5d5ce",
+                networkId: "e80f6269-061f-404a-b2c9-acf4824302c8",
                 id: "nodeworks:processing_storage"
             }
         },
@@ -350,208 +359,159 @@
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 0b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 1b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 2b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 3b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 4b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 5b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 6b,
                         id: "nodeworks:processing_set"
                     },
                     {
                         components: {
                             "minecraft:custom_data": {
-                                outputs: ["minecraft:cherry_wood"],
+                                outputs: ["minecraft:acacia_button"],
                                 output_slots: [I; 0],
                                 serial: 0b,
-                                inputs: [
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log",
-                                    "minecraft:cherry_log"
-                                ],
-                                output_counts: [I; 3],
-                                name: "minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1|minecraft:cherry_log@1>>minecraft:cherry_wood@3",
-                                input_slots: [I; 0, 1, 3, 4],
-                                input_counts: [I; 1, 1, 1, 1],
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
                                 timeout: 0
                             }
                         },
-                        count: 64,
+                        count: 1,
                         Slot: 7b,
                         id: "nodeworks:processing_set"
                     }
                 ],
-                networkId: "6e6c0424-6825-42eb-8847-c246c4b5d5ce",
-                id: "nodeworks:processing_storage",
-                connections: [
-                    [I; 3, 0, 0]
-                ]
+                networkId: "e80f6269-061f-404a-b2c9-acf4824302c8",
+                id: "nodeworks:processing_storage"
             }
         },
         {
             pos: [3, 0, 0],
-            state: "nodeworks:node",
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
             nbt: {
                 components: {},
-                Items: [],
-                networkId: "6e6c0424-6825-42eb-8847-c246c4b5d5ce",
-                id: "nodeworks:node",
-                connections: [
-                    [I; 4, 0, 0],
-                    [I; 2, 0, 0],
-                    [I; 4, 1, 0]
-                ]
+                networkId: "e80f6269-061f-404a-b2c9-acf4824302c8",
+                id: "nodeworks:pipe"
             }
         },
         {
@@ -560,16 +520,26 @@
             nbt: {
                 chunkLoadingEnabled: 0b,
                 components: {},
+                laserEnabled: 1b,
                 networkName: "",
                 handlerRetryLimit: 50,
-                networkId: "6e6c0424-6825-42eb-8847-c246c4b5d5ce",
+                networkId: "e80f6269-061f-404a-b2c9-acf4824302c8",
                 nodeGlowStyle: 0,
                 id: "nodeworks:network_controller",
+                permanentId: "e80f6269-061f-404a-b2c9-acf4824302c8",
+                laserMode: 0,
                 redstoneMode: 0,
-                connections: [
-                    [I; 3, 0, 0]
-                ],
-                networkColor: 8186961
+                networkColor: 2352987
+            }
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:broadcast_antenna",
+            nbt: {
+                components: {},
+                Items: [],
+                id: "nodeworks:broadcast_antenna",
+                frequency: "626a78e9-ef6e-4ba5-83f2-4fb050ef55d4"
             }
         },
         {
@@ -578,20 +548,20 @@
             nbt: {
                 components: {},
                 layoutIndex: 0,
-                networkId: "6e6c0424-6825-42eb-8847-c246c4b5d5ce",
-                id: "nodeworks:inventory_terminal",
-                connections: [
-                    [I; 3, 0, 0]
-                ]
+                networkId: "e80f6269-061f-404a-b2c9-acf4824302c8",
+                id: "nodeworks:inventory_terminal"
             }
         }
     ],
     entities: [],
     palette: [
         "minecraft:air",
+        "nodeworks:antenna_segment{connected:false,facing:north,part:middle}",
+        "nodeworks:antenna_segment{connected:false,facing:north,part:top}",
         "nodeworks:processing_storage{facing:north}",
-        "nodeworks:node",
+        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
         "nodeworks:network_controller",
+        "nodeworks:broadcast_antenna",
         "nodeworks:inventory_terminal{facing:north}"
     ]
 }

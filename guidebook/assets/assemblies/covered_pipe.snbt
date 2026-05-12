@@ -1,0 +1,73 @@
+{
+    DataVersion: 4790,
+    size: [5, 1, 1],
+    data: [
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:inventory_terminal{facing:north}",
+            nbt: {
+                components: {},
+                layoutIndex: 0,
+                networkId: "808e6c52-656c-4b6c-9f1f-e45fe99df5a5",
+                id: "nodeworks:inventory_terminal"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "808e6c52-656c-4b6c-9f1f-e45fe99df5a5",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:covered_pipe",
+            nbt: {
+                components: {
+                    "nodeworks:camo_block_state": {
+                        Name: "minecraft:stone"
+                    }
+                },
+                camoBlock: "minecraft:stone",
+                networkId: "808e6c52-656c-4b6c-9f1f-e45fe99df5a5",
+                id: "nodeworks:covered_pipe"
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "808e6c52-656c-4b6c-9f1f-e45fe99df5a5",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [4, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                laserEnabled: 1b,
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "808e6c52-656c-4b6c-9f1f-e45fe99df5a5",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                permanentId: "808e6c52-656c-4b6c-9f1f-e45fe99df5a5",
+                laserMode: 0,
+                redstoneMode: 0,
+                networkColor: 6024740
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "nodeworks:inventory_terminal{facing:north}",
+        "nodeworks:pipe{pipe_axis:x,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "nodeworks:covered_pipe",
+        "nodeworks:network_controller"
+    ]
+}

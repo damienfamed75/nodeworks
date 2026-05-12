@@ -4,7 +4,7 @@ navigation:
   icon: terminal
   title: Scripting Terminal
 categories:
-  - connectable
+  - terminal
 description: where you write and run Lua scripts that control a network
 item_ids:
 - nodeworks:terminal
@@ -15,10 +15,6 @@ item_ids:
 The Scripting Terminal is where you write and run Lua scripts that control a network.
 
 <BlockImage scale="6" id="terminal" />
-
-> **Note:** The Scripting Terminal is a [Connectable](../nodeworks-mechanics/connectables.md).
-> Use a <ItemLink id="network_wrench" /> to connect it to a node and join that node's
-> network.
 
 ## Opening the Editor
 

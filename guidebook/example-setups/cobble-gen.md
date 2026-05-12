@@ -20,8 +20,13 @@ Place a Breaker in front of a cobblestone generator like the following
   <RemoveBlocks id="minecraft:stone" />
 </GameScene>
 
-With the following script to always mine the block in front of it. Mined blocks
-will automatically be inserted into network storage.
+Then you configure the Breaker to break `minecraft:cobblestone` with the redstone
+mode set to **Low** to make it always active.
+
+![image of the breaker GUI with cobblestone set as its filter to break](../assets/images/breaker_cobblestone.png)
+
+Or if you had a <ItemLink id="terminal" /> in your network you can use the following
+script to achieve the same thing but for many breakers.
 
 <LuaCode>
 ```lua

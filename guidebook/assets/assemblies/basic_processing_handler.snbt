@@ -1,0 +1,170 @@
+{
+    DataVersion: 4790,
+    size: [4, 3, 1],
+    data: [
+        {
+            pos: [2, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 2, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 9b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "6b43b4b8-ef9b-4b45-8e64-ec78c1a1edfa",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "6b43b4b8-ef9b-4b45-8e64-ec78c1a1edfa",
+                forcedPipeBlocked: 32,
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:processing_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                outputs: ["minecraft:acacia_button"],
+                                output_slots: [I; 0],
+                                serial: 0b,
+                                inputs: ["minecraft:acacia_planks"],
+                                output_counts: [I; 1],
+                                name: "minecraft:acacia_planks@1>>minecraft:acacia_button@1",
+                                input_slots: [I; 4],
+                                input_counts: [I; 1],
+                                timeout: 0
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:processing_set"
+                    }
+                ],
+                networkId: "8b5901d5-0b7b-4980-a9b4-fbe2b94ecef6",
+                id: "nodeworks:processing_storage"
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                laserEnabled: 1b,
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "8b5901d5-0b7b-4980-a9b4-fbe2b94ecef6",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                permanentId: "8b5901d5-0b7b-4980-a9b4-fbe2b94ecef6",
+                laserMode: 0,
+                redstoneMode: 0,
+                networkColor: 12531958
+            }
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:furnace{facing:north,lit:false}",
+            nbt: {
+                lit_total_time: 0,
+                components: {},
+                cooking_time_spent: 0,
+                cooking_total_time: 0,
+                Items: [],
+                id: "minecraft:furnace",
+                lit_time_remaining: 0,
+                RecipesUsed: {}
+            }
+        },
+        {
+            pos: [1, 1, 0],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+            nbt: {
+                components: {},
+                networkId: "6b43b4b8-ef9b-4b45-8e64-ec78c1a1edfa",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 1, 0],
+            state: "nodeworks:processing_handler{facing:west}",
+            nbt: {
+                microNetworkId: "6b43b4b8-ef9b-4b45-8e64-ec78c1a1edfa",
+                components: {},
+                outputChannel: 14,
+                networkId: "8b5901d5-0b7b-4980-a9b4-fbe2b94ecef6",
+                processingApiName: "",
+                id: "nodeworks:processing_handler",
+                permanentId: "6b43b4b8-ef9b-4b45-8e64-ec78c1a1edfa",
+                inputCount: 0
+            }
+        },
+        {
+            pos: [3, 1, 0],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "8b5901d5-0b7b-4980-a9b4-fbe2b94ecef6",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [0, 2, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "6b43b4b8-ef9b-4b45-8e64-ec78c1a1edfa",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [1, 2, 0],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "6b43b4b8-ef9b-4b45-8e64-ec78c1a1edfa",
+                id: "nodeworks:pipe"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:true}",
+        "nodeworks:processing_storage{facing:north}",
+        "nodeworks:network_controller",
+        "minecraft:furnace{facing:north,lit:false}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:true,pipe_west:false}",
+        "nodeworks:processing_handler{facing:west}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:true,pipe_east:false,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}"
+    ]
+}
