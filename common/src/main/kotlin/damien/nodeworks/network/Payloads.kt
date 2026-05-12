@@ -946,3 +946,74 @@ data class NetworkIdBatchPayload(val newId: java.util.UUID?, val positions: List
     }
     override fun type() = TYPE
 }
+
+/**
+ * S2C: A chunk of [damien.nodeworks.screen.DiagnosticOpenData.NetworkBlock]s
+ * for the currently open Diagnostic GUI. The menu opens with an empty block
+ * list so the open packet stays small, then the server streams the topology
+ * in chunks bounded under the custom-payload size limit. The client appends
+ * each chunk to the menu's live block list as it arrives.
+ *
+ * Chunks are sent in order. The receiver doesn't need a sequence number,
+ * NeoForge's payload bus guarantees in-order delivery on the same channel.
+ * [isLast] is informational so the screen can drop a "loading…" indicator
+ * once the full topology is in.
+ */
+data class DiagnosticTopologyChunkPayload(
+    val blocks: List<damien.nodeworks.screen.DiagnosticOpenData.NetworkBlock>,
+    val isLast: Boolean,
+) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<DiagnosticTopologyChunkPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "diagnostic_topology_chunk")
+        )
+        val CODEC: StreamCodec<FriendlyByteBuf, DiagnosticTopologyChunkPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeBoolean(p.isLast)
+                buf.writeVarInt(p.blocks.size)
+                for (block in p.blocks) {
+                    buf.writeBlockPos(block.pos)
+                    buf.writeUtf(block.type, 64)
+                    buf.writeVarInt(block.connections.size)
+                    for (path in block.connections) {
+                        buf.writeVarInt(path.size)
+                        for (waypoint in path) buf.writeBlockPos(waypoint)
+                    }
+                    buf.writeVarInt(block.cards.size)
+                    for (card in block.cards) {
+                        buf.writeVarInt(card.side)
+                        buf.writeUtf(card.cardType, 32)
+                        buf.writeUtf(card.alias, 64)
+                        buf.writeUtf(card.adjacentBlockId, 128)
+                    }
+                    buf.writeVarInt(block.details.size)
+                    for (detail in block.details) buf.writeUtf(detail, 256)
+                }
+            },
+            { buf ->
+                val isLast = buf.readBoolean()
+                val count = buf.readVarInt()
+                val blocks = (0 until count).map {
+                    val pos = buf.readBlockPos()
+                    val type = buf.readUtf(64)
+                    val connCount = buf.readVarInt()
+                    val connections = (0 until connCount).map {
+                        val pathLen = buf.readVarInt()
+                        (0 until pathLen).map { buf.readBlockPos() }
+                    }
+                    val cardCount = buf.readVarInt()
+                    val cards = (0 until cardCount).map {
+                        damien.nodeworks.screen.DiagnosticOpenData.CardInfo(
+                            buf.readVarInt(), buf.readUtf(32), buf.readUtf(64), buf.readUtf(128)
+                        )
+                    }
+                    val detailCount = buf.readVarInt()
+                    val details = (0 until detailCount).map { buf.readUtf(256) }
+                    damien.nodeworks.screen.DiagnosticOpenData.NetworkBlock(pos, type, connections, cards, details)
+                }
+                DiagnosticTopologyChunkPayload(blocks, isLast)
+            }
+        )
+    }
+    override fun type() = TYPE
+}

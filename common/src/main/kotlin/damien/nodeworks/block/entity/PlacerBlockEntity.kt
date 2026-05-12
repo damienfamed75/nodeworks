@@ -160,12 +160,14 @@ class PlacerBlockEntity(
 
     // --- Auto-place ---
 
-    /** Per-tick driver. No-op when the filter is empty (idle), the redstone
-     *  gate blocks the placement, the cooldown is still running, or the
-     *  target slot is occupied by a non-replaceable block. Lua-driven
-     *  placement via [PlacerHandle] is unaffected and ignores this loop. */
+    /** Per-tick driver. No-op when the redstone gate blocks the placement, the
+     *  cooldown is still running, or the target slot is occupied by a
+     *  non-replaceable block. An empty [filterRule] is treated as `*` (match
+     *  any block-form item in network storage), so a fresh Placer switched to
+     *  LOW/HIGH redstone places the first available block without forcing the
+     *  player to type a wildcard. Lua-driven placement via [PlacerHandle]
+     *  ignores this loop. */
     fun serverTick(level: ServerLevel) {
-        if (filterRule.isEmpty()) return
         // Ignored = script-only, mirrors UserBlockEntity. Auto-place stays off
         // until the player switches to LOW or HIGH; Lua [PlacerHandle.place]
         // bypasses this gate by calling the placement helpers directly.
@@ -199,7 +201,10 @@ class PlacerBlockEntity(
         val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
         if (snapshot.controller == null) return false
 
-        val filterPred: (String) -> Boolean = { CardHandle.matchesFilter(it, filterRule) }
+        // Empty filter is the "any block" sentinel, matchesFilter handles `*` as
+        // "match everything" natively.
+        val effective = filterRule.ifEmpty { "*" }
+        val filterPred: (String) -> Boolean = { CardHandle.matchesFilter(it, effective) }
         val blockItemPred: (String) -> Boolean = { id ->
             filterPred(id) && resolveBlockItem(id) != null
         }

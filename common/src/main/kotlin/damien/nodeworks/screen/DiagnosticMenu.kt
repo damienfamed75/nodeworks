@@ -16,6 +16,23 @@ class DiagnosticMenu(
 
     override val blockBackingPos: BlockPos get() = clickedPos
 
+    /** Mutable topology block list. The open packet ships with [topology.blocks]
+     *  empty so it stays small on huge networks; the server streams the full
+     *  block set in chunks via DiagnosticTopologyChunkPayload, each chunk
+     *  appended here. Screen reads this list so additions show up immediately
+     *  on the next frame. */
+    val blocks: MutableList<DiagnosticOpenData.NetworkBlock> = topology.blocks.toMutableList()
+
+    /** False until the server's final topology chunk arrives. Lets the screen
+     *  surface a loading indicator while chunks stream in. */
+    var topologyLoaded: Boolean = topology.blocks.isNotEmpty()
+        private set
+
+    fun appendTopologyChunk(chunk: List<DiagnosticOpenData.NetworkBlock>, isLast: Boolean) {
+        blocks.addAll(chunk)
+        if (isLast) topologyLoaded = true
+    }
+
     /** Craft tree received from server, updated via S2C packet. */
     var craftTree: CraftTreeBuilder.CraftTreeNode? = null
 

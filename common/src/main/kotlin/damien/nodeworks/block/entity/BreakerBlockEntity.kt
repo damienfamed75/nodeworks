@@ -200,10 +200,11 @@ class BreakerBlockEntity(
     }
 
     /** Filter + redstone gate check, fires [startBreak] when both pass and the
-     *  front block resolves to a registry id matching [filterRule]. Empty
-     *  filter is the explicit idle signal (no auto-break). */
+     *  front block resolves to a registry id matching the effective filter.
+     *  An empty [filterRule] is treated as `*` (match anything), so a fresh
+     *  Breaker switched to LOW/HIGH redstone starts mining whatever is in front
+     *  without forcing the player to type a wildcard. */
     private fun tryAutoStart(level: ServerLevel) {
-        if (filterRule.isEmpty()) return
         // Ignored = script-only, mirrors UserBlockEntity. Auto-break stays off
         // until the player switches to LOW or HIGH; Lua [BreakerHandle.mine]
         // calls [startBreak] directly and bypasses this gate.
@@ -212,8 +213,9 @@ class BreakerBlockEntity(
         val target = targetPos
         val state = level.getBlockState(target)
         if (state.isAir) return
+        val effective = filterRule.ifEmpty { "*" }
         val blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.block).toString()
-        if (!damien.nodeworks.script.CardHandle.matchesFilter(blockId, filterRule)) return
+        if (!damien.nodeworks.script.CardHandle.matchesFilter(blockId, effective)) return
         startBreak(level, handler = null)
     }
 

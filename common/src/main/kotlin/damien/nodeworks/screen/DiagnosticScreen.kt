@@ -57,6 +57,7 @@ class DiagnosticScreen(
 
         private val BLOCK_COLORS = mapOf(
             "node" to 0xFFCCCCCC.toInt(),
+            "focus_node" to 0xFFAABBFF.toInt(),
             "controller" to 0xFFFFD700.toInt(),
             "terminal" to 0xFF5599FF.toInt(),
             "crafting_core" to 0xFFFF8833.toInt(),
@@ -66,7 +67,13 @@ class DiagnosticScreen(
             "variable" to 0xFFFFAA33.toInt(),
             "receiver_antenna" to 0xFF55BBAA.toInt(),
             "broadcast_antenna" to 0xFF55BBAA.toInt(),
-            "inventory_terminal" to 0xFF77BBFF.toInt()
+            "inventory_terminal" to 0xFF77BBFF.toInt(),
+            "breaker" to 0xFFE07555.toInt(),
+            "placer" to 0xFF6BBCD0.toInt(),
+            "user" to 0xFF79E324.toInt(),
+            "import_chest" to 0xFFB8915C.toInt(),
+            "export_chest" to 0xFFB8915C.toInt(),
+            "processing_handler" to 0xFFDD55DD.toInt(),
         )
 
         private val CARD_COLORS = mapOf(
@@ -77,6 +84,7 @@ class DiagnosticScreen(
 
         private val BLOCK_LABELS = mapOf(
             "node" to "Node",
+            "focus_node" to "Focus Node",
             "controller" to "Controller",
             "terminal" to "Terminal",
             "crafting_core" to "Crafting Core",
@@ -86,7 +94,13 @@ class DiagnosticScreen(
             "variable" to "Variable",
             "receiver_antenna" to "Receiver Antenna",
             "broadcast_antenna" to "Broadcast Antenna",
-            "inventory_terminal" to "Inventory Terminal"
+            "inventory_terminal" to "Inventory Terminal",
+            "breaker" to "Breaker",
+            "placer" to "Placer",
+            "user" to "User",
+            "import_chest" to "Import Chest",
+            "export_chest" to "Export Chest",
+            "processing_handler" to "Processing Handler",
         )
 
         private val TAB_NAMES = listOf("Topology", "Route", "Craft", "Jobs")
@@ -95,6 +109,7 @@ class DiagnosticScreen(
             val reg = damien.nodeworks.registry.ModBlocks
             mapOf(
                 "node" to ItemStack(reg.NODE),
+                "focus_node" to ItemStack(reg.FOCUS_NODE),
                 "controller" to ItemStack(reg.NETWORK_CONTROLLER),
                 "terminal" to ItemStack(reg.TERMINAL),
                 "crafting_core" to ItemStack(reg.CRAFTING_CORE),
@@ -104,7 +119,13 @@ class DiagnosticScreen(
                 "variable" to ItemStack(reg.VARIABLE),
                 "receiver_antenna" to ItemStack(reg.RECEIVER_ANTENNA),
                 "broadcast_antenna" to ItemStack(reg.BROADCAST_ANTENNA),
-                "inventory_terminal" to ItemStack(reg.INVENTORY_TERMINAL)
+                "inventory_terminal" to ItemStack(reg.INVENTORY_TERMINAL),
+                "breaker" to ItemStack(reg.BREAKER),
+                "placer" to ItemStack(reg.PLACER),
+                "user" to ItemStack(reg.USER),
+                "import_chest" to ItemStack(reg.IMPORT_CHEST),
+                "export_chest" to ItemStack(reg.EXPORT_CHEST),
+                "processing_handler" to ItemStack(reg.PROCESSING_HANDLER),
             )
         }
     }
@@ -152,9 +173,26 @@ class DiagnosticScreen(
     /** Map from BlockPos to its group index (only for stacked blocks). */
     private val blockToGroup = mutableMapOf<BlockPos, Int>()
 
+    /** Snapshot of [menu.blocks.size] last time the layout was rebuilt.
+     *  Triggers a rebuild when topology chunks have grown the list since the
+     *  last frame, otherwise the rotated positions / stack groups stay frozen
+     *  at zero entries and every block renders at the same spot. */
+    private var lastLayoutBlockCount = -1
+
     init {
         inventoryLabelY = -9999
         titleLabelY = -9999
+
+        rebuildLayout()
+    }
+
+    /** Recompute rotated screen positions and overlap groups from [menu.blocks].
+     *  Called on construction and on the first frame after each topology chunk
+     *  arrives, so the view fills in as the network streams from the server. */
+    private fun rebuildLayout() {
+        rotatedPositions.clear()
+        stackGroups.clear()
+        blockToGroup.clear()
 
         val player = net.minecraft.client.Minecraft.getInstance().player
         val playerX = player?.x?.toFloat() ?: 0f
@@ -167,30 +205,40 @@ class DiagnosticScreen(
         centerX = 0f
         centerZ = 0f
 
-        val blocks = menu.topology.blocks
-        if (blocks.isNotEmpty()) {
-            // Compute rotated positions for all blocks
-            for (block in blocks) {
-                val dx = block.pos.x + 0.5f - playerX
-                val dz = block.pos.z + 0.5f - playerZ
-                val rx = dx * cosYaw + dz * sinYaw
-                val rz = -dx * sinYaw + dz * cosYaw
-                rotatedPositions[block.pos] = rx to rz
-            }
+        val blocks = menu.blocks
+        lastLayoutBlockCount = blocks.size
+        if (blocks.isEmpty()) return
 
-            // Group blocks that overlap in rotated space
-            val byXZ = blocks.groupBy {
-                val p = rotatedPositions[it.pos]!!
-                (p.first * 10).roundToInt() to (p.second * 10).roundToInt()
+        // Rotate every position the renderer will look up. Includes the block
+        // positions themselves AND each waypoint along their pipe paths; without
+        // the waypoint entries [blockScreenX]/[blockScreenY] would fall back to
+        // the view centre and pipe segments would all converge there.
+        fun rotateInto(pos: BlockPos) {
+            if (pos in rotatedPositions) return
+            val dx = pos.x + 0.5f - playerX
+            val dz = pos.z + 0.5f - playerZ
+            val rx = dx * cosYaw + dz * sinYaw
+            val rz = -dx * sinYaw + dz * cosYaw
+            rotatedPositions[pos] = rx to rz
+        }
+        for (block in blocks) {
+            rotateInto(block.pos)
+            for (path in block.connections) {
+                for (waypoint in path) rotateInto(waypoint)
             }
-            for ((_, group) in byXZ) {
-                if (group.size > 1) {
-                    val sorted = group.sortedByDescending { it.pos.y }
-                    val groupIdx = stackGroups.size
-                    stackGroups.add(StackGroup(sorted, rotatedPositions[sorted[0].pos]!!))
-                    for (b in sorted) {
-                        blockToGroup[b.pos] = groupIdx
-                    }
+        }
+
+        val byXZ = blocks.groupBy {
+            val p = rotatedPositions[it.pos]!!
+            (p.first * 10).roundToInt() to (p.second * 10).roundToInt()
+        }
+        for ((_, group) in byXZ) {
+            if (group.size > 1) {
+                val sorted = group.sortedByDescending { it.pos.y }
+                val groupIdx = stackGroups.size
+                stackGroups.add(StackGroup(sorted, rotatedPositions[sorted[0].pos]!!))
+                for (b in sorted) {
+                    blockToGroup[b.pos] = groupIdx
                 }
             }
         }
@@ -339,9 +387,11 @@ class DiagnosticScreen(
     private var hoveredGroupIdx = -1
 
     private fun renderTopology(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        val blocks = menu.topology.blocks
+        val blocks = menu.blocks
+        if (blocks.size != lastLayoutBlockCount) rebuildLayout()
         if (blocks.isEmpty()) {
-            graphics.drawString(font, "No blocks found", contentLeft + 8, contentTop + 8, DIM)
+            val msg = if (menu.topologyLoaded) "No blocks found" else "Loading topology..."
+            graphics.drawString(font, msg, contentLeft + 8, contentTop + 8, DIM)
             return
         }
 
@@ -351,23 +401,38 @@ class DiagnosticScreen(
 
         val posSet = blocks.map { it.pos }.toSet()
 
-        // Draw connections (use group center for collapsed blocks)
+        // Draw connections as polylines along their actual pipe path. Each
+        // logical neighbour ships with a waypoint list, intermediate entries
+        // are pipe positions and the last entry is the non-pipe target. Drawing
+        // segment-by-segment keeps the line aligned with the world layout
+        // instead of cutting a diagonal between the two endpoints.
         for (block in blocks) {
             val sx1 = blockScreenX(block.pos)
             val sy1 = blockScreenY(block.pos)
-            for (conn in block.connections) {
-                if (conn !in posSet) continue
-                if (block.pos.asLong() > conn.asLong()) continue
-                val sx2 = blockScreenX(conn)
-                val sy2 = blockScreenY(conn)
-                drawLine(
-                    graphics,
-                    sx1.roundToInt(),
-                    sy1.roundToInt(),
-                    sx2.roundToInt(),
-                    sy2.roundToInt(),
-                    networkLineColor
-                )
+            for (path in block.connections) {
+                if (path.isEmpty()) continue
+                val target = path.last()
+                if (target !in posSet) continue
+                // Dedup symmetric edges. Either direction owns the draw based
+                // on pos ordering of the two non-pipe endpoints, intermediates
+                // don't affect the decision.
+                if (block.pos.asLong() > target.asLong()) continue
+                var px = sx1
+                var py = sy1
+                for (wp in path) {
+                    val nx = blockScreenX(wp)
+                    val ny = blockScreenY(wp)
+                    drawLine(
+                        graphics,
+                        px.roundToInt(),
+                        py.roundToInt(),
+                        nx.roundToInt(),
+                        ny.roundToInt(),
+                        networkLineColor
+                    )
+                    px = nx
+                    py = ny
+                }
             }
         }
 
@@ -1314,6 +1379,68 @@ class DiagnosticScreen(
                         graphics.fill(swatchX, textY, swatchX + ss, textY + ss, swatchColor)
                         val hexStr = "#${Integer.toHexString(colorVal).uppercase().padStart(6, '0')}"
                         graphics.drawString(font, hexStr, swatchX + ss + 3, textY, DIM, false)
+                    } else if (row.text.startsWith("__channel:")) {
+                        // Format: __channel:<rgbInt>:<name>, or __channel:ALL for the
+                        // unrestricted "any channel" case. Mirrors the dye-swatch the
+                        // Channel Picker widget uses so the diagnostic reads visually
+                        // identical to the device's own GUI.
+                        graphics.drawString(font, "Channel:", textX, textY, 0xFFCCCCCC.toInt(), false)
+                        val labelW = font.width("Channel: ")
+                        val payload = row.text.removePrefix("__channel:")
+                        val ss = font.lineHeight - 2
+                        val swatchX = textX + labelW
+                        graphics.fill(swatchX - 1, textY - 1, swatchX + ss + 1, textY + ss + 1, 0xFF444444.toInt())
+                        if (payload == "ALL") {
+                            // Same any-channel glyph the ChannelPickerWidget uses so
+                            // the diagnostic reads identical to the device GUI.
+                            Icons.ANY_CHANNEL.draw(graphics, swatchX, textY, ss)
+                            graphics.drawString(font, "Any", swatchX + ss + 3, textY, DIM, false)
+                        } else {
+                            val colon = payload.indexOf(':')
+                            val rgb = (payload.substring(0, colon.coerceAtLeast(0)).toIntOrNull() ?: 0xFFFFFF) and 0xFFFFFF
+                            val name = if (colon >= 0) payload.substring(colon + 1) else ""
+                            Icons.WHITE_WOOL.drawTinted(graphics, swatchX, textY, ss, rgb)
+                            graphics.drawString(font, name, swatchX + ss + 3, textY, DIM, false)
+                        }
+                    } else if (row.text.startsWith("__phitem:")) {
+                        // Processing Handler ingredient row, used for both
+                        // Inputs and Outputs lists. Indent, half-scale item
+                        // icon, wool swatch tinted to the item's channel, and
+                        // the channel name. Pipe `|` separator because the item
+                        // id itself contains a colon (e.g. minecraft:iron_ingot).
+                        val parts = row.text.removePrefix("__phitem:").split('|')
+                        val itemId = parts.getOrNull(0).orEmpty()
+                        val rgb = (parts.getOrNull(1)?.toIntOrNull() ?: 0xFFFFFF) and 0xFFFFFF
+                        val name = parts.getOrNull(2).orEmpty()
+                        var x = textX + 6
+                        val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+                        val item = identifier?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
+                        if (item != null) {
+                            graphics.pose().pushMatrix()
+                            graphics.pose().translate(x.toFloat(), (textY - 1).toFloat())
+                            graphics.pose().scale(0.5f, 0.5f)
+                            graphics.renderItem(ItemStack(item), 0, 0)
+                            graphics.pose().popMatrix()
+                            x += 10
+                        } else {
+                            x += 2
+                        }
+                        val ss = font.lineHeight - 2
+                        graphics.fill(x - 1, textY - 1, x + ss + 1, textY + ss + 1, 0xFF444444.toInt())
+                        Icons.WHITE_WOOL.drawTinted(graphics, x, textY, ss, rgb)
+                        graphics.drawString(font, name, x + ss + 3, textY, DIM, false)
+                    } else if (row.text.startsWith("__alias:")) {
+                        // Format: __alias:<rgbInt>:<text>. Renders "Name:" in the
+                        // standard key gray, value text in the device's sidebar tint
+                        // so the diagnostic colour-cues each device the same way the
+                        // Scripting Terminal sidebar does.
+                        val payload = row.text.removePrefix("__alias:")
+                        val colon = payload.indexOf(':')
+                        val rgb = (payload.substring(0, colon.coerceAtLeast(0)).toIntOrNull() ?: 0xFFFFFF) and 0xFFFFFF
+                        val name = if (colon >= 0) payload.substring(colon + 1) else ""
+                        graphics.drawString(font, "Name:", textX, textY, 0xFFCCCCCC.toInt(), false)
+                        val labelW = font.width("Name: ")
+                        graphics.drawString(font, name, textX + labelW, textY, rgb or 0xFF000000.toInt(), false)
                     } else if (row.text.startsWith("__glow:")) {
                         val parts = row.text.removePrefix("__glow:").split(":")
                         val glowStyle = parts.getOrNull(0)?.toIntOrNull() ?: 0
@@ -1595,7 +1722,7 @@ class DiagnosticScreen(
         if (activeTab == 3 && errorClickRegions.isNotEmpty()) {
             for ((yStart, yEnd, termPos) in errorClickRegions) {
                 if (my >= yStart && my < yEnd && mx >= contentLeft + contentW / 2 && mx < contentLeft + contentW) {
-                    val block = menu.topology.blocks.firstOrNull { it.pos == termPos }
+                    val block = menu.blocks.firstOrNull { it.pos == termPos }
                     if (block != null) {
                         selectedBlock = block
                         inspectorScrollY = 0

@@ -98,6 +98,13 @@ interface ServerNetworkingService {
         level: ServerLevel,
         payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload,
     )
+
+    /** Send [payload] to a single player. Used for menu-scoped streams (e.g.
+     *  Diagnostic Tool topology chunks) that don't fan out to other players. */
+    fun sendToPlayer(
+        player: ServerPlayer,
+        payload: net.minecraft.network.protocol.common.custom.CustomPacketPayload,
+    )
 }
 
 /**

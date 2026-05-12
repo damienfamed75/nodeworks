@@ -40,7 +40,12 @@ data class DiagnosticOpenData(
     data class NetworkBlock(
         val pos: BlockPos,
         val type: String,
-        val connections: List<BlockPos>,
+        /** Each entry is the polyline path from [pos] to a logical neighbour.
+         *  The first element is the first hop, the last element is the
+         *  neighbour itself. Pipes show up as intermediate waypoints so the
+         *  renderer can draw segments along the actual world layout instead
+         *  of a straight diagonal between non-pipe endpoints. */
+        val connections: List<List<BlockPos>>,
         val cards: List<CardInfo>,
         val details: List<String>  // free-form detail lines for the inspector panel
     )
@@ -60,7 +65,10 @@ data class DiagnosticOpenData(
                     val pos = buf.readBlockPos()
                     val type = buf.readUtf(64)
                     val connCount = buf.readVarInt()
-                    val connections = (0 until connCount).map { buf.readBlockPos() }
+                    val connections = (0 until connCount).map {
+                        val pathLen = buf.readVarInt()
+                        (0 until pathLen).map { buf.readBlockPos() }
+                    }
                     val cardCount = buf.readVarInt()
                     val cards = (0 until cardCount).map {
                         CardInfo(buf.readVarInt(), buf.readUtf(32), buf.readUtf(64), buf.readUtf(128))
@@ -102,8 +110,9 @@ data class DiagnosticOpenData(
                     buf.writeBlockPos(block.pos)
                     buf.writeUtf(block.type, 64)
                     buf.writeVarInt(block.connections.size)
-                    for (conn in block.connections) {
-                        buf.writeBlockPos(conn)
+                    for (path in block.connections) {
+                        buf.writeVarInt(path.size)
+                        for (waypoint in path) buf.writeBlockPos(waypoint)
                     }
                     buf.writeVarInt(block.cards.size)
                     for (card in block.cards) {

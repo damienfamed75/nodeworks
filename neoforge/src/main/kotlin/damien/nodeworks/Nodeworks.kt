@@ -867,6 +867,17 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         }
 
         registrar.playToClient(
+            damien.nodeworks.network.DiagnosticTopologyChunkPayload.TYPE,
+            damien.nodeworks.network.DiagnosticTopologyChunkPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu as? damien.nodeworks.screen.DiagnosticMenu ?: return@enqueueWork
+                menu.appendTopologyChunk(payload.blocks, payload.isLast)
+            }
+        }
+
+        registrar.playToClient(
             damien.nodeworks.network.ProcessingHandlerStateSyncPayload.TYPE,
             damien.nodeworks.network.ProcessingHandlerStateSyncPayload.CODEC,
         ) { payload, context ->
