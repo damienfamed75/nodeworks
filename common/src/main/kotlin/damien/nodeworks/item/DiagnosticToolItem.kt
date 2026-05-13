@@ -342,7 +342,10 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             cpuInfos = cpuInfos,
             terminalInfos = terminalInfos,
             recentErrors = recentErrors,
-            processingApis = processingApis,
+            // Processing APIs ride on chunked payloads after open. Open packet
+            // stays small even on networks with many component-bearing
+            // recipes (potions, dyed armour, enchanted books).
+            processingApis = emptyList(),
         )
 
         PlatformServices.menu.openExtendedMenu(
@@ -370,6 +373,24 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                 PlatformServices.serverNetworking.sendToPlayer(
                     serverPlayer,
                     damien.nodeworks.network.DiagnosticTopologyChunkPayload(chunk, isLast = idx == chunks.lastIndex),
+                )
+            }
+        }
+
+        // Stream Processing APIs similarly. Each entry can hold many
+        // component-bearing ItemStacks, so the chunk count is intentionally
+        // smaller than topology chunks.
+        val apiChunks = processingApis.chunked(PROCESSING_API_CHUNK_SIZE)
+        if (apiChunks.isEmpty()) {
+            PlatformServices.serverNetworking.sendToPlayer(
+                serverPlayer,
+                damien.nodeworks.network.DiagnosticProcessingApisChunkPayload(emptyList(), isLast = true),
+            )
+        } else {
+            for ((idx, chunk) in apiChunks.withIndex()) {
+                PlatformServices.serverNetworking.sendToPlayer(
+                    serverPlayer,
+                    damien.nodeworks.network.DiagnosticProcessingApisChunkPayload(chunk, isLast = idx == apiChunks.lastIndex),
                 )
             }
         }
@@ -440,6 +461,12 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
          *  per chunk lands at ~75-130 KB which stays comfortably under
          *  NeoForge's default payload ceiling. */
         const val TOPOLOGY_CHUNK_SIZE = 256
+
+        /** Processing API entries per chunk. Each entry carries 0..N input and
+         *  0..N output ItemStacks, each of which can be component-bearing
+         *  (potions, dyed items). Conservative cap keeps a chunk under the
+         *  payload ceiling even when every ingredient is a maxed-out potion. */
+        const val PROCESSING_API_CHUNK_SIZE = 16
 
         /** Per-device tint colours mirror the Scripting Terminal sidebar so
          *  the diagnostic colour-codes devices the same way the script editor

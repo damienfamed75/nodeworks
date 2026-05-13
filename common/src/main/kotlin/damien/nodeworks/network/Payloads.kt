@@ -11,6 +11,24 @@ import net.minecraft.resources.Identifier
  * These are platform-agnostic data classes, registration and handling is in the platform module.
  */
 
+/** Defensive cap on the encoded byte size of a single client-supplied
+ *  [net.minecraft.core.component.DataComponentPatch]. A patch is always the
+ *  tail field of its payload, so a remaining-byte check at the gate fences
+ *  off DoS via multi-MB `custom_data` blobs without rewriting the codec.
+ *  16 KiB comfortably accommodates every legitimate variant (potions, dyed
+ *  armor, enchanted books with reasonable enchantment lists, signs with
+ *  text); anything larger is rejected and the connection drops. */
+private const val MAX_CLIENT_PATCH_BYTES = 16 * 1024
+
+private fun readBoundedPatch(buf: net.minecraft.network.RegistryFriendlyByteBuf): net.minecraft.core.component.DataComponentPatch {
+    if (buf.readableBytes() > MAX_CLIENT_PATCH_BYTES) {
+        throw io.netty.handler.codec.DecoderException(
+            "Component patch exceeds $MAX_CLIENT_PATCH_BYTES byte cap"
+        )
+    }
+    return net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(buf)
+}
+
 data class RunScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<RunScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "run_script"))
@@ -157,7 +175,7 @@ data class InvTerminalClickPayload(
                 val act = buf.readVarInt()
                 val k = buf.readByte()
                 val hasPatch = buf.readBoolean()
-                val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                val patch = if (hasPatch) readBoundedPatch(regBuf)
                     else net.minecraft.core.component.DataComponentPatch.EMPTY
                 InvTerminalClickPayload(cid, id, act, k, patch)
             }
@@ -266,7 +284,7 @@ data class InvTerminalCraftPayload(
                 val id = buf.readUtf(256)
                 val ct = buf.readVarInt()
                 val hasPatch = buf.readBoolean()
-                val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                val patch = if (hasPatch) readBoundedPatch(regBuf)
                     else net.minecraft.core.component.DataComponentPatch.EMPTY
                 InvTerminalCraftPayload(cid, id, ct, patch)
             }
@@ -560,7 +578,7 @@ data class CraftPreviewRequestPayload(
                 val pos = buf.readBlockPos()
                 val id = buf.readUtf(256)
                 val hasPatch = buf.readBoolean()
-                val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                val patch = if (hasPatch) readBoundedPatch(regBuf)
                     else net.minecraft.core.component.DataComponentPatch.EMPTY
                 CraftPreviewRequestPayload(cid, pos, id, patch)
             }
@@ -1103,6 +1121,77 @@ data class NetworkIdBatchPayload(val newId: java.util.UUID?, val positions: List
  * [isLast] is informational so the screen can drop a "loading…" indicator
  * once the full topology is in.
  */
+/**
+ * Streams the Processing API list (resolved recipes for each ProcessingHandler)
+ * to the diagnostic GUI client-side. Carried separately from the open packet
+ * because each API can hold a dozen component-bearing ItemStacks (potions,
+ * dyed items, enchanted gear), so a network with many Processing Sets would
+ * otherwise inflate the open packet past the custom-payload size limit.
+ *
+ * Chunked the same way topology blocks are: in-order delivery on the same
+ * payload channel, [isLast] marks the final chunk for client-side loading
+ * indicator handling.
+ */
+data class DiagnosticProcessingApisChunkPayload(
+    val apis: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>,
+    val isLast: Boolean,
+) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<DiagnosticProcessingApisChunkPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "diagnostic_processing_apis_chunk")
+        )
+        val CODEC: StreamCodec<net.minecraft.network.RegistryFriendlyByteBuf, DiagnosticProcessingApisChunkPayload> = StreamCodec.of(
+            { buf, p ->
+                buf.writeBoolean(p.isLast)
+                buf.writeVarInt(p.apis.size)
+                for (api in p.apis) {
+                    buf.writeUtf(api.name, 64)
+                    buf.writeVarInt(api.inputs.size)
+                    for (ingr in api.inputs) {
+                        net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, ingr.stack)
+                        buf.writeVarInt(ingr.count)
+                    }
+                    buf.writeVarInt(api.outputs.size)
+                    for (ingr in api.outputs) {
+                        net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, ingr.stack)
+                        buf.writeVarInt(ingr.count)
+                    }
+                    buf.writeVarInt(api.timeout)
+                    buf.writeBoolean(api.serial)
+                    buf.writeBoolean(api.fuzzy)
+                }
+            },
+            { buf ->
+                val isLast = buf.readBoolean()
+                val count = buf.readVarInt()
+                val apis = (0 until count).map {
+                    val name = buf.readUtf(64)
+                    val inCount = buf.readVarInt()
+                    val inputs = (0 until inCount).map {
+                        val stack = net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.decode(buf)
+                        val cnt = buf.readVarInt()
+                        damien.nodeworks.script.RecipeIngredient(stack, cnt)
+                    }
+                    val outCount = buf.readVarInt()
+                    val outputs = (0 until outCount).map {
+                        val stack = net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.decode(buf)
+                        val cnt = buf.readVarInt()
+                        damien.nodeworks.script.RecipeIngredient(stack, cnt)
+                    }
+                    val timeout = buf.readVarInt()
+                    val serial = buf.readBoolean()
+                    val fuzzy = buf.readBoolean()
+                    damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo(
+                        name, inputs, outputs, timeout, serial, fuzzy
+                    )
+                }
+                DiagnosticProcessingApisChunkPayload(apis, isLast)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
 data class DiagnosticTopologyChunkPayload(
     val blocks: List<damien.nodeworks.screen.DiagnosticOpenData.NetworkBlock>,
     val isLast: Boolean,

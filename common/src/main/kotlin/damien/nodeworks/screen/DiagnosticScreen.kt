@@ -708,12 +708,25 @@ class DiagnosticScreen(
     private var craftAutocompleteScroll = 0
     private val craftDropdownMaxVisible = 10
 
-    /** Built lazily from [menu.topology]. Plain itemId entries from
-     *  [craftableItems] combine with component-bearing variant entries
-     *  pulled from each local recipe's outputs. Deduped on the canonical
-     *  string so a recipe producing the same variant twice doesn't double
-     *  up in the popup. */
-    private val craftCandidates: List<CraftCandidate> by lazy {
+    private var craftCandidatesCache: List<CraftCandidate>? = null
+    private var craftCandidatesCacheSize: Int = -1
+
+    /** Plain itemId entries from [craftableItems] combine with component-bearing
+     *  variant entries pulled from each local recipe's outputs. Deduped on the
+     *  canonical string so a recipe producing the same variant twice doesn't
+     *  double up in the popup. Memoized on [menu.processingApis.size] so the
+     *  list rebuilds as chunked Processing API payloads stream in after open. */
+    private val craftCandidates: List<CraftCandidate> get() {
+        val currentSize = menu.processingApis.size
+        val cached = craftCandidatesCache
+        if (cached != null && craftCandidatesCacheSize == currentSize) return cached
+        val built = buildCraftCandidates()
+        craftCandidatesCache = built
+        craftCandidatesCacheSize = currentSize
+        return built
+    }
+
+    private fun buildCraftCandidates(): List<CraftCandidate> {
         // Split processing-api outputs into plain (no components patch) and
         // variant buckets so we can decide whether a `craftableItems` entry
         // for a given itemId represents a real plain recipe or just the
@@ -722,7 +735,7 @@ class DiagnosticScreen(
         // strength / fire-resistance recipes exist).
         val plainItemIdsFromApis = mutableSetOf<String>()
         val variantItemIdsFromApis = mutableSetOf<String>()
-        for (api in menu.topology.processingApis) {
+        for (api in menu.processingApis) {
             for (ingr in api.outputs) {
                 if (ingr.stack.componentsPatch.size() > 0) variantItemIdsFromApis.add(ingr.itemId)
                 else plainItemIdsFromApis.add(ingr.itemId)
@@ -741,7 +754,7 @@ class DiagnosticScreen(
         }
         val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
         if (registries != null) {
-            for (api in menu.topology.processingApis) {
+            for (api in menu.processingApis) {
                 for (ingr in api.outputs) {
                     if (ingr.stack.componentsPatch.size() == 0) continue
                     val canonical = damien.nodeworks.script.FilterRule.format(ingr.stack, registries)
@@ -749,7 +762,7 @@ class DiagnosticScreen(
                 }
             }
         }
-        out.values.toList()
+        return out.values.toList()
     }
 
     private fun updateCraftAutocomplete(query: String) {
@@ -1128,7 +1141,7 @@ class DiagnosticScreen(
                     val hintW = (splitX - 2) - hintX
                     y += damien.nodeworks.screen.widget.RecipeHintRenderer.renderHandlers(
                         graphics, font, term.handlers, hintX, y, hintW,
-                        resolver = { hash -> menu.topology.processingApis.firstOrNull { it.name == hash } }
+                        resolver = { hash -> menu.processingApis.firstOrNull { it.name == hash } }
                     )
                     y += 2
                 }
@@ -1499,7 +1512,7 @@ class DiagnosticScreen(
                         val ingrIdx = parts.getOrNull(5)?.toIntOrNull() ?: -1
                         val resolvedStack: ItemStack? = run {
                             if (recipeHash.isEmpty() || ingrIdx < 0) return@run null
-                            val api = menu.topology.processingApis.firstOrNull { it.name == recipeHash } ?: return@run null
+                            val api = menu.processingApis.firstOrNull { it.name == recipeHash } ?: return@run null
                             val list = if (isOutput) api.outputs else api.inputs
                             list.getOrNull(ingrIdx)?.stack
                         }
@@ -1574,7 +1587,7 @@ class DiagnosticScreen(
                     damien.nodeworks.screen.widget.RecipeHintRenderer.renderById(
                         graphics, font, row.text, stripX, curY,
                         stripW, damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT,
-                        resolver = { hash -> menu.topology.processingApis.firstOrNull { it.name == hash } }
+                        resolver = { hash -> menu.processingApis.firstOrNull { it.name == hash } }
                     )
                     curY += damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT + 1
                     rowIndex++

@@ -44,6 +44,11 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         private val logger = LoggerFactory.getLogger(MOD_ID)
         var tickCount = 0L
             private set
+
+        // Per-player last-tick map for Diagnostic craft-preview throttling.
+        // Touched from the netty payload handler thread and the main thread, so
+        // it must be concurrent.
+        private val diagnosticPreviewLastTick = java.util.concurrent.ConcurrentHashMap<java.util.UUID, Long>()
     }
 
     init {
@@ -728,6 +733,23 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         registrar.playToServer(CraftPreviewRequestPayload.TYPE, CraftPreviewRequestPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
+                // Gate the preview to players who actually have the Diagnostic
+                // menu open at the exact network position they're previewing.
+                // Without this gate any client could spam network discoveries
+                // for arbitrary positions and force expensive planner runs.
+                val menu = player.containerMenu
+                if (menu !is damien.nodeworks.screen.DiagnosticMenu) return@enqueueWork
+                if (menu.containerId != payload.containerId) return@enqueueWork
+                if (menu.clickedPos != payload.networkPos) return@enqueueWork
+                // Per-player request throttle. Diagnostic preview is a
+                // bounded-depth tree walk (depth 20) but still walks the
+                // network; cap to 10 requests/sec to fence off accidental
+                // or hostile spam from a modified client.
+                val now = (player.level() as? ServerLevel)?.server?.tickCount?.toLong() ?: 0L
+                val last = diagnosticPreviewLastTick[player.uuid] ?: Long.MIN_VALUE
+                if (now - last < 2) return@enqueueWork
+                diagnosticPreviewLastTick[player.uuid] = now
+
                 val level = player.level() as? ServerLevel ?: return@enqueueWork
                 val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, payload.networkPos)
                 val tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(
@@ -886,6 +908,17 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         }
 
         registrar.playToClient(
+            damien.nodeworks.network.DiagnosticProcessingApisChunkPayload.TYPE,
+            damien.nodeworks.network.DiagnosticProcessingApisChunkPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu as? damien.nodeworks.screen.DiagnosticMenu ?: return@enqueueWork
+                menu.appendProcessingApisChunk(payload.apis, payload.isLast)
+            }
+        }
+
+        registrar.playToClient(
             damien.nodeworks.network.ProcessingHandlerStateSyncPayload.TYPE,
             damien.nodeworks.network.ProcessingHandlerStateSyncPayload.CODEC,
         ) { payload, context ->
@@ -949,6 +982,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
     private fun onPlayerDisconnect(event: net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent) {
         damien.nodeworks.item.NetworkWrenchItem.clearSelection(event.entity.uuid)
+        diagnosticPreviewLastTick.remove(event.entity.uuid)
     }
 
     private fun onRightClickBlock(event: net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock) {

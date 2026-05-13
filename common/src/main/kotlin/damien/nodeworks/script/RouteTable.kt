@@ -121,30 +121,36 @@ class RouteTable(
 
     /**
      * Insert items using default priority routing, but ONLY into open (unrouted) storages.
+     *
+     * Component-aware: enumerates source variants per (itemId + componentsPatch)
+     * so a card configured to accept Strength Potions only doesn't swallow
+     * every potion variant. See [NetworkStorageHelper.insertItemsDefault]
+     * for the parallel implementation.
      */
     fun insertDefault(source: ItemStorageHandle, filter: String, maxCount: Long): Long {
         var totalMoved = 0L
         var remaining = maxCount
-        for (card in openStorageCards) {
-            if (remaining <= 0) break
-            val destStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
-            // Per-card filter gate: predicate must match BOTH the caller's filter
-            // and the card's configured rules. An ALLOW-mode card with no rules
-            // and ANY/ANY gates accepts everything (legacy behavior). Routes
-            // through `moveItemsVariant` so the per-card filter has access to
-            // `hasData` for the NBT-presence gate.
-            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-            val moved = try {
-                PlatformServices.storage.moveItemsVariant(
-                    source, destStorage,
-                    { id, hasData ->
-                        CardHandle.matchesFilter(id, filter) && (cap == null || cap.acceptsItem(id, hasData))
-                    },
-                    remaining
-                )
-            } catch (_: Exception) { 0L }
-            totalMoved += moved
-            remaining -= moved
+        val registries = level.registryAccess()
+        val variants = PlatformServices.storage.findAllItemInfo(source) {
+            CardHandle.matchesFilter(it, filter)
+        }
+        for (info in variants) {
+            if (remaining <= 0L) break
+            val itemId = info.itemId
+            val componentsPatch = info.componentsPatch
+            val hasData = info.hasData
+            val variantFilter: (String, Boolean) -> Boolean = { id, data -> id == itemId && data == hasData }
+            for (card in openStorageCards) {
+                if (remaining <= 0L) break
+                val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+                if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
+                val destStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                val moved = try {
+                    PlatformServices.storage.moveItemsVariant(source, destStorage, variantFilter, remaining)
+                } catch (_: Exception) { 0L }
+                totalMoved += moved
+                remaining -= moved
+            }
         }
         return totalMoved
     }

@@ -687,7 +687,14 @@ object NetworkStorageHelper {
         return totalMoved
     }
 
-    /** Default priority-based routing across ALL storage cards (no route filtering). */
+    /** Default priority-based routing across ALL storage cards (no route filtering).
+     *
+     *  Enumerates the source's distinct (itemId + componentsPatch) variants
+     *  matching [filter], then applies each card's component-aware acceptance
+     *  rule per variant. Without this enumeration the per-card filter would
+     *  fall back to the itemId-only `acceptsItem(id, hasData)` overload, so
+     *  a card configured to accept only Strength Potions would still
+     *  swallow every potion variant the network produced. */
     private fun insertItemsDefault(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
@@ -699,27 +706,32 @@ object NetworkStorageHelper {
     ): Long {
         var totalMoved = 0L
         var remaining = maxCount
-        for (card in getStorageCards(snapshot)) {
-            if (remaining <= 0) break
-            if (!channel.matches(card.channel)) continue
-            val destStorage = getStorage(level, card) ?: continue
-            // Per-card filter gate, see [RouteTable.insertDefault] for the rationale.
-            // An ALLOW-mode card with empty rules + ANY/ANY gates accepts anything
-            // (legacy behavior). Routes through `moveItemsVariant` so the filter
-            // sees `hasData` for the NBT-presence gate.
-            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-            val moved = try {
-                PlatformServices.storage.moveItemsVariant(
-                    source, destStorage,
-                    { id, hasData ->
-                        CardHandle.matchesFilter(id, filter) && (cap == null || cap.acceptsItem(id, hasData))
-                    },
-                    remaining
-                )
-            } catch (_: Exception) { 0L }
-            totalMoved += moved
-            remaining -= moved
+        val registries = level.registryAccess()
+        val variants = PlatformServices.storage.findAllItemInfo(source) {
+            CardHandle.matchesFilter(it, filter)
         }
+        for (info in variants) {
+            if (remaining <= 0L) break
+            val itemId = info.itemId
+            val componentsPatch = info.componentsPatch
+            val hasData = info.hasData
+            val variantFilter: (String, Boolean) -> Boolean = { id, data -> id == itemId && data == hasData }
+            for (card in getStorageCards(snapshot)) {
+                if (remaining <= 0L) break
+                if (!channel.matches(card.channel)) continue
+                val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+                if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
+                val destStorage = getStorage(level, card) ?: continue
+                val moved = try {
+                    PlatformServices.storage.moveItemsVariant(source, destStorage, variantFilter, remaining)
+                } catch (_: Exception) { 0L }
+                totalMoved += moved
+                remaining -= moved
+            }
+        }
+        // Cache notification handled by callers in [insertItemsRouted] so we
+        // don't double-count here. [insertItems]'s direct default path passes
+        // cache=null since it isn't tracking per-variant inserts at that level.
         return totalMoved
     }
 }

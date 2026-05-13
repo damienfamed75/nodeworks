@@ -1,12 +1,9 @@
 package damien.nodeworks.screen
 
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo
-import damien.nodeworks.script.RecipeIngredient
 import net.minecraft.core.BlockPos
 import net.minecraft.network.FriendlyByteBuf
-import net.minecraft.network.RegistryFriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
-import net.minecraft.world.item.ItemStack
 
 data class DiagnosticOpenData(
     val blocks: List<NetworkBlock>,
@@ -17,10 +14,11 @@ data class DiagnosticOpenData(
     val cpuInfos: List<CpuInfo> = emptyList(),
     val terminalInfos: List<TerminalInfo> = emptyList(),
     val recentErrors: List<ErrorEntry> = emptyList(),
-    /** Processing API list resolved at open time so the inspector's handler
-     *  rows can render `recipe_<hash>` ids as icon strips. Carries
-     *  component-bearing ItemStacks per ingredient so potion / dyed variants
-     *  display correctly. */
+    /** Always empty on the wire. Processing APIs stream in chunked via
+     *  [damien.nodeworks.network.DiagnosticProcessingApisChunkPayload] after
+     *  the menu opens so the open packet stays under the custom-payload size
+     *  limit even on networks with many component-bearing recipes. The field
+     *  is retained for type-compatibility but is not encoded. */
     val processingApis: List<ProcessingApiInfo> = emptyList(),
 ) {
     data class ErrorEntry(
@@ -110,28 +108,7 @@ data class DiagnosticOpenData(
                 val recentErrors = (0 until errCount).map {
                     ErrorEntry(buf.readBlockPos(), buf.readUtf(512), buf.readVarInt())
                 }
-                val regBuf = buf as RegistryFriendlyByteBuf
-                val apiCount = buf.readVarInt()
-                val processingApis = (0 until apiCount).map {
-                    val name = buf.readUtf(64)
-                    val inCount = buf.readVarInt()
-                    val inputs = (0 until inCount).map {
-                        val stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
-                        val count = buf.readVarInt()
-                        RecipeIngredient(stack, count)
-                    }
-                    val outCount = buf.readVarInt()
-                    val outputs = (0 until outCount).map {
-                        val stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
-                        val count = buf.readVarInt()
-                        RecipeIngredient(stack, count)
-                    }
-                    val timeout = buf.readVarInt()
-                    val serial = buf.readBoolean()
-                    val fuzzy = buf.readBoolean()
-                    ProcessingApiInfo(name, inputs, outputs, timeout, serial, fuzzy)
-                }
-                return DiagnosticOpenData(blocks, networkName, networkColor, networkPos, craftableItems, cpuInfos, terminalInfos, recentErrors, processingApis)
+                return DiagnosticOpenData(blocks, networkName, networkColor, networkPos, craftableItems, cpuInfos, terminalInfos, recentErrors, emptyList())
             }
 
             override fun encode(buf: FriendlyByteBuf, data: DiagnosticOpenData) {
@@ -185,24 +162,6 @@ data class DiagnosticOpenData(
                     buf.writeBlockPos(err.terminalPos)
                     buf.writeUtf(err.message, 512)
                     buf.writeVarInt(err.tickAge)
-                }
-                val regBuf = buf as RegistryFriendlyByteBuf
-                buf.writeVarInt(data.processingApis.size)
-                for (api in data.processingApis) {
-                    buf.writeUtf(api.name, 64)
-                    buf.writeVarInt(api.inputs.size)
-                    for (ingr in api.inputs) {
-                        ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, ingr.stack)
-                        buf.writeVarInt(ingr.count)
-                    }
-                    buf.writeVarInt(api.outputs.size)
-                    for (ingr in api.outputs) {
-                        ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, ingr.stack)
-                        buf.writeVarInt(ingr.count)
-                    }
-                    buf.writeVarInt(api.timeout)
-                    buf.writeBoolean(api.serial)
-                    buf.writeBoolean(api.fuzzy)
                 }
             }
         }

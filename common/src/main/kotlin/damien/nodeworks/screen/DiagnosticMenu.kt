@@ -33,6 +33,19 @@ class DiagnosticMenu(
         if (isLast) topologyLoaded = true
     }
 
+    /** Live list of Processing APIs streamed in chunks after open. Open packet
+     *  ships with an empty list to keep its size bounded when networks hold
+     *  many Processing Sets with component-bearing ingredient stacks. */
+    val processingApis: MutableList<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo> =
+        topology.processingApis.toMutableList()
+
+    fun appendProcessingApisChunk(
+        chunk: List<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>,
+        isLast: Boolean,
+    ) {
+        processingApis.addAll(chunk)
+    }
+
     /** Craft tree received from server, updated via S2C packet. */
     var craftTree: CraftTreeBuilder.CraftTreeNode? = null
 

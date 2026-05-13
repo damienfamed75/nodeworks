@@ -95,10 +95,21 @@ sealed class FilterRule {
             if (filter.startsWith("/") && filter.endsWith("/") && filter.length > 2) {
                 val body = filter.substring(1, filter.length - 1)
                 if (body.length > MAX_REGEX_LENGTH) return Invalid(filter, "regex too long")
-                val pattern = regexCache.getOrPut(body) {
-                    try { java.util.regex.Pattern.compile(body) }
-                    catch (_: Exception) { return Invalid(filter, "bad regex") }
-                }
+                // LinkedHashMap with accessOrder isn't thread-safe; the
+                // LAN-host case shares static state between client and server
+                // threads. Synchronize the whole get-then-put around a
+                // compile() that can throw so we don't leave a half-built
+                // entry in the LRU. Compilation runs under the lock but the
+                // 200-char regex cap bounds worst-case wait time to ~ms.
+                val pattern = synchronized(regexCache) {
+                    val cached = regexCache[body]
+                    if (cached != null) cached
+                    else try {
+                        val compiled = java.util.regex.Pattern.compile(body)
+                        regexCache[body] = compiled
+                        compiled
+                    } catch (_: Exception) { null }
+                } ?: return Invalid(filter, "bad regex")
                 return Regex(pattern)
             }
 
