@@ -440,22 +440,35 @@ data class CpuFailurePayload(val containerId: Int, val reason: String) : CustomP
     override fun type() = TYPE
 }
 
-data class BufferSyncPayload(val containerId: Int, val entries: List<Pair<String, Long>>) : CustomPacketPayload {
+/** S2C: per-bucket buffer contents for the Crafting CPU GUI. Carries a
+ *  representative [ItemStack] (with components) plus the Long bucket count
+ *  so variant-bearing buckets (Potion of Strength, dyed armor, enchanted
+ *  books) render their actual visual in the buffer grid + tooltip. */
+data class BufferSyncPayload(
+    val containerId: Int,
+    val entries: List<Pair<net.minecraft.world.item.ItemStack, Long>>,
+) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<BufferSyncPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "buffer_sync"))
         val CODEC: StreamCodec<FriendlyByteBuf, BufferSyncPayload> = CustomPacketPayload.codec(
             { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
                 buf.writeVarInt(p.containerId)
                 buf.writeVarInt(p.entries.size)
-                for ((id, count) in p.entries) {
-                    buf.writeUtf(id, 256)
+                for ((stack, count) in p.entries) {
+                    net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, stack)
                     buf.writeVarLong(count)
                 }
             },
             { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
                 val containerId = buf.readVarInt()
                 val size = buf.readVarInt()
-                val entries = (0 until size).map { buf.readUtf(256) to buf.readVarLong() }
+                val entries = (0 until size).map {
+                    val stack = net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
+                    val count = buf.readVarLong()
+                    stack to count
+                }
                 BufferSyncPayload(containerId, entries)
             }
         )
@@ -522,12 +535,35 @@ data class DismissCpuFailurePayload(val pos: BlockPos) : CustomPacketPayload {
 }
 
 /** C2S: Request a craft preview tree for the diagnostic tool. */
-data class CraftPreviewRequestPayload(val containerId: Int, val networkPos: BlockPos, val itemId: String) : CustomPacketPayload {
+data class CraftPreviewRequestPayload(
+    val containerId: Int,
+    val networkPos: BlockPos,
+    val itemId: String,
+    /** Component patch of the requested variant. Empty for plain crafts.
+     *  Lets the diagnostic preview a Strength Potion specifically rather than
+     *  whichever potion recipe the network's first-match picks. */
+    val componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<CraftPreviewRequestPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "craft_preview_request"))
         val CODEC: StreamCodec<FriendlyByteBuf, CraftPreviewRequestPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeVarInt(p.containerId); buf.writeBlockPos(p.networkPos); buf.writeUtf(p.itemId, 256) },
-            { buf -> CraftPreviewRequestPayload(buf.readVarInt(), buf.readBlockPos(), buf.readUtf(256)) }
+            { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                buf.writeVarInt(p.containerId); buf.writeBlockPos(p.networkPos); buf.writeUtf(p.itemId, 256)
+                val hasPatch = p.componentsPatch.size() > 0
+                buf.writeBoolean(hasPatch)
+                if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, p.componentsPatch)
+            },
+            { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                val cid = buf.readVarInt()
+                val pos = buf.readBlockPos()
+                val id = buf.readUtf(256)
+                val hasPatch = buf.readBoolean()
+                val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                    else net.minecraft.core.component.DataComponentPatch.EMPTY
+                CraftPreviewRequestPayload(cid, pos, id, patch)
+            }
         )
     }
     override fun type() = TYPE
@@ -956,10 +992,13 @@ data class ProcessingHandlerUnbindPayload(val pos: BlockPos) : CustomPacketPaylo
     override fun type() = TYPE
 }
 
-/** C2S: change the channel for a single input itemId. */
+/** C2S: change the channel for a single input variant. Identity is
+ *  (itemId, componentsHash) so the same recipe can address each variant
+ *  of a same-itemId pair independently (e.g. Strength vs Fire Resistance). */
 data class ProcessingHandlerSetInputChannelPayload(
     val pos: BlockPos,
     val itemId: String,
+    val componentsHash: String,
     val channelId: Int,
 ) : CustomPacketPayload {
     companion object {
@@ -967,8 +1006,8 @@ data class ProcessingHandlerSetInputChannelPayload(
             Identifier.fromNamespaceAndPath("nodeworks", "phandler_set_input_channel")
         )
         val CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerSetInputChannelPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.itemId, 256); buf.writeVarInt(p.channelId) },
-            { buf -> ProcessingHandlerSetInputChannelPayload(buf.readBlockPos(), buf.readUtf(256), buf.readVarInt()) }
+            { p, buf -> buf.writeBlockPos(p.pos); buf.writeUtf(p.itemId, 256); buf.writeUtf(p.componentsHash, 32); buf.writeVarInt(p.channelId) },
+            { buf -> ProcessingHandlerSetInputChannelPayload(buf.readBlockPos(), buf.readUtf(256), buf.readUtf(32), buf.readVarInt()) }
         )
     }
     override fun type() = TYPE

@@ -101,11 +101,12 @@ class ProcessingHandlerBlockEntity(
     var processingApiName: String = ""
         private set
 
-    /** Per-input-itemId channel. Routed inputs land on storage cards in the
-     *  micro-network whose channel matches the entry for that itemId.
-     *  Defaults to [DyeColor.BLUE] for new entries, which the UI populates
-     *  the first time a player binds a Set. */
-    private val inputChannelsByItem = mutableMapOf<String, DyeColor>()
+    /** Per-input-variant channel. Keyed on [damien.nodeworks.script.BufferKey.Key]
+     *  so the same recipe can bind different channels to different variants of
+     *  the same itemId (e.g. Strength Potion on BLUE and Fire Resistance Potion
+     *  on RED). Plain inputs use an empty `componentsHash` and behave like the
+     *  legacy itemId-only map. Defaults to [DyeColor.BLUE] for new entries. */
+    private val inputChannelsByKey = mutableMapOf<damien.nodeworks.script.BufferKey.Key, DyeColor>()
 
     /** Output channel. The UI doesn't expose per-output editing, so a single
      *  shared color suffices. Storage cards on the micro-network with this
@@ -113,17 +114,24 @@ class ProcessingHandlerBlockEntity(
     var outputChannel: DyeColor = DyeColor.RED
         private set
 
+    /** Looks up the channel for an ingredient by full variant identity. */
+    fun getInputChannel(key: damien.nodeworks.script.BufferKey.Key): DyeColor =
+        inputChannelsByKey[key] ?: DyeColor.BLUE
+
+    /** Backwards-compat lookup by itemId only. Returns the first registered
+     *  entry sharing the id (regardless of variant), or BLUE when none. Only
+     *  meaningful for callers that don't know the variant. */
     fun getInputChannel(itemId: String): DyeColor =
-        inputChannelsByItem[itemId] ?: DyeColor.BLUE
+        inputChannelsByKey.entries.firstOrNull { it.key.itemId == itemId }?.value ?: DyeColor.BLUE
 
     /** Snapshot of the per-input channel map. Returns a copy so callers can't
      *  mutate the BE's internal state. */
-    fun snapshotInputChannels(): Map<String, DyeColor> = inputChannelsByItem.toMap()
+    fun snapshotInputChannels(): Map<damien.nodeworks.script.BufferKey.Key, DyeColor> = inputChannelsByKey.toMap()
 
-    fun bindToProcessingSet(name: String, inputItemIds: Collection<String>) {
+    fun bindToProcessingSet(name: String, inputs: Collection<damien.nodeworks.script.RecipeIngredient>) {
         processingApiName = name
-        inputChannelsByItem.clear()
-        for (id in inputItemIds) inputChannelsByItem[id] = DyeColor.BLUE
+        inputChannelsByKey.clear()
+        for (ingr in inputs) inputChannelsByKey[ingr.bufferKey()] = DyeColor.BLUE
         outputChannel = DyeColor.RED
         markDirtyAndSync()
         if (level is ServerLevel) {
@@ -133,7 +141,7 @@ class ProcessingHandlerBlockEntity(
 
     fun unbind() {
         processingApiName = ""
-        inputChannelsByItem.clear()
+        inputChannelsByKey.clear()
         outputChannel = DyeColor.RED
         markDirtyAndSync()
         if (level is ServerLevel) {
@@ -151,18 +159,18 @@ class ProcessingHandlerBlockEntity(
         damien.nodeworks.script.cpu.BlockHandlerRegistry.syncFromBE(this)
     }
 
-    fun setInputChannel(itemId: String, color: DyeColor) {
-        if (!inputChannelsByItem.containsKey(itemId)) return
-        if (inputChannelsByItem[itemId] == color) return
-        inputChannelsByItem[itemId] = color
+    fun setInputChannel(key: damien.nodeworks.script.BufferKey.Key, color: DyeColor) {
+        if (!inputChannelsByKey.containsKey(key)) return
+        if (inputChannelsByKey[key] == color) return
+        inputChannelsByKey[key] = color
         markDirtyAndSync()
     }
 
     fun setAllInputChannels(color: DyeColor) {
         var changed = false
-        for (key in inputChannelsByItem.keys.toList()) {
-            if (inputChannelsByItem[key] != color) {
-                inputChannelsByItem[key] = color
+        for (key in inputChannelsByKey.keys.toList()) {
+            if (inputChannelsByKey[key] != color) {
+                inputChannelsByKey[key] = color
                 changed = true
             }
         }
@@ -299,14 +307,17 @@ class ProcessingHandlerBlockEntity(
         output.putBlockPosList("connections", connections)
         output.putString("processingApiName", processingApiName)
         output.putInt("outputChannel", outputChannel.id)
-        // Per-input channels packed as parallel itemId / channelId lists.
-        // Two parallel arrays beat a sub-tag map for predictable codec order
-        // and small payload size when many handlers share an inventory cache.
-        val inputIds = inputChannelsByItem.keys.toList()
-        output.putInt("inputCount", inputIds.size)
-        for ((index, id) in inputIds.withIndex()) {
-            output.putString("inputId$index", id)
-            output.putInt("inputChannel$index", (inputChannelsByItem[id] ?: DyeColor.BLUE).id)
+        // Per-input channels packed as parallel (itemId, componentsHash,
+        // channelId) lists. componentsHash is empty for plain-item inputs
+        // and equal to the in-session [BufferKey.componentsHash] for
+        // variant-bearing ones, so plain entries round-trip through the
+        // legacy inputId / inputChannel fields without churn.
+        val keys = inputChannelsByKey.keys.toList()
+        output.putInt("inputCount", keys.size)
+        for ((index, k) in keys.withIndex()) {
+            output.putString("inputId$index", k.itemId)
+            output.putString("inputHash$index", k.componentsHash)
+            output.putInt("inputChannel$index", (inputChannelsByKey[k] ?: DyeColor.BLUE).id)
         }
     }
 
@@ -331,14 +342,16 @@ class ProcessingHandlerBlockEntity(
         processingApiName = input.getStringOr("processingApiName", "")
         outputChannel = runCatching { DyeColor.byId(input.getIntOr("outputChannel", DyeColor.RED.id)) }
             .getOrDefault(DyeColor.RED)
-        inputChannelsByItem.clear()
+        inputChannelsByKey.clear()
         val count = input.getIntOr("inputCount", 0).coerceAtLeast(0)
         for (index in 0 until count) {
             val id = input.getStringOr("inputId$index", "")
             if (id.isEmpty()) continue
+            // Legacy saves don't have inputHash, fall back to empty (plain).
+            val hash = input.getStringOr("inputHash$index", "")
             val ch = runCatching { DyeColor.byId(input.getIntOr("inputChannel$index", DyeColor.BLUE.id)) }
                 .getOrDefault(DyeColor.BLUE)
-            inputChannelsByItem[id] = ch
+            inputChannelsByKey[damien.nodeworks.script.BufferKey.Key(id, hash)] = ch
         }
     }
 

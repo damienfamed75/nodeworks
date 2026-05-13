@@ -265,12 +265,17 @@ class CraftTreeGraph {
                 else -> null
             }
 
-            // Item icon with per-pixel glow highlight
+            // Item icon with per-pixel glow highlight. Applies the node's
+            // components patch so variant-bearing items (potions, dyed armor,
+            // enchanted books) render their actual visual instead of the bare
+            // item placeholder.
             val itemResId = Identifier.tryParse(node.itemId)
             if (itemResId != null) {
                 val item = BuiltInRegistries.ITEM.getValue(itemResId)
                 if (item != null) {
-                    val stack = ItemStack(item)
+                    val stack = ItemStack(item).apply {
+                        if (node.componentsPatch.size() > 0) applyComponents(node.componentsPatch)
+                    }
                     val iconX = sx - 8
                     val iconY = sy
 

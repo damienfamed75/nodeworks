@@ -71,7 +71,7 @@ object ProcessingHandlerServerLogic {
             .flatMap { it.apis }
             .firstOrNull { it.name == apiName } ?: return
         if (isSetClaimedByOther(level, self, apiName)) return
-        self.bindToProcessingSet(apiName, match.inputs.map { it.itemId })
+        self.bindToProcessingSet(apiName, match.inputs)
     }
 
     /**
@@ -95,8 +95,8 @@ object ProcessingHandlerServerLogic {
             ProcessingHandlerOpenData.AvailableSet(it.name, it.inputs, it.outputs)
         }
         val boundSetMissing = entity.processingApiName.isNotEmpty() && boundOnNetwork == null
-        val inputChannelEntries = entity.snapshotInputChannels().map { (id, color) ->
-            ProcessingHandlerOpenData.InputChannelEntry(id, color.id)
+        val inputChannelEntries = entity.snapshotInputChannels().map { (key, color) ->
+            ProcessingHandlerOpenData.InputChannelEntry(key.itemId, key.componentsHash, color.id)
         }
         return ProcessingHandlerOpenData(
             pos = entity.blockPos,

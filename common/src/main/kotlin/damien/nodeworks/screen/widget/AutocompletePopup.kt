@@ -2562,7 +2562,22 @@ class AutocompletePopup(
      *  literal correctly. Lua unescapes back to canonical form before
      *  ItemParser sees it. */
     private fun craftableSuggestions(partial: String): List<Suggestion> {
+        // Split api outputs into plain (no components patch) and variant
+        // buckets so we can skip plain `craftableOutputs` entries whose only
+        // recipes are variant-bearing (e.g. `minecraft:potion` showing as
+        // an Uncraftable Potion suggestion when only strength /
+        // fire-resistance recipes produce potions on this network).
+        val plainItemIdsFromApis = mutableSetOf<String>()
+        val variantItemIdsFromApis = mutableSetOf<String>()
+        for (api in localApis) {
+            for (ingr in api.outputs) {
+                if (ingr.stack.componentsPatch.size() > 0) variantItemIdsFromApis.add(ingr.itemId)
+                else plainItemIdsFromApis.add(ingr.itemId)
+            }
+        }
+
         val plain = craftableOutputs.mapNotNull { itemId ->
+            if (itemId in variantItemIdsFromApis && itemId !in plainItemIdsFromApis) return@mapNotNull null
             val ident = net.minecraft.resources.Identifier.tryParse(itemId) ?: return@mapNotNull null
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: return@mapNotNull null
             val stack = net.minecraft.world.item.ItemStack(item)

@@ -338,11 +338,11 @@ class CraftingCoreScreen(
             if (row < 0 || row >= rows) continue
             val ix = startX + col * slotSize
             val iy = startY + row * slotSize
-            val id = Identifier.tryParse(entry.first) ?: continue
-            val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
-            val stack = ItemStack(item, 1)
+            // Entry is already a variant-bearing stack from BufferState's
+            // bucket template (potion variants, dyed armor render with their
+            // real visual).
             NineSlice.SLOT.draw(graphics, ix - 1, iy - 1, 18, 18)
-            graphics.renderItem(stack, ix, iy)
+            graphics.renderItem(entry.first, ix, iy)
         }
 
         // Count text at higher Z with 0.5x scale
@@ -405,9 +405,12 @@ class CraftingCoreScreen(
                 val ix = bufferGridX + col * slotSize
                 val iy = bufferGridY + row * slotSize
                 if (mouseX >= ix && mouseX < ix + 16 && mouseY >= iy && mouseY < iy + 16) {
-                    val id = Identifier.tryParse(entry.first) ?: continue
-                    val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
-                    val stack = ItemStack(item, entry.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+                    // Build the tooltip stack from the entry's variant template
+                    // sized to the bucket count, so the hover shows the proper
+                    // name (e.g. "Potion of Strength") plus the right count.
+                    val stack = entry.first.copyWithCount(
+                        entry.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    )
                     graphics.renderTooltip(font, stack, mouseX, mouseY)
                     break
                 }

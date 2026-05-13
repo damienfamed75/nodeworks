@@ -256,7 +256,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                         if (api.inputs.isNotEmpty()) {
                             details.add("Inputs:")
                             for ((idx, ingr) in api.inputs.withIndex()) {
-                                val channel = entity.getInputChannel(ingr.itemId)
+                                val channel = entity.getInputChannel(ingr.bufferKey())
                                 details.add(processingHandlerItemMarker(ingr.itemId, channel, apiName, false, idx))
                             }
                         }

@@ -225,12 +225,12 @@ class ProcessingHandlerScreen(
     private var inputsScroll = 0
     private var outputsScroll = 0
 
-    private val inputPickers = mutableMapOf<String, ChannelPickerWidget>()
+    private val inputPickers = mutableMapOf<damien.nodeworks.script.BufferKey.Key, ChannelPickerWidget>()
     private var inputsHeaderPicker: ChannelPickerWidget? = null
     private var outputsHeaderPicker: ChannelPickerWidget? = null
 
     private var lastBoundApiName: String = ""
-    private var lastInputItemIds: List<String> = emptyList()
+    private var lastInputItemIds: List<damien.nodeworks.script.BufferKey.Key> = emptyList()
     private var lastInputsScroll = -1
 
     override fun init() {
@@ -315,7 +315,7 @@ class ProcessingHandlerScreen(
         for (visibleIdx in 0 until VISIBLE_ROWS) {
             val rowIdx = inputsScroll + visibleIdx
             if (rowIdx >= inputChannels.size) break
-            val (itemId, color) = inputChannels[rowIdx]
+            val (bufferKey, color) = inputChannels[rowIdx]
             val rowY = interiorY + visibleIdx * ROW_H
             val pickerY = rowY + (ROW_H - SEPARATOR_OVERLAP - SMALL_SWATCH) / 2
             val picker = ChannelPickerWidget(
@@ -329,12 +329,12 @@ class ProcessingHandlerScreen(
                 onChange = { newColor ->
                     if (newColor != null) {
                         PlatformServices.clientNetworking.sendToServer(
-                            ProcessingHandlerSetInputChannelPayload(menu.devicePos, itemId, newColor.id)
+                            ProcessingHandlerSetInputChannelPayload(menu.devicePos, bufferKey.itemId, bufferKey.componentsHash, newColor.id)
                         )
                     }
                 },
             )
-            inputPickers[itemId] = picker
+            inputPickers[bufferKey] = picker
             addRenderableWidget(picker)
         }
     }
@@ -357,8 +357,8 @@ class ProcessingHandlerScreen(
             rebuildPickers()
             return
         }
-        for ((itemId, picker) in inputPickers) {
-            val color = inputChannels[itemId] ?: continue
+        for ((bufferKey, picker) in inputPickers) {
+            val color = inputChannels[bufferKey] ?: continue
             if (picker.currentColor != color) picker.setColor(color)
         }
         outputsHeaderPicker?.let { picker ->

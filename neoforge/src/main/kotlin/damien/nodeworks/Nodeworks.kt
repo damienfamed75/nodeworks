@@ -663,7 +663,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
                 val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity ?: return@enqueueWork
                 val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull() ?: return@enqueueWork
-                entity.setInputChannel(payload.itemId, color)
+                entity.setInputChannel(damien.nodeworks.script.BufferKey.Key(payload.itemId, payload.componentsHash), color)
             }
         }
         registrar.playToServer(
@@ -730,7 +730,10 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val player = context.player()
                 val level = player.level() as? ServerLevel ?: return@enqueueWork
                 val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, payload.networkPos)
-                val tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(payload.itemId, 1, level, snapshot)
+                val tree = damien.nodeworks.script.CraftTreeBuilder.buildCraftTree(
+                    payload.itemId, 1, level, snapshot,
+                    componentsPatch = payload.componentsPatch,
+                )
                 val serverPlayer = player as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
                 val packet = net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(CraftPreviewResponsePayload(payload.containerId, tree))
                 serverPlayer.connection.send(packet)

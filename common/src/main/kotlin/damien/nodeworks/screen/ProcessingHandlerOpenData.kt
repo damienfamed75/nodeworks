@@ -39,10 +39,15 @@ data class ProcessingHandlerOpenData(
     val boundSet: AvailableSet?,
     val available: List<AvailableSet>,
 ) {
-    /** One row in the bound-state input channel list. Keyed on itemId; a
-     *  future change will widen to [BufferKey.Key] so per-variant channels
-     *  become possible. */
-    data class InputChannelEntry(val itemId: String, val channelId: Int)
+    /** One row in the bound-state input channel list. Keyed on the full
+     *  [BufferKey.Key] (itemId + componentsHash) so a recipe with two
+     *  variants of the same itemId (e.g. fire + swiftness potion inputs)
+     *  shows two distinct rows that can bind independent channels. Plain
+     *  inputs use `componentsHash = ""`. */
+    data class InputChannelEntry(val itemId: String, val componentsHash: String, val channelId: Int) {
+        val bufferKey: damien.nodeworks.script.BufferKey.Key
+            get() = damien.nodeworks.script.BufferKey.Key(itemId, componentsHash)
+    }
 
     /** One picker entry. The picker shows the recipe icons and routes by [name]
      *  back to the server. [inputs] and [outputs] carry full component-bearing
@@ -108,7 +113,10 @@ data class ProcessingHandlerOpenData(
                     val inputCount = buf.readVarInt().coerceIn(0, MAX_INPUTS)
                     val inputs = ArrayList<InputChannelEntry>(inputCount)
                     repeat(inputCount) {
-                        inputs.add(InputChannelEntry(buf.readUtf(MAX_ITEM_ID), buf.readVarInt()))
+                        val itemId = buf.readUtf(MAX_ITEM_ID)
+                        val hash = buf.readUtf(32)
+                        val ch = buf.readVarInt()
+                        inputs.add(InputChannelEntry(itemId, hash, ch))
                     }
                     val outputCh = buf.readVarInt()
                     val boundSet = if (buf.readBoolean()) decodeSet(buf) else null
@@ -125,6 +133,7 @@ data class ProcessingHandlerOpenData(
                     buf.writeVarInt(data.inputChannels.size.coerceAtMost(MAX_INPUTS))
                     for (entry in data.inputChannels.take(MAX_INPUTS)) {
                         buf.writeUtf(entry.itemId, MAX_ITEM_ID)
+                        buf.writeUtf(entry.componentsHash, 32)
                         buf.writeVarInt(entry.channelId)
                     }
                     buf.writeVarInt(data.outputChannelId)

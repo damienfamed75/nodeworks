@@ -107,8 +107,10 @@ class CraftingCoreMenu(
     val heatCooled: Int get() = data.get(IDX_HEAT_COOL)
     val throttle: Float get() = data.get(IDX_THROTTLE_X100) / 100f
 
-    /** Client-side buffer contents, populated by BufferSyncPayload handler. */
-    var clientBufferContents: List<Pair<String, Long>> = emptyList()
+    /** Client-side buffer contents, populated by BufferSyncPayload handler.
+     *  Each entry is the bucket's representative [ItemStack] (component-
+     *  bearing for variant buckets) paired with the bucket count. */
+    var clientBufferContents: List<Pair<net.minecraft.world.item.ItemStack, Long>> = emptyList()
 
     /** Client-side craft tree, populated by CraftingCpuTreePayload handler. */
     var craftTree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
@@ -141,11 +143,15 @@ class CraftingCoreMenu(
 
         if (++bufferSyncTimer >= BUFFER_SYNC_INTERVAL) {
             bufferSyncTimer = 0
-            val contents = entity.getBufferContents()
-            val hash = contents.hashCode()
+            // Per-bucket entries (variant-aware): each maps to a representative
+            // stack carrying components and a Long count. Hash off the (key,
+            // count) pairs since templates are stable for a bucket's lifetime.
+            val buckets = entity.bufferState.contents()
+            val hash = buckets.entries.map { it.key to it.value.count }.hashCode()
             if (hash != lastBufferHash) {
                 lastBufferHash = hash
-                sender(BufferSyncPayload(containerId, contents.entries.map { it.key to it.value }))
+                val entries = buckets.values.map { it.template.copyWithCount(1) to it.count }
+                sender(BufferSyncPayload(containerId, entries))
             }
         }
         if (++treeSyncTimer >= TREE_SYNC_INTERVAL) {

@@ -1466,6 +1466,13 @@ class ScriptEngine(
         val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
         val maxStack = item.getDefaultMaxStackSize().toLong()
+        // Snapshot the buffer's variant template BEFORE the first extract so
+        // a drain-to-empty doesn't wipe the template under us. Rebuilt stacks
+        // for routing carry the variant's components (Potion of Strength,
+        // dyed armor) instead of being reconstructed as bare items.
+        val capturedTemplate = bufSrc.template.let { tmpl ->
+            if (tmpl.isEmpty) net.minecraft.world.item.ItemStack(item) else tmpl.copy()
+        }
 
         // Same per-network budget enforcement as [invokeItems]: clamp the
         // request, atomic short-circuits when budget can't fit the full count,
@@ -1492,7 +1499,7 @@ class ScriptEngine(
             var remaining = extracted
             while (remaining > 0L) {
                 val batch = minOf(remaining, maxStack).toInt()
-                val stack = net.minecraft.world.item.ItemStack(item, batch)
+                val stack = capturedTemplate.copyWithCount(batch)
                 val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache, channel).toLong()
                 totalInserted += inserted
                 remaining -= inserted
@@ -1512,8 +1519,8 @@ class ScriptEngine(
             val batch = minOf(remaining, maxStack)
             val extracted = bufSrc.extract(batch)
             if (extracted == 0L) break
-            val stack = net.minecraft.world.item.ItemStack(item, extracted.toInt())
-            val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache).toLong()
+            val stack = capturedTemplate.copyWithCount(extracted.toInt())
+            val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache, channel).toLong()
             totalMoved += inserted
             if (inserted < extracted) {
                 bufSrc.returnUnused(extracted - inserted)

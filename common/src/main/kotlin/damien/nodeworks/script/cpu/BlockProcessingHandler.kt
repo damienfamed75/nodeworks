@@ -119,18 +119,23 @@ object BlockProcessingHandler {
         // and destination insert. Without that pairing, a recipe that wants
         // Potion of Strength would route from the generic potion bucket and
         // hand the handler bare uncraftable potions.
-        val rolledBack = mutableListOf<Pair<String, Long>>()
+        val rolledBack = mutableListOf<Pair<damien.nodeworks.script.BufferKey.Key, Long>>()
         for ((idx, slotData) in perBatchInputs.withIndex()) {
             val (itemId, batchCount) = slotData
             if (batchCount <= 0L) continue
             val ingredient = api.inputs.getOrNull(idx)
-            val color = handlerBE.getInputChannel(itemId)
+            // Look up the channel by full variant key so a recipe that takes
+            // Strength + Fire Resistance potion inputs can route each to its
+            // own channel. Falls back to the itemId-only lookup for legacy
+            // recipes that don't have variant-bearing inputs.
+            val bufferKey = ingredient?.bufferKey() ?: damien.nodeworks.script.BufferKey.Key(itemId, "")
+            val color = handlerBE.getInputChannel(bufferKey)
             val moveOk = routeInputAtomic(
                 handlerLevel, microSnapshot, cpu, handlerBE,
                 itemId, ingredient, batchCount, ChannelFilter.Color(color),
             )
             if (moveOk) {
-                rolledBack += itemId to batchCount
+                rolledBack += bufferKey to batchCount
                 continue
             }
             // Couldn't route this input. Unwind anything already moved so the
@@ -325,24 +330,30 @@ object BlockProcessingHandler {
         snapshot: NetworkSnapshot,
         cpu: CraftingCoreBlockEntity,
         handlerBE: ProcessingHandlerBlockEntity,
-        moved: List<Pair<String, Long>>,
+        moved: List<Pair<damien.nodeworks.script.BufferKey.Key, Long>>,
     ) {
         val allCards = NetworkStorageHelper.getStorageCards(snapshot)
-        for ((itemId, count) in moved) {
+        for ((bufferKey, count) in moved) {
             // Pull only from cards on the channel the forward route used. Items
             // were JUST placed there a few microseconds ago; scanning the full
             // network would let same-tick mutations from other devices steal
             // items we're trying to recover.
-            val channel = ChannelFilter.Color(handlerBE.getInputChannel(itemId))
+            val channel = ChannelFilter.Color(handlerBE.getInputChannel(bufferKey))
+            val itemId = bufferKey.itemId
+            val wantHash = bufferKey.componentsHash
             var stillNeeded = count
             for (card in allCards) {
                 if (stillNeeded <= 0L) break
                 if (!channel.matches(card.channel)) continue
                 val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                // Component-aware unwind: pull real stacks so the buffer
-                // re-receives the exact variant we previously routed out.
+                // Variant-aware unwind: narrow to the specific (itemId, hash)
+                // bucket so the rollback grabs the exact potion / dyed armor
+                // we just routed out, not a fresh swap that drifted in.
                 val pulledStacks = try {
-                    PlatformServices.storage.extractItemStacksMatching(storage, { it == itemId }, stillNeeded)
+                    PlatformServices.storage.extractStacksByPredicate(storage, { stack ->
+                        val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                        sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+                    }, stillNeeded)
                 } catch (_: Exception) { emptyList() }
                 for (stack in pulledStacks) {
                     if (stack.isEmpty) continue
