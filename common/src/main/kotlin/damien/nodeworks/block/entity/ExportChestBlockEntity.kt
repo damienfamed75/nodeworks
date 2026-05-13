@@ -196,9 +196,11 @@ class ExportChestBlockEntity(
         pushWireless(level)
     }
 
-    /** Whitelist match: any rule hits = accept. */
-    private fun matchesFilter(itemId: String): Boolean =
-        filterRules.any { rule -> CardHandle.matchesFilter(itemId, rule) }
+    /** Whitelist match: any rule hits = accept. Component-aware so
+     *  `minecraft:potion[components]` rules narrow to the variant rather
+     *  than every potion sharing the itemId. */
+    private fun matchesFilter(stack: ItemStack, registries: net.minecraft.core.HolderLookup.Provider): Boolean =
+        filterRules.any { rule -> CardHandle.matchesFilter(stack, rule, registries) }
 
     /** Walk the network's storage cards, extract filter-matched items into
      *  our buffer until either the buffer is full or the network is empty of
@@ -220,13 +222,16 @@ class ExportChestBlockEntity(
         if (totalSpace <= 0L) return
 
         val cache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(level, worldPosition)
-        val filterPred: (String) -> Boolean = ::matchesFilter
+        val registries = level.registryAccess()
+        // Stack-aware predicate so `id[components]` rules pick the right
+        // variant out of a mixed-component chest.
+        val filterPred: (ItemStack) -> Boolean = { stack -> matchesFilter(stack, registries) }
         var changed = false
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (totalSpace <= 0L) break
             if (!channel.matches(card.channel)) continue
             val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val extracted = PlatformServices.storage.extractItemStacksMatching(storage, filterPred, totalSpace)
+            val extracted = PlatformServices.storage.extractStacksByPredicate(storage, filterPred, totalSpace)
             for (stack in extracted) {
                 if (stack.isEmpty) continue
                 val placed = placeIntoBuffer(stack)

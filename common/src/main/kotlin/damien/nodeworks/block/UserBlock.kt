@@ -110,9 +110,13 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties) {
         ) return InteractionResult.TRY_WITH_EMPTY_HAND
         if (level.isClientSide) return InteractionResult.SUCCESS
         val be = level.getBlockEntity(pos) as? UserBlockEntity ?: return InteractionResult.PASS
-        val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return InteractionResult.PASS
-        be.filterRule = itemId
-        player.sendSystemMessage(Component.literal("User filter set to $itemId"))
+        // Build the canonical filter string for the held stack so a variant-
+        // bearing item (potion, dyed armor, enchanted book) sets a rule that
+        // matches only that specific variant. Plain stacks fall back to the
+        // bare itemId.
+        val rule = damien.nodeworks.script.FilterRule.format(stack, level.registryAccess())
+        be.filterRule = rule
+        player.sendSystemMessage(Component.literal("User filter set to $rule"))
         return InteractionResult.SUCCESS
     }
 

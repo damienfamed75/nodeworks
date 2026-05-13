@@ -714,18 +714,20 @@ class UserBlockEntity(
     }
 
     /** Pull the first stack matching [filterRule] / [channel] off network
-     *  storage, returns null when nothing matches. The full ItemStack with
-     *  components is preserved via extractItemStacksMatching so durability,
-     *  damage, custom name, etc. survive into the FakePlayer's hand. */
+     *  storage, returns null when nothing matches. Uses a stack-aware
+     *  predicate so `id[components]` rules narrow to the specific variant
+     *  (e.g. a particular potion or dyed item) rather than every variant
+     *  sharing the itemId. */
     private fun pullStackFromNetwork(
         level: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot,
     ): ItemStack? {
-        val filterPred: (String) -> Boolean = { CardHandle.matchesFilter(it, filterRule) }
+        val registries = level.registryAccess()
+        val filterPred: (ItemStack) -> Boolean = { stack -> CardHandle.matchesFilter(stack, filterRule, registries) }
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (!isChannelMatching(card)) continue
             val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val stacks = PlatformServices.storage.extractItemStacksMatching(storage, filterPred, 1L)
+            val stacks = PlatformServices.storage.extractStacksByPredicate(storage, filterPred, 1L)
             for (stack in stacks) {
                 if (!stack.isEmpty) return stack
             }

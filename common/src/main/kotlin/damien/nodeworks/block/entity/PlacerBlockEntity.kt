@@ -202,46 +202,57 @@ class PlacerBlockEntity(
         if (snapshot.controller == null) return false
 
         // Empty filter is the "any block" sentinel, matchesFilter handles `*` as
-        // "match everything" natively.
+        // "match everything" natively. Stack-aware so `id[components]` rules
+        // pick a specific variant out of a mixed-component chest.
         val effective = filterRule.ifEmpty { "*" }
-        val filterPred: (String) -> Boolean = { CardHandle.matchesFilter(it, effective) }
-        val blockItemPred: (String) -> Boolean = { id ->
-            filterPred(id) && resolveBlockItem(id) != null
+        val registries = level.registryAccess()
+        val blockItemPred: (ItemStack) -> Boolean = { stack ->
+            if (!CardHandle.matchesFilter(stack, effective, registries)) false
+            else stack.item is BlockItem
         }
 
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (!isChannelMatching(card)) continue
             val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val foundItemId = PlatformServices.storage.findFirstItem(storage, blockItemPred) ?: continue
-            val blockItem = resolveBlockItem(foundItemId) ?: continue
-            if (placeBlockFromCard(level, snapshot, storage, foundItemId, blockItem)) return true
+            val extracted = PlatformServices.storage.extractStacksByPredicate(storage, blockItemPred, 1L)
+            val stack = extracted.firstOrNull { !it.isEmpty } ?: continue
+            // Return any over-extract back to storage. Stack count is bounded
+            // at 1 by the maxCount above, but a slot might have yielded a
+            // larger atomic batch on some loaders.
+            if (stack.count > 1) {
+                val leftover = stack.copyWithCount(stack.count - 1)
+                NetworkStorageHelper.insertItemStack(level, snapshot, leftover)
+                stack.shrink(stack.count - 1)
+            }
+            val blockItem = stack.item as? BlockItem ?: run {
+                NetworkStorageHelper.insertItemStack(level, snapshot, stack)
+                continue
+            }
+            if (placeBlockFromStack(level, snapshot, stack, blockItem)) return true
         }
         return false
     }
 
-    /** Extract one [foundItemId] from [storage] and set [blockItem]'s default
-     *  state at [targetPos], gated by [PlatformServices.fakePlayer.tryPlace]
-     *  for spawn-protection / claim-mod / EntityPlaceEvent dispatch. Refunds
-     *  the pulled item on rollback. Returns whether the place succeeded. */
-    private fun placeBlockFromCard(
+    /** Set [blockItem]'s default state at [targetPos], gated by
+     *  [PlatformServices.fakePlayer.tryPlace] for spawn-protection / claim-mod
+     *  / EntityPlaceEvent dispatch. The [pulled] stack carries the variant's
+     *  components, refunded as-is on rollback so durability / dye / etc.
+     *  survive a failed place. Returns whether the place succeeded. */
+    private fun placeBlockFromStack(
         level: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot,
-        storage: damien.nodeworks.platform.ItemStorageHandle,
-        foundItemId: String,
+        pulled: ItemStack,
         blockItem: BlockItem,
     ): Boolean {
         val target = targetPos
         val newState = blockItem.block.defaultBlockState()
         val placedAgainst = level.getBlockState(worldPosition)
-        val exactMatch: (String) -> Boolean = { it == foundItemId }
-        var pulled = false
+        var placedOk = false
         return PlatformServices.fakePlayer.tryPlace(
             level, target, placedAgainst, ownerUuid,
             mutate = {
-                val extracted = PlatformServices.storage.extractItems(storage, exactMatch, 1L)
-                if (extracted < 1L) return@tryPlace false
-                pulled = true
                 level.setBlock(target, newState, Block.UPDATE_ALL)
+                placedOk = true
                 val soundType = newState.soundType
                 level.playSound(
                     null, target,
@@ -253,9 +264,8 @@ class PlacerBlockEntity(
                 true
             },
             onRollback = {
-                if (pulled) {
-                    val refund = ItemStack(blockItem, 1)
-                    NetworkStorageHelper.insertItemStack(level, snapshot, refund)
+                if (!placedOk) {
+                    NetworkStorageHelper.insertItemStack(level, snapshot, pulled.copy())
                 }
             },
         )
@@ -263,11 +273,6 @@ class PlacerBlockEntity(
 
     private fun isChannelMatching(card: damien.nodeworks.network.CardSnapshot): Boolean =
         channel == DyeColor.WHITE || card.channel == channel
-
-    private fun resolveBlockItem(id: String): BlockItem? {
-        val ident = Identifier.tryParse(id) ?: return null
-        return BuiltInRegistries.ITEM.getValue(ident) as? BlockItem
-    }
 
     // --- Serialization ---
     override fun saveAdditional(output: ValueOutput) {
