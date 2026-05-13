@@ -80,6 +80,11 @@ class AutocompletePopup(
          *  picker entries so the player sees what each `recipe_<hash>` actually
          *  produces. The accepted [insertText] remains the hash. */
         val recipe: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? = null,
+        /** When non-null, render this row with a small item icon to the left
+         *  of the text. Used by item-id and craftable-variant suggestions so
+         *  the player sees the actual visual (potion variant, dyed armor) at
+         *  a glance instead of just the registry id string. */
+        val itemIconStack: net.minecraft.world.item.ItemStack? = null,
     )
 
     var visible: Boolean = false
@@ -246,12 +251,16 @@ class AutocompletePopup(
     fun render(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (!visible || suggestions.isEmpty()) return
 
-        // Rows with a recipe icon strip need extra height. Stretch the whole
-        // popup to that height when any visible row is a recipe, so alignment
-        // stays consistent.
+        // Rows with a recipe icon strip or an item icon need extra height.
+        // Stretch the whole popup so alignment stays consistent.
         val hasRecipe = suggestions.any { it.recipe != null }
+        val hasItemIcon = suggestions.any { it.itemIconStack != null }
         val baseRowH = font.lineHeight + 2
-        val itemHeight = if (hasRecipe) maxOf(baseRowH, RecipeHintRenderer.HINT_HEIGHT + 1) else baseRowH
+        val itemHeight = when {
+            hasRecipe -> maxOf(baseRowH, RecipeHintRenderer.HINT_HEIGHT + 1)
+            hasItemIcon -> maxOf(baseRowH, ITEM_ICON_SIZE + 2)
+            else -> baseRowH
+        }
         val visibleCount = minOf(suggestions.size, maxVisible)
         // Each row has a Kind badge on the left, then either an icon strip
         // (recipe rows) or plain text. Width is the max of the two across all
@@ -326,6 +335,7 @@ class AutocompletePopup(
             val nameColor = if (suggestionIndex == selectedIndex) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt()
             val hintColor = if (suggestionIndex == selectedIndex) 0xFFBBBBBB.toInt() else 0xFF888888.toInt()
             val recipe = s.recipe
+            val iconStack = s.itemIconStack
             if (recipe != null) {
                 // Recipe rows render as the input → output icon strip alone.
                 // No trailing text, the strip's potion / dye / enchantment
@@ -338,6 +348,20 @@ class AutocompletePopup(
                     textX, stripY, stripW, RecipeHintRenderer.HINT_HEIGHT,
                     valid = true,
                 )
+            } else if (iconStack != null) {
+                // Item-icon rows: small icon + display name. Used by
+                // `network:craft` and similar where the canonical id /
+                // variant string is opaque, the hover name + visual icon
+                // tells the player what they're picking. insertText (the
+                // canonical) is still what lands in the script on accept.
+                val iconY = y + (itemHeight - ITEM_ICON_SIZE) / 2
+                graphics.pose().pushMatrix()
+                graphics.pose().translate(textX.toFloat(), iconY.toFloat())
+                graphics.pose().scale(ITEM_ICON_SCALE, ITEM_ICON_SCALE)
+                graphics.renderItem(iconStack, 0, 0)
+                graphics.pose().popMatrix()
+                val labelX = textX + ITEM_ICON_SIZE + 3
+                graphics.drawString(font, s.displayText, labelX, y + (itemHeight - font.lineHeight) / 2 + 1, nameColor)
             } else {
                 val nameWidth = font.width(s.insertText)
                 graphics.drawString(font, s.insertText, textX, y + (itemHeight - font.lineHeight) / 2 + 1, nameColor)
@@ -350,11 +374,19 @@ class AutocompletePopup(
     }
 
     /** Pixel width for a row's content (not counting the badge + gap on the
-     *  left). Recipe rows measure their icon strip, plain rows their text. */
+     *  left). Recipe rows measure their icon strip, item-icon rows add a
+     *  fixed icon column + label width, plain rows their text. */
     private fun rowContentWidth(s: Suggestion): Int {
-        val recipe = s.recipe ?: return font.width(s.displayText)
-        return recipeStripWidth(recipe)
+        val recipe = s.recipe
+        if (recipe != null) return recipeStripWidth(recipe)
+        if (s.itemIconStack != null) return ITEM_ICON_SIZE + 3 + font.width(s.displayText)
+        return font.width(s.displayText)
     }
+
+    /** Visible item icon size in autocomplete rows. 14px so the icon fits
+     *  in the existing 16px row height without clipping. */
+    private val ITEM_ICON_SIZE = 14
+    private val ITEM_ICON_SCALE: Float = ITEM_ICON_SIZE / 16f
 
     /** Pixel width of the recipe icon strip. Matches the layout in
      *  [RecipeHintRenderer]: 14px icons, 2px gaps, 11px arrow with 2px pads. */
@@ -2369,7 +2401,9 @@ class AutocompletePopup(
         "fluid-id" -> fuzzyStrings(partial, fluidIds)
         "tag-id" -> fuzzyStrings(partial, (itemTags + fluidTags).distinct())
         "block-id" -> fuzzyStrings(partial, blockIds)
-        "craftable" -> fuzzyStrings(partial, craftableOutputs)
+        "craftable" -> {
+            suggestComponentArg(partial) ?: craftableSuggestions(partial)
+        }
         "card-alias" -> {
             val labels = cards.map { it.effectiveAlias to it.capability.type }.distinct()
             FuzzyMatch.filter(
@@ -2486,7 +2520,90 @@ class AutocompletePopup(
      * Suggest sigils when the user is just starting, and pivot to id completion once a
      * kind prefix is committed.
      */
+    /** Component-arg autocomplete inside `id[...]` filter strings. Returns
+     *  null when the cursor isn't inside an open `[`. Otherwise produces a
+     *  list of component-type ids prefixed with everything up to the current
+     *  segment, so accepting an entry replaces the whole partial. */
+    private fun suggestComponentArg(partial: String): List<Suggestion>? {
+        val bracketStart = partial.indexOf('[')
+        if (bracketStart < 0 || partial.contains(']')) return null
+        val argsArea = partial.substring(bracketStart + 1)
+        val lastDelim = argsArea.lastIndexOf(',')
+        val segmentStart = if (lastDelim >= 0) lastDelim + 1 else 0
+        val segment = argsArea.substring(segmentStart)
+        // Inside a value (past `=`), bail out, component values are SNBT
+        // and too open-ended to autocomplete meaningfully right now.
+        if (segment.contains('=')) return emptyList()
+        val negated = segment.startsWith('!')
+        val staticPrefix = partial.substring(0, partial.length - segment.length)
+        customPrefix = partial
+        return componentTypeIds.map {
+            val full = staticPrefix + (if (negated) "!" else "") + it
+            Suggestion(full, full, kind = Kind.STRING)
+        }.let { FuzzyMatch.filter(partial, it) }
+    }
+
+    /** Component-type ids from the registry. Used by [suggestComponentArg]
+     *  to power `id[<key>]` autocomplete inside filter strings. */
+    private val componentTypeIds: List<String> by lazy {
+        net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_TYPE
+            .keySet().map { it.toString() }.sorted()
+    }
+
+    /** Suggestions for the `network:craft` string arg, combining plain
+     *  craftable itemIds with the canonical `id[components]` form for each
+     *  variant-bearing output across all local recipes. Each suggestion
+     *  carries an [itemIconStack] so the popup renders the actual visual
+     *  (Potion of Strength, etc.) alongside its display name.
+     *
+     *  Inserted text is escaped for the Lua string-literal context that
+     *  `network:craft("...")` runs in: inner `"` characters in the SNBT
+     *  payload become `\"` so the surrounding quotes still bound the
+     *  literal correctly. Lua unescapes back to canonical form before
+     *  ItemParser sees it. */
+    private fun craftableSuggestions(partial: String): List<Suggestion> {
+        val plain = craftableOutputs.mapNotNull { itemId ->
+            val ident = net.minecraft.resources.Identifier.tryParse(itemId) ?: return@mapNotNull null
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: return@mapNotNull null
+            val stack = net.minecraft.world.item.ItemStack(item)
+            Suggestion(
+                insertText = itemId,
+                displayText = stack.hoverName.string,
+                kind = Kind.STRING,
+                itemIconStack = stack,
+            )
+        }
+        val variants = craftableVariantStacks.map { stack ->
+            val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+            val canonical = if (registries != null) damien.nodeworks.script.FilterRule.format(stack, registries) else ""
+            Suggestion(
+                insertText = canonical.replace("\"", "\\\""),
+                displayText = stack.hoverName.string,
+                kind = Kind.STRING,
+                itemIconStack = stack,
+            )
+        }
+        return FuzzyMatch.filter(partial, plain + variants)
+    }
+
+    /** Component-bearing output stacks from every local recipe, deduped on
+     *  the (itemId, componentsHash) bucket key so the same variant doesn't
+     *  appear in the popup more than once when several recipes produce it. */
+    private val craftableVariantStacks: List<net.minecraft.world.item.ItemStack> by lazy {
+        val seen = mutableSetOf<damien.nodeworks.script.BufferKey.Key>()
+        val out = mutableListOf<net.minecraft.world.item.ItemStack>()
+        for (api in localApis) {
+            for (ingr in api.outputs) {
+                if (ingr.stack.componentsPatch.size() == 0) continue
+                val key = ingr.bufferKey()
+                if (seen.add(key)) out.add(ingr.stack.copy())
+            }
+        }
+        out
+    }
+
     private fun suggestResourceFilter(partial: String): List<Suggestion> {
+        suggestComponentArg(partial)?.let { return it }
         customPrefix = partial
         return when {
             partial.startsWith("\$item:") -> {

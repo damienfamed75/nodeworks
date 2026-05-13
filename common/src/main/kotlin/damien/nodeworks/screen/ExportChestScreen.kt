@@ -323,10 +323,25 @@ class ExportChestScreen(
 
     /** Drop handler for JEI's ghost ingredient API: append [itemId] as a new
      *  rule. Returns false when the list is already at MAX_RULES. */
-    fun acceptGhostItem(itemId: String): Boolean {
+    fun acceptGhostItem(itemId: String): Boolean = acceptGhostRule(itemId)
+
+    /** JEI drop entry point that preserves [DataComponentPatch] from the
+     *  dragged stack. Builds a canonical `id[components]` filter string so
+     *  variant-bearing stacks (potions, dyed items) produce a variant-specific
+     *  rule rather than a bare itemId match. */
+    fun acceptGhostStack(stack: net.minecraft.world.item.ItemStack): Boolean {
+        if (stack.isEmpty) return false
+        val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+            ?: return acceptGhostItem(
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return false
+            )
+        return acceptGhostRule(damien.nodeworks.script.FilterRule.format(stack, registries))
+    }
+
+    private fun acceptGhostRule(rule: String): Boolean {
         if (localRules.size >= SetExportChestFilterRulesPayload.MAX_RULES) return false
         commitAllRuleFields()
-        localRules.add(itemId)
+        localRules.add(rule)
         if (localRules.size > scrollOffset + VISIBLE_ROWS) {
             scrollOffset = localRules.size - VISIBLE_ROWS
         }
@@ -652,6 +667,23 @@ class ExportChestScreen(
             val idx = ((net.minecraft.util.Util.getMillis() / TAG_CYCLE_PERIOD_MS) % members.size).toInt()
             return ItemStack(members[idx])
         }
+        // Variant rule: `id[components]` resolves to a stack carrying the
+        // actual variant so the row icon shows the real visual.
+        if (core.contains('[')) {
+            val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+                ?: return null
+            val parsed = damien.nodeworks.script.FilterRule.parse(core, registries)
+            if (parsed is damien.nodeworks.script.FilterRule.Item) {
+                val ident = Identifier.tryParse(parsed.itemId) ?: return null
+                val item = BuiltInRegistries.ITEM.getValue(ident) ?: return null
+                val stack = ItemStack(item)
+                if (parsed.componentsPatch != null && parsed.componentsPatch.size() > 0) {
+                    stack.applyComponents(parsed.componentsPatch)
+                }
+                return stack
+            }
+            return null
+        }
         val ident = Identifier.tryParse(core) ?: return null
         val item = BuiltInRegistries.ITEM.getValue(ident) ?: return null
         return ItemStack(item)
@@ -693,6 +725,38 @@ class ExportChestScreen(
                 lastAutocompletePartial = null
                 setFocused(box)
                 return true
+            }
+        }
+
+        // Drop-on-icon: when the player holds an item on the cursor and
+        // clicks a row's icon slot, fill that rule with the canonical filter
+        // string for the held stack (`id` for plain, `id[components]` for
+        // variants). Cursor stack is not consumed. Runs before the per-row
+        // delete-button check so the icon slot wins when both overlap.
+        val carried = menu.carried
+        if (!carried.isEmpty) {
+            val interiorX = leftPos + RULE_PANEL_X + RULE_PANEL_INNER_PAD
+            val interiorY = topPos + RULE_PANEL_Y + RULE_PANEL_INNER_PAD
+            for (visibleIdx in ruleFields.indices) {
+                val ruleIdx = scrollOffset + visibleIdx
+                if (ruleIdx !in localRules.indices) continue
+                val rowY = interiorY + visibleIdx * ROW_H
+                val slotX = interiorX + ROW_ICON_PAD
+                val slotY = rowY + (ROW_H - SEPARATOR_OVERLAP - ROW_ICON_SIZE) / 2
+                if (mx in slotX until slotX + ROW_ICON_SIZE &&
+                    my in slotY until slotY + ROW_ICON_SIZE
+                ) {
+                    val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+                    if (registries != null) {
+                        val rule = damien.nodeworks.script.FilterRule.format(carried, registries)
+                        commitAllRuleFields()
+                        localRules[ruleIdx] = rule
+                        rebuildRuleFields()
+                        sendRulesToServer()
+                        playClickSound()
+                    }
+                    return true
+                }
             }
         }
 

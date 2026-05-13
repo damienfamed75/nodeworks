@@ -334,10 +334,25 @@ class StorageCardScreen(
      * end of the list. Caps at [SetStorageCardFilterRulesPayload.MAX_RULES],
      * returns false when full.
      */
-    fun acceptGhostItem(itemId: String): Boolean {
+    fun acceptGhostItem(itemId: String): Boolean = acceptGhostRule(itemId)
+
+    /** JEI drop entry point that preserves [DataComponentPatch] from the
+     *  dragged stack. Builds a canonical `id[components]` filter string so
+     *  a Strength Potion dragged from JEI produces a rule that matches only
+     *  that specific potion variant. */
+    fun acceptGhostStack(stack: net.minecraft.world.item.ItemStack): Boolean {
+        if (stack.isEmpty) return false
+        val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+            ?: return acceptGhostItem(
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return false
+            )
+        return acceptGhostRule(damien.nodeworks.script.FilterRule.format(stack, registries))
+    }
+
+    private fun acceptGhostRule(rule: String): Boolean {
         if (localRules.size >= SetStorageCardFilterRulesPayload.MAX_RULES) return false
         commitAllRuleFields()
-        localRules.add(itemId)
+        localRules.add(rule)
         if (localRules.size > scrollOffset + VISIBLE_ROWS) {
             scrollOffset = localRules.size - VISIBLE_ROWS
         }
@@ -1063,6 +1078,38 @@ class StorageCardScreen(
             val interiorX = panelX + RULE_PANEL_INNER_PAD
             val interiorY = panelY + RULE_PANEL_INNER_PAD
             val interiorW = RULE_PANEL_W - RULE_PANEL_INNER_PAD * 2 - SCROLL_BAR_W - SCROLL_BAR_GAP
+
+            // Drop-on-icon: when the player holds an item on the cursor and
+            // clicks a row's icon slot, fill that rule with the canonical
+            // filter string for the held stack. Variant-bearing stacks
+            // produce `id[components]`, plain stacks just the id. Cursor
+            // stack is not consumed (this is a stamp action). Runs before
+            // the per-row delete-button check so the icon slot wins when
+            // both happen to overlap.
+            val carried = menu.carried
+            if (!carried.isEmpty) {
+                for (visibleIdx in 0 until VISIBLE_ROWS) {
+                    val ruleIdx = scrollOffset + visibleIdx
+                    if (ruleIdx >= localRules.size) continue
+                    val rowY = interiorY + visibleIdx * ROW_H
+                    val slotX = interiorX + ROW_ICON_PAD
+                    val slotY = rowY + (ROW_H - SEPARATOR_OVERLAP - ROW_ICON_SIZE) / 2
+                    if (mx in slotX until slotX + ROW_ICON_SIZE &&
+                        my in slotY until slotY + ROW_ICON_SIZE
+                    ) {
+                        val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+                        if (registries != null) {
+                            val rule = damien.nodeworks.script.FilterRule.format(carried, registries)
+                            commitAllRuleFields()
+                            localRules[ruleIdx] = rule
+                            rebuildRuleFields()
+                            sendRulesToServer()
+                            playClickSound()
+                        }
+                        return true
+                    }
+                }
+            }
 
             // Delete buttons.
             for (visibleIdx in 0 until VISIBLE_ROWS) {

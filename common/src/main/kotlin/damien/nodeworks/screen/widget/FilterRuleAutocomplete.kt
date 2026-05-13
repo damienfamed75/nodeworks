@@ -55,6 +55,12 @@ class FilterRuleAutocomplete(private val font: Font) {
             BuiltInRegistries.FLUID.getTags().map { "#" + it.key().location.toString() }.sorted().toList()
         }
 
+        /** Component-type ids for `id[...]` component-arg completion. Sorted
+         *  so the popup reads alphabetically without a fuzzy match. */
+        private val componentTypeIds: List<String> by lazy {
+            BuiltInRegistries.DATA_COMPONENT_TYPE.keySet().map { it.toString() }.sorted()
+        }
+
         /** Sigils + bare wildcard for the empty-partial case. */
         private val sigils: List<String> = listOf("*", "\$item:", "\$fluid:")
     }
@@ -80,6 +86,31 @@ class FilterRuleAutocomplete(private val font: Font) {
      *  `AutocompletePopup.suggestResourceFilter` so users see the same
      *  ranking behavior they're used to from script editor filter fields. */
     fun update(partial: String) {
+        // Component-arg autocompletion: when the partial includes `[` past the
+        // item id, complete with component-type ids. Each segment is delimited
+        // by `[` (first) or `,` (subsequent). The final `]` closes the args,
+        // we don't suggest past it.
+        val bracketStart = partial.indexOf('[')
+        if (bracketStart >= 0 && !partial.contains(']')) {
+            val argsArea = partial.substring(bracketStart + 1)
+            val lastDelimiter = argsArea.lastIndexOf(',')
+            val segmentStart = if (lastDelimiter >= 0) lastDelimiter + 1 else 0
+            val segment = argsArea.substring(segmentStart)
+            // Only suggest component types while the user is typing the KEY.
+            // Once they type `=`, they're in the value position which we don't
+            // currently autocomplete (component values are SNBT, way too open).
+            if (!segment.contains('=')) {
+                val negated = segment.startsWith('!')
+                val staticPrefix = partial.substring(0, partial.length - segment.length)
+                val pool = componentTypeIds.map { staticPrefix + (if (negated) "!" else "") + it }
+                return rebuild(staticPrefix + segment, pool)
+            }
+            // Inside a value, no suggestions, dismiss the popup.
+            suggestions = emptyList()
+            selectedIndex = 0
+            return
+        }
+
         val pool = when {
             partial.startsWith("#") -> itemTags + fluidTags
             partial.startsWith("\$item:") -> {

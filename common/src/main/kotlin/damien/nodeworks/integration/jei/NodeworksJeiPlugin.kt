@@ -501,8 +501,7 @@ class StorageCardGhostHandler : IGhostIngredientHandler<StorageCardScreen> {
         override fun getArea(): Rect2i = area
         override fun accept(ingredient: I) {
             if (ingredient !is ItemStack || ingredient.isEmpty) return
-            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
-            gui.acceptGhostItem(itemId)
+            gui.acceptGhostStack(ingredient)
         }
     }
 }
@@ -533,8 +532,7 @@ class ExportChestGhostHandler : IGhostIngredientHandler<ExportChestScreen> {
         override fun getArea(): Rect2i = area
         override fun accept(ingredient: I) {
             if (ingredient !is ItemStack || ingredient.isEmpty) return
-            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
-            gui.acceptGhostItem(itemId)
+            gui.acceptGhostStack(ingredient)
         }
     }
 }
@@ -564,8 +562,7 @@ class UserGhostHandler : IGhostIngredientHandler<UserScreen> {
         override fun getArea(): Rect2i = area
         override fun accept(ingredient: I) {
             if (ingredient !is ItemStack || ingredient.isEmpty) return
-            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
-            gui.acceptGhostItem(itemId)
+            gui.acceptGhostStack(ingredient)
         }
     }
 }
@@ -597,8 +594,7 @@ class BreakerGhostHandler : IGhostIngredientHandler<BreakerScreen> {
         override fun getArea(): Rect2i = area
         override fun accept(ingredient: I) {
             if (ingredient !is ItemStack || ingredient.isEmpty) return
-            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
-            gui.acceptGhostItem(itemId)
+            gui.acceptGhostStack(ingredient)
         }
     }
 }
@@ -627,8 +623,7 @@ class PlacerGhostHandler : IGhostIngredientHandler<PlacerScreen> {
         override fun getArea(): Rect2i = area
         override fun accept(ingredient: I) {
             if (ingredient !is ItemStack || ingredient.isEmpty) return
-            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
-            gui.acceptGhostItem(itemId)
+            gui.acceptGhostStack(ingredient)
         }
     }
 }

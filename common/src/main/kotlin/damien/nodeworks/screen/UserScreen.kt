@@ -398,6 +398,24 @@ class UserScreen(
             val idx = ((net.minecraft.util.Util.getMillis() / TAG_CYCLE_PERIOD_MS) % members.size).toInt()
             return ItemStack(members[idx])
         }
+        // Variant rule: `id[components]` resolves to a stack carrying the
+        // actual variant (potion of strength, dyed armor) so the row icon
+        // shows the real visual instead of the bare item.
+        if (core.contains('[')) {
+            val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+                ?: return null
+            val parsed = damien.nodeworks.script.FilterRule.parse(core, registries)
+            if (parsed is damien.nodeworks.script.FilterRule.Item) {
+                val ident = Identifier.tryParse(parsed.itemId) ?: return null
+                val item = BuiltInRegistries.ITEM.getValue(ident) ?: return null
+                val stack = ItemStack(item)
+                if (parsed.componentsPatch != null && parsed.componentsPatch.size() > 0) {
+                    stack.applyComponents(parsed.componentsPatch)
+                }
+                return stack
+            }
+            return null
+        }
         val ident = Identifier.tryParse(core) ?: return null
         val item = BuiltInRegistries.ITEM.getValue(ident) ?: return null
         return ItemStack(item)
@@ -423,6 +441,22 @@ class UserScreen(
     fun acceptGhostItem(itemId: String): Boolean {
         if (!::filterField.isInitialized) return false
         filterField.value = itemId
+        commitFilter()
+        return true
+    }
+
+    /** JEI drop handler that preserves [DataComponentPatch] so a Strength
+     *  Potion drop fills the field with `minecraft:potion[...]` rather than
+     *  the bare itemId. Falls back to the id-only path when registries are
+     *  unavailable. */
+    fun acceptGhostStack(stack: net.minecraft.world.item.ItemStack): Boolean {
+        if (stack.isEmpty) return false
+        val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+            ?: return acceptGhostItem(
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return false
+            )
+        if (!::filterField.isInitialized) return false
+        filterField.value = damien.nodeworks.script.FilterRule.format(stack, registries)
         commitFilter()
         return true
     }
@@ -509,6 +543,24 @@ class UserScreen(
             if (focused === filterField) setFocused(null) else filterField.isFocused = false
             autocompleteDismissed = true
             return true
+        }
+
+        // Drop-on-icon: clicking the filter row's icon slot with a held item
+        // on the cursor stamps the canonical filter string for that stack
+        // into the field. Cursor stack is not consumed.
+        val carried = menu.carried
+        if (!carried.isEmpty) {
+            val ix = filterIconX
+            val iy = filterIconY
+            if (mx in ix until ix + ROW_ICON_SIZE && my in iy until iy + ROW_ICON_SIZE) {
+                val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+                if (registries != null) {
+                    filterField.value = damien.nodeworks.script.FilterRule.format(carried, registries)
+                    commitFilter()
+                    playClickSound()
+                }
+                return true
+            }
         }
         if (modeToggleRect().contains(mx, my)) {
             val next =
