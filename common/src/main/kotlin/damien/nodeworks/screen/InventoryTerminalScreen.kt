@@ -1316,8 +1316,11 @@ class InventoryTerminalScreen(
                     button == 1 -> 2
                     else -> 0
                 }
+                // Carry the clicked cell's components patch so a click on a
+                // Strength Potion entry extracts that variant rather than
+                // whichever potion the server-side itemId lookup finds first.
                 PlatformServices.clientNetworking.sendToServer(
-                    InvTerminalClickPayload(menu.containerId, entry.info.itemId, action)
+                    InvTerminalClickPayload(menu.containerId, entry.info.itemId, action, kind = 0, componentsPatch = entry.info.componentsPatch)
                 )
                 unfocusSearchBox()
                 return true
@@ -1593,7 +1596,7 @@ class InventoryTerminalScreen(
             if (entry != null && !entry.isFluid && entry.info.count > 0) {
                 val action = if (dropStack) 6 else 5
                 PlatformServices.clientNetworking.sendToServer(
-                    InvTerminalClickPayload(menu.containerId, entry.info.itemId, action)
+                    InvTerminalClickPayload(menu.containerId, entry.info.itemId, action, kind = 0, componentsPatch = entry.info.componentsPatch)
                 )
                 return true
             }

@@ -126,17 +126,41 @@ data class SetInstructionGridPayload(val containerId: Int, val items: List<Strin
  *         4 = right-click insert one, 5 = drop one (Q), 6 = drop stack (Ctrl+Q)
  * kind: 0 = item (default), 1 = fluid, fluid clicks route to bucket-fill logic server-side.
  */
-data class InvTerminalClickPayload(val containerId: Int, val itemId: String, val action: Int, val kind: Byte = 0) : CustomPacketPayload {
+data class InvTerminalClickPayload(
+    val containerId: Int,
+    val itemId: String,
+    val action: Int,
+    val kind: Byte = 0,
+    /** Components patch of the clicked grid cell. Lets a click on a Strength
+     *  Potion extract that specific variant instead of whichever potion the
+     *  server's itemId-only lookup happens to find first. Empty for cells
+     *  without component data. */
+    val componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<InvTerminalClickPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_click"))
         val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalClickPayload> = CustomPacketPayload.codec(
             { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
                 buf.writeVarInt(p.containerId)
                 buf.writeUtf(p.itemId, 256)
                 buf.writeVarInt(p.action)
                 buf.writeByte(p.kind.toInt())
+                val hasPatch = p.componentsPatch.size() > 0
+                buf.writeBoolean(hasPatch)
+                if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, p.componentsPatch)
             },
-            { buf -> InvTerminalClickPayload(buf.readVarInt(), buf.readUtf(256), buf.readVarInt(), buf.readByte()) }
+            { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                val cid = buf.readVarInt()
+                val id = buf.readUtf(256)
+                val act = buf.readVarInt()
+                val k = buf.readByte()
+                val hasPatch = buf.readBoolean()
+                val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                    else net.minecraft.core.component.DataComponentPatch.EMPTY
+                InvTerminalClickPayload(cid, id, act, k, patch)
+            }
         )
     }
     override fun type() = TYPE

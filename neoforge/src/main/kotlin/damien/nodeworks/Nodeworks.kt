@@ -77,6 +77,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
         // Register game events on the NeoForge event bus
         NeoForge.EVENT_BUS.addListener(::onServerTick)
+        NeoForge.EVENT_BUS.addListener(::onServerStarting)
         NeoForge.EVENT_BUS.addListener(::onServerStopping)
         NeoForge.EVENT_BUS.addListener(::onPlayerDisconnect)
         NeoForge.EVENT_BUS.addListener(::onRightClickBlock)
@@ -373,7 +374,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     if (payload.kind == 1.toByte()) {
                         menu.handleFluidGridClick(player, payload.itemId, payload.action)
                     } else {
-                        menu.handleGridClick(player, payload.itemId, payload.action)
+                        menu.handleGridClick(player, payload.itemId, payload.action, payload.componentsPatch)
                     }
                 }
             }
@@ -917,6 +918,13 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
     private fun onRegisterCommands(event: net.neoforged.neoforge.event.RegisterCommandsEvent) {
         damien.nodeworks.command.NwDebugCommand.register(event.dispatcher)
         damien.nodeworks.command.NodeworksCommand.register(event.dispatcher)
+    }
+
+    private fun onServerStarting(event: net.neoforged.neoforge.event.server.ServerStartingEvent) {
+        // Hand the server's registry access to the id-only matchesFilter
+        // overload so legacy callers can still resolve component-bearing
+        // rules like `minecraft:potion[minecraft:potion_contents={...}]`.
+        damien.nodeworks.script.CardHandle.setFallbackRegistries(event.server.registryAccess())
     }
 
     private fun onServerStopping(event: net.neoforged.neoforge.event.server.ServerStoppingEvent) {

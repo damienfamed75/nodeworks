@@ -44,6 +44,14 @@ object NetworkStorageHelper {
         filter: String,
         channel: ChannelFilter = ChannelFilter.All,
     ): Long {
+        // When the filter narrows to a specific variant, delegate to the
+        // component-aware path so we count only matching stacks. Plain
+        // itemId / tag / regex filters route through the legacy path which
+        // doesn't need a registry lookup per slot.
+        val variantInfo = parsedVariantInfo(filter)
+        if (variantInfo != null) {
+            return countVariantAcrossNetwork(level, snapshot, variantInfo.first, variantInfo.second, channel)
+        }
         var total = 0L
         val visited = HashSet<BlockPos>()
         for (card in getStorageCards(snapshot)) {
@@ -433,13 +441,43 @@ object NetworkStorageHelper {
         filter: String,
         channel: ChannelFilter = ChannelFilter.All,
     ): Pair<ItemInfo, CardSnapshot>? {
+        val variantPatch = parsedVariantPatch(filter)
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
             val storage = getStorage(level, card) ?: continue
-            val info = PlatformServices.storage.findFirstItemInfo(storage) { CardHandle.matchesFilter(it, filter) }
-            if (info != null) return Pair(info, card)
+            val info = PlatformServices.storage.findFirstItemInfo(storage) {
+                CardHandle.matchesFilter(it, filter)
+            } ?: continue
+            // When the filter narrows to a specific variant, require the
+            // returned info's components hash to match. The itemId-only
+            // predicate above lets through every variant of the item, this
+            // second check narrows to the requested one.
+            if (variantPatch != null) {
+                val infoHash = damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch)
+                val wantHash = damien.nodeworks.script.BufferKey.componentsHash(variantPatch)
+                if (infoHash != wantHash) continue
+            }
+            return Pair(info, card)
         }
         return null
+    }
+
+    private fun parsedVariantPatch(filter: String): net.minecraft.core.component.DataComponentPatch? =
+        damien.nodeworks.script.CardHandle.parsedVariantPatchForFind(filter)
+
+    /** Like [parsedVariantPatch] but also extracts the itemId for the variant
+     *  dispatch. Returns null when the filter isn't `Item(_, componentsPatch != null)`. */
+    private fun parsedVariantInfo(filter: String): Pair<String, net.minecraft.core.component.DataComponentPatch>? {
+        if (!filter.contains('[')) return null
+        val inner = when {
+            filter.startsWith("\$item:") -> filter.removePrefix("\$item:")
+            filter.startsWith("\$fluid:") -> return null
+            else -> filter
+        }
+        val registries = damien.nodeworks.script.CardHandle.parsedRuleRegistries() ?: return null
+        val rule = FilterRule.parse(inner, registries) as? FilterRule.Item ?: return null
+        val patch = rule.componentsPatch ?: return null
+        return rule.itemId to patch
     }
 
     /** Find all unique item types across all Storage Cards matching the filter, with their source cards.
@@ -456,11 +494,14 @@ object NetworkStorageHelper {
     ): List<Pair<ItemInfo, CardSnapshot>> {
         val results = mutableListOf<Pair<ItemInfo, CardSnapshot>>()
         val seen = mutableSetOf<damien.nodeworks.script.BufferKey.Key>()
+        val variantPatch = parsedVariantPatch(filter)
+        val wantHash = variantPatch?.let { damien.nodeworks.script.BufferKey.componentsHash(it) }
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
             val storage = getStorage(level, card) ?: continue
             val items = PlatformServices.storage.findAllItemInfo(storage) { CardHandle.matchesFilter(it, filter) }
             for (info in items) {
+                if (wantHash != null && damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch) != wantHash) continue
                 val key = damien.nodeworks.script.BufferKey.Key(
                     info.itemId,
                     damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch),
@@ -502,11 +543,12 @@ object NetworkStorageHelper {
         // ItemStack carries its own NBT-presence state, so the filter check
         // can use the actual `hasData` rather than guessing.
         val hasData = !stack.componentsPatch.isEmpty
+        val registries = level.registryAccess()
         for (card in getStorageCards(snapshot)) {
             if (remaining <= 0) break
             if (!channel.matches(card.channel)) continue
             val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-            if (cap != null && itemId != null && !cap.acceptsItem(itemId, hasData)) continue
+            if (cap != null && !cap.acceptsItem(stack, registries)) continue
             val storage = getStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
             remaining -= inserted
@@ -581,14 +623,16 @@ object NetworkStorageHelper {
             val routeTargets = routeTable?.findRouteTargets(itemInfo) ?: emptyList()
             if (routeTargets.isNotEmpty()) {
                 var routeRemaining = toMove
+                val registries = level.registryAccess()
                 for ((targetCard, target) in routeTargets) {
                     if (routeRemaining <= 0L) break
                     // Per-card filter gate. A route may point at a card whose
                     // configured rules reject this item (misconfiguration, but
                     // valid). Skip those and let overflow fall through to
-                    // open storages. Passes [hasData] so the NBT gate works.
+                    // open storages. Passes the item's components patch so
+                    // `[component]` rules narrow to the specific variant.
                     val cap = targetCard.capability as? damien.nodeworks.card.StorageSideCapability
-                    if (cap != null && !cap.acceptsItem(itemId, hasData)) continue
+                    if (cap != null && !cap.acceptsItem(itemId, itemInfo.componentsPatch, registries)) continue
                     val moved = try {
                         PlatformServices.storage.moveItemsVariant(source, target, variantFilter, routeRemaining)
                     } catch (_: Exception) { 0L }

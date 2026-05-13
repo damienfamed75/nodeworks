@@ -154,18 +154,14 @@ class RouteTable(
      */
     fun insertItemStackDefault(stack: net.minecraft.world.item.ItemStack): Int {
         var remaining = stack.count
-        val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString()
-        // Vanilla's "isn't this just a default ItemStack" check: an ItemStack
-        // with no `damage`, custom data, name overrides, etc. is "no data";
-        // anything carrying NBT-equivalent state is "has data".
-        val hasData = stack.componentsPatch.isEmpty.not()
+        val registries = level.registryAccess()
         for (card in openStorageCards) {
             if (remaining <= 0) break
             // Same per-card filter gate as [insertDefault], the source here is
-            // a single concrete ItemStack so we resolve its id and hasData
-            // once and skip cards that refuse it.
+            // a single concrete ItemStack so the full component-aware check
+            // runs and `[component]` rules narrow to the variant.
             val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-            if (cap != null && !cap.acceptsItem(itemId, hasData)) continue
+            if (cap != null && !cap.acceptsItem(stack, registries)) continue
             val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
             remaining -= inserted

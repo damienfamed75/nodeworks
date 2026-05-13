@@ -66,9 +66,9 @@ data class StorageSideCapability(
      *  gates, ALLOW mode) accepts everything, so untouched cards behave the
      *  way they always have.
      *
-     *  We look up `maxStackSize` on the registered Item to evaluate
-     *  stackability. For unknown ids the gate falls back to "any" (true)
-     *  so a card never rejects an item it can't classify. */
+     *  Component-bearing rules (`id[components]`) degrade to plain itemId
+     *  matching at this overload, callers with the full stack should use
+     *  [acceptsItem] taking [ItemStack] so component-specific rules fire. */
     fun acceptsItem(itemId: String, hasData: Boolean = false): Boolean {
         if (!stackabilityMatches(itemId)) return false
         if (!nbtMatches(hasData)) return false
@@ -78,6 +78,43 @@ data class StorageSideCapability(
             StorageCard.Companion.FilterMode.ALLOW -> anyMatch
             StorageCard.Companion.FilterMode.DENY -> !anyMatch
         }
+    }
+
+    /** Component-aware overload. Passes the full [stack] through to
+     *  [CardHandle.matchesFilter] so rules carrying `[components]` match
+     *  the stack's specific variant. */
+    fun acceptsItem(
+        stack: net.minecraft.world.item.ItemStack,
+        registries: net.minecraft.core.HolderLookup.Provider,
+    ): Boolean {
+        if (stack.isEmpty) return false
+        val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString()
+        val hasData = !stack.componentsPatch.isEmpty
+        if (!stackabilityMatches(itemId)) return false
+        if (!nbtMatches(hasData)) return false
+        if (filterRules.isEmpty()) return true
+        val anyMatch = filterRules.any { rule -> CardHandle.matchesFilter(stack, rule, registries) }
+        return when (filterMode) {
+            StorageCard.Companion.FilterMode.ALLOW -> anyMatch
+            StorageCard.Companion.FilterMode.DENY -> !anyMatch
+        }
+    }
+
+    /** Component-aware overload taking the constituents of a stack. Builds a
+     *  throwaway ItemStack so route-table fast paths (which carry an
+     *  [ItemInfo] but no real stack) can still honour `[components]` rules. */
+    fun acceptsItem(
+        itemId: String,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch,
+        registries: net.minecraft.core.HolderLookup.Provider,
+    ): Boolean {
+        if (componentsPatch.isEmpty) return acceptsItem(itemId, hasData = false)
+        val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+            ?: return acceptsItem(itemId, hasData = true)
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier)
+            ?: return acceptsItem(itemId, hasData = true)
+        val stack = net.minecraft.world.item.ItemStack(item).apply { applyComponents(componentsPatch) }
+        return acceptsItem(stack, registries)
     }
 
     private fun stackabilityMatches(itemId: String): Boolean {

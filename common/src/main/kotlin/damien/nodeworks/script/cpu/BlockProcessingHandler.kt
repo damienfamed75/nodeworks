@@ -196,11 +196,13 @@ object BlockProcessingHandler {
         // Storage cards are already sorted by priority descending in the
         // snapshot, so walking in order naturally targets filtered + high
         // priority cards first.
+        val registries = level.registryAccess()
+        val componentsPatch = ingredient?.stack?.componentsPatch ?: net.minecraft.core.component.DataComponentPatch.EMPTY
         val cards = NetworkStorageHelper.getStorageCards(snapshot).filter { card ->
             if (!channel.matches(card.channel)) return@filter false
             val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
                 ?: return@filter true
-            cap.acceptsItem(itemId, hasData)
+            cap.acceptsItem(itemId, componentsPatch, registries)
         }
         if (cards.isEmpty()) return false
 

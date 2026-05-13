@@ -857,6 +857,24 @@ class StorageCardScreen(
             val idx = ((net.minecraft.util.Util.getMillis() / TAG_CYCLE_PERIOD_MS) % members.size).toInt()
             return net.minecraft.world.item.ItemStack(members[idx])
         }
+        // Variant rule: parse via FilterRule so `id[components]` resolves to a
+        // stack carrying the actual variant (Potion of Strength etc.) instead
+        // of the bare item which renders as the placeholder Uncraftable form.
+        if (core.contains('[')) {
+            val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+                ?: return null
+            val parsed = damien.nodeworks.script.FilterRule.parse(core, registries)
+            if (parsed is damien.nodeworks.script.FilterRule.Item) {
+                val ident = net.minecraft.resources.Identifier.tryParse(parsed.itemId) ?: return null
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: return null
+                val stack = net.minecraft.world.item.ItemStack(item)
+                if (parsed.componentsPatch != null && parsed.componentsPatch.size() > 0) {
+                    stack.applyComponents(parsed.componentsPatch)
+                }
+                return stack
+            }
+            return null
+        }
         val ident = net.minecraft.resources.Identifier.tryParse(core) ?: return null
         val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: return null
         return net.minecraft.world.item.ItemStack(item)

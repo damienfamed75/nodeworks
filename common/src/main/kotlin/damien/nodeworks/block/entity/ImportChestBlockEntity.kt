@@ -238,6 +238,7 @@ class ImportChestBlockEntity(
             while (!stack.isEmpty) {
                 val startIndex = roundRobinIndex.mod(cards.size)
                 var placed = false
+                val registries = level.registryAccess()
                 for (offset in 0 until cards.size) {
                     val idx = (startIndex + offset).mod(cards.size)
                     val card = cards[idx]
@@ -245,7 +246,7 @@ class ImportChestBlockEntity(
                     val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
                         .getKey(stack.item)?.toString()
                     val hasData = !stack.componentsPatch.isEmpty
-                    if (cap != null && itemId != null && !cap.acceptsItem(itemId, hasData)) continue
+                    if (cap != null && !cap.acceptsItem(stack, registries)) continue
                     val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
                     val moved = damien.nodeworks.platform.PlatformServices.storage.insertItemStack(
                         storage, stack.copyWithCount(1)

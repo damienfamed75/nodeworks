@@ -74,7 +74,12 @@ class AutocompletePopup(
          *  on auto-import suggestions for cards / variables the player hasn't yet
          *  bound to a local. The terminal's accept handler is responsible for
          *  inserting it (with a duplicate guard) before applying [insertText]. */
-        val autoImport: String? = null
+        val autoImport: String? = null,
+        /** When non-null, render this row as a recipe icon strip
+         *  (input → output icons) instead of plain text. Set on `network:handle`
+         *  picker entries so the player sees what each `recipe_<hash>` actually
+         *  produces. The accepted [insertText] remains the hash. */
+        val recipe: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo? = null,
     )
 
     var visible: Boolean = false
@@ -241,11 +246,17 @@ class AutocompletePopup(
     fun render(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (!visible || suggestions.isEmpty()) return
 
-        val itemHeight = font.lineHeight + 2
+        // Rows with a recipe icon strip need extra height. Stretch the whole
+        // popup to that height when any visible row is a recipe, so alignment
+        // stays consistent.
+        val hasRecipe = suggestions.any { it.recipe != null }
+        val baseRowH = font.lineHeight + 2
+        val itemHeight = if (hasRecipe) maxOf(baseRowH, RecipeHintRenderer.HINT_HEIGHT + 1) else baseRowH
         val visibleCount = minOf(suggestions.size, maxVisible)
-        // Each row now has a Kind badge to the left of the text. Badge occupies
-        // BADGE_SIZE px from the left edge of content area, then BADGE_GAP before text.
-        val popupWidth = suggestions.maxOf { font.width(it.displayText) } + 8 + BADGE_SIZE + BADGE_GAP
+        // Each row has a Kind badge on the left, then either an icon strip
+        // (recipe rows) or plain text. Width is the max of the two across all
+        // visible suggestions so columns line up.
+        val popupWidth = suggestions.maxOf { rowContentWidth(it) } + 8 + BADGE_SIZE + BADGE_GAP
         val actualHeight = visibleCount * itemHeight + 4
 
         // Keep the popup within the game window, same flip-and-clamp policy the hover
@@ -314,13 +325,59 @@ class AutocompletePopup(
 
             val nameColor = if (suggestionIndex == selectedIndex) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt()
             val hintColor = if (suggestionIndex == selectedIndex) 0xFFBBBBBB.toInt() else 0xFF888888.toInt()
-            val nameWidth = font.width(s.insertText)
-            graphics.drawString(font, s.insertText, textX, y + 1, nameColor)
-            if (s.displayText != s.insertText) {
-                val hint = s.displayText.removePrefix(s.insertText)
-                graphics.drawString(font, hint, textX + nameWidth, y + 1, hintColor)
+            val recipe = s.recipe
+            if (recipe != null) {
+                // Recipe rows render as the input → output icon strip alone.
+                // No trailing text, the strip's potion / dye / enchantment
+                // icons are self-describing and a textual summary would
+                // either truncate misleadingly or balloon the popup width.
+                val stripW = recipeStripWidth(recipe)
+                val stripY = y + (itemHeight - RecipeHintRenderer.HINT_HEIGHT) / 2
+                RecipeHintRenderer.render(
+                    graphics, font, recipe.inputs, recipe.outputs,
+                    textX, stripY, stripW, RecipeHintRenderer.HINT_HEIGHT,
+                    valid = true,
+                )
+            } else {
+                val nameWidth = font.width(s.insertText)
+                graphics.drawString(font, s.insertText, textX, y + (itemHeight - font.lineHeight) / 2 + 1, nameColor)
+                if (s.displayText != s.insertText) {
+                    val hint = s.displayText.removePrefix(s.insertText)
+                    graphics.drawString(font, hint, textX + nameWidth, y + (itemHeight - font.lineHeight) / 2 + 1, hintColor)
+                }
             }
         }
+    }
+
+    /** Pixel width for a row's content (not counting the badge + gap on the
+     *  left). Recipe rows measure their icon strip, plain rows their text. */
+    private fun rowContentWidth(s: Suggestion): Int {
+        val recipe = s.recipe ?: return font.width(s.displayText)
+        return recipeStripWidth(recipe)
+    }
+
+    /** Pixel width of the recipe icon strip. Matches the layout in
+     *  [RecipeHintRenderer]: 14px icons, 2px gaps, 11px arrow with 2px pads. */
+    private fun recipeStripWidth(
+        recipe: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo,
+    ): Int {
+        val ICON = 14
+        val GAP = 2
+        val ARROW = 11
+        val ARROW_PAD_L = 2
+        val ARROW_PAD_R = 2
+        val PAD = 4
+        var w = PAD
+        if (recipe.inputs.isNotEmpty()) {
+            w += recipe.inputs.size * ICON + (recipe.inputs.size - 1) * GAP
+        }
+        if (recipe.inputs.isNotEmpty() && recipe.outputs.isNotEmpty()) {
+            w += ARROW_PAD_L + ARROW + ARROW_PAD_R
+        }
+        if (recipe.outputs.isNotEmpty()) {
+            w += recipe.outputs.size * ICON + (recipe.outputs.size - 1) * GAP
+        }
+        return w + PAD
     }
 
     companion object {
@@ -3205,7 +3262,8 @@ class AutocompletePopup(
             displayText = canonicalId,
             snippetText = fullSnippet,
             snippetCursor = beforeCursor.length,
-            consumesAutoclose = true
+            consumesAutoclose = true,
+            recipe = api,
         )
     }
 

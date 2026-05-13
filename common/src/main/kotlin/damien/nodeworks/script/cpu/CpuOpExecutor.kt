@@ -656,8 +656,23 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
 
         if (!allConsumed) {
-            // Nothing moved. Unwind pulls and retry later.
+            // Nothing moved. Two scenarios distinguished by whether the
+            // handler registered any output pulls:
+            //  - Pulls registered: handler tried to wire outputs but
+            //    couldn't route inputs (destination full / unreachable).
+            //    Retry, the destination may free up.
+            //  - No pulls registered: the handler is a no-op (empty body,
+            //    early return, or just buggy). Retrying never helps.
+            //    Fail loudly so the player notices.
+            val hadPulls = state.processingJob.invocationPulls.isNotEmpty()
             cancelInvocationPulls(state)
+            if (!hadPulls) {
+                return CraftScheduler.OpResult.Failed(
+                    "Handler '$apiName' did nothing: no inputs moved, no job:pull registered. " +
+                    "The handler body must route inputs (e.g. items.x:insert(card)) and call " +
+                    "job:pull to collect outputs."
+                )
+            }
             return scheduleRetry(op, state, "destination unavailable")
         }
 

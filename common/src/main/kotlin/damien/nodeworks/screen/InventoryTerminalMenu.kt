@@ -535,18 +535,32 @@ class InventoryTerminalMenu(
     /**
      * Handle a click on the network item grid.
      * action: 0=extract full stack, 1=insert carried, 2=extract half, 3=shift-click to inventory
+     *
+     * [componentsPatch] is non-empty when the clicked cell carried a specific
+     * variant (e.g. Strength Potion). Used to narrow the extract so the same
+     * variant the player saw in the grid is what they get on the cursor.
      */
-    fun handleGridClick(player: Player, itemId: String, action: Int) {
+    fun handleGridClick(
+        player: Player,
+        itemId: String,
+        action: Int,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+    ) {
         val lvl = serverLevel ?: return
         val snap = snapshot ?: return
         val c = cache
+        val variantPatch = if (componentsPatch.size() > 0) componentsPatch else null
 
         when (action) {
             0, 2, 3 -> {
                 val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
 
-                val available = if (c != null) c.count(itemId) else {
+                val available = if (variantPatch != null) {
+                    NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch)
+                } else if (c != null) {
+                    c.count(itemId)
+                } else {
                     NetworkStorageHelper.countItems(lvl, snap, itemId)
                 }
                 val maxStack = item.getDefaultMaxStackSize().toLong()
@@ -555,7 +569,7 @@ class InventoryTerminalMenu(
                     else -> minOf(available, maxStack)
                 }
 
-                val stacks = extractRealStacks(lvl, snap, c, itemId, toExtract)
+                val stacks = extractRealStacks(lvl, snap, c, itemId, toExtract, variantPatch)
                 if (stacks.isNotEmpty()) {
                     if (action == 3) {
                         // Shift-click into player inventory. Each component-distinct
@@ -958,15 +972,36 @@ class InventoryTerminalMenu(
         c: NetworkInventoryCache?,
         itemId: String,
         maxCount: Long,
+        /** Optional variant patch. When non-null, only stacks whose components
+         *  hash equal the patch are extracted, so clicking a Strength Potion
+         *  cell doesn't accidentally pull a Fire Resistance one out of the
+         *  same itemId bucket. */
+        componentsPatch: net.minecraft.core.component.DataComponentPatch? = null,
     ): List<ItemStack> {
         if (maxCount <= 0L) return emptyList()
+        val wantHash = componentsPatch?.let { damien.nodeworks.script.BufferKey.componentsHash(it) }
         val out = ArrayList<ItemStack>()
         var remaining = maxCount
         for (card in NetworkStorageHelper.getStorageCards(snap)) {
             if (remaining <= 0L) break
             val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
-            val stacks = damien.nodeworks.platform.PlatformServices.storage
-                .extractItemStacksMatching(storage, { it == itemId }, remaining)
+            // Use the stack-aware predicate when narrowing to a variant so
+            // the platform can filter at the slot level instead of returning
+            // all variants and forcing the caller to re-insert mismatches.
+            val stacks = if (wantHash != null) {
+                damien.nodeworks.platform.PlatformServices.storage.extractStacksByPredicate(
+                    storage,
+                    { stack ->
+                        val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                        sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+                    },
+                    remaining,
+                )
+            } else {
+                damien.nodeworks.platform.PlatformServices.storage.extractItemStacksMatching(
+                    storage, { it == itemId }, remaining,
+                )
+            }
             for (stack in stacks) {
                 if (stack.isEmpty) continue
                 val hasData = !stack.componentsPatch.isEmpty

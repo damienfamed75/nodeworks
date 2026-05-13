@@ -1831,8 +1831,19 @@ class ScriptEngine(
         // failures still log to the terminal so the player sees what went wrong.
         networkTable.setGuarded("Network", "craft", object : VarArgFunction() {
             override fun invoke(args: Varargs): Varargs {
-                val identifier = args.checkjstring(2)
+                val rawIdentifier = args.checkjstring(2)
                 val count = if (args.narg() >= 3 && !args.arg(3).isnil()) args.checkint(3) else 1
+
+                // Parse so `network:craft("minecraft:potion[minecraft:potion_contents={...}]")`
+                // resolves to (itemId, componentsPatch) and the planner can target
+                // the specific variant. Plain ids pass through unchanged.
+                val registries = level.registryAccess()
+                val parsedRule = FilterRule.parse(rawIdentifier, registries)
+                val (identifier, requestedPatch) = when (parsedRule) {
+                    is FilterRule.Item -> parsedRule.itemId to (parsedRule.componentsPatch
+                        ?: net.minecraft.core.component.DataComponentPatch.EMPTY)
+                    else -> rawIdentifier to net.minecraft.core.component.DataComponentPatch.EMPTY
+                }
 
                 CraftingHelper.currentPendingJob = null
                 // omitDeliver = true: the CPU plan stops at the root output, leaving
@@ -1846,6 +1857,7 @@ class ScriptEngine(
                     callerScheduler = scheduler,
                     traceLog = { msg -> logCallback(msg, false) },
                     omitDeliver = true,
+                    componentsPatch = requestedPatch,
                 )
 
                 // Check for async pending job (processing handler or async assembly)
