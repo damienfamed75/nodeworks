@@ -758,6 +758,19 @@ class ExportChestScreen(
                     return true
                 }
             }
+            // Drop-on-panel: held stack clicked anywhere inside the rule
+            // panel but not on a row icon -> append as a new rule, same path
+            // as JEI's ghost drop. Cursor stack is not consumed.
+            val drop = rulePanelDropArea()
+            if (drop != null &&
+                mx in drop[0] until drop[0] + drop[2] &&
+                my in drop[1] until drop[1] + drop[3]
+            ) {
+                if (acceptGhostStack(carried)) {
+                    playClickSound()
+                    return true
+                }
+            }
         }
 
         // Rule list deletes.
