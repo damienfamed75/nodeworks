@@ -51,6 +51,15 @@ class TerminalScreen(
         var savedLogCollapsed = false
         var savedLogPanelHeight = 80
 
+        /** Clear the JEI-drag flag on whichever terminal is currently shown.
+         *  Called from the JEI ghost handler's `onComplete` since JEI doesn't
+         *  pass the screen reference there. No-op when no terminal is open. */
+        fun clearJeiDraggingOnActive() {
+            val mc = net.minecraft.client.Minecraft.getInstance()
+            val screen = mc.screen as? TerminalScreen ?: return
+            screen.setJeiDragging(false)
+        }
+
         /** Max pixel width for the hover tooltip text block. Long descriptions wrap via
          *  `font.split` at this limit so the panel stays readable. */
         private const val TOOLTIP_MAX_WIDTH_PX = 200
@@ -70,6 +79,61 @@ class TerminalScreen(
 
     /** Exposed for platform-specific input suppression (e.g., blocking JEI keybinds). */
     fun isEditorFocused(): Boolean = ::editor.isInitialized && editor.isFocused
+
+    /** True while a JEI ghost-ingredient drag is in flight over this screen.
+     *  Used to suppress text-select drags in the script editor and to paint
+     *  a small drop-marker at the caret. */
+    private var jeiDragging: Boolean = false
+
+    fun setJeiDragging(value: Boolean) {
+        jeiDragging = value
+        if (::editor.isInitialized) editor.suppressDrag = value
+    }
+
+    /** Drop area covering the script editor, used by the JEI ghost-ingredient
+     *  handler. `null` until the editor widget is built. */
+    fun editorDropArea(): IntArray? {
+        if (!::editor.isInitialized) return null
+        return intArrayOf(editor.x, editor.y, editor.width, editor.height)
+    }
+
+    /** JEI drop entry point. Splices [stack]'s canonical filter form into
+     *  the script at the editor's current cursor. When the caret sits
+     *  inside an existing Lua string literal, the bare (escaped) canonical
+     *  is inserted so the player's opening / closing quotes still bound
+     *  the literal. Otherwise the canonical is wrapped in `"..."` so it
+     *  drops in as a standalone literal ready to pass as a function arg. */
+    fun acceptGhostStack(stack: net.minecraft.world.item.ItemStack): Boolean {
+        if (!::editor.isInitialized || stack.isEmpty) return false
+        val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+            ?: return false
+        val canonical = damien.nodeworks.script.FilterRule.format(stack, registries)
+        val escaped = canonical.replace("\"", "\\\"")
+        val text = if (editor.isCursorInsideStringLiteral()) escaped else "\"$escaped\""
+        editor.insertAtCursor(text)
+        return true
+    }
+
+    /** Small "+" glyph at the caret, drawn on a faint green pill, so the
+     *  player can see exactly where a JEI ingredient drop will splice. */
+    private fun renderJeiDropMarker(graphics: GuiGraphicsExtractor) {
+        val cx = editor.caretScreenX()
+        val cy = editor.caretScreenY()
+        val lh = editor.caretLineHeight()
+        // Pill backdrop: 10×10 rounded-ish square (a 2-px-padded square is
+        // close enough at vanilla GUI scale).
+        val markerSize = 10
+        val mx = cx - 1
+        val my = cy + (lh - markerSize) / 2
+        graphics.fill(mx, my, mx + markerSize, my + markerSize, 0x6055CC55.toInt())
+        graphics.fill(mx - 1, my, mx, my + markerSize, 0x6055CC55.toInt())
+        graphics.fill(mx + markerSize, my, mx + markerSize + 1, my + markerSize, 0x6055CC55.toInt())
+        // "+" drawn as two 1-px fills, centred in the pill.
+        val pcx = mx + markerSize / 2
+        val pcy = my + markerSize / 2
+        graphics.fill(pcx - 2, pcy, pcx + 3, pcy + 1, 0xFFFFFFFF.toInt())
+        graphics.fill(pcx, pcy - 2, pcx + 1, pcy + 3, 0xFFFFFFFF.toInt())
+    }
 
     /** True if either Ctrl key is currently physically held. CharacterEvent doesn't
      *  carry modifier bits in 26.1, so we consult [net.minecraft.client.Minecraft.hasControlDown]
@@ -1446,6 +1510,14 @@ class TerminalScreen(
 
         // Autocomplete popup renders on top of everything
         autocomplete.render(graphics, mouseX, mouseY)
+
+        // JEI drop marker: small green "+" anchored at the caret so the
+        // player can see where the dropped filter literal will splice in.
+        // We replace JEI's full-area green tint here (the handler returns
+        // `shouldHighlightTargets = false`) so the indicator stays minimal.
+        if (jeiDragging && ::editor.isInitialized) {
+            renderJeiDropMarker(graphics)
+        }
         // New tab name input overlay, render on top of everything
         if (showNewTabInput) {
             val inputW = 120

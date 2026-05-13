@@ -122,6 +122,10 @@ class NodeworksJeiPlugin : IModPlugin {
             PlacerScreen::class.java,
             PlacerGhostHandler()
         )
+        registration.addGhostIngredientHandler(
+            damien.nodeworks.screen.TerminalScreen::class.java,
+            TerminalScriptEditorGhostHandler()
+        )
     }
 
     override fun registerCategories(registration: IRecipeCategoryRegistration) {
@@ -624,6 +628,55 @@ class PlacerGhostHandler : IGhostIngredientHandler<PlacerScreen> {
         override fun accept(ingredient: I) {
             if (ingredient !is ItemStack || ingredient.isEmpty) return
             gui.acceptGhostStack(ingredient)
+        }
+    }
+}
+
+/**
+ * Ghost-ingredient handler for the Scripting Terminal. The script editor's
+ * rendered region is the drop area; dropping inserts a quoted Lua string
+ * literal with the canonical `id[components]` filter form at the cursor so a
+ * player can author `network:find(<dropped>)` etc. without typing the
+ * variant string by hand.
+ *
+ * Suppresses JEI's default full-area green tint via [shouldHighlightTargets]
+ * `= false`. The terminal screen draws its own small "+" marker at the caret
+ * while the drag is active, and we tell the screen to skip text-selection
+ * drags so dragging a JEI ingredient over the editor doesn't accidentally
+ * select script text.
+ */
+class TerminalScriptEditorGhostHandler : IGhostIngredientHandler<damien.nodeworks.screen.TerminalScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: damien.nodeworks.screen.TerminalScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val rect = gui.editorDropArea() ?: return emptyList()
+        if (doStart) gui.setJeiDragging(true)
+        return listOf(TerminalEditorTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
+    }
+
+    override fun shouldHighlightTargets(): Boolean = false
+
+    override fun onComplete() {
+        // JEI only hands us back a `Screen` here on older versions, so we
+        // can't query the active terminal directly. Instead the screen owns
+        // its own flag and clears it on render-end / mouseRelease. Belt and
+        // braces: also clear via the active-screen singleton if exposed.
+        damien.nodeworks.screen.TerminalScreen.clearJeiDraggingOnActive()
+    }
+
+    private class TerminalEditorTarget<I : Any>(
+        private val gui: damien.nodeworks.screen.TerminalScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+        override fun getArea(): Rect2i = area
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            gui.acceptGhostStack(ingredient)
+            gui.setJeiDragging(false)
         }
     }
 }

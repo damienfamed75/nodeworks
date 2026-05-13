@@ -1102,12 +1102,26 @@ class ScriptEditor(
 
     override fun onDrag(event: MouseButtonEvent, dragX: Double, dragY: Double) {
         val newPos = screenToCursor(event.mouseX, event.mouseY)
-        if (newPos != cursor) {
-            if (selectStart < 0) selectStart = cursor
+        if (newPos == cursor) return
+        if (suppressDrag) {
+            // External callers (TerminalScreen during a JEI ghost drag) toggle
+            // this so a drop-drag doesn't extend the text selection, but we
+            // still let the caret follow the mouse so the host can paint a
+            // drop marker at the right spot.
             cursor = newPos
             ensureCursorVisible()
+            return
         }
+        if (selectStart < 0) selectStart = cursor
+        cursor = newPos
+        ensureCursorVisible()
     }
+
+    /** When true, pointer drags over the editor move the caret but don't
+     *  extend the selection. Set by hosts that have a competing drag gesture
+     *  in flight (e.g. JEI ingredient drag-to-drop) and want the caret to
+     *  follow the mouse for a host-painted drop marker. */
+    var suppressDrag: Boolean = false
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
         if (!isMouseOver(mouseX, mouseY)) return false
@@ -1117,6 +1131,64 @@ class ScriptEditor(
     }
 
     // --- Text manipulation ---
+
+    /** Public entry point for callers outside the editor (e.g. JEI ghost
+     *  drop) that need to splice text at the current cursor. Goes through
+     *  the same normalize + rebuild path as keyboard typing. */
+    fun insertAtCursor(text: String) = insertText(text)
+
+    /** Screen-space X of the caret's left edge. Used by hosts that need to
+     *  paint an indicator at the cursor (e.g. JEI drop marker). */
+    fun caretScreenX(): Int {
+        val (line, col) = cursorToLineCol(cursor)
+        return textLeft + xOfCol(line, col) - scrollX
+    }
+
+    /** Screen-space Y of the caret's top edge. */
+    fun caretScreenY(): Int {
+        val (line, _) = cursorToLineCol(cursor)
+        return textTop + yTopOfLine(line) - scrollY
+    }
+
+    /** Caret line height in pixels, so a host indicator can size itself
+     *  proportionally to the editor's font. */
+    fun caretLineHeight(): Int = lineHeight
+
+    /** True when the caret sits inside an open Lua string literal on the
+     *  current line. Walks the line text up to the caret column, tracking
+     *  unescaped `"` / `'` toggles and bailing at `--` (line comment).
+     *  Used by host drop logic to decide whether to wrap an inserted token
+     *  in quotes or splice it bare into an existing literal. Long-bracket
+     *  strings (`[[...]]`) aren't handled, the heuristic favours the common
+     *  single-line case. */
+    fun isCursorInsideStringLiteral(): Boolean {
+        val (lineIdx, col) = cursorToLineCol(cursor)
+        val line = getLine(lineIdx)
+        var inString = false
+        var stringQuote = ' '
+        var i = 0
+        val end = col.coerceAtMost(line.length)
+        while (i < end) {
+            val ch = line[i]
+            if (!inString && ch == '-' && i + 1 < end && line[i + 1] == '-') {
+                // Line comment, anything past here is comment text not a literal.
+                return false
+            }
+            if (inString) {
+                if (ch == '\\' && i + 1 < end) {
+                    // Skip the escaped char regardless of what it is.
+                    i += 2
+                    continue
+                }
+                if (ch == stringQuote) inString = false
+            } else if (ch == '"' || ch == '\'') {
+                inString = true
+                stringQuote = ch
+            }
+            i++
+        }
+        return inString
+    }
 
     private fun insertText(text: String) {
         // Normalise BEFORE length math, expanding `\t` to two spaces changes length, so
