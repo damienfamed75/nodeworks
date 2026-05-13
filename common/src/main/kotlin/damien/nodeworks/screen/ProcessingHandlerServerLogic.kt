@@ -71,7 +71,7 @@ object ProcessingHandlerServerLogic {
             .flatMap { it.apis }
             .firstOrNull { it.name == apiName } ?: return
         if (isSetClaimedByOther(level, self, apiName)) return
-        self.bindToProcessingSet(apiName, match.inputs.map { it.first })
+        self.bindToProcessingSet(apiName, match.inputs.map { it.itemId })
     }
 
     /**

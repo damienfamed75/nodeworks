@@ -170,6 +170,46 @@ interface StorageService {
         maxCount: Long,
     ): List<ItemStack>
 
+    /** Stack-aware extract: the [filter] sees the full [ItemStack] of each
+     *  candidate slot, so callers can match by (itemId + DataComponents).
+     *  Used by the planner's Pull op to extract a specific variant (e.g. a
+     *  Strength Potion specifically, not just any potion). Default
+     *  implementation delegates to [extractItemStacksMatching] with an
+     *  itemId-only filter and then post-filters the returned stacks, which
+     *  is correct but extracts more than necessary from storage on a
+     *  mixed-variant chest. Loaders should override with a slot-walking
+     *  variant for efficiency. */
+    fun extractStacksByPredicate(
+        storage: ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+    ): List<ItemStack> {
+        // Default: extract everything matching by itemId-of-anything-stored, then
+        // filter the returned stacks and re-insert the rejects. Loaders can do
+        // better by walking slots directly.
+        val all = extractItemStacksMatching(storage, { true }, maxCount)
+        val keep = ArrayList<ItemStack>(all.size)
+        var kept = 0L
+        for (stack in all) {
+            if (kept < maxCount && filter(stack)) {
+                keep.add(stack)
+                kept += stack.count
+            } else {
+                insertItemStack(storage, stack)
+            }
+        }
+        return keep
+    }
+
+    /** Stack-aware count: sums every slot whose [filter] returns true. Used
+     *  by the planner's feasibility check to count specific variants (not
+     *  every variant sharing an itemId). Default implementation delegates
+     *  via a non-mutating slot scan in the loader. */
+    fun countStacksByPredicate(
+        storage: ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+    ): Long = 0L
+
     /** Insert an ItemStack into storage. Returns count actually inserted. */
     fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int
 

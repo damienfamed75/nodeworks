@@ -255,15 +255,15 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                     } else {
                         if (api.inputs.isNotEmpty()) {
                             details.add("Inputs:")
-                            for ((itemId, _) in api.inputs) {
-                                val channel = entity.getInputChannel(itemId)
-                                details.add(processingHandlerItemMarker(itemId, channel))
+                            for (ingr in api.inputs) {
+                                val channel = entity.getInputChannel(ingr.itemId)
+                                details.add(processingHandlerItemMarker(ingr.itemId, channel))
                             }
                         }
                         if (api.outputs.isNotEmpty()) {
                             details.add("Outputs:")
-                            for ((itemId, _) in api.outputs) {
-                                details.add(processingHandlerItemMarker(itemId, entity.outputChannel))
+                            for (ingr in api.outputs) {
+                                details.add(processingHandlerItemMarker(ingr.itemId, entity.outputChannel))
                             }
                         }
                     }

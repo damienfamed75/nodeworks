@@ -93,7 +93,16 @@ class ProcessingSetScreen(
 
         private const val CLEAR_BTN_SIZE = 14
         private const val CLEAR_BTN_X = 16
-        private const val CLEAR_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - CLEAR_BTN_SIZE) / 2
+        // Stacked pair: fuzzy toggle on top, clear button beneath, centered as a
+        // pair against the 3-row input grid. Mirrors InstructionSetScreen's
+        // substitutions-and-clear layout so the two recipe editors look alike.
+        private const val FUZZY_BTN_SIZE = 14
+        private const val FUZZY_BTN_X = CLEAR_BTN_X
+        private const val FUZZY_ICON_SIZE = 9
+        private const val BTN_PAIR_GAP = 2
+        private const val BTN_PAIR_H = FUZZY_BTN_SIZE + BTN_PAIR_GAP + CLEAR_BTN_SIZE
+        private const val FUZZY_BTN_Y = INPUT_SECTION_Y + (INPUT_SECTION_H - BTN_PAIR_H) / 2
+        private const val CLEAR_BTN_Y = FUZZY_BTN_Y + FUZZY_BTN_SIZE + BTN_PAIR_GAP
 
 
         private val BG_TEXTURE = net.minecraft.resources.Identifier.fromNamespaceAndPath(
@@ -200,6 +209,32 @@ class ProcessingSetScreen(
             5, 5, WHITE)
         if (clearHover) queueTooltip(mouseX, mouseY, "Clear slots")
 
+        // Fuzzy-mode toggle. Reuses the substitution icons so the visual
+        // language matches Instruction Sets: ON when the recipe accepts any
+        // component variant (e.g. any potion), OFF when it requires exact
+        // component matching (e.g. specifically Potion of Strength).
+        val fuzzyX = x + FUZZY_BTN_X
+        val fuzzyY = y + FUZZY_BTN_Y
+        val fuzzyDrawW = FUZZY_BTN_SIZE - 1
+        val fuzzyDrawH = FUZZY_BTN_SIZE - 1
+        val fuzzyHover = mouseX in fuzzyX until fuzzyX + FUZZY_BTN_SIZE && mouseY in fuzzyY until fuzzyY + FUZZY_BTN_SIZE
+        (if (fuzzyHover) NineSlice.BUTTON_HOVER else NineSlice.BUTTON).draw(graphics, fuzzyX, fuzzyY, fuzzyDrawW, fuzzyDrawH)
+        val fuzzyIcon = if (menu.fuzzy) Icons.SUBSTITUTIONS_ON else Icons.SUBSTITUTIONS_OFF
+        fuzzyIcon.drawTopLeft(
+            graphics,
+            fuzzyX + (fuzzyDrawW - FUZZY_ICON_SIZE) / 2,
+            fuzzyY + (fuzzyDrawH - FUZZY_ICON_SIZE) / 2,
+            FUZZY_ICON_SIZE, FUZZY_ICON_SIZE,
+        )
+        if (fuzzyHover) {
+            queueTooltip(
+                mouseX, mouseY,
+                "Fuzzy: ${if (menu.fuzzy) "On" else "Off"}",
+                "Accept any component variant of each ingredient.",
+                "Click to toggle.",
+            )
+        }
+
         // Stepper buttons, draw the 9-slice background first, then paint the +/- glyph
         // on top. (Previously the text was drawn before the button and got painted over.)
         val minusHover = mouseX in (x + TIMEOUT_MINUS_X) until (x + TIMEOUT_MINUS_X + STEPPER_BTN_SIZE) &&
@@ -302,13 +337,24 @@ class ProcessingSetScreen(
             if (!inBox && box.isFocused) box.isFocused = false
         }
 
+        // Fuzzy-mode toggle (above the clear button).
+        val fuzzyX = leftPos + FUZZY_BTN_X
+        val fuzzyY = topPos + FUZZY_BTN_Y
+        if (mx in fuzzyX until fuzzyX + FUZZY_BTN_SIZE && my in fuzzyY until fuzzyY + FUZZY_BTN_SIZE) {
+            menu.fuzzy = !menu.fuzzy
+            PlatformServices.clientNetworking.sendToServer(
+                SetProcessingApiDataPayload(menu.containerId, "fuzzy", 0, if (menu.fuzzy) 1 else 0)
+            )
+            return true
+        }
+
         // Clear-all button (left of input grid).
         val clearX = leftPos + CLEAR_BTN_X
         val clearY = topPos + CLEAR_BTN_Y
         if (mx in clearX until clearX + CLEAR_BTN_SIZE && my in clearY until clearY + CLEAR_BTN_SIZE) {
             for (i in 0 until ProcessingSetScreenHandler.TOTAL_GHOST_SLOTS) {
                 PlatformServices.clientNetworking.sendToServer(
-                    SetProcessingApiSlotPayload(menu.containerId, i, "")
+                    SetProcessingApiSlotPayload(menu.containerId, i, net.minecraft.world.item.ItemStack.EMPTY)
                 )
             }
             return true
@@ -372,7 +418,7 @@ class ProcessingSetScreen(
 
             if (newCount <= 0) {
                 PlatformServices.clientNetworking.sendToServer(
-                    SetProcessingApiSlotPayload(menu.containerId, i, "")
+                    SetProcessingApiSlotPayload(menu.containerId, i, net.minecraft.world.item.ItemStack.EMPTY)
                 )
             } else {
                 val key = if (isInput) "input" else "output"

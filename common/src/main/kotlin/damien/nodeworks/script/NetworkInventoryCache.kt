@@ -6,6 +6,7 @@ import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.FluidInfo
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.PlatformServices
+import net.minecraft.world.item.ItemStack
 import net.minecraft.core.BlockPos
 import net.minecraft.core.component.DataComponentPatch
 import net.minecraft.network.chat.Component
@@ -48,11 +49,16 @@ class NetworkInventoryCache(
     // Authoritative view of the latest poll. Filled across the cycle's slices,
     // diffed against [entries] at cycle end. Anything in [entries] but not in
     // [frontBuffer] (and not protected by the dirty mark) is treated as gone.
-    private val frontBuffer = LinkedHashMap<String, ItemInfo>()
+    //
+    // Keys are [BufferKey.Key] (itemId + componentsHash) so component-bearing
+    // variants of one item (five potions, three dyed armors) live in separate
+    // buckets instead of collapsing under a single boolean `hasData`. Fluids
+    // don't have components, so the fluid map stays String-keyed.
+    private val frontBuffer = LinkedHashMap<BufferKey.Key, ItemInfo>()
     private val fluidFrontBuffer = LinkedHashMap<String, FluidInfo>()
 
     // Serial-tracked entries for delta sync to clients
-    private val entries = LinkedHashMap<String, SerialEntry>()
+    private val entries = LinkedHashMap<BufferKey.Key, SerialEntry>()
     private val fluidEntries = LinkedHashMap<String, FluidSerialEntry>()
     private var nextSerial = 1L
 
@@ -81,7 +87,7 @@ class NetworkInventoryCache(
     // extract that happens mid-cycle would briefly flicker back to the pre-extract
     // count when the cycle ends, since the polled `frontBuffer` value is older
     // than the hook-updated `entries` value. Cleared after each [applyDiff].
-    private val dirtyKeys = mutableSetOf<String>()
+    private val dirtyKeys = mutableSetOf<BufferKey.Key>()
     private val dirtyFluidKeys = mutableSetOf<String>()
 
     companion object {
@@ -226,7 +232,7 @@ class NetworkInventoryCache(
                 PlatformServices.storage.findAllItemInfo(storage) { true }
             }
             for (info in items) {
-                val key = cacheKey(info.itemId, info.hasData)
+                val key = cacheKey(info)
                 val existing = frontBuffer[key]
                 if (existing != null) {
                     frontBuffer[key] = existing.copy(count = existing.count + info.count)
@@ -269,9 +275,14 @@ class NetworkInventoryCache(
             }
             for (api in snapshot.processingApis) {
                 for (procApi in api.apis) {
-                    for (outputId in procApi.outputItemIds) {
-                        if (outputId.isEmpty()) continue
-                        addCraftablePhantom(outputId)
+                    for (output in procApi.outputs) {
+                        if (output.itemId.isEmpty()) continue
+                        // Pass the full stack so the phantom carries any
+                        // DataComponents (potion contents, dyed color,
+                        // enchantments) and renders as the proper variant
+                        // in the Inventory Terminal instead of falling back
+                        // to "Uncraftable Potion" / blank-glint placeholders.
+                        addCraftablePhantom(output.stack)
                     }
                 }
             }
@@ -280,19 +291,36 @@ class NetworkInventoryCache(
         return applyDiff()
     }
 
-    /** Mark [outputId] as craftable in the front buffer, either by flipping the
-     *  flag on an existing entry or by adding a phantom 0-count entry. Shared
-     *  between Crafter and Processing-API phantom passes in [finalizeAndDiff]. */
+    /** Mark [outputId] as craftable, plain-components variant. Used by
+     *  Instruction Set recipes whose output is always a plain itemId. */
     private fun addCraftablePhantom(outputId: String) {
-        val key = cacheKey(outputId, false)
+        val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return
+        addCraftablePhantom(ItemStack(item))
+    }
+
+    /** Mark the variant identified by [template] as craftable in the front
+     *  buffer, either by flipping the flag on an existing entry or by adding
+     *  a phantom 0-count entry. Keyed on the template's component-aware
+     *  [BufferKey.Key] so component-bearing recipe outputs (potions, dyed
+     *  armor) get distinct phantom rows from plain variants of the same
+     *  itemId. */
+    private fun addCraftablePhantom(template: ItemStack) {
+        if (template.isEmpty) return
+        val key = BufferKey.of(template)
         val existing = frontBuffer[key]
         if (existing != null) {
             frontBuffer[key] = existing.copy(isCraftable = true)
         } else {
-            val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: return
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return
-            val name = Component.translatable(item.descriptionId).string
-            frontBuffer[key] = ItemInfo(outputId, name, 0, item.getDefaultMaxStackSize(), false, isCraftable = true)
+            frontBuffer[key] = ItemInfo(
+                itemId = key.itemId,
+                name = template.hoverName.string,
+                count = 0,
+                maxStackSize = template.item.getDefaultMaxStackSize(),
+                hasData = !key.isPlain,
+                isCraftable = true,
+                componentsPatch = template.componentsPatch,
+            )
         }
     }
 
@@ -407,11 +435,16 @@ class NetworkInventoryCache(
 
     fun count(filter: String): Long {
         // Fast path so 500 Monitors × every-20-ticks polling for exact ids stays
-        // O(1) per query instead of O(entries).
+        // O(1)-ish per query. With component-aware keying we sum across every
+        // variant that shares the requested itemId (`minecraft:potion` sums
+        // all five potion buckets). Still O(variants for this item) rather
+        // than O(total entries), so plain-item lookups stay effectively O(1).
         if (isExactItemFilter(filter)) {
-            val a = entries[cacheKey(filter, false)]?.info?.count ?: 0L
-            val b = entries[cacheKey(filter, true)]?.info?.count ?: 0L
-            return a + b
+            var total = 0L
+            for ((key, entry) in entries) {
+                if (key.itemId == filter) total += entry.info.count
+            }
+            return total
         }
         var total = 0L
         for ((_, entry) in entries) {
@@ -474,32 +507,33 @@ class NetworkInventoryCache(
         componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
     ) {
         if (amount <= 0) return
-        val key = cacheKey(itemId, hasData)
+        // Bucket on (itemId, componentsHash) so an inserted strength potion
+        // doesn't collide with a healing potion bucket. The legacy [hasData]
+        // boolean param survives for API stability but the patch is authoritative.
+        val key = cacheKey(itemId, componentsPatch)
         // Mark dirty so the next applyDiff doesn't revert this update with a stale
         // pre-insert poll value. See [applyDiff] and [dirtyKeys] for the full rationale.
         dirtyKeys.add(key)
         val existing = entries[key]
         if (existing != null) {
-            // Adopt the new patch when the existing entry has none so a player-
-            // inserted damaged tool gets its bar immediately even if the bucket
-            // already held a default-state instance from a prior insert.
-            val mergedPatch = if (existing.info.componentsPatch.isEmpty) componentsPatch
-            else existing.info.componentsPatch
+            // Same-key existing entry already has matching components by construction.
             entries[key] = existing.copy(
-                info = existing.info.copy(
-                    count = existing.info.count + amount,
-                    componentsPatch = mergedPatch,
-                )
+                info = existing.info.copy(count = existing.info.count + amount)
             )
             changedSerials.add(existing.serial)
         } else {
             val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
             val serial = nextSerial++
+            // Build a representative stack so the displayed name reflects the
+            // specific variant (e.g. "Potion of Strength" instead of "Potion").
+            val displayStack = net.minecraft.world.item.ItemStack(item).also {
+                it.applyComponents(componentsPatch)
+            }
             entries[key] = SerialEntry(
                 serial, ItemInfo(
                     itemId = itemId,
-                    name = net.minecraft.world.item.ItemStack(item).hoverName.string,
+                    name = displayStack.hoverName.string,
                     count = amount,
                     maxStackSize = item.getDefaultMaxStackSize(),
                     hasData = hasData,
@@ -546,9 +580,14 @@ class NetworkInventoryCache(
         }
     }
 
-    fun onExtracted(itemId: String, hasData: Boolean, amount: Long) {
+    fun onExtracted(
+        itemId: String,
+        hasData: Boolean,
+        amount: Long,
+        componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
+    ) {
         if (amount <= 0) return
-        val key = cacheKey(itemId, hasData)
+        val key = cacheKey(itemId, componentsPatch)
         dirtyKeys.add(key)
         val existing = entries[key] ?: return
         val newCount = existing.info.count - amount
@@ -568,5 +607,14 @@ class NetworkInventoryCache(
         }
     }
 
-    private fun cacheKey(itemId: String, hasData: Boolean): String = "$itemId:$hasData"
+    private fun cacheKey(itemId: String, componentsHash: String): BufferKey.Key =
+        BufferKey.Key(itemId, componentsHash)
+
+    private fun cacheKey(info: ItemInfo): BufferKey.Key =
+        BufferKey.Key(info.itemId, BufferKey.componentsHash(info.componentsPatch))
+
+    /** Helper used by the immediate-delta hook callers ([onInserted], [onExtracted])
+     *  which carry a [DataComponentPatch] rather than an [ItemInfo]. */
+    private fun cacheKey(itemId: String, componentsPatch: DataComponentPatch): BufferKey.Key =
+        BufferKey.Key(itemId, BufferKey.componentsHash(componentsPatch))
 }

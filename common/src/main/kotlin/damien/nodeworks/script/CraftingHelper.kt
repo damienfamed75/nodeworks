@@ -66,20 +66,24 @@ object CraftingHelper {
         val snapshot = result.snapshot ?: return
         val droppedTotals = mutableMapOf<String, Long>()
         if (cpu.bufferUsed > 0L) {
-            val leftovers = cpu.clearBuffer()
-            for ((itemId, count) in leftovers) {
-                val id = Identifier.tryParse(itemId) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
-                var remaining = count
+            // Component-aware flush so component-bearing variants (potions
+            // mid-craft, custom-named items) survive the trip back to storage.
+            // The legacy clearBuffer() flattened to itemId+count, turning
+            // every variant into a bare ItemStack on the way out.
+            val leftovers = cpu.clearBufferComponentAware()
+            for ((key, entry) in leftovers) {
+                val template = entry.template
+                val maxStack = template.item.getDefaultMaxStackSize().toLong()
+                var remaining = entry.count
                 while (remaining > 0L) {
-                    val batchSize = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
-                    val stack = ItemStack(item, batchSize)
+                    val batchSize = minOf(remaining, maxStack).toInt()
+                    val stack = template.copyWithCount(batchSize)
                     val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, result.cache)
                     if (inserted < batchSize) {
                         // Storage refused (full or partially full), drop the shortfall
                         // in-world at the CPU so items survive instead of being lost.
                         val dropCount = batchSize - inserted
-                        val dropStack = ItemStack(item, dropCount)
+                        val dropStack = template.copyWithCount(dropCount)
                         net.minecraft.world.Containers.dropItemStack(
                             level,
                             cpu.blockPos.x + 0.5,
@@ -87,10 +91,10 @@ object CraftingHelper {
                             cpu.blockPos.z + 0.5,
                             dropStack
                         )
-                        droppedTotals.merge(itemId, dropCount.toLong(), Long::plus)
+                        droppedTotals.merge(key.itemId, dropCount.toLong(), Long::plus)
                         logger.warn(
                             "releaseCraftResult: storage refused {} x{}, dropped at CPU {}",
-                            itemId, dropCount, cpu.blockPos
+                            key.itemId, dropCount, cpu.blockPos
                         )
                     }
                     remaining -= batchSize.toLong()
@@ -172,7 +176,11 @@ object CraftingHelper {
         callerScheduler: SchedulerImpl? = null,
         traceLog: ((String) -> Unit)? = null,
         submitterUuid: java.util.UUID? = null,
-        omitDeliver: Boolean = false
+        omitDeliver: Boolean = false,
+        /** Component patch of the top-level requested variant. Empty for
+         *  plain crafts. Threaded down to [CraftTreeBuilder.buildCraftTree]
+         *  so recipe lookup disambiguates same-itemId recipes by component. */
+        componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ): CraftResult? {
         lastFailReason = null
         currentPendingJob = null
@@ -183,7 +191,11 @@ object CraftingHelper {
         }
 
         // 1. Build the craft tree (iterative via CraftTreeBuilder, not recursive here).
-        val tree = CraftTreeBuilder.buildCraftTree(identifier, count, level, snapshot)
+        //    Passes the requested variant's component patch so the recipe
+        //    lookup disambiguates same-itemId recipes correctly.
+        val tree = CraftTreeBuilder.buildCraftTree(
+            identifier, count, level, snapshot, componentsPatch = componentsPatch,
+        )
 
         // 2. Select a CPU, explicit [cpuPos] for legacy resume paths, otherwise find
         //    any CPU on the network that can fit the craft (feasibility-aware).

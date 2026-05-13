@@ -392,7 +392,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val player = context.player()
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
-                    menu.handleCraftRequest(player, payload.itemId, payload.count)
+                    menu.handleCraftRequest(player, payload.itemId, payload.count, payload.componentsPatch)
                 }
             }
         }
@@ -574,6 +574,10 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                             menu.serial = payload.value != 0
                             menu.markDirty()
                         }
+                        "fuzzy" -> {
+                            menu.fuzzy = payload.value != 0
+                            menu.markDirty()
+                        }
                     }
                 }
             }
@@ -737,7 +741,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val player = context.player()
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
-                    menu.setSlotFromId(payload.slotIndex, payload.itemId)
+                    menu.setSlotFromStack(payload.slotIndex, payload.stack)
                 }
             }
         }

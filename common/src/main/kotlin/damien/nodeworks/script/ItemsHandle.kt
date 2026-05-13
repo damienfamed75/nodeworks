@@ -20,28 +20,56 @@ import org.luaj.vm2.lib.*
  */
 /**
  * Opaque source for items held in a CPU buffer rather than real block storage.
- * Used by processing handlers, items are extracted from here and inserted into destination.
+ * Used by processing handlers, items are extracted from here and inserted into
+ * destination.
+ *
+ * Carries a [BufferKey.Key] so component-bearing variants (potions, dyed armor,
+ * enchanted books) don't collide with plain copies of the same itemId. The
+ * convenience [itemId] accessor mirrors the legacy field for downstream
+ * consumers that still index by name only.
  */
 class BufferSource(
     private val cpu: damien.nodeworks.block.entity.CraftingCoreBlockEntity,
-    val itemId: String,
+    val key: BufferKey.Key,
     private var remaining: Long
 ) {
+    /** Legacy itemId accessor for consumers that haven't migrated to [key]. */
+    val itemId: String get() = key.itemId
+
+    /** Template the buffer is using for this variant. Carries the components
+     *  of the first instance routed in (e.g. the exact potion variant pulled
+     *  from storage). Empty when the bucket is gone. */
+    val template: net.minecraft.world.item.ItemStack
+        get() = cpu.getBufferTemplate(key) ?: net.minecraft.world.item.ItemStack.EMPTY
+
     /** Extract up to [maxCount] items from the buffer. Returns actual count extracted. */
     fun extract(maxCount: Long): Long {
         val toExtract = minOf(maxCount, remaining)
-        val removed = cpu.removeFromBuffer(itemId, toExtract)
+        val removed = cpu.removeFromBuffer(key, toExtract)
         remaining -= removed
         return removed
     }
 
-    /** Put previously-extracted items back into the buffer. Used by `card:insert`'s
-     *  atomic rollback when the destination refused a partial amount. */
+    /** Put previously-extracted items back into the buffer. Uses the bucket's
+     *  template stack so components survive the round trip. Used by
+     *  `card:insert`'s atomic rollback when the destination refused a partial
+     *  amount. */
     fun returnUnused(count: Long) {
         if (count <= 0L) return
-        if (cpu.addToBuffer(itemId, count)) {
-            remaining += count
-        }
+        val template = cpu.getBufferTemplate(key)
+        val ok = if (template != null) cpu.addToBuffer(template, count)
+            else cpu.addToBuffer(key.itemId, count)
+        if (ok) remaining += count
+    }
+
+    companion object {
+        /** Legacy itemId-only constructor for sites that don't yet thread
+         *  components through. Builds an empty-components [BufferKey.Key]. */
+        fun ofItemId(
+            cpu: damien.nodeworks.block.entity.CraftingCoreBlockEntity,
+            itemId: String,
+            remaining: Long,
+        ): BufferSource = BufferSource(cpu, BufferKey.Key(itemId, ""), remaining)
     }
 }
 

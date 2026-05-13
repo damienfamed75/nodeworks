@@ -22,6 +22,11 @@ object CraftQueueManager {
         val itemId: String,
         val itemName: String,
         var totalRequested: Int,
+        /** Component patch of the requested variant. Empty for plain items
+         *  (the common case). Preserved so the client's craft-queue row
+         *  renders the right potion / dyed armor / enchantment variant
+         *  instead of a generic placeholder. */
+        val componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
         @Volatile var completedOps: Int = 0,
         var takenCount: Int = 0,
         var seenComplete: Boolean = false,
@@ -54,14 +59,16 @@ object CraftQueueManager {
         networkId: UUID?,
         itemId: String,
         itemName: String,
-        totalRequested: Int
+        totalRequested: Int,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ): CraftQueueEntry {
         val entry = CraftQueueEntry(
             id = nextId.incrementAndGet(),
             networkId = networkId,
             itemId = itemId,
             itemName = itemName,
-            totalRequested = totalRequested
+            totalRequested = totalRequested,
+            componentsPatch = componentsPatch,
         )
         getQueue(playerUUID).add(entry)
         return entry

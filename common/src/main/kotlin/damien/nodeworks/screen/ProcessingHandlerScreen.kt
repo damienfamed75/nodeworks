@@ -567,21 +567,21 @@ class ProcessingHandlerScreen(
             if (recipe == null) return
             for ((idx, pair) in recipe.inputs.withIndex()) {
                 if (idx >= 9) break
-                val (id, count) = pair
+                val ingr = pair
                 val col = idx % 3
                 val row = idx / 3
                 val sx = gridX + col * SLOT_SIZE + 1
                 val sy = gridY + row * SLOT_SIZE + 1
-                val stack = stackOf(id, count)
+                val stack = ingr.stack.copyWithCount(ingr.count.coerceIn(1, 99))
                 graphics.renderItem(stack, sx, sy)
                 graphics.renderItemDecorations(font, stack, sx, sy)
             }
             for ((idx, pair) in recipe.outputs.withIndex()) {
                 if (idx >= 3) break
-                val (id, count) = pair
+                val ingr = pair
                 val sx = gridX + idx * SLOT_SIZE + 1
                 val sy = outputY + 1
-                val stack = stackOf(id, count)
+                val stack = ingr.stack.copyWithCount(ingr.count.coerceIn(1, 99))
                 graphics.renderItem(stack, sx, sy)
                 graphics.renderItemDecorations(font, stack, sx, sy)
             }
@@ -608,23 +608,21 @@ class ProcessingHandlerScreen(
         Icons.ARROW_RIGHT.draw(graphics, arrowX, arrowY)
 
         if (recipe == null) return
-        for ((idx, pair) in recipe.inputs.withIndex()) {
+        for ((idx, ingr) in recipe.inputs.withIndex()) {
             if (idx >= 9) break
-            val (id, count) = pair
             val col = idx % 3
             val row = idx / 3
             val sx = gridX + col * SLOT_SIZE + 1
             val sy = gridY + row * SLOT_SIZE + 1
-            val stack = stackOf(id, count)
+            val stack = ingr.stack.copyWithCount(ingr.count.coerceIn(1, 99))
             graphics.renderItem(stack, sx, sy)
             graphics.renderItemDecorations(font, stack, sx, sy)
         }
-        for ((idx, pair) in recipe.outputs.withIndex()) {
+        for ((idx, ingr) in recipe.outputs.withIndex()) {
             if (idx >= 3) break
-            val (id, count) = pair
             val sx = outputX + 1
             val sy = gridY + idx * SLOT_SIZE + 1
-            val stack = stackOf(id, count)
+            val stack = ingr.stack.copyWithCount(ingr.count.coerceIn(1, 99))
             graphics.renderItem(stack, sx, sy)
             graphics.renderItemDecorations(font, stack, sx, sy)
         }
@@ -651,10 +649,14 @@ class ProcessingHandlerScreen(
         // sections stay consistent and the recipe-panel "click to pick" prompt
         // remains the single call to action.
         val recipeMissing = be.processingApiName.isNotEmpty() && findBoundSet() == null
+        // Iterate the bound recipe's component-aware ingredients so each row
+        // can render the actual variant (e.g. "Potion of Strength") instead
+        // of a generic plain-item placeholder. Channel-map is still keyed by
+        // itemId, so two variants sharing an itemId currently share a channel.
         val rows: List<RowItem> = when {
             recipeMissing -> emptyList()
-            isOutputs -> findBoundSet()?.outputs?.map { RowItem(it.first, it.second) } ?: emptyList()
-            else -> be.snapshotInputChannels().keys.toList().map { RowItem(it, 1) }
+            isOutputs -> findBoundSet()?.outputs?.map { RowItem(it.stack, it.count) } ?: emptyList()
+            else -> findBoundSet()?.inputs?.map { RowItem(it.stack, it.count) } ?: emptyList()
         }
         val scroll = if (isOutputs) outputsScroll else inputsScroll
 
@@ -702,7 +704,13 @@ class ProcessingHandlerScreen(
         }
     }
 
-    private data class RowItem(val itemId: String, val count: Int)
+    /** One row in the Inputs / Outputs scroll panel. Carries the full
+     *  component-bearing stack so render and labelling pick up the variant's
+     *  hover name (e.g. "Potion of Strength") instead of falling back to the
+     *  generic itemId display. */
+    private data class RowItem(val stack: ItemStack, val count: Int) {
+        val itemId: String get() = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString()
+    }
 
     private fun renderRowContent(
         graphics: GuiGraphicsExtractor,
@@ -716,7 +724,7 @@ class ProcessingHandlerScreen(
         val slotX = interiorX + ROW_ICON_PAD
         val slotY = rowY + (ROW_H - SEPARATOR_OVERLAP - slotSize) / 2
         NineSlice.SLOT.draw(graphics, slotX, slotY, slotSize, slotSize)
-        val stack = stackOf(item.itemId, item.count)
+        val stack = item.stack.copyWithCount(item.count.coerceIn(1, 99))
         if (!stack.isEmpty) {
             // Render item + decorations at 16×16 directly aligned with the
             // slot so the count overlay reads correctly (same convention as
@@ -729,8 +737,10 @@ class ProcessingHandlerScreen(
         // so long names truncate with an ellipsis instead of running under it.
         val labelRight = interiorX + interiorW - ROW_PICKER_RIGHT_PAD - SMALL_SWATCH - 4
         val labelW = (labelRight - labelX).coerceAtLeast(0)
+        // Use the stack's hover name so component-bearing variants surface
+        // ("Potion of Strength", not just "Potion") in the row label.
         graphics.drawString(
-            font, truncateToWidth(displayName(item.itemId), labelW),
+            font, truncateToWidth(item.stack.hoverName.string, labelW),
             labelX,
             rowY + (ROW_H - SEPARATOR_OVERLAP - font.lineHeight) / 2 + 1,
             WHITE,

@@ -1901,7 +1901,7 @@ class ScriptEngine(
                             filter = cr.outputItemId,
                             sourceStorage = { null },
                             level = level,
-                            bufferSource = damien.nodeworks.script.BufferSource(cpu, cr.outputItemId, cr.count.toLong()),
+                            bufferSource = damien.nodeworks.script.BufferSource.ofItemId(cpu, cr.outputItemId, cr.count.toLong()),
                         )
                     )
                 }
@@ -2132,8 +2132,8 @@ class ScriptEngine(
                     val remote = if (api.remoteTerminalPositions != null) " (remote)" else ""
                     sb.appendLine("  ${api.pos}$remote: ${api.apis.size} cards")
                     for (card in api.apis) {
-                        val inputs = card.inputs.joinToString(", ") { "${it.first} x${it.second}" }
-                        val outputs = card.outputs.joinToString(", ") { "${it.first} x${it.second}" }
+                        val inputs = card.inputs.joinToString(", ") { "${it.itemId} x${it.count}" }
+                        val outputs = card.outputs.joinToString(", ") { "${it.itemId} x${it.count}" }
                         sb.appendLine("    [${card.name}] $inputs -> $outputs")
                     }
                 }

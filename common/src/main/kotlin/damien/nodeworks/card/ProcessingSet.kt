@@ -3,14 +3,17 @@ package damien.nodeworks.card
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.screen.ProcessingSetOpenData
 import damien.nodeworks.screen.ProcessingSetScreenHandler
+import damien.nodeworks.script.RecipeId
+import damien.nodeworks.script.RecipeIngredient
 import net.minecraft.ChatFormatting
 import net.minecraft.core.component.DataComponents
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.nbt.CompoundTag
 import net.minecraft.nbt.ListTag
-import net.minecraft.nbt.StringTag
+import net.minecraft.nbt.NbtOps
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
+import net.minecraft.resources.RegistryOps
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
@@ -27,6 +30,12 @@ import java.util.function.Consumer
  * Processing Set, stores a processing recipe contract:
  * input items + counts, up to 3 output items + counts, and optional timeout in ticks.
  * Goes in Processing Storage blocks. Right-click while holding to open the recipe editor.
+ *
+ * As of the component-identity refactor, inputs/outputs are stored as full
+ * ItemStacks (with their DataComponentPatch) so recipes like "potion of
+ * weakness + redstone → potion of strength" become expressible. The legacy
+ * itemId+count storage is still read from old save files via the v1 reader
+ * in [getInputs] / [getOutputs] for backward compatibility.
  */
 class ProcessingSet(properties: Properties) : Item(properties) {
 
@@ -35,14 +44,20 @@ class ProcessingSet(properties: Properties) : Item(properties) {
 
         val stack = player.getItemInHand(hand)
         val serverPlayer = player as ServerPlayer
+        val registries = level.registryAccess()
 
         PlatformServices.menu.openExtendedMenu(
             serverPlayer,
             Component.translatable("container.nodeworks.processing_set"),
             ProcessingSetOpenData(
-                getCardName(stack), getInputs(stack), getInputPositions(stack),
-                getOutputs(stack), getOutputPositions(stack),
-                getTimeout(stack), isSerial(stack)
+                name = getCardName(stack),
+                inputs = getInputs(stack, registries),
+                inputSlots = getInputPositions(stack),
+                outputs = getOutputs(stack, registries),
+                outputSlots = getOutputPositions(stack),
+                timeout = getTimeout(stack),
+                fuzzy = isFuzzy(stack),
+                serial = isSerial(stack),
             ),
             ProcessingSetOpenData.STREAM_CODEC,
             { syncId, inv, p -> ProcessingSetScreenHandler.createHandheld(syncId, inv, hand, stack) }
@@ -53,17 +68,18 @@ class ProcessingSet(properties: Properties) : Item(properties) {
 
     override fun appendHoverText(stack: ItemStack, context: TooltipContext, display: TooltipDisplay, tooltip: Consumer<Component>, flag: TooltipFlag) {
         super.appendHoverText(stack, context, display, tooltip, flag)
-        val inputs = getInputs(stack)
-        val outputs = getOutputs(stack)
+        val registries = context.registries() ?: return
+        val inputs = getInputs(stack, registries)
+        val outputs = getOutputs(stack, registries)
 
         if (inputs.isNotEmpty()) {
             tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.input")
                 .withStyle(ChatFormatting.GRAY))
-            for ((itemId, count) in inputs) {
-                val identifier = Identifier.tryParse(itemId) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(identifier) ?: continue
-                val countStr = if (count > 1) " x$count" else ""
-                tooltip.accept(Component.literal("  ").append(Component.translatable(item.descriptionId)).append(countStr)
+            for (ingredient in inputs) {
+                val countStr = if (ingredient.count > 1) " x${ingredient.count}" else ""
+                tooltip.accept(Component.literal("  ")
+                    .append(ingredient.stack.hoverName)
+                    .append(countStr)
                     .withStyle(ChatFormatting.DARK_GRAY))
             }
         }
@@ -71,11 +87,11 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         if (outputs.isNotEmpty()) {
             tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.output")
                 .withStyle(ChatFormatting.GRAY))
-            for ((itemId, count) in outputs) {
-                val identifier = Identifier.tryParse(itemId) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(identifier) ?: continue
-                val countStr = if (count > 1) " x$count" else ""
-                tooltip.accept(Component.literal("  ").append(Component.translatable(item.descriptionId)).append(countStr)
+            for (ingredient in outputs) {
+                val countStr = if (ingredient.count > 1) " x${ingredient.count}" else ""
+                tooltip.accept(Component.literal("  ")
+                    .append(ingredient.stack.hoverName)
+                    .append(countStr)
                     .withStyle(ChatFormatting.DARK_GRAY))
             }
         }
@@ -85,127 +101,107 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             tooltip.accept(Component.literal("  Timeout: ${timeout}t (${timeout / 20.0}s)")
                 .withStyle(ChatFormatting.DARK_GRAY))
         }
+        if (isFuzzy(stack)) {
+            tooltip.accept(Component.literal("  Fuzzy: any component variant matches")
+                .withStyle(ChatFormatting.DARK_GRAY))
+        }
     }
 
     companion object {
+        // v2 NBT keys (component-aware). Each entry in INPUTS_V2_KEY / OUTPUTS_V2_KEY
+        // is a CompoundTag holding the ItemStack (codec-encoded with components),
+        // an explicit Long count, and the grid slot position.
+        private const val INPUTS_V2_KEY = "inputs_v2"
+        private const val OUTPUTS_V2_KEY = "outputs_v2"
+        private const val ENTRY_STACK_KEY = "stack"
+        private const val ENTRY_COUNT_KEY = "count"
+        private const val ENTRY_SLOT_KEY = "slot"
+
+        // v1 NBT keys, still read for backward compatibility. Migrated to v2
+        // shape (with empty components) on the next save.
         private const val INPUTS_KEY = "inputs"
         private const val INPUT_COUNTS_KEY = "input_counts"
         private const val INPUT_SLOTS_KEY = "input_slots"
         private const val OUTPUTS_KEY = "outputs"
         private const val OUTPUT_COUNTS_KEY = "output_counts"
         private const val OUTPUT_SLOTS_KEY = "output_slots"
+
         private const val NAME_KEY = "name"
         private const val TIMEOUT_KEY = "timeout"
         private const val SERIAL_KEY = "serial"
+        private const val FUZZY_KEY = "fuzzy"
         const val MAX_OUTPUTS = 3
         const val INPUT_GRID_SIZE = 9
 
-        /** Get the card's registered name (used as the handler key). */
+        /** The card's display name. Cosmetic only after the canonical-id retire,
+         *  recipe identity is the hash, not the name. */
         fun getCardName(stack: ItemStack): String {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
             return customData.copyTag().getStringOr(NAME_KEY, "")
         }
 
-        /** Get the list of (itemId, count) input pairs. Empty-ID entries are filtered. */
-        fun getInputs(stack: ItemStack): List<Pair<String, Int>> {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
+        /** Inputs as component-aware [RecipeIngredient]s. Reads v2 NBT when
+         *  present, falls back to v1 (itemId + count, empty components). The
+         *  grid-position info is mirrored by [getInputPositions] so callers
+         *  that need both can pair them by index.
+         *
+         *  [registries] is required to parse component-bearing items whose
+         *  components reference registry-backed values (potion contents,
+         *  enchantments, banner patterns). Calling with a mismatched / empty
+         *  provider degrades component-bearing items to bare items, which
+         *  renders potions as "Uncraftable Potion" and similar. */
+        fun getInputs(stack: ItemStack, registries: net.minecraft.core.HolderLookup.Provider): List<RecipeIngredient> =
+            readIngredients(stack, INPUTS_V2_KEY, INPUTS_KEY, INPUT_COUNTS_KEY, registries)
+
+        /** Grid positions (0..8) for each entry returned by [getInputs], parallel
+         *  to that list. Reads v2 slots when present, falls back to v1's
+         *  INPUT_SLOTS array, falls back to sequential positions for very old
+         *  cards saved before slot tracking existed. */
+        fun getInputPositions(stack: ItemStack): IntArray =
+            readPositions(stack, INPUTS_V2_KEY, INPUTS_KEY, INPUT_SLOTS_KEY)
+
+        /** Outputs as component-aware [RecipeIngredient]s. Same compat shape as
+         *  [getInputs]. */
+        fun getOutputs(stack: ItemStack, registries: net.minecraft.core.HolderLookup.Provider): List<RecipeIngredient> =
+            readIngredients(stack, OUTPUTS_V2_KEY, OUTPUTS_KEY, OUTPUT_COUNTS_KEY, registries)
+
+        /** Output-column positions (0..2) parallel to [getOutputs]. */
+        fun getOutputPositions(stack: ItemStack): IntArray =
+            readPositions(stack, OUTPUTS_V2_KEY, OUTPUTS_KEY, OUTPUT_SLOTS_KEY)
+
+        /** Cheap structural check: does this Set have at least one output
+         *  ingredient declared? Reads NBT lists directly without decoding
+         *  ItemStacks, so it doesn't need a [registries] provider. Slot
+         *  `mayPlace` and similar fast paths use this instead of the full
+         *  [getOutputs] decode. */
+        fun hasOutputs(stack: ItemStack): Boolean {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
             val tag = customData.copyTag()
-            val ids = tag.getList(INPUTS_KEY).orElse(null) ?: return emptyList()
-            val counts = tag.getIntArray(INPUT_COUNTS_KEY).orElse(IntArray(0))
-            return (0 until ids.size).mapNotNull { i ->
-                val id = ids.getStringOr(i, "")
-                if (id.isEmpty()) return@mapNotNull null
-                val count = counts.getOrElse(i) { 1 }
-                id to count
+            val v2 = tag.get(OUTPUTS_V2_KEY) as? ListTag
+            if (v2 != null && v2.size > 0) return true
+            val v1 = tag.getList(OUTPUTS_KEY).orElse(null) ?: return false
+            for (i in 0 until v1.size) {
+                if (v1.getStringOr(i, "").isNotEmpty()) return true
             }
+            return false
         }
 
-        /**
-         * Grid positions (0..8) for each entry returned by [getInputs], parallel to
-         * that list. Returns sequential positions for legacy cards saved before slot
-         * tracking existed.
-         */
-        fun getInputPositions(stack: ItemStack): IntArray {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
-            val tag = customData.copyTag()
-            val ids = tag.getList(INPUTS_KEY).orElse(null) ?: return IntArray(0)
-            val slots = tag.getIntArray(INPUT_SLOTS_KEY).orElse(IntArray(0))
-            val result = ArrayList<Int>(ids.size)
-            for (i in 0 until ids.size) {
-                val id = ids.getStringOr(i, "")
-                if (id.isEmpty()) continue
-                result.add(slots.getOrElse(i) { i })
-            }
-            return result.toIntArray()
-        }
-
-        /** Get the list of (itemId, count) output pairs (up to 3). */
-        fun getOutputs(stack: ItemStack): List<Pair<String, Int>> {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
-            val tag = customData.copyTag()
-            val idsOpt = tag.getList(OUTPUTS_KEY).orElse(null)
-            if (idsOpt == null) {
-                // Legacy: single output field
-                val output = tag.getStringOr("output", "")
-                val outputCount = tag.getIntOr("output_count", 1)
-                return if (output.isNotEmpty()) listOf(output to outputCount) else emptyList()
-            }
-            val counts = tag.getIntArray(OUTPUT_COUNTS_KEY).orElse(IntArray(0))
-            return (0 until idsOpt.size).mapNotNull { i ->
-                val id = idsOpt.getStringOr(i, "")
-                if (id.isEmpty()) return@mapNotNull null
-                val count = counts.getOrElse(i) { 1 }
-                id to count
-            }
-        }
-
-        /** Output-column positions (0..2) parallel to [getOutputs]. Sequential fallback
-         *  for legacy cards. */
-        fun getOutputPositions(stack: ItemStack): IntArray {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
-            val tag = customData.copyTag()
-            val ids = tag.getList(OUTPUTS_KEY).orElse(null)
-            if (ids == null) {
-                val output = tag.getStringOr("output", "")
-                return if (output.isNotEmpty()) intArrayOf(0) else IntArray(0)
-            }
-            val slots = tag.getIntArray(OUTPUT_SLOTS_KEY).orElse(IntArray(0))
-            val result = ArrayList<Int>(ids.size)
-            for (i in 0 until ids.size) {
-                val id = ids.getStringOr(i, "")
-                if (id.isEmpty()) continue
-                result.add(slots.getOrElse(i) { i })
-            }
-            return result.toIntArray()
-        }
-
-        /** Get the timeout in ticks (0 = no timeout). */
         fun getTimeout(stack: ItemStack): Int {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
             return customData.copyTag().getIntOr(TIMEOUT_KEY, 0)
         }
 
-        /** Whether this card enforces serial (one-at-a-time) handler execution. */
         fun isSerial(stack: ItemStack): Boolean {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
             return customData.copyTag().getBooleanOr(SERIAL_KEY, false)
         }
 
-        /**
-         * Build the canonical handler ID for a Processing Set from its input and output
-         * layout. Inputs must already be in row-major grid order (slot 0 → 8, empty
-         * slots skipped), outputs top-to-bottom. Duplicate items in different slots are
-         * preserved, they produce distinct entries.
-         *
-         * Format: `itemId@count|itemId@count|...>>itemId@count|...`
-         *
-         * The format deliberately uses `@` and `|`, characters that never appear in
-         * vanilla or modded item IDs, so parsing is unambiguous.
-         */
-        fun canonicalId(inputs: List<Pair<String, Int>>, outputs: List<Pair<String, Int>>): String {
-            val inputPart = inputs.joinToString("|") { (id, c) -> "$id@$c" }
-            val outputPart = outputs.joinToString("|") { (id, c) -> "$id@$c" }
-            return "$inputPart>>$outputPart"
+        /** True when the recipe accepts any component variant of its declared
+         *  inputs (e.g. any potion in the input slot, not specifically a
+         *  Potion of Strength). Default false = exact-component matching. */
+        fun isFuzzy(stack: ItemStack): Boolean {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
+            return customData.copyTag().getBooleanOr(FUZZY_KEY, false)
         }
 
         /**
@@ -219,53 +215,162 @@ class ProcessingSet(properties: Properties) : Item(properties) {
 
         /**
          * Build per-slot handler parameter names in grid order. See
-         * [HandlerParamNames.build] for the rule details.
+         * [HandlerParamNames.build] for the rule details. Legacy
+         * `(itemId, count)` overload retained for callers that haven't
+         * switched to RecipeIngredient.
          */
         fun buildHandlerParamNames(inputs: List<Pair<String, Int>>): List<String> =
             HandlerParamNames.build(inputs)
 
-        /**
-         * Save the processing recipe to the card stack. [inputPositions] maps each
-         * entry in [inputs] to its grid slot (0..8). [outputPositions] does the same
-         * for outputs (0..2). Pass `null` to default to sequential positions, this is
-         * only appropriate for legacy callers that don't care about layout.
-         */
+        /** Component-aware build. */
+        @JvmName("buildHandlerParamNamesFromIngredients")
+        fun buildHandlerParamNamesFromIngredients(inputs: List<RecipeIngredient>): List<String> =
+            HandlerParamNames.build(inputs.map { it.itemId to it.count })
+
+        /** Save the processing recipe to [stack]. Encodes inputs and outputs as
+         *  component-aware v2 entries, keeping the slot-position arrays parallel
+         *  so the editor restores ghost slots exactly where the player left them.
+         *
+         *  [registryAccess] is required to encode component-bearing items
+         *  (potions, enchanted books, banners). Their codecs reference
+         *  registry-backed values. The screen handler / item-use path threads
+         *  this through from the player's level. */
         fun setRecipe(
             stack: ItemStack,
             name: String,
-            inputs: List<Pair<String, Int>>,
-            outputs: List<Pair<String, Int>>,
+            inputs: List<RecipeIngredient>,
+            outputs: List<RecipeIngredient>,
             timeout: Int,
+            fuzzy: Boolean = false,
             serial: Boolean = false,
             inputPositions: IntArray? = null,
-            outputPositions: IntArray? = null
+            outputPositions: IntArray? = null,
+            registryAccess: net.minecraft.core.HolderLookup.Provider,
         ) {
+            val ops = RegistryOps.create(NbtOps.INSTANCE, registryAccess)
             val tag = CompoundTag()
             tag.putString(NAME_KEY, name)
 
-            val inputIds = ListTag()
-            val inputCounts = IntArray(inputs.size)
-            for ((i, pair) in inputs.withIndex()) {
-                inputIds.add(StringTag.valueOf(pair.first))
-                inputCounts[i] = pair.second
-            }
-            tag.put(INPUTS_KEY, inputIds)
-            tag.putIntArray(INPUT_COUNTS_KEY, inputCounts)
-            tag.putIntArray(INPUT_SLOTS_KEY, inputPositions ?: IntArray(inputs.size) { it })
-
-            val outputIds = ListTag()
-            val outputCounts = IntArray(outputs.size)
-            for ((i, pair) in outputs.withIndex()) {
-                outputIds.add(StringTag.valueOf(pair.first))
-                outputCounts[i] = pair.second
-            }
-            tag.put(OUTPUTS_KEY, outputIds)
-            tag.putIntArray(OUTPUT_COUNTS_KEY, outputCounts)
-            tag.putIntArray(OUTPUT_SLOTS_KEY, outputPositions ?: IntArray(outputs.size) { it })
+            tag.put(INPUTS_V2_KEY, encodeIngredients(inputs, inputPositions, ops))
+            tag.put(OUTPUTS_V2_KEY, encodeIngredients(outputs, outputPositions, ops))
 
             tag.putInt(TIMEOUT_KEY, timeout)
             tag.putBoolean(SERIAL_KEY, serial)
+            tag.putBoolean(FUZZY_KEY, fuzzy)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }
+
+        // -----------------------------------------------------------------
+        // Internal helpers
+        // -----------------------------------------------------------------
+
+        private fun encodeIngredients(
+            ingredients: List<RecipeIngredient>,
+            slotsOverride: IntArray?,
+            ops: net.minecraft.resources.RegistryOps<net.minecraft.nbt.Tag>,
+        ): ListTag {
+            val list = ListTag()
+            for ((i, ingr) in ingredients.withIndex()) {
+                val entry = CompoundTag()
+                // Encode the stack with count=1 baked in; the authoritative count
+                // is the separate ENTRY_COUNT_KEY. Avoids the ItemStack codec
+                // refusing zero-count or huge-count stacks.
+                val template = ingr.stack.copyWithCount(1)
+                val stackTag = ItemStack.CODEC.encodeStart(ops, template).result().orElse(null) ?: continue
+                entry.put(ENTRY_STACK_KEY, stackTag)
+                entry.putInt(ENTRY_COUNT_KEY, ingr.count.coerceAtLeast(1))
+                entry.putInt(ENTRY_SLOT_KEY, slotsOverride?.getOrElse(i) { i } ?: i)
+                list.add(entry)
+            }
+            return list
+        }
+
+        private fun readIngredients(
+            stack: ItemStack,
+            v2Key: String,
+            v1IdsKey: String,
+            v1CountsKey: String,
+            registries: net.minecraft.core.HolderLookup.Provider,
+        ): List<RecipeIngredient> {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
+            val tag = customData.copyTag()
+
+            // v2 path: list of compound entries with full stacks. RegistryOps
+            // wrapping is required to deserialize component values that
+            // reference registry entries (POTION_CONTENTS → Holder<Potion>,
+            // enchantments → Holder<Enchantment>, banner patterns, etc).
+            // Plain NbtOps drops those components and the resulting "potion"
+            // item renders as "Uncraftable Potion".
+            val ops = RegistryOps.create(NbtOps.INSTANCE, registries)
+            val v2List = tag.get(v2Key) as? ListTag
+            if (v2List != null) {
+                val out = ArrayList<RecipeIngredient>(v2List.size)
+                for (i in 0 until v2List.size) {
+                    val entry = v2List.getCompound(i).orElse(null) ?: continue
+                    val stackTag = entry.get(ENTRY_STACK_KEY) ?: continue
+                    val ingrStack = ItemStack.CODEC.parse(ops, stackTag).result().orElse(null) ?: continue
+                    if (ingrStack.isEmpty) continue
+                    val count = entry.getInt(ENTRY_COUNT_KEY).orElse(1).coerceAtLeast(1)
+                    out.add(RecipeIngredient(ingrStack, count))
+                }
+                return out
+            }
+
+            // v1 path: parallel ListTag<String> + IntArray.
+            val ids = tag.getList(v1IdsKey).orElse(null) ?: return emptyList()
+            val counts = tag.getIntArray(v1CountsKey).orElse(IntArray(0))
+            val out = ArrayList<RecipeIngredient>(ids.size)
+            for (i in 0 until ids.size) {
+                val id = ids.getStringOr(i, "")
+                if (id.isEmpty()) continue
+                val identifier = Identifier.tryParse(id) ?: continue
+                val item = BuiltInRegistries.ITEM.getValue(identifier) ?: continue
+                val count = counts.getOrElse(i) { 1 }.coerceAtLeast(1)
+                out.add(RecipeIngredient(ItemStack(item), count))
+            }
+            return out
+        }
+
+        private fun readPositions(
+            stack: ItemStack,
+            v2Key: String,
+            v1IdsKey: String,
+            v1SlotsKey: String,
+        ): IntArray {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
+            val tag = customData.copyTag()
+
+            val v2List = tag.get(v2Key) as? ListTag
+            if (v2List != null) {
+                val out = IntArray(v2List.size)
+                for (i in 0 until v2List.size) {
+                    val entry = v2List.getCompound(i).orElse(null)
+                    out[i] = entry?.getInt(ENTRY_SLOT_KEY)?.orElse(i) ?: i
+                }
+                return out
+            }
+
+            // v1 fallback: parallel slot array.
+            val ids = tag.getList(v1IdsKey).orElse(null) ?: return IntArray(0)
+            val slots = tag.getIntArray(v1SlotsKey).orElse(IntArray(0))
+            val result = ArrayList<Int>(ids.size)
+            for (i in 0 until ids.size) {
+                val id = ids.getStringOr(i, "")
+                if (id.isEmpty()) continue
+                result.add(slots.getOrElse(i) { i })
+            }
+            return result.toIntArray()
+        }
+
+        /** Compute the recipe's hash-based identity. Identical structure (same
+         *  inputs and outputs, same fuzzy flag) always yields the same id, so
+         *  re-authoring the same recipe in two places merges under one entry.
+         *  Uses the cross-session-stable [RecipeId.of] overload so the hash
+         *  encoded into Processing Handler bindings survives world reloads.
+         *  Without [registries] the per-stack components hash would mix in
+         *  `Holder.Reference.hashCode()` (object identity), which drifts
+         *  between sessions and causes handlers to "forget" their recipe. */
+        fun computeRecipeId(stack: ItemStack, registries: net.minecraft.core.HolderLookup.Provider): String =
+            RecipeId.of(getInputs(stack, registries), getOutputs(stack, registries), isFuzzy(stack), registries)
     }
 }

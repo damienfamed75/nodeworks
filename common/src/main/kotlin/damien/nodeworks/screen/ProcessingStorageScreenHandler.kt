@@ -73,7 +73,7 @@ class ProcessingStorageScreenHandler(
 
     private class ApiCardSlot(container: Container, index: Int, x: Int, y: Int) : Slot(container, index, x, y) {
         override fun mayPlace(stack: ItemStack): Boolean {
-            return stack.item is ProcessingSet && ProcessingSet.getOutputs(stack).isNotEmpty()
+            return stack.item is ProcessingSet && ProcessingSet.hasOutputs(stack)
         }
     }
 

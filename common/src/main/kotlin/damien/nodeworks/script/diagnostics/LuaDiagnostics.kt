@@ -1645,7 +1645,7 @@ object LuaDiagnostics {
             val api = byName[span.name] ?: continue
             if (api.inputs.isEmpty()) continue
             val expected =
-                damien.nodeworks.card.HandlerParamNames.build(api.inputs)
+                damien.nodeworks.card.HandlerParamNames.build(api.inputsAsPairs)
             if (expected.isEmpty()) continue
             val body = stripped.substring(span.bodyStart, span.bodyEnd)
             // Bail when the body references `items` opaquely (table / loop /

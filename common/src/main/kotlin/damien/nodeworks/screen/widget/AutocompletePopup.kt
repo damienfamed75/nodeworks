@@ -2848,13 +2848,13 @@ class AutocompletePopup(
         // surface is intentionally empty so this fallback fires.
         if (type == "InputItems") {
             val api = enclosingHandlerApi ?: return emptyList()
-            val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputs)
+            val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputsAsPairs)
             return fuzzy(
                 partial,
                 paramNames.mapIndexed { idx, name ->
-                    val (itemId, count) = api.inputs[idx]
-                    val shortId = itemId.substringAfter(':')
-                    suggest(name, "$name: ItemsHandle ($shortId × $count)", Kind.PROPERTY)
+                    val ingr = api.inputs[idx]
+                    val shortId = ingr.itemId.substringAfter(':')
+                    suggest(name, "$name: ItemsHandle ($shortId × ${ingr.count})", Kind.PROPERTY)
                 },
             )
         }
@@ -2899,7 +2899,7 @@ class AutocompletePopup(
         return when (outerType) {
             "InputItems" -> {
                 val api = enclosingHandlerApi ?: return null
-                val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputs)
+                val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputsAsPairs)
                 if (field !in paramNames) null else "ItemsHandle"
             }
 
@@ -2914,7 +2914,7 @@ class AutocompletePopup(
      *  property-suggestion path so hover and completion stay in sync. */
     fun inputItemsFieldsAt(textBeforeOffset: String): List<String>? {
         val api = findEnclosingHandlerApi(textBeforeOffset) ?: return null
-        return damien.nodeworks.card.HandlerParamNames.build(api.inputs)
+        return damien.nodeworks.card.HandlerParamNames.build(api.inputsAsPairs)
     }
 
     /**

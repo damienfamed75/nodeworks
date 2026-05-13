@@ -128,7 +128,8 @@ class InventoryTerminalScreen(
     data class QueueSlot(
         val id: Int, val itemId: String, val name: String,
         val totalRequested: Int, val readyCount: Int, val availableCount: Int,
-        val isComplete: Boolean
+        val isComplete: Boolean,
+        val componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
     )
     var craftQueue: List<QueueSlot> = emptyList()
     private val MAX_PINNED get() = layout.cols
@@ -136,6 +137,7 @@ class InventoryTerminalScreen(
     // Craft dialogue state
     private var craftDialogueItemId: String? = null
     private var craftDialogueItemName: String = ""
+    private var craftDialogueComponentsPatch: DataComponentPatch = DataComponentPatch.EMPTY
     private var craftDialogueCount: String = "1"
     private var craftDialogueField: EditBox? = null
 
@@ -606,11 +608,14 @@ class InventoryTerminalScreen(
             graphics.pose().popMatrix()
         }
 
-        // Craft queue reserved row (always visible as first row)
+        // Craft queue reserved row (always visible as first row). The slot's
+        // [componentsPatch] surfaces the variant the player requested (potion
+        // type, dye color, enchantment) so a Potion-of-Strength job doesn't
+        // render as a bare "Uncraftable Potion".
         for ((i, slot) in craftQueue.withIndex()) {
             if (i >= layout.cols) break
             val sx = networkGrid.x + i * 18 + 1
-            val stack = getItemStack(slot.itemId)
+            val stack = getItemStack(slot.itemId, slot.componentsPatch)
             if (!stack.isEmpty) {
                 if (slot.availableCount <= 0) {
                     // Pending: gray overlay + dim item + queued count in gray (0.5x scale)
@@ -981,8 +986,10 @@ class InventoryTerminalScreen(
             NineSlice.PANEL_INSET.draw(graphics, dx, dy, dw, dh)
             NineSlice.CONTENT_BORDER.draw(graphics, dx, dy, dw, dh)
 
-            // Item icon + name
-            val stack = getItemStack(craftDialogueItemId!!)
+            // Item icon + name. Use the component-aware overload so the
+            // dialogue surfaces the actual variant (e.g. "Potion of Strength")
+            // captured when the phantom row was Alt-clicked.
+            val stack = getItemStack(craftDialogueItemId!!, craftDialogueComponentsPatch)
             if (!stack.isEmpty) {
                 graphics.renderItem(stack, dx + 6, dy + 6)
             }
@@ -1102,7 +1109,7 @@ class InventoryTerminalScreen(
                     lastAttemptItemName = craftDialogueItemName
                     lastAttemptCount = count
                     PlatformServices.clientNetworking.sendToServer(
-                        damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
+                        damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count, craftDialogueComponentsPatch)
                     )
                     craftCloseAfterMs = System.currentTimeMillis() + CRAFT_CLOSE_DELAY_MS
                 }
@@ -1277,6 +1284,10 @@ class InventoryTerminalScreen(
             if (entry != null && entry.info.isCraftable && (hasAltDownCompat() || entry.info.count == 0L)) {
                 craftDialogueItemId = entry.info.itemId
                 craftDialogueItemName = entry.info.name
+                // Preserve the phantom's component patch so the dialogue icon
+                // renders the right potion / dyed armor / enchanted variant
+                // instead of a bare "Uncraftable Potion" placeholder.
+                craftDialogueComponentsPatch = entry.info.componentsPatch
                 craftDialogueField?.value = "1"
                 craftDialogueField?.visible = true
                 craftDialogueField?.isFocused = true
@@ -1511,7 +1522,7 @@ class InventoryTerminalScreen(
                 val count = craftDialogueField?.value?.toIntOrNull() ?: 1
                 if (count > 0) {
                     PlatformServices.clientNetworking.sendToServer(
-                        damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count)
+                        damien.nodeworks.network.InvTerminalCraftPayload(menu.containerId, craftDialogueItemId!!, count, craftDialogueComponentsPatch)
                     )
                 }
                 craftDialogueItemId = null
@@ -1609,7 +1620,10 @@ class InventoryTerminalScreen(
     /** Handle server sync of craft queue state. */
     fun handleQueueSync(payload: damien.nodeworks.network.CraftQueueSyncPayload) {
         craftQueue = payload.entries.map { e ->
-            QueueSlot(e.id, e.itemId, e.name, e.totalRequested, e.readyCount, e.availableCount, e.isComplete)
+            QueueSlot(
+                e.id, e.itemId, e.name, e.totalRequested, e.readyCount, e.availableCount, e.isComplete,
+                componentsPatch = e.componentsPatch,
+            )
         }
     }
 

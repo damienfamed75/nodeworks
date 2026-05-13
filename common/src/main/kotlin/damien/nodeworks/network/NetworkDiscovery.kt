@@ -520,6 +520,22 @@ data class NetworkSnapshot(
         return null
     }
 
+    /** Find a Processing Set by its recipe name (hash). The CPU executor uses
+     *  this at op-run time so the recipe the planner chose during planning
+     *  (potentially disambiguated by component patch via [pickBestRecipe])
+     *  is the one actually executed. Looking up by output itemId at run time
+     *  loses that decision and can pick a competing recipe with different
+     *  inputs. */
+    fun findProcessingApiByName(name: String): ProcessingApiMatch? {
+        if (name.isEmpty()) return null
+        for (snapshot in processingApis) {
+            for (api in snapshot.apis) {
+                if (api.name == name) return ProcessingApiMatch(snapshot, api)
+            }
+        }
+        return null
+    }
+
     /** Find a Processing Set that outputs a specific item ID (checks all outputs). */
     fun findProcessingApi(outputItemId: String): ProcessingApiMatch? {
         for (snapshot in processingApis) {
@@ -530,6 +546,42 @@ data class NetworkSnapshot(
             }
         }
         return null
+    }
+
+    /** Find a Processing Set whose output matches [outputItemId] AND carries
+     *  the same [componentsPatch]. Required when multiple recipes produce
+     *  the same base item (different potions all output `minecraft:potion`).
+     *  The itemId-only [findProcessingApi] would pick whichever recipe
+     *  appears first, routing a Strength-potion request to the Fire-resistance
+     *  recipe's handler. Passing an empty patch matches the first plain
+     *  recipe variant. */
+    fun findProcessingApiByOutput(
+        outputItemId: String,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch,
+    ): ProcessingApiMatch? = findAllProcessingApisByOutput(outputItemId, componentsPatch).firstOrNull()
+
+    /** All Processing Sets whose output matches [outputItemId] + [componentsPatch].
+     *  Returned in network walk order. Used by callers that need to disambiguate
+     *  between competing recipes (e.g. when both `raw_iron → strength_potion`
+     *  and `awkward_potion → strength_potion` exist on the same network).
+     *  Caller is expected to apply feasibility / handler-presence tiebreakers. */
+    fun findAllProcessingApisByOutput(
+        outputItemId: String,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch,
+    ): List<ProcessingApiMatch> {
+        val requestedHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
+        val out = mutableListOf<ProcessingApiMatch>()
+        for (snapshot in processingApis) {
+            for (api in snapshot.apis) {
+                for (ingr in api.outputs) {
+                    if (ingr.itemId == outputItemId && ingr.componentsHash == requestedHash) {
+                        out.add(ProcessingApiMatch(snapshot, api))
+                        break
+                    }
+                }
+            }
+        }
+        return out
     }
 
     /** Get all Processing Sets across the entire network. */

@@ -24,15 +24,39 @@ class ProcessingJob(
     private val pendingResult: CraftingHelper.PendingHandlerJob,
     /** Override of how many output items this invocation should collect before completing.
      *  Defaults to the API's per-batch output count. Parallel (non-serial) APIs pass the
-     *  full bulk count here so one handler invocation can wait for the full batch worth. */
-    overrideOutputs: List<Pair<String, Int>>? = null,
+     *  full bulk count here so one handler invocation can wait for the full batch worth.
+     *  Each entry pairs a recipe ingredient (carrying the variant identity) with a
+     *  Long count, so component-bearing outputs survive the override and tryExtract
+     *  can filter storage for the specific variant.
+     */
+    overrideOutputs: List<Pair<damien.nodeworks.script.RecipeIngredient, Long>>? = null,
     /** ID of the [damien.nodeworks.script.cpu.Operation.Process] this handler invocation is
      *  serving. -1 for non-scheduler callers (legacy / scripted resume). When set, the CPU
      *  records per-op resume info so a world reload can pick up the polls without re-invoking
      *  the handler (which would attempt to re-insert items already in machines). */
     private val opId: Int = -1
 ) {
-    private val remaining = (overrideOutputs ?: api.outputs).map { it.first to it.second }.toMutableList()
+    /** One pending output: itemId for the filter, componentsHash for variant
+     *  matching, template stack for component-aware buffer insertion, and a
+     *  mutable remaining count. */
+    private data class OutputState(
+        val itemId: String,
+        val componentsHash: String,
+        val template: net.minecraft.world.item.ItemStack,
+        var amount: Long,
+    )
+
+    private val remaining: MutableList<OutputState> = run {
+        val src = overrideOutputs ?: api.outputs.map { it to it.count.toLong() }
+        src.map { (ingr, ct) ->
+            OutputState(
+                itemId = ingr.itemId,
+                componentsHash = damien.nodeworks.script.BufferKey.componentsHash(ingr.stack),
+                template = ingr.stack.copyWithCount(1),
+                amount = ct,
+            )
+        }.toMutableList()
+    }
     private val startGeneration = cpu.jobGeneration
 
     /** Pulls registered during the most recent handler invocation. The CPU reads this
@@ -48,10 +72,10 @@ class ProcessingJob(
         val table = LuaTable()
 
         val outputsTable = LuaTable()
-        for ((i, pair) in api.outputs.withIndex()) {
+        for ((i, ingr) in api.outputs.withIndex()) {
             val entry = LuaTable()
-            entry.set("id", pair.first)
-            entry.set("count", pair.second)
+            entry.set("id", ingr.itemId)
+            entry.set("count", ingr.count)
             outputsTable.set(i + 1, entry)
         }
         table.set("outputs", outputsTable)
@@ -91,11 +115,11 @@ class ProcessingJob(
                 // Per-op resume (preferred) lets the new scheduler restart polling on the
                 // exact op that was in-flight, the legacy global addPendingOp is still called
                 // for backwards compat with the legacy resume path.
-                cpu.addPendingOp(api.outputs.map { it.first to it.second.toLong() }, pullTargets)
+                cpu.addPendingOp(api.outputs.map { it.itemId to it.count.toLong() }, pullTargets)
                 if (opId >= 0) {
                     cpu.setOpResume(opId, CraftingCoreBlockEntity.OpResumeInfo(
                         processingApiName = api.name,
-                        outputs = remaining.map { it.first to it.second.toLong() },
+                        outputs = remaining.map { it.itemId to it.amount },
                         pullTargets = pullTargets
                     ))
                 }
@@ -133,33 +157,41 @@ class ProcessingJob(
 
         val iter = remaining.listIterator()
         while (iter.hasNext()) {
-            val (outputId, needed) = iter.next()
-            var stillNeeded = needed.toLong()
-            val filter: (String) -> Boolean = { id -> CardHandle.matchesFilter(id, outputId) }
+            val out = iter.next()
+            var stillNeeded = out.amount
+            // Variant-aware filter: pull only stacks whose itemId AND
+            // componentsHash match the declared output. Without this a
+            // poison potion sitting in the output card would satisfy a
+            // strength-potion output because both share `minecraft:potion`.
+            val stackFilter: (net.minecraft.world.item.ItemStack) -> Boolean = { stack ->
+                val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                sid == out.itemId &&
+                    damien.nodeworks.script.BufferKey.componentsHash(stack) == out.componentsHash
+            }
             for (getter in getters) {
                 if (stillNeeded <= 0L) break
                 val storage = getter.getStorage() ?: continue
-                val extracted = PlatformServices.storage.extractItems(storage, filter, stillNeeded)
-                if (extracted > 0L) {
+                val extractedStacks = PlatformServices.storage.extractStacksByPredicate(
+                    storage, stackFilter, stillNeeded
+                )
+                for (stack in extractedStacks) {
+                    if (stack.isEmpty) continue
+                    val amount = stack.count.toLong()
                     if (stale) {
-                        val rl = net.minecraft.resources.Identifier.tryParse(outputId)
-                        val item = rl?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
-                        if (item != null) {
-                            NetworkStorageHelper.insertItemStack(
-                                level, snapshot!!,
-                                net.minecraft.world.item.ItemStack(item, extracted.toInt()), null
-                            )
-                        }
+                        // Stale-recovery path: the CPU's job context outlived the
+                        // network it was on, so we route the recovered stack back
+                        // into the live network as-is (components preserved).
+                        NetworkStorageHelper.insertItemStack(level, snapshot!!, stack, null)
                     } else {
-                        cpu.addToBuffer(outputId, extracted)
+                        cpu.addToBuffer(stack, amount)
                     }
-                    stillNeeded -= extracted
+                    stillNeeded -= amount
                 }
             }
             if (stillNeeded <= 0L) {
                 iter.remove()
             } else {
-                iter.set(outputId to stillNeeded.toInt())
+                out.amount = stillNeeded
             }
         }
 
@@ -172,7 +204,7 @@ class ProcessingJob(
         if (opId >= 0 && cpu.opResumeInfo[opId] != null) {
             val existing = cpu.opResumeInfo[opId]!!
             cpu.setOpResume(opId, existing.copy(
-                outputs = remaining.map { it.first to it.second.toLong() }
+                outputs = remaining.map { it.itemId to it.amount }
             ))
         }
         return false

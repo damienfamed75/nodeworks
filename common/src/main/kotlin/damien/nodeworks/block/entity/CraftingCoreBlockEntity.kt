@@ -77,7 +77,7 @@ class CraftingCoreBlockEntity(
     private val opExecutor: CpuOpExecutor = CpuOpExecutor(this)
 
     /** The scheduler that drives all in-flight crafts for this CPU.
-     *  Phase 2 uses a single thread, Phase 3 adds one per Co-Processor. */
+     *  Currently single-threaded, Co-Processor blocks will add threads. */
     val scheduler: CraftScheduler = CraftScheduler(threadCount = 1, executor = opExecutor)
 
     /** Number of Co-Processor blocks discovered in the last multiblock scan. */
@@ -341,6 +341,16 @@ class CraftingCoreBlockEntity(
         return true
     }
 
+    /** Component-aware buffer insertion. Use this when the caller has a real
+     *  [ItemStack] (e.g. just pulled from storage) so durability / potion
+     *  contents / dye colour / enchantments live in the buffer template
+     *  instead of being stripped by the itemId-only overload. */
+    fun addToBuffer(stack: net.minecraft.world.item.ItemStack, count: Long): Boolean {
+        if (!bufferState.insert(stack, count)) return false
+        setChanged()
+        return true
+    }
+
     /**
      * Remove up to [count] of [itemId] from the buffer.
      * Returns the amount actually removed (≤ count, 0 if nothing to remove).
@@ -351,11 +361,51 @@ class CraftingCoreBlockEntity(
         return removed
     }
 
+    /** Component-aware buffer extraction. Targets a specific variant via
+     *  [key] so a strength-potion bucket isn't drained by a healing-potion
+     *  request. Returns the actual count extracted. */
+    fun removeFromBuffer(key: damien.nodeworks.script.BufferKey.Key, count: Long): Long {
+        val removed = bufferState.extract(key, count)
+        if (removed > 0) setChanged()
+        return removed
+    }
+
+    /** Template stack the buffer is using to represent variant [key]. Carries
+     *  the components of the first instance inserted into that bucket. Used
+     *  by [damien.nodeworks.script.BufferSource] / [CardHandle.moveFromBuffer]
+     *  to rebuild extracted stacks with their full components instead of a
+     *  bare `ItemStack(item, count)`. */
+    fun getBufferTemplate(key: damien.nodeworks.script.BufferKey.Key): net.minecraft.world.item.ItemStack? =
+        bufferState.template(key)
+
     fun getBufferCount(itemId: String): Long = bufferState.get(itemId)
 
-    fun getBufferContents(): Map<String, Long> = bufferState.contents()
+    fun getBufferCount(key: damien.nodeworks.script.BufferKey.Key): Long = bufferState.get(key)
 
+    /** Legacy itemId-flattened snapshot. New callers should use
+     *  [bufferState] directly to access component-aware buckets. */
+    fun getBufferContents(): Map<String, Long> = bufferState.contentsByItemId()
+
+    /** Legacy itemId-flattened clear. Returns the contents as itemId → count so
+     *  pre-component callers (which dump the buffer back into network storage
+     *  by itemId) keep working. Component variants are summed under their item
+     *  id during the flattening, which is lossy but matches the legacy
+     *  behaviour those callers expect. */
     fun clearBuffer(): Map<String, Long> {
+        val contents = bufferState.clear()
+        if (contents.isEmpty()) return emptyMap()
+        setChanged()
+        val flat = LinkedHashMap<String, Long>()
+        for ((k, e) in contents) flat.merge(k.itemId, e.count) { a, b -> a + b }
+        return flat
+    }
+
+    /** Component-aware clear. Returns per-bucket [BufferState.Entry] (each
+     *  carrying a template ItemStack with components + a Long count). Use
+     *  this when flushing the buffer back to network storage so potion
+     *  variants and other component-bearing items don't get stripped to
+     *  bare uncraftable placeholders on the way out. */
+    fun clearBufferComponentAware(): Map<damien.nodeworks.script.BufferKey.Key, damien.nodeworks.script.cpu.BufferState.Entry> {
         val contents = bufferState.clear()
         if (contents.isNotEmpty()) setChanged()
         return contents
@@ -682,10 +732,18 @@ class CraftingCoreBlockEntity(
         }
 
         // Synthetic API info, only outputs matter for polling.
-        // ProcessingApiInfo.outputs is (String, Int). We down-cast our Long pendingOutputs
-        // for the synthetic API (the underlying processing pipeline will be refactored in
-        // a later phase to handle Long end-to-end).
-        val syntheticOutputs = pendingOutputs.map { it.first to it.second.coerceAtMost(Int.MAX_VALUE.toLong()).toInt() }
+        // ProcessingApiInfo.outputs is now a List<RecipeIngredient>. The
+        // resume-from-disk synthetic API only needs item ids + counts to drive
+        // the pending poll loop, so we build component-empty ingredients from
+        // each (itemId, Long) pair, capping the count at Int.MAX_VALUE.
+        val syntheticOutputs = pendingOutputs.mapNotNull { (id, ct) ->
+            val identifier = net.minecraft.resources.Identifier.tryParse(id) ?: return@mapNotNull null
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return@mapNotNull null
+            damien.nodeworks.script.RecipeIngredient(
+                net.minecraft.world.item.ItemStack(item),
+                ct.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            )
+        }
         val apiInfo = damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo(
             name = "resume",
             inputs = emptyList(),
@@ -806,9 +864,12 @@ class CraftingCoreBlockEntity(
 
         // Buffer state, the BufferState helper still speaks the CompoundTag API internally
         // (streaming ValueOutput doesn't help here since the data is a small fixed blob),
-        // so we round-trip via CompoundTag.CODEC as a store child.
+        // so we round-trip via CompoundTag.CODEC as a store child. The registry access
+        // is needed so component-bearing buffered items (potions etc) encode their
+        // potion-effect / enchantment / banner-pattern references against the world's
+        // registries.
         val bufferTag = CompoundTag()
-        bufferState.saveToNBT(bufferTag)
+        bufferState.saveToNBT(bufferTag, level!!.registryAccess())
         output.store("bufferState", CompoundTag.CODEC, bufferTag)
 
         // Scheduler state, same pattern.
@@ -876,13 +937,14 @@ class CraftingCoreBlockEntity(
 
         // Load buffer, new format first, legacy "buffer" + "bufferCapacity" format as fallback
         // for pre-Phase-1 worlds. Both come through as CompoundTag sub-values via the codec.
+        val registryAccess = level!!.registryAccess()
         val bufferStateTag = input.read("bufferState", CompoundTag.CODEC).orElse(null)
         if (bufferStateTag != null) {
-            bufferState.loadFromNBT(bufferStateTag)
+            bufferState.loadFromNBT(bufferStateTag, registryAccess)
         } else {
             val legacyBuffer = input.read("buffer", CompoundTag.CODEC).orElse(null)
             if (legacyBuffer != null) {
-                bufferState.loadFromNBT(legacyBuffer)
+                bufferState.loadFromNBT(legacyBuffer, registryAccess)
                 val legacyCap = input.getIntOrNull("bufferCapacity")
                 if (legacyCap != null) {
                     bufferState.setCapacities(legacyCap.toLong(), CpuRules.CORE_BASE_TYPES)

@@ -90,7 +90,12 @@ object CraftPlanner {
                         id = pullId,
                         dependsOn = emptyList(),
                         itemId = node.itemId,
-                        amount = node.count.toLong()
+                        amount = node.count.toLong(),
+                        // Carry the tree node's variant hash so executePull
+                        // can ask storage for the specific potion / dyed /
+                        // enchanted variant rather than any first-found item
+                        // sharing the itemId.
+                        componentsHash = node.bufferKey.componentsHash,
                     )
                     op.outputNodeId = node.nodeId
                     ops += op
@@ -186,6 +191,12 @@ object CraftPlanner {
     }
 
     private fun aggregateByItem(children: List<CraftTreeNode>): List<Pair<String, Long>> {
+        // Aggregate by item id only for the Process op's flattened input
+        // summary. Variant identity is preserved at the per-child Pull op
+        // level (each `storage` child generates a Pull with its own
+        // componentsHash). The Process op's totals still need to be by
+        // itemId so the buffer feasibility check matches the planner's
+        // pre-craft reservation pass.
         val map = LinkedHashMap<String, Long>()
         for (c in children) {
             map.merge(c.itemId, c.count.toLong()) { a, b -> a + b }

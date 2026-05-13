@@ -367,9 +367,9 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
             //  / modded machine), not just CraftingRecipe.
             val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
             for (index in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
-                val (itemId, count) = extractItemAndCount(inputSlots.getOrNull(index))
+                val (stack, count) = extractStackAndCount(inputSlots.getOrNull(index))
                 PlatformServices.clientNetworking.sendToServer(
-                    SetProcessingApiSlotPayload(container.containerId, index, itemId)
+                    SetProcessingApiSlotPayload(container.containerId, index, stack)
                 )
                 // Always reset the count, stale counts from previous recipes otherwise
                 //  linger when the item changes.
@@ -380,12 +380,12 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
 
             val outputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.OUTPUT)
             for (index in 0 until ProcessingSetScreenHandler.OUTPUT_SLOTS) {
-                val (itemId, count) = extractItemAndCount(outputSlots.getOrNull(index))
+                val (stack, count) = extractStackAndCount(outputSlots.getOrNull(index))
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(
                         container.containerId,
                         ProcessingSetScreenHandler.INPUT_SLOTS + index,
-                        itemId
+                        stack
                     )
                 )
                 PlatformServices.clientNetworking.sendToServer(
@@ -397,26 +397,21 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
     }
 
     /**
-     * Extract (itemId, count) from a JEI slot view. Returns ("", 1) if the slot is
-     * empty, not an ItemStack, or carries non-default data components (potion
-     * contents, enchantments, stew effects). Skipping those avoids placing
-     * misleading "Uncraftable Potion" / blank-enchanted placeholders into the grid
-     *, the Processing Set only keeps `itemId:count`, so anything component-
-     * dependent can't round-trip.
-     *
-     * Count is clamped to at least 1 to preserve the set's invariant.
+     * Extract (stack, count) from a JEI slot view. Returns (EMPTY, 1) if the
+     * slot is empty or not an ItemStack. Component-bearing items (potions,
+     * enchanted books, dyed armor) are passed through with their components
+     * intact since Processing Sets now key recipes on the full DataComponents
+     * patch, not just itemId.
      */
-    private fun extractItemAndCount(
+    private fun extractStackAndCount(
         slotView: mezz.jei.api.gui.ingredient.IRecipeSlotView?
-    ): Pair<String, Int> {
-        if (slotView == null) return "" to 1
+    ): Pair<ItemStack, Int> {
+        if (slotView == null) return ItemStack.EMPTY to 1
         val displayed = slotView.displayedIngredient
-        if (!displayed.isPresent) return "" to 1
+        if (!displayed.isPresent) return ItemStack.EMPTY to 1
         val ingredient = displayed.get().ingredient
-        if (ingredient !is ItemStack || ingredient.isEmpty) return "" to 1
-        if (!ingredient.componentsPatch.isEmpty) return "" to 1
-        val id = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: ""
-        return id to ingredient.count.coerceAtLeast(1)
+        if (ingredient !is ItemStack || ingredient.isEmpty) return ItemStack.EMPTY to 1
+        return ingredient.copyWithCount(1) to ingredient.count.coerceAtLeast(1)
     }
 }
 
@@ -465,9 +460,12 @@ class ProcessingSetGhostHandler : IGhostIngredientHandler<ProcessingSetScreen> {
 
         override fun accept(ingredient: I) {
             if (ingredient !is ItemStack || ingredient.isEmpty) return
-            val itemId = BuiltInRegistries.ITEM.getKey(ingredient.item)?.toString() ?: return
+            // Carry the full stack (components and all) so dragging a
+            // Potion of Strength from JEI lands as the actual variant, not
+            // a bare uncraftable potion. The server's setSlotFromStack
+            // copies with count=1 to fit the ghost-slot contract.
             PlatformServices.clientNetworking.sendToServer(
-                SetProcessingApiSlotPayload(gui.menu.containerId, slotIndex, itemId)
+                SetProcessingApiSlotPayload(gui.menu.containerId, slotIndex, ingredient.copyWithCount(1))
             )
         }
     }

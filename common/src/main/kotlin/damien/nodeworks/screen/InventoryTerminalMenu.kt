@@ -1215,16 +1215,35 @@ class InventoryTerminalMenu(
      *   2. Items stay in CPU buffer throughout
      *   3. releaseCraftResult flushes buffer → network and releases CPU
      */
-    fun handleCraftRequest(player: Player, itemId: String, count: Int) {
+    fun handleCraftRequest(
+        player: Player,
+        itemId: String,
+        count: Int,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+    ) {
         val lvl = serverLevel ?: return
         val snap = snapshot ?: return
         if (count <= 0 || count > 999) return
 
-        val itemName = net.minecraft.resources.Identifier.tryParse(itemId)?.path?.replace('_', ' ') ?: itemId
+        // Display name prefers the variant's hover name (e.g. "Potion of Strength")
+        // when the request carries components, falling back to the identifier path.
+        val itemName = if (componentsPatch.size() > 0) {
+            val id = net.minecraft.resources.Identifier.tryParse(itemId)
+            val item = id?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
+            if (item != null) {
+                val stack = net.minecraft.world.item.ItemStack(item)
+                stack.applyComponents(componentsPatch)
+                stack.hoverName.string
+            } else {
+                itemId
+            }
+        } else {
+            net.minecraft.resources.Identifier.tryParse(itemId)?.path?.replace('_', ' ') ?: itemId
+        }
 
         // Create queue entry (pending until the whole job completes), scoped to the
         // network that owns this craft so other networks' terminals don't display it.
-        val entry = CraftQueueManager.addEntry(player.uuid, snap.networkId, itemId, itemName, count)
+        val entry = CraftQueueManager.addEntry(player.uuid, snap.networkId, itemId, itemName, count, componentsPatch)
 
         try {
             // CraftingHelper.craft does feasibility-aware CPU selection across every CPU on
@@ -1233,7 +1252,8 @@ class InventoryTerminalMenu(
             val result = damien.nodeworks.script.CraftingHelper.craft(
                 itemId, count, lvl, snap,
                 cache = cache,
-                submitterUuid = player.uuid
+                submitterUuid = player.uuid,
+                componentsPatch = componentsPatch,
             )
             val pending = damien.nodeworks.script.CraftingHelper.currentPendingJob
             damien.nodeworks.script.CraftingHelper.currentPendingJob = null
@@ -1605,7 +1625,8 @@ class InventoryTerminalMenu(
             damien.nodeworks.network.CraftQueueSyncPayload.QueueEntry(
                 id = e.id, itemId = e.itemId, name = e.itemName,
                 totalRequested = e.totalRequested, readyCount = readyCount,
-                availableCount = e.availableCount, isComplete = e.isComplete
+                availableCount = e.availableCount, isComplete = e.isComplete,
+                componentsPatch = e.componentsPatch,
             )
         }
         for (e in queue) e.dirty = false

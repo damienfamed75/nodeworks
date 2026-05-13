@@ -58,6 +58,69 @@ object NetworkStorageHelper {
         return total
     }
 
+    /** Count items across the network whose itemId AND DataComponents match
+     *  the target variant. Used by the planner's component-aware
+     *  feasibility check so a recipe asking for Strength Potion sees only
+     *  the strength-potion count, not every variant under
+     *  `minecraft:potion`. */
+    fun countVariantAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        itemId: String,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Long {
+        val targetHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
+        val visited = HashSet<BlockPos>()
+        var total = 0L
+        for (card in getStorageCards(snapshot)) {
+            if (!channel.matches(card.channel)) continue
+            val cap = card.capability as? StorageSideCapability ?: continue
+            if (!visited.add(cap.adjacentPos)) continue
+            val storage = getStorage(level, card) ?: continue
+            total += PlatformServices.storage.countStacksByPredicate(storage) { stack ->
+                val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == targetHash
+            }
+        }
+        return total
+    }
+
+    /** Extract items matching variant across the network, returning real
+     *  ItemStacks with their components intact. Honours per-card filters
+     *  and the channel scope. Stops after [maxCount] items total. */
+    fun extractVariantAcrossNetwork(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        itemId: String,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch,
+        maxCount: Long,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): List<net.minecraft.world.item.ItemStack> {
+        if (maxCount <= 0L) return emptyList()
+        val targetHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
+        val out = mutableListOf<net.minecraft.world.item.ItemStack>()
+        var remaining = maxCount
+        val visited = HashSet<BlockPos>()
+        for (card in getStorageCards(snapshot)) {
+            if (remaining <= 0L) break
+            if (!channel.matches(card.channel)) continue
+            val cap = card.capability as? StorageSideCapability ?: continue
+            if (!visited.add(cap.adjacentPos)) continue
+            val storage = getStorage(level, card) ?: continue
+            val pulled = PlatformServices.storage.extractStacksByPredicate(storage, { stack ->
+                val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == targetHash
+            }, remaining)
+            for (s in pulled) {
+                if (s.isEmpty) continue
+                out.add(s)
+                remaining -= s.count
+            }
+        }
+        return out
+    }
+
     /** [List] of [CardSnapshot]s deduped by adjacentPos. Higher-priority
      *  cards win on a tie. Use this anywhere the same physical inventory
      *  shouldn't be counted/visited twice when the player has cards on
@@ -379,7 +442,12 @@ object NetworkStorageHelper {
         return null
     }
 
-    /** Find all unique item types across all Storage Cards matching the filter, with their source cards. */
+    /** Find all unique item types across all Storage Cards matching the filter, with their source cards.
+     *  Dedups by component-aware [BufferKey.Key] so component-bearing variants
+     *  (different potions, dyed armor, enchanted books) each return as a
+     *  distinct entry. The previous `"$itemId:$hasData"` boolean key collapsed
+     *  every variant of a component-bearing item into one bucket which made
+     *  `network:findEach("minecraft:potion")` return a single arbitrary potion. */
     fun findAllItemInfoAcrossNetwork(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
@@ -387,13 +455,16 @@ object NetworkStorageHelper {
         channel: ChannelFilter = ChannelFilter.All,
     ): List<Pair<ItemInfo, CardSnapshot>> {
         val results = mutableListOf<Pair<ItemInfo, CardSnapshot>>()
-        val seen = mutableSetOf<String>()
+        val seen = mutableSetOf<damien.nodeworks.script.BufferKey.Key>()
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
             val storage = getStorage(level, card) ?: continue
             val items = PlatformServices.storage.findAllItemInfo(storage) { CardHandle.matchesFilter(it, filter) }
             for (info in items) {
-                val key = "${info.itemId}:${info.hasData}"
+                val key = damien.nodeworks.script.BufferKey.Key(
+                    info.itemId,
+                    damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch),
+                )
                 if (seen.add(key)) {
                     results.add(Pair(info, card))
                 }

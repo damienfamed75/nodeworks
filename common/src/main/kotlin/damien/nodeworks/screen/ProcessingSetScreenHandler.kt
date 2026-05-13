@@ -40,6 +40,7 @@ class ProcessingSetScreenHandler(
 
     var cardName: String = ""
     var serial: Boolean = false
+    var fuzzy: Boolean = false
 
     /** Set true the first time a user action mutates configurable state.
      *  [removed] skips the save (and the >1-stack split-copy side effect)
@@ -63,28 +64,27 @@ class ProcessingSetScreenHandler(
         const val TIMEOUT_MAX = 999
 
         fun createHandheld(syncId: Int, playerInventory: Inventory, hand: InteractionHand, stack: ItemStack): ProcessingSetScreenHandler {
-            val inputs = ProcessingSet.getInputs(stack)
+            val registries = playerInventory.player.level().registryAccess()
+            val inputs = ProcessingSet.getInputs(stack, registries)
             val inputSlots = ProcessingSet.getInputPositions(stack)
-            val outputs = ProcessingSet.getOutputs(stack)
+            val outputs = ProcessingSet.getOutputs(stack, registries)
             val outputSlots = ProcessingSet.getOutputPositions(stack)
             val timeout = ProcessingSet.getTimeout(stack)
 
             val inputGrid = SimpleContainer(INPUT_SLOTS)
-            for ((i, pair) in inputs.withIndex()) {
+            for ((i, ingr) in inputs.withIndex()) {
                 val slot = inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
-                val id = Identifier.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
-                inputGrid.setItem(slot, ItemStack(item, 1))
+                // Stash the full component-bearing stack with count=1 (ghost slot
+                // capacity). The recipe's authoritative count rides in [data].
+                inputGrid.setItem(slot, ingr.stack.copyWithCount(1))
             }
 
             val outputGrid = SimpleContainer(OUTPUT_SLOTS)
-            for ((i, pair) in outputs.withIndex()) {
+            for ((i, ingr) in outputs.withIndex()) {
                 val slot = outputSlots.getOrElse(i) { i }
                 if (slot !in 0 until OUTPUT_SLOTS) continue
-                val id = Identifier.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
-                outputGrid.setItem(slot, ItemStack(item, 1))
+                outputGrid.setItem(slot, ingr.stack.copyWithCount(1))
             }
 
             val data = object : ContainerData {
@@ -94,13 +94,13 @@ class ProcessingSetScreenHandler(
                     // don't start from 0 and force the user to re-enter everything.
                     for (i in 0 until INPUT_SLOTS) values[i] = 1
                     for (i in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + i] = 1
-                    for ((i, pair) in inputs.withIndex()) {
+                    for ((i, ingr) in inputs.withIndex()) {
                         val slot = inputSlots.getOrElse(i) { i }
-                        if (slot in 0 until INPUT_SLOTS) values[slot] = pair.second
+                        if (slot in 0 until INPUT_SLOTS) values[slot] = ingr.count
                     }
-                    for ((i, pair) in outputs.withIndex()) {
+                    for ((i, ingr) in outputs.withIndex()) {
                         val slot = outputSlots.getOrElse(i) { i }
-                        if (slot in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + slot] = pair.second
+                        if (slot in 0 until OUTPUT_SLOTS) values[INPUT_SLOTS + slot] = ingr.count
                     }
                     values[DATA_TIMEOUT] = timeout
                 }
@@ -112,44 +112,42 @@ class ProcessingSetScreenHandler(
             return ProcessingSetScreenHandler(syncId, playerInventory, inputGrid, outputGrid, data, SaveMode.Handheld(hand)).also {
                 it.cardName = ProcessingSet.getCardName(stack)
                 it.serial = ProcessingSet.isSerial(stack)
+                it.fuzzy = ProcessingSet.isFuzzy(stack)
             }
         }
 
         fun clientFactory(syncId: Int, playerInventory: Inventory, openData: ProcessingSetOpenData): ProcessingSetScreenHandler {
             val inputGrid = SimpleContainer(INPUT_SLOTS)
-            for ((i, pair) in openData.inputs.withIndex()) {
+            for ((i, ingr) in openData.inputs.withIndex()) {
                 val slot = openData.inputSlots.getOrElse(i) { i }
                 if (slot !in 0 until INPUT_SLOTS) continue
-                val id = Identifier.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
-                inputGrid.setItem(slot, ItemStack(item, 1))
+                inputGrid.setItem(slot, ingr.stack.copyWithCount(1))
             }
 
             val outputGrid = SimpleContainer(OUTPUT_SLOTS)
-            for ((i, pair) in openData.outputs.withIndex()) {
+            for ((i, ingr) in openData.outputs.withIndex()) {
                 val slot = openData.outputSlots.getOrElse(i) { i }
                 if (slot !in 0 until OUTPUT_SLOTS) continue
-                val id = Identifier.tryParse(pair.first) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
-                outputGrid.setItem(slot, ItemStack(item, 1))
+                outputGrid.setItem(slot, ingr.stack.copyWithCount(1))
             }
 
             val data = SimpleContainerData(DATA_COUNT)
             for (i in 0 until INPUT_SLOTS) data.set(i, 1)
             for (i in 0 until OUTPUT_SLOTS) data.set(INPUT_SLOTS + i, 1)
-            for ((i, pair) in openData.inputs.withIndex()) {
+            for ((i, ingr) in openData.inputs.withIndex()) {
                 val slot = openData.inputSlots.getOrElse(i) { i }
-                if (slot in 0 until INPUT_SLOTS) data.set(slot, pair.second)
+                if (slot in 0 until INPUT_SLOTS) data.set(slot, ingr.count)
             }
-            for ((i, pair) in openData.outputs.withIndex()) {
+            for ((i, ingr) in openData.outputs.withIndex()) {
                 val slot = openData.outputSlots.getOrElse(i) { i }
-                if (slot in 0 until OUTPUT_SLOTS) data.set(INPUT_SLOTS + slot, pair.second)
+                if (slot in 0 until OUTPUT_SLOTS) data.set(INPUT_SLOTS + slot, ingr.count)
             }
             data.set(DATA_TIMEOUT, openData.timeout)
 
             return ProcessingSetScreenHandler(syncId, playerInventory, inputGrid, outputGrid, data, SaveMode.ClientDummy).also {
                 it.cardName = openData.name
                 it.serial = openData.serial
+                it.fuzzy = openData.fuzzy
             }
         }
     }
@@ -206,15 +204,17 @@ class ProcessingSetScreenHandler(
             } else {
                 // Populate slot AND inherit the clicked stack's count so the recipe
                 // picks up "4 ingots" when the player clicked with a stack of 4.
+                // Preserve the carried stack's components (potion contents, custom
+                // name, enchantments) so component-aware recipes work end-to-end.
                 val inheritedCount = carried.count.coerceAtLeast(1)
                 when {
                     slotId < INPUT_SLOTS -> {
-                        inputGrid.setItem(slotId, ItemStack(carried.item, 1))
+                        inputGrid.setItem(slotId, carried.copyWithCount(1))
                         data.set(slotId, inheritedCount)
                     }
                     else -> {
                         val outIdx = slotId - INPUT_SLOTS
-                        outputGrid.setItem(outIdx, ItemStack(carried.item, 1))
+                        outputGrid.setItem(outIdx, carried.copyWithCount(1))
                         data.set(INPUT_SLOTS + outIdx, inheritedCount)
                     }
                 }
@@ -232,7 +232,10 @@ class ProcessingSetScreenHandler(
             val stack = slot.item
             for (i in 0 until INPUT_SLOTS) {
                 if (inputGrid.getItem(i).isEmpty) {
-                    inputGrid.setItem(i, ItemStack(stack.item, 1))
+                    // Carry the full stack (with components) into the ghost slot,
+                    // not just the item id, so shift-clicked potions and dyed
+                    // armor land as their specific variant.
+                    inputGrid.setItem(i, stack.copyWithCount(1))
                     dirty = true
                     break
                 }
@@ -260,31 +263,17 @@ class ProcessingSetScreenHandler(
         dirty = true
     }
 
-    /** Set a ghost slot by item ID string (used by JEI ghost ingredient and recipe transfer). */
-    fun setSlotFromId(slotIndex: Int, itemId: String) {
-        if (itemId.isEmpty()) {
-            when {
-                slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, ItemStack.EMPTY)
-                slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, ItemStack.EMPTY)
-            }
-            dirty = true
-            return
-        }
-        val id = Identifier.tryParse(itemId) ?: return
-        val item = BuiltInRegistries.ITEM.getValue(id) ?: return
+    /** Set a ghost slot to [stack] (or clear it if empty). Used by the JEI
+     *  ghost-ingredient drag and the recipe-transfer button. Preserves the
+     *  stack's components so dragging "Potion of Strength" into a ghost slot
+     *  lands the actual strength variant, not a bare uncraftable potion. */
+    fun setSlotFromStack(slotIndex: Int, stack: ItemStack) {
+        val placed = if (stack.isEmpty) ItemStack.EMPTY else stack.copyWithCount(1)
         when {
-            slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, ItemStack(item, 1))
-            slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, ItemStack(item, 1))
+            slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, placed)
+            slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, placed)
         }
         dirty = true
-    }
-
-    /** Set the entire input grid from a list of item IDs (used by JEI recipe transfer). */
-    fun setInputsFromIds(items: List<String>) {
-        for (i in 0 until minOf(INPUT_SLOTS, items.size)) {
-            setSlotFromId(i, items[i])
-        }
-        broadcastChanges()
     }
 
     /** Mark the recipe as edited from outside the slot/click path (e.g. UI controls
@@ -302,25 +291,25 @@ class ProcessingSetScreenHandler(
     }
 
     private fun saveRecipe(player: Player) {
-        val inputs = mutableListOf<Pair<String, Int>>()
+        val inputs = mutableListOf<damien.nodeworks.script.RecipeIngredient>()
         val inputSlots = mutableListOf<Int>()
         for (i in 0 until INPUT_SLOTS) {
             val stack = inputGrid.getItem(i)
             if (stack.isEmpty) continue
-            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
             val count = data.get(i).coerceAtLeast(1)
-            inputs.add(id to count)
+            // copyWithCount(1) snapshots item + components without leaking the
+            // ghost slot's runtime count into the recipe definition.
+            inputs.add(damien.nodeworks.script.RecipeIngredient(stack.copyWithCount(1), count))
             inputSlots.add(i)
         }
 
-        val outputs = mutableListOf<Pair<String, Int>>()
+        val outputs = mutableListOf<damien.nodeworks.script.RecipeIngredient>()
         val outputSlots = mutableListOf<Int>()
         for (i in 0 until OUTPUT_SLOTS) {
             val stack = outputGrid.getItem(i)
             if (stack.isEmpty) continue
-            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
             val count = data.get(INPUT_SLOTS + i).coerceAtLeast(1)
-            outputs.add(id to count)
+            outputs.add(damien.nodeworks.script.RecipeIngredient(stack.copyWithCount(1), count))
             outputSlots.add(i)
         }
 
@@ -330,10 +319,14 @@ class ProcessingSetScreenHandler(
             is SaveMode.Handheld -> {
                 val stack = player.getItemInHand(mode.hand)
                 if (stack.item is ProcessingSet) {
-                    // Name is now derived from the recipe layout, the canonical ID is
-                    // the unique handler key. Custom naming is gone. See
-                    // docs/design/processing-set-handler-ux.md.
-                    val canonical = ProcessingSet.canonicalId(inputs, outputs)
+                    // Recipe identity is now a hash of the full ingredient structure
+                    // (including components and the fuzzy flag) so identical recipes
+                    // authored separately collapse under one entry and component
+                    // variants stay distinct. See [RecipeId].
+                    val displayName = if (cardName.isNotEmpty()) cardName else {
+                        outputs.firstOrNull()?.stack?.hoverName?.string ?: ""
+                    }
+                    val registryAccess = player.level().registryAccess()
                     // ProcessingSets stack to 64 with shared NBT, so writing the
                     // recipe into the held stack would programme every copy.
                     // Split off a single copy when the stack has more than one,
@@ -342,9 +335,12 @@ class ProcessingSetScreenHandler(
                     if (stack.count > 1) {
                         val configured = stack.copyWithCount(1)
                         ProcessingSet.setRecipe(
-                            configured, canonical, inputs, outputs, timeout, serial,
+                            configured, displayName, inputs, outputs, timeout,
+                            fuzzy = fuzzy,
+                            serial = serial,
                             inputPositions = inputSlots.toIntArray(),
-                            outputPositions = outputSlots.toIntArray()
+                            outputPositions = outputSlots.toIntArray(),
+                            registryAccess = registryAccess,
                         )
                         stack.shrink(1)
                         if (!player.inventory.add(configured)) {
@@ -352,9 +348,12 @@ class ProcessingSetScreenHandler(
                         }
                     } else {
                         ProcessingSet.setRecipe(
-                            stack, canonical, inputs, outputs, timeout, serial,
+                            stack, displayName, inputs, outputs, timeout,
+                            fuzzy = fuzzy,
+                            serial = serial,
                             inputPositions = inputSlots.toIntArray(),
-                            outputPositions = outputSlots.toIntArray()
+                            outputPositions = outputSlots.toIntArray(),
+                            registryAccess = registryAccess,
                         )
                     }
                 }

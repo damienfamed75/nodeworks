@@ -1,8 +1,11 @@
 package damien.nodeworks.screen
 
+import damien.nodeworks.script.RecipeIngredient
 import net.minecraft.core.BlockPos
 import net.minecraft.network.FriendlyByteBuf
+import net.minecraft.network.RegistryFriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
+import net.minecraft.world.item.ItemStack
 
 /**
  * Open-payload for the Processing Handler GUI. Sends the full picture to the
@@ -18,6 +21,11 @@ import net.minecraft.network.codec.StreamCodec
  *    Set that's no longer on the network. The screen surfaces this as a
  *    warning and the player can either pick a new Set or wait for the missing
  *    one to come back.
+ *
+ * The [AvailableSet]'s inputs and outputs are component-aware
+ * [RecipeIngredient]s rather than `(itemId, count)` pairs, so the picker and
+ * the recipe-strip render component-bearing items (potions etc.) with their
+ * proper hover names.
  */
 data class ProcessingHandlerOpenData(
     val pos: BlockPos,
@@ -25,35 +33,31 @@ data class ProcessingHandlerOpenData(
     val boundSetMissing: Boolean,
     val inputChannels: List<InputChannelEntry>,
     val outputChannelId: Int,
-    /** The bound set's full recipe (inputs + outputs with counts), null when
-     *  nothing is bound or when the bound set isn't on the parent network
-     *  anymore. The screen uses this to render the recipe-strip panel and
-     *  the outputs scrollbox; the BE itself only stores input itemIds and a
-     *  single output channel, not counts. */
+    /** The bound set's full recipe (inputs + outputs with components), null
+     *  when nothing is bound or when the bound set isn't on the parent network
+     *  anymore. */
     val boundSet: AvailableSet?,
     val available: List<AvailableSet>,
 ) {
-    /** One row in the bound-state input channel list. */
+    /** One row in the bound-state input channel list. Keyed on itemId; a
+     *  future change will widen to [BufferKey.Key] so per-variant channels
+     *  become possible. */
     data class InputChannelEntry(val itemId: String, val channelId: Int)
 
-    /** One picker entry. The picker shows [name] but routes by [name] back to
-     *  the server. [inputs] and [outputs] are full (id, count) lists so the
-     *  picker can render item icons + counts, and so the server-side bind
-     *  handler can default the per-input channel map without re-walking the
-     *  network. */
+    /** One picker entry. The picker shows the recipe icons and routes by [name]
+     *  back to the server. [inputs] and [outputs] carry full component-bearing
+     *  ingredient stacks so the picker can render the actual variant (a
+     *  strength potion, not "Uncraftable Potion"). */
     data class AvailableSet(
         val name: String,
-        val inputs: List<Pair<String, Int>>,
-        val outputs: List<Pair<String, Int>>,
+        val inputs: List<RecipeIngredient>,
+        val outputs: List<RecipeIngredient>,
     )
 
     companion object {
-        /** Canonical recipe id is the recipe layout joined into a string
-         *  (`item@count|...>>item@count|...`). With 9 inputs + 3 outputs of
-         *  typical modded item ids it can easily exceed 256 chars; cap at
-         *  4096 so the upper bound (~12 entries × ~80 chars + separators)
-         *  always fits. Bound by [ProcessingSet.canonicalId]'s output, not
-         *  player input. */
+        /** Recipe id is a `recipe_<hash>` literal now, well under any
+         *  reasonable cap. 4096 stays well above the largest legacy
+         *  canonical-id string that pre-Phase-2 worlds might still carry. */
         const val MAX_API_NAME = 4096
         const val MAX_ITEM_ID = 256
         const val MAX_INPUTS = 32
@@ -63,25 +67,37 @@ data class ProcessingHandlerOpenData(
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, ProcessingHandlerOpenData> =
             object : StreamCodec<FriendlyByteBuf, ProcessingHandlerOpenData> {
                 private fun decodeSet(buf: FriendlyByteBuf): AvailableSet {
+                    val regBuf = buf as RegistryFriendlyByteBuf
                     val sn = buf.readUtf(MAX_API_NAME)
                     val ic = buf.readVarInt().coerceIn(0, MAX_INPUTS)
-                    val ins = ArrayList<Pair<String, Int>>(ic)
-                    repeat(ic) { ins.add(buf.readUtf(MAX_ITEM_ID) to buf.readVarInt()) }
+                    val ins = ArrayList<RecipeIngredient>(ic)
+                    repeat(ic) {
+                        val stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
+                        val ct = buf.readVarInt()
+                        ins.add(RecipeIngredient(stack, ct))
+                    }
                     val oc = buf.readVarInt().coerceIn(0, MAX_OUTPUTS)
-                    val outs = ArrayList<Pair<String, Int>>(oc)
-                    repeat(oc) { outs.add(buf.readUtf(MAX_ITEM_ID) to buf.readVarInt()) }
+                    val outs = ArrayList<RecipeIngredient>(oc)
+                    repeat(oc) {
+                        val stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
+                        val ct = buf.readVarInt()
+                        outs.add(RecipeIngredient(stack, ct))
+                    }
                     return AvailableSet(sn, ins, outs)
                 }
 
                 private fun encodeSet(buf: FriendlyByteBuf, set: AvailableSet) {
+                    val regBuf = buf as RegistryFriendlyByteBuf
                     buf.writeUtf(set.name, MAX_API_NAME)
                     buf.writeVarInt(set.inputs.size.coerceAtMost(MAX_INPUTS))
-                    for ((id, count) in set.inputs.take(MAX_INPUTS)) {
-                        buf.writeUtf(id, MAX_ITEM_ID); buf.writeVarInt(count)
+                    for (ingr in set.inputs.take(MAX_INPUTS)) {
+                        ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, ingr.stack)
+                        buf.writeVarInt(ingr.count)
                     }
                     buf.writeVarInt(set.outputs.size.coerceAtMost(MAX_OUTPUTS))
-                    for ((id, count) in set.outputs.take(MAX_OUTPUTS)) {
-                        buf.writeUtf(id, MAX_ITEM_ID); buf.writeVarInt(count)
+                    for (ingr in set.outputs.take(MAX_OUTPUTS)) {
+                        ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, ingr.stack)
+                        buf.writeVarInt(ingr.count)
                     }
                 }
 

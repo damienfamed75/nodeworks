@@ -216,12 +216,36 @@ data class InvTerminalDistributePayload(val containerId: Int, val slotType: Int,
  * C2S: Request automated network crafting (Alt+click).
  * Server allocates a CraftingCore and initiates crafting via CraftingHelper.
  */
-data class InvTerminalCraftPayload(val containerId: Int, val itemId: String, val count: Int) : CustomPacketPayload {
+data class InvTerminalCraftPayload(
+    val containerId: Int,
+    val itemId: String,
+    val count: Int,
+    /** Component patch of the requested variant. Empty for plain crafts.
+     *  Threaded through to the planner so variant-specific Pull ops can
+     *  filter storage, and to the queue-row renderer so a Potion of
+     *  Strength job displays as the correct potion. */
+    val componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<InvTerminalCraftPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_craft"))
         val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalCraftPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.itemId, 256); buf.writeVarInt(p.count) },
-            { buf -> InvTerminalCraftPayload(buf.readVarInt(), buf.readUtf(256), buf.readVarInt()) }
+            { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                buf.writeVarInt(p.containerId); buf.writeUtf(p.itemId, 256); buf.writeVarInt(p.count)
+                val hasPatch = p.componentsPatch.size() > 0
+                buf.writeBoolean(hasPatch)
+                if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, p.componentsPatch)
+            },
+            { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                val cid = buf.readVarInt()
+                val id = buf.readUtf(256)
+                val ct = buf.readVarInt()
+                val hasPatch = buf.readBoolean()
+                val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                    else net.minecraft.core.component.DataComponentPatch.EMPTY
+                InvTerminalCraftPayload(cid, id, ct, patch)
+            }
         )
     }
     override fun type() = TYPE
@@ -344,12 +368,30 @@ data class SetProcessingApiNamePayload(val containerId: Int, val name: String) :
  * C2S: Set a single ghost slot on the Processing Set by item ID.
  * slotIndex 0-8 = input, 9-11 = output. Empty string = clear slot.
  */
-data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int, val itemId: String) : CustomPacketPayload {
+/**
+ * C2S: Set a Processing Set editor ghost slot to [stack].
+ *  [ItemStack.EMPTY] clears the slot. Carries the full stack (with
+ *  DataComponents) so component-bearing items (potions, dyed armor,
+ *  enchanted books) round-trip correctly from JEI drag / recipe transfer
+ *  into the ghost slot. slotIndex 0-8 = input, 9-11 = output.
+ */
+data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int, val stack: net.minecraft.world.item.ItemStack) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<SetProcessingApiSlotPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_processing_api_slot"))
         val CODEC: StreamCodec<FriendlyByteBuf, SetProcessingApiSlotPayload> = CustomPacketPayload.codec(
-            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.slotIndex); buf.writeUtf(p.itemId, 256) },
-            { buf -> SetProcessingApiSlotPayload(buf.readVarInt(), buf.readVarInt(), buf.readUtf(256)) }
+            { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                buf.writeVarInt(p.containerId)
+                buf.writeVarInt(p.slotIndex)
+                net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, p.stack)
+            },
+            { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                val cid = buf.readVarInt()
+                val slot = buf.readVarInt()
+                val stack = net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
+                SetProcessingApiSlotPayload(cid, slot, stack)
+            }
         )
     }
     override fun type() = TYPE
@@ -588,6 +630,10 @@ data class CraftingCpuTreePayload(
  * S2C: Sync craft queue entries to the client for the reserved row.
  */
 data class CraftQueueSyncPayload(val containerId: Int, val entries: List<QueueEntry>) : CustomPacketPayload {
+    /** One craft-queue row. [componentsPatch] preserves the variant the player
+     *  requested (potion type, dye color, enchantment) so the queue slot
+     *  renders the right icon instead of a bare uncraftable placeholder.
+     *  Empty patch = plain item (the common case). */
     data class QueueEntry(
         val id: Int,
         val itemId: String,
@@ -595,12 +641,14 @@ data class CraftQueueSyncPayload(val containerId: Int, val entries: List<QueueEn
         val totalRequested: Int,
         val readyCount: Int,
         val availableCount: Int,
-        val isComplete: Boolean
+        val isComplete: Boolean,
+        val componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     )
     companion object {
         val TYPE: CustomPacketPayload.Type<CraftQueueSyncPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "craft_queue_sync"))
         val CODEC: StreamCodec<FriendlyByteBuf, CraftQueueSyncPayload> = CustomPacketPayload.codec(
             { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
                 buf.writeVarInt(p.containerId)
                 buf.writeVarInt(p.entries.size)
                 for (e in p.entries) {
@@ -611,16 +659,29 @@ data class CraftQueueSyncPayload(val containerId: Int, val entries: List<QueueEn
                     buf.writeVarInt(e.readyCount)
                     buf.writeVarInt(e.availableCount)
                     buf.writeBoolean(e.isComplete)
+                    val hasPatch = e.componentsPatch.size() > 0
+                    buf.writeBoolean(hasPatch)
+                    if (hasPatch) {
+                        net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, e.componentsPatch)
+                    }
                 }
             },
             { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
                 val containerId = buf.readVarInt()
                 val size = buf.readVarInt()
                 val entries = (0 until size).map {
-                    QueueEntry(
-                        buf.readVarInt(), buf.readUtf(256), buf.readUtf(256),
-                        buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean()
-                    )
+                    val id = buf.readVarInt()
+                    val itemId = buf.readUtf(256)
+                    val name = buf.readUtf(256)
+                    val total = buf.readVarInt()
+                    val ready = buf.readVarInt()
+                    val avail = buf.readVarInt()
+                    val done = buf.readBoolean()
+                    val hasPatch = buf.readBoolean()
+                    val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                        else net.minecraft.core.component.DataComponentPatch.EMPTY
+                    QueueEntry(id, itemId, name, total, ready, avail, done, patch)
                 }
                 CraftQueueSyncPayload(containerId, entries)
             }

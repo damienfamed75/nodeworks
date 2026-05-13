@@ -268,21 +268,32 @@ class CardHandle private constructor(
     ): Long {
         val id = Identifier.tryParse(bufSrc.itemId) ?: return 0L
         val item = BuiltInRegistries.ITEM.getValue(id) ?: return 0L
+        // Snapshot the buffer template ONCE before any extract. The bucket
+        // gets removed when the last item is drained, so a later read of
+        // bufSrc.template would return EMPTY and we'd write bare items to
+        // the destination, losing potion variants, dye colors, enchants.
+        val capturedTemplate = bufSrc.template.let { tmpl ->
+            if (tmpl.isEmpty) net.minecraft.world.item.ItemStack(item) else tmpl.copy()
+        }
+        val templateFn: (Int) -> net.minecraft.world.item.ItemStack = { count ->
+            capturedTemplate.copyWithCount(count)
+        }
 
         if (atomic) {
             // Pre-check atomically whether destination can accept everything. If so,
-            // extract from buffer then insert exactly that amount via the atomic primitive.
-            // If platform's real insert somehow can't match the sim (shouldn't happen on
-            // single-threaded server), we return the extracted items to the buffer.
+            // extract from buffer then insert via the variant-bearing stack. The
+            // platform's atomic primitive is bare-item only, so we go through
+            // insertItemStack instead and roll back if it under-delivers.
             val extracted = bufSrc.extract(requested)
             if (extracted < requested) {
                 bufSrc.returnUnused(extracted)
                 return 0L
             }
-            val ok = PlatformServices.storage.tryInsertAll(destStorage, item, extracted)
-            if (!ok) {
-                bufSrc.returnUnused(extracted)
-                return 0L
+            val stack = templateFn(extracted.coerceAtMost(item.getDefaultMaxStackSize().toLong()).toInt())
+            val inserted = PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
+            if (inserted < extracted) {
+                bufSrc.returnUnused(extracted - inserted)
+                return inserted
             }
             return extracted
         }
@@ -295,7 +306,7 @@ class CardHandle private constructor(
             val batch = minOf(remaining, maxStack)
             val extracted = bufSrc.extract(batch)
             if (extracted == 0L) break
-            val stack = net.minecraft.world.item.ItemStack(item, extracted.toInt())
+            val stack = templateFn(extracted.toInt())
             val inserted = PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
             if (inserted < extracted) {
                 bufSrc.returnUnused(extracted - inserted)

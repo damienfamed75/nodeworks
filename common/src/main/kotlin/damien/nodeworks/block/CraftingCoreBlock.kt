@@ -134,15 +134,18 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
         val entity = level.getBlockEntity(pos) as? CraftingCoreBlockEntity
         if (entity != null) {
             entity.blockDestroyed = true
-            // Drop buffer contents as items
+            // Drop buffer contents as items. Component-aware flush preserves
+            // potions / dyed armor / custom-named items on the drop, so the
+            // player picks up the exact variants the buffer held.
             if (!level.isClientSide) {
-                for ((itemId, count) in entity.clearBuffer()) {
-                    val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-                    val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
-                    var remaining = count
+                for ((_, bucket) in entity.clearBufferComponentAware()) {
+                    val template = bucket.template
+                    if (template.isEmpty) continue
+                    val maxStack = template.item.getDefaultMaxStackSize().toLong()
+                    var remaining = bucket.count
                     while (remaining > 0L) {
-                        val dropCount = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
-                        Containers.dropItemStack(level, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, ItemStack(item, dropCount))
+                        val dropCount = minOf(remaining, maxStack).toInt()
+                        Containers.dropItemStack(level, pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, template.copyWithCount(dropCount))
                         remaining -= dropCount.toLong()
                     }
                 }

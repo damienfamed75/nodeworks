@@ -28,14 +28,18 @@ data class TerminalOpenData(
 ) {
     companion object {
         private fun writeApi(buf: FriendlyByteBuf, api: ProcessingStorageBlockEntity.ProcessingApiInfo) {
+            // Terminal sidebar autocomplete only consumes recipe NAMES + itemId
+            // / count for icon-strip rendering, so we ship the legacy
+            // (itemId, count) wire shape. Component-aware recipe icons in the
+            // editor decoration are a future change.
             buf.writeUtf(api.name, 128)
             buf.writeVarInt(api.inputs.size)
-            for ((id, count) in api.inputs) {
-                buf.writeUtf(id, 256); buf.writeVarInt(count)
+            for (ingr in api.inputs) {
+                buf.writeUtf(ingr.itemId, 256); buf.writeVarInt(ingr.count)
             }
             buf.writeVarInt(api.outputs.size)
-            for ((id, count) in api.outputs) {
-                buf.writeUtf(id, 256); buf.writeVarInt(count)
+            for (ingr in api.outputs) {
+                buf.writeUtf(ingr.itemId, 256); buf.writeVarInt(ingr.count)
             }
             buf.writeVarInt(api.timeout)
             buf.writeBoolean(api.serial)
@@ -44,11 +48,27 @@ data class TerminalOpenData(
         private fun readApi(buf: FriendlyByteBuf): ProcessingStorageBlockEntity.ProcessingApiInfo {
             val name = buf.readUtf(128)
             val inputCount = buf.readVarInt()
-            val inputs = ArrayList<Pair<String, Int>>(inputCount)
-            repeat(inputCount) { inputs.add(buf.readUtf(256) to buf.readVarInt()) }
+            val inputs = ArrayList<damien.nodeworks.script.RecipeIngredient>(inputCount)
+            repeat(inputCount) {
+                val id = buf.readUtf(256)
+                val count = buf.readVarInt()
+                val identifier = net.minecraft.resources.Identifier.tryParse(id)
+                val item = identifier?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
+                if (item != null) {
+                    inputs.add(damien.nodeworks.script.RecipeIngredient(net.minecraft.world.item.ItemStack(item), count))
+                }
+            }
             val outputCount = buf.readVarInt()
-            val outputs = ArrayList<Pair<String, Int>>(outputCount)
-            repeat(outputCount) { outputs.add(buf.readUtf(256) to buf.readVarInt()) }
+            val outputs = ArrayList<damien.nodeworks.script.RecipeIngredient>(outputCount)
+            repeat(outputCount) {
+                val id = buf.readUtf(256)
+                val count = buf.readVarInt()
+                val identifier = net.minecraft.resources.Identifier.tryParse(id)
+                val item = identifier?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
+                if (item != null) {
+                    outputs.add(damien.nodeworks.script.RecipeIngredient(net.minecraft.world.item.ItemStack(item), count))
+                }
+            }
             val timeout = buf.readVarInt()
             val serial = buf.readBoolean()
             return ProcessingStorageBlockEntity.ProcessingApiInfo(name, inputs, outputs, timeout, serial)

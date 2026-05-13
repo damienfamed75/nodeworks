@@ -45,12 +45,19 @@ sealed class Operation {
     var outputNodeId: Int = -1
 
     /** Extract [amount] of [itemId] from network storage into the CPU buffer.
-     *  Atomic reservation on the network happens immediately, scheduler gates consumption. */
+     *  Atomic reservation on the network happens immediately, scheduler gates
+     *  consumption.
+     *
+     *  [componentsHash] narrows the extraction to a specific variant when
+     *  non-empty: a Pull asking for the strength-potion bucket won't pull a
+     *  healing potion even though both share `minecraft:potion`. Empty hash
+     *  matches any variant, which is the plain-item path. */
     data class Pull(
         override val id: Int,
         override val dependsOn: List<Int>,
         val itemId: String,
-        val amount: Long
+        val amount: Long,
+        val componentsHash: String = "",
     ) : Operation() {
         override val baseCost: Int get() = CpuRules.PULL_BASE_COST
     }
@@ -115,6 +122,7 @@ sealed class Operation {
                 tag.putString("kind", "pull")
                 tag.putString("itemId", itemId)
                 tag.putLong("amount", amount)
+                if (componentsHash.isNotEmpty()) tag.putString("componentsHash", componentsHash)
             }
             is Process -> {
                 tag.putString("kind", "process")
@@ -151,7 +159,12 @@ sealed class Operation {
             val inProgress = tag.getBooleanOr("inProgress", false)
             val deps = tag.getIntArray("deps").orElse(IntArray(0)).toList()
             val op: Operation = when (tag.getStringOr("kind", "")) {
-                "pull" -> Pull(id, deps, tag.getStringOr("itemId", ""), tag.getLongOr("amount", 0L))
+                "pull" -> Pull(
+                    id, deps,
+                    tag.getStringOr("itemId", ""),
+                    tag.getLongOr("amount", 0L),
+                    tag.getStringOr("componentsHash", ""),
+                )
                 "process" -> Process(
                     id, deps, tag.getStringOr("api", ""),
                     readItemList(tag, "inputs"),

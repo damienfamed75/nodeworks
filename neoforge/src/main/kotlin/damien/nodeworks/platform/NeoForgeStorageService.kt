@@ -138,6 +138,46 @@ class NeoForgeStorageService : StorageService {
         return out
     }
 
+    override fun extractStacksByPredicate(
+        storage: ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+    ): List<ItemStack> {
+        if (maxCount <= 0L) return emptyList()
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        val out = ArrayList<ItemStack>()
+        var remaining = maxCount
+        for (slot in 0 until handler.slots) {
+            if (remaining <= 0L) break
+            val stack = handler.getStackInSlot(slot)
+            if (stack.isEmpty) continue
+            // Predicate sees the full slot stack so the caller can match on
+            // component-bearing identity (e.g. only Strength Potions, not
+            // every variant of `minecraft:potion`).
+            if (!filter(stack)) continue
+            val toExtract = minOf(remaining, stack.count.toLong()).toInt()
+            val extracted = handler.extractItem(slot, toExtract, false)
+            if (extracted.isEmpty) continue
+            out.add(extracted)
+            remaining -= extracted.count
+        }
+        return out
+    }
+
+    override fun countStacksByPredicate(
+        storage: ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+    ): Long {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        var total = 0L
+        for (slot in 0 until handler.slots) {
+            val stack = handler.getStackInSlot(slot)
+            if (stack.isEmpty) continue
+            if (filter(stack)) total += stack.count
+        }
+        return total
+    }
+
     override fun insertItemStack(storage: ItemStorageHandle, stack: ItemStack): Int {
         if (stack.isEmpty) return 0
         val handler = (storage as NeoForgeItemStorageHandle).handler
@@ -192,7 +232,7 @@ class NeoForgeStorageService : StorageService {
         val src = (source as NeoForgeItemStorageHandle).handler
         val dst = (dest as NeoForgeItemStorageHandle).handler
 
-        // Phase 1, real extract from source, collecting exactly `count` matching items.
+        // Step 1: real extract from source, collecting exactly `count` matching items.
         // If source doesn't have enough, put what we took right back and return false.
         val extracted = mutableListOf<ItemStack>()
         var remaining = count
@@ -213,7 +253,7 @@ class NeoForgeStorageService : StorageService {
             return false
         }
 
-        // Phase 2, atomic insert into dest, per item type. Sim-then-commit in sequence is
+        // Step 2: atomic insert into dest, per item type. Sim-then-commit in sequence is
         // safe on a single-threaded server: each commit updates state so the next item type's
         // sim correctly reflects prior commits' effects.
         val byItem = extracted.groupBy { it.item }
@@ -307,21 +347,26 @@ class NeoForgeStorageService : StorageService {
 
     override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
         val handler = (storage as NeoForgeItemStorageHandle).handler
-        val aggregated = LinkedHashMap<String, ItemInfo>()
+        // Aggregation key is the full BufferKey so stacks with distinct
+        // DataComponents (different potions, dyed armor, enchanted books) stay
+        // separate entries in the result instead of collapsing under a single
+        // `hasData=true` bucket. The old key was `"$itemId:$hasData"` which
+        // hashed all five potion variants together and the Inventory Terminal
+        // / network:find / card:find all displayed one with the wrong count.
+        val aggregated = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, ItemInfo>()
         for (slot in 0 until handler.slots) {
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
             val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
             if (!filter(itemId)) continue
-            val hasData = stack.componentsPatch.size() > 0
-            val cacheKey = "$itemId:$hasData"
+            val cacheKey = damien.nodeworks.script.BufferKey.of(stack)
             val existing = aggregated[cacheKey]
             if (existing != null) {
                 // Aggregate count, keep the first-sampled stack's components as the
-                // representative for client-side display. A second damaged tool with
-                // a different durability still shows the first one's bar, the
-                // exact stack is only material for extracts which use the live
-                // storage scan via [extractItemStacksMatching].
+                // representative for client-side display (durability bars, custom
+                // names, enchantment glints). Distinct components already routed
+                // to distinct cacheKey buckets, so this only merges truly
+                // identical stacks split across slots.
                 aggregated[cacheKey] = existing.copy(count = existing.count + stack.count)
             } else {
                 aggregated[cacheKey] = ItemInfo(
@@ -329,7 +374,7 @@ class NeoForgeStorageService : StorageService {
                     name = stack.hoverName.string,
                     count = stack.count.toLong(),
                     maxStackSize = stack.item.getDefaultMaxStackSize(),
-                    hasData = hasData,
+                    hasData = !cacheKey.isPlain,
                     componentsPatch = stack.componentsPatch,
                 )
             }

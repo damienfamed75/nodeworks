@@ -17,6 +17,7 @@ import damien.nodeworks.script.ResumeScheduler
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.world.item.ItemStack
 import org.slf4j.LoggerFactory
 
 /**
@@ -81,7 +82,7 @@ object BlockProcessingHandler {
         api: ProcessingStorageBlockEntity.ProcessingApiInfo,
         handlerBE: ProcessingHandlerBlockEntity,
         perBatchInputs: List<Pair<String, Long>>,
-        bulkOutputOverride: List<Pair<String, Int>>?,
+        bulkOutputOverride: List<Pair<damien.nodeworks.script.RecipeIngredient, Long>>?,
         opId: Int,
     ): InvokeResult {
         // The cpu and the handler may live on different networks (and even
@@ -95,7 +96,7 @@ object BlockProcessingHandler {
         )
 
         // Discover the FRONT (micro) network from the handler's front-face
-        // neighbor. Phase 1's per-side BFS routes the walk into the micro
+        // neighbor. The per-side BFS routes the walk into the micro
         // side because the handler's own [adjacencyFaceAllowed] gates entry.
         val frontPos = handlerBE.blockPos.relative(handlerBE.frontFace)
         val microSnapshot = NetworkDiscovery.discoverNetwork(handlerLevel, frontPos)
@@ -113,12 +114,21 @@ object BlockProcessingHandler {
 
         // Route inputs. Each slot is independently atomic; we accumulate
         // successful moves so we can roll back if a later slot fails to route.
-        // Per-slot data is (itemId, batchCount).
+        // Per-slot data is (itemId, batchCount) but we zip with api.inputs to
+        // recover the component-bearing ingredient stack for buffer keying
+        // and destination insert. Without that pairing, a recipe that wants
+        // Potion of Strength would route from the generic potion bucket and
+        // hand the handler bare uncraftable potions.
         val rolledBack = mutableListOf<Pair<String, Long>>()
-        for ((itemId, batchCount) in perBatchInputs) {
+        for ((idx, slotData) in perBatchInputs.withIndex()) {
+            val (itemId, batchCount) = slotData
             if (batchCount <= 0L) continue
+            val ingredient = api.inputs.getOrNull(idx)
             val color = handlerBE.getInputChannel(itemId)
-            val moveOk = routeInputAtomic(handlerLevel, microSnapshot, cpu, handlerBE, itemId, batchCount, ChannelFilter.Color(color))
+            val moveOk = routeInputAtomic(
+                handlerLevel, microSnapshot, cpu, handlerBE,
+                itemId, ingredient, batchCount, ChannelFilter.Color(color),
+            )
             if (moveOk) {
                 rolledBack += itemId to batchCount
                 continue
@@ -168,12 +178,19 @@ object BlockProcessingHandler {
         cpu: CraftingCoreBlockEntity,
         @Suppress("UNUSED_PARAMETER") handlerBE: ProcessingHandlerBlockEntity,
         itemId: String,
+        /** Recipe ingredient for this slot. Carries the full ItemStack
+         *  including components so a Potion-of-Strength recipe slot pulls
+         *  from the right buffer bucket and inserts the right variant into
+         *  the destination card. Null when the caller doesn't have the
+         *  ingredient (legacy path, treated as plain item). */
+        ingredient: damien.nodeworks.script.RecipeIngredient?,
         count: Long,
         channel: ChannelFilter,
     ): Boolean {
         val id = Identifier.tryParse(itemId) ?: return false
         val item = BuiltInRegistries.ITEM.getValue(id) ?: return false
-        val hasData = false  // declared input slots never carry components
+        val bufferKey = ingredient?.bufferKey() ?: damien.nodeworks.script.BufferKey.Key(itemId, "")
+        val hasData = !bufferKey.isPlain
 
         // Filter cards: channel match AND per-card filter accepts this item.
         // Storage cards are already sorted by priority descending in the
@@ -189,7 +206,9 @@ object BlockProcessingHandler {
 
         // Capacity probe in priority order. Sum simulateInsertItem across
         // qualifying cards until either count is satisfied or we exhaust
-        // the list.
+        // the list. The simulate primitive is item-only (no components),
+        // which can over-count capacity for slots that filter by component,
+        // but the worst case is an extra commit-then-rollback pass below.
         var capacity = 0L
         for (card in cards) {
             if (capacity >= count) break
@@ -202,12 +221,27 @@ object BlockProcessingHandler {
 
         // Capacity check passed. Extract from buffer; if buffer somehow has
         // fewer items than declared, return what we did extract and bail.
-        val bufSrc = BufferSource(cpu, itemId, count)
+        // Buffer-key match guarantees we pull the recipe's specific variant
+        // (Strength Potion bucket) rather than a generic potion.
+        val bufSrc = BufferSource(cpu, bufferKey, count)
+        // Snapshot the template BEFORE extracting. If this slot drains the
+        // bucket dry, BufferState wipes the bucket and the later template
+        // read returns EMPTY → destination card receives a bare uncraftable
+        // potion. Recipe ingredient stack is the fallback when the buffer
+        // somehow has no template (defensive only).
+        val capturedTemplate = bufSrc.template.let { tmpl ->
+            when {
+                !tmpl.isEmpty -> tmpl.copy()
+                ingredient != null -> ingredient.stack.copyWithCount(1)
+                else -> ItemStack(item)
+            }
+        }
         val extracted = bufSrc.extract(count)
         if (extracted < count) {
             bufSrc.returnUnused(extracted)
             return false
         }
+        val variantStack = capturedTemplate
 
         // Commit in priority order. Each card takes whatever its remaining
         // free space allows (per-card sim then real insert). We accumulate
@@ -225,12 +259,18 @@ object BlockProcessingHandler {
                 PlatformServices.storage.simulateInsertItem(dest, item, remaining)
             } catch (_: Exception) { 0L }
             if (sim <= 0L) continue
-            val ok = try {
-                PlatformServices.storage.tryInsertAll(dest, item, sim)
-            } catch (_: Exception) { false }
-            if (ok) {
-                committed += card to sim
-                remaining -= sim
+            // Insert the component-bearing stack so the destination card
+            // (and the machine downstream of it) sees the right variant.
+            // insertItemStack returns the count actually inserted; we accept
+            // partial commits and let the post-loop rollback handle any
+            // shortfall.
+            val toInsert = variantStack.copyWithCount(sim.coerceAtMost(item.getDefaultMaxStackSize().toLong()).toInt())
+            val inserted = try {
+                PlatformServices.storage.insertItemStack(dest, toInsert).toLong()
+            } catch (_: Exception) { 0L }
+            if (inserted > 0L) {
+                committed += card to inserted
+                remaining -= inserted
             }
         }
         if (remaining > 0L) {
@@ -242,14 +282,23 @@ object BlockProcessingHandler {
             // slot's net effect on buffer + cards is zero.
             for ((card, amount) in committed) {
                 val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                val pulled = try {
-                    PlatformServices.storage.extractItems(storage, { it == itemId }, amount)
-                } catch (_: Exception) { 0L }
-                if (pulled > 0L) cpu.addToBuffer(itemId, pulled)
-                if (pulled < amount) {
+                // Component-aware rollback: pull real stacks so any variant
+                // we just routed lands back in the buffer with its
+                // components intact.
+                val pulledStacks = try {
+                    PlatformServices.storage.extractItemStacksMatching(storage, { it == itemId }, amount)
+                } catch (_: Exception) { emptyList() }
+                var totalPulled = 0L
+                for (stack in pulledStacks) {
+                    if (stack.isEmpty) continue
+                    val n = stack.count.toLong()
+                    cpu.addToBuffer(stack, n)
+                    totalPulled += n
+                }
+                if (totalPulled < amount) {
                     logger.warn(
                         "Block handler partial-commit rollback shortfall for {}: {} of {} items recovered from card",
-                        itemId, pulled, amount,
+                        itemId, totalPulled, amount,
                     )
                 }
             }
@@ -288,12 +337,16 @@ object BlockProcessingHandler {
                 if (stillNeeded <= 0L) break
                 if (!channel.matches(card.channel)) continue
                 val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                val pulled = try {
-                    PlatformServices.storage.extractItems(storage, { it == itemId }, stillNeeded)
-                } catch (_: Exception) { 0L }
-                if (pulled > 0L) {
-                    cpu.addToBuffer(itemId, pulled)
-                    stillNeeded -= pulled
+                // Component-aware unwind: pull real stacks so the buffer
+                // re-receives the exact variant we previously routed out.
+                val pulledStacks = try {
+                    PlatformServices.storage.extractItemStacksMatching(storage, { it == itemId }, stillNeeded)
+                } catch (_: Exception) { emptyList() }
+                for (stack in pulledStacks) {
+                    if (stack.isEmpty) continue
+                    val n = stack.count.toLong()
+                    cpu.addToBuffer(stack, n)
+                    stillNeeded -= n
                 }
             }
             if (stillNeeded > 0L) {
