@@ -255,15 +255,15 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                     } else {
                         if (api.inputs.isNotEmpty()) {
                             details.add("Inputs:")
-                            for (ingr in api.inputs) {
+                            for ((idx, ingr) in api.inputs.withIndex()) {
                                 val channel = entity.getInputChannel(ingr.itemId)
-                                details.add(processingHandlerItemMarker(ingr.itemId, channel))
+                                details.add(processingHandlerItemMarker(ingr.itemId, channel, apiName, false, idx))
                             }
                         }
                         if (api.outputs.isNotEmpty()) {
                             details.add("Outputs:")
-                            for (ingr in api.outputs) {
-                                details.add(processingHandlerItemMarker(ingr.itemId, entity.outputChannel))
+                            for ((idx, ingr) in api.outputs.withIndex()) {
+                                details.add(processingHandlerItemMarker(ingr.itemId, entity.outputChannel, apiName, true, idx))
                             }
                         }
                     }
@@ -332,6 +332,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
         // of pipes and nodes) can easily blow past the custom-payload size limit
         // if the entire topology rides on the open packet. The blocks stream in
         // afterwards via DiagnosticTopologyChunkPayload, chunked at TOPOLOGY_CHUNK_SIZE.
+        val processingApis = snapshot.processingApis.flatMap { it.apis }
         val openData = DiagnosticOpenData(
             blocks = emptyList(),
             networkName = networkName,
@@ -341,6 +342,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
             cpuInfos = cpuInfos,
             terminalInfos = terminalInfos,
             recentErrors = recentErrors,
+            processingApis = processingApis,
         )
 
         PlatformServices.menu.openExtendedMenu(
@@ -414,10 +416,22 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
      *  inputs and outputs lists. Renders as `[item icon] [wool swatch] <ChannelName>`.
      *  Uses `|` between fields so the item id's namespace colon doesn't
      *  collide with the marker syntax. */
-    private fun processingHandlerItemMarker(itemId: String, channel: net.minecraft.world.item.DyeColor): String {
+    /** Marker for a Processing Handler ingredient row. Fields are
+     *  pipe-separated, the trailing recipe / side / index let the client
+     *  resolve the actual component-bearing [ItemStack] from the shipped
+     *  processingApis (recipes with potion variants etc. would otherwise
+     *  render as the bare Uncraftable Potion icon). */
+    private fun processingHandlerItemMarker(
+        itemId: String,
+        channel: net.minecraft.world.item.DyeColor,
+        recipeHash: String,
+        isOutput: Boolean,
+        idx: Int,
+    ): String {
         val rgb = channel.textureDiffuseColor and 0xFFFFFF
         val label = channel.name.lowercase().replaceFirstChar { it.uppercase() }
-        return "__phitem:$itemId|$rgb|$label"
+        val side = if (isOutput) 1 else 0
+        return "__phitem:$itemId|$rgb|$label|$recipeHash|$side|$idx"
     }
 
     private companion object {

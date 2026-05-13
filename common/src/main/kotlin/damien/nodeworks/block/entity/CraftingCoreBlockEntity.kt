@@ -935,13 +935,16 @@ class CraftingCoreBlockEntity(
         }
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
 
-        // Load buffer, new format first, legacy "buffer" + "bufferCapacity" format as fallback
-        // for pre-Phase-1 worlds. Both come through as CompoundTag sub-values via the codec.
-        val registryAccess = level!!.registryAccess()
+        // [level] isn't set yet during loadAdditional (Vanilla calls
+        // [setLevel] AFTER load), but [ValueInput.lookup] carries the
+        // registry context from the chunk-load path, which is what
+        // BufferState needs to deserialize component-bearing ItemStacks.
+        val registryAccess = input.lookup()
         val bufferStateTag = input.read("bufferState", CompoundTag.CODEC).orElse(null)
         if (bufferStateTag != null) {
             bufferState.loadFromNBT(bufferStateTag, registryAccess)
         } else {
+            // Legacy "buffer" + "bufferCapacity" shape from older saves.
             val legacyBuffer = input.read("buffer", CompoundTag.CODEC).orElse(null)
             if (legacyBuffer != null) {
                 bufferState.loadFromNBT(legacyBuffer, registryAccess)

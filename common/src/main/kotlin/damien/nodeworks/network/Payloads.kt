@@ -528,6 +528,7 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
         )
 
         private fun writeNode(buf: FriendlyByteBuf, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode) {
+            val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
             buf.writeUtf(node.itemId, 256)
             buf.writeUtf(node.itemName, 128)
             buf.writeVarInt(node.count)
@@ -536,11 +537,15 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
             buf.writeUtf(node.resolvedBy, 32)
             buf.writeVarInt(node.inStorage)
             buf.writeVarInt(node.nodeId)
+            val hasPatch = node.componentsPatch.size() > 0
+            buf.writeBoolean(hasPatch)
+            if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, node.componentsPatch)
             buf.writeVarInt(node.children.size)
             for (child in node.children) writeNode(buf, child)
         }
 
         private fun readNode(buf: FriendlyByteBuf): damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode {
+            val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
             val itemId = buf.readUtf(256)
             val itemName = buf.readUtf(128)
             val count = buf.readVarInt()
@@ -549,9 +554,15 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
             val resolvedBy = buf.readUtf(32)
             val inStorage = buf.readVarInt()
             val nodeId = buf.readVarInt()
+            val hasPatch = buf.readBoolean()
+            val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                else net.minecraft.core.component.DataComponentPatch.EMPTY
             val childCount = buf.readVarInt()
             val children = (0 until childCount).map { readNode(buf) }
-            val n = damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(itemId, itemName, count, source, templateName, resolvedBy, inStorage, children)
+            val n = damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(
+                itemId, itemName, count, source, templateName, resolvedBy, inStorage, children,
+                componentsPatch = patch,
+            )
             n.nodeId = nodeId
             return n
         }
@@ -593,6 +604,7 @@ data class CraftingCpuTreePayload(
         )
 
         private fun writeNode(buf: FriendlyByteBuf, node: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode) {
+            val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
             buf.writeUtf(node.itemId, 256)
             buf.writeUtf(node.itemName, 128)
             buf.writeVarInt(node.count)
@@ -601,11 +613,15 @@ data class CraftingCpuTreePayload(
             buf.writeUtf(node.resolvedBy, 32)
             buf.writeVarInt(node.inStorage)
             buf.writeVarInt(node.nodeId)
+            val hasPatch = node.componentsPatch.size() > 0
+            buf.writeBoolean(hasPatch)
+            if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, node.componentsPatch)
             buf.writeVarInt(node.children.size)
             for (child in node.children) writeNode(buf, child)
         }
 
         private fun readNode(buf: FriendlyByteBuf): damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode {
+            val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
             val itemId = buf.readUtf(256)
             val itemName = buf.readUtf(128)
             val count = buf.readVarInt()
@@ -614,10 +630,14 @@ data class CraftingCpuTreePayload(
             val resolvedBy = buf.readUtf(32)
             val inStorage = buf.readVarInt()
             val nodeId = buf.readVarInt()
+            val hasPatch = buf.readBoolean()
+            val patch = if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(regBuf)
+                else net.minecraft.core.component.DataComponentPatch.EMPTY
             val childCount = buf.readVarInt()
             val children = (0 until childCount).map { readNode(buf) }
             val node = damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode(
-                itemId, itemName, count, source, templateName, resolvedBy, inStorage, children
+                itemId, itemName, count, source, templateName, resolvedBy, inStorage, children,
+                componentsPatch = patch,
             )
             node.nodeId = nodeId
             return node

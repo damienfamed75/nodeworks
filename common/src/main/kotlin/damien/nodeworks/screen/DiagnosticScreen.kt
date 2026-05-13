@@ -811,10 +811,13 @@ class DiagnosticScreen(
         if (itemId != null) {
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
             if (item != null) {
+                val nodeStack = ItemStack(item).apply {
+                    if (node.componentsPatch.size() > 0) applyComponents(node.componentsPatch)
+                }
                 graphics.pose().pushMatrix()
                 graphics.pose().translate((x + indent).toFloat(), (y - 1).toFloat())
                 graphics.pose().scale((0.5f).toFloat(), (0.5f).toFloat())
-                graphics.renderItem(ItemStack(item), 0, 0)
+                graphics.renderItem(nodeStack, 0, 0)
                 graphics.pose().popMatrix()
             }
         }
@@ -934,7 +937,10 @@ class DiagnosticScreen(
             if (itemId != null) {
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
                 if (item != null) {
-                    graphics.renderItem(ItemStack(item), sx - 8, sy)
+                    val nodeStack = ItemStack(item).apply {
+                        if (n.componentsPatch.size() > 0) applyComponents(n.componentsPatch)
+                    }
+                    graphics.renderItem(nodeStack, sx - 8, sy)
                     if (n.count > 1) {
                         graphics.drawString(font, "x${n.count}", sx + 9, sy + 9, WHITE, true)
                     }
@@ -1044,13 +1050,11 @@ class DiagnosticScreen(
                 if (term.handlers.isNotEmpty()) {
                     graphics.drawString(font, "Handlers:", contentLeft + 12, y, 0xFFAA83E0.toInt(), false)
                     y += lineH
-                    // Render each handler as a recipe icon strip, same visual language as
-                    // the Scripting Terminal's inline recipe hints. Legacy/plain names
-                    // fall back to gray text inside the helper.
                     val hintX = contentLeft + 18
                     val hintW = (splitX - 2) - hintX
                     y += damien.nodeworks.screen.widget.RecipeHintRenderer.renderHandlers(
-                        graphics, font, term.handlers, hintX, y, hintW
+                        graphics, font, term.handlers, hintX, y, hintW,
+                        resolver = { hash -> menu.topology.processingApis.firstOrNull { it.name == hash } }
                     )
                     y += 2
                 }
@@ -1408,18 +1412,32 @@ class DiagnosticScreen(
                         // icon, wool swatch tinted to the item's channel, and
                         // the channel name. Pipe `|` separator because the item
                         // id itself contains a colon (e.g. minecraft:iron_ingot).
+                        // Trailing fields (recipe hash, side, index) point at the
+                        // ingredient's full component-bearing ItemStack in
+                        // processingApis so potion variants render their
+                        // specific potion instead of the Uncraftable Potion fallback.
                         val parts = row.text.removePrefix("__phitem:").split('|')
                         val itemId = parts.getOrNull(0).orEmpty()
                         val rgb = (parts.getOrNull(1)?.toIntOrNull() ?: 0xFFFFFF) and 0xFFFFFF
                         val name = parts.getOrNull(2).orEmpty()
+                        val recipeHash = parts.getOrNull(3).orEmpty()
+                        val isOutput = parts.getOrNull(4) == "1"
+                        val ingrIdx = parts.getOrNull(5)?.toIntOrNull() ?: -1
+                        val resolvedStack: ItemStack? = run {
+                            if (recipeHash.isEmpty() || ingrIdx < 0) return@run null
+                            val api = menu.topology.processingApis.firstOrNull { it.name == recipeHash } ?: return@run null
+                            val list = if (isOutput) api.outputs else api.inputs
+                            list.getOrNull(ingrIdx)?.stack
+                        }
                         var x = textX + 6
                         val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
                         val item = identifier?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
-                        if (item != null) {
+                        val displayStack = resolvedStack ?: item?.let { ItemStack(it) }
+                        if (displayStack != null) {
                             graphics.pose().pushMatrix()
                             graphics.pose().translate(x.toFloat(), (textY - 1).toFloat())
                             graphics.pose().scale(0.5f, 0.5f)
-                            graphics.renderItem(ItemStack(item), 0, 0)
+                            graphics.renderItem(displayStack, 0, 0)
                             graphics.pose().popMatrix()
                             x += 10
                         } else {
@@ -1479,9 +1497,10 @@ class DiagnosticScreen(
                     // minus the scrollbar gutter (6px track + 2px pad on each side).
                     val stripX = px + 6
                     val stripW = pw - 12
-                    damien.nodeworks.screen.widget.RecipeHintRenderer.render(
+                    damien.nodeworks.screen.widget.RecipeHintRenderer.renderById(
                         graphics, font, row.text, stripX, curY,
-                        stripW, damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT
+                        stripW, damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT,
+                        resolver = { hash -> menu.topology.processingApis.firstOrNull { it.name == hash } }
                     )
                     curY += damien.nodeworks.screen.widget.RecipeHintRenderer.HINT_HEIGHT + 1
                     rowIndex++

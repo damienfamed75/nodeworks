@@ -901,9 +901,10 @@ class TerminalScreen(
         }
         addRenderableWidget(editor)
 
-        // Inline recipe-hint decorations. When a line contains a `network:handle("<id>"`
-        // call whose id is a canonical recipe, reserve a hint row above that line and
-        // render the recipe as item icons → arrow → output icons.
+        // Inline recipe-hint decorations. When a line references a `recipe_<hex>`
+        // id inside a `network:handle(...)` or `network:craft(...)` call, reserve
+        // a hint row above the line and render the recipe as input icons, arrow,
+        // output icons. Missing recipes render as a red placeholder.
         editor.decorationAboveLine = { lineIdx ->
             val line = editor.getLine(lineIdx)
             if (damien.nodeworks.screen.widget.RecipeHintRenderer.detectHandleId(line) != null) {
@@ -914,24 +915,23 @@ class TerminalScreen(
             val line = editor.getLine(lineIdx)
             val id = damien.nodeworks.screen.widget.RecipeHintRenderer.detectHandleId(line)
             if (id != null) {
-                // Flag handlers whose recipe id doesn't match any registered processing
-                // set on the network, visible cue that the handler will never fire.
-                val isValid = localApis.any { it.name == id }
-                damien.nodeworks.screen.widget.RecipeHintRenderer.render(
-                    graphics, font, id, hintX, hintY, hintW, hintH, valid = isValid
+                damien.nodeworks.screen.widget.RecipeHintRenderer.renderById(
+                    graphics, font, id, hintX, hintY, hintW, hintH,
+                    resolver = { hash -> localApis.firstOrNull { it.name == hash } }
                 )
             }
         }
 
-        // Fold the long canonical recipe id inside `network:handle("...")` to "..." while
-        // the cursor isn't sitting inside the string. The full id stays in the buffer and
-        // re-appears the moment the cursor enters the range, so editing still works.
-        // Combined with the inline icon hint above, players can keep handle calls on a
-        // single visual line even for recipes with many ingredients.
+        // Fold the recipe-hash literal inside `network:handle(...)` / `network:craft(...)`
+        // to "..." while the cursor isn't sitting inside it. The full id stays in the
+        // buffer and re-appears the moment the cursor enters the range. Combined with
+        // the inline icon hint above, players can read handle calls at a glance without
+        // the 19-char hash dominating the line.
         editor.foldsForLine = { lineIdx ->
             val line = editor.getLine(lineIdx)
-            val match = Regex("""network:handle\s*\(\s*"([^"]+)"""").find(line)
-            if (match != null && match.groupValues[1].contains(">>")) {
+            val match = Regex("""network:(?:handle|craft)\s*\(\s*"([^"]+)"""").find(line)
+            val arg = match?.groupValues?.get(1)
+            if (match != null && arg != null && damien.nodeworks.script.RecipeId.isRecipeId(arg)) {
                 val idRange = match.groups[1]!!.range
                 listOf(damien.nodeworks.screen.widget.ScriptEditor.Fold(idRange.first, idRange.last + 1, "..."))
             } else emptyList()

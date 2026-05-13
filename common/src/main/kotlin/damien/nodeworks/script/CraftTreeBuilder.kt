@@ -91,17 +91,17 @@ object CraftTreeBuilder {
         componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ): CraftTreeNode {
         if (depth > 20) {
-            return CraftTreeNode(itemId, getItemName(itemId), count, "missing", "", "recursion limit", 0, emptyList())
+            return CraftTreeNode(itemId, getItemName(itemId, componentsPatch), count, "missing", "", "recursion limit", 0, emptyList(), componentsPatch = componentsPatch)
         }
 
-        val itemName = getItemName(itemId)
+        val itemName = getItemName(itemId, componentsPatch)
         val inStorageTotal = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
         val reservedAmount = reserved[itemId] ?: 0
         val availableFromStorage = maxOf(0, inStorageTotal - reservedAmount)
 
         // Prevent infinite loops for circular recipes
         if (itemId in visited) {
-            return CraftTreeNode(itemId, itemName, count, "storage", "", "circular", availableFromStorage, emptyList())
+            return CraftTreeNode(itemId, itemName, count, "storage", "", "circular", availableFromStorage, emptyList(), componentsPatch = componentsPatch)
         }
         visited.add(itemId)
 
@@ -140,6 +140,7 @@ object CraftTreeBuilder {
             return CraftTreeNode(
                 itemId, itemName, actualCount, "craft_template", alias, "", availableFromStorage, children,
                 resolvedRecipe = if (swapped) concreteRecipe else null,
+                componentsPatch = componentsPatch,
             )
         }
 
@@ -185,7 +186,8 @@ object CraftTreeBuilder {
 
             // Processing APIs can yield >1 per batch (e.g. a smelting handler that produces
             // 9 nuggets per ingot). Round request up to a whole batch, same as Instruction Sets.
-            val perBatch = api.outputs.firstOrNull { it.itemId == itemId }?.count?.coerceAtLeast(1) ?: 1
+            val matchingOutput = api.outputs.firstOrNull { it.itemId == itemId }
+            val perBatch = matchingOutput?.count?.coerceAtLeast(1) ?: 1
             val batches = (count + perBatch - 1) / perBatch
             val actualCount = batches * perBatch
 
@@ -201,11 +203,18 @@ object CraftTreeBuilder {
                 )
             }
 
+            // Prefer the caller's patch when supplied. Otherwise inherit the
+            // recipe's matching output patch so a request for plain
+            // "minecraft:potion" still shows the produced variant (e.g.
+            // Strength) on the tree root.
+            val rootPatch = if (componentsPatch.size() > 0) componentsPatch
+                else matchingOutput?.stack?.componentsPatch ?: net.minecraft.core.component.DataComponentPatch.EMPTY
+            val rootName = if (componentsPatch.size() > 0) itemName else getItemName(itemId, rootPatch)
             val source = if (hasHandler) "process_template" else "process_no_handler"
             visited.remove(itemId)
             return CraftTreeNode(
-                itemId, itemName, actualCount, source, api.name, resolvedBy, availableFromStorage, children,
-                componentsPatch = componentsPatch,
+                itemId, rootName, actualCount, source, api.name, resolvedBy, availableFromStorage, children,
+                componentsPatch = rootPatch,
             )
         }
 
@@ -266,14 +275,14 @@ object CraftTreeBuilder {
             ingAvailable >= needed -> {
                 reserved[reservedKey] = ingReserved + needed
                 listOf(CraftTreeNode(
-                    ingId, getItemName(ingId), needed, "storage", "", "storage", ingAvailable, emptyList(),
+                    ingId, getItemName(ingId, ingredientPatch), needed, "storage", "", "storage", ingAvailable, emptyList(),
                     componentsPatch = ingredientPatch,
                 ))
             }
             ingAvailable > 0 -> {
                 reserved[reservedKey] = ingReserved + ingAvailable
                 val fromStorage = CraftTreeNode(
-                    ingId, getItemName(ingId), ingAvailable, "storage", "", "storage", ingAvailable, emptyList(),
+                    ingId, getItemName(ingId, ingredientPatch), ingAvailable, "storage", "", "storage", ingAvailable, emptyList(),
                     componentsPatch = ingredientPatch,
                 )
                 val toCraft = needed - ingAvailable
@@ -467,9 +476,15 @@ object CraftTreeBuilder {
         return if (result.isEmpty) 1 else result.getCount()
     }
 
-    private fun getItemName(itemId: String): String {
+    private fun getItemName(
+        itemId: String,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+    ): String {
         val id = Identifier.tryParse(itemId) ?: return itemId.substringAfter(':')
         val item = BuiltInRegistries.ITEM.getValue(id) ?: return itemId.substringAfter(':')
-        return ItemStack(item).hoverName.string
+        val stack = ItemStack(item).apply {
+            if (componentsPatch.size() > 0) applyComponents(componentsPatch)
+        }
+        return stack.hoverName.string
     }
 }
