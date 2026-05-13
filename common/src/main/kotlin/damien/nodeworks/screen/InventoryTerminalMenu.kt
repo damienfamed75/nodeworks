@@ -881,15 +881,28 @@ class InventoryTerminalMenu(
         recipeId: net.minecraft.resources.Identifier?,
         fallback: List<String>,
     ) {
+        // Clear the grid first: push into the network so the items return to
+        // storage instead of stuffing the player's inventory with a stack
+        // they didn't want back. Falls through to player inventory when the
+        // network is unreachable or refuses the stack, drops on the ground
+        // as a last resort.
+        val lvl = serverLevel
+        val snap = snapshot
         for (i in 0 until craftingContainer.containerSize) {
             val stack = craftingContainer.getItem(i)
+            if (stack.isEmpty) continue
+            if (lvl != null && snap != null) {
+                val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                if (inserted > 0) stack.shrink(inserted)
+            }
             if (!stack.isEmpty) {
                 if (!playerInventory.add(stack.copy())) {
                     player.drop(stack, false)
                 }
-                craftingContainer.setItem(i, ItemStack.EMPTY)
             }
+            craftingContainer.setItem(i, ItemStack.EMPTY)
         }
+        if (lvl != null && snap != null) needsImmediateSync = true
 
         val ingredients = resolveRecipeIngredients(recipeId)
         // Track claimed ingredients so a single `#planks` entry doesn't
