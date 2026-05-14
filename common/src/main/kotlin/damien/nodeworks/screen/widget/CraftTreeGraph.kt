@@ -274,7 +274,8 @@ class CraftTreeGraph {
                 val item = BuiltInRegistries.ITEM.getValue(itemResId)
                 if (item != null) {
                     val stack = ItemStack(item).apply {
-                        if (node.componentsPatch.size() > 0) applyComponents(node.componentsPatch)
+                        val patch = node.componentsPatch
+                        if (patch != null && patch.size() > 0) applyComponents(patch)
                     }
                     val iconX = sx - 8
                     val iconY = sy

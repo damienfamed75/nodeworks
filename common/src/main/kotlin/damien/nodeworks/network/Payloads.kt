@@ -615,9 +615,10 @@ data class CraftPreviewResponsePayload(val containerId: Int, val tree: damien.no
             buf.writeUtf(node.resolvedBy, 32)
             buf.writeVarInt(node.inStorage)
             buf.writeVarInt(node.nodeId)
-            val hasPatch = node.componentsPatch.size() > 0
+            val patch = node.componentsPatch
+            val hasPatch = patch != null && patch.size() > 0
             buf.writeBoolean(hasPatch)
-            if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, node.componentsPatch)
+            if (hasPatch && patch != null) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, patch)
             buf.writeVarInt(node.children.size)
             for (child in node.children) writeNode(buf, child)
         }
@@ -691,9 +692,10 @@ data class CraftingCpuTreePayload(
             buf.writeUtf(node.resolvedBy, 32)
             buf.writeVarInt(node.inStorage)
             buf.writeVarInt(node.nodeId)
-            val hasPatch = node.componentsPatch.size() > 0
+            val patch = node.componentsPatch
+            val hasPatch = patch != null && patch.size() > 0
             buf.writeBoolean(hasPatch)
-            if (hasPatch) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, node.componentsPatch)
+            if (hasPatch && patch != null) net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.encode(regBuf, patch)
             buf.writeVarInt(node.children.size)
             for (child in node.children) writeNode(buf, child)
         }

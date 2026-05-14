@@ -1024,8 +1024,10 @@ class LuaDiagnosticsTest {
         name: String,
         inputs: List<Pair<String, Int>> = emptyList(),
         outputs: List<Pair<String, Int>> = emptyList(),
-    ) = ProcessingStorageBlockEntity.ProcessingApiInfo(
-        name = name, inputs = inputs, outputs = outputs, timeout = 0,
+    ) = ProcessingStorageBlockEntity.ProcessingApiInfo.fromPairs(
+        name = name,
+        inputs = inputs,
+        outputs = outputs,
     )
 
     @Test

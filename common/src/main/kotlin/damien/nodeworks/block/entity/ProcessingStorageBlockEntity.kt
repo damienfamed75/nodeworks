@@ -125,15 +125,54 @@ class ProcessingStorageBlockEntity(
         val timeout: Int,
         val serial: Boolean = false,
         val fuzzy: Boolean = false,
+        /** Optional pre-computed `(itemId, count)` projections. Non-null only
+         *  for fixtures built via [fromPairs] (unit tests, which can't touch
+         *  [net.minecraft.core.registries.BuiltInRegistries] at runtime).
+         *  When null, [inputsAsPairs] / [outputsAsPairs] derive from the
+         *  full [inputs] / [outputs] ingredient lists. */
+        private val inputsPairsOverride: List<Pair<String, Int>>? = null,
+        private val outputsPairsOverride: List<Pair<String, Int>>? = null,
     ) {
         /** All output item IDs. Strips components, used by consumers that just
          *  need to know which items the recipe can produce by name. */
-        val outputItemIds: List<String> get() = outputs.map { it.itemId }
+        val outputItemIds: List<String> get() = outputsAsPairs.map { it.first }
 
         /** Legacy `(itemId, count)` projection for consumers that haven't
          *  been widened to component-aware reads yet. Components are dropped. */
-        val inputsAsPairs: List<Pair<String, Int>> get() = inputs.map { it.itemId to it.count }
-        val outputsAsPairs: List<Pair<String, Int>> get() = outputs.map { it.itemId to it.count }
+        val inputsAsPairs: List<Pair<String, Int>>
+            get() = inputsPairsOverride ?: inputs.map { it.itemId to it.count }
+        val outputsAsPairs: List<Pair<String, Int>>
+            get() = outputsPairsOverride ?: outputs.map { it.itemId to it.count }
+
+        companion object {
+            /** Test/legacy fixture: build a [ProcessingApiInfo] from
+             *  `(itemId, count)` pairs without constructing real
+             *  [damien.nodeworks.script.RecipeIngredient]s. Routes the pairs
+             *  through the [inputsPairsOverride] / [outputsPairsOverride]
+             *  fields so [inputsAsPairs] still returns them, while [inputs]
+             *  / [outputs] stay empty (no [net.minecraft.world.item.ItemStack]
+             *  construction, no [net.minecraft.core.registries.BuiltInRegistries]
+             *  lookup). Used by [damien.nodeworks.script.diagnostics] unit
+             *  tests whose runtime classpath lacks Minecraft. */
+            @JvmStatic
+            fun fromPairs(
+                name: String,
+                inputs: List<Pair<String, Int>>,
+                outputs: List<Pair<String, Int>> = emptyList(),
+                timeout: Int = 0,
+                serial: Boolean = false,
+                fuzzy: Boolean = false,
+            ): ProcessingApiInfo = ProcessingApiInfo(
+                name = name,
+                inputs = emptyList(),
+                outputs = emptyList(),
+                timeout = timeout,
+                serial = serial,
+                fuzzy = fuzzy,
+                inputsPairsOverride = inputs,
+                outputsPairsOverride = outputs,
+            )
+        }
     }
 
     // --- Connectable ---

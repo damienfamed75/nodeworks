@@ -1643,9 +1643,10 @@ object LuaDiagnostics {
         val out = mutableListOf<Diagnostic>()
         for (span in spans) {
             val api = byName[span.name] ?: continue
-            if (api.inputs.isEmpty()) continue
+            val pairs = api.inputsAsPairs
+            if (pairs.isEmpty()) continue
             val expected =
-                damien.nodeworks.card.HandlerParamNames.build(api.inputsAsPairs)
+                damien.nodeworks.card.HandlerParamNames.build(pairs)
             if (expected.isEmpty()) continue
             val body = stripped.substring(span.bodyStart, span.bodyEnd)
             // Bail when the body references `items` opaquely (table / loop /

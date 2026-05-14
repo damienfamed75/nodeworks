@@ -34,12 +34,26 @@ object CraftTreeBuilder {
         /** Component patch identifying the requested variant. Empty for
          *  plain items (the common case). Carries through to the planner so
          *  Pull ops can filter storage by component, e.g. asking specifically
-         *  for a Strength Potion rather than "any potion". */
-        val componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+         *  for a Strength Potion rather than "any potion".
+         *
+         *  Nullable for the default value to avoid eagerly loading
+         *  [net.minecraft.core.component.DataComponentPatch] when a
+         *  [CraftTreeNode] is constructed without specifying a patch (which
+         *  is what the unit tests in `:common` do, since their runtime
+         *  classpath is MC-free). Read sites should fall back to
+         *  [net.minecraft.core.component.DataComponentPatch.EMPTY] when
+         *  null. */
+        val componentsPatch: net.minecraft.core.component.DataComponentPatch? = null,
         /** Component-aware buffer key (itemId + componentsHash). Convenience
-         *  accessor for the planner's variant-keyed aggregation. */
+         *  accessor for the planner's variant-keyed aggregation. The default
+         *  expression branches on [componentsPatch] being null to avoid
+         *  loading MC classes when no patch was supplied (test contexts). */
         val bufferKey: damien.nodeworks.script.BufferKey.Key =
-            damien.nodeworks.script.BufferKey.Key(itemId, damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)),
+            damien.nodeworks.script.BufferKey.Key(
+                itemId,
+                if (componentsPatch == null) ""
+                else damien.nodeworks.script.BufferKey.componentsHash(componentsPatch),
+            ),
     ) {
         /** Stable identity within this tree, assigned by [assignNodeIds] after construction
          *  and serialized so the client can match server-side op activity to specific nodes

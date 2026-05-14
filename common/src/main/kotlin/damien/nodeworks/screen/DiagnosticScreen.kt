@@ -899,7 +899,8 @@ class DiagnosticScreen(
             val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
             if (item != null) {
                 val nodeStack = ItemStack(item).apply {
-                    if (node.componentsPatch.size() > 0) applyComponents(node.componentsPatch)
+                    val patch = node.componentsPatch
+                    if (patch != null && patch.size() > 0) applyComponents(patch)
                 }
                 graphics.pose().pushMatrix()
                 graphics.pose().translate((x + indent).toFloat(), (y - 1).toFloat())
@@ -1025,7 +1026,8 @@ class DiagnosticScreen(
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(itemId)
                 if (item != null) {
                     val nodeStack = ItemStack(item).apply {
-                        if (n.componentsPatch.size() > 0) applyComponents(n.componentsPatch)
+                        val patch = n.componentsPatch
+                        if (patch != null && patch.size() > 0) applyComponents(patch)
                     }
                     graphics.renderItem(nodeStack, sx - 8, sy)
                     if (n.count > 1) {
