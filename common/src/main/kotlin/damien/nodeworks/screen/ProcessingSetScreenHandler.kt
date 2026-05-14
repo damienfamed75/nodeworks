@@ -202,22 +202,43 @@ class ProcessingSetScreenHandler(
                     }
                 }
             } else {
-                // Populate slot AND inherit the clicked stack's count so the recipe
-                // picks up "4 ingots" when the player clicked with a stack of 4.
-                // Preserve the carried stack's components (potion contents, custom
-                // name, enchantments) so component-aware recipes work end-to-end.
-                val inheritedCount = carried.count.coerceAtLeast(1)
-                when {
-                    slotId < INPUT_SLOTS -> {
-                        inputGrid.setItem(slotId, carried.copyWithCount(1))
-                        data.set(slotId, inheritedCount)
-                    }
-                    else -> {
-                        val outIdx = slotId - INPUT_SLOTS
-                        outputGrid.setItem(outIdx, carried.copyWithCount(1))
-                        data.set(INPUT_SLOTS + outIdx, inheritedCount)
-                    }
+                // Left-click: inherit the carried stack's count so the recipe
+                // picks up "4 ingots" when the player clicked with a stack of
+                // 4. Right-click: always start at 1 and increment by 1 on each
+                // subsequent right-click with the same item, so the player can
+                // dial in a precise quantity from a full stack.
+                //
+                // Branch on (clickType, button): vanilla `mouseClicked` starts
+                // a QUICK_CRAFT drag whenever the cursor is non-empty (even
+                // for a stationary click that releases without a drag). The
+                // QUICK_CRAFT(add) phase fires with [button] = mask(stage=1,
+                // type), so left-drag-add carries button=1, right-drag-add
+                // carries button=5. The PICKUP path only fires for the
+                // zero-slot-drag fallback. Decoding the button properly here
+                // is necessary or left-drag-add gets misread as a right click
+                // and the count drops to 1 on the first click.
+                //
+                // Components (potion contents, custom name, enchantments) are
+                // preserved so component-aware recipes work end-to-end.
+                val isRightClick = when (clickType) {
+                    net.minecraft.world.inventory.ContainerInput.PICKUP -> button == 1
+                    net.minecraft.world.inventory.ContainerInput.QUICK_CRAFT -> ((button shr 2) and 3) == 1
+                    else -> false
                 }
+                val isInput = slotId < INPUT_SLOTS
+                val outIdx = if (isInput) -1 else slotId - INPUT_SLOTS
+                val dataIdx = if (isInput) slotId else INPUT_SLOTS + outIdx
+                val existing = if (isInput) inputGrid.getItem(slotId) else outputGrid.getItem(outIdx)
+                val sameItem = !existing.isEmpty &&
+                    ItemStack.isSameItemSameComponents(existing, carried)
+                val newCount = if (isRightClick) {
+                    if (sameItem) (data.get(dataIdx) + 1).coerceAtMost(Short.MAX_VALUE.toInt()) else 1
+                } else {
+                    carried.count.coerceAtLeast(1)
+                }
+                if (isInput) inputGrid.setItem(slotId, carried.copyWithCount(1))
+                else outputGrid.setItem(outIdx, carried.copyWithCount(1))
+                data.set(dataIdx, newCount)
             }
             dirty = true
             return
