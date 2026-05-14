@@ -228,5 +228,11 @@ class Icons private constructor(val col: Int, val row: Int) {
         val FACE_TOP = Icons(4, 5)
         val COLOR_PICKING_CIRCLE = Icons(5, 5)
         val LOCK = Icons(6, 5)
+
+        // Inventory Terminal: JEI search-bar sync toggle. ON binds the
+        // terminal's search box to JEI's filter so typing in either side
+        // mirrors to the other.
+        val JEI_SYNC_ON = Icons(7, 5)
+        val JEI_SYNC_OFF = Icons(8, 5)
     }
 }

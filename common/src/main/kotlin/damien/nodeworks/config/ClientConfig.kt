@@ -22,6 +22,7 @@ object ClientConfig {
         var invTerminalSortMode: String = "ALPHA",
         var invTerminalFilterMode: String = "BOTH",
         var invTerminalKindMode: String = "BOTH",
+        var invTerminalJeiSync: Boolean = false,
         var scriptTerminalLayout: Int = 0
     )
 
@@ -78,6 +79,10 @@ object ClientConfig {
     var invTerminalKindMode: String
         get() = data.invTerminalKindMode
         set(value) { data.invTerminalKindMode = value; save() }
+
+    var invTerminalJeiSync: Boolean
+        get() = data.invTerminalJeiSync
+        set(value) { data.invTerminalJeiSync = value; save() }
 
     // --- Scripting Terminal ---
 

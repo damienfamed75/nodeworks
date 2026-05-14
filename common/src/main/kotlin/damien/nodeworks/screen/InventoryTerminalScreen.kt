@@ -177,6 +177,16 @@ class InventoryTerminalScreen(
     private val slotDragVisited = mutableListOf<DragSlotRef>()  // dedup for non-shift drags
     private var slotDragLastHovered: DragSlotRef? = null         // slot-entry tracker for shift-drag
     private lateinit var searchBox: EditBox
+
+    /** Guard against ping-pong when adopting JEI's filter text into the local
+     *  search box. The [EditBox] responder mirrors back to JEI when sync is
+     *  on, this flag short-circuits the responder during JEI-driven updates. */
+    private var syncingFromJei: Boolean = false
+
+    /** Last text we observed in JEI's filter, used by the per-tick poll to
+     *  detect changes typed in JEI while the terminal is open. */
+    private var lastJeiSeenText: String = ""
+
     private var cachedNetworkColor: Int? = null
     private var itemStackCache = HashMap<String, ItemStack>()
     // Reused container for JEI hoveredSlot, avoids allocating new SimpleContainer every frame
@@ -281,7 +291,27 @@ class InventoryTerminalScreen(
         searchBox.setBordered(true)
         searchBox.setTextColor(0xFFE0E0E0.toInt())
         searchBox.setHint(Component.literal("Search items..."))
-        searchBox.setResponder { text -> repo.searchText = text }
+        searchBox.setResponder { text ->
+            repo.searchText = text
+            // Mirror to JEI when sync is on. Skip when the change originated
+            // from JEI itself, [syncingFromJei] is set just before we adopt
+            // JEI's text so the responder doesn't ping-pong back.
+            if (ClientConfig.invTerminalJeiSync && !syncingFromJei) {
+                val bridge = damien.nodeworks.integration.jei.JeiSearchBridge
+                if (bridge.read() != text) bridge.write(text)
+            }
+        }
+        // Adopt JEI's current filter text on screen (re)build so the grid opens
+        // already filtered to whatever the player typed in JEI.
+        if (ClientConfig.invTerminalJeiSync) {
+            damien.nodeworks.integration.jei.JeiSearchBridge.read()?.let { jeiText ->
+                if (jeiText.isNotEmpty() && jeiText != searchBox.value) {
+                    syncingFromJei = true
+                    searchBox.value = jeiText
+                    syncingFromJei = false
+                }
+            }
+        }
         if (ClientConfig.invTerminalAutoFocusSearch) {
             searchBox.isFocused = true
         }
@@ -371,6 +401,24 @@ class InventoryTerminalScreen(
             sideBtnX, sideBtnY, SIDE_BTN_W, SIDE_BTN_W, "", autoFocusIcon
         ) { _ ->
             ClientConfig.invTerminalAutoFocusSearch = !ClientConfig.invTerminalAutoFocusSearch
+            rebuildWidgets()
+        })
+        sideBtnY += SIDE_BTN_W + SIDE_BTN_GAP
+
+        // JEI search-bar sync toggle. When on, the terminal's search box and
+        // JEI's filter text mirror each other in both directions.
+        val jeiSyncIcon = if (ClientConfig.invTerminalJeiSync) Icons.JEI_SYNC_ON else Icons.JEI_SYNC_OFF
+        addRenderableWidget(SlicedButton.create(
+            sideBtnX, sideBtnY, SIDE_BTN_W, SIDE_BTN_W, "", jeiSyncIcon
+        ) { _ ->
+            ClientConfig.invTerminalJeiSync = !ClientConfig.invTerminalJeiSync
+            // Turning sync on: adopt JEI's current text immediately so the
+            // grid reflects whatever the player had typed before opening.
+            if (ClientConfig.invTerminalJeiSync) {
+                damien.nodeworks.integration.jei.JeiSearchBridge.read()?.let { jeiText ->
+                    if (jeiText != searchBox.value) searchBox.value = jeiText
+                }
+            }
             rebuildWidgets()
         })
 
@@ -564,6 +612,25 @@ class InventoryTerminalScreen(
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        // JEI search-bar sync poll. When sync is on, pull JEI's current text
+        // each frame and adopt it locally if it changed externally (e.g. the
+        // player clicked JEI's input or used JEI's clear-search hotkey while
+        // the terminal was open). Local→JEI direction is handled by the
+        // [searchBox] responder. The [lastJeiSeenText] gate keeps this cheap:
+        // we only touch [searchBox.value] when JEI's text actually changed.
+        if (ClientConfig.invTerminalJeiSync) {
+            val bridge = damien.nodeworks.integration.jei.JeiSearchBridge
+            val jeiText = bridge.read()
+            if (jeiText != null && jeiText != lastJeiSeenText) {
+                lastJeiSeenText = jeiText
+                if (jeiText != searchBox.value) {
+                    syncingFromJei = true
+                    searchBox.value = jeiText
+                    syncingFromJei = false
+                }
+            }
+        }
+
         // Sync persisted auto-pull state to server on first render
         if (!syncedAutoPull) {
             syncedAutoPull = true
@@ -1746,6 +1813,9 @@ class InventoryTerminalScreen(
             }}")
             4 -> Component.literal(
                 "Auto-focus search: ${if (ClientConfig.invTerminalAutoFocusSearch) "On" else "Off"}"
+            )
+            5 -> Component.literal(
+                "JEI search sync: ${if (ClientConfig.invTerminalJeiSync) "On" else "Off"}"
             )
             else -> null
         }

@@ -155,6 +155,21 @@ class NodeworksJeiPlugin : IModPlugin {
         registration.addRecipeCatalyst(ItemStack(Items.MILK_BUCKET), MilkySoulBallRecipeCategory.RECIPE_TYPE)
         registration.addRecipeCatalyst(ItemStack(Items.SOUL_SAND), MilkySoulBallRecipeCategory.RECIPE_TYPE)
     }
+
+    override fun onRuntimeAvailable(runtime: mezz.jei.api.runtime.IJeiRuntime) {
+        // Wire the search-bar bridge so the Inventory Terminal can mirror its
+        // search box against JEI's filter text when the player has the sync
+        // toggle on. Bridge stays installed for the lifetime of this runtime,
+        // [onRuntimeUnavailable] clears it on resource reload / disconnect.
+        val filter = runtime.ingredientFilter
+        JeiSearchBridge.getter = { filter.filterText.orEmpty() }
+        JeiSearchBridge.setter = { text -> filter.setFilterText(text) }
+    }
+
+    override fun onRuntimeUnavailable() {
+        JeiSearchBridge.getter = null
+        JeiSearchBridge.setter = null
+    }
 }
 
 // ── Inventory Terminal: crafting-recipe transfer (+) ──
