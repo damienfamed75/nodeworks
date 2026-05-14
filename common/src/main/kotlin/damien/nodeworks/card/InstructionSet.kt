@@ -53,37 +53,40 @@ class InstructionSet(properties: Properties) : Item(properties) {
 
     override fun appendHoverText(stack: ItemStack, context: Item.TooltipContext, display: TooltipDisplay, tooltip: Consumer<Component>, flag: TooltipFlag) {
         super.appendHoverText(stack, context, display, tooltip, flag)
+        // Text lines were per-item names; the [getTooltipImage] icon strip
+        // replaces them. Nothing else lives here right now.
+    }
+
+    /** Provides the recipe-icon grid for the tooltip. Preserves the 3×3 slot
+     *  layout so the recipe reads positionally (a 2×2 of planks shows up
+     *  in the top-left quadrant) and uses the persisted output count so a
+     *  recipe yielding 3 doors shows the correct "3" badge. Returns absent
+     *  when the card hasn't been configured. */
+    override fun getTooltipImage(stack: ItemStack): java.util.Optional<net.minecraft.world.inventory.tooltip.TooltipComponent> {
         val recipe = getRecipe(stack)
-        val ingredients = recipe.filter { it.isNotEmpty() }.mapNotNull { id ->
-            val identifier = Identifier.tryParse(id) ?: return@mapNotNull null
-            BuiltInRegistries.ITEM.getValue(identifier)
-        }.distinct()
-
-        if (ingredients.isNotEmpty()) {
-            tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.input")
-                .withStyle(ChatFormatting.GRAY))
-            for (item in ingredients) {
-                tooltip.accept(Component.literal("  ").append(Component.translatable(item.descriptionId)).withStyle(ChatFormatting.DARK_GRAY))
-            }
-
-            val outputId = getOutput(stack)
-            if (outputId.isNotEmpty()) {
-                val outputIdentifier = Identifier.tryParse(outputId)
-                if (outputIdentifier != null) {
-                    val outputItem = BuiltInRegistries.ITEM.getValue(outputIdentifier)
-                    if (outputItem != null) {
-                        tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.output")
-                            .withStyle(ChatFormatting.GRAY))
-                        tooltip.accept(Component.literal("  ").append(Component.translatable(outputItem.descriptionId)).withStyle(ChatFormatting.DARK_GRAY))
-                    }
-                }
-            }
+        val inputs = recipe.map { id ->
+            if (id.isEmpty()) ItemStack.EMPTY
+            else Identifier.tryParse(id)
+                ?.let { BuiltInRegistries.ITEM.getValue(it) }
+                ?.let { ItemStack(it) }
+                ?: ItemStack.EMPTY
         }
+        val outputId = getOutput(stack)
+        val outputStack = if (outputId.isNotEmpty()) {
+            Identifier.tryParse(outputId)
+                ?.let { BuiltInRegistries.ITEM.getValue(it) }
+                ?.let { ItemStack(it, getOutputCount(stack)) }
+        } else null
+        val anyInput = inputs.any { !it.isEmpty }
+        if (!anyInput && outputStack == null) return java.util.Optional.empty()
+        val outputs = if (outputStack != null) listOf(outputStack) else emptyList()
+        return java.util.Optional.of(damien.nodeworks.screen.tooltip.RecipeIconTooltip(inputs, outputs))
     }
 
     companion object {
         private const val RECIPE_KEY = "recipe"
         private const val OUTPUT_KEY = "output"
+        private const val OUTPUT_COUNT_KEY = "outputCount"
         private const val SUBSTITUTIONS_KEY = "allowSubstitutions"
 
         fun getRecipe(stack: ItemStack): List<String> {
@@ -99,6 +102,15 @@ class InstructionSet(properties: Properties) : Item(properties) {
             return customData.copyTag().getStringOr(OUTPUT_KEY, "")
         }
 
+        /** Per-craft output count resolved when the recipe was saved. Defaults
+         *  to 1 for cards saved before the count was persisted, which matches
+         *  the previous render where every recipe rendered as a 1-count
+         *  output regardless of the underlying crafting yield. */
+        fun getOutputCount(stack: ItemStack): Int {
+            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 1
+            return customData.copyTag().getIntOr(OUTPUT_COUNT_KEY, 1).coerceIn(1, 99)
+        }
+
         /** Whether the instruction set should accept tag substitutions for its
          *  ingredients (e.g. any plank in `#minecraft:planks` for a chest
          *  recipe). Defaults to true, so a fresh card and any older saved card
@@ -108,7 +120,13 @@ class InstructionSet(properties: Properties) : Item(properties) {
             return customData.copyTag().getBooleanOr(SUBSTITUTIONS_KEY, true)
         }
 
-        fun setRecipe(stack: ItemStack, recipe: List<String>, output: String = "", allowSubstitutions: Boolean = true) {
+        fun setRecipe(
+            stack: ItemStack,
+            recipe: List<String>,
+            output: String = "",
+            outputCount: Int = 1,
+            allowSubstitutions: Boolean = true,
+        ) {
             require(recipe.size == 9)
             val tag = CompoundTag()
             val list = ListTag()
@@ -117,6 +135,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
             }
             tag.put(RECIPE_KEY, list)
             tag.putString(OUTPUT_KEY, output)
+            tag.putInt(OUTPUT_COUNT_KEY, outputCount.coerceIn(1, 99))
             tag.putBoolean(SUBSTITUTIONS_KEY, allowSubstitutions)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
         }

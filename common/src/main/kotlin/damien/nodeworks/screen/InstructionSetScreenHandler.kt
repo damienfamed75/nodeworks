@@ -212,6 +212,11 @@ class InstructionSetScreenHandler(
     private fun saveRecipe(player: Player, recipe: List<String>, allowSubstitutions: Boolean) {
         val resultStack = resultContainer.getItem(0)
         val output = if (resultStack.isEmpty) "" else BuiltInRegistries.ITEM.getKey(resultStack.item)?.toString() ?: ""
+        // Recipe-resolved yield (e.g. 3 for the door recipe). Persisted so the
+        // item tooltip can render the count badge without a recipe lookup,
+        // which isn't possible on the client (only the server has the full
+        // RecipeManager).
+        val outputCount = if (resultStack.isEmpty) 1 else resultStack.count
 
         when (val mode = saveMode) {
             is SaveMode.Handheld -> {
@@ -224,13 +229,13 @@ class InstructionSetScreenHandler(
                     // it into the player's inventory.
                     if (stack.count > 1) {
                         val configured = stack.copyWithCount(1)
-                        InstructionSet.setRecipe(configured, recipe, output, allowSubstitutions)
+                        InstructionSet.setRecipe(configured, recipe, output, outputCount, allowSubstitutions)
                         stack.shrink(1)
                         if (!player.inventory.add(configured)) {
                             player.drop(configured, false)
                         }
                     } else {
-                        InstructionSet.setRecipe(stack, recipe, output, allowSubstitutions)
+                        InstructionSet.setRecipe(stack, recipe, output, outputCount, allowSubstitutions)
                     }
                 }
             }
@@ -241,7 +246,7 @@ class InstructionSetScreenHandler(
                 val globalSlot = side.ordinal * damien.nodeworks.block.entity.NodeBlockEntity.SLOTS_PER_SIDE + mode.slotIndex
                 val cardStack = nodeEntity.getItem(globalSlot)
                 if (cardStack.item is InstructionSet) {
-                    InstructionSet.setRecipe(cardStack, recipe, output, allowSubstitutions)
+                    InstructionSet.setRecipe(cardStack, recipe, output, outputCount, allowSubstitutions)
                     nodeEntity.setChanged()
                 }
             }

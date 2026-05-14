@@ -57,6 +57,7 @@ object NeoForgeClientSetup {
         modBus.addListener(::onRegisterRenderPipelines)
         modBus.addListener(::onRegisterStandaloneModels)
         modBus.addListener(::onModifyBakingResult)
+        modBus.addListener(::onRegisterTooltipComponents)
 
         // Register the in-game guide synchronously during mod construction, NOT inside
         // FMLClientSetupEvent.enqueueWork. GuideME hooks the item-tooltip "Hold G" hint
@@ -438,6 +439,20 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.PROCESSING_HANDLER) { menu, inventory, title ->
             damien.nodeworks.screen.ProcessingHandlerScreen(menu, inventory, title)
+        }
+    }
+
+    /** Wire [damien.nodeworks.screen.tooltip.RecipeIconTooltip] (server-safe
+     *  data carrier returned by Instruction / Processing Set items'
+     *  [net.minecraft.world.item.Item.getTooltipImage]) to its client-side
+     *  renderer. Without this the data class flows through the tooltip
+     *  pipeline but vanilla doesn't know how to draw it and the icons
+     *  silently no-op. */
+    private fun onRegisterTooltipComponents(
+        event: net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent
+    ) {
+        event.register(damien.nodeworks.screen.tooltip.RecipeIconTooltip::class.java) { data ->
+            damien.nodeworks.screen.tooltip.RecipeIconTooltipRenderer(data)
         }
     }
 

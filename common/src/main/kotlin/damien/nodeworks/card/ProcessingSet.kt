@@ -69,34 +69,9 @@ class ProcessingSet(properties: Properties) : Item(properties) {
 
     override fun appendHoverText(stack: ItemStack, context: TooltipContext, display: TooltipDisplay, tooltip: Consumer<Component>, flag: TooltipFlag) {
         super.appendHoverText(stack, context, display, tooltip, flag)
-        val registries = context.registries() ?: return
-        val inputs = getInputs(stack, registries)
-        val outputs = getOutputs(stack, registries)
-
-        if (inputs.isNotEmpty()) {
-            tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.input")
-                .withStyle(ChatFormatting.GRAY))
-            for (ingredient in inputs) {
-                val countStr = if (ingredient.count > 1) " x${ingredient.count}" else ""
-                tooltip.accept(Component.literal("  ")
-                    .append(ingredient.stack.hoverName)
-                    .append(countStr)
-                    .withStyle(ChatFormatting.DARK_GRAY))
-            }
-        }
-
-        if (outputs.isNotEmpty()) {
-            tooltip.accept(Component.translatable("tooltip.nodeworks.instruction_set.output")
-                .withStyle(ChatFormatting.GRAY))
-            for (ingredient in outputs) {
-                val countStr = if (ingredient.count > 1) " x${ingredient.count}" else ""
-                tooltip.accept(Component.literal("  ")
-                    .append(ingredient.stack.hoverName)
-                    .append(countStr)
-                    .withStyle(ChatFormatting.DARK_GRAY))
-            }
-        }
-
+        // Per-ingredient name lines were redundant once the [getTooltipImage]
+        // icon strip arrived. Timeout / fuzzy stay as text since they're
+        // metadata, not items.
         val timeout = getTimeout(stack)
         if (timeout > 0) {
             tooltip.accept(Component.literal("  Timeout: ${timeout}t (${timeout / 20.0}s)")
@@ -106,6 +81,36 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             tooltip.accept(Component.literal("  Fuzzy: any component variant matches")
                 .withStyle(ChatFormatting.DARK_GRAY))
         }
+    }
+
+    /** Provides the recipe-icon strip for the tooltip. Surfaces inputs and
+     *  outputs with their configured counts, preserving component identity
+     *  (so a Strength Potion ingredient renders as the strength variant).
+     *  Returns absent when the set hasn't been configured. */
+    override fun getTooltipImage(stack: ItemStack): java.util.Optional<net.minecraft.world.inventory.tooltip.TooltipComponent> {
+        // Tooltip rendering runs client-side; grab the client level's
+        // synced registries so component-bearing entries (potions, dyed
+        // armor) parse with their full identity instead of degrading to
+        // bare items. Falls back to an empty provider if the player isn't
+        // in a world (main menu, etc.).
+        val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
+            ?: net.minecraft.core.HolderLookup.Provider.create(java.util.stream.Stream.empty())
+        val rawInputs = getInputs(stack, registries)
+        val inputSlots = getInputPositions(stack)
+        // Place each input at its configured grid slot so the tooltip
+        // mirrors what the player set up in the GUI; sparse layouts
+        // (a single ingredient in slot 4) read positionally instead of
+        // bunching at the top-left.
+        val inputs = MutableList(damien.nodeworks.screen.tooltip.RecipeIconTooltip.INPUT_SLOTS) { ItemStack.EMPTY }
+        for ((i, ingr) in rawInputs.withIndex()) {
+            val slotIdx = inputSlots.getOrNull(i) ?: i
+            if (slotIdx in inputs.indices) {
+                inputs[slotIdx] = ingr.stack.copyWithCount(ingr.count)
+            }
+        }
+        val outputs = getOutputs(stack, registries).map { it.stack.copyWithCount(it.count) }
+        if (inputs.all { it.isEmpty } && outputs.isEmpty()) return java.util.Optional.empty()
+        return java.util.Optional.of(damien.nodeworks.screen.tooltip.RecipeIconTooltip(inputs, outputs))
     }
 
     companion object {
