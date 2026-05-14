@@ -8,8 +8,8 @@
   "key": {
     "D": "nodeworks:substrate",
     "S": "minecraft:snow_block",
-    "B": "minecraft:blue_ice",
-    "G": "minecraft:ghast_tear"
+    "B": "minecraft:packed_ice",
+    "G": "minecraft:blue_ice"
   },
   "result": {
     "id": "nodeworks:stabilizer",
