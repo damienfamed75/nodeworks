@@ -651,13 +651,20 @@ class InventoryTerminalMenu(
                 // slot, but pulls from network storage instead of an inventory
                 // slot. Stack count is clamped to the item's default max stack
                 // size so dropping doesn't dump 64-stack-thousands at once.
+                //
+                // Threads [variantPatch] through count + extract so dropping
+                // from a component-bearing grid entry (e.g. Strength Potion)
+                // pulls that specific variant rather than any potion sharing
+                // the itemId.
                 val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
-                val available = if (c != null) c.count(itemId) else NetworkStorageHelper.countItems(lvl, snap, itemId)
+                val available = if (variantPatch != null) {
+                    NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch)
+                } else if (c != null) c.count(itemId) else NetworkStorageHelper.countItems(lvl, snap, itemId)
                 val maxStack = item.getDefaultMaxStackSize().toLong()
                 val toDrop = if (action == 5) 1L else minOf(available, maxStack)
 
-                for (stack in extractRealStacks(lvl, snap, c, itemId, toDrop)) {
+                for (stack in extractRealStacks(lvl, snap, c, itemId, toDrop, variantPatch)) {
                     player.drop(stack, true)
                 }
             }
@@ -1041,7 +1048,7 @@ class InventoryTerminalMenu(
             for (stack in stacks) {
                 if (stack.isEmpty) continue
                 val hasData = !stack.componentsPatch.isEmpty
-                c?.onExtracted(itemId, hasData, stack.count.toLong())
+                c?.onExtracted(itemId, hasData, stack.count.toLong(), stack.componentsPatch)
                 out.add(stack)
                 remaining -= stack.count
             }

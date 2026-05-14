@@ -36,11 +36,22 @@ class BufferSource(
     /** Legacy itemId accessor for consumers that haven't migrated to [key]. */
     val itemId: String get() = key.itemId
 
+    /** Template stack captured at construction time so [returnUnused] can
+     *  restore the original variant even when [extract] has fully drained
+     *  the bucket and [cpu.getBufferTemplate] no longer returns one.
+     *  Falls back to [net.minecraft.world.item.ItemStack.EMPTY] when the
+     *  bucket was already empty at construction (legacy callers using
+     *  [ofItemId] who never touched the buffer first). */
+    private val capturedTemplate: net.minecraft.world.item.ItemStack? = cpu.getBufferTemplate(key)
+
     /** Template the buffer is using for this variant. Carries the components
      *  of the first instance routed in (e.g. the exact potion variant pulled
-     *  from storage). Empty when the bucket is gone. */
+     *  from storage). Falls back to the captured snapshot when the bucket
+     *  has been drained. */
     val template: net.minecraft.world.item.ItemStack
-        get() = cpu.getBufferTemplate(key) ?: net.minecraft.world.item.ItemStack.EMPTY
+        get() = cpu.getBufferTemplate(key)
+            ?: capturedTemplate
+            ?: net.minecraft.world.item.ItemStack.EMPTY
 
     /** Extract up to [maxCount] items from the buffer. Returns actual count extracted. */
     fun extract(maxCount: Long): Long {
@@ -53,11 +64,16 @@ class BufferSource(
     /** Put previously-extracted items back into the buffer. Uses the bucket's
      *  template stack so components survive the round trip. Used by
      *  `card:insert`'s atomic rollback when the destination refused a partial
-     *  amount. */
+     *  amount.
+     *
+     *  Falls back to the [capturedTemplate] from construction time when the
+     *  live bucket has been drained empty by a prior [extract], so
+     *  component-bearing variants (potions, dyed gear) get re-added with
+     *  their identity intact instead of degrading to a plain-itemId entry. */
     fun returnUnused(count: Long) {
         if (count <= 0L) return
-        val template = cpu.getBufferTemplate(key)
-        val ok = if (template != null) cpu.addToBuffer(template, count)
+        val template = cpu.getBufferTemplate(key) ?: capturedTemplate
+        val ok = if (template != null && !template.isEmpty) cpu.addToBuffer(template, count)
             else cpu.addToBuffer(key.itemId, count)
         if (ok) remaining += count
     }

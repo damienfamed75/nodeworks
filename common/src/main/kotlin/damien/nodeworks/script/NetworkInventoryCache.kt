@@ -62,6 +62,28 @@ class NetworkInventoryCache(
     private val fluidEntries = LinkedHashMap<String, FluidSerialEntry>()
     private var nextSerial = 1L
 
+    /** Secondary index from itemId to the set of component-variant keys
+     *  registered under it. Keeps the exact-id [count] / [find] fast paths
+     *  O(variants-per-item) instead of O(total-entries), so a high-traffic
+     *  Monitor polling for a plain itemId every tick doesn't scan every
+     *  variant in storage. Mutated in lockstep with [entries] via the
+     *  [putEntry] / [removeEntry] helpers. */
+    private val keysByItemId = HashMap<String, MutableSet<BufferKey.Key>>()
+
+    private fun putEntry(key: BufferKey.Key, entry: SerialEntry) {
+        entries[key] = entry
+        keysByItemId.getOrPut(key.itemId) { HashSet() }.add(key)
+    }
+
+    private fun removeEntry(key: BufferKey.Key) {
+        if (entries.remove(key) != null) {
+            keysByItemId[key.itemId]?.let { set ->
+                set.remove(key)
+                if (set.isEmpty()) keysByItemId.remove(key.itemId)
+            }
+        }
+    }
+
     // Change tracking for delta sync (shared serial space, items + fluids)
     private val changedSerials = mutableSetOf<Long>()
     private val removedSerials = mutableSetOf<Long>()
@@ -343,14 +365,16 @@ class NetworkInventoryCache(
 
         // Items removed: anything in entries the latest poll didn't see.
         // Iterator-based eviction avoids a full keyset copy every cycle-end.
-        val iter = entries.entries.iterator()
-        while (iter.hasNext()) {
-            val (key, entry) = iter.next()
+        val keysToRemove = mutableListOf<BufferKey.Key>()
+        for ((key, entry) in entries) {
             if (key in dirtyKeys) continue
             if (key in frontBuffer) continue
-            iter.remove()
+            keysToRemove.add(key)
             removedSerials.add(entry.serial)
             changedSerials.remove(entry.serial)
+        }
+        if (keysToRemove.isNotEmpty()) {
+            for (k in keysToRemove) removeEntry(k)
             changed = true
         }
 
@@ -363,7 +387,7 @@ class NetworkInventoryCache(
             val existing = entries[key]
             if (existing == null) {
                 val serial = nextSerial++
-                entries[key] = SerialEntry(serial, info)
+                putEntry(key, SerialEntry(serial, info))
                 changedSerials.add(serial)
                 changed = true
             } else {
@@ -375,13 +399,13 @@ class NetworkInventoryCache(
                 val countChanged = existing.info.count != info.count
                 val craftableChanged = existing.info.isCraftable != info.isCraftable
                 if (countChanged || craftableChanged || patchChanged) {
-                    entries[key] = existing.copy(
+                    putEntry(key, existing.copy(
                         info = existing.info.copy(
                             count = info.count,
                             isCraftable = info.isCraftable,
                             componentsPatch = info.componentsPatch,
                         )
-                    )
+                    ))
                     changedSerials.add(existing.serial)
                     changed = true
                 }
@@ -437,12 +461,15 @@ class NetworkInventoryCache(
         // Fast path so 500 Monitors × every-20-ticks polling for exact ids stays
         // O(1)-ish per query. With component-aware keying we sum across every
         // variant that shares the requested itemId (`minecraft:potion` sums
-        // all five potion buckets). Still O(variants for this item) rather
-        // than O(total entries), so plain-item lookups stay effectively O(1).
+        // all five potion buckets). The [keysByItemId] secondary index gives
+        // us only the variants for this id directly, so plain-item lookups
+        // are effectively O(1) and variant-laden lookups (potions) are
+        // O(variants) instead of O(total cache entries).
         if (isExactItemFilter(filter)) {
+            val variantKeys = keysByItemId[filter] ?: return 0L
             var total = 0L
-            for ((key, entry) in entries) {
-                if (key.itemId == filter) total += entry.info.count
+            for (key in variantKeys) {
+                total += entries[key]?.info?.count ?: 0L
             }
             return total
         }
@@ -517,9 +544,9 @@ class NetworkInventoryCache(
         val existing = entries[key]
         if (existing != null) {
             // Same-key existing entry already has matching components by construction.
-            entries[key] = existing.copy(
+            putEntry(key, existing.copy(
                 info = existing.info.copy(count = existing.info.count + amount)
-            )
+            ))
             changedSerials.add(existing.serial)
         } else {
             val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
@@ -530,7 +557,7 @@ class NetworkInventoryCache(
             val displayStack = net.minecraft.world.item.ItemStack(item).also {
                 it.applyComponents(componentsPatch)
             }
-            entries[key] = SerialEntry(
+            putEntry(key, SerialEntry(
                 serial, ItemInfo(
                     itemId = itemId,
                     name = displayStack.hoverName.string,
@@ -539,7 +566,7 @@ class NetworkInventoryCache(
                     hasData = hasData,
                     componentsPatch = componentsPatch,
                 )
-            )
+            ))
             changedSerials.add(serial)
         }
     }
@@ -594,15 +621,15 @@ class NetworkInventoryCache(
         if (newCount <= 0) {
             if (existing.info.isCraftable) {
                 // Keep as phantom craftable entry with 0 count
-                entries[key] = existing.copy(info = existing.info.copy(count = 0))
+                putEntry(key, existing.copy(info = existing.info.copy(count = 0)))
                 changedSerials.add(existing.serial)
             } else {
-                entries.remove(key)
+                removeEntry(key)
                 removedSerials.add(existing.serial)
                 changedSerials.remove(existing.serial)
             }
         } else {
-            entries[key] = existing.copy(info = existing.info.copy(count = newCount))
+            putEntry(key, existing.copy(info = existing.info.copy(count = newCount)))
             changedSerials.add(existing.serial)
         }
     }

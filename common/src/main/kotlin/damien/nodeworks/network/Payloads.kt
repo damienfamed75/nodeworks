@@ -29,6 +29,21 @@ private fun readBoundedPatch(buf: net.minecraft.network.RegistryFriendlyByteBuf)
     return net.minecraft.core.component.DataComponentPatch.STREAM_CODEC.decode(buf)
 }
 
+/** Mirror of [readBoundedPatch] for payloads whose tail is a full
+ *  client-supplied [net.minecraft.world.item.ItemStack] (which encodes its
+ *  own [net.minecraft.core.component.DataComponentPatch] inline via
+ *  `OPTIONAL_STREAM_CODEC`). Without this, a modified client can attach a
+ *  multi-MB `custom_data` blob to e.g. a Processing Set slot drop and force
+ *  expensive decode/storage work on the server. */
+private fun readBoundedStack(buf: net.minecraft.network.RegistryFriendlyByteBuf): net.minecraft.world.item.ItemStack {
+    if (buf.readableBytes() > MAX_CLIENT_PATCH_BYTES) {
+        throw io.netty.handler.codec.DecoderException(
+            "ItemStack payload exceeds $MAX_CLIENT_PATCH_BYTES byte cap"
+        )
+    }
+    return net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.decode(buf)
+}
+
 data class RunScriptPayload(val terminalPos: BlockPos) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<RunScriptPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "run_script"))
@@ -431,7 +446,7 @@ data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int,
                 val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
                 val cid = buf.readVarInt()
                 val slot = buf.readVarInt()
-                val stack = net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
+                val stack = readBoundedStack(regBuf)
                 SetProcessingApiSlotPayload(cid, slot, stack)
             }
         )

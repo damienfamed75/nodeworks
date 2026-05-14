@@ -336,7 +336,7 @@ object NetworkStorageHelper {
             }
             if (returned > 0L) {
                 val info = PlatformServices.storage.findFirstItemInfo(source) { it == itemId }
-                if (info != null) cache?.onExtracted(info.itemId, info.hasData, returned)
+                if (info != null) cache?.onExtracted(info.itemId, info.hasData, returned, info.componentsPatch)
             }
         }
         return false

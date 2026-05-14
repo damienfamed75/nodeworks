@@ -238,7 +238,9 @@ class ExportChestBlockEntity(
                 if (placed > 0) {
                     val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
                         .getKey(stack.item)?.toString()
-                    if (itemId != null) cache?.onExtracted(itemId, !stack.componentsPatch.isEmpty, placed.toLong())
+                    if (itemId != null) cache?.onExtracted(
+                        itemId, !stack.componentsPatch.isEmpty, placed.toLong(), stack.componentsPatch,
+                    )
                     totalSpace -= placed
                     changed = true
                 }

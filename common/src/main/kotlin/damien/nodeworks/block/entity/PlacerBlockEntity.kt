@@ -237,7 +237,19 @@ class PlacerBlockEntity(
      *  [PlatformServices.fakePlayer.tryPlace] for spawn-protection / claim-mod
      *  / EntityPlaceEvent dispatch. The [pulled] stack carries the variant's
      *  components, refunded as-is on rollback so durability / dye / etc.
-     *  survive a failed place. Returns whether the place succeeded. */
+     *  survive a failed place.
+     *
+     *  Two rejection paths can lose the extracted stack if we don't refund:
+     *  1. [PlatformServices.fakePlayer.tryPlace] rejects upfront (spawn
+     *     protection, claim mods) before invoking either [mutate] or
+     *     [onRollback], so [mutateRan] stays false and we refund post-call.
+     *  2. [mutate] runs (block is placed, [mutateRan] flips true), then
+     *     `EntityPlaceEvent` cancels the placement and [onRollback] fires
+     *     with the world already restored. Unconditionally refunding in
+     *     [onRollback] covers this; the previous `if (!placedOk)` guard
+     *     was inverted so the refund never ran.
+     *
+     *  Returns whether the place succeeded. */
     private fun placeBlockFromStack(
         level: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot,
@@ -247,12 +259,12 @@ class PlacerBlockEntity(
         val target = targetPos
         val newState = blockItem.block.defaultBlockState()
         val placedAgainst = level.getBlockState(worldPosition)
-        var placedOk = false
-        return PlatformServices.fakePlayer.tryPlace(
+        var mutateRan = false
+        val ok = PlatformServices.fakePlayer.tryPlace(
             level, target, placedAgainst, ownerUuid,
             mutate = {
                 level.setBlock(target, newState, Block.UPDATE_ALL)
-                placedOk = true
+                mutateRan = true
                 val soundType = newState.soundType
                 level.playSound(
                     null, target,
@@ -264,11 +276,13 @@ class PlacerBlockEntity(
                 true
             },
             onRollback = {
-                if (!placedOk) {
-                    NetworkStorageHelper.insertItemStack(level, snapshot, pulled.copy())
-                }
+                NetworkStorageHelper.insertItemStack(level, snapshot, pulled.copy())
             },
         )
+        if (!ok && !mutateRan) {
+            NetworkStorageHelper.insertItemStack(level, snapshot, pulled.copy())
+        }
+        return ok
     }
 
     private fun isChannelMatching(card: damien.nodeworks.network.CardSnapshot): Boolean =

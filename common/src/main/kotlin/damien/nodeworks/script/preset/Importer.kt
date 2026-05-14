@@ -388,7 +388,7 @@ class ImporterBuilder(
                 )
                 totalMoved += moved
                 remaining -= moved
-                if (moved > 0L) cache?.onExtracted(info.itemId, info.hasData, moved)
+                if (moved > 0L) cache?.onExtracted(info.itemId, info.hasData, moved, info.componentsPatch)
             }
         }
         return totalMoved

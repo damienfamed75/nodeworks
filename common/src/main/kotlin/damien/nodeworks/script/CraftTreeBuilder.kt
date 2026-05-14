@@ -80,7 +80,7 @@ object CraftTreeBuilder {
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         depth: Int = 0,
-        visited: MutableSet<String> = mutableSetOf(),
+        visited: MutableSet<damien.nodeworks.script.BufferKey.Key> = mutableSetOf(),
         reserved: MutableMap<String, Int> = mutableMapOf(),
         /** Component patch of the top-level requested variant. Empty for
          *  plain crafts (the common case). Used by the recipe lookup so
@@ -100,7 +100,7 @@ object CraftTreeBuilder {
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         depth: Int,
-        visited: MutableSet<String>,
+        visited: MutableSet<damien.nodeworks.script.BufferKey.Key>,
         reserved: MutableMap<String, Int>,
         componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ): CraftTreeNode {
@@ -113,11 +113,17 @@ object CraftTreeBuilder {
         val reservedAmount = reserved[itemId] ?: 0
         val availableFromStorage = maxOf(0, inStorageTotal - reservedAmount)
 
-        // Prevent infinite loops for circular recipes
-        if (itemId in visited) {
+        // Prevent infinite loops for circular recipes. Key by (itemId,
+        // componentsHash) so a potion-processing chain where one variant
+        // crafts another (Strength <- Awkward) isn't flagged circular just
+        // because they share `minecraft:potion`.
+        val variantKey = damien.nodeworks.script.BufferKey.Key(
+            itemId, damien.nodeworks.script.BufferKey.componentsHash(componentsPatch),
+        )
+        if (variantKey in visited) {
             return CraftTreeNode(itemId, itemName, count, "storage", "", "circular", availableFromStorage, emptyList(), componentsPatch = componentsPatch)
         }
-        visited.add(itemId)
+        visited.add(variantKey)
 
         // 1. Try Instruction Set (3x3 crafting)
         val instructionMatch = snapshot.findInstructionSet(itemId)
@@ -150,7 +156,7 @@ object CraftTreeBuilder {
                 resolveIngredient(ingId, ingCount * batches, level, snapshot, depth, visited, reserved)
             }
 
-            visited.remove(itemId)
+            visited.remove(variantKey)
             return CraftTreeNode(
                 itemId, itemName, actualCount, "craft_template", alias, "", availableFromStorage, children,
                 resolvedRecipe = if (swapped) concreteRecipe else null,
@@ -225,7 +231,7 @@ object CraftTreeBuilder {
                 else matchingOutput?.stack?.componentsPatch ?: net.minecraft.core.component.DataComponentPatch.EMPTY
             val rootName = if (componentsPatch.size() > 0) itemName else getItemName(itemId, rootPatch)
             val source = if (hasHandler) "process_template" else "process_no_handler"
-            visited.remove(itemId)
+            visited.remove(variantKey)
             return CraftTreeNode(
                 itemId, rootName, actualCount, source, api.name, resolvedBy, availableFromStorage, children,
                 componentsPatch = rootPatch,
@@ -235,7 +241,7 @@ object CraftTreeBuilder {
         // 3. Fall back to storage, but only for the portion that isn't already reserved
         if (availableFromStorage >= count) {
             reserved[itemId] = reservedAmount + count
-            visited.remove(itemId)
+            visited.remove(variantKey)
             return CraftTreeNode(
                 itemId, itemName, count, "storage", "", "storage", availableFromStorage, emptyList(),
                 componentsPatch = componentsPatch,
@@ -243,7 +249,7 @@ object CraftTreeBuilder {
         }
 
         // 4. No recipe and no (unreserved) storage, genuinely missing
-        visited.remove(itemId)
+        visited.remove(variantKey)
         return CraftTreeNode(
             itemId, itemName, count, "missing", "", "", availableFromStorage, emptyList(),
             componentsPatch = componentsPatch,
@@ -261,7 +267,7 @@ object CraftTreeBuilder {
         level: ServerLevel,
         snapshot: NetworkSnapshot,
         depth: Int,
-        visited: MutableSet<String>,
+        visited: MutableSet<damien.nodeworks.script.BufferKey.Key>,
         reserved: MutableMap<String, Int>,
         /** Component patch the ingredient declares. Empty = match any variant
          *  by itemId only (the plain-recipe path).

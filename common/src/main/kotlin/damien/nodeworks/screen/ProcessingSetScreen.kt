@@ -227,10 +227,16 @@ class ProcessingSetScreen(
             FUZZY_ICON_SIZE, FUZZY_ICON_SIZE,
         )
         if (fuzzyHover) {
+            // Fuzzy currently only differentiates the recipe identity
+            // (RecipeId.of mixes the flag into the canonical hash so a
+            // "fuzzy" recipe is distinct from its strict twin). Runtime
+            // ingredient matching is still variant-exact; widening that
+            // is tracked as a follow-up.
             queueTooltip(
                 mouseX, mouseY,
                 "Fuzzy: ${if (menu.fuzzy) "On" else "Off"}",
-                "Accept any component variant of each ingredient.",
+                "Marks this recipe as a separate variant (different recipe id).",
+                "Runtime matching is still strict per ingredient.",
                 "Click to toggle.",
             )
         }
