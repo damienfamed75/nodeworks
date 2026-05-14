@@ -448,18 +448,41 @@ class InventoryTerminalMenu(
             if (!slot.hasItem()) return ItemStack.EMPTY
             // Snapshot pattern BEFORE onTake consumes ingredients
             if (autoPull) autoPullPattern = snapshotCraftPattern()
-            val result = slot.item.copy()
-            if (!playerInventory.add(result.copy())) return ItemStack.EMPTY
-            slot.onTake(player, result)
+            val firstResult = slot.item.copy()
+            // Server-side: loop crafts off the existing grid contents until
+            // the recipe stops matching (grid depleted, pattern broken by
+            // remaining items like buckets, etc.) or the player inventory
+            // can't accept more output. The 4096 safety bound covers a full
+            // 9-input × 64-per-stack grid even for recipes that yield a
+            // small count per craft. Client-side does a single iteration so
+            // vanilla's QUICK_MOVE while-loop sees the cleared slot and
+            // exits; the server's authoritative state syncs back.
+            if (serverLevel != null) {
+                var safety = 0
+                while (slot.hasItem() && safety < 4096) {
+                    safety++
+                    val nextResult = slot.item.copy()
+                    if (!playerInventory.add(nextResult.copy())) break
+                    slot.onTake(player, nextResult)
+                    // slot.onTake consumes one of each grid slot, triggering
+                    // slotsChanged which re-assembles the recipe and writes
+                    // the next result (or EMPTY if no match). Next iteration
+                    // observes the updated slot.
+                }
+            } else {
+                if (!playerInventory.add(firstResult.copy())) return ItemStack.EMPTY
+                slot.onTake(player, firstResult)
+            }
             // Clear the live result stack so vanilla's QUICK_MOVE loop
-            // terminates client-side after one iteration. Our [slotsChanged]
-            // is server-gated, so without this the client's prediction
-            // can't see the slot empty and re-enters quickMoveStack until
-            // it fills the player inventory with a phantom stack.
+            // terminates after this one (potentially batched) iteration.
+            // Our [slotsChanged] is server-gated for recipe re-assembly, so
+            // without this the client's prediction can't see the slot empty
+            // and re-enters quickMoveStack until it fills the player
+            // inventory with a phantom stack.
             slot.set(ItemStack.EMPTY)
             // Refill from network inline so the server's QUICK_MOVE loop
             // can chain crafts off the player's network stock instead of
-            // capping at one craft per click. The refill triggers
+            // capping at one batch per click. The refill triggers
             // [slotsChanged] which repopulates [resultContainer], the loop
             // then sees a fresh result and continues. Client-side this is
             // a no-op (server-only network access), so the prediction
@@ -467,7 +490,7 @@ class InventoryTerminalMenu(
             if (autoPull) {
                 autoPullRefill()
             }
-            return result
+            return firstResult
         }
         // Crafting input slots: move back to player inventory
         if (slotIndex in CRAFT_INPUT_START until CRAFT_OUTPUT_SLOT) {
