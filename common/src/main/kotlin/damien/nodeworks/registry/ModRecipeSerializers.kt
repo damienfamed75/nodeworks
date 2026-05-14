@@ -2,6 +2,7 @@ package damien.nodeworks.registry
 
 import damien.nodeworks.recipe.CoveredPipeRecipe
 import damien.nodeworks.recipe.SoulSandInfusionRecipe
+import damien.nodeworks.recipe.WipeConfigRecipe
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
@@ -30,6 +31,14 @@ object ModRecipeSerializers {
     lateinit var COVERED_PIPE_CRAFTING: RecipeSerializer<CoveredPipeRecipe>
         private set
 
+    /** Wipes saved configuration off a card / set / terminal. One serializer,
+     *  one JSON per supported item, each JSON declares the target via the
+     *  `item` field. Matches only when the stack carries a non-null
+     *  CUSTOM_DATA or BLOCK_ENTITY_DATA component, so blank items don't
+     *  show a useless self-recipe in JEI. */
+    lateinit var WIPE_CONFIG: RecipeSerializer<WipeConfigRecipe>
+        private set
+
     fun initialize() {
         SOUL_SAND_INFUSION = register(
             "soul_sand_infusion",
@@ -38,6 +47,10 @@ object ModRecipeSerializers {
         COVERED_PIPE_CRAFTING = register(
             "covered_pipe_crafting",
             RecipeSerializer(CoveredPipeRecipe.CODEC, CoveredPipeRecipe.STREAM_CODEC),
+        )
+        WIPE_CONFIG = register(
+            "wipe_config",
+            RecipeSerializer(WipeConfigRecipe.CODEC, WipeConfigRecipe.STREAM_CODEC),
         )
     }
 
