@@ -31,6 +31,7 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
     override val cardType: String = "storage"
 
     override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
+        tryResetConfig(level, player, hand)?.let { return it }
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val serverPlayer = player as ServerPlayer

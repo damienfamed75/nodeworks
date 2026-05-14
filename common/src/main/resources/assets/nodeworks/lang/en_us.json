@@ -20,6 +20,7 @@
   "message.nodeworks.not_focus_node": "Right-click a Focus Node to start a link, then right-click another Focus Node to finish.",
   "message.nodeworks.connected": "Linked.",
   "message.nodeworks.disconnected": "Unlinked.",
+  "message.nodeworks.card_reset": "Cleared.",
   "item.nodeworks.diagnostic_tool": "Diagnostic Tool",
   "container.nodeworks.diagnostic": "Network Diagnostic",
   "item.nodeworks.card_programmer": "Card Programmer",

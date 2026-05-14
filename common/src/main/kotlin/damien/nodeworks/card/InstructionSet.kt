@@ -32,6 +32,7 @@ import java.util.function.Consumer
 class InstructionSet(properties: Properties) : Item(properties) {
 
     override fun use(level: Level, player: Player, hand: InteractionHand): InteractionResult {
+        tryResetConfig(level, player, hand)?.let { return it }
         if (level.isClientSide) return InteractionResult.SUCCESS
 
         val stack = player.getItemInHand(hand)

@@ -31,6 +31,7 @@ class IOCard(properties: Properties) : NodeCard(properties) {
  * boilerplate.
  */
 internal fun openCardSettings(level: Level, player: Player, hand: InteractionHand): InteractionResult {
+    tryResetConfig(level, player, hand)?.let { return it }
     if (level.isClientSide) return InteractionResult.SUCCESS
     val serverPlayer = player as ServerPlayer
     val stack = serverPlayer.getItemInHand(hand)
