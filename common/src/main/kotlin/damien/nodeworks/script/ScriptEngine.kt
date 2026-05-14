@@ -1506,7 +1506,26 @@ class ScriptEngine(
                 if (inserted == 0L) break
             }
             if (totalInserted < extracted) {
-                bufSrc.returnUnused(extracted - totalInserted)
+                // Partial commit. `atomic=false` must mean "nothing moved",
+                // so pull placed items back out and return all to the buffer.
+                if (totalInserted > 0L) {
+                    val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                        .getKey(capturedTemplate.item).toString()
+                    val pulledBack = NetworkStorageHelper.extractVariantAcrossNetwork(
+                        level, snapshot, itemId, capturedTemplate.componentsPatch,
+                        totalInserted, channel,
+                    )
+                    val recovered = pulledBack.sumOf { it.count.toLong() }
+                    inventoryCache?.let { c ->
+                        if (recovered > 0L) c.onExtracted(
+                            itemId, !capturedTemplate.componentsPatch.isEmpty, recovered,
+                            capturedTemplate.componentsPatch,
+                        )
+                    }
+                    bufSrc.returnUnused(extracted - totalInserted + recovered)
+                } else {
+                    bufSrc.returnUnused(extracted)
+                }
                 return LuaValue.FALSE
             }
             budget.noteItemsMoved(tick, totalInserted)

@@ -33,13 +33,13 @@ data class CraftPlan(
 
     fun op(id: Int): Operation? = byId[id]
 
-    fun saveToNBT(tag: CompoundTag) {
+    fun saveToNBT(tag: CompoundTag, registries: net.minecraft.core.HolderLookup.Provider) {
         tag.putString("rootItemId", rootItemId)
         tag.putLong("rootCount", rootCount)
         val opsTag = ListTag()
         for (op in ops) {
             val o = CompoundTag()
-            op.saveToNBT(o)
+            op.saveToNBT(o, registries)
             opsTag.add(o)
         }
         tag.put("ops", opsTag)
@@ -55,13 +55,13 @@ data class CraftPlan(
     }
 
     companion object {
-        fun loadFromNBT(tag: CompoundTag): CraftPlan? {
+        fun loadFromNBT(tag: CompoundTag, registries: net.minecraft.core.HolderLookup.Provider): CraftPlan? {
             val rootItemId = tag.getStringOr("rootItemId", "")
             if (rootItemId.isEmpty()) return null
             val rootCount = tag.getLongOr("rootCount", 0L)
             val opsList = tag.getListOrEmpty("ops")
             val ops = (0 until opsList.size).mapNotNull { i ->
-                opsList.getCompound(i).orElse(null)?.let { Operation.loadFromNBT(it) }
+                opsList.getCompound(i).orElse(null)?.let { Operation.loadFromNBT(it, registries) }
             }
             val terms = tag.getIntArray("terminals").orElse(IntArray(0)).toSet()
             val submitter = tag.getStringOr("submitter", "").takeIf { it.isNotEmpty() }?.let {

@@ -226,8 +226,10 @@ class CraftingCoreBlockEntity(
     @Transient
     var craftTreeSnapshot: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode? = null
 
-    /** Expected outputs per operation: list of (itemId, count). Long-safe. */
-    var pendingOutputs: List<Pair<String, Long>> = emptyList()
+    /** Expected outputs per operation: (template stack, count). The stack
+     *  carries variant components so a resumed poll matches the exact
+     *  output variant, not any item sharing the id. */
+    var pendingOutputs: List<Pair<net.minecraft.world.item.ItemStack, Long>> = emptyList()
         private set
 
     /** Number of async processing operations still pending. */
@@ -255,7 +257,10 @@ class CraftingCoreBlockEntity(
      * Called when job:pull() registers an async poll. Captures the pull target
      * coordinates and increments the pending count.
      */
-    fun addPendingOp(outputs: List<Pair<String, Long>>, pullTargets: List<Pair<BlockPos, net.minecraft.core.Direction>>) {
+    fun addPendingOp(
+        outputs: List<Pair<net.minecraft.world.item.ItemStack, Long>>,
+        pullTargets: List<Pair<BlockPos, net.minecraft.core.Direction>>,
+    ) {
         if (pendingOutputs.isEmpty()) pendingOutputs = outputs
         if (pendingPullTargets.isEmpty() && pullTargets.isNotEmpty()) pendingPullTargets = pullTargets
         pendingCount++
@@ -272,10 +277,13 @@ class CraftingCoreBlockEntity(
     /** Per-op resume state, captured when a Process op's handler registers a pull, used
      *  on world reload to restart polling without re-invoking the handler. The handler's
      *  side effects (items placed in machines) survive the reload as actual block state,
-     *  we just need to keep watching for the outputs to arrive. */
+     *  we just need to keep watching for the outputs to arrive.
+     *
+     *  [outputs] pairs a template [ItemStack] (carrying variant components)
+     *  with the remaining count so a resumed poll matches the exact variant. */
     data class OpResumeInfo(
         val processingApiName: String,
-        val outputs: List<Pair<String, Long>>,
+        val outputs: List<Pair<net.minecraft.world.item.ItemStack, Long>>,
         val pullTargets: List<Pair<BlockPos, net.minecraft.core.Direction>>
     )
 
@@ -731,16 +739,12 @@ class CraftingCoreBlockEntity(
             }
         }
 
-        // Synthetic API info, only outputs matter for polling.
-        // ProcessingApiInfo.outputs is now a List<RecipeIngredient>. The
-        // resume-from-disk synthetic API only needs item ids + counts to drive
-        // the pending poll loop, so we build component-empty ingredients from
-        // each (itemId, Long) pair, capping the count at Int.MAX_VALUE.
-        val syntheticOutputs = pendingOutputs.mapNotNull { (id, ct) ->
-            val identifier = net.minecraft.resources.Identifier.tryParse(id) ?: return@mapNotNull null
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return@mapNotNull null
+        // Synthetic API, only outputs drive the poll. Template stacks carry
+        // variant components so the poll matches the exact output variant.
+        val syntheticOutputs = pendingOutputs.mapNotNull { (template, ct) ->
+            if (template.isEmpty) return@mapNotNull null
             damien.nodeworks.script.RecipeIngredient(
-                net.minecraft.world.item.ItemStack(item),
+                template.copyWithCount(1),
                 ct.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
             )
         }
@@ -872,9 +876,10 @@ class CraftingCoreBlockEntity(
         bufferState.saveToNBT(bufferTag, level!!.registryAccess())
         output.store("bufferState", CompoundTag.CODEC, bufferTag)
 
-        // Scheduler state, same pattern.
+        // Scheduler state. Registries let a Pull op's component patch persist
+        // by registry id rather than the session-unstable in-memory hash.
         val schedulerTag = CompoundTag()
-        scheduler.saveToNBT(schedulerTag)
+        scheduler.saveToNBT(schedulerTag, level!!.registryAccess())
         output.store("scheduler", CompoundTag.CODEC, schedulerTag)
 
         // Original craft request + pending job metadata (server-only, stripped in getUpdateTag).
@@ -885,9 +890,11 @@ class CraftingCoreBlockEntity(
         if (pendingCount > 0) {
             output.putInt("pendingCount", pendingCount)
             val outsList = output.childrenList("pendingOutputs")
-            for ((id, ct) in pendingOutputs) {
+            for ((template, ct) in pendingOutputs) {
                 val child = outsList.addChild()
-                child.putString("id", id)
+                // Encode the template stack so the output resumes against its
+                // exact variant. Legacy "id"-string saves still read on load.
+                child.store("stack", net.minecraft.world.item.ItemStack.OPTIONAL_CODEC, template)
                 child.putLong("ct", ct)
             }
             val targetsList = output.childrenList("pendingPullTargets")
@@ -907,9 +914,9 @@ class CraftingCoreBlockEntity(
                 c.putInt("op", opId)
                 c.putString("api", info.processingApiName)
                 val outsList = c.childrenList("outputs")
-                for ((id, ct) in info.outputs) {
+                for ((template, ct) in info.outputs) {
                     val o = outsList.addChild()
-                    o.putString("id", id)
+                    o.store("stack", net.minecraft.world.item.ItemStack.OPTIONAL_CODEC, template)
                     o.putLong("ct", ct)
                 }
                 val tgtsList = c.childrenList("targets")
@@ -955,8 +962,9 @@ class CraftingCoreBlockEntity(
             }
         }
 
-        // Scheduler state, optional for pre-Phase-2 saves.
-        input.read("scheduler", CompoundTag.CODEC).ifPresent { scheduler.loadFromNBT(it) }
+        // Scheduler state, optional for pre-Phase-2 saves. [registryAccess]
+        // decodes Pull-op component patches into this session's hash space.
+        input.read("scheduler", CompoundTag.CODEC).ifPresent { scheduler.loadFromNBT(it, registryAccess) }
 
         // Load original craft request + pending job metadata
         originalCraftId = input.getStringOr("originalCraftId", "")
@@ -967,12 +975,22 @@ class CraftingCoreBlockEntity(
         pendingCount = input.getIntOr("pendingCount", 0)
         pendingOutputs = if (pendingCount > 0) {
             val list = input.childrenListOrEmpty("pendingOutputs")
-            val out = ArrayList<Pair<String, Long>>()
+            val out = ArrayList<Pair<net.minecraft.world.item.ItemStack, Long>>()
             for (child in list) {
-                val id = child.getStringOr("id", "")
-                if (id.isEmpty()) continue
                 val ct = child.getLongOr("ct", 0L)
-                out += id to ct
+                // Encoded stack first; legacy "id" string for old saves.
+                val stack = child.read("stack", net.minecraft.world.item.ItemStack.OPTIONAL_CODEC)
+                    .orElse(null)
+                    ?.takeIf { !it.isEmpty }
+                    ?: run {
+                        val id = child.getStringOr("id", "")
+                        if (id.isEmpty()) return@run null
+                        net.minecraft.resources.Identifier.tryParse(id)
+                            ?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
+                            ?.let { net.minecraft.world.item.ItemStack(it) }
+                    }
+                    ?: continue
+                out += stack to ct
             }
             out
         } else emptyList()
@@ -996,11 +1014,21 @@ class CraftingCoreBlockEntity(
             val opId = c.getIntOr("op", -1)
             if (opId < 0) continue
             val api = c.getStringOr("api", "")
-            val outputs = ArrayList<Pair<String, Long>>()
+            val outputs = ArrayList<Pair<net.minecraft.world.item.ItemStack, Long>>()
             for (o in c.childrenListOrEmpty("outputs")) {
-                val id = o.getStringOr("id", "")
-                if (id.isEmpty()) continue
-                outputs += id to o.getLongOr("ct", 0L)
+                val ct = o.getLongOr("ct", 0L)
+                val stack = o.read("stack", net.minecraft.world.item.ItemStack.OPTIONAL_CODEC)
+                    .orElse(null)
+                    ?.takeIf { !it.isEmpty }
+                    ?: run {
+                        val id = o.getStringOr("id", "")
+                        if (id.isEmpty()) return@run null
+                        net.minecraft.resources.Identifier.tryParse(id)
+                            ?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
+                            ?.let { net.minecraft.world.item.ItemStack(it) }
+                    }
+                    ?: continue
+                outputs += stack to ct
             }
             val targets = ArrayList<Pair<BlockPos, net.minecraft.core.Direction>>()
             for (t in c.childrenListOrEmpty("targets")) {

@@ -141,6 +141,35 @@ interface StorageService {
         return moveItems(source, dest, { filter(it, false) }, maxCount)
     }
 
+    /** Move items with a full-stack filter. The [filter] sees each candidate
+     *  slot's [ItemStack], so callers can match on component-bearing identity.
+     *  Use this instead of [moveItemsVariant] when routing a specific variant:
+     *  the `(itemId, hasData)` predicate there can't tell a Strength Potion
+     *  from a Healing Potion.
+     *
+     *  Loaders should override with a slot-walking variant; the default
+     *  extract-then-insert path re-inserts rejects back into [source]. */
+    fun moveItemsByStackPredicate(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+    ): Long {
+        if (maxCount <= 0L) return 0L
+        val extracted = extractStacksByPredicate(source, filter, maxCount)
+        var moved = 0L
+        for (stack in extracted) {
+            if (stack.isEmpty) continue
+            val inserted = insertItemStack(dest, stack)
+            moved += inserted
+            // Keep the move loss-free: return what dest rejected to source.
+            if (inserted < stack.count) {
+                insertItemStack(source, stack.copyWithCount(stack.count - inserted))
+            }
+        }
+        return moved
+    }
+
     /** Count items matching filter in a storage. */
     fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long
 

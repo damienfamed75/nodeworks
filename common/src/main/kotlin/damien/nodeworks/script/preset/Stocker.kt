@@ -318,15 +318,19 @@ class StockerBuilder(
             if (remaining <= 0L) break
             if (!sourceChannel.matches(poolCard.channel)) continue
             val storage = NetworkStorageHelper.getStorage(level, poolCard) ?: continue
-            // Per (itemId, hasData) move so the cache gets a paired onExtracted for
-            // each item that leaves the pool. See [Importer.movePoolToCard] for the
-            // full rationale, same orphan-entry leak applies here.
+            // Per-variant move so the cache gets a paired onExtracted for
+            // each item leaving the pool (see [Importer.movePoolToCard]) and
+            // two variants of one itemId aren't conflated.
             val infos = PlatformServices.storage.findAllItemInfo(storage) { filterPred(it) }
             for (info in infos) {
                 if (remaining <= 0L) break
-                val moved = PlatformServices.storage.moveItemsVariant(
+                val wantHash = damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch)
+                val moved = PlatformServices.storage.moveItemsByStackPredicate(
                     storage, destStorage,
-                    { id, hasData -> id == info.itemId && hasData == info.hasData },
+                    { stack ->
+                        val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                        sid == info.itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+                    },
                     remaining,
                 )
                 totalMoved += moved

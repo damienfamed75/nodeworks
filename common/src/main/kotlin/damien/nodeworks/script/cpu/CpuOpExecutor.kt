@@ -65,7 +65,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val perBatchInputs: List<Pair<String, Long>>,
         /** Output produced per batch (aggregated from api.outputs). */
         val outputItemId: String,
-        val outputPerBatch: Long
+        val outputPerBatch: Long,
+        /** Real number of recipe-batches the request decomposes into. Equals
+         *  [totalBatches] for serial APIs; for parallel APIs [totalBatches]
+         *  is 1 while [batches] still carries the true count. Scale
+         *  bulk-output overrides by this, not [totalBatches]. */
+        val batches: Long,
     )
 
     /** Cumulative handler retries per op, survives across [processState] entries being
@@ -386,7 +391,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             // Serial: one handler invocation per batch. Each invocation receives the
             // api's per-slot inputs exactly as declared (preserves order + duplicates).
             val perBatchInputs = apiMatch.api.inputs.map { it.itemId to it.count.toLong() }
-            BatchProgress(batches, 0L, perBatchInputs, outputItemId, outputPerBatch)
+            BatchProgress(batches, 0L, perBatchInputs, outputItemId, outputPerBatch, batches)
         } else {
             // Parallel: one handler invocation handles the whole demand. Scale each
             // slot's declared count by the number of batches needed to satisfy the
@@ -398,6 +403,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 perBatchInputs = perBatchInputs,
                 outputItemId = outputItemId,
                 outputPerBatch = outputTotal,
+                batches = batches,
             )
         }
         processBatchProgress[op.id] = progress
@@ -503,15 +509,13 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
 
         // For parallel APIs, override the job's expected output set with the
-        // full recipe outputs scaled by total batches so `job:pull` waits for
-        // every output the recipe declares (not just the one the player
-        // requested). Pairs carry the full RecipeIngredient (with the
-        // components-bearing stack) so tryExtract can filter the output
-        // card for the specific variant rather than any first-found item
-        // sharing the itemId.
+        // full recipe outputs scaled by [progress.batches] (the real batch
+        // count, not [progress.totalBatches] which is 1 for parallel). Pairs
+        // carry the components-bearing RecipeIngredient so tryExtract filters
+        // the output card by variant.
         val bulkOutputOverride: List<Pair<damien.nodeworks.script.RecipeIngredient, Long>>? = if (!apiMatch.api.serial) {
             apiMatch.api.outputs.map { ingr ->
-                ingr to (ingr.count.toLong() * progress.totalBatches)
+                ingr to (ingr.count.toLong() * progress.batches)
             }
         } else null
         val job = ProcessingJob(apiMatch.api, cpu, lvl, scheduler, pending, bulkOutputOverride, op.id)
@@ -723,13 +727,11 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return CraftScheduler.OpResult.InProgress
         }
 
-        // Same as the Lua-handler path: feed the BlockProcessingHandler the
-        // full recipe outputs (scaled by total batches), not just the
-        // requested output. Pairs carry the components-bearing recipe
-        // ingredient so the output card extraction filters by variant.
+        // Same scaling as the Lua-handler path: full recipe outputs scaled by
+        // [progress.batches], not [progress.totalBatches].
         val bulkOutputOverride: List<Pair<damien.nodeworks.script.RecipeIngredient, Long>>? = if (!apiMatch.api.serial) {
             apiMatch.api.outputs.map { ingr ->
-                ingr to (ingr.count.toLong() * progress.totalBatches)
+                ingr to (ingr.count.toLong() * progress.batches)
             }
         } else null
 
@@ -804,14 +806,18 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     ): CraftScheduler.OpResult {
         // BatchProgress as a single-batch, no-input bulk op (items already in machine).
         processBatchProgress.getOrPut(op.id) {
-            val outputTotal = info.outputs.firstOrNull { it.first == outputItemId }?.second
-                ?: op.outputs.first().second
+            val outputTotal = info.outputs.firstOrNull { (template, _) ->
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(template.item)?.toString() == outputItemId
+            }?.second ?: op.outputs.first().second
             BatchProgress(
                 totalBatches = 1L,
                 batchesDone = 0L,
                 perBatchInputs = emptyList(),
                 outputItemId = outputItemId,
-                outputPerBatch = outputTotal
+                outputPerBatch = outputTotal,
+                // Resume replays one bulk poll, no re-invocation, so the
+                // batch count is informational here.
+                batches = 1L,
             )
         }
         val scheduler = damien.nodeworks.script.ResumeScheduler.scheduler
@@ -819,14 +825,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val syntheticApi = damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo(
             name = info.processingApiName,
             inputs = emptyList(),
-            // resume-on-load synthetic API only needs item ids and counts to
-            // drive the pending poll. Build component-empty ingredient stacks
-            // so the constructor's new RecipeIngredient shape is satisfied.
-            outputs = info.outputs.mapNotNull { (id, count) ->
-                val identifier = net.minecraft.resources.Identifier.tryParse(id) ?: return@mapNotNull null
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return@mapNotNull null
+            // Persisted template stacks carry variant components, so the
+            // poll matches the exact output variant.
+            outputs = info.outputs.mapNotNull { (template, count) ->
+                if (template.isEmpty) return@mapNotNull null
                 damien.nodeworks.script.RecipeIngredient(
-                    net.minecraft.world.item.ItemStack(item),
+                    template.copyWithCount(1),
                     count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 )
             },

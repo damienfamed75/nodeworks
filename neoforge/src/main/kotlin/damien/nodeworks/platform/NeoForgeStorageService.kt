@@ -79,6 +79,40 @@ class NeoForgeStorageService : StorageService {
         return total
     }
 
+    override fun moveItemsByStackPredicate(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+    ): Long {
+        if (maxCount <= 0L) return 0L
+        val src = (source as NeoForgeItemStorageHandle).handler
+        val dst = (dest as NeoForgeItemStorageHandle).handler
+        var total = 0L
+        var remaining = maxCount
+
+        for (slot in 0 until src.slots) {
+            if (remaining <= 0) break
+            val stack = src.getStackInSlot(slot)
+            if (stack.isEmpty) continue
+            // Predicate sees the full slot stack for component-aware matching.
+            if (!filter(stack)) continue
+
+            val toMove = minOf(remaining, stack.count.toLong()).toInt()
+            val extracted = src.extractItem(slot, toMove, true) // simulate
+            if (extracted.isEmpty) continue
+
+            val leftover = ItemHandlerHelper.insertItemStacked(dst, extracted.copy(), false)
+            val inserted = extracted.count - leftover.count
+            if (inserted > 0) {
+                src.extractItem(slot, inserted, false) // actually extract
+                total += inserted
+                remaining -= inserted
+            }
+        }
+        return total
+    }
+
     override fun countItems(storage: ItemStorageHandle, filter: (String) -> Boolean): Long {
         val handler = (storage as NeoForgeItemStorageHandle).handler
         var total = 0L

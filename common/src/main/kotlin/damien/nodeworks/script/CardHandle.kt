@@ -313,20 +313,44 @@ class CardHandle private constructor(
         }
 
         if (atomic) {
-            // Pre-check atomically whether destination can accept everything. If so,
-            // extract from buffer then insert via the variant-bearing stack. The
-            // platform's atomic primitive is bare-item only, so we go through
-            // insertItemStack instead and roll back if it under-delivers.
+            // Simulate the FULL requested amount before touching the buffer,
+            // so an under-capacity destination leaves both sides untouched.
+            val maxStack = item.getDefaultMaxStackSize().toLong()
+            val capacity = try {
+                PlatformServices.storage.simulateInsertItem(destStorage, item, requested)
+            } catch (_: Exception) { 0L }
+            if (capacity < requested) return 0L
+
             val extracted = bufSrc.extract(requested)
             if (extracted < requested) {
                 bufSrc.returnUnused(extracted)
                 return 0L
             }
-            val stack = templateFn(extracted.coerceAtMost(item.getDefaultMaxStackSize().toLong()).toInt())
-            val inserted = PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
+
+            var inserted = 0L
+            var remaining = extracted
+            while (remaining > 0L) {
+                val batch = minOf(remaining, maxStack)
+                val stack = templateFn(batch.toInt())
+                val put = PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
+                inserted += put
+                remaining -= put
+                if (put < batch) break  // sim/commit divergence, bail to rollback
+            }
+
             if (inserted < extracted) {
-                bufSrc.returnUnused(extracted - inserted)
-                return inserted
+                // Sim/commit divergence (modded storage, concurrent mutation).
+                // Pull the inserted variant back out so the move stays atomic.
+                val pulledBack = try {
+                    PlatformServices.storage.extractStacksByPredicate(
+                        destStorage,
+                        { st -> net.minecraft.world.item.ItemStack.isSameItemSameComponents(st, capturedTemplate) },
+                        inserted,
+                    )
+                } catch (_: Exception) { emptyList() }
+                val recovered = pulledBack.sumOf { it.count.toLong() }
+                bufSrc.returnUnused(extracted - inserted + recovered)
+                return 0L
             }
             return extracted
         }

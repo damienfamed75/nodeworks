@@ -601,21 +601,44 @@ object NetworkStorageHelper {
     ): Long {
         var totalMoved = 0L
         var remaining = maxCount
-        val processedItems = mutableSetOf<String>()
+
+        // Keyed by full variant identity so two potion variants of one itemId
+        // are processed independently.
+        val processedVariants = mutableSetOf<damien.nodeworks.script.BufferKey.Key>()
 
         while (remaining > 0) {
             val itemInfo = PlatformServices.storage.findFirstItemInfo(source) {
-                CardHandle.matchesFilter(it, filter) && it !in processedItems
+                CardHandle.matchesFilter(it, filter)
+            }?.takeIf {
+                damien.nodeworks.script.BufferKey.Key(
+                    it.itemId, damien.nodeworks.script.BufferKey.componentsHash(it.componentsPatch),
+                ) !in processedVariants
+            } ?: run {
+                // findFirstItemInfo only returns the first match; scan for the
+                // next unprocessed variant once that one's done.
+                PlatformServices.storage.findAllItemInfo(source) { CardHandle.matchesFilter(it, filter) }
+                    .firstOrNull {
+                        damien.nodeworks.script.BufferKey.Key(
+                            it.itemId, damien.nodeworks.script.BufferKey.componentsHash(it.componentsPatch),
+                        ) !in processedVariants
+                    }
             } ?: break
             val itemId = itemInfo.itemId
             val hasData = itemInfo.hasData
-            val variantKey = "$itemId:$hasData"
+            val componentsPatch = itemInfo.componentsPatch
+            val wantHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
+            val variantKey = damien.nodeworks.script.BufferKey.Key(itemId, wantHash)
 
-            processedItems.add(itemId)
+            processedVariants.add(variantKey)
 
-            val variantFilter: (String, Boolean) -> Boolean = { id, data -> id == itemId && data == hasData }
-            val count = PlatformServices.storage.countItems(source) { it == itemId }
+            // Matches only this exact variant.
+            val variantPred: (net.minecraft.world.item.ItemStack) -> Boolean = { stack ->
+                val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+            }
+            val count = PlatformServices.storage.countStacksByPredicate(source, variantPred)
             val toMove = minOf(remaining, count)
+            if (toMove <= 0L) continue
 
             // 1. Check routes first (precomputed, fast). A route may have multiple candidate
             //    cards (wildcard pattern like `cobblestone_*`), iterate them in order,
@@ -632,18 +655,18 @@ object NetworkStorageHelper {
                     // open storages. Passes the item's components patch so
                     // `[component]` rules narrow to the specific variant.
                     val cap = targetCard.capability as? damien.nodeworks.card.StorageSideCapability
-                    if (cap != null && !cap.acceptsItem(itemId, itemInfo.componentsPatch, registries)) continue
+                    if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
                     val moved = try {
-                        PlatformServices.storage.moveItemsVariant(source, target, variantFilter, routeRemaining)
+                        PlatformServices.storage.moveItemsByStackPredicate(source, target, variantPred, routeRemaining)
                     } catch (_: Exception) { 0L }
-                    if (moved > 0) cache?.onInserted(itemId, hasData, moved, itemInfo.componentsPatch)
+                    if (moved > 0) cache?.onInserted(itemId, hasData, moved, componentsPatch)
                     totalMoved += moved
                     remaining -= moved
                     routeRemaining -= moved
                 }
                 if (routeRemaining > 0L && routeTable != null) {
                     val overflow = routeTable.insertDefault(source, itemId, routeRemaining)
-                    if (overflow > 0) cache?.onInserted(itemId, hasData, overflow, itemInfo.componentsPatch)
+                    if (overflow > 0) cache?.onInserted(itemId, hasData, overflow, componentsPatch)
                     totalMoved += overflow
                     remaining -= overflow
                 }
@@ -654,9 +677,9 @@ object NetworkStorageHelper {
             val callbackTarget = onInsertCallback?.invoke(itemId, toMove)
             if (callbackTarget != null) {
                 val moved = try {
-                    PlatformServices.storage.moveItemsVariant(source, callbackTarget, variantFilter, toMove)
+                    PlatformServices.storage.moveItemsByStackPredicate(source, callbackTarget, variantPred, toMove)
                 } catch (_: Exception) { 0L }
-                if (moved > 0) cache?.onInserted(itemId, hasData, moved, itemInfo.componentsPatch)
+                if (moved > 0) cache?.onInserted(itemId, hasData, moved, componentsPatch)
                 totalMoved += moved
                 remaining -= moved
                 if (moved < toMove) {
@@ -666,7 +689,7 @@ object NetworkStorageHelper {
                     } else {
                         insertItemsDefault(level, snapshot, source, itemId, toMove - moved, cache, channel)
                     }
-                    if (fallbackMoved > 0) cache?.onInserted(itemId, hasData, fallbackMoved, itemInfo.componentsPatch)
+                    if (fallbackMoved > 0) cache?.onInserted(itemId, hasData, fallbackMoved, componentsPatch)
                     totalMoved += fallbackMoved
                     remaining -= fallbackMoved
                 }
@@ -679,7 +702,7 @@ object NetworkStorageHelper {
             } else {
                 insertItemsDefault(level, snapshot, source, itemId, toMove, cache, channel)
             }
-            if (defaultMoved > 0) cache?.onInserted(itemId, hasData, defaultMoved, itemInfo.componentsPatch)
+            if (defaultMoved > 0) cache?.onInserted(itemId, hasData, defaultMoved, componentsPatch)
             totalMoved += defaultMoved
             remaining -= defaultMoved
         }
@@ -688,13 +711,8 @@ object NetworkStorageHelper {
     }
 
     /** Default priority-based routing across ALL storage cards (no route filtering).
-     *
-     *  Enumerates the source's distinct (itemId + componentsPatch) variants
-     *  matching [filter], then applies each card's component-aware acceptance
-     *  rule per variant. Without this enumeration the per-card filter would
-     *  fall back to the itemId-only `acceptsItem(id, hasData)` overload, so
-     *  a card configured to accept only Strength Potions would still
-     *  swallow every potion variant the network produced. */
+     *  Enumerates source variants so each card's component-aware acceptance
+     *  rule is applied per variant, not collapsed by itemId. */
     private fun insertItemsDefault(
         level: ServerLevel,
         snapshot: NetworkSnapshot,
@@ -714,8 +732,12 @@ object NetworkStorageHelper {
             if (remaining <= 0L) break
             val itemId = info.itemId
             val componentsPatch = info.componentsPatch
-            val hasData = info.hasData
-            val variantFilter: (String, Boolean) -> Boolean = { id, data -> id == itemId && data == hasData }
+            val wantHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
+            // Matches only this exact variant.
+            val variantPred: (net.minecraft.world.item.ItemStack) -> Boolean = { stack ->
+                val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+            }
             for (card in getStorageCards(snapshot)) {
                 if (remaining <= 0L) break
                 if (!channel.matches(card.channel)) continue
@@ -723,7 +745,7 @@ object NetworkStorageHelper {
                 if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
                 val destStorage = getStorage(level, card) ?: continue
                 val moved = try {
-                    PlatformServices.storage.moveItemsVariant(source, destStorage, variantFilter, remaining)
+                    PlatformServices.storage.moveItemsByStackPredicate(source, destStorage, variantPred, remaining)
                 } catch (_: Exception) { 0L }
                 totalMoved += moved
                 remaining -= moved

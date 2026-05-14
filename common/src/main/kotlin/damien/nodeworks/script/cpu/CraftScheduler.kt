@@ -300,7 +300,7 @@ class CraftScheduler(
 
     // --- Serialization ---
 
-    fun saveToNBT(tag: CompoundTag) {
+    fun saveToNBT(tag: CompoundTag, registries: net.minecraft.core.HolderLookup.Provider) {
         tag.putString("state", state.name)
         failureReason?.let { tag.putString("failReason", it) }
         val compArr = IntArray(completed.size)
@@ -313,19 +313,19 @@ class CraftScheduler(
         tag.putIntArray("inProgress", progArr)
         plan?.let {
             val planTag = CompoundTag()
-            it.saveToNBT(planTag)
+            it.saveToNBT(planTag, registries)
             tag.put("plan", planTag)
         }
         val bList = ListTag()
         for (p in backlog) {
             val pp = CompoundTag()
-            p.saveToNBT(pp)
+            p.saveToNBT(pp, registries)
             bList.add(pp)
         }
         tag.put("backlog", bList)
     }
 
-    fun loadFromNBT(tag: CompoundTag) {
+    fun loadFromNBT(tag: CompoundTag, registries: net.minecraft.core.HolderLookup.Provider) {
         // 26.1: getList returns Optional<ListTag>, getIntArray returns Optional<int[]>,
         //  getString/getInt/etc. return Optional<T>. The *Or variants cover defaults.
         //  Backward-compat: old format wrote per-thread state under "threads", if that's
@@ -337,7 +337,7 @@ class CraftScheduler(
             failureReason = first.getStringOr("failReason", "").takeIf { it.isNotEmpty() }
             completed.clear()
             first.getIntArray("completed").orElse(IntArray(0)).forEach { completed.add(it) }
-            plan = first.getCompound("plan").orElse(null)?.let { CraftPlan.loadFromNBT(it) }
+            plan = first.getCompound("plan").orElse(null)?.let { CraftPlan.loadFromNBT(it, registries) }
             inProgressIds.clear()
             // Re-derive inProgress flags from the loaded plan (legacy save had no set).
             plan?.ops?.forEach { if (it.inProgress) inProgressIds.add(it.id) }
@@ -348,14 +348,14 @@ class CraftScheduler(
             tag.getIntArray("completed").orElse(IntArray(0)).forEach { completed.add(it) }
             inProgressIds.clear()
             tag.getIntArray("inProgress").orElse(IntArray(0)).forEach { inProgressIds.add(it) }
-            plan = tag.getCompound("plan").orElse(null)?.let { CraftPlan.loadFromNBT(it) }
+            plan = tag.getCompound("plan").orElse(null)?.let { CraftPlan.loadFromNBT(it, registries) }
         }
 
         backlog.clear()
         val bList = tag.getListOrEmpty("backlog")
         for (i in 0 until bList.size) {
             bList.getCompound(i).orElse(null)?.let { c ->
-                CraftPlan.loadFromNBT(c)?.let { backlog.addLast(it) }
+                CraftPlan.loadFromNBT(c, registries)?.let { backlog.addLast(it) }
             }
         }
     }

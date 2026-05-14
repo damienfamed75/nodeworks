@@ -121,11 +121,8 @@ class RouteTable(
 
     /**
      * Insert items using default priority routing, but ONLY into open (unrouted) storages.
-     *
-     * Component-aware: enumerates source variants per (itemId + componentsPatch)
-     * so a card configured to accept Strength Potions only doesn't swallow
-     * every potion variant. See [NetworkStorageHelper.insertItemsDefault]
-     * for the parallel implementation.
+     * Enumerates source variants and moves each per-variant so a card's
+     * filter rules apply to the right variant.
      */
     fun insertDefault(source: ItemStorageHandle, filter: String, maxCount: Long): Long {
         var totalMoved = 0L
@@ -138,15 +135,19 @@ class RouteTable(
             if (remaining <= 0L) break
             val itemId = info.itemId
             val componentsPatch = info.componentsPatch
-            val hasData = info.hasData
-            val variantFilter: (String, Boolean) -> Boolean = { id, data -> id == itemId && data == hasData }
+            val wantHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
+            // Matches only this exact variant.
+            val variantPred: (net.minecraft.world.item.ItemStack) -> Boolean = { stack ->
+                val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+            }
             for (card in openStorageCards) {
                 if (remaining <= 0L) break
                 val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
                 if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
                 val destStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
                 val moved = try {
-                    PlatformServices.storage.moveItemsVariant(source, destStorage, variantFilter, remaining)
+                    PlatformServices.storage.moveItemsByStackPredicate(source, destStorage, variantPred, remaining)
                 } catch (_: Exception) { 0L }
                 totalMoved += moved
                 remaining -= moved

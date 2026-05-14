@@ -157,7 +157,15 @@ object BlockProcessingHandler {
         val getters = outputCards.map { card ->
             CardHandle.StorageGetter { NetworkStorageHelper.getStorage(handlerLevel, card) }
         }
-        job.startPoll(getters)
+        // Output cards' (pos, face) coords double as the poll's resume
+        // targets so a reload mid-process restarts the poll instead of
+        // re-invoking the handler against an already-drained buffer.
+        val pullTargets = outputCards.mapNotNull { card ->
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+                ?: return@mapNotNull null
+            cap.adjacentPos to cap.defaultFace
+        }
+        job.startPoll(getters, pullTargets)
 
         // startPoll completes synchronously when outputs were sitting in the
         // cards already; the pending result reflects that.
@@ -258,42 +266,50 @@ object BlockProcessingHandler {
         // there when the outer caller treats this slot's `false` return as
         // "nothing happened" and skips it in [unwindRoutedInputs].
         var remaining = extracted
+        val maxStack = item.getDefaultMaxStackSize().toLong()
+        // Variant hash so the rollback pulls back the exact same variant.
+        val variantHash = damien.nodeworks.script.BufferKey.componentsHash(variantStack)
         val committed = ArrayList<Pair<CardSnapshot, Long>>(cards.size)
         for (card in cards) {
             if (remaining <= 0L) break
             val dest = NetworkStorageHelper.getStorage(level, card) ?: continue
-            val sim = try {
+            var sim = try {
                 PlatformServices.storage.simulateInsertItem(dest, item, remaining)
             } catch (_: Exception) { 0L }
             if (sim <= 0L) continue
-            // Insert the component-bearing stack so the destination card
-            // (and the machine downstream of it) sees the right variant.
-            // insertItemStack returns the count actually inserted; we accept
-            // partial commits and let the post-loop rollback handle any
-            // shortfall.
-            val toInsert = variantStack.copyWithCount(sim.coerceAtMost(item.getDefaultMaxStackSize().toLong()).toInt())
-            val inserted = try {
-                PlatformServices.storage.insertItemStack(dest, toInsert).toLong()
-            } catch (_: Exception) { 0L }
-            if (inserted > 0L) {
-                committed += card to inserted
+            // Drain this card's full simulated capacity before moving on, so
+            // a multi-stack card doesn't leave a stack behind and trip the
+            // rollback path despite having room.
+            var cardInserted = 0L
+            while (sim > 0L && remaining > 0L) {
+                val batch = minOf(sim, remaining, maxStack)
+                val toInsert = variantStack.copyWithCount(batch.toInt())
+                val inserted = try {
+                    PlatformServices.storage.insertItemStack(dest, toInsert).toLong()
+                } catch (_: Exception) { 0L }
+                if (inserted <= 0L) break  // card stopped accepting despite sim
+                cardInserted += inserted
                 remaining -= inserted
+                sim -= inserted
             }
+            if (cardInserted > 0L) committed += card to cardInserted
         }
         if (remaining > 0L) {
-            // Sim claimed more capacity than tryInsertAll actually accepted -
-            // shouldn't happen under a well-behaved single-threaded backend
-            // but is the only edge case that could violate the "buffer
-            // bit-equal on failure" contract this function advertises.
-            // Pull back the items we did place and route them home so the
-            // slot's net effect on buffer + cards is zero.
+            // Real insert accepted less than sim claimed (rare). Pull placed
+            // items back so the slot's net effect on buffer + cards is zero.
             for ((card, amount) in committed) {
                 val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                // Component-aware rollback: pull real stacks so any variant
-                // we just routed lands back in the buffer with its
-                // components intact.
+                // Variant-aware rollback so a sibling variant in the card
+                // can't be grabbed instead of the one we inserted.
                 val pulledStacks = try {
-                    PlatformServices.storage.extractItemStacksMatching(storage, { it == itemId }, amount)
+                    PlatformServices.storage.extractStacksByPredicate(
+                        storage,
+                        { st ->
+                            val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.item)?.toString()
+                            sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(st) == variantHash
+                        },
+                        amount,
+                    )
                 } catch (_: Exception) { emptyList() }
                 var totalPulled = 0L
                 for (stack in pulledStacks) {

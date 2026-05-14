@@ -91,11 +91,9 @@ object CraftPlanner {
                         dependsOn = emptyList(),
                         itemId = node.itemId,
                         amount = node.count.toLong(),
-                        // Carry the tree node's variant hash so executePull
-                        // can ask storage for the specific potion / dyed /
-                        // enchanted variant rather than any first-found item
-                        // sharing the itemId.
-                        componentsHash = node.bufferKey.componentsHash,
+                        // Variant patch so executePull asks for the specific
+                        // variant; it also persists cleanly across reloads.
+                        componentsPatch = node.componentsPatch,
                     )
                     op.outputNodeId = node.nodeId
                     ops += op

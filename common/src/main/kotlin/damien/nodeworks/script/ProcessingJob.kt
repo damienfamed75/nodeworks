@@ -115,11 +115,14 @@ class ProcessingJob(
                 // Per-op resume (preferred) lets the new scheduler restart polling on the
                 // exact op that was in-flight, the legacy global addPendingOp is still called
                 // for backwards compat with the legacy resume path.
-                cpu.addPendingOp(api.outputs.map { it.itemId to it.count.toLong() }, pullTargets)
+                cpu.addPendingOp(
+                    api.outputs.map { it.stack.copyWithCount(1) to it.count.toLong() },
+                    pullTargets,
+                )
                 if (opId >= 0) {
                     cpu.setOpResume(opId, CraftingCoreBlockEntity.OpResumeInfo(
                         processingApiName = api.name,
-                        outputs = remaining.map { it.itemId to it.amount },
+                        outputs = remaining.map { it.template.copyWithCount(1) to it.amount },
                         pullTargets = pullTargets
                     ))
                 }
@@ -204,20 +207,41 @@ class ProcessingJob(
         if (opId >= 0 && cpu.opResumeInfo[opId] != null) {
             val existing = cpu.opResumeInfo[opId]!!
             cpu.setOpResume(opId, existing.copy(
-                outputs = remaining.map { it.itemId to it.amount }
+                outputs = remaining.map { it.template.copyWithCount(1) to it.amount }
             ))
         }
         return false
     }
 
     /**
-     * Public entry for resume, start polling with pre-built getters.
-     * Same logic as job:pull() but bypasses the Lua API.
+     * Public entry for resume / block-handler polling, bypasses the Lua API.
+     *
+     * Non-empty [pullTargets] (the block-handler path) persists the same
+     * `addPendingOp` + `setOpResume` resume state the Lua `job:pull` path
+     * records, so a reload mid-process restarts the poll instead of
+     * re-invoking the handler against an already-drained buffer. The resume
+     * path passes none: its [opResumeInfo] entry already exists on disk.
      */
-    fun startPoll(getters: List<CardHandle.StorageGetter>) {
+    fun startPoll(
+        getters: List<CardHandle.StorageGetter>,
+        pullTargets: List<Pair<net.minecraft.core.BlockPos, net.minecraft.core.Direction>> = emptyList(),
+    ) {
         if (tryExtract(getters)) {
             pendingResult.complete(true)
             return
+        }
+        if (pullTargets.isNotEmpty()) {
+            cpu.addPendingOp(
+                api.outputs.map { it.stack.copyWithCount(1) to it.count.toLong() },
+                pullTargets,
+            )
+            if (opId >= 0) {
+                cpu.setOpResume(opId, CraftingCoreBlockEntity.OpResumeInfo(
+                    processingApiName = api.name,
+                    outputs = remaining.map { it.template.copyWithCount(1) to it.amount },
+                    pullTargets = pullTargets,
+                ))
+            }
         }
         val timeoutTicks = if (api.timeout > 0) api.timeout.toLong() else 6000L
         scheduler.addPendingJob(SchedulerImpl.PendingJob(

@@ -381,9 +381,14 @@ class ImporterBuilder(
             val infos = PlatformServices.storage.findAllItemInfo(poolStorage) { filterPred(it) }
             for (info in infos) {
                 if (remaining <= 0L) break
-                val moved = PlatformServices.storage.moveItemsVariant(
+                // Per-variant move so two variants of one itemId aren't conflated.
+                val wantHash = damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch)
+                val moved = PlatformServices.storage.moveItemsByStackPredicate(
                     poolStorage, destStorage,
-                    { id, hasData -> id == info.itemId && hasData == info.hasData },
+                    { stack ->
+                        val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                        sid == info.itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+                    },
                     remaining,
                 )
                 totalMoved += moved
