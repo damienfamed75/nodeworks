@@ -96,6 +96,15 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
     )
 
+    val DISPLAY: Block = register(
+        "display",
+        { damien.nodeworks.block.DisplayBlock(it) },
+        BlockBehaviour.Properties.of()
+            .strength(2.0f, 4.0f)
+            .noOcclusion()
+            .requiresCorrectToolForDrops()
+    )
+
     val INSTRUCTION_STORAGE: Block = register(
         "instruction_storage",
         ::InstructionStorageBlock,
@@ -162,6 +171,15 @@ object ModBlocks {
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()
+    )
+
+    val WIDGET: Block = register(
+        "widget",
+        { damien.nodeworks.block.WidgetBlock(it) },
+        BlockBehaviour.Properties.of()
+            .strength(2.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+            .noOcclusion()
     )
 
     /** Crafting-only frame block. Combines the common ingredients shared by

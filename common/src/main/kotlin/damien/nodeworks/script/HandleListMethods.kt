@@ -69,6 +69,9 @@ object HandleListMethods {
         "NumberVariableHandle" to setOf("increment", "decrement", "min", "max"),
         "StringVariableHandle" to setOf("append", "clear"),
         "BoolVariableHandle" to setOf("toggle", "unlock"),
+        // Widget, only `:on` fans out (registering the same callback on every
+        // widget). `:value` / `:type` / `:option` are reads, go through `:list()`.
+        "WidgetHandle" to setOf("on"),
     )
 
     /**

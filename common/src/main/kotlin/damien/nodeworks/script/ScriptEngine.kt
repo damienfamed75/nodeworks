@@ -216,6 +216,17 @@ class ScriptEngine(
     )
     private val observerCallbacks = mutableMapOf<String, ObserverCallback>()
 
+    /** Widget `:on` callbacks. Keyed by widget name → (block pos, last seen
+     *  interaction generation, callback). The poller fires the callback when
+     *  the Widget block's [WidgetBlockEntity.interactionGeneration] advances,
+     *  the same edge-detection shape as the redstone / observer pollers. */
+    private data class WidgetCallback(
+        val pos: net.minecraft.core.BlockPos,
+        var lastGeneration: Int,
+        val callback: LuaFunction,
+    )
+    private val widgetCallbacks = mutableMapOf<String, WidgetCallback>()
+
 
     fun start(scripts: Map<String, String>): Boolean {
         stop()
@@ -350,6 +361,7 @@ class ScriptEngine(
         processingHandlers.clear()
         redstoneCallbacks.clear()
         observerCallbacks.clear()
+        widgetCallbacks.clear()
         // Stop every registered preset before wiping the scheduler so per-preset
         // cleanup (Stocker's pending craft callbacks, cached CardSnapshot lookups,
         // etc.) runs while the scheduler task ids are still valid. Exceptions in
@@ -464,8 +476,8 @@ class ScriptEngine(
         || processingHandlers.isNotEmpty()
         || redstoneCallbacks.isNotEmpty()
         || observerCallbacks.isNotEmpty()
+        || widgetCallbacks.isNotEmpty()
         || routeTable?.hasRoutes() == true
-
 
     /** Called each server tick. Runs scheduler callbacks and pollers, deferring
      *  remaining work to the next tick when [tickDeadlineNs] is reached.
@@ -496,6 +508,7 @@ class ScriptEngine(
             scheduler.tick(tickCount, tickDeadlineNs)
             if (System.nanoTime() < tickDeadlineNs) pollRedstoneCallbacks(tickDeadlineNs)
             if (System.nanoTime() < tickDeadlineNs) pollObserverCallbacks(tickDeadlineNs)
+            if (System.nanoTime() < tickDeadlineNs) pollWidgetCallbacks(tickDeadlineNs)
         } catch (e: LuaError) {
             logCallback("Runtime error: ${gate.stripLuaTraceback(e.message)}", true)
             stop()
@@ -581,6 +594,42 @@ class ScriptEngine(
             }
         }
         for (alias in toEvict) observerCallbacks.remove(alias)
+    }
+
+    /** Polled once per server tick. Fires a Widget block's `:on` callback when
+     *  its [WidgetBlockEntity.interactionGeneration] advances (i.e. a player
+     *  pressed / toggled / cycled / dragged it). Passes the widget's current
+     *  value. Evicts the entry if the block is gone. */
+    private fun pollWidgetCallbacks(tickDeadlineNs: Long = Long.MAX_VALUE) {
+        if (widgetCallbacks.isEmpty()) return
+        val toEvict = mutableListOf<String>()
+        for ((name, cb) in widgetCallbacks.toList()) {
+            if (System.nanoTime() >= tickDeadlineNs) break
+            val be = level.getBlockEntity(cb.pos) as? damien.nodeworks.block.entity.WidgetBlockEntity
+            if (be == null) {
+                logCallback("Widget handler on '$name' removed: the widget block is gone.", false)
+                toEvict += name
+                continue
+            }
+            if (be.interactionGeneration == cb.lastGeneration) continue
+            cb.lastGeneration = be.interactionGeneration
+            val value = be.value
+            val outcome = runGatedCallback("widget-handler:$name") {
+                cb.callback.call(LuaValue.valueOf(value.toDouble()))
+            }
+            when (outcome) {
+                LuaExecGate.Outcome.TimedOut -> {
+                    logCallback("Widget handler on '$name' took too long to run, handler removed.", true)
+                    toEvict += name
+                }
+                is LuaExecGate.Outcome.Errored -> {
+                    logCallback("Widget handler on '$name': ${outcome.message}", true)
+                }
+                is LuaExecGate.Outcome.Fatal -> return
+                LuaExecGate.Outcome.Ok -> { /* no-op */ }
+            }
+        }
+        for (name in toEvict) widgetCallbacks.remove(name)
     }
 
     /** Block id at [pos] formatted as `"namespace:path"`. Used by observer reads
@@ -771,6 +820,29 @@ class ScriptEngine(
                 onLimit = LuaValue.FALSE,
             ))
         }
+        return table
+    }
+
+    /** Build the Lua handle returned by `network:get` for a Widget block.
+     *  [WidgetHandle.create] supplies the value / type readers, the engine
+     *  binds `:on(fn)` here so the callback registers into [widgetCallbacks]
+     *  for the per-tick poller, same split as the redstone / observer cards. */
+    private fun createWidgetTable(snapshot: damien.nodeworks.network.WidgetSnapshot): LuaTable {
+        val table = WidgetHandle.create(snapshot, level)
+        val name = snapshot.name
+        table.setGuarded("WidgetHandle", "on", object : org.luaj.vm2.lib.TwoArgFunction() {
+            override fun call(selfArg: LuaValue, fnArg: LuaValue): LuaValue {
+                val fn = fnArg.checkfunction()
+                if (name !in widgetCallbacks) assertCallbackCap(widgetCallbacks.size, "widget-handler")
+                // Seed with the live generation so registering doesn't replay
+                // interactions that happened before this script run.
+                val be = level.getBlockEntity(snapshot.pos)
+                    as? damien.nodeworks.block.entity.WidgetBlockEntity
+                    ?: throw LuaError("Widget '$name' has been removed")
+                widgetCallbacks[name] = WidgetCallback(snapshot.pos, be.interactionGeneration, fn)
+                return selfArg
+            }
+        })
         return table
     }
 
@@ -1580,10 +1652,22 @@ class ScriptEngine(
                 val s = snapshot()
                 s.findByAlias(alias)?.let { return createCardTable(it, alias) }
                 s.findVariable(alias)?.let { return createVariableTable(it) }
+                s.findWidget(alias)?.let { return createWidgetTable(it) }
                 s.findBreaker(alias)?.let { return BreakerHandle.create(it, level) }
                 s.findPlacer(alias)?.let { return createPlacerTable(it) }
                 s.findUser(alias)?.let { return createUserTable(it) }
                 throw LuaError("Not found on network: '$alias'")
+            }
+        })
+
+        // network:display(name) → DisplayHandle, or error. Looks up a Display
+        // block by its anvil-set name and returns a retained-mode UI builder.
+        networkTable.setGuarded("Network", "display", object : TwoArgFunction() {
+            override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
+                val name = nameArg.checkjstring()
+                val d = snapshot().findDisplay(name)
+                    ?: throw LuaError("No display named '$name' on network")
+                return DisplayHandle.create(d, level)
             }
         })
 
@@ -1601,6 +1685,13 @@ class ScriptEngine(
                     return createHandleListTable(
                         members,
                         HandleListMethods.methodsForHandleType("VariableHandle"),
+                    )
+                }
+                if (type == "widget") {
+                    val members = snapshot().widgets.map { createWidgetTable(it) as LuaValue }
+                    return createHandleListTable(
+                        members,
+                        HandleListMethods.methodsForHandleType("WidgetHandle"),
                     )
                 }
                 if (type == "breaker") {

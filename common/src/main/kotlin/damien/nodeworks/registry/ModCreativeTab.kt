@@ -46,6 +46,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.BREAKER)
                 output.accept(ModBlocks.PLACER)
                 output.accept(ModBlocks.USER)
+                output.accept(ModBlocks.WIDGET)
                 output.accept(ModBlocks.IMPORT_CHEST)
                 output.accept(ModBlocks.EXPORT_CHEST)
                 output.accept(ModBlocks.INSTRUCTION_STORAGE)
@@ -88,6 +89,7 @@ object ModCreativeTab {
                 output.accept(ModItems.DIMENSION_RANGE_UPGRADE)
                 output.accept(ModItems.MULTI_DIMENSION_RANGE_UPGRADE)
                 output.accept(ModBlocks.MONITOR)
+                output.accept(ModBlocks.DISPLAY)
                 output.accept(ModItems.CELESTINE_SHARD)
                 output.accept(ModItems.MILKY_SOUL_BALL)
             }

@@ -7,6 +7,7 @@
     "nodeworks:covered_pipe",
     "nodeworks:terminal",
     "nodeworks:monitor",
+    "nodeworks:display",
     "nodeworks:inventory_terminal",
     "nodeworks:network_controller",
     "nodeworks:breaker",

@@ -208,6 +208,14 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     VariableMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.WIDGET = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "widget")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.WidgetOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.WidgetMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.CRAFTING_CORE = Registry.register(
                 BuiltInRegistries.MENU,
                 ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "crafting_core")),
@@ -286,6 +294,14 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 IMenuTypeExtension.create { syncId, inv, buf ->
                     val data = damien.nodeworks.screen.BreakerOpenData.STREAM_CODEC.decode(buf)
                     damien.nodeworks.screen.BreakerMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.DISPLAY = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "display")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.DisplayOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.DisplayMenu.clientFactory(syncId, inv, data)
                 }
             )
             ModScreenHandlers.PLACER = Registry.register(
@@ -561,6 +577,59 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                                     damien.nodeworks.block.entity.UserBlockEntity.UseMode.entries[ord]
                             }
                             "preview" -> entity.previewArea = payload.intValue != 0
+                        }
+                    }
+                    is damien.nodeworks.block.entity.DisplayBlockEntity -> {
+                        // A cluster shares one name, the BE writes it to every
+                        // member so opening the GUI on any block shows it.
+                        if (payload.key == "name") entity.setClusterName(payload.strValue)
+                    }
+                    is damien.nodeworks.block.entity.WidgetBlockEntity -> {
+                        when (payload.key) {
+                            "name" -> entity.widgetName = payload.strValue
+                            "channel" -> if (newColor != null) entity.channel = newColor
+                            "type" -> entity.setType(
+                                damien.nodeworks.block.entity.WidgetType.fromOrdinal(payload.intValue)
+                            )
+                            "hold" -> entity.setButtonHold(payload.intValue)
+                            "value" -> payload.strValue.toFloatOrNull()?.let { entity.setValue(it) }
+                            "slider_drag" -> {
+                                // Streamed from the client-side drag tracker, one
+                                // per client tick while the use key is held. The
+                                // payload carries a 0..1 fraction of the track.
+                                val f = payload.strValue.toFloatOrNull()
+                                if (f != null) {
+                                    val target = entity.sliderMin + f * (entity.sliderMax - entity.sliderMin)
+                                    if (entity.setSliderValue(target)) {
+                                        level.playSound(
+                                            null, payload.pos,
+                                            net.minecraft.sounds.SoundEvents.STONE_BUTTON_CLICK_ON,
+                                            net.minecraft.sounds.SoundSource.BLOCKS, 0.3f, 1.5f,
+                                        )
+                                    }
+                                }
+                            }
+                            "slider" -> {
+                                // "min,max,step"
+                                val parts = payload.strValue.split(',')
+                                if (parts.size == 3) {
+                                    val min = parts[0].trim().toFloatOrNull()
+                                    val max = parts[1].trim().toFloatOrNull()
+                                    val step = parts[2].trim().toFloatOrNull()
+                                    if (min != null && max != null && step != null) {
+                                        entity.setSliderConfig(min, max, step)
+                                    }
+                                }
+                            }
+                            "options" -> entity.setRadioOptions(
+                                // Newline-separated, single-line GUI fields can't
+                                // contain newlines so an option may hold any other
+                                // character (commas, etc.) without ambiguity.
+                                payload.strValue.split('\n')
+                                    .map { it.trim() }
+                                    .filter { it.isNotEmpty() }
+                                    .take(6)
+                            )
                         }
                     }
                 }

@@ -3,6 +3,7 @@ package damien.nodeworks.registry
 import damien.nodeworks.block.entity.FocusNodeBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
+import damien.nodeworks.block.entity.DisplayBlockEntity
 import damien.nodeworks.block.entity.MonitorBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
@@ -24,6 +25,7 @@ import damien.nodeworks.block.entity.PlacerBlockEntity
 import damien.nodeworks.block.entity.ProcessingHandlerBlockEntity
 import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
+import damien.nodeworks.block.entity.WidgetBlockEntity
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.Registry
 import net.minecraft.core.registries.BuiltInRegistries
@@ -63,6 +65,11 @@ object ModBlockEntities {
     val MONITOR: BlockEntityType<MonitorBlockEntity> = register(
         "monitor",
         PlatformServices.blockEntity.createBlockEntityType(::MonitorBlockEntity, ModBlocks.MONITOR)
+    )
+
+    val DISPLAY: BlockEntityType<DisplayBlockEntity> = register(
+        "display",
+        PlatformServices.blockEntity.createBlockEntityType(::DisplayBlockEntity, ModBlocks.DISPLAY)
     )
 
     val INSTRUCTION_STORAGE: BlockEntityType<InstructionStorageBlockEntity> = register(
@@ -153,6 +160,11 @@ object ModBlockEntities {
     val PROCESSING_HANDLER: BlockEntityType<ProcessingHandlerBlockEntity> = register(
         "processing_handler",
         PlatformServices.blockEntity.createBlockEntityType(::ProcessingHandlerBlockEntity, ModBlocks.PROCESSING_HANDLER)
+    )
+
+    val WIDGET: BlockEntityType<WidgetBlockEntity> = register(
+        "widget",
+        PlatformServices.blockEntity.createBlockEntityType(::WidgetBlockEntity, ModBlocks.WIDGET)
     )
 
     private fun <T : BlockEntity> register(

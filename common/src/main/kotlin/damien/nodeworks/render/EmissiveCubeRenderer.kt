@@ -15,6 +15,7 @@ import net.minecraft.client.renderer.rendertype.RenderType
 import net.minecraft.client.renderer.texture.OverlayTexture
 import net.minecraft.core.Direction
 import net.minecraft.resources.Identifier
+import org.joml.Vector3f
 
 /**
  * Shared helper for BERs that render an emissive "glow" cube over the block's
@@ -337,4 +338,171 @@ object EmissiveCubeRenderer {
             }
         }
     }
+
+    // =====================================================================
+    // Textureless colored primitives (Display block holograms)
+    // =====================================================================
+    //
+    // The Display block draws flat-colored quads and cuboids positioned by an
+    // arbitrary basis, not axis-aligned single-tile faces. A POSITION_COLOR
+    // pipeline keeps the tint pure (no Sampler0). Same alpha-modulated additive
+    // blend as the textured path so the hologram glows and respects per-element
+    // alpha. Normal depth test (unlike PinHighlightRenderType's through-walls).
+
+    private val COLOR_EMISSIVE_PIPELINE: RenderPipeline =
+        RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
+            .withLocation(Identifier.fromNamespaceAndPath("nodeworks", "pipeline/display_hologram"))
+            .withColorTargetState(ColorTargetState(BlendFunction.LIGHTNING))
+            .withDepthStencilState(DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false))
+            .build()
+
+    /** Shared additive-emissive [RenderType] for flat-colored hologram geometry. */
+    val DISPLAY_HOLOGRAM_TYPE: RenderType = RenderType.create(
+        "nodeworks_display_hologram",
+        RenderSetup.builder(COLOR_EMISSIVE_PIPELINE).createRenderSetup(),
+    )
+
+    /** Double-sided colored quad spanned by [origin] + [edgeX] + [edgeY], in
+     *  the pose's local space. Double-sided so it reads from either side of the
+     *  projected volume. */
+    fun submitRect(
+        submitter: SubmitNodeCollector,
+        pose: PoseStack,
+        origin: Vector3f, edgeX: Vector3f, edgeY: Vector3f,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        submitter.submitCustomGeometry(pose, DISPLAY_HOLOGRAM_TYPE) { p, vc ->
+            emitColorQuad(p, vc, origin, edgeX, edgeY, r, g, b, a)
+        }
+    }
+
+    /** Like [submitRect] but the color blends from [colorA] to [colorB]. When
+     *  [alongX] the gradient runs along [edgeX] (start → end of a line),
+     *  otherwise along [edgeY] (bottom → top of a box). Both colors ARGB. */
+    fun submitRectGradient(
+        submitter: SubmitNodeCollector,
+        pose: PoseStack,
+        origin: Vector3f, edgeX: Vector3f, edgeY: Vector3f,
+        colorA: Int, colorB: Int, alongX: Boolean,
+    ) {
+        submitter.submitCustomGeometry(pose, DISPLAY_HOLOGRAM_TYPE) { p, vc ->
+            val c0 = origin
+            val c1 = Vector3f(origin).add(edgeX)
+            val c2 = Vector3f(origin).add(edgeX).add(edgeY)
+            val c3 = Vector3f(origin).add(edgeY)
+            if (alongX) {
+                emitGradientQuad(p, vc, c0, c1, c2, c3, colorA, colorB, colorB, colorA)
+            } else {
+                emitGradientQuad(p, vc, c0, c1, c2, c3, colorA, colorA, colorB, colorB)
+            }
+        }
+    }
+
+    /** Colored cuboid spanned by [origin] + the three edge vectors. */
+    fun submitBox(
+        submitter: SubmitNodeCollector,
+        pose: PoseStack,
+        origin: Vector3f, edgeX: Vector3f, edgeY: Vector3f, edgeZ: Vector3f,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        submitter.submitCustomGeometry(pose, DISPLAY_HOLOGRAM_TYPE) { p, vc ->
+            emitColorBox(p, vc, origin, edgeX, edgeY, edgeZ, r, g, b, a)
+        }
+    }
+
+    /** Outline of a quad: four border bars [thickness] world-units wide, inset
+     *  along the quad's own edges. Degenerate (zero-size) quads are skipped. */
+    fun submitRectOutline(
+        submitter: SubmitNodeCollector,
+        pose: PoseStack,
+        origin: Vector3f, edgeX: Vector3f, edgeY: Vector3f, thickness: Float,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        if (edgeX.lengthSquared() < 1e-9f || edgeY.lengthSquared() < 1e-9f) return
+        val tx = Vector3f(edgeX).normalize().mul(thickness)
+        val ty = Vector3f(edgeY).normalize().mul(thickness)
+        submitter.submitCustomGeometry(pose, DISPLAY_HOLOGRAM_TYPE) { p, vc ->
+            emitColorQuad(p, vc, origin, edgeX, ty, r, g, b, a)                                  // bottom
+            emitColorQuad(p, vc, Vector3f(origin).add(edgeY).sub(ty), edgeX, ty, r, g, b, a)      // top
+            emitColorQuad(p, vc, origin, tx, edgeY, r, g, b, a)                                  // left
+            emitColorQuad(p, vc, Vector3f(origin).add(edgeX).sub(tx), tx, edgeY, r, g, b, a)      // right
+        }
+    }
+
+    /** Wireframe cuboid: the 12 edges drawn as thin bars [thickness] wide. */
+    fun submitBoxOutline(
+        submitter: SubmitNodeCollector,
+        pose: PoseStack,
+        origin: Vector3f, edgeX: Vector3f, edgeY: Vector3f, edgeZ: Vector3f, thickness: Float,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        if (edgeX.lengthSquared() < 1e-9f || edgeY.lengthSquared() < 1e-9f || edgeZ.lengthSquared() < 1e-9f) return
+        val tx = Vector3f(edgeX).normalize().mul(thickness)
+        val ty = Vector3f(edgeY).normalize().mul(thickness)
+        val tz = Vector3f(edgeZ).normalize().mul(thickness)
+        submitter.submitCustomGeometry(pose, DISPLAY_HOLOGRAM_TYPE) { p, vc ->
+            fun corner(fx: Float, fy: Float, fz: Float) = Vector3f(origin)
+                .fma(fx, edgeX).fma(fy, edgeY).fma(fz, edgeZ)
+            // 4 edges along X
+            for (fy in 0..1) for (fz in 0..1)
+                emitColorBox(p, vc, corner(0f, fy.toFloat(), fz.toFloat()), edgeX, ty, tz, r, g, b, a)
+            // 4 edges along Y
+            for (fx in 0..1) for (fz in 0..1)
+                emitColorBox(p, vc, corner(fx.toFloat(), 0f, fz.toFloat()), tx, edgeY, tz, r, g, b, a)
+            // 4 edges along Z
+            for (fx in 0..1) for (fy in 0..1)
+                emitColorBox(p, vc, corner(fx.toFloat(), fy.toFloat(), 0f), tx, ty, edgeZ, r, g, b, a)
+        }
+    }
+
+    /** Emit one quad and its reverse winding so the surface is visible from
+     *  both sides (no back-face culling concerns for the hologram). */
+    private fun emitColorQuad(
+        p: PoseStack.Pose,
+        vc: com.mojang.blaze3d.vertex.VertexConsumer,
+        origin: Vector3f, edgeA: Vector3f, edgeB: Vector3f,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        val c0 = origin
+        val c1 = Vector3f(origin).add(edgeA)
+        val c2 = Vector3f(origin).add(edgeA).add(edgeB)
+        val c3 = Vector3f(origin).add(edgeB)
+        emitGradientQuad(
+            p, vc, c0, c1, c2, c3,
+            packArgb(r, g, b, a), packArgb(r, g, b, a), packArgb(r, g, b, a), packArgb(r, g, b, a),
+        )
+    }
+
+    /** Double-sided quad with a per-corner ARGB color (corners in winding order). */
+    private fun emitGradientQuad(
+        p: PoseStack.Pose,
+        vc: com.mojang.blaze3d.vertex.VertexConsumer,
+        c0: Vector3f, c1: Vector3f, c2: Vector3f, c3: Vector3f,
+        col0: Int, col1: Int, col2: Int, col3: Int,
+    ) {
+        fun v(pt: Vector3f, col: Int) {
+            vc.addVertex(p, pt.x, pt.y, pt.z)
+                .setColor((col shr 16) and 0xFF, (col shr 8) and 0xFF, col and 0xFF, (col ushr 24) and 0xFF)
+        }
+        v(c0, col0); v(c1, col1); v(c2, col2); v(c3, col3)
+        v(c3, col3); v(c2, col2); v(c1, col1); v(c0, col0)
+    }
+
+    /** The 6 faces of a cuboid spanned by [origin] + the three edge vectors. */
+    private fun emitColorBox(
+        p: PoseStack.Pose,
+        vc: com.mojang.blaze3d.vertex.VertexConsumer,
+        origin: Vector3f, edgeX: Vector3f, edgeY: Vector3f, edgeZ: Vector3f,
+        r: Int, g: Int, b: Int, a: Int,
+    ) {
+        emitColorQuad(p, vc, origin, edgeX, edgeY, r, g, b, a)
+        emitColorQuad(p, vc, Vector3f(origin).add(edgeZ), edgeX, edgeY, r, g, b, a)
+        emitColorQuad(p, vc, origin, edgeY, edgeZ, r, g, b, a)
+        emitColorQuad(p, vc, Vector3f(origin).add(edgeX), edgeY, edgeZ, r, g, b, a)
+        emitColorQuad(p, vc, origin, edgeZ, edgeX, r, g, b, a)
+        emitColorQuad(p, vc, Vector3f(origin).add(edgeY), edgeZ, edgeX, r, g, b, a)
+    }
+
+    private fun packArgb(r: Int, g: Int, b: Int, a: Int): Int =
+        ((a and 0xFF) shl 24) or ((r and 0xFF) shl 16) or ((g and 0xFF) shl 8) or (b and 0xFF)
 }

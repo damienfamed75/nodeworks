@@ -186,6 +186,15 @@ val NetworkApi: ApiSurface = api(Network) {
         guidebookRef = "nodeworks:lua-api/network.md#handle"
     }
 
+    method("display") {
+        param("name", DisplayName, description = "Anvil-set name of a Display block on this network.")
+        returns(DisplayHandle)
+        description =
+            "Returns a DisplayHandle for the named Display block. Errors if no match. " +
+            "Use it to build and commit a holographic UI frame."
+        guidebookRef = "nodeworks:lua-api/network.md#display"
+    }
+
     method("debug") {
         returns(Void)
         description = "Prints a summary of the network to the terminal log."

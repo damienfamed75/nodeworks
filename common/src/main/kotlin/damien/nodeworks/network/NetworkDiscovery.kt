@@ -7,8 +7,11 @@ import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
+import damien.nodeworks.block.entity.DisplayBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.block.entity.VariableType
+import damien.nodeworks.block.entity.WidgetBlockEntity
+import damien.nodeworks.block.entity.WidgetType
 import damien.nodeworks.card.SideCapability
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -78,6 +81,8 @@ object NetworkDiscovery {
         val crafters = mutableListOf<CrafterSnapshot>()
         val cpus = mutableListOf<CpuSnapshot>()
         val variables = mutableListOf<VariableSnapshot>()
+        val widgets = mutableListOf<WidgetSnapshot>()
+        val displays = mutableListOf<DisplaySnapshot>()
         val breakers = mutableListOf<BreakerSnapshot>()
         val placers = mutableListOf<PlacerSnapshot>()
         val users = mutableListOf<UserSnapshot>()
@@ -91,6 +96,7 @@ object NetworkDiscovery {
         // not once per cluster member the BFS happens to visit.
         val processingClustersSeen = mutableSetOf<BlockPos>()
         val instructionClustersSeen = mutableSetOf<BlockPos>()
+        val displayClustersSeen = mutableSetOf<BlockPos>()
 
         queue.add(startPos to null)
         visited.add(startPos)
@@ -164,6 +170,27 @@ object NetworkDiscovery {
                         )
                     )
                 }
+                is WidgetBlockEntity -> if (connectable.widgetName.isNotEmpty()) {
+                    widgets.add(
+                        WidgetSnapshot(
+                            connectable.blockPos,
+                            connectable.widgetName,
+                            connectable.widgetType,
+                            connectable.channel,
+                        )
+                    )
+                }
+                is DisplayBlockEntity -> {
+                    // Emit once per multiblock cluster, keyed by the anchor, so
+                    // a 2x2 Display surfaces as a single named entry.
+                    val cl = connectable.cluster()
+                    if (displayClustersSeen.add(cl.anchor)) {
+                        val name = connectable.clusterName()
+                        if (name.isNotEmpty()) {
+                            displays.add(DisplaySnapshot(cl.anchor, name))
+                        }
+                    }
+                }
                 is damien.nodeworks.block.entity.BreakerBlockEntity -> {
                     // Always snapshot breakers (unlike variables which require a name) so
                     // auto-aliasing produces breaker_N for unnamed devices. The user-set
@@ -236,7 +263,7 @@ object NetworkDiscovery {
         // counter namespace as cards so the alias prefix uniquely identifies the type.
         assignAutoAliases(nodes, breakers, placers, users)
 
-        return NetworkSnapshot(nodes, crafters, variables, breakers, placers, users, cpus, processingApis, terminalPositions, controller)
+        return NetworkSnapshot(nodes, crafters, variables, widgets, displays, breakers, placers, users, cpus, processingApis, terminalPositions, controller)
     }
 
     /** Assign `<base>_N` auto-aliases so every card / breaker / placer on the
@@ -343,6 +370,27 @@ data class VariableSnapshot(
     val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
 )
 
+/** Snapshot for a named Widget block. Like [VariableSnapshot], the widget only
+ *  joins script lookups once it's named in the GUI. [type] lets the handle
+ *  expose `:type()` without re-reading the block entity. */
+data class WidgetSnapshot(
+    val pos: BlockPos,
+    val name: String,
+    val type: WidgetType,
+    val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
+)
+
+/** Snapshot for a named Display (or multiblock Display cluster). [pos] is the
+ *  cluster anchor, the volume-origin block that carries the element list. The
+ *  drawing coordinate space is normalized (`-1..1`), so the snapshot doesn't
+ *  need the cluster's size, the renderer / hit-test resolve it live. Unlike
+ *  devices there's no auto-alias, a Display only joins script lookups once
+ *  it's named in the GUI. */
+data class DisplaySnapshot(
+    val pos: BlockPos,
+    val name: String,
+)
+
 /** Snapshot for a Breaker device. [name] is the user-set alias from the GUI.
  *  [autoAlias] is set by [NetworkDiscovery.assignAutoAliases] when the breaker is
  *  unnamed OR shares its [name] with another breaker on the network. The
@@ -403,6 +451,8 @@ data class NetworkSnapshot(
     val nodes: List<NodeSnapshot>,
     val crafters: List<CrafterSnapshot> = emptyList(),
     val variables: List<VariableSnapshot> = emptyList(),
+    val widgets: List<WidgetSnapshot> = emptyList(),
+    val displays: List<DisplaySnapshot> = emptyList(),
     val breakers: List<BreakerSnapshot> = emptyList(),
     val placers: List<PlacerSnapshot> = emptyList(),
     val users: List<UserSnapshot> = emptyList(),
@@ -470,6 +520,12 @@ data class NetworkSnapshot(
 
     /** Find a variable by name. */
     fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
+
+    /** Find a Widget block by its GUI-set name. */
+    fun findWidget(name: String): WidgetSnapshot? = widgets.firstOrNull { it.name == name }
+
+    /** Find a Display block by its anvil-set name. */
+    fun findDisplay(name: String): DisplaySnapshot? = displays.firstOrNull { it.name == name }
 
     /** Find a Breaker by alias. Literal name wins (so a player who named two
      *  breakers `miner` gets the first via `network:get("miner")`, matching

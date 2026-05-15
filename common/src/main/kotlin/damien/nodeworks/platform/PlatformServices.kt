@@ -112,6 +112,10 @@ interface ServerNetworkingService {
  */
 interface ClientEventService {
     fun onWorldRender(handler: (poseStack: com.mojang.blaze3d.vertex.PoseStack?, consumers: net.minecraft.client.renderer.MultiBufferSource?, camera: net.minecraft.world.phys.Vec3) -> Unit)
+
+    /** Registers a handler run once per client tick (end of tick). Used for
+     *  client-driven input polling like the Widget slider drag. */
+    fun onClientTick(handler: () -> Unit)
 }
 
 /**

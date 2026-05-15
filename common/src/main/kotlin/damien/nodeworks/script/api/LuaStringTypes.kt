@@ -43,6 +43,14 @@ val Craftable: LuaType.StringDomain = LuaType.StringDomain(
 )
 
 /** Fluid registry id. Same shape as [ItemId] but for fluids. */
+/** A registered entity-type id, e.g. `minecraft:cow`. Resolved at autocomplete
+ *  time against the entity-type registry. */
+val EntityId: LuaType.StringDomain = LuaType.StringDomain(
+    name = "EntityId",
+    description = "A registered entity-type id, e.g. `minecraft:cow`.",
+    sourceKey = "entity-id",
+)
+
 val FluidId: LuaType.StringDomain = LuaType.StringDomain(
     name = "FluidId",
     description = "Fluid registry id like `minecraft:water` or `minecraft:lava`.",
@@ -164,11 +172,27 @@ val VariableName: LuaType.StringDomain = LuaType.StringDomain(
     sourceKey = "variable-name",
 )
 
+/** Name of a Display block on the network (set in its settings GUI). Resolves
+ *  at autocomplete time against the network's currently-known named Displays. */
+val DisplayName: LuaType.StringDomain = LuaType.StringDomain(
+    name = "DisplayName",
+    description = "The name of a Display block on this network.",
+    sourceKey = "display-name",
+)
+
+/** Name of a Widget block on the network (set in its settings GUI). Resolves
+ *  at autocomplete time against the network's currently-known named Widgets. */
+val WidgetName: LuaType.StringDomain = LuaType.StringDomain(
+    name = "WidgetName",
+    description = "The name of a Widget block on this network.",
+    sourceKey = "widget-name",
+)
+
 /** Capability/type-string accepted by `network:getAll`, `Channel:getAll`, and
  *  `Channel:getFirst`. Closed enum, the runtime dispatches on these literals. */
 val NetworkAccessorType: LuaType.StringEnum = LuaType.StringEnum(
     name = "NetworkAccessorType",
-    values = listOf("io", "storage", "redstone", "observer", "variable", "breaker", "placer", "user"),
+    values = listOf("io", "storage", "redstone", "observer", "variable", "widget", "breaker", "placer", "user"),
     description = "The capability or device type to filter `network:getAll` / `Channel:getAll` queries by.",
 )
 
@@ -177,8 +201,8 @@ val NetworkAccessorType: LuaType.StringEnum = LuaType.StringEnum(
  *  union walks every part's source so all surfaces appear in autocomplete. */
 val NetworkName: LuaType.Union = LuaType.Union(
     name = "NetworkName",
-    parts = listOf(CardAlias, VariableName, BreakerAlias, PlacerAlias, UserAlias),
-    description = "Any addressable name on the network, a card alias, variable, breaker, placer, or user.",
+    parts = listOf(CardAlias, VariableName, WidgetName, BreakerAlias, PlacerAlias, UserAlias),
+    description = "Any addressable name on the network, a card alias, variable, widget, breaker, placer, or user.",
 )
 
 /** Composite filter string accepted by `find` / `findEach` / `count` / `matches`.
@@ -209,6 +233,7 @@ val FaceName: LuaType.StringEnum = LuaType.StringEnum(
 internal val ALL_STRING_TYPES: List<LuaType> = listOf(
     ItemsHandleKind,
     ItemId,
+    EntityId,
     Craftable,
     FluidId,
     BlockId,
@@ -223,6 +248,8 @@ internal val ALL_STRING_TYPES: List<LuaType> = listOf(
     UserAlias,
     UserMode,
     VariableName,
+    DisplayName,
+    WidgetName,
     DyeColor,
     NetworkAccessorType,
     NetworkName,

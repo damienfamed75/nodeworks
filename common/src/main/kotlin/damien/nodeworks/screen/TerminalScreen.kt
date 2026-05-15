@@ -156,6 +156,7 @@ class TerminalScreen(
     private val itemTags: List<String>
     private val fluidTags: List<String>
     private val itemIds: List<String>
+    private val entityIds: List<String>
     private val fluidIds: List<String>
     private val blockIds: List<String>
     private val variables: List<Pair<String, Int>>
@@ -179,6 +180,14 @@ class TerminalScreen(
     private val breakerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
     private val placerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
     private val userEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
+
+    /** Anvil-set names of every Display block on the network. Displays carry no
+     *  channel and no auto-alias, only named ones surface (like variables). */
+    private val displays: List<String>
+
+    /** GUI-set names of every Widget block on the network. Only named ones
+     *  surface (like variables / displays). */
+    private val widgets: List<String>
 
     /** Literal names that appear ≥2 times across cards / breakers / placers on
      *  this network. Drives the script editor's `ambiguous-card-name` HINT for
@@ -568,6 +577,8 @@ class TerminalScreen(
         val scannedBreakers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
         val scannedPlacers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
         val scannedUsers = mutableListOf<Pair<String, net.minecraft.world.item.DyeColor>>()
+        val scannedDisplays = mutableListOf<String>()
+        val scannedWidgets = mutableListOf<String>()
         val scannedLocal = mutableListOf<String>()
         val scannedLocalApis =
             mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
@@ -578,6 +589,7 @@ class TerminalScreen(
         // [getAllInstructionSets] each return the full cluster from any member.
         val processingClustersSeen = mutableSetOf<net.minecraft.core.BlockPos>()
         val instructionClustersSeen = mutableSetOf<net.minecraft.core.BlockPos>()
+        val displayClustersSeen = mutableSetOf<net.minecraft.core.BlockPos>()
         val mc = net.minecraft.client.Minecraft.getInstance()
         val clientLevel = mc.level
         if (clientLevel != null) {
@@ -647,6 +659,10 @@ class TerminalScreen(
                             }
                         }
 
+                        is damien.nodeworks.block.entity.WidgetBlockEntity -> {
+                            if (entity.widgetName.isNotEmpty()) scannedWidgets.add(entity.widgetName)
+                        }
+
                         is damien.nodeworks.block.entity.BreakerBlockEntity -> {
                             scannedBreakers.add(entity.deviceName to entity.channel)
                         }
@@ -657,6 +673,15 @@ class TerminalScreen(
 
                         is damien.nodeworks.block.entity.UserBlockEntity -> {
                             scannedUsers.add(entity.deviceName to entity.channel)
+                        }
+
+                        is damien.nodeworks.block.entity.DisplayBlockEntity -> {
+                            // One sidebar entry per multiblock cluster, keyed by anchor.
+                            val cl = entity.cluster()
+                            if (displayClustersSeen.add(cl.anchor)) {
+                                val name = entity.clusterName()
+                                if (name.isNotEmpty()) scannedDisplays.add(name)
+                            }
                         }
 
                         is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> {
@@ -808,6 +833,10 @@ class TerminalScreen(
             .map { it.toString() }
             .sorted()
             .toList()
+        val scannedEntityIds = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.keySet()
+            .map { it.toString() }
+            .sorted()
+            .toList()
         // Filter out minecraft:empty and flowing variants, users almost always want source
         // fluids (minecraft:water, not minecraft:flowing_water) since that's what shows up
         // inside tanks.
@@ -825,6 +854,7 @@ class TerminalScreen(
         itemTags = scannedTags
         fluidTags = scannedFluidTags
         itemIds = scannedItemIds
+        entityIds = scannedEntityIds
         fluidIds = scannedFluidIds
         blockIds = scannedBlockIds
         variables = scannedVars
@@ -835,6 +865,8 @@ class TerminalScreen(
         breakerEntries = scannedBreakerEntries
         placerEntries = scannedPlacerEntries
         userEntries = scannedUserEntries
+        displays = scannedDisplays
+        widgets = scannedWidgets
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
@@ -1005,7 +1037,7 @@ class TerminalScreen(
             AutocompletePopup(
                 font, cards, itemTags, variables, localApiNames, craftableOutputs, localApis,
                 itemIds, fluidIds, fluidTags, blockIds,
-                breakerAliases, placerAliases, userAliases,
+                breakerAliases, placerAliases, userAliases, displays, entityIds, widgets,
             ) { scripts }
         // Position popups directly under the cursor's text row. Using yBottomOfLine
         // (instead of yTopOfLine of the next line) deliberately excludes any decoration
@@ -1196,6 +1228,14 @@ class TerminalScreen(
             val ch = channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
             entries.add(SidebarEntry(alias, 0xFF79E324.toInt(), 112, 16, "user", ch))
         }
+        // Displays carry no channel, so they never render a pip.
+        for (name in displays) {
+            entries.add(SidebarEntry(name, 0xFF7FD8FF.toInt(), 0, 16, "display", null))
+        }
+        // Widgets, addressable via network:get like variables / devices.
+        for (name in widgets) {
+            entries.add(SidebarEntry(name, 0xFF66D9C0.toInt(), 0, 16, "widget", null))
+        }
 
         // Sidebar entries (scrollable)
         val cardListTop = cardStartY + 12
@@ -1231,6 +1271,8 @@ class TerminalScreen(
                 "breaker" -> Icons.BREAKER
                 "placer" -> Icons.PLACER
                 "user" -> Icons.USER
+                "display" -> Icons.DISPLAY
+                "widget" -> Icons.VARIABLE
                 else -> Icons.IO_CARD
             }
             // Channel pip, 2×9 vertical stripe LEFT of the icon when the row is
@@ -2217,13 +2259,19 @@ class TerminalScreen(
                     "breaker" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "breaker")
                     "placer" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "placer")
                     "user" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "user")
+                    "display" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "display")
+                    "widget" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "widget")
                     else -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "x")
                 }
                 val line = when (entry.type) {
                     // Cards, variables, and devices all ride the unified `network:get`
                     // accessor, same generated line shape for any click-to-import.
-                    "card", "var", "breaker", "placer", "user" ->
+                    "card", "var", "breaker", "placer", "user", "widget" ->
                         "local $ident = network:get(\"${entry.name}\")"
+
+                    // Displays have their own accessor since they return a builder,
+                    // not a NetworkHandle.
+                    "display" -> "local $ident = network:display(\"${entry.name}\")"
 
                     else -> null
                 }

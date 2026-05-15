@@ -234,5 +234,8 @@ class Icons private constructor(val col: Int, val row: Int) {
         // mirrors to the other.
         val JEI_SYNC_ON = Icons(7, 5)
         val JEI_SYNC_OFF = Icons(8, 5)
+
+        // Display block sidebar icon. Art pending, cell reserved at (9, 5).
+        val DISPLAY = Icons(9, 5)
     }
 }

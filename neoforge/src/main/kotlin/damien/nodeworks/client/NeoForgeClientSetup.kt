@@ -11,6 +11,7 @@ import damien.nodeworks.render.CoProcessorRenderer
 import damien.nodeworks.render.CraftingCoreRenderer
 import damien.nodeworks.render.CraftingStorageRenderer
 import damien.nodeworks.render.ExportChestRenderer
+import damien.nodeworks.render.DisplayRenderer
 import damien.nodeworks.render.ImportChestRenderer
 import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.InventoryTerminalRenderer
@@ -25,6 +26,7 @@ import damien.nodeworks.render.ReceiverAntennaRenderer
 import damien.nodeworks.render.TerminalRenderer
 import damien.nodeworks.render.UserRenderer
 import damien.nodeworks.render.VariableRenderer
+import damien.nodeworks.render.WidgetRenderer
 import net.neoforged.neoforge.client.event.EntityRenderersEvent
 import damien.nodeworks.screen.NodeSideScreen
 import damien.nodeworks.screen.InstructionSetScreen
@@ -104,6 +106,7 @@ object NeoForgeClientSetup {
                 event.isCanceled = true
             }
         }
+
     }
 
     private fun onClientSetup(event: FMLClientSetupEvent) {
@@ -128,6 +131,7 @@ object NeoForgeClientSetup {
             NodeConnectionRenderer.register()
             damien.nodeworks.render.CardPlacementPreviewRenderer.init()
             damien.nodeworks.render.UserPreviewRenderer.init()
+            damien.nodeworks.render.WidgetDragController.init()
         }
     }
 
@@ -139,8 +143,10 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.PIPE, ::PipeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_HANDLER, ::ProcessingHandlerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.DISPLAY, ::DisplayRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.WIDGET, ::WidgetRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_STORAGE, ::ProcessingStorageRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.INSTRUCTION_STORAGE, ::InstructionStorageRenderer)
@@ -395,6 +401,9 @@ object NeoForgeClientSetup {
         event.register(ModScreenHandlers.VARIABLE) { menu, inventory, title ->
             VariableScreen(menu, inventory, title)
         }
+        event.register(ModScreenHandlers.WIDGET) { menu, inventory, title ->
+            damien.nodeworks.screen.WidgetScreen(menu, inventory, title)
+        }
         event.register(ModScreenHandlers.CRAFTING_CORE) { menu, inventory, title ->
             damien.nodeworks.screen.CraftingCoreScreen(menu, inventory, title)
         }
@@ -424,6 +433,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.BREAKER) { menu, inventory, title ->
             damien.nodeworks.screen.BreakerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.DISPLAY) { menu, inventory, title ->
+            damien.nodeworks.screen.DisplayScreen(menu, inventory, title)
         }
         event.register(ModScreenHandlers.PLACER) { menu, inventory, title ->
             damien.nodeworks.screen.PlacerScreen(menu, inventory, title)
@@ -502,5 +514,18 @@ class NeoForgeClientEventService : ClientEventService {
         for (handler in handlers) {
             handler(event.poseStack, bufferSource, cameraPos)
         }
+    }
+
+    private val tickHandlers = mutableListOf<() -> Unit>()
+
+    override fun onClientTick(handler: () -> Unit) {
+        tickHandlers.add(handler)
+        if (tickHandlers.size == 1) {
+            NeoForge.EVENT_BUS.addListener(::onClientTickPost)
+        }
+    }
+
+    private fun onClientTickPost(event: net.neoforged.neoforge.client.event.ClientTickEvent.Post) {
+        for (handler in tickHandlers) handler()
     }
 }

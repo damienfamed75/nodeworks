@@ -38,6 +38,12 @@ class AutocompletePopup(
     private val placerAliases: List<String> = emptyList(),
     /** Effective aliases of every User on the network. */
     private val userAliases: List<String> = emptyList(),
+    /** Anvil-set names of every Display block on the network. */
+    private val displayNames: List<String> = emptyList(),
+    /** Every registered entity-type id, for `d:entity(...)` autocomplete. */
+    private val entityIds: List<String> = emptyList(),
+    /** GUI-set names of every Widget block on the network. */
+    private val widgetNames: List<String> = emptyList(),
     private val scripts: () -> Map<String, String> = { emptyMap() }
 ) {
     /**
@@ -2398,6 +2404,7 @@ class AutocompletePopup(
      *  [damien.nodeworks.script.api.LuaStringTypes], add a case here, that's it. */
     private fun suggestionsForDomain(sourceKey: String, partial: String): List<Suggestion> = when (sourceKey) {
         "item-id" -> fuzzyStrings(partial, itemIds)
+        "entity-id" -> fuzzyStrings(partial, entityIds)
         "fluid-id" -> fuzzyStrings(partial, fluidIds)
         "tag-id" -> fuzzyStrings(partial, (itemTags + fluidTags).distinct())
         "block-id" -> fuzzyStrings(partial, blockIds)
@@ -2436,6 +2443,16 @@ class AutocompletePopup(
         "user-alias" -> FuzzyMatch.filter(
             partial,
             userAliases.map { suggest(it, "$it (user)", Kind.STRING) },
+        )
+
+        "display-name" -> FuzzyMatch.filter(
+            partial,
+            displayNames.map { suggest(it, "$it (display)", Kind.STRING) },
+        )
+
+        "widget-name" -> FuzzyMatch.filter(
+            partial,
+            widgetNames.map { suggest(it, "$it (widget)", Kind.STRING) },
         )
 
         "variable-name" -> {
