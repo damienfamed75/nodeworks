@@ -364,7 +364,14 @@ class StockerBuilder(
         CraftingHelper.currentPendingJob = null
 
         if (result == null && pending == null) {
-            CraftingHelper.lastFailReason?.let { engine.logError("[stocker] $it") }
+            // Missing ingredients is a transient, expected condition for a
+            // stocker (it's literally watching for stock to fall short), so
+            // it's silenced. Other planning failures (no CPU, no handler,
+            // buffer too small) are still surfaced.
+            val reason = CraftingHelper.lastFailReason
+            if (reason != null && !reason.startsWith("Missing ingredients")) {
+                engine.logError("[stocker] $reason")
+            }
             return
         }
 
