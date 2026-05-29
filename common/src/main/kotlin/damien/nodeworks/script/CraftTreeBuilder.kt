@@ -420,10 +420,6 @@ object CraftTreeBuilder {
         val holder = rm.getRecipeFor(RecipeType.CRAFTING, input, level).orElse(null)
             ?: return recipe to false
         val placement = holder.value().placementInfo()
-        // PlacementInfo de-duplicates ingredients (the chest's eight `#planks`
-        // slots collapse to one entry), so we have to map slot index back to
-        // its ingredient via [slotsToIngredientIndex].
-        val slotsToIngredient = placement.slotsToIngredientIndex()
         val candidatesPerIngredient: List<List<String>> = placement.ingredients().map { ing ->
             @Suppress("DEPRECATION")
             ing.items().toList().mapNotNull { BuiltInRegistries.ITEM.getKey(it.value())?.toString() }
@@ -443,11 +439,14 @@ object CraftTreeBuilder {
         for (slot in 0 until 9) {
             val originalId = concrete[slot]
             if (originalId.isEmpty()) continue
-            // slotsToIngredientIndex covers the recipe's bounding box, not the full
-            // 3×3, so slots past its size carry no ingredient (treat as -1).
-            val ingredientIdx = if (slot < slotsToIngredient.size) slotsToIngredient.getInt(slot) else -1
+            // Map the slot's authored item to its ingredient by candidate
+            // membership. Indexing by slot doesn't work, the recipe's
+            // [PlacementInfo] is laid out over its own bounding box, not the
+            // user's 3×3 grid, so a single-ingredient recipe authored in
+            // anywhere but slot 0 would otherwise miss its ingredient.
+            val ingredientIdx = candidatesPerIngredient.indexOfFirst { it.contains(originalId) }
             if (ingredientIdx < 0) continue
-            val candidates = candidatesPerIngredient.getOrNull(ingredientIdx) ?: continue
+            val candidates = candidatesPerIngredient[ingredientIdx]
 
             val choice = pickSlotCandidate(originalId, candidates, batches, ::availableFor) ?: continue
             if (choice != originalId) swapped = true
