@@ -11,6 +11,7 @@ import org.luaj.vm2.LuaError
 import org.luaj.vm2.LuaTable
 import org.luaj.vm2.LuaValue
 import org.luaj.vm2.Varargs
+import org.luaj.vm2.lib.OneArgFunction
 import org.luaj.vm2.lib.TwoArgFunction
 import org.luaj.vm2.lib.VarArgFunction
 
@@ -101,10 +102,17 @@ class StockerBuilder(
     internal var target: CardRef? = null
     internal var keepAmount: Int = -1
     internal var batchSize: Int = 0
+    internal var verboseLogging: Boolean = false
 
     /** Count of items currently being crafted on behalf of this stocker. Subtracted
      *  from "need" so we don't spam the CPU with redundant plans while one is in flight. */
     private var pendingCraftCount: Int = 0
+
+    /** Last planning-failure reason logged in verbose mode and the game tick
+     *  it was logged on, so a stuck stocker logs the same reason only on
+     *  change or after a quiet period instead of every tick. */
+    private var lastLoggedReason: String? = null
+    private var lastLoggedTick: Long = Long.MIN_VALUE
 
     // Per-snapshot cached resolutions. Sources expand wildcards (e.g. `"chest_*"` fans
     // out to every matching card), target stays single because "maintain 64 in each of
@@ -138,6 +146,11 @@ class StockerBuilder(
 
     fun filter(pattern: String): StockerBuilder {
         filter = pattern
+        return this
+    }
+
+    fun verbose(): StockerBuilder {
+        verboseLogging = true
         return this
     }
 
@@ -364,13 +377,25 @@ class StockerBuilder(
         CraftingHelper.currentPendingJob = null
 
         if (result == null && pending == null) {
-            // Missing ingredients is a transient, expected condition for a
-            // stocker (it's literally watching for stock to fall short), so
-            // it's silenced. Other planning failures (no CPU, no handler,
-            // buffer too small) are still surfaced.
             val reason = CraftingHelper.lastFailReason
-            if (reason != null && !reason.startsWith("Missing ingredients")) {
-                engine.logError("[stocker] $reason")
+            if (reason != null) {
+                val missing = reason.startsWith("Missing ingredients")
+                // Missing ingredients is a transient, expected condition for a
+                // stocker (it's literally watching for stock to fall short),
+                // silenced by default. `:verbose()` opts in but rate-limits so
+                // a stuck stocker reports its block only on change or after a
+                // quiet period. Other planning failures (no CPU, no handler,
+                // buffer too small) always surface.
+                if (!missing || verboseLogging) {
+                    val tick = engine.level.gameTime
+                    val changed = reason != lastLoggedReason
+                    val quiet = tick - lastLoggedTick >= VERBOSE_REPEAT_TICKS
+                    if (!missing || changed || quiet) {
+                        engine.logError("[stocker] $reason")
+                        lastLoggedReason = reason
+                        lastLoggedTick = tick
+                    }
+                }
             }
             return
         }
@@ -413,5 +438,17 @@ class StockerBuilder(
                 return selfRef.toLuaTable()
             }
         })
+        t.set("verbose", object : OneArgFunction() {
+            override fun call(selfArg: LuaValue): LuaValue {
+                selfRef.verbose()
+                return selfRef.toLuaTable()
+            }
+        })
+    }
+
+    companion object {
+        /** Quiet window before a repeating verbose failure is re-logged. ~5 s
+         *  at 20 tps keeps the log readable when a stocker sits stuck. */
+        private const val VERBOSE_REPEAT_TICKS = 100L
     }
 }

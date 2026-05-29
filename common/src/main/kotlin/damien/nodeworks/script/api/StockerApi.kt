@@ -85,6 +85,11 @@ val StockerBuilderApi: ApiSurface = api(StockerBuilder) {
         guidebookRef = "nodeworks:lua-api/stocker.md#filter"
     }
 
+    method("verbose") {
+        returns(StockerBuilder)
+        description = "Log planning failures (including missing ingredients) to the script log"
+    }
+
     method("every") {
         param("ticks", Number, description = "Tick interval. Default 20 (one second).")
         returns(StockerBuilder)
