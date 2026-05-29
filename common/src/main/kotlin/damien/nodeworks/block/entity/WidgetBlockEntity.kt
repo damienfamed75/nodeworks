@@ -79,9 +79,9 @@ class WidgetBlockEntity(
         private set
 
     /** BUTTON only, how many ticks the button stays "held" (`value == 1`)
-     *  after a press before auto-releasing. 0 = a pure momentary press
-     *  (value stays 0, only the interaction edge fires). */
-    var buttonHoldTicks: Int = 0
+     *  after a press before auto-releasing. Floored at [MIN_HOLD_TICKS] so
+     *  every press registers as at least a visible click. */
+    var buttonHoldTicks: Int = MIN_HOLD_TICKS
         private set
 
     /** Game time the current button hold expires at. Transient, a hold does
@@ -98,11 +98,21 @@ class WidgetBlockEntity(
     fun setType(type: WidgetType) {
         widgetType = type
         value = 0f
+        // Mirror the type into the blockstate so the chunk renderer can
+        // pick the matching per-type model. Same-class state changes keep
+        // the BE intact via Block.onRemove's `is(newBlock)` check.
+        val lvl = level
+        if (lvl != null && !lvl.isClientSide) {
+            val newState = blockState.setValue(WidgetBlock.WIDGET_TYPE, type)
+            if (newState != blockState) {
+                lvl.setBlock(worldPosition, newState, Block.UPDATE_ALL)
+            }
+        }
         markDirtyAndSync()
     }
 
     fun setButtonHold(ticks: Int) {
-        buttonHoldTicks = ticks.coerceIn(0, MAX_HOLD_TICKS)
+        buttonHoldTicks = ticks.coerceIn(MIN_HOLD_TICKS, MAX_HOLD_TICKS)
         markDirtyAndSync()
     }
 
@@ -129,17 +139,22 @@ class WidgetBlockEntity(
 
     // --- Interactions, called from the block's right-click handler ---
 
-    /** BUTTON press. With [buttonHoldTicks] == 0 it is a pure momentary edge
-     *  (value stays 0). With a positive hold it latches `value` to 1 and a
-     *  later [serverTick] releases it, so a script sees both the press (1)
-     *  and release (0) edges. */
-    fun press() {
-        if (widgetType == WidgetType.BUTTON && buttonHoldTicks > 0) {
+    /** BUTTON press. Latches `value` to 1 for [buttonHoldTicks] ticks (always
+     *  at least [MIN_HOLD_TICKS]), then [serverTick] releases it, so a script
+     *  sees both the press (1) and release (0) edges. Re-presses while a hold
+     *  is latched are a no-op: the hold acts as a timeout, further clicks
+     *  don't refresh it. Returns true when the press actually registered, so
+     *  the caller knows whether to play a click sound. */
+    fun press(): Boolean {
+        // Already-latched hold absorbs further clicks.
+        if (widgetType == WidgetType.BUTTON && value >= 0.5f) return false
+        if (widgetType == WidgetType.BUTTON) {
             value = 1f
             heldUntilTick = (level?.gameTime ?: 0L) + buttonHoldTicks
         }
         interactionGeneration++
         markDirtyAndSync()
+        return true
     }
 
     /** Server-side per-tick hook, releases a held BUTTON once its hold ends. */
@@ -148,6 +163,13 @@ class WidgetBlockEntity(
         if (level.gameTime >= heldUntilTick) {
             value = 0f
             interactionGeneration++
+            // Pop-out sound mirrors the press click, slightly deeper pitch.
+            level.playSound(
+                null, worldPosition,
+                net.minecraft.sounds.SoundEvents.STONE_BUTTON_CLICK_OFF,
+                net.minecraft.sounds.SoundSource.BLOCKS,
+                0.4f, 0.9f,
+            )
             markDirtyAndSync()
         }
     }
@@ -175,6 +197,13 @@ class WidgetBlockEntity(
         markDirtyAndSync()
     }
 
+    /** SLIDER, the current value as a 0..1 fraction of `[sliderMin, sliderMax]`.
+     *  Used to pitch-shift the step-click sound (deeper at min, higher at max). */
+    fun sliderValueFraction(): Float {
+        val span = sliderMax - sliderMin
+        return if (span <= 0f) 0.5f else ((value - sliderMin) / span).coerceIn(0f, 1f)
+    }
+
     /** SLIDER, snap [raw] to the configured step+bounds. Returns true when the
      *  value actually moved, so the block can play a per-step click sound. */
     fun setSliderValue(raw: Float): Boolean {
@@ -187,7 +216,11 @@ class WidgetBlockEntity(
     }
 
     private fun sanitize(raw: Float): Float = when (widgetType) {
-        WidgetType.BUTTON -> 0f
+        // BUTTON's value is 0 at rest and 1 while a hold is latched. Sanitize
+        // to 0/1 so a held value survives the client's loadAdditional during
+        // a sync, otherwise the BER never sees value=1 and the cap doesn't
+        // animate for hold-configured buttons.
+        WidgetType.BUTTON -> if (raw >= 0.5f) 1f else 0f
         WidgetType.SWITCH -> if (raw >= 0.5f) 1f else 0f
         WidgetType.RADIO -> raw.toInt().coerceIn(0, (radioOptions.size - 1).coerceAtLeast(0)).toFloat()
         WidgetType.SLIDER -> sanitizeSlider(raw)
@@ -280,7 +313,7 @@ class WidgetBlockEntity(
         sliderMax = input.getFloatOr("sliderMax", 10f)
         sliderStep = input.getFloatOr("sliderStep", 1f).coerceAtLeast(0.0001f)
         channel = runCatching { DyeColor.byId(input.getIntOr("channel", 0)) }.getOrDefault(DyeColor.WHITE)
-        buttonHoldTicks = input.getIntOr("buttonHoldTicks", 0).coerceIn(0, MAX_HOLD_TICKS)
+        buttonHoldTicks = input.getIntOr("buttonHoldTicks", MIN_HOLD_TICKS).coerceIn(MIN_HOLD_TICKS, MAX_HOLD_TICKS)
         val opts = ArrayList<String>()
         for (s in input.listOrEmpty("radioOptions", Codec.STRING)) opts.add(s)
         radioOptions = opts.ifEmpty { listOf("A", "B", "C") }
@@ -297,6 +330,9 @@ class WidgetBlockEntity(
     override fun getUpdatePacket(): Packet<ClientGamePacketListener> = ClientboundBlockEntityDataPacket.create(this)
 
     companion object {
+        /** Lower bound on a button's hold duration. 1 tick is too brief to
+         *  read visually + audibly, 2 ticks reliably reads as a click. */
+        const val MIN_HOLD_TICKS = 2
         /** Upper bound on a button's hold duration (10 s at 20 tps). */
         const val MAX_HOLD_TICKS = 200
     }

@@ -28,8 +28,10 @@ import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
+import net.minecraft.world.level.block.state.properties.EnumProperty
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
+import net.minecraft.world.phys.shapes.Shapes
 import net.minecraft.world.phys.shapes.VoxelShape
 
 /**
@@ -49,9 +51,32 @@ class WidgetBlock(properties: Properties) : BaseEntityBlock(properties) {
         val CODEC: MapCodec<WidgetBlock> = simpleCodec(::WidgetBlock)
         val FACING = BlockStateProperties.FACING
 
-        private val SHAPE_Z: VoxelShape = Block.box(1.0, 1.0, 0.0, 15.0, 15.0, 16.0)
-        private val SHAPE_X: VoxelShape = Block.box(0.0, 1.0, 1.0, 16.0, 15.0, 15.0)
-        private val SHAPE_Y: VoxelShape = Block.box(1.0, 0.0, 1.0, 15.0, 16.0, 15.0)
+        /** Blockstate enum that drives per-type model selection in the
+         *  chunk renderer. Kept in sync with [WidgetBlockEntity.widgetType]
+         *  by [WidgetBlockEntity.setType]. */
+        val WIDGET_TYPE: EnumProperty<WidgetType> =
+            EnumProperty.create("widget_type", WidgetType::class.java)
+
+        /** Full 16×16×16 hitbox: the widget reads as a solid block to hit-tests
+         *  and collisions regardless of facing, so the player has the whole
+         *  face to click on for the control. */
+        private val SHAPE_FULL: VoxelShape = Shapes.block()
+
+        /** Slider track + handle geometry, shared with [damien.nodeworks.render.WidgetRenderer]
+         *  so the click hit-test and the rendered handle stay in lockstep. Track
+         *  is centred on the face, the handle's edges line up with the track's
+         *  edges at min / max value. Edit these if you author a different
+         *  track size in `widget_slider.json`. */
+        const val SLIDER_TRACK_WIDTH_PX = 11
+        const val SLIDER_HANDLE_WIDTH_PX = 2
+        /** Block-relative inset of the track's left edge from the block's
+         *  left edge. = (16 - track_width) / 2 / 16. */
+        const val SLIDER_TRACK_MIN = (16f - SLIDER_TRACK_WIDTH_PX) / 32f
+        /** Block-relative width of the slidable track. */
+        const val SLIDER_TRACK_SPAN = SLIDER_TRACK_WIDTH_PX / 16f
+        /** Block-relative travel of the handle's centre, edge-to-edge of the
+         *  track. = (track_width - handle_width) / 16. */
+        const val SLIDER_HANDLE_TRAVEL = (SLIDER_TRACK_WIDTH_PX - SLIDER_HANDLE_WIDTH_PX) / 16f
 
         /** Vertical band of the face occupied by the control (the name label
          *  sits above it, the value readout below). A shift-click inside this
@@ -65,39 +90,41 @@ class WidgetBlock(properties: Properties) : BaseEntityBlock(properties) {
         /** Project a point on the block's front face onto the slider's track,
          *  returning a 0..1 fraction along the face's local +X axis (the axis
          *  [damien.nodeworks.render.WidgetRenderer] positions the handle on).
-         *  Shared by the click handler and the client-side drag controller so
-         *  both agree on which way is "right" for every facing. */
+         *  The fraction is remapped to the track's actual width ([SLIDER_TRACK_SPAN])
+         *  so a click on the track's left edge gives 0 and a click on its right
+         *  edge gives 1, with clicks past the track clamped. Shared by the
+         *  click handler and the client-side drag controller. */
         fun sliderFractionFor(facing: Direction, pos: BlockPos, loc: net.minecraft.world.phys.Vec3): Float {
             val lx = (loc.x - pos.x).toFloat()
             val lz = (loc.z - pos.z).toFloat()
-            val frac = when (facing) {
+            val rawFrac = when (facing) {
                 Direction.SOUTH -> lx
                 Direction.NORTH -> 1f - lx
                 Direction.EAST -> 1f - lz
                 Direction.WEST -> lz
                 else -> lx // UP / DOWN: nominal, the track has no world-horizontal anchor
             }
-            return frac.coerceIn(0f, 1f)
+            return ((rawFrac - SLIDER_TRACK_MIN) / SLIDER_TRACK_SPAN).coerceIn(0f, 1f)
         }
     }
 
     init {
-        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH))
+        registerDefaultState(
+            stateDefinition.any()
+                .setValue(FACING, Direction.NORTH)
+                .setValue(WIDGET_TYPE, WidgetType.BUTTON)
+        )
     }
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
-        builder.add(FACING)
+        builder.add(FACING, WIDGET_TYPE)
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
 
     override fun getShape(state: BlockState, level: BlockGetter, pos: BlockPos, context: CollisionContext): VoxelShape =
-        when (state.getValue(FACING).axis) {
-            Direction.Axis.X -> SHAPE_X
-            Direction.Axis.Y -> SHAPE_Y
-            else -> SHAPE_Z
-        }
+        SHAPE_FULL
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState? =
         defaultBlockState().setValue(FACING, context.nearestLookingDirection.opposite)
@@ -145,10 +172,18 @@ class WidgetBlock(properties: Properties) : BaseEntityBlock(properties) {
         // Plain right-click operates the widget forward. Shift-click splits by
         // where on the face it landed: a click inside the centred control band
         // operates the widget in reverse, a click on the name / value rows
-        // (above or below the band) opens the config GUI.
+        // (above or below the band) opens the config GUI. The BUTTON's cap is
+        // narrow, so its band is checked on both axes — the empty space left
+        // and right of the cap also opens the GUI.
         if (player.isShiftKeyDown) {
             val v = faceV(state, pos, hitResult)
-            if (v in CONTROL_BAND_MIN..CONTROL_BAND_MAX) {
+            val inBand = if (entity.widgetType == WidgetType.BUTTON) {
+                val u = faceU(state, pos, hitResult)
+                v in CONTROL_BAND_MIN..CONTROL_BAND_MAX && u in CONTROL_BAND_MIN..CONTROL_BAND_MAX
+            } else {
+                v in CONTROL_BAND_MIN..CONTROL_BAND_MAX
+            }
+            if (inBand) {
                 operate(level, pos, state, entity, hitResult, reverse = true)
             } else {
                 openConfig(pos, player as ServerPlayer, entity)
@@ -193,8 +228,10 @@ class WidgetBlock(properties: Properties) : BaseEntityBlock(properties) {
     ) {
         when (entity.widgetType) {
             WidgetType.BUTTON -> {
-                entity.press()
-                playSound(level, pos, SoundEvents.STONE_BUTTON_CLICK_ON, 1.0f)
+                // A latched hold absorbs further clicks, no click sound.
+                if (entity.press()) {
+                    playSound(level, pos, SoundEvents.STONE_BUTTON_CLICK_ON, 1.0f)
+                }
             }
             WidgetType.SWITCH -> {
                 entity.toggle()
@@ -212,7 +249,7 @@ class WidgetBlock(properties: Properties) : BaseEntityBlock(properties) {
                     val frac = sliderFraction(state, pos, hitResult)
                     entity.setSliderValue(entity.sliderMin + frac * (entity.sliderMax - entity.sliderMin))
                 }
-                if (changed) playSound(level, pos, SoundEvents.STONE_BUTTON_CLICK_ON, 1.4f)
+                if (changed) playSound(level, pos, SoundEvents.STONE_BUTTON_CLICK_ON, sliderClickPitch(entity))
             }
         }
     }
@@ -232,9 +269,27 @@ class WidgetBlock(properties: Properties) : BaseEntityBlock(properties) {
         return v.coerceIn(0f, 1f)
     }
 
+    /** Horizontal position of the hit on the face, 0 (left) .. 1 (right) in
+     *  face-local coords. Used by the BUTTON's shift-click split so the empty
+     *  space left and right of the cap opens the GUI. */
+    private fun faceU(state: BlockState, pos: BlockPos, hitResult: BlockHitResult): Float {
+        val loc = hitResult.location
+        val u = when (state.getValue(FACING).axis) {
+            Direction.Axis.X -> (loc.z - pos.z).toFloat()
+            else -> (loc.x - pos.x).toFloat()
+        }
+        return u.coerceIn(0f, 1f)
+    }
+
     private fun playSound(level: Level, pos: BlockPos, sound: net.minecraft.sounds.SoundEvent, pitch: Float) {
         level.playSound(null, pos, sound, SoundSource.BLOCKS, 0.4f, pitch)
     }
+
+    /** Slider step-click pitch, deeper at the low end of the range and higher
+     *  at the top so the player hears the value travelling. Shared by the
+     *  click-to-position path here and the drag stream in `Nodeworks.kt`. */
+    private fun sliderClickPitch(entity: WidgetBlockEntity): Float =
+        0.6f + entity.sliderValueFraction() * 1.0f
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
         val entity = level.getBlockEntity(pos) as? WidgetBlockEntity

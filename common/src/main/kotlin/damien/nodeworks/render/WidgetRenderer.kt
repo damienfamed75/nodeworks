@@ -1,30 +1,38 @@
 package damien.nodeworks.render
 
 import com.mojang.blaze3d.vertex.PoseStack
+import com.mojang.blaze3d.vertex.QuadInstance
 import com.mojang.math.Axis
 import damien.nodeworks.block.WidgetBlock
 import damien.nodeworks.block.entity.WidgetBlockEntity
 import damien.nodeworks.block.entity.WidgetType
+import damien.nodeworks.client.WidgetPartModels
 import net.minecraft.client.renderer.SubmitNodeCollector
+import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer
 import net.minecraft.client.renderer.state.level.CameraRenderState
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
+import net.minecraft.util.ARGB
 import net.minecraft.world.phys.Vec3
-import org.joml.Vector3f
 
 /**
- * BER for the Widget block. Draws a network-coloured emissive "moving part" on
- * the block's front face, shaped by the widget's configured type:
+ * BER for the Widget block. Overlays the dynamic "moving part" of each widget
+ * type on top of the static chassis baked into the `widget_<type>` blockstate
+ * model:
  *
- *  * BUTTON, a square cap that pushes inward briefly after each press.
- *  * SWITCH, a handle that slides left (off) / right (on).
- *  * RADIO, a row of pips with the selected index lit brightest.
- *  * SLIDER, a track bar with a handle positioned at the value's fraction.
+ *  * BUTTON, the cap (loaded from `widget_button_cap`) pushes inward briefly
+ *    on press and stays in while a hold is latched.
+ *  * SWITCH, the handle (`widget_switch_handle`) slides between the two ends.
+ *  * RADIO, the pip (`widget_radio_pip`) is drawn once per option, with the
+ *    selected one at full alpha and the rest dimmed.
+ *  * SLIDER, the handle (`widget_slider_handle`) rides along the track.
  *
- * The in-world name label is drawn separately by [NodeConnectionRenderer]
- * (font rendering wants the level-render pose, not a per-BER pass).
+ * Each part model is authored centred on the face (model space `(8, 8)` is
+ * the face centre, `z=0` is the face plane). The renderer applies the
+ * blockstate-equivalent face rotation, then a per-state offset on top, so
+ * the rest pose in Blockbench matches the value-zero appearance in-world.
  */
 class WidgetRenderer(context: BlockEntityRendererProvider.Context) :
     ConnectableBER<WidgetBlockEntity, WidgetRenderer.RenderState>(context) {
@@ -32,30 +40,26 @@ class WidgetRenderer(context: BlockEntityRendererProvider.Context) :
     class RenderState : ConnectableRenderState() {
         var facing: Direction = Direction.NORTH
         var type: WidgetType = WidgetType.BUTTON
-        var color: Int = NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
-        /** Normalized value: SWITCH 0/1, RADIO index, SLIDER fraction 0..1. */
+        /** Normalized 0..1, drives the per-type horizontal offset. SWITCH 0/1,
+         *  SLIDER the value fraction. Unused by BUTTON / RADIO. */
         var valueFraction: Float = 0f
         var radioIndex: Int = 0
         var radioCount: Int = 1
-        /** 1.0 right after a press, decaying to 0 over [PRESS_TICKS]. */
+        /** Binary 0 or 1, no easing: 1 while the button is "in", 0 while "out". */
         var pressProgress: Float = 0f
     }
 
     companion object {
-        /** How long the button-press push-in animation lasts, in ticks. */
-        private const val PRESS_TICKS = 5f
-        /** Front face plane in centred block-local space. [applyFaceRotation]
-         *  orients local +Z along the block's facing, so the face is +Z. */
-        private const val FACE_Z = 0.5f
-        /** Vertical offset of the control on the face. Centred so the name
-         *  label (above) and the value readout (below) sit symmetrically
-         *  around it, a fixed layout a custom model can be built to. */
-        private const val CTRL_Y = 0f
-
-        /** Last seen interaction generation per widget, to detect a fresh press. */
-        private val lastGen = HashMap<BlockPos, Int>()
-        /** Game-time (+ partial) of the last detected press, per widget. */
-        private val pressAt = HashMap<BlockPos, Float>()
+        /** Button push-in depth (block-relative). Held short of a full pixel so
+         *  the cap's front face doesn't reach the recessed inner panel and
+         *  z-fight with it. Half a pixel reads as a clear press. */
+        private const val BUTTON_PUSH_DEPTH = 0.5f / 16f
+        /** Horizontal travel range for the switch handle (block-relative). Kept
+         *  short so the handle stays inside the modeled toggle frame's endcaps. */
+        private const val SWITCH_HANDLE_TRAVEL = 0.25f
+        /** Six +null face buckets to walk a BlockStateModelPart's quads. */
+        private val DIRECTIONS_AND_NULL: Array<Direction?> =
+            arrayOf(Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST, null)
     }
 
     override fun createRenderState(): RenderState = RenderState()
@@ -69,19 +73,12 @@ class WidgetRenderer(context: BlockEntityRendererProvider.Context) :
     ) {
         state.facing = blockEntity.blockState.getValue(WidgetBlock.FACING)
         state.type = blockEntity.widgetType
-        state.color = resolveNetworkColor(blockEntity)
 
-        val pos = blockEntity.blockPos
-        val now = (blockEntity.level?.gameTime ?: 0L).toFloat() + partialTicks
-        val gen = blockEntity.interactionGeneration
-        if (lastGen.put(pos, gen) != gen) pressAt[pos] = now
-        val age = now - (pressAt[pos] ?: (now - PRESS_TICKS))
-        state.pressProgress = (1f - age / PRESS_TICKS).coerceIn(0f, 1f)
-        // A latched (hold-configured) button stays fully pressed in until the
-        // server releases value back to 0; override the time decay here.
-        if (blockEntity.widgetType == WidgetType.BUTTON && blockEntity.value >= 0.5f) {
-            state.pressProgress = 1f
-        }
+        // Binary press state mirrors the server-driven value: in for the
+        // whole hold, out immediately after. Every button is hold-configured
+        // (floored at MIN_HOLD_TICKS), so there's no momentary fallback.
+        val pressed = blockEntity.widgetType == WidgetType.BUTTON && blockEntity.value >= 0.5f
+        state.pressProgress = if (pressed) 1f else 0f
 
         when (blockEntity.widgetType) {
             WidgetType.BUTTON -> state.valueFraction = 0f
@@ -105,85 +102,114 @@ class WidgetRenderer(context: BlockEntityRendererProvider.Context) :
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
-        poseStack.pushPose()
-        poseStack.translate(0.5, 0.5, 0.5)
-        applyFaceRotation(poseStack, state.facing)
+        // No network-colour tint, the authored texture shows through as-is.
+        // Only the alpha varies, used to dim non-selected radio pips.
+        val r = 255
+        val g = 255
+        val b = 255
 
-        val r = (state.color shr 16) and 0xFF
-        val g = (state.color shr 8) and 0xFF
-        val b = state.color and 0xFF
+        // After the blockstate rotation, local +X points toward the player's
+        // LEFT on every horizontal facing and toward the player's RIGHT for
+        // UP / DOWN. Flip the offset on horizontal facings so a higher value
+        // always slides the part toward the player's right.
+        val xSign = if (state.facing.axis == Direction.Axis.Y) 1f else -1f
 
-        // Z planes, all kept strictly in front of the model surface (FACE_Z)
-        // so nothing co-planar z-fights the block face.
-        val trackZ = FACE_Z + 0.03f
-        val partZ = FACE_Z + 0.06f
         when (state.type) {
             WidgetType.BUTTON -> {
-                // A square cap pushed inward by the press animation. Slightly
-                // smaller than before so the name label fits above it.
-                val pushIn = state.pressProgress * 0.05f
-                box(submitNodeCollector, poseStack, 0f, CTRL_Y, partZ - pushIn, 0.13f, 0.13f, 0.05f, r, g, b, 255)
+                val cap = WidgetPartModels.buttonCap() ?: return
+                // Press pushes the cap inward along the face's local +Z axis.
+                submitPart(poseStack, submitNodeCollector, cap, state.facing,
+                    xOffset = 0f, zOffset = state.pressProgress * BUTTON_PUSH_DEPTH,
+                    r = r, g = g, b = b, a = 255)
             }
             WidgetType.SWITCH -> {
-                // Recessed track + a handle that slides between the two ends.
-                box(submitNodeCollector, poseStack, 0f, CTRL_Y, trackZ, 0.28f, 0.1f, 0.018f, r, g, b, 90)
-                val hx = -0.16f + state.valueFraction * 0.32f
-                box(submitNodeCollector, poseStack, hx, CTRL_Y, partZ, 0.1f, 0.14f, 0.05f, r, g, b, 255)
+                val handle = WidgetPartModels.switchHandle() ?: return
+                val xOffset = (state.valueFraction - 0.5f) * SWITCH_HANDLE_TRAVEL * xSign
+                submitPart(poseStack, submitNodeCollector, handle, state.facing,
+                    xOffset = xOffset, zOffset = 0f,
+                    r = r, g = g, b = b, a = 255)
             }
             WidgetType.RADIO -> {
-                // A row of pips, the selected one lit bright, the rest dim.
+                val pip = WidgetPartModels.radioPip() ?: return
                 val count = state.radioCount.coerceAtMost(6)
+                // Even spacing on the face, matching the previous box layout
+                // so authored models slot into the same positions.
                 val spacing = 0.6f / count
                 val start = -0.3f + spacing / 2f
                 for (i in 0 until count) {
                     val lit = i == state.radioIndex
                     val a = if (lit) 255 else 70
-                    val s = if (lit) 0.07f else 0.05f
-                    box(submitNodeCollector, poseStack, start + i * spacing, CTRL_Y, partZ, s, s, 0.035f, r, g, b, a)
+                    submitPart(poseStack, submitNodeCollector, pip, state.facing,
+                        xOffset = (start + i * spacing) * xSign, zOffset = 0f,
+                        r = r, g = g, b = b, a = a)
                 }
             }
             WidgetType.SLIDER -> {
-                // Horizontal track + a handle at the value fraction.
-                box(submitNodeCollector, poseStack, 0f, CTRL_Y, trackZ, 0.36f, 0.04f, 0.018f, r, g, b, 90)
-                val hx = -0.32f + state.valueFraction * 0.64f
-                box(submitNodeCollector, poseStack, hx, CTRL_Y, partZ, 0.06f, 0.16f, 0.05f, r, g, b, 255)
+                val handle = WidgetPartModels.sliderHandle() ?: return
+                // Travel matches the modeled track width so the handle's edges
+                // line up with the track's edges at min / max value.
+                val xOffset = (state.valueFraction - 0.5f) * WidgetBlock.SLIDER_HANDLE_TRAVEL * xSign
+                submitPart(poseStack, submitNodeCollector, handle, state.facing,
+                    xOffset = xOffset, zOffset = 0f,
+                    r = r, g = g, b = b, a = 255)
             }
         }
-
-        poseStack.popPose()
     }
 
-    /** Submit one emissive cuboid centred at [cx],[cy],[cz] with the given
-     *  half-extents, in the pose's centred block-local space. */
-    private fun box(
-        submitter: SubmitNodeCollector,
+    /** Submit [part]'s baked quads, oriented to match the chunk-rendered
+     *  chassis (so model `z=0` lands on the widget's facing face) and offset
+     *  along the face's local axes by ([xOffset], [zOffset]) in block-relative
+     *  units. The colour multiplies the texture, so a "neutral" authored mesh
+     *  picks up the network tint while the alpha controls intensity for the
+     *  additive-emissive blend. */
+    private fun submitPart(
         pose: PoseStack,
-        cx: Float, cy: Float, cz: Float,
-        hx: Float, hy: Float, hz: Float,
+        submitter: SubmitNodeCollector,
+        part: BlockStateModelPart,
+        facing: Direction,
+        xOffset: Float,
+        zOffset: Float,
         r: Int, g: Int, b: Int, a: Int,
     ) {
-        EmissiveCubeRenderer.submitBox(
-            submitter, pose,
-            Vector3f(cx - hx, cy - hy, cz - hz),
-            Vector3f(2f * hx, 0f, 0f),
-            Vector3f(0f, 2f * hy, 0f),
-            Vector3f(0f, 0f, 2f * hz),
-            r, g, b, a,
-        )
+        pose.pushPose()
+        // Rotate around the block centre to match the blockstate JSON, so the
+        // baked quads land on the same world geometry as the chunk-rendered
+        // chassis.
+        pose.translate(0.5, 0.5, 0.5)
+        applyBlockstateRotation(pose, facing)
+        pose.translate(-0.5, -0.5, -0.5)
+        // Local +X = right on the face, local +Z = into the block (away from
+        // the player looking at the widget). The author centres the part at
+        // face centre, the renderer slides it from there.
+        pose.translate(xOffset, 0f, zOffset)
+
+        val argb = ARGB.color(a, r, g, b)
+        val quadInstance = QuadInstance().apply {
+            for (vertex in 0..3) setColor(vertex, argb)
+        }
+        submitter.submitCustomGeometry(pose, EmissiveCubeRenderer.OPAQUE_BLOCK_ATLAS_RENDER_TYPE) { p, vc ->
+            for (dir in DIRECTIONS_AND_NULL) {
+                for (quad in part.getQuads(dir)) {
+                    vc.putBakedQuad(p, quad, quadInstance)
+                }
+            }
+        }
+        pose.popPose()
     }
 
-    /** Orient the pose so local +Z points along [facing] (outward from the
-     *  block's front face) and local +Y reads as "up" on that face. Shared
-     *  convention with [NodeConnectionRenderer]'s widget-name path so the
-     *  label and the control agree on which way is up for every facing. */
-    private fun applyFaceRotation(poseStack: PoseStack, facing: Direction) {
+    /** Same rotation the chunk renderer applies via `blockstates/widget.json`,
+     *  so a baked overlay lands on the same world geometry as the chassis.
+     *  MC's blockstate Y/X rotation goes opposite the standard right-hand
+     *  convention, so blockstate `y=90` corresponds to `Axis.YP.rotationDegrees(-90)`
+     *  here. */
+    private fun applyBlockstateRotation(pose: PoseStack, facing: Direction) {
         when (facing) {
-            Direction.SOUTH -> Unit
-            Direction.NORTH -> poseStack.mulPose(Axis.YP.rotationDegrees(180f))
-            Direction.EAST -> poseStack.mulPose(Axis.YP.rotationDegrees(90f))
-            Direction.WEST -> poseStack.mulPose(Axis.YP.rotationDegrees(-90f))
-            Direction.UP -> poseStack.mulPose(Axis.XP.rotationDegrees(-90f))
-            Direction.DOWN -> poseStack.mulPose(Axis.XP.rotationDegrees(90f))
+            Direction.NORTH -> Unit
+            Direction.SOUTH -> pose.mulPose(Axis.YP.rotationDegrees(180f))
+            Direction.EAST -> pose.mulPose(Axis.YP.rotationDegrees(-90f))
+            Direction.WEST -> pose.mulPose(Axis.YP.rotationDegrees(90f))
+            Direction.UP -> pose.mulPose(Axis.XP.rotationDegrees(90f))
+            Direction.DOWN -> pose.mulPose(Axis.XP.rotationDegrees(-90f))
         }
     }
 }

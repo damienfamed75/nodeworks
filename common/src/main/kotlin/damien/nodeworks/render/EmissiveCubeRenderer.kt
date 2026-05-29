@@ -125,6 +125,40 @@ object EmissiveCubeRenderer {
         )
     }
 
+    /**
+     * Non-additive opaque counterpart to [ADDITIVE_EMISSIVE_PIPELINE]. Same
+     * core/entity shader, but [BlendFunction.TRANSLUCENT] blend + depth-write
+     * enabled, so textured BakedModel quads render as solid (opaque pixels
+     * fully overwrite, transparent pixels alpha-blend) instead of glowing
+     * additively. Used by the Widget BER for its modeled moving parts where
+     * the user wants a textured-block look rather than an emissive highlight.
+     */
+    private val OPAQUE_BLOCK_PIPELINE: RenderPipeline =
+        RenderPipeline.builder(RenderPipelines.MATRICES_FOG_SNIPPET)
+            .withLocation(Identifier.fromNamespaceAndPath("nodeworks", "pipeline/opaque_block_atlas"))
+            .withVertexShader("core/entity")
+            .withFragmentShader("core/entity")
+            .withShaderDefine("EMISSIVE")
+            .withShaderDefine("NO_OVERLAY")
+            // No NO_CARDINAL_LIGHTING: the shader applies per-face direction
+            // shading using each baked quad's normal, so tops read brighter
+            // than sides and the parts look like solid block geometry.
+            .withSampler("Sampler0")
+            .withColorTargetState(ColorTargetState(BlendFunction.TRANSLUCENT))
+            .withVertexFormat(DefaultVertexFormat.ENTITY, VertexFormat.Mode.QUADS)
+            .withDepthStencilState(DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true))
+            .build()
+
+    /** Opaque, non-additive sister of [BLOCK_ATLAS_RENDER_TYPE]. */
+    val OPAQUE_BLOCK_ATLAS_RENDER_TYPE: RenderType by lazy {
+        RenderType.create(
+            "nodeworks_opaque_block_atlas",
+            RenderSetup.builder(OPAQUE_BLOCK_PIPELINE)
+                .withTexture("Sampler0", net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS)
+                .createRenderSetup()
+        )
+    }
+
 
     /**
      * Emit the 4 faces perpendicular to [facing] with each face's UV rotated so the

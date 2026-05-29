@@ -170,7 +170,7 @@ class WidgetScreen(
 
         holdField = EditBox(font, configFieldX, topPos + CONFIG_AREA_Y + 2, 48, FIELD_H, Component.literal("Hold")).also {
             it.setMaxLength(4)
-            it.setHint(Component.literal("0").withStyle(ChatFormatting.DARK_GRAY))
+            it.setHint(Component.literal(WidgetBlockEntity.MIN_HOLD_TICKS.toString()).withStyle(ChatFormatting.DARK_GRAY))
             it.value = menu.initialButtonHold.toString()
         }
         addRenderableWidget(holdField)
@@ -319,7 +319,7 @@ class WidgetScreen(
                 graphics.drawString(font, "Hold length (ticks):", leftPos + OUTER_PAD + 2, topPos + CONFIG_LABEL_Y, 0xFFAAAAAA.toInt())
                 drawSetButton(graphics, configSetBtnX, topPos + CONFIG_AREA_Y, mouseX, mouseY)
                 graphics.drawString(
-                    font, "0 = momentary",
+                    font, "min ${WidgetBlockEntity.MIN_HOLD_TICKS}",
                     holdField.x + holdField.width + 6, topPos + CONFIG_AREA_Y + 4, 0xFF777777.toInt(),
                 )
             }
@@ -635,8 +635,8 @@ class WidgetScreen(
     }
 
     private fun commitHold() {
-        val ticks = (holdField.value.toIntOrNull() ?: 0)
-            .coerceIn(0, WidgetBlockEntity.MAX_HOLD_TICKS)
+        val ticks = (holdField.value.toIntOrNull() ?: WidgetBlockEntity.MIN_HOLD_TICKS)
+            .coerceIn(WidgetBlockEntity.MIN_HOLD_TICKS, WidgetBlockEntity.MAX_HOLD_TICKS)
         holdField.value = ticks.toString()
         if (holdField.value == lastSentHold) return
         sendUpdate("hold", ticks, "")

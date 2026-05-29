@@ -205,6 +205,15 @@ object NeoForgeClientSetup {
     private val COVERED_PIPE_INDICATOR_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:covered_pipe_indicator" }
 
+    private val WIDGET_BUTTON_CAP_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:widget_button_cap" }
+    private val WIDGET_SWITCH_HANDLE_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:widget_switch_handle" }
+    private val WIDGET_RADIO_PIP_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:widget_radio_pip" }
+    private val WIDGET_SLIDER_HANDLE_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:widget_slider_handle" }
+
     private fun onRegisterStandaloneModels(
         event: net.neoforged.neoforge.client.event.ModelEvent.RegisterStandalone
     ) {
@@ -268,6 +277,44 @@ object NeoForgeClientSetup {
             COVERED_PIPE_INDICATOR_MODEL_KEY,
             net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(coveredPipeIndicatorId),
         )
+
+        // Widget moving-part overlays. The BER positions and animates these
+        // baked models over the static chassis in the widget_<type> blockstate.
+        val widgetButtonCapId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/widget_button_cap")
+        event.register(
+            WIDGET_BUTTON_CAP_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(widgetButtonCapId),
+        )
+        damien.nodeworks.client.WidgetPartModels.buttonCapFetcher = {
+            net.minecraft.client.Minecraft.getInstance().modelManager.getStandaloneModel(WIDGET_BUTTON_CAP_KEY)
+        }
+
+        val widgetSwitchHandleId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/widget_switch_handle")
+        event.register(
+            WIDGET_SWITCH_HANDLE_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(widgetSwitchHandleId),
+        )
+        damien.nodeworks.client.WidgetPartModels.switchHandleFetcher = {
+            net.minecraft.client.Minecraft.getInstance().modelManager.getStandaloneModel(WIDGET_SWITCH_HANDLE_KEY)
+        }
+
+        val widgetRadioPipId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/widget_radio_pip")
+        event.register(
+            WIDGET_RADIO_PIP_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(widgetRadioPipId),
+        )
+        damien.nodeworks.client.WidgetPartModels.radioPipFetcher = {
+            net.minecraft.client.Minecraft.getInstance().modelManager.getStandaloneModel(WIDGET_RADIO_PIP_KEY)
+        }
+
+        val widgetSliderHandleId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/widget_slider_handle")
+        event.register(
+            WIDGET_SLIDER_HANDLE_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(widgetSliderHandleId),
+        )
+        damien.nodeworks.client.WidgetPartModels.sliderHandleFetcher = {
+            net.minecraft.client.Minecraft.getInstance().modelManager.getStandaloneModel(WIDGET_SLIDER_HANDLE_KEY)
+        }
     }
 
     /**

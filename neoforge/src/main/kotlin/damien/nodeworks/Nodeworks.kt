@@ -604,7 +604,9 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                                         level.playSound(
                                             null, payload.pos,
                                             net.minecraft.sounds.SoundEvents.STONE_BUTTON_CLICK_ON,
-                                            net.minecraft.sounds.SoundSource.BLOCKS, 0.3f, 1.5f,
+                                            net.minecraft.sounds.SoundSource.BLOCKS,
+                                            0.3f,
+                                            0.6f + entity.sliderValueFraction() * 1.0f,
                                         )
                                     }
                                 }

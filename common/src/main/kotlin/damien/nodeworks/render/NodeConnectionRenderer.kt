@@ -240,7 +240,8 @@ object NodeConnectionRenderer {
      * the same distance below it. Name and value sit symmetrically around the
      * centred control at fixed heights ([WIDGET_LABEL_Y]) so a custom model can
      * be built to the layout. Oriented to the face with the same per-facing
-     * rotation [WidgetRenderer] uses; long strings scale down to fit.
+     * rotation [WidgetRenderer] uses. Strings longer than [MARQUEE_CHARS] cycle
+     * a windowed view across the face instead of scaling down.
      */
     private fun renderWidgetName(
         poseStack: PoseStack,
@@ -253,12 +254,17 @@ object NodeConnectionRenderer {
         val maxDistSq = 48.0 * 48.0
         val basePose = poseStack.last().pose()
         val maxWorldWidth = 0.78f
-        val faceZ = 0.51f
+        // 1 px (1/16 of a block) inward from the face plane, just in front of
+        // the user's recessed inner panel so the text sits in the depression
+        // rather than floating outside the block.
+        val faceZ = 0.51f - 1f / 16f
         val baseScale = 1f / 110f
         // Font draws downward from its baseline; offsetting by half the line
         // height centres the text vertically on the requested face height, so
         // name (+Y) and value (-Y) are visually symmetric about the control.
         val vCenter = -font.lineHeight / 2f
+
+        val gameTick = level.gameTime
 
         for (pos in knownNodes) {
             val dx = pos.x + 0.5 - cameraPos.x
@@ -274,7 +280,8 @@ object NodeConnectionRenderer {
             // Draw one string centred on the face at face-local height [y].
             fun drawFaceText(text: String, y: Float, color: Int) {
                 if (text.isEmpty()) return
-                val textWidth = font.width(text)
+                val display = marqueeText(text, gameTick)
+                val textWidth = font.width(display)
                 val fitScale = if (textWidth * baseScale > maxWorldWidth)
                     maxWorldWidth / (textWidth * baseScale) else 1f
                 val scale = baseScale * fitScale
@@ -285,7 +292,7 @@ object NodeConnectionRenderer {
                 // Negative Y flips font's downward layout so +y reads as up on the face.
                 m.scale(scale, -scale, scale)
                 font.drawInBatch(
-                    text, -textWidth / 2f, vCenter, color, true, m, bufferSource,
+                    display, -textWidth / 2f, vCenter, color, true, m, bufferSource,
                     Font.DisplayMode.POLYGON_OFFSET, 0, RenderUtils.FULL_BRIGHT,
                 )
             }
@@ -301,6 +308,27 @@ object NodeConnectionRenderer {
             drawFaceText(value, -WIDGET_LABEL_Y, 0xFFC9F5E8.toInt())
         }
         bufferSource.endBatch()
+    }
+
+    /** Window size (chars) shown for in-world widget labels before marquee
+     *  scrolling kicks in. Names / values longer than this cycle. */
+    private const val MARQUEE_CHARS: Int = 10
+
+    /** Ticks per character scroll step. ~5 chars / second at 20 tps. */
+    private const val MARQUEE_TICKS_PER_STEP: Long = 4
+
+    /** Returns a window of [text] sized to [MARQUEE_CHARS], cycling left over
+     *  time so long strings scroll instead of overflowing the face. Strings
+     *  shorter than the window render verbatim. */
+    private fun marqueeText(text: String, gameTick: Long): String {
+        if (text.length <= MARQUEE_CHARS) return text
+        // Trailing gap so the head of the string isn't immediately followed
+        // by its tail when the window wraps.
+        val padded = "$text   "
+        val cycle = padded.length
+        val offset = ((gameTick / MARQUEE_TICKS_PER_STEP) % cycle.toLong()).toInt()
+        val doubled = padded + padded
+        return doubled.substring(offset, offset + MARQUEE_CHARS)
     }
 
     /** Trim a slider value for display: whole numbers show plain, otherwise

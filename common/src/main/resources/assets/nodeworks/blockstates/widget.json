@@ -1,10 +1,33 @@
 {
   "variants": {
-    "facing=up":    {"model": "nodeworks:block/widget", "x": 270},
-    "facing=down":  {"model": "nodeworks:block/widget", "x": 90},
-    "facing=north": {"model": "nodeworks:block/widget"},
-    "facing=south": {"model": "nodeworks:block/widget", "y": 180},
-    "facing=east":  {"model": "nodeworks:block/widget", "y": 90},
-    "facing=west":  {"model": "nodeworks:block/widget", "y": 270}
+    "facing=north,widget_type=button": {"model": "nodeworks:block/widget_button"},
+    "facing=north,widget_type=switch": {"model": "nodeworks:block/widget_switch"},
+    "facing=north,widget_type=radio":  {"model": "nodeworks:block/widget_radio"},
+    "facing=north,widget_type=slider": {"model": "nodeworks:block/widget_slider"},
+
+    "facing=south,widget_type=button": {"model": "nodeworks:block/widget_button", "y": 180},
+    "facing=south,widget_type=switch": {"model": "nodeworks:block/widget_switch", "y": 180},
+    "facing=south,widget_type=radio":  {"model": "nodeworks:block/widget_radio",  "y": 180},
+    "facing=south,widget_type=slider": {"model": "nodeworks:block/widget_slider", "y": 180},
+
+    "facing=east,widget_type=button":  {"model": "nodeworks:block/widget_button", "y": 90},
+    "facing=east,widget_type=switch":  {"model": "nodeworks:block/widget_switch", "y": 90},
+    "facing=east,widget_type=radio":   {"model": "nodeworks:block/widget_radio",  "y": 90},
+    "facing=east,widget_type=slider":  {"model": "nodeworks:block/widget_slider", "y": 90},
+
+    "facing=west,widget_type=button":  {"model": "nodeworks:block/widget_button", "y": 270},
+    "facing=west,widget_type=switch":  {"model": "nodeworks:block/widget_switch", "y": 270},
+    "facing=west,widget_type=radio":   {"model": "nodeworks:block/widget_radio",  "y": 270},
+    "facing=west,widget_type=slider":  {"model": "nodeworks:block/widget_slider", "y": 270},
+
+    "facing=up,widget_type=button":    {"model": "nodeworks:block/widget_button", "x": 270},
+    "facing=up,widget_type=switch":    {"model": "nodeworks:block/widget_switch", "x": 270},
+    "facing=up,widget_type=radio":     {"model": "nodeworks:block/widget_radio",  "x": 270},
+    "facing=up,widget_type=slider":    {"model": "nodeworks:block/widget_slider", "x": 270},
+
+    "facing=down,widget_type=button":  {"model": "nodeworks:block/widget_button", "x": 90},
+    "facing=down,widget_type=switch":  {"model": "nodeworks:block/widget_switch", "x": 90},
+    "facing=down,widget_type=radio":   {"model": "nodeworks:block/widget_radio",  "x": 90},
+    "facing=down,widget_type=slider":  {"model": "nodeworks:block/widget_slider", "x": 90}
   }
 }
