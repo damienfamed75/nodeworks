@@ -138,6 +138,9 @@ class BreakerBlockEntity(
      *  started so [BreakerHandle.break] can return a live builder vs a no-op. */
     fun startBreak(level: ServerLevel, handler: LuaFunction? = null): Boolean {
         if (isBreaking) return false
+        // Inert without a Controller-rooted network, mirrors Placer / User.
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, worldPosition)
+        if (snapshot.controller == null) return false
         val target = targetPos
         val state = level.getBlockState(target)
         val duration = computeBreakDuration(level, target, state) ?: return false
@@ -262,7 +265,8 @@ class BreakerBlockEntity(
         // null and the break wouldn't have started.
         val tool = pickToolPair(state)?.first ?: ItemStack(Items.DIAMOND_PICKAXE)
         val targetEntity = level.getBlockEntity(target)
-        val drops = Block.getDrops(state, level, target, targetEntity, null, tool)
+        val drops = mutableListOf<ItemStack>()
+        drops.addAll(Block.getDrops(state, level, target, targetEntity, null, tool))
 
         // Play vanilla break particles + sound so the break reads visually.
         level.levelEvent(net.minecraft.world.level.block.LevelEvent.PARTICLES_DESTROY_BLOCK, target, Block.getId(state))
@@ -270,6 +274,12 @@ class BreakerBlockEntity(
         // Remove the block. UPDATE_ALL fires neighbor updates so connected redstone
         // / pistons / observers see the change.
         level.setBlock(target, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
+
+        // Tree felling. Drops accumulate into [drops] so a felled tree is
+        // indistinguishable from a single break to downstream routing.
+        if (TreeCutter.isLog(state)) {
+            TreeCutter.findTree(level, target, state)?.let { tree -> fellTree(level, tree, drops) }
+        }
 
         // Route drops. The handler-or-default split lives here so the
         // [pendingHandler] state stays internal, neither the BreakerHandle nor
@@ -287,6 +297,29 @@ class BreakerBlockEntity(
         targetSnapshot = null
         pendingHandler = null
         markDirtyAndSync()
+    }
+
+    /** Break each tree block individually so claim-mod boundaries partway
+     *  through the canopy leave protected blocks standing instead of failing
+     *  the whole fell. */
+    private fun fellTree(level: ServerLevel, tree: TreeCutter.TreeShape, sink: MutableList<ItemStack>) {
+        for (pos in tree.logs) breakOneForFell(level, pos, sink)
+        for (pos in tree.leaves) breakOneForFell(level, pos, sink)
+    }
+
+    private fun breakOneForFell(level: ServerLevel, pos: BlockPos, sink: MutableList<ItemStack>) {
+        val state = level.getBlockState(pos)
+        if (state.isAir) return
+        if (!PlatformServices.fakePlayer.mayBreak(level, pos, state, ownerUuid)) return
+        // Empty-tool fallback hits the loot table's no-tool branch for leaves
+        // (saplings + sticks), pickToolPair gives diamond axe for logs.
+        val tool = pickToolPair(state)?.first ?: ItemStack.EMPTY
+        val be = level.getBlockEntity(pos)
+        sink.addAll(Block.getDrops(state, level, pos, be, null, tool))
+        // UPDATE_CLIENTS only, skip the neighbour-update cascade so a 500-block
+        // fell doesn't trigger redstone/observer/leaf-decay churn on every
+        // adjacent block. The cut pos already fired UPDATE_ALL above.
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS)
     }
 
     private fun markDirtyAndSync() {

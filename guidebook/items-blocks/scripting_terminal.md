@@ -49,6 +49,17 @@ nearby.
 
 ![](../assets/images/autorun.png)
 
+### Redstone
+
+A redstone pulse on the terminal toggles its script. If the script is stopped,
+the pulse starts it. If it's already running, the pulse stops it. Any rising
+edge works, a button tap, a pressure plate step, or a freshly placed torch.
+
+> If a script gets killed by the wall-clock timeout, redstone can't restart it
+> until you open the editor and edit the script. This stops a redstone clock
+> pointed at a misbehaving terminal from re-triggering the same broken script
+> every cycle.
+
 ## Recipe
 
 <RecipeFor id="terminal" />
