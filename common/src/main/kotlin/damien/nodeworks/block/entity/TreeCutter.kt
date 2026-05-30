@@ -10,9 +10,14 @@ import net.minecraft.world.level.block.state.properties.IntegerProperty
 import java.util.ArrayDeque
 
 /**
- * Tree shape discovery for the Breaker's tree-felling path. Tag-driven via
- * `BlockTags.LOGS` and the vanilla leaf `distance` property, so any mod
- * following the vanilla convention works without a direct dependency.
+ * Tree shape discovery for the Breaker. Validates that the cut isn't bypassed
+ * by a sibling trunk supporting the canopy directly above, then collects every
+ * log reachable upward from the cut and walks leaves outward through the
+ * vanilla `distance` gradient.
+ *
+ * Tag-driven via `BlockTags.LOGS` and the vanilla leaf `distance` property,
+ * so any mod following the vanilla convention works without a direct
+ * dependency.
  */
 object TreeCutter {
 
@@ -23,9 +28,10 @@ object TreeCutter {
 
     data class TreeShape(val logs: List<BlockPos>, val leaves: List<BlockPos>)
 
-    /** Scan from [cutPos], assumed already broken (air in [reader]). Returns
-     *  null when [brokenState] wasn't a log, the canopy is still supported by
-     *  another trunk, or the cap is exceeded. */
+    /** Discover the portion of a tree to fell when [cutPos] is broken (already
+     *  air in [reader]). Returns null when [brokenState] wasn't a log, a
+     *  sibling trunk still holds the canopy up at the layer above the cut, or
+     *  the scan exceeds [MAX_BLOCKS]. */
     fun findTree(reader: BlockGetter, cutPos: BlockPos, brokenState: BlockState): TreeShape? {
         if (!isLog(brokenState)) return null
         if (!validateCut(reader, cutPos)) return null
@@ -35,55 +41,31 @@ object TreeCutter {
         val frontier = ArrayDeque<BlockPos>()
 
         visited.add(cutPos)
-        forEachNeighbour(cutPos, 0..1) { frontier.add(it) }
+        forEachNeighbourUp(cutPos) { frontier.add(it) }
 
         while (frontier.isNotEmpty()) {
             val pos = frontier.removeFirst()
             if (!visited.add(pos)) continue
             if (logs.size >= MAX_BLOCKS) return null
-            val state = reader.getBlockState(pos)
-            if (!isLog(state)) continue
+            if (!isLog(reader.getBlockState(pos))) continue
             logs.add(pos)
-            forEachNeighbour(pos, 0..1) {
+            forEachNeighbourUp(pos) {
                 if (it !in visited) frontier.add(it)
             }
         }
 
         if (logs.isEmpty()) return null
 
-        val leaves = ArrayList<BlockPos>()
-        visited.clear()
-        visited.addAll(logs)
-        visited.add(cutPos)
-        for (log in logs) frontier.add(log)
-
-        while (frontier.isNotEmpty()) {
-            val prev = frontier.removeFirst()
-            if (logs.size + leaves.size >= MAX_BLOCKS) return null
-            val prevState = reader.getBlockState(prev)
-            val prevDistance = if (isLeaf(prevState)) leafDistance(prevState) else 0
-
-            forEachNeighbour(prev, -1..1) { candidate ->
-                if (candidate in visited) return@forEachNeighbour
-                val state = reader.getBlockState(candidate)
-                if (isLeaf(state) && leafDistance(state) > prevDistance) {
-                    if (visited.add(candidate)) {
-                        leaves.add(candidate)
-                        frontier.add(candidate)
-                    }
-                }
-            }
-        }
-
+        val leaves = collectLeaves(reader, logs, capRemaining = MAX_BLOCKS - logs.size)
         return TreeShape(logs, leaves)
     }
 
     fun isLog(state: BlockState): Boolean = state.`is`(BlockTags.LOGS)
 
-    /** True when [cutPos] is the last log connecting the canopy to the ground.
-     *  Rejects if any log above the cut has another log directly beneath it
-     *  (a sibling trunk still rooted). The cut pos itself is excluded so
-     *  cutting the bottom of a single trunk counts as a disconnect. */
+    /** True when no log at the layer directly above [cutPos] is still
+     *  supported by another non-cut log beneath it. A sibling trunk in the
+     *  3x3 column above the cut (e.g. dark oak's 2x2 trunk) trips this and
+     *  the fell is refused. */
     private fun validateCut(reader: BlockGetter, cutPos: BlockPos): Boolean {
         val visited = HashSet<BlockPos>()
         val frontier = ArrayDeque<BlockPos>()
@@ -94,8 +76,7 @@ object TreeCutter {
         while (frontier.isNotEmpty()) {
             val pos = frontier.removeFirst()
             if (!visited.add(pos)) continue
-            val state = reader.getBlockState(pos)
-            if (!isLog(state)) continue
+            if (!isLog(reader.getBlockState(pos))) continue
 
             val lowerLayer = pos.y == baseY
             val below = pos.below()
@@ -113,12 +94,47 @@ object TreeCutter {
         return true
     }
 
-    private inline fun forEachNeighbour(
-        pos: BlockPos,
-        yRange: IntRange,
-        sink: (BlockPos) -> Unit,
-    ) {
-        for (dx in -1..1) for (dy in yRange) for (dz in -1..1) {
+    /** Walk leaves outward from felled logs along the vanilla `distance`
+     *  gradient. Each step accepts leaves with a higher distance than the
+     *  previous log/leaf, mirroring how vanilla leaf decay propagates. */
+    private fun collectLeaves(
+        reader: BlockGetter,
+        seeds: List<BlockPos>,
+        capRemaining: Int,
+    ): List<BlockPos> {
+        if (capRemaining <= 0) return emptyList()
+        val leaves = ArrayList<BlockPos>()
+        val visited = HashSet<BlockPos>(seeds)
+        val frontier = ArrayDeque<BlockPos>().apply { addAll(seeds) }
+        while (frontier.isNotEmpty()) {
+            if (leaves.size >= capRemaining) break
+            val prev = frontier.removeFirst()
+            val prevState = reader.getBlockState(prev)
+            val prevDistance = if (isLeaf(prevState)) leafDistance(prevState) else 0
+            forEachNeighbour3D(prev) { candidate ->
+                if (candidate in visited) return@forEachNeighbour3D
+                val state = reader.getBlockState(candidate)
+                if (isLeaf(state) && leafDistance(state) > prevDistance && visited.add(candidate)) {
+                    leaves.add(candidate)
+                    frontier.add(candidate)
+                }
+            }
+        }
+        return leaves
+    }
+
+    /** Upward 3x3x2 expansion (cut level and one above), used for log walks. */
+    private inline fun forEachNeighbourUp(pos: BlockPos, sink: (BlockPos) -> Unit) {
+        for (dx in -1..1) for (dy in 0..1) for (dz in -1..1) {
+            if (dx == 0 && dy == 0 && dz == 0) continue
+            sink(pos.offset(dx, dy, dz))
+        }
+    }
+
+    /** Full 3x3x3 expansion, used for leaf walks where leaves can sit below
+     *  the log they attach to. */
+    private inline fun forEachNeighbour3D(pos: BlockPos, sink: (BlockPos) -> Unit) {
+        for (dx in -1..1) for (dy in -1..1) for (dz in -1..1) {
             if (dx == 0 && dy == 0 && dz == 0) continue
             sink(pos.offset(dx, dy, dz))
         }
