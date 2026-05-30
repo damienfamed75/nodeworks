@@ -3,6 +3,8 @@ navigation:
   parent: nodeworks-mechanics/index.md
   title: Network Storage
   icon: minecraft:chest
+categories:
+  - mechanic
 ---
 
 # Network Storage

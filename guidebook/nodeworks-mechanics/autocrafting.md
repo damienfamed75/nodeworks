@@ -3,6 +3,8 @@ navigation:
   parent: nodeworks-mechanics/index.md
   title: Auto-Crafting
   icon: crafting_core
+categories:
+  - mechanic
 ---
 
 # Auto-Crafting

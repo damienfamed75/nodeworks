@@ -4,7 +4,8 @@ navigation:
   title: Subnets
   icon: broadcast_antenna
 categories:
-- networking
+  - networking
+  - mechanic
 ---
 
 # Subnets

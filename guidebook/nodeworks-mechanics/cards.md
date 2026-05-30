@@ -3,6 +3,8 @@ navigation:
   parent: nodeworks-mechanics/index.md
   title: Cards
   icon: blank_card
+categories:
+  - mechanic
 ---
 
 # Cards

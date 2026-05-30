@@ -3,6 +3,8 @@ navigation:
   parent: nodeworks-mechanics/index.md
   title: Devices
   icon: variable
+categories:
+  - mechanic
 ---
 
 # Devices

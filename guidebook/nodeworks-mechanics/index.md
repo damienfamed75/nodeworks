@@ -5,3 +5,5 @@ navigation:
 ---
 
 # Nodeworks Mechanics
+
+<CategoryIndexDescriptions category="mechanic" />
