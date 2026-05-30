@@ -2,6 +2,7 @@ package damien.nodeworks.item
 
 import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.PipeBlock
+import damien.nodeworks.block.Wrenchable
 import damien.nodeworks.block.entity.FocusNodeBlockEntity
 import damien.nodeworks.network.Connectable
 import damien.nodeworks.network.NetworkRuntimeConfig
@@ -18,6 +19,7 @@ import net.minecraft.world.item.Item
 import net.minecraft.world.item.context.UseOnContext
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
+import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.Vec3
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -62,28 +64,36 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
     ) {
         builder.accept(Component.literal("Shift + right-click a Focus Node's free face to select it").withStyle(ChatFormatting.GRAY))
         builder.accept(Component.literal("Right-click another Focus Node to link / unlink").withStyle(ChatFormatting.GRAY))
+        builder.accept(Component.literal("Right-click a device to rotate it").withStyle(ChatFormatting.GRAY))
         builder.accept(Component.literal("Shift + right-click a pipe / node face to toggle that connection").withStyle(ChatFormatting.DARK_GRAY))
     }
 
-    override fun useOn(context: UseOnContext): InteractionResult {
-        val level = context.level
-        val pos = context.clickedPos
-        val player = context.player ?: return InteractionResult.PASS
+    override fun useOn(ctx: UseOnContext): InteractionResult {
+        val level = ctx.level
+        val pos = ctx.clickedPos
+        val player = ctx.player ?: return InteractionResult.PASS
         val be = level.getBlockEntity(pos) as? Connectable ?: return InteractionResult.PASS
 
-        return if (player.isShiftKeyDown) shiftClick(context, level, pos, be)
-        else plainClick(level, pos, player, be)
+        return if (player.isShiftKeyDown) shiftClick(ctx, level, pos, be)
+        else plainClick(ctx, level, pos, player, be)
     }
 
-    /** Plain right-click on a Focus Node: link/unlink it against the pending
-     *  selection. Non-Focus-Node clicks PASS so vanilla blocks behave normally. */
+    /** Plain right-click. Focus Nodes link/unlink against the pending
+     *  selection, other Connectables delegate to [Wrenchable.onWrenched]. */
     private fun plainClick(
+        ctx: UseOnContext,
         level: Level,
         pos: BlockPos,
         player: Player,
         @Suppress("UNUSED_PARAMETER") be: Connectable,
     ): InteractionResult {
-        if (level.getBlockEntity(pos) !is FocusNodeBlockEntity) return InteractionResult.PASS
+        if (level.getBlockEntity(pos) !is FocusNodeBlockEntity) {
+            val state = level.getBlockState(pos)
+            val block = state.block
+            if (block !is Wrenchable) return InteractionResult.PASS
+            val hit = BlockHitResult(ctx.clickLocation, ctx.clickedFace, pos, ctx.isInside)
+            return block.onWrenched(state, level, pos, player, hit)
+        }
 
         if (level.isClientSide) return InteractionResult.SUCCESS
 
@@ -116,18 +126,18 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
      *  link source. Every other case falls through to the per-face
      *  force-block toggle (the original disconnect path). */
     private fun shiftClick(
-        context: UseOnContext,
+        ctx: UseOnContext,
         level: Level,
         pos: BlockPos,
         be: Connectable,
     ): InteractionResult {
-        val side = resolveClickedSide(pos, context.clickLocation)
+        val side = resolveClickedSide(pos, ctx.clickLocation)
         val isFocusNode = level.getBlockEntity(pos) is FocusNodeBlockEntity
         if (isFocusNode) {
             val neighborPos = pos.relative(side)
             val hasAdjacent = level.getBlockEntity(neighborPos) is Connectable
             if (!hasAdjacent) {
-                return selectFocusNode(level, pos, context.player!!)
+                return selectFocusNode(level, pos, ctx.player!!)
             }
         }
         return faceToggle(level, pos, side, be)

@@ -78,6 +78,7 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
         state: BlockState, level: Level, pos: BlockPos,
         player: Player, hitResult: BlockHitResult
     ): InteractionResult {
+        if (player.mainHandItem.item is damien.nodeworks.item.NetworkWrenchItem || player.mainHandItem.item is damien.nodeworks.item.DiagnosticToolItem) return InteractionResult.PASS
         if (level.isClientSide) return InteractionResult.SUCCESS
         val entity = level.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return InteractionResult.PASS
         val serverPlayer = player as ServerPlayer

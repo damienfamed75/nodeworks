@@ -26,7 +26,7 @@ import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
-class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
+class InventoryTerminalBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<InventoryTerminalBlock> = simpleCodec(::InventoryTerminalBlock)

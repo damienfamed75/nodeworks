@@ -26,7 +26,7 @@ import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
-class TerminalBlock(properties: Properties) : BaseEntityBlock(properties) {
+class TerminalBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<TerminalBlock> = simpleCodec(::TerminalBlock)

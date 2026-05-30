@@ -35,7 +35,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * (sapling replant, sugar cane, kelp, sweet berries). Synchronous: the placement
  * resolves in the same tick `placer:place(...)` is called, no ticker needed.
  */
-class PlacerBlock(properties: Properties) : BaseEntityBlock(properties) {
+class PlacerBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<PlacerBlock> = simpleCodec(::PlacerBlock)

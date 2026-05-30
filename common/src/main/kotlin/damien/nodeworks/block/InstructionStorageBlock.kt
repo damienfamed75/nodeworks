@@ -24,7 +24,7 @@ import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
-class InstructionStorageBlock(properties: Properties) : BaseEntityBlock(properties) {
+class InstructionStorageBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<InstructionStorageBlock> = simpleCodec(::InstructionStorageBlock)

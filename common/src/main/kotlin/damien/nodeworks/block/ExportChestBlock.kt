@@ -35,7 +35,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * Export Chest. Buffer + network output device. See [ExportChestBlockEntity]
  * for runtime semantics.
  */
-class ExportChestBlock(properties: Properties) : BaseEntityBlock(properties) {
+class ExportChestBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     init {
         registerDefaultState(stateDefinition.any().setValue(FACING, Direction.SOUTH))

@@ -35,7 +35,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * Import Chest. Buffer + network input device. See [ImportChestBlockEntity]
  * for runtime semantics.
  */
-class ImportChestBlock(properties: Properties) : BaseEntityBlock(properties) {
+class ImportChestBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     init {
         registerDefaultState(stateDefinition.any().setValue(FACING, Direction.SOUTH))

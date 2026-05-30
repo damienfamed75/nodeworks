@@ -23,7 +23,7 @@ import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 
-class ProcessingStorageBlock(properties: Properties) : BaseEntityBlock(properties) {
+class ProcessingStorageBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<ProcessingStorageBlock> = simpleCodec(::ProcessingStorageBlock)

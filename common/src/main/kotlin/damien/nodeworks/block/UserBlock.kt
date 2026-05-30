@@ -40,7 +40,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * companion to Breaker / Placer for closing automation loops that need a
  * use-on-block or use-on-entity step.
  */
-class UserBlock(properties: Properties) : BaseEntityBlock(properties) {
+class UserBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<UserBlock> = simpleCodec(::UserBlock)

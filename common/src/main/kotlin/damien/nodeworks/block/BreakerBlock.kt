@@ -40,7 +40,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * blocks like ancient debris are slow. See [BreakerBlockEntity] for the
  * server-side break-progress logic.
  */
-class BreakerBlock(properties: Properties) : BaseEntityBlock(properties) {
+class BreakerBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<BreakerBlock> = simpleCodec(::BreakerBlock)

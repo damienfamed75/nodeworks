@@ -38,7 +38,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * Phase 1: placement and the directional split. GUI, item routing, and the
  * actual handler binding land in later phases.
  */
-class ProcessingHandlerBlock(properties: Properties) : BaseEntityBlock(properties) {
+class ProcessingHandlerBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<ProcessingHandlerBlock> = simpleCodec(::ProcessingHandlerBlock)

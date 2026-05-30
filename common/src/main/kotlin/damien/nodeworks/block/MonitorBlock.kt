@@ -31,7 +31,7 @@ import net.minecraft.world.phys.BlockHitResult
  *   - Wrench / Diagnostic Tool → pass-through (wrench wires network connections,
  *     diagnostic tool opens the inspector UI instead).
  */
-class MonitorBlock(properties: Properties) : BaseEntityBlock(properties) {
+class MonitorBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
 
     companion object {
         val CODEC: MapCodec<MonitorBlock> = simpleCodec(::MonitorBlock)
