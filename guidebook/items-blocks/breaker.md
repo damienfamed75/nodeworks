@@ -32,6 +32,19 @@ The Breaker's GUI has a filter for which block it should break. Leave it
 empty to break anything in front, or set a block to restrict the Breaker
 to that target.
 
+## Tree Felling
+
+If you place a Breaker at the base of a tree it will fell the whole thing.
+
+<GameScene zoom="4" paddingTop="30" paddingLeft="60" paddingRight="60" interactive={true} >
+  <ImportStructure src="../assets/assemblies/breaker_tree_felling.snbt" />
+  <BlockAnnotation x="2" y="1" z="2">
+  Cutting the last log holding the tree up fells the whole thing
+  </BlockAnnotation>
+  <RemoveBlocks id="minecraft:sandstone" />
+  <RemoveBlocks id="minecraft:sandstone" />
+</GameScene>
+
 ## Redstone
 
 The GUI's redstone setting controls when the Breaker is allowed to fire:
