@@ -20,9 +20,15 @@ object ClientServerPolicy {
     var disabledMethods: Set<String> = ServerSafetySettings.Defaults.disabledMethods
         private set
 
-    fun update(modules: Set<String>, disabled: Set<String>) {
+    /** Mirrors [ServerSafetySettings.networkControllerChunkLoading]. */
+    @Volatile
+    var networkControllerChunkLoading: Boolean = ServerSafetySettings.Defaults.networkControllerChunkLoading
+        private set
+
+    fun update(modules: Set<String>, disabled: Set<String>, chunkLoading: Boolean) {
         enabledModules = modules
         disabledMethods = disabled
+        networkControllerChunkLoading = chunkLoading
     }
 
     /** Is `Type:method` callable under the current server policy? Cheap, hot

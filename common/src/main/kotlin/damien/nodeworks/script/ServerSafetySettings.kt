@@ -153,6 +153,11 @@ data class ServerSafetySettings(
      *  the active level's registry. Format: `"minecraft:bow"` for exact items,
      *  `"#c:foods"` for tags. */
     val userDeniedItems: List<String> = listOf("#c:foods", "#c:tools/ranged_weapon"),
+
+    /** Whether the Network Controller is allowed to force-load chunks. When
+     *  false, the Controller's chunk-load toggle row is hidden and any
+     *  existing claims are released on the next controller tick. */
+    val networkControllerChunkLoading: Boolean = true,
 ) {
     companion object {
         /** Compiled-in defaults, used as the seed values when generating the

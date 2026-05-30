@@ -154,7 +154,9 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                     details.add("Network ID: ${entity.networkId?.toString()?.take(8) ?: "none"}...")
                     details.add("__color:${entity.networkColor}")
                     details.add("Craft Retries: ${entity.handlerRetryLimit}")
-                    details.add("Chunk Loading: ${if (entity.chunkLoadingEnabled) "on" else "off"}")
+                    if (damien.nodeworks.script.ServerPolicy.current.networkControllerChunkLoading) {
+                        details.add("Chunk Loading: ${if (entity.chunkLoadingEnabled) "on" else "off"}")
+                    }
                     val fancyLasers = entity.laserMode == damien.nodeworks.network.NetworkSettingsRegistry.LASER_MODE_FANCY
                     details.add("Fancy Lasers: ${if (fancyLasers) "on" else "off"}")
                 }

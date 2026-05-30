@@ -74,25 +74,27 @@ class NetworkControllerScreen(
         LASER_ENABLE, LASER_MODE,
     }
 
-    private val properties = listOf(
-        Property("Name", PropertyType.NAME),
-        Property("Color", PropertyType.COLOR),
+    private val properties = buildList {
+        add(Property("Name", PropertyType.NAME))
+        add(Property("Color", PropertyType.COLOR))
         // "Redstone" mode has no consumer, the controller's redstoneMode field
         // is set/persisted/synced but never gates any behaviour. Hidden until
         // a real use lands. REDSTONE rendering / click / payload kept intact
         // below so re-adding the row is one-line.
-        // Property("Redstone", PropertyType.REDSTONE),
+        // add(Property("Redstone", PropertyType.REDSTONE))
         // "Node Glow" is hidden for now while the visual design is in flux.
         // GLOW_STYLE rendering / click handling / payload plumbing stays intact
         // below so re-adding the row is one-line.
-        // Property("Node Glow", PropertyType.GLOW_STYLE),
-        Property("Craft Retries", PropertyType.HANDLER_RETRY),
-        Property("Chunk Loading", PropertyType.CHUNK_LOADING),
+        // add(Property("Node Glow", PropertyType.GLOW_STYLE))
+        add(Property("Craft Retries", PropertyType.HANDLER_RETRY))
+        if (damien.nodeworks.script.ClientServerPolicy.networkControllerChunkLoading) {
+            add(Property("Chunk Loading", PropertyType.CHUNK_LOADING))
+        }
         // "Show Lasers" toggle removed in the pipe-based architecture, lasers
         // aren't part of the connectivity model anymore. LASER_ENABLE render +
         // click + payload kept below in case it's reinstated; just no row.
-        Property("Fancy Lasers", PropertyType.LASER_MODE),
-    )
+        add(Property("Fancy Lasers", PropertyType.LASER_MODE))
+    }
 
     private lateinit var nameField: EditBox
     private lateinit var retryField: EditBox

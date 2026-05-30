@@ -961,6 +961,7 @@ data class SetCardNamePayload(val containerId: Int, val name: String) : CustomPa
 data class ServerPolicySyncPayload(
     val enabledModules: Set<String>,
     val disabledMethods: Set<String>,
+    val networkControllerChunkLoading: Boolean,
 ) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<ServerPolicySyncPayload> = CustomPacketPayload.Type(
@@ -978,6 +979,7 @@ data class ServerPolicySyncPayload(
                 for (m in p.enabledModules.take(MAX_ENTRIES)) buf.writeUtf(m, MAX_NAME)
                 buf.writeVarInt(p.disabledMethods.size.coerceAtMost(MAX_ENTRIES))
                 for (m in p.disabledMethods.take(MAX_ENTRIES)) buf.writeUtf(m, MAX_NAME)
+                buf.writeBoolean(p.networkControllerChunkLoading)
             },
             { buf ->
                 val mc = buf.readVarInt().coerceAtMost(MAX_ENTRIES)
@@ -986,7 +988,8 @@ data class ServerPolicySyncPayload(
                 val dc = buf.readVarInt().coerceAtMost(MAX_ENTRIES)
                 val disabled = HashSet<String>(dc)
                 repeat(dc) { disabled.add(buf.readUtf(MAX_NAME)) }
-                ServerPolicySyncPayload(modules, disabled)
+                val chunkLoading = buf.readBoolean()
+                ServerPolicySyncPayload(modules, disabled, chunkLoading)
             }
         )
     }

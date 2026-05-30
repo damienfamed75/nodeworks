@@ -33,6 +33,7 @@ object NodeworksServerConfig {
     val ENABLED_MODULES: ModConfigSpec.ConfigValue<List<String>>
     val DISABLED_METHODS: ModConfigSpec.ConfigValue<List<String>>
     val USER_DENIED_ITEMS: ModConfigSpec.ConfigValue<List<String>>
+    val NETWORK_CONTROLLER_CHUNK_LOADING: ModConfigSpec.BooleanValue
 
     val SPEC: ModConfigSpec
 
@@ -347,6 +348,18 @@ object NodeworksServerConfig {
                 { "#c:foods" },
             ) { it is String }
 
+        NETWORK_CONTROLLER_CHUNK_LOADING = builder
+            .comment(
+                " Whether the Network Controller can force-load chunks. Disable to",
+                " let another chunk-loading mod handle it. When false, the chunk-",
+                " load toggle is hidden from the Controller's GUI and any existing",
+                " claims drop on the next controller tick."
+            )
+            .define(
+                "networkControllerChunkLoading",
+                ServerSafetySettings.Defaults.networkControllerChunkLoading,
+            )
+
         builder.pop()
         SPEC = builder.build()
     }
@@ -376,5 +389,6 @@ object NodeworksServerConfig {
         enabledModules = ENABLED_MODULES.get().toSet(),
         disabledMethods = DISABLED_METHODS.get().toSet(),
         userDeniedItems = USER_DENIED_ITEMS.get().toList(),
+        networkControllerChunkLoading = NETWORK_CONTROLLER_CHUNK_LOADING.get(),
     )
 }

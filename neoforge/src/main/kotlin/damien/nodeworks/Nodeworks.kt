@@ -880,7 +880,11 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
         registrar.playToClient(ServerPolicySyncPayload.TYPE, ServerPolicySyncPayload.CODEC) { payload, context ->
             context.enqueueWork {
-                damien.nodeworks.script.ClientServerPolicy.update(payload.enabledModules, payload.disabledMethods)
+                damien.nodeworks.script.ClientServerPolicy.update(
+                    payload.enabledModules,
+                    payload.disabledMethods,
+                    payload.networkControllerChunkLoading,
+                )
             }
         }
 
@@ -1009,7 +1013,11 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
     private fun onDatapackSync(event: net.neoforged.neoforge.event.OnDatapackSyncEvent) {
         event.sendRecipes(damien.nodeworks.registry.ModRecipeTypes.SOUL_SAND_INFUSION)
         val policy = damien.nodeworks.script.ServerPolicy.current
-        val payload = ServerPolicySyncPayload(policy.enabledModules, policy.disabledMethods)
+        val payload = ServerPolicySyncPayload(
+            policy.enabledModules,
+            policy.disabledMethods,
+            policy.networkControllerChunkLoading,
+        )
         // event.player is non-null on join, null on /reload (broadcast). Iterate
         // getRelevantPlayers() which covers both cases without branching. The
         // event API returns a Stream<ServerPlayer>, not Iterable.
@@ -1037,7 +1045,11 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // on Reloading we broadcast so the editor's autocomplete refreshes
         // without needing a re-log.
         net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer()?.let { server ->
-            val payload = ServerPolicySyncPayload(newSettings.enabledModules, newSettings.disabledMethods)
+            val payload = ServerPolicySyncPayload(
+                newSettings.enabledModules,
+                newSettings.disabledMethods,
+                newSettings.networkControllerChunkLoading,
+            )
             for (p in server.playerList.players) {
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p, payload)
             }

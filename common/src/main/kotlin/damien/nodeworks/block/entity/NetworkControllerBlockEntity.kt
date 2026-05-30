@@ -171,7 +171,9 @@ class NetworkControllerBlockEntity(
             // had claimed before the server shut down. Vanilla's forcedchunks.dat already
             // restored the actual chunk-forced flags, this just gets the manager back in
             // sync so disabling later correctly decrements.
-            if (chunkLoadingEnabled && claimedChunks.isNotEmpty()) {
+            if (chunkLoadingEnabled && claimedChunks.isNotEmpty() &&
+                damien.nodeworks.script.ServerPolicy.current.networkControllerChunkLoading
+            ) {
                 for (packed in claimedChunks) {
                     ChunkForceLoadManager.claim(level, ChunkPos.getX(packed), ChunkPos.getZ(packed))
                 }
@@ -210,6 +212,7 @@ class NetworkControllerBlockEntity(
      *  other enabled controllers in the same dimension stay loaded. */
     fun setChunkLoadingEnabled(enabled: Boolean) {
         if (enabled == chunkLoadingEnabled) return
+        if (enabled && !damien.nodeworks.script.ServerPolicy.current.networkControllerChunkLoading) return
         val lvl = level as? ServerLevel ?: run {
             // No level yet (BE construction path), just store the flag, setLevel will
             // pick it up via the NBT-load path next time.
@@ -264,6 +267,10 @@ class NetworkControllerBlockEntity(
      *  own micro-network, ...) auto-claims the new chunks without the
      *  player toggling chunk loading off and on. */
     fun serverTick(lvl: ServerLevel) {
+        if (!damien.nodeworks.script.ServerPolicy.current.networkControllerChunkLoading) {
+            if (claimedChunks.isNotEmpty()) releaseAllClaims(lvl)
+            return
+        }
         if (!chunkLoadingEnabled) return
         if (Math.floorMod(lvl.gameTime + refreshPhase, CHUNK_REFRESH_INTERVAL_TICKS) != 0L) return
         refreshClaimedChunks(lvl)

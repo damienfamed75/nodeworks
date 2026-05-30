@@ -59,7 +59,11 @@ object NodeworksCommand {
         // is live without re-opening a terminal.
         val newSettings = NodeworksServerConfig.snapshot()
         ServerPolicy.update(newSettings)
-        val payload = ServerPolicySyncPayload(newSettings.enabledModules, newSettings.disabledMethods)
+        val payload = ServerPolicySyncPayload(
+            newSettings.enabledModules,
+            newSettings.disabledMethods,
+            newSettings.networkControllerChunkLoading,
+        )
         for (p in ctx.source.server.playerList.players) {
             PacketDistributor.sendToPlayer(p, payload)
         }
