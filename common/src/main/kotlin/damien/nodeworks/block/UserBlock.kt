@@ -30,6 +30,7 @@ import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
+import net.minecraft.world.phys.shapes.Shapes
 import net.minecraft.world.phys.shapes.VoxelShape
 
 /**
@@ -70,6 +71,11 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties) {
             Direction.Axis.Y -> SHAPE_Y
             else -> SHAPE_Z
         }
+
+    /** Lets levers / buttons / redstone components attach to any face despite
+     *  the inset collision shape. */
+    override fun getBlockSupportShape(state: BlockState, level: BlockGetter, pos: BlockPos): VoxelShape =
+        Shapes.block()
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState? =
         defaultBlockState().setValue(FACING, context.nearestLookingDirection.opposite)
