@@ -310,7 +310,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
             val stack = ItemStack(item, batch)
-            val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, deliverCache)
+            val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, deliverCache, op.outputChannel)
             if (inserted == 0) {
                 // Network storage refused, drop the batch on the ground so the finished
                 // items aren't destroyed, and track how many we had to drop. We still fail

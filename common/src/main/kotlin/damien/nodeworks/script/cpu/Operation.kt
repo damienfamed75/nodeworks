@@ -105,13 +105,17 @@ sealed class Operation {
         override val baseCost: Int get() = CpuRules.EXECUTE_BASE_COST
     }
 
-    /** Move [amount] of [itemId] from the CPU buffer to network storage (or a reserved slot). */
+    /** Move [amount] of [itemId] from the CPU buffer to network storage (or a reserved slot).
+     *  [outputChannel] scopes the destination storage to a single channel, only the
+     *  trailing root Deliver carries a non-All channel, intermediate Delivers always
+     *  use [ChannelFilter.All] so prerequisites land wherever they fit. */
     data class Deliver(
         override val id: Int,
         override val dependsOn: List<Int>,
         val itemId: String,
         val amount: Long,
-        val toReservedSlot: Boolean
+        val toReservedSlot: Boolean,
+        val outputChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ) : Operation() {
         override val baseCost: Int get() = CpuRules.DELIVER_BASE_COST
     }
@@ -163,6 +167,10 @@ sealed class Operation {
                 tag.putString("itemId", itemId)
                 tag.putLong("amount", amount)
                 tag.putBoolean("reserved", toReservedSlot)
+                // Default All → -1, omit the key for older-save compatibility.
+                if (outputChannel !is damien.nodeworks.network.ChannelFilter.All) {
+                    tag.putInt("channel", outputChannel.toNbtInt())
+                }
             }
         }
     }
@@ -217,7 +225,8 @@ sealed class Operation {
                     id, deps,
                     tag.getStringOr("itemId", ""),
                     tag.getLongOr("amount", 0L),
-                    tag.getBooleanOr("reserved", false)
+                    tag.getBooleanOr("reserved", false),
+                    damien.nodeworks.network.ChannelFilter.fromNbtInt(tag.getIntOr("channel", -1)),
                 )
                 else -> return null
             }

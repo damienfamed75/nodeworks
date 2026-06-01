@@ -1,0 +1,8 @@
+{
+  "comment": "Redstone-active overlay for the Craft Requester. Inherits all geometry from `nodeworks:block/craft_requester` and only overrides the `#0` texture binding to point at craft_requester_redstone_active.png. Shown alongside the network-colour emissive overlay while the input signal is high (debounced via `signalActive`); the two textures don't overlap so they stack cleanly.",
+  "parent": "nodeworks:block/craft_requester",
+  "textures": {
+    "0": "nodeworks:block/craft_requester_redstone_active",
+    "particle": "nodeworks:block/craft_requester_redstone_active"
+  }
+}

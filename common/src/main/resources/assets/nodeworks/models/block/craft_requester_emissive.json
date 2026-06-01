@@ -1,0 +1,8 @@
+{
+  "comment": "Network-colour emissive overlay for the Craft Requester. Inherits all geometry from `nodeworks:block/craft_requester` and only overrides the `#0` texture binding to point at craft_requester_emissive.png. Same pattern as storage_meter_emissive / breaker_emissive / user_emissive: any face the artist paints in craft_requester_emissive.png lights up at the network colour with the SAME per-face UV layout craft_requester.json uses.",
+  "parent": "nodeworks:block/craft_requester",
+  "textures": {
+    "0": "nodeworks:block/craft_requester_emissive",
+    "particle": "nodeworks:block/craft_requester_emissive"
+  }
+}

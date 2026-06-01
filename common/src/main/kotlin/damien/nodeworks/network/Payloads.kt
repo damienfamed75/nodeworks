@@ -454,6 +454,52 @@ data class SetProcessingApiSlotPayload(val containerId: Int, val slotIndex: Int,
     override fun type() = TYPE
 }
 
+/** C2S: Set the Storage Meter's ghost target stack. Used by the JEI ghost-drop
+ *  handler so dragging an item from JEI onto the slot writes the full
+ *  component-bearing stack as the meter's target. The menu's own click handler
+ *  already covers the inventory-drag path and doesn't need this payload. */
+data class SetStorageMeterTargetPayload(val containerId: Int, val stack: net.minecraft.world.item.ItemStack) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetStorageMeterTargetPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_storage_meter_target"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetStorageMeterTargetPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                buf.writeVarInt(p.containerId)
+                net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, p.stack)
+            },
+            { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                val cid = buf.readVarInt()
+                val stack = readBoundedStack(regBuf)
+                SetStorageMeterTargetPayload(cid, stack)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: Set the Craft Requester's ghost target stack, parallel to
+ *  [SetStorageMeterTargetPayload] but routes to the Craft Requester BE. */
+data class SetCraftRequesterTargetPayload(val containerId: Int, val stack: net.minecraft.world.item.ItemStack) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetCraftRequesterTargetPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_craft_requester_target"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetCraftRequesterTargetPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                buf.writeVarInt(p.containerId)
+                net.minecraft.world.item.ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, p.stack)
+            },
+            { buf ->
+                val regBuf = buf as net.minecraft.network.RegistryFriendlyByteBuf
+                val cid = buf.readVarInt()
+                val stack = readBoundedStack(regBuf)
+                SetCraftRequesterTargetPayload(cid, stack)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /**
  * S2C: Sync buffer contents from a Crafting Core to the client with the GUI open.
  * Sent only to the player viewing the menu, throttled to once per second.

@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "nodeworks:monitor",
+    "nodeworks:craft_requester"
+  ],
+  "result": {
+    "id": "nodeworks:storage_meter",
+    "count": 1
+  }
+}

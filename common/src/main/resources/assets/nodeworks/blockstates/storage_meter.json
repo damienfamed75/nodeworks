@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "nodeworks:block/storage_meter" },
+    "facing=south": { "model": "nodeworks:block/storage_meter", "y": 180 },
+    "facing=west":  { "model": "nodeworks:block/storage_meter", "y": 270 },
+    "facing=east":  { "model": "nodeworks:block/storage_meter", "y": 90 }
+  }
+}

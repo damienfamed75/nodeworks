@@ -1,0 +1,259 @@
+{
+    DataVersion: 4790,
+    size: [5, 2, 3],
+    data: [
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:instruction_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:oak_door",
+                                outputCount: 3,
+                                recipe: [
+                                    "minecraft:oak_planks",
+                                    "minecraft:oak_planks",
+                                    "",
+                                    "minecraft:oak_planks",
+                                    "minecraft:oak_planks",
+                                    "",
+                                    "minecraft:oak_planks",
+                                    "minecraft:oak_planks",
+                                    ""
+                                ],
+                                allowSubstitutions: 1b
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:instruction_set"
+                    }
+                ],
+                networkId: "a9830efb-9cc8-4208-8d9d-d6d9ad779903",
+                id: "nodeworks:instruction_storage"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:storage_meter{facing:north}",
+            nbt: {
+                components: {},
+                channel: -1,
+                count: 3L,
+                networkId: "a9830efb-9cc8-4208-8d9d-d6d9ad779903",
+                threshold: 3,
+                id: "nodeworks:storage_meter",
+                target: {
+                    count: 1,
+                    id: "minecraft:oak_door"
+                }
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "a9830efb-9cc8-4208-8d9d-d6d9ad779903",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 0, 1],
+            state: "nodeworks:crafting_core{formed:true}",
+            nbt: {
+                isCrafting: 0b,
+                scheduler: {
+                    backlog: [],
+                    inProgress: [I; ],
+                    state: "IDLE",
+                    completed: [I; ]
+                },
+                isFormed: 1b,
+                components: {},
+                currentCraftItem: "",
+                networkId: "a9830efb-9cc8-4208-8d9d-d6d9ad779903",
+                id: "nodeworks:crafting_core",
+                bufferState: {
+                    countCap: 768L,
+                    entries: [],
+                    typesCap: 12
+                }
+            }
+        },
+        {
+            pos: [2, 0, 2],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 27b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "a9830efb-9cc8-4208-8d9d-d6d9ad779903",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [3, 0, 1],
+            state: "minecraft:chest{facing:north,type:single,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 58,
+                        Slot: 0b,
+                        id: "minecraft:oak_planks"
+                    },
+                    {
+                        count: 3,
+                        Slot: 1b,
+                        id: "minecraft:oak_door"
+                    }
+                ],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [4, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                laserEnabled: 1b,
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "a9830efb-9cc8-4208-8d9d-d6d9ad779903",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                permanentId: "a9830efb-9cc8-4208-8d9d-d6d9ad779903",
+                laserMode: 0,
+                redstoneMode: 0,
+                networkColor: 7526378
+            }
+        },
+        {
+            pos: [2, 1, 1],
+            state: "nodeworks:crafting_storage{formed:true,overheat_level:0}",
+            nbt: {
+                components: {},
+                id: "nodeworks:crafting_storage"
+            }
+        },
+        {
+            pos: [2, 1, 2],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "nodeworks:instruction_storage{facing:north}",
+        "nodeworks:storage_meter{facing:north}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:true}",
+        "nodeworks:crafting_core{formed:true}",
+        "nodeworks:stabilizer",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "minecraft:chest{facing:north,type:single,waterlogged:false}",
+        "nodeworks:network_controller",
+        "nodeworks:crafting_storage{formed:true,overheat_level:0}"
+    ]
+}

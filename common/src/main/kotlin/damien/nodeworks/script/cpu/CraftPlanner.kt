@@ -26,8 +26,13 @@ object CraftPlanner {
      * Convenience overload that pulls Instruction Set recipe patterns out of a
      * [NetworkSnapshot]. Live callers in production go through this entry point.
      */
-    fun plan(tree: CraftTreeNode, snapshot: NetworkSnapshot, omitDeliver: Boolean = false): PlanResult =
-        plan(tree, omitDeliver) { itemId ->
+    fun plan(
+        tree: CraftTreeNode,
+        snapshot: NetworkSnapshot,
+        omitDeliver: Boolean = false,
+        outputChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
+    ): PlanResult =
+        plan(tree, omitDeliver, outputChannel) { itemId ->
             snapshot.findInstructionSet(itemId)?.instructionSet?.recipe
         }
 
@@ -50,6 +55,7 @@ object CraftPlanner {
     fun plan(
         tree: CraftTreeNode,
         omitDeliver: Boolean = false,
+        outputChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
         recipeLookup: (String) -> List<String>?,
     ): PlanResult {
         val ops = mutableListOf<Operation>()
@@ -167,7 +173,8 @@ object CraftPlanner {
                 dependsOn = listOf(rootOpId),
                 itemId = tree.itemId,
                 amount = tree.count.toLong(),
-                toReservedSlot = true
+                toReservedSlot = true,
+                outputChannel = outputChannel,
             )
             // Deliver finishing means the root tree node is fully complete.
             deliverOp.outputNodeId = tree.nodeId

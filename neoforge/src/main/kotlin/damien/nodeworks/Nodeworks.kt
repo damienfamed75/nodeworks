@@ -49,6 +49,9 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // Touched from the netty payload handler thread and the main thread, so
         // it must be concurrent.
         private val diagnosticPreviewLastTick = java.util.concurrent.ConcurrentHashMap<java.util.UUID, Long>()
+
+        // Per-player throttle for DeviceSettingsPayload, ~10 pkt/sec.
+        private val deviceSettingsLastTick = java.util.concurrent.ConcurrentHashMap<java.util.UUID, Long>()
     }
 
     init {
@@ -328,6 +331,22 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     damien.nodeworks.screen.ProcessingHandlerMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.STORAGE_METER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "storage_meter")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.StorageMeterOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.StorageMeterMenu.clientFactory(syncId, inv, data)
+                }
+            )
+            ModScreenHandlers.CRAFT_REQUESTER = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "craft_requester")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.CraftRequesterOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.CraftRequesterMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.initialize()
         }
     }
@@ -494,6 +513,14 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val player = context.player()
                 val level = player.level() as? ServerLevel ?: return@enqueueWork
                 if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
+                // Per-player throttle, 2 ticks (~10 pkt/sec). Caps macro spam.
+                // Null-check the map entry rather than using Long.MIN_VALUE as
+                // a sentinel, since `now - Long.MIN_VALUE` overflows and would
+                // drop the player's very first packet.
+                val now = level.server.tickCount.toLong()
+                val last = deviceSettingsLastTick[player.uuid]
+                if (last != null && now - last < 2) return@enqueueWork
+                deviceSettingsLastTick[player.uuid] = now
                 val entity = level.getBlockEntity(payload.pos) ?: return@enqueueWork
                 val newColor: net.minecraft.world.item.DyeColor? = if (payload.key == "channel") {
                     runCatching { net.minecraft.world.item.DyeColor.byId(payload.intValue) }.getOrNull()
@@ -561,6 +588,22 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                                     damien.nodeworks.block.entity.UserBlockEntity.UseMode.entries[ord]
                             }
                             "preview" -> entity.previewArea = payload.intValue != 0
+                        }
+                    }
+                    is damien.nodeworks.block.entity.StorageMeterBlockEntity -> {
+                        when (payload.key) {
+                            "channel" -> entity.channel = damien.nodeworks.network.ChannelFilter.fromNbtInt(payload.intValue)
+                            // Caps match the GUI clamp, MAX_INT from a crafted
+                            // client would have the meter chase a 2B threshold.
+                            "threshold" -> entity.threshold = payload.intValue.coerceIn(0, 1_000_000)
+                            "autocraft" -> entity.autocraftEnabled = payload.intValue != 0
+                        }
+                    }
+                    is damien.nodeworks.block.entity.CraftRequesterBlockEntity -> {
+                        when (payload.key) {
+                            "channel" -> entity.outputChannel = damien.nodeworks.network.ChannelFilter.fromNbtInt(payload.intValue)
+                            // Caps match the GUI clamp, see Meter above.
+                            "batch" -> entity.batchSize = payload.intValue.coerceIn(1, 1_000_000)
                         }
                     }
                 }
@@ -741,13 +784,13 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 if (menu !is damien.nodeworks.screen.DiagnosticMenu) return@enqueueWork
                 if (menu.containerId != payload.containerId) return@enqueueWork
                 if (menu.clickedPos != payload.networkPos) return@enqueueWork
-                // Per-player request throttle. Diagnostic preview is a
-                // bounded-depth tree walk (depth 20) but still walks the
-                // network; cap to 10 requests/sec to fence off accidental
-                // or hostile spam from a modified client.
+                // Per-player request throttle, 2 ticks (~10 req/sec). Caps
+                // hostile spam from a modified client. Null-check rather than
+                // a Long.MIN_VALUE sentinel since `now - Long.MIN_VALUE`
+                // overflows and would drop the first packet after login.
                 val now = (player.level() as? ServerLevel)?.server?.tickCount?.toLong() ?: 0L
-                val last = diagnosticPreviewLastTick[player.uuid] ?: Long.MIN_VALUE
-                if (now - last < 2) return@enqueueWork
+                val last = diagnosticPreviewLastTick[player.uuid]
+                if (last != null && now - last < 2) return@enqueueWork
                 diagnosticPreviewLastTick[player.uuid] = now
 
                 val level = player.level() as? ServerLevel ?: return@enqueueWork
@@ -768,6 +811,42 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
                     menu.setSlotFromStack(payload.slotIndex, payload.stack)
+                }
+            }
+        }
+
+        registrar.playToServer(
+            damien.nodeworks.network.SetStorageMeterTargetPayload.TYPE,
+            damien.nodeworks.network.SetStorageMeterTargetPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.StorageMeterMenu && menu.containerId == payload.containerId) {
+                    val level = player.level() as? ServerLevel ?: return@enqueueWork
+                    val be = level.getBlockEntity(menu.devicePos) as? damien.nodeworks.block.entity.StorageMeterBlockEntity
+                        ?: return@enqueueWork
+                    be.target = if (payload.stack.isEmpty) net.minecraft.world.item.ItemStack.EMPTY
+                                else payload.stack.copyWithCount(1)
+                    menu.broadcastChanges()
+                }
+            }
+        }
+
+        registrar.playToServer(
+            damien.nodeworks.network.SetCraftRequesterTargetPayload.TYPE,
+            damien.nodeworks.network.SetCraftRequesterTargetPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.CraftRequesterMenu && menu.containerId == payload.containerId) {
+                    val level = player.level() as? ServerLevel ?: return@enqueueWork
+                    val be = level.getBlockEntity(menu.devicePos) as? damien.nodeworks.block.entity.CraftRequesterBlockEntity
+                        ?: return@enqueueWork
+                    be.target = if (payload.stack.isEmpty) net.minecraft.world.item.ItemStack.EMPTY
+                                else payload.stack.copyWithCount(1)
+                    menu.broadcastChanges()
                 }
             }
         }
@@ -987,6 +1066,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
     private fun onPlayerDisconnect(event: net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent) {
         damien.nodeworks.item.NetworkWrenchItem.clearSelection(event.entity.uuid)
         diagnosticPreviewLastTick.remove(event.entity.uuid)
+        deviceSettingsLastTick.remove(event.entity.uuid)
     }
 
     private fun onRightClickBlock(event: net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock) {

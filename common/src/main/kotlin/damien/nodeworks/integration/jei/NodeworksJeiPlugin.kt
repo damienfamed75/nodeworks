@@ -126,6 +126,14 @@ class NodeworksJeiPlugin : IModPlugin {
             damien.nodeworks.screen.TerminalScreen::class.java,
             TerminalScriptEditorGhostHandler()
         )
+        registration.addGhostIngredientHandler(
+            damien.nodeworks.screen.StorageMeterScreen::class.java,
+            StorageMeterGhostHandler()
+        )
+        registration.addGhostIngredientHandler(
+            damien.nodeworks.screen.CraftRequesterScreen::class.java,
+            CraftRequesterGhostHandler()
+        )
     }
 
     override fun registerCategories(registration: IRecipeCategoryRegistration) {
@@ -692,6 +700,78 @@ class TerminalScriptEditorGhostHandler : IGhostIngredientHandler<damien.nodework
             if (ingredient !is ItemStack || ingredient.isEmpty) return
             gui.acceptGhostStack(ingredient)
             gui.setJeiDragging(false)
+        }
+    }
+}
+
+// ── Storage Meter: ghost-ingredient drag from JEI onto the target slot ──
+
+class StorageMeterGhostHandler : IGhostIngredientHandler<damien.nodeworks.screen.StorageMeterScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: damien.nodeworks.screen.StorageMeterScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean,
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val slotScreenX = gui.getLeft() + damien.nodeworks.screen.StorageMeterScreen.SLOT_X
+        val slotScreenY = gui.getTop() + damien.nodeworks.screen.StorageMeterScreen.SLOT_Y
+        return listOf(GhostTarget(gui, Rect2i(slotScreenX, slotScreenY, 16, 16)))
+    }
+
+    override fun onComplete() {}
+
+    private class GhostTarget<I : Any>(
+        private val gui: damien.nodeworks.screen.StorageMeterScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+
+        override fun getArea(): Rect2i = area
+
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            PlatformServices.clientNetworking.sendToServer(
+                damien.nodeworks.network.SetStorageMeterTargetPayload(
+                    gui.menu.containerId,
+                    ingredient.copyWithCount(1),
+                ),
+            )
+        }
+    }
+}
+
+// ── Craft Requester: ghost-ingredient drag from JEI onto the target slot ──
+
+class CraftRequesterGhostHandler : IGhostIngredientHandler<damien.nodeworks.screen.CraftRequesterScreen> {
+
+    override fun <I : Any> getTargetsTyped(
+        gui: damien.nodeworks.screen.CraftRequesterScreen,
+        ingredient: ITypedIngredient<I>,
+        doStart: Boolean,
+    ): List<IGhostIngredientHandler.Target<I>> {
+        if (ingredient.ingredient !is ItemStack) return emptyList()
+        val slotScreenX = gui.getLeft() + damien.nodeworks.screen.CraftRequesterScreen.SLOT_X
+        val slotScreenY = gui.getTop() + damien.nodeworks.screen.CraftRequesterScreen.SLOT_Y
+        return listOf(GhostTarget(gui, Rect2i(slotScreenX, slotScreenY, 16, 16)))
+    }
+
+    override fun onComplete() {}
+
+    private class GhostTarget<I : Any>(
+        private val gui: damien.nodeworks.screen.CraftRequesterScreen,
+        private val area: Rect2i,
+    ) : IGhostIngredientHandler.Target<I> {
+
+        override fun getArea(): Rect2i = area
+
+        override fun accept(ingredient: I) {
+            if (ingredient !is ItemStack || ingredient.isEmpty) return
+            PlatformServices.clientNetworking.sendToServer(
+                damien.nodeworks.network.SetCraftRequesterTargetPayload(
+                    gui.menu.containerId,
+                    ingredient.copyWithCount(1),
+                ),
+            )
         }
     }
 }

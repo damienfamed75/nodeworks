@@ -1,0 +1,8 @@
+{
+  "comment": "Network-colour emissive overlay for the Storage Meter. Inherits all geometry from `nodeworks:block/storage_meter` and only overrides the `#0` texture binding to point at storage_meter_emissive.png. Same pattern as breaker_emissive / placer_emissive / user_emissive: any face the artist paints in storage_meter_emissive.png lights up at the network colour with the SAME per-face UV layout storage_meter.json uses.",
+  "parent": "nodeworks:block/storage_meter",
+  "textures": {
+    "0": "nodeworks:block/storage_meter_emissive",
+    "particle": "nodeworks:block/storage_meter_emissive"
+  }
+}

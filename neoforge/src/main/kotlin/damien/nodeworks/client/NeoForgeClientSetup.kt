@@ -15,6 +15,8 @@ import damien.nodeworks.render.ImportChestRenderer
 import damien.nodeworks.render.InstructionStorageRenderer
 import damien.nodeworks.render.InventoryTerminalRenderer
 import damien.nodeworks.render.MonitorRenderer
+import damien.nodeworks.render.CraftRequesterRenderer
+import damien.nodeworks.render.StorageMeterRenderer
 import damien.nodeworks.render.NodeConnectionRenderer
 import damien.nodeworks.render.NodeRenderer
 import damien.nodeworks.render.PipeRenderer
@@ -139,6 +141,8 @@ object NeoForgeClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.PIPE, ::PipeRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.PROCESSING_HANDLER, ::ProcessingHandlerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.MONITOR, ::MonitorRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.STORAGE_METER, ::StorageMeterRenderer)
+        event.registerBlockEntityRenderer(ModBlockEntities.CRAFT_REQUESTER, ::CraftRequesterRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.NETWORK_CONTROLLER, ::ControllerRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.VARIABLE, ::VariableRenderer)
         event.registerBlockEntityRenderer(ModBlockEntities.TERMINAL, ::TerminalRenderer)
@@ -185,6 +189,30 @@ object NeoForgeClientSetup {
      *  breaker_emissive.png. */
     private val BREAKER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:breaker_emissive" }
+
+    /** Storage Meter network-colour emissive overlay. Inherits the geometry of
+     *  `nodeworks:block/storage_meter` and only swaps `#0` to
+     *  storage_meter_emissive.png. */
+    private val STORAGE_METER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:storage_meter_emissive" }
+
+    /** Storage Meter redstone-active overlay. Same geometry inheritance, swaps
+     *  `#0` to storage_meter_redstone_active.png. Drawn alongside the network-
+     *  colour overlay when the meter is below threshold. */
+    private val STORAGE_METER_REDSTONE_ACTIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:storage_meter_redstone_active" }
+
+    /** Craft Requester network-colour emissive overlay. Inherits the geometry
+     *  of `nodeworks:block/craft_requester` and only swaps `#0` to
+     *  craft_requester_emissive.png. */
+    private val CRAFT_REQUESTER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:craft_requester_emissive" }
+
+    /** Craft Requester redstone-active overlay. Same geometry inheritance,
+     *  swaps `#0` to craft_requester_redstone_active.png. Drawn alongside the
+     *  network-colour overlay while the input signal is high. */
+    private val CRAFT_REQUESTER_REDSTONE_ACTIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:craft_requester_redstone_active" }
 
     /** Emissive overlay model for the Variable block. Same parent-model
      *  pattern - inherits `nodeworks:block/variable`'s geometry and only
@@ -244,6 +272,50 @@ object NeoForgeClientSetup {
             net.minecraft.client.Minecraft.getInstance()
                 .modelManager
                 .getStandaloneModel(BREAKER_EMISSIVE_MODEL_KEY)
+        }
+
+        val storageMeterEmissiveId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/storage_meter_emissive")
+        event.register(
+            STORAGE_METER_EMISSIVE_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(storageMeterEmissiveId),
+        )
+        damien.nodeworks.client.StorageMeterEmissiveModel.fetcher = {
+            net.minecraft.client.Minecraft.getInstance()
+                .modelManager
+                .getStandaloneModel(STORAGE_METER_EMISSIVE_MODEL_KEY)
+        }
+
+        val storageMeterRedstoneActiveId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/storage_meter_redstone_active")
+        event.register(
+            STORAGE_METER_REDSTONE_ACTIVE_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(storageMeterRedstoneActiveId),
+        )
+        damien.nodeworks.client.StorageMeterRedstoneActiveModel.fetcher = {
+            net.minecraft.client.Minecraft.getInstance()
+                .modelManager
+                .getStandaloneModel(STORAGE_METER_REDSTONE_ACTIVE_MODEL_KEY)
+        }
+
+        val craftRequesterEmissiveId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/craft_requester_emissive")
+        event.register(
+            CRAFT_REQUESTER_EMISSIVE_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(craftRequesterEmissiveId),
+        )
+        damien.nodeworks.client.CraftRequesterEmissiveModel.fetcher = {
+            net.minecraft.client.Minecraft.getInstance()
+                .modelManager
+                .getStandaloneModel(CRAFT_REQUESTER_EMISSIVE_MODEL_KEY)
+        }
+
+        val craftRequesterRedstoneActiveId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/craft_requester_redstone_active")
+        event.register(
+            CRAFT_REQUESTER_REDSTONE_ACTIVE_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(craftRequesterRedstoneActiveId),
+        )
+        damien.nodeworks.client.CraftRequesterRedstoneActiveModel.fetcher = {
+            net.minecraft.client.Minecraft.getInstance()
+                .modelManager
+                .getStandaloneModel(CRAFT_REQUESTER_REDSTONE_ACTIVE_MODEL_KEY)
         }
 
         val variableEmissiveId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/variable_emissive")
@@ -439,6 +511,12 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.PROCESSING_HANDLER) { menu, inventory, title ->
             damien.nodeworks.screen.ProcessingHandlerScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.STORAGE_METER) { menu, inventory, title ->
+            damien.nodeworks.screen.StorageMeterScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.CRAFT_REQUESTER) { menu, inventory, title ->
+            damien.nodeworks.screen.CraftRequesterScreen(menu, inventory, title)
         }
     }
 

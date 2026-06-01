@@ -1,0 +1,259 @@
+{
+    DataVersion: 4790,
+    size: [5, 2, 3],
+    data: [
+        {
+            pos: [0, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 0, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 0],
+            state: "minecraft:oak_button{face:floor,facing:south,powered:false}"
+        },
+        {
+            pos: [1, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [1, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [2, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [3, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 0],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 1],
+            state: "minecraft:air"
+        },
+        {
+            pos: [4, 1, 2],
+            state: "minecraft:air"
+        },
+        {
+            pos: [0, 0, 0],
+            state: "nodeworks:instruction_storage{facing:north}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        components: {
+                            "minecraft:custom_data": {
+                                output: "minecraft:oak_door",
+                                outputCount: 3,
+                                recipe: [
+                                    "minecraft:oak_planks",
+                                    "minecraft:oak_planks",
+                                    "",
+                                    "minecraft:oak_planks",
+                                    "minecraft:oak_planks",
+                                    "",
+                                    "minecraft:oak_planks",
+                                    "minecraft:oak_planks",
+                                    ""
+                                ],
+                                allowSubstitutions: 1b
+                            }
+                        },
+                        count: 1,
+                        Slot: 0b,
+                        id: "nodeworks:instruction_set"
+                    }
+                ],
+                networkId: "5d926461-a6c5-4243-a106-6bb988ff6064",
+                id: "nodeworks:instruction_storage"
+            }
+        },
+        {
+            pos: [1, 0, 0],
+            state: "nodeworks:craft_requester{facing:north}",
+            nbt: {
+                components: {},
+                batch: 1,
+                channel: -1,
+                networkId: "5d926461-a6c5-4243-a106-6bb988ff6064",
+                id: "nodeworks:craft_requester",
+                target: {
+                    count: 1,
+                    id: "minecraft:oak_door"
+                }
+            }
+        },
+        {
+            pos: [2, 0, 0],
+            state: "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                networkId: "5d926461-a6c5-4243-a106-6bb988ff6064",
+                id: "nodeworks:pipe"
+            }
+        },
+        {
+            pos: [2, 0, 1],
+            state: "nodeworks:crafting_core{formed:true}",
+            nbt: {
+                isCrafting: 0b,
+                scheduler: {
+                    backlog: [],
+                    inProgress: [I; ],
+                    state: "IDLE",
+                    completed: [I; ]
+                },
+                isFormed: 1b,
+                components: {},
+                currentCraftItem: "",
+                networkId: "5d926461-a6c5-4243-a106-6bb988ff6064",
+                id: "nodeworks:crafting_core",
+                bufferState: {
+                    countCap: 768L,
+                    entries: [],
+                    typesCap: 12
+                }
+            }
+        },
+        {
+            pos: [2, 0, 2],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        },
+        {
+            pos: [3, 0, 0],
+            state: "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 1,
+                        Slot: 27b,
+                        id: "nodeworks:storage_card"
+                    }
+                ],
+                networkId: "5d926461-a6c5-4243-a106-6bb988ff6064",
+                id: "nodeworks:node"
+            }
+        },
+        {
+            pos: [3, 0, 1],
+            state: "minecraft:chest{facing:north,type:single,waterlogged:false}",
+            nbt: {
+                components: {},
+                Items: [
+                    {
+                        count: 58,
+                        Slot: 0b,
+                        id: "minecraft:oak_planks"
+                    },
+                    {
+                        count: 3,
+                        Slot: 1b,
+                        id: "minecraft:oak_door"
+                    }
+                ],
+                id: "minecraft:chest"
+            }
+        },
+        {
+            pos: [4, 0, 0],
+            state: "nodeworks:network_controller",
+            nbt: {
+                chunkLoadingEnabled: 0b,
+                components: {},
+                laserEnabled: 1b,
+                networkName: "",
+                handlerRetryLimit: 50,
+                networkId: "5d926461-a6c5-4243-a106-6bb988ff6064",
+                nodeGlowStyle: 0,
+                id: "nodeworks:network_controller",
+                permanentId: "5d926461-a6c5-4243-a106-6bb988ff6064",
+                laserMode: 0,
+                redstoneMode: 0,
+                networkColor: 14282388
+            }
+        },
+        {
+            pos: [2, 1, 1],
+            state: "nodeworks:crafting_storage{formed:true,overheat_level:0}",
+            nbt: {
+                components: {},
+                id: "nodeworks:crafting_storage"
+            }
+        },
+        {
+            pos: [2, 1, 2],
+            state: "nodeworks:stabilizer",
+            nbt: {
+                components: {},
+                id: "nodeworks:stabilizer"
+            }
+        }
+    ],
+    entities: [],
+    palette: [
+        "minecraft:air",
+        "minecraft:oak_button{face:floor,facing:south,powered:false}",
+        "nodeworks:instruction_storage{facing:north}",
+        "nodeworks:craft_requester{facing:north}",
+        "nodeworks:pipe{pipe_axis:junction,pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:true,pipe_up:false,pipe_west:true}",
+        "nodeworks:crafting_core{formed:true}",
+        "nodeworks:stabilizer",
+        "nodeworks:node{pipe_down:false,pipe_east:true,pipe_north:false,pipe_south:false,pipe_up:false,pipe_west:true}",
+        "minecraft:chest{facing:north,type:single,waterlogged:false}",
+        "nodeworks:network_controller",
+        "nodeworks:crafting_storage{formed:true,overheat_level:0}"
+    ]
+}

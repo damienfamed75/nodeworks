@@ -47,6 +47,11 @@ class ChannelPickerWidget(
      *  "Channel: {Color}". Useful when the picker drives a domain-specific
      *  routing rule (e.g. "Routes to Blue Storage Cards"). */
     private val tooltipFormatter: ((DyeColor) -> String)? = null,
+    /** Optional one-line preface shown above the channel-name line in the
+     *  hover tooltip. Lets the host add a sentence of context for what the
+     *  picker controls (e.g. "Outputs go to") without forcing every screen
+     *  to draw its own label beside the swatch. */
+    private val tooltipPrefix: String? = null,
     private val onChange: (DyeColor?) -> Unit,
 ) : AbstractWidget(x, y, swatchSize, swatchSize, Component.literal("Channel")) {
 
@@ -233,17 +238,17 @@ class ChannelPickerWidget(
     private fun renderSwatchTooltip(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (mouseX !in x until x + width || mouseY !in y until y + height) return
         val font = Minecraft.getInstance().font
-        val firstLine = when {
+        val channelLine = when {
             isNone -> "All channels"
             tooltipFormatter != null -> tooltipFormatter.invoke(currentColor)
             else -> "Channel: ${currentColor.name.lowercase().replaceFirstChar { it.uppercase() }}"
         }
-        graphics.renderComponentTooltip(
-            font,
-            listOf(Component.literal(firstLine), Component.literal("Click to change.")),
-            mouseX,
-            mouseY,
-        )
+        val lines = buildList {
+            tooltipPrefix?.let { add(Component.literal(it)) }
+            add(Component.literal(channelLine))
+            add(Component.literal("Click to change."))
+        }
+        graphics.renderComponentTooltip(font, lines, mouseX, mouseY)
     }
 
     /** Host screens call this BEFORE forwarding clicks to other widgets while

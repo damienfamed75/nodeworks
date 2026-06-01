@@ -210,11 +210,14 @@ object NodeConnectionRenderer {
         val mc = Minecraft.getInstance()
         val level = mc.level ?: return
 
-        // Monitor count text, kept here because it wants camera-relative billboarding
-        // over the entire knownNodes set, not a per-BER pass.
+        // Monitor + Storage Meter count text + Craft Requester batch number,
+        // kept here because each wants camera-relative work over the entire
+        // knownNodes set, not per-BER.
         poseStack.pushPose()
         poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
         renderMonitorText(poseStack, consumers, level, cameraPos)
+        renderStorageMeterText(poseStack, consumers, level, cameraPos)
+        renderCraftRequesterText(poseStack, consumers, level, cameraPos)
         poseStack.popPose()
     }
 
@@ -289,6 +292,142 @@ object NodeConnectionRenderer {
             count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
             else -> count.toString()
         }
+    }
+
+    /** Storage Meter `count/threshold` rendered as a bottom-right overlay
+     *  on the target icon. Same pipeline as the Monitor count. */
+    private fun renderStorageMeterText(
+        poseStack: PoseStack,
+        consumers: MultiBufferSource,
+        level: net.minecraft.world.level.Level,
+        cameraPos: net.minecraft.world.phys.Vec3
+    ) {
+        val mc = Minecraft.getInstance()
+        val font = mc.font
+        val bufferSource = mc.renderBuffers().bufferSource()
+        val maxDistSq = 64.0 * 64.0
+
+        for (pos in knownNodes) {
+            val dx = pos.x + 0.5 - cameraPos.x
+            val dy = pos.y + 0.5 - cameraPos.y
+            val dz = pos.z + 0.5 - cameraPos.z
+            if (dx * dx + dy * dy + dz * dz > maxDistSq) continue
+
+            if (!level.isLoaded(pos)) continue
+            val be = level.getBlockEntity(pos) as? damien.nodeworks.block.entity.StorageMeterBlockEntity ?: continue
+            if (be.target.isEmpty || be.threshold <= 0) continue
+
+            val facing = be.blockState.getValue(damien.nodeworks.block.StorageMeterBlock.FACING)
+            val text = "${formatMonitorCount(be.displayCount)}/${formatMonitorCount(be.threshold.toLong())}"
+            val textWidth = font.width(text)
+
+            poseStack.pushPose()
+            poseStack.translate(
+                pos.x.toDouble() + 0.5,
+                pos.y.toDouble() + 0.5,
+                pos.z.toDouble() + 0.5
+            )
+
+            when (facing) {
+                Direction.SOUTH -> {}
+                Direction.NORTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat()))
+                Direction.EAST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI / 2).toFloat()))
+                Direction.WEST -> poseStack.mulPose(Quaternionf().rotateY((-Math.PI / 2).toFloat()))
+                else -> {}
+            }
+
+            // Bottom-right of the 0.34-scale icon: right edge at +0.17,
+            // baseline at -0.10 (visible bottom at -0.17). 0.502 sits a hair
+            // outside the face to avoid z-fight.
+            poseStack.translate(0.17, -0.10, 0.502)
+            poseStack.scale(0.01f, -0.01f, 0.01f)
+
+            font.drawInBatch(
+                text,
+                -textWidth.toFloat(),
+                0f,
+                0xFFFFFFFF.toInt(),
+                true,
+                poseStack.last().pose(),
+                bufferSource,
+                Font.DisplayMode.POLYGON_OFFSET,
+                0,
+                RenderUtils.FULL_BRIGHT
+            )
+
+            poseStack.popPose()
+        }
+
+        bufferSource.endBatch()
+    }
+
+    /** Craft Requester batch size overlaid on the bottom-right of the target
+     *  icon. Shares the icon's facing-face visibility check so they hide
+     *  together. */
+    private fun renderCraftRequesterText(
+        poseStack: PoseStack,
+        consumers: MultiBufferSource,
+        level: net.minecraft.world.level.Level,
+        cameraPos: net.minecraft.world.phys.Vec3
+    ) {
+        val mc = Minecraft.getInstance()
+        val font = mc.font
+        val bufferSource = mc.renderBuffers().bufferSource()
+        val maxDistSq = 64.0 * 64.0
+
+        for (pos in knownNodes) {
+            val dx = pos.x + 0.5 - cameraPos.x
+            val dy = pos.y + 0.5 - cameraPos.y
+            val dz = pos.z + 0.5 - cameraPos.z
+            if (dx * dx + dy * dy + dz * dz > maxDistSq) continue
+
+            if (!level.isLoaded(pos)) continue
+            val be = level.getBlockEntity(pos) as? damien.nodeworks.block.entity.CraftRequesterBlockEntity ?: continue
+            if (be.target.isEmpty) continue
+            if (!damien.nodeworks.render.CraftRequesterRenderer.isFacingFaceVisible(be)) continue
+
+            val facing = be.blockState.getValue(damien.nodeworks.block.CraftRequesterBlock.FACING)
+            val text = be.batchSize.toString()
+            val textWidth = font.width(text)
+
+            poseStack.pushPose()
+            poseStack.translate(
+                pos.x.toDouble() + 0.5,
+                pos.y.toDouble() + 0.5,
+                pos.z.toDouble() + 0.5
+            )
+
+            when (facing) {
+                Direction.SOUTH -> {}
+                Direction.NORTH -> poseStack.mulPose(Quaternionf().rotateY(Math.PI.toFloat()))
+                Direction.EAST -> poseStack.mulPose(Quaternionf().rotateY((Math.PI / 2).toFloat()))
+                Direction.WEST -> poseStack.mulPose(Quaternionf().rotateY((-Math.PI / 2).toFloat()))
+                else -> {}
+            }
+
+            // Bottom-right of the 0.25-scale icon: right edge at +0.125,
+            // baseline at -0.055 (visible bottom at -0.125). 0.502 sits a hair
+            // outside the icon (at 0.501) to layer cleanly.
+            poseStack.translate(0.125, -0.055, 0.502)
+            poseStack.scale(0.01f, -0.01f, 0.01f)
+
+            font.drawInBatch(
+                text,
+                -textWidth.toFloat(),
+                0f,
+                0xFFFFFFFF.toInt(),
+                true,
+                poseStack.last().pose(),
+                bufferSource,
+                Font.DisplayMode.POLYGON_OFFSET,
+                0,
+                RenderUtils.FULL_BRIGHT
+            )
+
+            poseStack.popPose()
+        }
+
+        bufferSource.endBatch()
     }
 
     // ========== Diagnostic Pin Highlight ==========

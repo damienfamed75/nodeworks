@@ -1,0 +1,8 @@
+{
+  "comment": "Redstone-active overlay for the Storage Meter. Inherits all geometry from `nodeworks:block/storage_meter` and only overrides the `#0` texture binding to point at storage_meter_redstone_active.png. Shown alongside the network-colour emissive overlay when the meter is below threshold (signal active); the two textures don't overlap so they stack cleanly.",
+  "parent": "nodeworks:block/storage_meter",
+  "textures": {
+    "0": "nodeworks:block/storage_meter_redstone_active",
+    "particle": "nodeworks:block/storage_meter_redstone_active"
+  }
+}

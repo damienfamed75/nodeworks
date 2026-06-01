@@ -181,6 +181,10 @@ object CraftingHelper {
          *  plain crafts. Threaded down to [CraftTreeBuilder.buildCraftTree]
          *  so recipe lookup disambiguates same-itemId recipes by component. */
         componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+        /** Channel filter for the trailing Deliver op only, intermediate Delivers
+         *  always use [ChannelFilter.All]. Default [ChannelFilter.All] preserves
+         *  existing routing for Inventory Terminal / Lua callers. */
+        outputChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ): CraftResult? {
         lastFailReason = null
         currentPendingJob = null
@@ -221,7 +225,7 @@ object CraftingHelper {
         }
 
         // 3. Plan the craft against the selected CPU.
-        val planResult = CraftPlanner.plan(tree, snapshot, omitDeliver = omitDeliver)
+        val planResult = CraftPlanner.plan(tree, snapshot, omitDeliver = omitDeliver, outputChannel = outputChannel)
         val plan = planResult.plan ?: run {
             lastFailReason = planResult.message ?: "Could not plan craft"
             return null

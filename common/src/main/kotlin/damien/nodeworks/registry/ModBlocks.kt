@@ -96,6 +96,22 @@ object ModBlocks {
             .requiresCorrectToolForDrops()
     )
 
+    val STORAGE_METER: Block = register(
+        "storage_meter",
+        { damien.nodeworks.block.StorageMeterBlock(it) },
+        BlockBehaviour.Properties.of()
+            .strength(2.0f, 4.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    val CRAFT_REQUESTER: Block = register(
+        "craft_requester",
+        { damien.nodeworks.block.CraftRequesterBlock(it) },
+        BlockBehaviour.Properties.of()
+            .strength(2.0f, 4.0f)
+            .requiresCorrectToolForDrops()
+    )
+
     val INSTRUCTION_STORAGE: Block = register(
         "instruction_storage",
         ::InstructionStorageBlock,

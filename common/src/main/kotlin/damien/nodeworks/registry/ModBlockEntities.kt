@@ -4,6 +4,8 @@ import damien.nodeworks.block.entity.FocusNodeBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.InventoryTerminalBlockEntity
 import damien.nodeworks.block.entity.MonitorBlockEntity
+import damien.nodeworks.block.entity.CraftRequesterBlockEntity
+import damien.nodeworks.block.entity.StorageMeterBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.PipeBlockEntity
@@ -63,6 +65,16 @@ object ModBlockEntities {
     val MONITOR: BlockEntityType<MonitorBlockEntity> = register(
         "monitor",
         PlatformServices.blockEntity.createBlockEntityType(::MonitorBlockEntity, ModBlocks.MONITOR)
+    )
+
+    val STORAGE_METER: BlockEntityType<StorageMeterBlockEntity> = register(
+        "storage_meter",
+        PlatformServices.blockEntity.createBlockEntityType(::StorageMeterBlockEntity, ModBlocks.STORAGE_METER)
+    )
+
+    val CRAFT_REQUESTER: BlockEntityType<CraftRequesterBlockEntity> = register(
+        "craft_requester",
+        PlatformServices.blockEntity.createBlockEntityType(::CraftRequesterBlockEntity, ModBlocks.CRAFT_REQUESTER)
     )
 
     val INSTRUCTION_STORAGE: BlockEntityType<InstructionStorageBlockEntity> = register(

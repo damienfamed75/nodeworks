@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DTD",
+    "RFR",
+    "DDD"
+  ],
+  "key": {
+    "D": "minecraft:deepslate",
+    "T": "minecraft:crafting_table",
+    "R": "minecraft:redstone",
+    "F": "nodeworks:device_frame"
+  },
+  "result": {
+    "id": "nodeworks:craft_requester",
+    "count": 1
+  }
+}

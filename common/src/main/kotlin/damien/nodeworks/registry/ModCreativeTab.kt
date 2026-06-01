@@ -88,6 +88,8 @@ object ModCreativeTab {
                 output.accept(ModItems.DIMENSION_RANGE_UPGRADE)
                 output.accept(ModItems.MULTI_DIMENSION_RANGE_UPGRADE)
                 output.accept(ModBlocks.MONITOR)
+                output.accept(ModBlocks.STORAGE_METER)
+                output.accept(ModBlocks.CRAFT_REQUESTER)
                 output.accept(ModItems.CELESTINE_SHARD)
                 output.accept(ModItems.MILKY_SOUL_BALL)
             }

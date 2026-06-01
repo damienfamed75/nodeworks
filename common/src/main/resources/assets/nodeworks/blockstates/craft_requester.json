@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "nodeworks:block/craft_requester" },
+    "facing=south": { "model": "nodeworks:block/craft_requester", "y": 180 },
+    "facing=west":  { "model": "nodeworks:block/craft_requester", "y": 270 },
+    "facing=east":  { "model": "nodeworks:block/craft_requester", "y": 90 }
+  }
+}
