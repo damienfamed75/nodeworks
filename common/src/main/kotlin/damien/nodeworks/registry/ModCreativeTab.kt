@@ -72,6 +72,7 @@ object ModCreativeTab {
                 output.accept(ModItems.NODEWORKS_BOOK)
                 output.accept(ModItems.NETWORK_WRENCH)
                 output.accept(ModItems.DIAGNOSTIC_TOOL)
+                output.accept(ModItems.GRAPPLE_BEAM)
                 output.accept(ModItems.PORTABLE_INVENTORY_TERMINAL)
                 output.accept(ModItems.CARD_PROGRAMMER)
                 output.accept(ModItems.BLANK_CARD)

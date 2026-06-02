@@ -63,6 +63,8 @@ object NodeworksCommand {
             newSettings.enabledModules,
             newSettings.disabledMethods,
             newSettings.networkControllerChunkLoading,
+            newSettings.grappleMaxDistance,
+            newSettings.grappleEntities,
         )
         for (p in ctx.source.server.playerList.players) {
             PacketDistributor.sendToPlayer(p, payload)

@@ -124,6 +124,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             ModItems.initialize()
             ModBlockEntities.initialize()
             damien.nodeworks.registry.ModEntityTypes.initialize()
+            damien.nodeworks.registry.ModSoundEvents.initialize()
             // Recipe types + serializers + display types. Ordering:
             //   1. ModRecipeTypes, the RecipeType marker the recipe class references.
             //   2. ModRecipeDisplayTypes, the display Type referenced by Recipe.display()
@@ -763,6 +764,34 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             }
         }
 
+        registrar.playToServer(damien.nodeworks.network.GrappleReleasePayload.TYPE, damien.nodeworks.network.GrappleReleasePayload.CODEC) { _, context ->
+            context.enqueueWork {
+                damien.nodeworks.item.GrappleBeamSessions.release(context.player())
+            }
+        }
+
+        registrar.playToServer(damien.nodeworks.network.GrappleAdjustRopePayload.TYPE, damien.nodeworks.network.GrappleAdjustRopePayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val hook = damien.nodeworks.item.GrappleBeamSessions.current(player) ?: return@enqueueWork
+                if (hook.ropeLength < 0.0) return@enqueueWork
+                // Scroll up (positive delta) reels the player in (shorter rope);
+                // scroll down lets them out (longer rope). 0.5 blocks per scroll
+                // tick is a comfortable adjustment speed. Floor depends on
+                // anchor type: block anchors floor at 2.0 (outside the
+                // auto-release radius), entity anchors floor at
+                // GrappleBeamPhysics.ENTITY_MIN_ROPE_LENGTH so a physgunned
+                // entity stays at arm's length.
+                val delta = payload.deltaScrollTicks.toDouble() * 0.5
+                val minRope = if (hook.attachedEntityId != 0) {
+                    damien.nodeworks.item.GrappleBeamPhysics.ENTITY_MIN_ROPE_LENGTH
+                } else {
+                    2.0
+                }
+                hook.ropeLength = (hook.ropeLength - delta).coerceIn(minRope, hook.maxRange)
+            }
+        }
+
         registrar.playToServer(DismissCpuFailurePayload.TYPE, DismissCpuFailurePayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
@@ -963,6 +992,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     payload.enabledModules,
                     payload.disabledMethods,
                     payload.networkControllerChunkLoading,
+                    payload.grappleMaxDistance,
+                    payload.grappleEntities,
                 )
             }
         }
@@ -1024,6 +1055,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }
+        tickGrappleSessions(event.server)
         // Drain any connectables whose setLevel queued a LOS revalidation this past tick.
         // Deferred because in-line revalidation from setLevel would recurse into
         // level.getBlockEntity for the still-being-registered BE → StackOverflow.
@@ -1032,6 +1064,39 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // propagate calls can traverse fresh. Kept here rather than per-level because
         // the dedup is indexed by dimension and clearing once covers all levels.
         damien.nodeworks.network.NodeConnectionHelper.clearTickDedup()
+    }
+
+    /** Drives the Grapple Beam pull for every active session. Vanilla's
+     *  `onUseTick` path would slow the player to 0.2x movement (the bow draw),
+     *  so the item doesn't enter the using-item state and the server runs the
+     *  pull from here instead. Sessions self-evict when the hook entity is
+     *  gone, the player no longer holds a Grapple Beam, or
+     *  [damien.nodeworks.item.GrappleBeamPhysics.applyPullTick] returns false
+     *  (out-of-range auto-release). */
+    private fun tickGrappleSessions(server: net.minecraft.server.MinecraftServer) {
+        val snapshot = damien.nodeworks.item.GrappleBeamSessions.snapshot()
+        if (snapshot.isEmpty()) return
+        for ((uuid, hookId) in snapshot) {
+            val player = server.playerList.getPlayer(uuid)
+            if (player == null) {
+                damien.nodeworks.item.GrappleBeamSessions.clearForPlayer(uuid)
+                continue
+            }
+            val level = player.level() as? ServerLevel ?: continue
+            val hook = level.getEntity(hookId) as? damien.nodeworks.entity.GrappleBeamHookEntity
+            if (hook == null || hook.isRemoved) {
+                damien.nodeworks.item.GrappleBeamSessions.release(player)
+                continue
+            }
+            val stillHolding = player.mainHandItem.item is damien.nodeworks.item.GrappleBeamItem ||
+                player.offhandItem.item is damien.nodeworks.item.GrappleBeamItem
+            if (!stillHolding) {
+                damien.nodeworks.item.GrappleBeamSessions.release(player)
+                continue
+            }
+            val keepAlive = damien.nodeworks.item.GrappleBeamPhysics.applyPullTick(player, hook)
+            if (!keepAlive) damien.nodeworks.item.GrappleBeamSessions.release(player)
+        }
     }
 
     private fun onRegisterCommands(event: net.neoforged.neoforge.event.RegisterCommandsEvent) {
@@ -1067,6 +1132,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         damien.nodeworks.item.NetworkWrenchItem.clearSelection(event.entity.uuid)
         diagnosticPreviewLastTick.remove(event.entity.uuid)
         deviceSettingsLastTick.remove(event.entity.uuid)
+        damien.nodeworks.item.GrappleBeamSessions.clearForPlayer(event.entity.uuid)
     }
 
     private fun onRightClickBlock(event: net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock) {
@@ -1097,6 +1163,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             policy.enabledModules,
             policy.disabledMethods,
             policy.networkControllerChunkLoading,
+            policy.grappleMaxDistance,
+            policy.grappleEntities,
         )
         // event.player is non-null on join, null on /reload (broadcast). Iterate
         // getRelevantPlayers() which covers both cases without branching. The
@@ -1129,6 +1197,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 newSettings.enabledModules,
                 newSettings.disabledMethods,
                 newSettings.networkControllerChunkLoading,
+                newSettings.grappleMaxDistance,
+                newSettings.grappleEntities,
             )
             for (p in server.playerList.players) {
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p, payload)

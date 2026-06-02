@@ -1008,6 +1008,8 @@ data class ServerPolicySyncPayload(
     val enabledModules: Set<String>,
     val disabledMethods: Set<String>,
     val networkControllerChunkLoading: Boolean,
+    val grappleMaxDistance: Int,
+    val grappleEntities: Boolean,
 ) : CustomPacketPayload {
     companion object {
         val TYPE: CustomPacketPayload.Type<ServerPolicySyncPayload> = CustomPacketPayload.Type(
@@ -1026,6 +1028,8 @@ data class ServerPolicySyncPayload(
                 buf.writeVarInt(p.disabledMethods.size.coerceAtMost(MAX_ENTRIES))
                 for (m in p.disabledMethods.take(MAX_ENTRIES)) buf.writeUtf(m, MAX_NAME)
                 buf.writeBoolean(p.networkControllerChunkLoading)
+                buf.writeVarInt(p.grappleMaxDistance)
+                buf.writeBoolean(p.grappleEntities)
             },
             { buf ->
                 val mc = buf.readVarInt().coerceAtMost(MAX_ENTRIES)
@@ -1035,7 +1039,9 @@ data class ServerPolicySyncPayload(
                 val disabled = HashSet<String>(dc)
                 repeat(dc) { disabled.add(buf.readUtf(MAX_NAME)) }
                 val chunkLoading = buf.readBoolean()
-                ServerPolicySyncPayload(modules, disabled, chunkLoading)
+                val grappleMaxDistance = buf.readVarInt()
+                val grappleEntities = buf.readBoolean()
+                ServerPolicySyncPayload(modules, disabled, chunkLoading, grappleMaxDistance, grappleEntities)
             }
         )
     }
@@ -1312,6 +1318,35 @@ data class DiagnosticTopologyChunkPayload(
                 }
                 DiagnosticTopologyChunkPayload(blocks, isLast)
             }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: Scroll wheel input while a Grapple Beam session is active. Server
+ *  adjusts the active hook's ropeLength accordingly, scroll up reels in,
+ *  scroll down lets out. Client also cancels the scroll's default hotbar
+ *  swap behaviour when this packet is sent. */
+data class GrappleAdjustRopePayload(val deltaScrollTicks: Float) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<GrappleAdjustRopePayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "grapple_adjust_rope"))
+        val CODEC: StreamCodec<FriendlyByteBuf, GrappleAdjustRopePayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeFloat(p.deltaScrollTicks) },
+            { buf -> GrappleAdjustRopePayload(buf.readFloat()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: The player let go of right-click while a Grapple Beam hook was
+ *  attached. Server releases the player's active session and reels the hook
+ *  back. Empty payload, the player is identified by the packet context. */
+class GrappleReleasePayload : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<GrappleReleasePayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "grapple_release"))
+        val CODEC: StreamCodec<FriendlyByteBuf, GrappleReleasePayload> = CustomPacketPayload.codec(
+            { _, _ -> },
+            { _ -> GrappleReleasePayload() }
         )
     }
     override fun type() = TYPE

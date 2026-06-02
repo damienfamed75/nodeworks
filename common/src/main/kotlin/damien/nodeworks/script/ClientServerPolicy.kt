@@ -1,10 +1,9 @@
 package damien.nodeworks.script
 
 /**
- * Client-side mirror of the server's script-sandbox policy. Populated by the
- * [damien.nodeworks.network.ServerPolicySyncPayload] handler on join and on
- * `/reload`, read by [damien.nodeworks.screen.widget.AutocompletePopup] so
- * disabled methods don't show up as completions.
+ * Client-side mirror of the server's script-sandbox policy and gameplay
+ * config knobs. Populated by [damien.nodeworks.network.ServerPolicySyncPayload]
+ * on join and on `/reload`.
  *
  * Server-side [LuaExecGate] / [GuardedBinding] enforcement is the actual
  * security boundary, this is UX. Defaults match [ServerSafetySettings.Defaults]
@@ -25,10 +24,28 @@ object ClientServerPolicy {
     var networkControllerChunkLoading: Boolean = ServerSafetySettings.Defaults.networkControllerChunkLoading
         private set
 
-    fun update(modules: Set<String>, disabled: Set<String>, chunkLoading: Boolean) {
+    /** Mirrors [ServerSafetySettings.grappleMaxDistance]. */
+    @Volatile
+    var grappleMaxDistance: Int = ServerSafetySettings.Defaults.grappleMaxDistance
+        private set
+
+    /** Mirrors [ServerSafetySettings.grappleEntities]. */
+    @Volatile
+    var grappleEntities: Boolean = ServerSafetySettings.Defaults.grappleEntities
+        private set
+
+    fun update(
+        modules: Set<String>,
+        disabled: Set<String>,
+        chunkLoading: Boolean,
+        grappleMaxDistance: Int,
+        grappleEntities: Boolean,
+    ) {
         enabledModules = modules
         disabledMethods = disabled
         networkControllerChunkLoading = chunkLoading
+        this.grappleMaxDistance = grappleMaxDistance
+        this.grappleEntities = grappleEntities
     }
 
     /** Is `Type:method` callable under the current server policy? Cheap, hot

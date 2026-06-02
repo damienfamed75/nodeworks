@@ -22,6 +22,7 @@
   "message.nodeworks.disconnected": "Unlinked.",
   "message.nodeworks.card_reset": "Cleared.",
   "item.nodeworks.diagnostic_tool": "Diagnostic Tool",
+  "item.nodeworks.grapple_beam": "Grapple Beam",
   "container.nodeworks.diagnostic": "Network Diagnostic",
   "item.nodeworks.card_programmer": "Card Programmer",
   "item.nodeworks.blank_card": "Blank Card",
@@ -102,5 +103,7 @@
   "item.nodeworks.celestine_shard": "Celestine Shard",
   "item.nodeworks.milky_soul_ball": "Milky Soul Ball",
   "item.nodeworks.portable_inventory_terminal": "Portable Inventory Terminal",
-  "container.nodeworks.portable_inventory_terminal": "Portable Inventory Terminal"
+  "container.nodeworks.portable_inventory_terminal": "Portable Inventory Terminal",
+  "subtitle.nodeworks.grapple_beam.activate": "Grapple Beam latches",
+  "subtitle.nodeworks.grapple_beam.deactivate": "Grapple Beam releases"
 }

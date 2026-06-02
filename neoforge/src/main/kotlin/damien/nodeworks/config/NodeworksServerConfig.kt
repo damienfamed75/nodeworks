@@ -34,6 +34,8 @@ object NodeworksServerConfig {
     val DISABLED_METHODS: ModConfigSpec.ConfigValue<List<String>>
     val USER_DENIED_ITEMS: ModConfigSpec.ConfigValue<List<String>>
     val NETWORK_CONTROLLER_CHUNK_LOADING: ModConfigSpec.BooleanValue
+    val GRAPPLE_MAX_DISTANCE: ModConfigSpec.IntValue
+    val GRAPPLE_ENTITIES: ModConfigSpec.BooleanValue
 
     val SPEC: ModConfigSpec
 
@@ -360,6 +362,27 @@ object NodeworksServerConfig {
                 ServerSafetySettings.Defaults.networkControllerChunkLoading,
             )
 
+        GRAPPLE_MAX_DISTANCE = builder
+            .comment(
+                " Max range in blocks for the Grapple Beam's attach raycast."
+            )
+            .defineInRange(
+                "grappleMaxDistance",
+                ServerSafetySettings.Defaults.grappleMaxDistance,
+                4,
+                256,
+            )
+
+        GRAPPLE_ENTITIES = builder
+            .comment(
+                " Whether the Grapple Beam can attach to and pull entities.",
+                " Set to false to restrict grapples to terrain only."
+            )
+            .define(
+                "grappleEntities",
+                ServerSafetySettings.Defaults.grappleEntities,
+            )
+
         builder.pop()
         SPEC = builder.build()
     }
@@ -390,5 +413,7 @@ object NodeworksServerConfig {
         disabledMethods = DISABLED_METHODS.get().toSet(),
         userDeniedItems = USER_DENIED_ITEMS.get().toList(),
         networkControllerChunkLoading = NETWORK_CONTROLLER_CHUNK_LOADING.get(),
+        grappleMaxDistance = GRAPPLE_MAX_DISTANCE.get(),
+        grappleEntities = GRAPPLE_ENTITIES.get(),
     )
 }

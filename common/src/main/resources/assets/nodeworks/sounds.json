@@ -1,0 +1,22 @@
+{
+  "item.grapple_beam.activate": {
+    "sounds": [
+      "nodeworks:items/grapple_beam/activate"
+    ],
+    "subtitle": "subtitle.nodeworks.grapple_beam.activate"
+  },
+  "item.grapple_beam.deactivate": {
+    "sounds": [
+      "nodeworks:items/grapple_beam/deactivate"
+    ],
+    "subtitle": "subtitle.nodeworks.grapple_beam.deactivate"
+  },
+  "item.grapple_beam.idle": {
+    "sounds": [
+      {
+        "name": "nodeworks:items/grapple_beam/idle",
+        "stream": false
+      }
+    ]
+  }
+}

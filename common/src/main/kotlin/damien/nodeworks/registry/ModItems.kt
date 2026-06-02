@@ -87,6 +87,12 @@ object ModItems {
         Item.Properties().stacksTo(1)
     )
 
+    val GRAPPLE_BEAM: Item = register(
+        "grapple_beam",
+        { props -> damien.nodeworks.item.GrappleBeamItem(props) },
+        Item.Properties().stacksTo(1)
+    )
+
     val CARD_PROGRAMMER: Item = register(
         "card_programmer",
         { props -> damien.nodeworks.item.CardProgrammerItem(props) },

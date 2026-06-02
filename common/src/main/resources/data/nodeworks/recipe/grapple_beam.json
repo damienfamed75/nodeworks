@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " EI",
+    "IRC",
+    "I  "
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "R": "minecraft:redstone",
+    "E": "minecraft:ender_pearl",
+    "C": "nodeworks:link_crystal"
+  },
+  "result": {
+    "id": "nodeworks:grapple_beam",
+    "count": 1
+  }
+}

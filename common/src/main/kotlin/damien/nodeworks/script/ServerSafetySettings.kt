@@ -158,6 +158,13 @@ data class ServerSafetySettings(
      *  false, the Controller's chunk-load toggle row is hidden and any
      *  existing claims are released on the next controller tick. */
     val networkControllerChunkLoading: Boolean = true,
+
+    /** Max range in blocks for the Grapple Beam's attach raycast. */
+    val grappleMaxDistance: Int = 24,
+
+    /** Whether the Grapple Beam can attach to entities and pull them. False
+     *  restricts grapples to terrain only. */
+    val grappleEntities: Boolean = true,
 ) {
     companion object {
         /** Compiled-in defaults, used as the seed values when generating the
