@@ -775,20 +775,24 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val player = context.player()
                 val hook = damien.nodeworks.item.GrappleBeamSessions.current(player) ?: return@enqueueWork
                 if (hook.ropeLength < 0.0) return@enqueueWork
-                // Scroll up (positive delta) reels the player in (shorter rope);
-                // scroll down lets them out (longer rope). 0.5 blocks per scroll
-                // tick is a comfortable adjustment speed. Floor depends on
-                // anchor type: block anchors floor at 2.0 (outside the
-                // auto-release radius), entity anchors floor at
-                // GrappleBeamPhysics.ENTITY_MIN_ROPE_LENGTH so a physgunned
+                // 0.5 blocks per scroll tick is a comfortable speed.
+                // Sign convention depends on anchor type:
+                //   block:  scroll up reels the player in (shorter rope)
+                //   entity: scroll up pushes the held entity AWAY
+                //           (longer rope), physics-gun convention.
+                // Floor also depends on anchor type: blocks floor at
+                // 2.0 (outside the auto-release radius), entities at
+                // GrappleBeamPhysics.ENTITY_MIN_ROPE_LENGTH so a held
                 // entity stays at arm's length.
                 val delta = payload.deltaScrollTicks.toDouble() * 0.5
-                val minRope = if (hook.attachedEntityId != 0) {
+                val isEntity = hook.attachedEntityId != 0
+                val minRope = if (isEntity) {
                     damien.nodeworks.item.GrappleBeamPhysics.ENTITY_MIN_ROPE_LENGTH
                 } else {
                     2.0
                 }
-                hook.ropeLength = (hook.ropeLength - delta).coerceIn(minRope, hook.maxRange)
+                val ropeDelta = if (isEntity) delta else -delta
+                hook.ropeLength = (hook.ropeLength + ropeDelta).coerceIn(minRope, hook.maxRange)
             }
         }
 

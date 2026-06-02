@@ -1,17 +1,13 @@
 package damien.nodeworks.client.model
 
-import com.google.common.base.Suppliers
 import damien.nodeworks.client.GrappleBeamAnimState
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart
-import net.minecraft.client.renderer.item.CuboidItemModelWrapper
 import net.minecraft.client.renderer.item.ItemModel
 import net.minecraft.client.renderer.item.ItemModelResolver
 import net.minecraft.client.renderer.item.ItemStackRenderState
 import net.minecraft.client.renderer.item.ModelRenderProperties
-import net.minecraft.client.resources.model.geometry.BakedQuad
-import net.minecraft.core.Direction
 import net.minecraft.world.entity.ItemOwner
 import net.minecraft.world.item.ItemDisplayContext
 import net.minecraft.world.item.ItemStack
@@ -33,15 +29,17 @@ import org.joml.Matrix4f
 class GrappleBeamItemModel(
     private val baselineStaff: ItemModel,
     private val cubeProperties: ModelRenderProperties,
-    private val cubePart: BlockStateModelPart,
+    cubePart: BlockStateModelPart,
 ) : ItemModel {
 
-    companion object {
-        private val DIRECTIONS_AND_NULL: Array<Direction?> = arrayOf(
-            Direction.DOWN, Direction.UP, Direction.NORTH,
-            Direction.SOUTH, Direction.WEST, Direction.EAST, null,
-        )
+    /** Cube layer renders through a SpecialModelRenderer so we can pass
+     *  FULL_BRIGHT in place of the entity-light value the parent layer
+     *  would otherwise propagate, making the cube read as an emissive
+     *  energy ball that matches the beam glow. */
+    private val cubeRenderer: GrappleBeamCubeSpecialRenderer =
+        GrappleBeamCubeSpecialRenderer(cubePart)
 
+    companion object {
         /** Cube centre in /16 baked space. Matches the element's
          *  geometric centroid in Blockbench divided by 16, so the
          *  values land in the same coordinate frame as the baked quads. */
@@ -78,14 +76,9 @@ class GrappleBeamItemModel(
         val cubeLayer = output.newLayer()
         cubeProperties.applyToLayer(cubeLayer, displayContext)
         cubeLayer.setLocalTransform(buildCubeTransform(partial))
+        cubeLayer.setupSpecialModel(cubeRenderer, Unit)
 
         output.appendModelIdentityElement(this)
-
-        val quads: MutableList<BakedQuad> = cubeLayer.prepareQuadList()
-        for (dir in DIRECTIONS_AND_NULL) {
-            quads.addAll(cubePart.getQuads(dir))
-        }
-        cubeLayer.setExtents(Suppliers.memoize { CuboidItemModelWrapper.computeExtents(quads) })
     }
 
     /** Translate-rotate-translate around the cube's baked center, with an

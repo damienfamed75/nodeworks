@@ -145,15 +145,13 @@ object GrappleBeamRenderer {
             val liveStaffPos = staffEmitterPos(owner, partial)
             val liveAnchorPos = entityCenter(entity, partial)
 
-            // Two passes per hook: outer glow first so the inner core
-            // draws over it. Same chain math runs twice with different
-            // widths / colors / render types.
-            val outerVc = consumers.getBuffer(OUTER_TYPE)
-            renderRope(
-                outerVc, poseStack, cameraPos, rope, partial, time,
-                liveStaffPos, liveAnchorPos,
-                OUTER_WIDTH, OUTER_R, OUTER_G, OUTER_B, OUTER_A,
-            )
+            // Outer coloured glow temporarily disabled for visual eval.
+            // val outerVc = consumers.getBuffer(OUTER_TYPE)
+            // renderRope(
+            //     outerVc, poseStack, cameraPos, rope, partial, time,
+            //     liveStaffPos, liveAnchorPos,
+            //     OUTER_WIDTH, OUTER_R, OUTER_G, OUTER_B, OUTER_A,
+            // )
             val innerVc = consumers.getBuffer(INNER_TYPE)
             renderRope(
                 innerVc, poseStack, cameraPos, rope, partial, time,

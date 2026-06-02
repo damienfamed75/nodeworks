@@ -124,6 +124,45 @@ object EmissiveCubeRenderer {
         )
     }
 
+    /**
+     * Translucent-emissive variant of [ADDITIVE_EMISSIVE_PIPELINE]. Same
+     * `EMISSIVE` + `NO_CARDINAL_LIGHTING` + `NO_OVERLAY` shader defines
+     * (so neither the lightmap nor the per-face directional darkening
+     * apply) but with standard alpha-blend [BlendFunction.TRANSLUCENT]
+     * instead of additive. Depth write stays enabled so the rendered
+     * geometry occludes the world behind it correctly.
+     *
+     * Use this when you want a fully-bright textured surface that
+     * respects the texture's alpha rather than glowing over whatever's
+     * behind it.
+     */
+    private val TRANSLUCENT_EMISSIVE_PIPELINE: RenderPipeline =
+        RenderPipeline.builder(RenderPipelines.MATRICES_FOG_SNIPPET)
+            .withLocation(Identifier.fromNamespaceAndPath("nodeworks", "pipeline/translucent_emissive"))
+            .withVertexShader("core/entity")
+            .withFragmentShader("core/entity")
+            .withShaderDefine("EMISSIVE")
+            .withShaderDefine("NO_OVERLAY")
+            .withShaderDefine("NO_CARDINAL_LIGHTING")
+            .withSampler("Sampler0")
+            .withColorTargetState(ColorTargetState(BlendFunction.TRANSLUCENT))
+            .withVertexFormat(DefaultVertexFormat.ENTITY, VertexFormat.Mode.QUADS)
+            .withDepthStencilState(DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true))
+            .build()
+
+    /** Translucent-emissive [RenderType] that samples from the block
+     *  atlas. Mirrors [BLOCK_ATLAS_RENDER_TYPE] but uses the alpha-
+     *  blended pipeline above, for fully-bright textured surfaces that
+     *  aren't intended to read as a glow. */
+    val BLOCK_ATLAS_TRANSLUCENT_RENDER_TYPE: RenderType by lazy {
+        RenderType.create(
+            "nodeworks_translucent_emissive_block_atlas",
+            RenderSetup.builder(TRANSLUCENT_EMISSIVE_PIPELINE)
+                .withTexture("Sampler0", net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS)
+                .createRenderSetup()
+        )
+    }
+
 
     /**
      * Emit the 4 faces perpendicular to [facing] with each face's UV rotated so the
