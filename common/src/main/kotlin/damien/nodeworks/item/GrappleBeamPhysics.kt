@@ -10,58 +10,52 @@ import kotlin.math.max
 /**
  * Grapple Beam pull physics. Server-authoritative.
  *
- * For BLOCK anchors the player is pulled toward a goal that floats
- * off the anchor along the reversed look vector, producing an orbit
- * as the camera rotates:
+ * Block anchors use a spring-damper pull on the player toward a goal
+ * offset along the reversed look vector (camera rotation orbits the
+ * player around the anchor). Entity anchors use a proportional pull
+ * on the held entity toward a target floating in front of the
+ * crosshair; the player doesn't move.
  *
- * ```
- * goal = anchor + look * (-(ropeLength * LOOK_OFFSET_FACTOR) - max(-look.y, 0))
- * diff = clamp(goal - eye, MAX_DIFF)
- * velocity = velocity * VELOCITY_RETAIN + diff * PULL_GAIN
- * ```
- *
- * For ENTITY anchors the player stays put and the grabbed entity is
- * springed to a target sitting `ropeLength` blocks in front of the
- * crosshair, a physics-gun style hold.
- *
- * Scroll wheel adjusts ropeLength, which is the orbit radius for
- * block anchors and the hold distance for entity anchors.
+ * Scroll wheel adjusts ropeLength: orbit radius for blocks, hold
+ * distance for entities.
  */
 object GrappleBeamPhysics {
 
-    /** Offset of the goal from the anchor along the reversed look
-     *  vector, as a fraction of the rope length. Higher values widen
-     *  the orbit. */
+    /** Goal offset from the anchor along the reversed look vector, as
+     *  a fraction of rope length. Wider = larger orbit radius. */
     private const val LOOK_OFFSET_FACTOR: Double = 0.8
 
-    /** Cap on the (goal - eye) vector magnitude before [PULL_GAIN] is
-     *  applied. Larger cap allows higher peak velocity. */
+    /** Cap on (goal - eye) before [PULL_GAIN] is applied. */
     private const val MAX_DIFF: Double = 4.0
 
-    /** Per-tick fraction of (goal - eye) added to velocity. Lower
-     *  values reduce overshoot amplitude when hovering at the goal. */
+    /** Per-tick fraction of (goal - eye) added to velocity. */
     private const val PULL_GAIN: Double = 0.15
 
     /** Fraction of previous velocity retained per tick. Carries flings
-     *  built from camera motion across a few ticks instead of snapping
-     *  back to whatever the current goal dictates. */
+     *  built from camera motion across a few ticks. */
     private const val VELOCITY_RETAIN: Double = 0.65
 
-    /** Per-tick upward velocity that nets out vanilla gravity. Lets
-     *  the player hover at a steady altitude rather than slowly
-     *  drifting down. */
+    /** Per-tick upward velocity that nets out vanilla gravity so the
+     *  player hovers steady. */
     private const val GRAVITY_OFFSET: Double = 0.08
 
     /** Auto-release radius around a BLOCK anchor. */
     private const val AUTO_RELEASE_DISTANCE: Double = 1.5
 
-    /** Minimum rope length when grabbing an entity. The hold target
-     *  sits at least this far in front of the eyes so a scrolled-in
+    /** Minimum rope length when grabbing an entity, so a scrolled-in
      *  entity never lands in the player's face. */
     const val ENTITY_MIN_ROPE_LENGTH: Double = 1.5
 
     /** Auto-release multiplier on the hook's [maxRange]. */
     private const val MAX_RANGE_SLACK: Double = 1.5
+
+    /** Fraction of the remaining (target - position) gap a held entity
+     *  closes per tick. 0.45 settles in ~6 ticks. */
+    private const val ENTITY_HOLD_PULL_GAIN: Double = 0.45
+
+    /** Hard cap on the per-tick velocity applied to a held entity so a
+     *  long-distance catch-up doesn't visibly teleport. */
+    private const val ENTITY_HOLD_MAX_VEL: Double = 2.5
 
     /** Returns true to keep the session alive, false to auto-release. */
     fun applyPullTick(player: Player, hook: GrappleBeamHookEntity): Boolean {
@@ -103,9 +97,10 @@ object GrappleBeamPhysics {
         return true
     }
 
-    /** Physics-gun style entity hold: the player does not move, the
-     *  grabbed entity is springed to a target floating in front of the
-     *  crosshair at [GrappleBeamHookEntity.ropeLength] blocks. */
+    /** Player stays put, the held entity is pulled toward a target in
+     *  front of the crosshair. Proportional model (no inertia retained
+     *  from the previous tick) so the entity tracks the aim smoothly
+     *  without the overshoot the block-anchor spring would produce. */
     private fun applyEntityHoldTick(
         player: Player,
         hook: GrappleBeamHookEntity,
@@ -119,21 +114,20 @@ object GrappleBeamPhysics {
             hook.ropeLength = ENTITY_MIN_ROPE_LENGTH
         }
 
-        // Bias the aim point down by half the entity's height so it
-        // floats centred on the crosshair instead of hanging from it
-        // by its feet.
+        // Bias down by half the entity height so it floats centred on
+        // the crosshair instead of hanging by its feet.
         val look = player.lookAngle
         val target = eye.add(look.scale(hook.ropeLength))
             .subtract(0.0, anchorEntity.bbHeight * 0.5, 0.0)
 
-        var diff = target.subtract(anchorEntity.position())
-        val diffLen = diff.length()
-        if (diffLen > MAX_DIFF) diff = diff.scale(MAX_DIFF / diffLen)
+        var velocity = target.subtract(anchorEntity.position()).scale(ENTITY_HOLD_PULL_GAIN)
+        val speed = velocity.length()
+        if (speed > ENTITY_HOLD_MAX_VEL) {
+            velocity = velocity.scale(ENTITY_HOLD_MAX_VEL / speed)
+        }
+        velocity = velocity.add(0.0, GRAVITY_OFFSET, 0.0)
 
-        var entityVel = anchorEntity.deltaMovement.add(0.0, GRAVITY_OFFSET, 0.0)
-        entityVel = entityVel.scale(VELOCITY_RETAIN).add(diff.scale(PULL_GAIN))
-
-        anchorEntity.deltaMovement = entityVel
+        anchorEntity.deltaMovement = velocity
         anchorEntity.hurtMarked = true
         anchorEntity.fallDistance = 0.0
         return true

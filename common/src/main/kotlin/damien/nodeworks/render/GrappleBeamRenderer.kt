@@ -18,20 +18,12 @@ import kotlin.math.sqrt
 /**
  * Draws the Grapple Beam between a player and their active hook.
  *
- * Two-layer billboard composition matching the Nodeworks pipe-laser style:
- *  - Opaque white inner core (thin, hard edge).
- *  - Translucent blue outer glow (wider, soft halo).
- *
- * Each layer is rendered as a series of camera-facing billboard quads,
- * one per chain segment, using the project's shared `laser_trail.png`
- * streak texture. UV V coordinates accumulate along the chain so the
- * texture appears continuous from staff to anchor instead of restarting
- * per segment, and a time-based scroll makes the streak visibly flow
- * along the beam.
- *
- * Backed by per-hook [GrappleBeamRope] state so the visible beam
- * inherits the cascading-bend dynamics. See [GrappleBeamRope] for the
- * relaxation model.
+ * Composed of two layers of camera-facing billboard quads (an opaque
+ * white inner core and a translucent blue outer halo) tiled with the
+ * shared `laser_trail.png` streak texture. UV V accumulates along the
+ * chain so the streak reads as continuous staff-to-anchor and scrolls
+ * with time. Per-hook [GrappleBeamRope] simulation provides the
+ * cascading bend.
  */
 object GrappleBeamRenderer {
 
@@ -105,7 +97,7 @@ object GrappleBeamRenderer {
             seen.add(entity.id)
 
             val staffPos = staffEmitterPos(owner, 1.0f)
-            val anchorPos = entityCenter(entity, 1.0f)
+            val anchorPos = hookAnchorPos(entity, 1.0f)
             val rope = ropes.getOrPut(entity.id) { GrappleBeamRope() }
             rope.tick(staffPos, anchorPos)
         }
@@ -135,17 +127,14 @@ object GrappleBeamRenderer {
             val rope = ropes[entity.id] ?: continue
             val owner: Entity = entity.owner ?: continue
 
-            // Live endpoint positions sampled every frame so the beam
-            // ends stay locked to the cube and the hook regardless of
-            // tick rate. The rope simulation runs at 20Hz and would
-            // otherwise leave node 0 one tick behind the cube (visible
-            // as a rubber-band between the cube and the beam start
-            // whenever the camera moved). Middle nodes still use the
-            // simulation, so the cascading-bend look is preserved.
+            // Live endpoints sampled every frame so the beam ends stay
+            // locked to the cube and the hook between rope-sim ticks.
+            // Middle nodes still come from the simulation, preserving
+            // the cascading bend.
             val liveStaffPos = staffEmitterPos(owner, partial)
-            val liveAnchorPos = entityCenter(entity, partial)
+            val liveAnchorPos = hookAnchorPos(entity, partial)
 
-            // Outer coloured glow temporarily disabled for visual eval.
+            // Outer coloured glow disabled while evaluating the look.
             // val outerVc = consumers.getBuffer(OUTER_TYPE)
             // renderRope(
             //     outerVc, poseStack, cameraPos, rope, partial, time,
@@ -161,17 +150,13 @@ object GrappleBeamRenderer {
         }
     }
 
-    /** Walk the chain and emit one billboard quad per segment. UV V
-     *  accumulates along the chain length so the streak texture stays
-     *  continuous between segments.
-     *
-     *  Endpoint lag is removed by computing two corrections (the gap
-     *  between the rope simulation's current endpoint and the live
-     *  endpoint sampled this frame) and redistributing them along the
-     *  rope with linear weights, full at the matching endpoint, zero
-     *  at the opposite end. This gives an exact match at the visible
-     *  attachment points without the hard discontinuity that a raw
-     *  endpoint substitution caused. */
+    /** Walk the chain and emit one billboard quad per segment, with UV
+     *  V accumulated so the streak stays continuous. The gap between
+     *  each simulated endpoint and its live counterpart this frame is
+     *  redistributed across the chain with linear weights (full at the
+     *  matching end, zero at the opposite), so the endpoints land
+     *  exactly on the cube and the hook without the discontinuity a
+     *  raw endpoint substitution would produce. */
     private fun renderRope(
         vc: VertexConsumer,
         poseStack: PoseStack,
@@ -227,9 +212,8 @@ object GrappleBeamRenderer {
             val extY = rawDy / rawLen * extend
             val extZ = rawDz / rawLen * extend
 
-            // Camera-relative coords, with each end pushed [extend] units
-            // along the segment direction so neighbors overlap and joint
-            // seams disappear.
+            // Camera-relative coords, each end pushed by [extend] so
+            // neighbour segments overlap and joint seams disappear.
             val ax = (nodeA.x - cameraPos.x).toFloat() - extX
             val ay = (nodeA.y - cameraPos.y).toFloat() - extY
             val az = (nodeA.z - cameraPos.z).toFloat() - extZ
@@ -243,9 +227,8 @@ object GrappleBeamRenderer {
             val segLen = sqrt(segDx * segDx + segDy * segDy + segDz * segDz)
             if (segLen < 1e-3f) continue
 
-            // Camera position is at the origin in the camera-relative
-            // frame, so the vector from segment midpoint to the camera
-            // is just the negated midpoint.
+            // Camera is at the origin in camera-relative coords, so
+            // the segment-to-camera vector is the negated midpoint.
             val midX = (ax + bx) * 0.5f
             val midY = (ay + by) * 0.5f
             val midZ = (az + bz) * 0.5f
@@ -253,9 +236,8 @@ object GrappleBeamRenderer {
             val toCamY = -midY
             val toCamZ = -midZ
 
-            // Perpendicular = (segment_dir cross to_camera), normalized
-            // and scaled to width/2. Extruding the segment endpoints by
-            // +/- perp gives a camera-facing quad.
+            // Perp = (segment_dir cross to_camera), scaled to width/2.
+            // Extruding the endpoints by +/- perp gives a billboard.
             val pxRaw = segDy * toCamZ - segDz * toCamY
             val pyRaw = segDz * toCamX - segDx * toCamZ
             val pzRaw = segDx * toCamY - segDy * toCamX
@@ -305,29 +287,20 @@ object GrappleBeamRenderer {
         }
     }
 
-    /** Third-person beam start offsets. Sits the beam well forward of
-     *  the player's body where the held staff tip visibly is, with a
-     *  small mainhand bias. */
+    /** Third-person beam start offsets. Sits the beam where the held
+     *  staff tip visibly is, with a small mainhand bias. */
     private const val TP_BODY_Y: Double = 1.28
     private const val TP_FORWARD: Double = 1.275
     private const val TP_RIGHT: Double = 0.325
 
     /** World-space position of the staff's emitter.
      *
-     *   - **Local player in first-person**: pulled from
-     *     [damien.nodeworks.client.GrappleBeamAnimState.getFirstPersonFocusPos],
-     *     which is the cube's world position captured during item
-     *     rendering. The capture happens inside
-     *     [damien.nodeworks.client.GrappleBeamClientExtensions.applyForgeHandTransform];
-     *     because Mojang seeds the item PoseStack with the inverse
-     *     view rotation matrix, transforming the cube pivot through
-     *     the pose at that point yields a view-space offset that we
-     *     un-rotate with the current camera. Falls back to the formula
-     *     path on the first frame before any capture has occurred, and
-     *     when the camera is detached.
-     *   - **Third-person view or other players**: formula using
-     *     player position, chest-height Y, view-direction forward, and
-     *     a horizontal-right mainhand offset. */
+     *  - **Local player in first-person**: cube position captured
+     *    during item rendering, re-projected with the current camera.
+     *    See [damien.nodeworks.client.GrappleBeamAnimState.getFirstPersonFocusPos].
+     *  - **Third-person view or other players**: formula using player
+     *    position, chest-height Y, view-direction forward, and a
+     *    horizontal-right mainhand offset. */
     private fun staffEmitterPos(owner: Entity, partial: Float): Vec3 {
         val mc = Minecraft.getInstance()
         val camera = mc.gameRenderer.mainCamera
@@ -363,5 +336,23 @@ object GrappleBeamRenderer {
         val y = Mth.lerp(partial.toDouble(), entity.yOld, entity.y)
         val z = Mth.lerp(partial.toDouble(), entity.zOld, entity.z)
         return Vec3(x, y, z)
+    }
+
+    /** World-space anchor for the beam's far end. Block-attached hooks
+     *  use the hook's own position (stationary, nothing to lag); entity-
+     *  attached hooks read the held entity directly so the beam tip
+     *  tracks it smoothly through Mojang's entity interpolation instead
+     *  of the one-tick lag the hook's own `tick()` follow would carry.
+     *  The Y bias matches the offset [GrappleBeamHookEntity.tick]
+     *  applies when it pins the hook to its target. */
+    private fun hookAnchorPos(hook: GrappleBeamHookEntity, partial: Float): Vec3 {
+        val attached = hook.attachedEntity()
+        if (attached != null) {
+            val x = Mth.lerp(partial.toDouble(), attached.xOld, attached.x)
+            val y = Mth.lerp(partial.toDouble(), attached.yOld, attached.y)
+            val z = Mth.lerp(partial.toDouble(), attached.zOld, attached.z)
+            return Vec3(x, y + attached.bbHeight * 0.5, z)
+        }
+        return entityCenter(hook, partial)
     }
 }
