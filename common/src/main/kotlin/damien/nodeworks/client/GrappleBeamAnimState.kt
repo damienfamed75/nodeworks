@@ -255,11 +255,27 @@ object GrappleBeamAnimState {
     private const val FP_ROTATE_Z_DEG: Float = -40f
     private const val DEG_TO_RAD: Float = (PI / 180.0).toFloat()
 
-    /** View-space Z nudge applied to the captured cube position at
-     *  beam-render time. Negative pulls the beam start toward the
-     *  camera so the segment-0 billboard's per-frame orientation twist
-     *  is hidden inside the cube body. Tuned by hand. */
+    /** View-space offsets applied to the captured cube position at
+     *  beam-render time, in block units. Camera-local sign convention:
+     *  -Z is forward into the scene, +X is the camera's right, -Y is
+     *  below the camera centre. Forward pulls the segment-0 billboard's
+     *  per-frame orientation twist inside the cube body; the small
+     *  negative right offset compensates for the residual screen-space
+     *  drift left by the FOV correction. Tuned by hand. */
     private const val FP_FORWARD_NUDGE: Float = -0.180f
+    private const val FP_RIGHT_NUDGE: Float = -0.160f
+    private const val FP_DOWN_NUDGE: Float = 0f
+
+    /** `tan(70° / 2)`. MC 26.x renders the item-in-hand pass with a
+     *  fixed 70° HUD FOV (see `Camera.calculateHudFov`). The world
+     *  pass uses the player's configured FOV. The captured view-space
+     *  cube position lands at the right screen point under the HUD
+     *  projection; to make the SAME world point land at the same
+     *  screen point under the world projection we scale view-space X
+     *  and Y by `tan(worldFov/2) / HUD_TAN_HALF_FOV`. At worldFov=70
+     *  the ratio is 1 (no correction); at worldFov=86 the ratio is
+     *  ~1.33, pushing the beam start outward to match. */
+    private const val HUD_TAN_HALF_FOV: Float = 0.7002075382097097f
 
     private val focusPos = Vector3f()
     @Volatile
@@ -411,13 +427,28 @@ object GrappleBeamAnimState {
         val mc = Minecraft.getInstance()
         val camera = mc.gameRenderer.mainCamera
         val viewPos = Vector3f(focusPos)
-        // Pull the captured cube position back toward the camera by
-        // FP_FORWARD_NUDGE so the segment-0 billboard's per-frame
-        // orientation twist is hidden inside the cube body. Applied
-        // before bobView/sway so it rides with the cube. Camera-local
-        // sign convention: -Z is forward, subtracting a negative pulls
-        // back toward the camera.
+        // Live-tunable view-space offsets. Forward (-Z) pulls the beam
+        // start back toward the camera so the segment-0 billboard's
+        // twist is hidden inside the cube body; right (+X) and down
+        // (-Y) are camera-local nudges. Applied before bobView/sway
+        // so they ride with the cube.
+        viewPos.x += FP_RIGHT_NUDGE
+        viewPos.y -= FP_DOWN_NUDGE
         viewPos.z -= FP_FORWARD_NUDGE
+        // FOV correction. Item-in-hand renders with a fixed 70° HUD
+        // projection; the world (and our beam) renders with the
+        // player's configured FOV. To make the captured view-space
+        // point land at the same SCREEN position under the world
+        // projection as it did under the HUD projection, scale X and
+        // Y by tan(worldFov/2) / tan(HUD_FOV/2). Reads tan(worldFov/2)
+        // straight off the projection matrix's [1][1] = 1/tan(fov/2).
+        val projM11 = mc.gameRenderer.gameRenderState
+            .levelRenderState.cameraRenderState.projectionMatrix.m11()
+        if (projM11 > 1e-4f) {
+            val ratio = 1f / (projM11 * HUD_TAN_HALF_FOV)
+            viewPos.x *= ratio
+            viewPos.y *= ratio
+        }
         // Re-apply CURRENT frame's bobView then sway so the resulting
         // view-space point matches what vanilla will render this
         // frame: bobView * sway * stable.

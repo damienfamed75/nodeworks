@@ -92,6 +92,7 @@ object ModCreativeTab {
                 output.accept(ModBlocks.STORAGE_METER)
                 output.accept(ModBlocks.CRAFT_REQUESTER)
                 output.accept(ModItems.CELESTINE_SHARD)
+                output.accept(ModItems.CHARGED_BEAM_CATALYST)
                 output.accept(ModItems.MILKY_SOUL_BALL)
             }
             .build()

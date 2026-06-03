@@ -1,0 +1,40 @@
+{
+	"format_version": "1.21.11",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"render_type": "translucent",
+	"textures": {
+		"0": "nodeworks:block/grapple_beam",
+		"particle": "nodeworks:block/grapple_beam"
+	},
+	"elements": [
+		{
+			"from": [4, 4, 4],
+			"to": [12, 12, 12],
+			"shade": false,
+			"rotation": {"angle": 0, "axis": "x", "origin": [8, 8, 8]},
+			"faces": {
+				"north": {"uv": [9, 14, 11, 16], "texture": "#0"},
+				"east": {"uv": [9, 14, 11, 16], "texture": "#0"},
+				"south": {"uv": [9, 14, 11, 16], "texture": "#0"},
+				"west": {"uv": [9, 14, 11, 16], "texture": "#0"},
+				"up": {"uv": [9, 14, 11, 16], "texture": "#0"},
+				"down": {"uv": [9, 14, 11, 16], "texture": "#0"}
+			}
+		},
+		{
+			"from": [3.5, 3.5, 3.5],
+			"to": [12.5, 12.5, 12.5],
+			"shade": false,
+			"rotation": {"angle": 0, "axis": "x", "origin": [8, 8, 8]},
+			"faces": {
+				"north": {"uv": [11, 14, 13, 16], "texture": "#0"},
+				"east": {"uv": [11, 14, 13, 16], "texture": "#0"},
+				"south": {"uv": [11, 14, 13, 16], "texture": "#0"},
+				"west": {"uv": [11, 14, 13, 16], "texture": "#0"},
+				"up": {"uv": [11, 14, 13, 16], "texture": "#0"},
+				"down": {"uv": [11, 14, 13, 16], "texture": "#0"}
+			}
+		}
+	]
+}

@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CCC",
+    "CSC",
+    "CCC"
+  ],
+  "key": {
+    "C": "nodeworks:celestine_shard",
+    "S": "minecraft:nether_star"
+  },
+  "result": {
+    "id": "nodeworks:charged_beam_catalyst",
+    "count": 1
+  }
+}

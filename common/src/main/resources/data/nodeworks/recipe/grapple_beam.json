@@ -1,15 +1,15 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    " EI",
-    "IRC",
-    "I  "
+    " FC",
+    "ENF",
+    "NE "
   ],
   "key": {
-    "I": "minecraft:iron_ingot",
-    "R": "minecraft:redstone",
-    "E": "minecraft:ender_pearl",
-    "C": "nodeworks:link_crystal"
+    "F": "nodeworks:focus_node",
+    "C": "nodeworks:charged_beam_catalyst",
+    "N": "minecraft:netherite_ingot",
+    "E": "minecraft:ender_eye"
   },
   "result": {
     "id": "nodeworks:grapple_beam",

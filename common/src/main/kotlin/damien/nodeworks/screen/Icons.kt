@@ -235,5 +235,6 @@ class Icons private constructor(val col: Int, val row: Int) {
         val JEI_SYNC_ON = Icons(7, 5)
         val JEI_SYNC_OFF = Icons(8, 5)
         val JOB_STATUS = Icons(9, 5)
+        val GRAPPLE_RETICLE = Icons(10, 5)
     }
 }
