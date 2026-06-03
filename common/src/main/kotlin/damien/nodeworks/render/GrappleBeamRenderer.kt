@@ -287,20 +287,18 @@ object GrappleBeamRenderer {
         }
     }
 
-    /** Third-person beam start offsets. Sits the beam where the held
-     *  staff tip visibly is, with a small mainhand bias. */
-    private const val TP_BODY_Y: Double = 1.28
-    private const val TP_FORWARD: Double = 1.275
-    private const val TP_RIGHT: Double = 0.325
+    /** Third-person staff emitter offsets in body-local blocks. Right is
+     *  negative because the cube lands slightly left of the body axis.
+     *  Tuned by hand. */
+    private const val TP_FORWARD: Double = 1.240
+    private const val TP_RIGHT: Double = -0.320
+    private const val TP_UP: Double = 1.290
 
-    /** World-space position of the staff's emitter.
-     *
-     *  - **Local player in first-person**: cube position captured
-     *    during item rendering, re-projected with the current camera.
-     *    See [damien.nodeworks.client.GrappleBeamAnimState.getFirstPersonFocusPos].
-     *  - **Third-person view or other players**: formula using player
-     *    position, chest-height Y, view-direction forward, and a
-     *    horizontal-right mainhand offset. */
+    /** World-space position of the staff's emitter. Local first-person
+     *  reuses the cube position captured during item rendering (see
+     *  [damien.nodeworks.client.GrappleBeamAnimState.getFirstPersonFocusPos]);
+     *  everything else rides body yaw so the beam stays glued to the
+     *  staff while the head pitches independently. */
     private fun staffEmitterPos(owner: Entity, partial: Float): Vec3 {
         val mc = Minecraft.getInstance()
         val camera = mc.gameRenderer.mainCamera
@@ -312,22 +310,26 @@ object GrappleBeamRenderer {
             return damien.nodeworks.client.GrappleBeamAnimState.getFirstPersonFocusPos(partial)
         }
 
-        // Third-person / other players: formula path.
         val px = Mth.lerp(partial.toDouble(), owner.xOld, owner.x)
         val py = Mth.lerp(partial.toDouble(), owner.yOld, owner.y)
         val pz = Mth.lerp(partial.toDouble(), owner.zOld, owner.z)
 
-        val look = owner.getViewVector(partial)
-        val rightX = -look.z
-        val rightZ = look.x
-        val rightLen = kotlin.math.sqrt(rightX * rightX + rightZ * rightZ)
-        val rx = if (rightLen > 1e-4) rightX / rightLen else 0.0
-        val rz = if (rightLen > 1e-4) rightZ / rightLen else 0.0
+        val living = owner as? net.minecraft.world.entity.LivingEntity
+        val yawDeg = if (living != null) {
+            Mth.rotLerp(partial, living.yBodyRotO, living.yBodyRot)
+        } else {
+            Mth.lerp(partial, owner.yRotO, owner.yRot)
+        }
+        val yawRad = yawDeg * Mth.DEG_TO_RAD
+        val forwardX = -kotlin.math.sin(yawRad).toDouble()
+        val forwardZ = kotlin.math.cos(yawRad).toDouble()
+        val rightX = kotlin.math.cos(yawRad).toDouble()
+        val rightZ = kotlin.math.sin(yawRad).toDouble()
 
         return Vec3(
-            px + look.x * TP_FORWARD + rx * TP_RIGHT,
-            py + TP_BODY_Y + look.y * TP_FORWARD,
-            pz + look.z * TP_FORWARD + rz * TP_RIGHT,
+            px + forwardX * TP_FORWARD + rightX * TP_RIGHT,
+            py + TP_UP,
+            pz + forwardZ * TP_FORWARD + rightZ * TP_RIGHT,
         )
     }
 
@@ -338,13 +340,12 @@ object GrappleBeamRenderer {
         return Vec3(x, y, z)
     }
 
-    /** World-space anchor for the beam's far end. Block-attached hooks
-     *  use the hook's own position (stationary, nothing to lag); entity-
-     *  attached hooks read the held entity directly so the beam tip
-     *  tracks it smoothly through Mojang's entity interpolation instead
-     *  of the one-tick lag the hook's own `tick()` follow would carry.
-     *  The Y bias matches the offset [GrappleBeamHookEntity.tick]
-     *  applies when it pins the hook to its target. */
+    /** World-space anchor for the beam's far end. Entity-attached hooks
+     *  read the held entity directly so the beam tip tracks it through
+     *  Mojang's entity interpolation instead of the one-tick lag the
+     *  hook's own `tick()` follow would carry. The Y bias matches the
+     *  offset [GrappleBeamHookEntity.tick] applies when it pins the
+     *  hook to its target. */
     private fun hookAnchorPos(hook: GrappleBeamHookEntity, partial: Float): Vec3 {
         val attached = hook.attachedEntity()
         if (attached != null) {
