@@ -92,7 +92,7 @@ class CraftPlannerTest {
         omitDeliver: Boolean = false,
         recipes: (String) -> List<String>? = noRecipes,
     ): CraftPlan {
-        val result = CraftPlanner.plan(tree, omitDeliver, recipes)
+        val result = CraftPlanner.plan(tree, omitDeliver = omitDeliver, recipeLookup = recipes)
         assertFalse(result.unresolvable, "expected a successful plan, got: ${result.message}")
         return result.plan ?: error("planner returned a null plan with no error message")
     }
