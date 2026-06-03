@@ -10,6 +10,7 @@ import net.minecraft.sounds.SoundSource
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.entity.player.Player
 import net.minecraft.world.entity.projectile.ItemSupplier
 import net.minecraft.world.entity.projectile.Projectile
 import net.minecraft.world.entity.projectile.ProjectileUtil
@@ -126,10 +127,14 @@ class GrappleBeamHookEntity : Projectile, ItemSupplier {
         )
         val segmentEnd: Vec3 = if (blockHit.type != HitResult.Type.MISS) blockHit.location else next
         // Entity scan along the same segment, capped by the block hit.
-        val entityHit: EntityHitResult? = ProjectileUtil.getEntityHitResult(
-            level(), this, current, segmentEnd,
-            boundingBox.expandTowards(deltaMovement).inflate(1.0),
-        ) { e -> e.isPickable && e !== owner && e is LivingEntity }
+        // Mirrors GrappleBeamItem's instant-fire filter: skipped entirely
+        // when the policy forbids it, players never grappleable.
+        val entityHit: EntityHitResult? = if (damien.nodeworks.script.ServerPolicy.current.grappleEntities) {
+            ProjectileUtil.getEntityHitResult(
+                level(), this, current, segmentEnd,
+                boundingBox.expandTowards(deltaMovement).inflate(1.0),
+            ) { e -> e.isPickable && e !== owner && e is LivingEntity && e !is Player }
+        } else null
 
         when {
             entityHit != null -> onHit(entityHit)

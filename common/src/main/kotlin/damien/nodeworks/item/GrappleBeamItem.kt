@@ -55,17 +55,19 @@ class GrappleBeamItem(properties: Properties) : Item(properties) {
         val segmentEnd = if (blockHit.type != HitResult.Type.MISS) blockHit.location else rayEnd
 
         // Entity scan along the same segment, capped by the block hit so the
-        // hook can't latch onto an entity behind a wall. The MC 26.1 single
-        // overload is `(Entity, Vec3, Vec3, AABB, Predicate, double)` where
-        // the trailing double is a per-entity bbox inflation; 0.0 keeps the
-        // raycast tight against actual hitboxes.
-        val entityFilter = java.util.function.Predicate<Entity> { e ->
-            e.isPickable && e !== player && e is LivingEntity
-        }
-        val entityHit = ProjectileUtil.getEntityHitResult(
-            player, eye, segmentEnd,
-            AABB(eye, segmentEnd).inflate(1.0), entityFilter, 0.0,
-        )
+        // hook can't latch onto an entity behind a wall. Skipped entirely
+        // when the server policy forbids entity grappling, so the beam
+        // passes through mobs and lands on whatever block is behind them.
+        // Players are always excluded, no grappling other players.
+        val entityHit = if (ServerPolicy.current.grappleEntities) {
+            val entityFilter = java.util.function.Predicate<Entity> { e ->
+                e.isPickable && e !== player && e is LivingEntity && e !is Player
+            }
+            ProjectileUtil.getEntityHitResult(
+                player, eye, segmentEnd,
+                AABB(eye, segmentEnd).inflate(1.0), entityFilter, 0.0,
+            )
+        } else null
 
         val anchorPoint = when {
             entityHit != null -> entityHit.location
