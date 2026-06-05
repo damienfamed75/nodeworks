@@ -72,7 +72,8 @@ data class ApiSurface(
      *  resolve to the same hover doc and guidebook link. */
     val moduleAliasDoc: ApiDoc? by lazy {
         if (type.kind != LuaType.Named.Kind.MODULE) return@lazy null
-        val global = type.moduleGlobal ?: return@lazy null
+        val global = type.moduleGlobal
+        if (global == null) return@lazy null
         ApiDoc(
             key = global,
             displayName = global,

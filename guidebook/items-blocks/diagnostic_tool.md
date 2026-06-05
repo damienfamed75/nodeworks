@@ -38,7 +38,7 @@ The diagnostic panel pulls together everything the network exposes:
 - **Topology**. Every block on the network with its position, type, and
   per-block details. <ItemLink id="node" />s list the cards on each
   face along with the adjacent block they target.
-- **Network identity**. The controller's name and colour, with a quick
+- **Network identity**. The controller's name and color, with a quick
   glance at its redstone mode, handler retry limit, and chunk-loading
   toggle.
 - **CPUs**. Each <ItemLink id="crafting_core" /> on the network, its

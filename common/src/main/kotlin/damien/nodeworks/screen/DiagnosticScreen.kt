@@ -64,7 +64,6 @@ class DiagnosticScreen(
             "crafting_storage" to 0xFFFFAA55.toInt(),
             "instruction_storage" to 0xFF55DDDD.toInt(),
             "processing_storage" to 0xFFDD55DD.toInt(),
-            "variable" to 0xFFFFAA33.toInt(),
             "receiver_antenna" to 0xFF55BBAA.toInt(),
             "broadcast_antenna" to 0xFF55BBAA.toInt(),
             "inventory_terminal" to 0xFF77BBFF.toInt(),
@@ -91,7 +90,6 @@ class DiagnosticScreen(
             "crafting_storage" to "Crafting Buffer",
             "instruction_storage" to "Instruction Storage",
             "processing_storage" to "Processing Storage",
-            "variable" to "Variable",
             "receiver_antenna" to "Receiver Antenna",
             "broadcast_antenna" to "Broadcast Antenna",
             "inventory_terminal" to "Inventory Terminal",
@@ -105,6 +103,28 @@ class DiagnosticScreen(
 
         private val TAB_NAMES = listOf("Topology", "Route", "Craft", "Jobs")
 
+        // ----- SPI extension fallbacks -----
+        //
+        // Cosmetic metadata for extension-mod devices comes from their registered
+        // DeviceType.displayInfo. Built-in devices stay in the hardcoded maps above
+        // so the diagnostic renderer can keep its existing exact-color tuning. New
+        // devices opt in just by registering a DeviceType with a non-null displayInfo,
+        // no DiagnosticScreen edit required.
+
+        private fun blockColor(typeId: String): Int =
+            BLOCK_COLORS[typeId]
+                ?: damien.nodeworks.api.DeviceRegistry.byTypeId(typeId)?.displayInfo?.tintColor
+                ?: 0xFFAAAAAA.toInt()
+
+        private fun blockLabel(typeId: String): String =
+            BLOCK_LABELS[typeId]
+                ?: damien.nodeworks.api.DeviceRegistry.byTypeId(typeId)?.displayInfo?.displayName
+                ?: typeId
+
+        private fun blockItem(typeId: String): ItemStack? =
+            BLOCK_ITEMS[typeId]
+                ?: damien.nodeworks.api.DeviceRegistry.byTypeId(typeId)?.displayInfo?.icon?.invoke()
+
         private val BLOCK_ITEMS: Map<String, ItemStack> by lazy {
             val reg = damien.nodeworks.registry.ModBlocks
             mapOf(
@@ -116,7 +136,6 @@ class DiagnosticScreen(
                 "crafting_storage" to ItemStack(reg.CRAFTING_STORAGE),
                 "instruction_storage" to ItemStack(reg.INSTRUCTION_STORAGE),
                 "processing_storage" to ItemStack(reg.PROCESSING_STORAGE),
-                "variable" to ItemStack(reg.VARIABLE),
                 "receiver_antenna" to ItemStack(reg.RECEIVER_ANTENNA),
                 "broadcast_antenna" to ItemStack(reg.BROADCAST_ANTENNA),
                 "inventory_terminal" to ItemStack(reg.INVENTORY_TERMINAL),
@@ -288,12 +307,14 @@ class DiagnosticScreen(
         (z - centerZ) * zoom * gridSize + viewCenterY + panY
 
     private fun blockScreenX(pos: BlockPos): Float {
-        val dp = rotatedPositions[pos] ?: return viewCenterX
+        val dp = rotatedPositions[pos]
+        if (dp == null) return viewCenterX
         return worldToScreenX(dp.first)
     }
 
     private fun blockScreenY(pos: BlockPos): Float {
-        val dp = rotatedPositions[pos] ?: return viewCenterY
+        val dp = rotatedPositions[pos]
+        if (dp == null) return viewCenterY
         return worldToScreenY(dp.second)
     }
 
@@ -312,7 +333,8 @@ class DiagnosticScreen(
      *  Solves `worldToScreenX(rx) = viewCenterX` for panX (and analogous for panY),
      *  using the rotated world coordinates cached in [rotatedPositions]. */
     private fun centerViewOn(pos: BlockPos) {
-        val rp = rotatedPositions[pos] ?: return
+        val rp = rotatedPositions[pos]
+        if (rp == null) return
         panX = -(rp.first - centerX) * zoom * gridSize
         panY = -(rp.second - centerZ) * zoom * gridSize
     }
@@ -514,7 +536,7 @@ class DiagnosticScreen(
                 // Each layer gets a higher z-level so it fully covers the one below
                 for (i in group.blocks.lastIndex downTo 0) {
                     val off = i * stackOffset
-                    val itemStack = BLOCK_ITEMS[group.blocks[i].type]
+                    val itemStack = blockItem(group.blocks[i].type)
                     if (itemStack != null) {
                         val zLayer = (group.blocks.lastIndex - i) * 50f
                         graphics.pose().pushMatrix()
@@ -748,8 +770,10 @@ class DiagnosticScreen(
             // Instruction Set outputs go through this loop too, those itemIds
             // never appear in `variantItemIdsFromApis` so they always pass.
             if (itemId in variantItemIdsFromApis && itemId !in plainItemIdsFromApis) continue
-            val ident = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: continue
+            val ident = net.minecraft.resources.Identifier.tryParse(itemId)
+            if (ident == null) continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+            if (item == null) continue
             out.putIfAbsent(itemId, CraftCandidate(itemId, ItemStack(item)))
         }
         val registries = net.minecraft.client.Minecraft.getInstance().level?.registryAccess()
@@ -802,7 +826,8 @@ class DiagnosticScreen(
 
     private fun renderCraftAutocomplete(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
         if (craftAutocompleteSuggestions.isEmpty()) return
-        val field = craftItemField ?: return
+        val field = craftItemField
+        if (field == null) return
         if (!field.isFocused) return
 
         val dropX = field.x
@@ -1010,7 +1035,8 @@ class DiagnosticScreen(
 
             // Draw lines to children (top-to-bottom tree)
             for (child in n.children) {
-                val childPos = layout.positions[child] ?: continue
+                val childPos = layout.positions[child]
+                if (childPos == null) continue
                 val cx = (originX + childPos.first * zoom).roundToInt()
                 val cy = (originY + childPos.second * zoom).roundToInt()
                 // L-shaped connector: vertical down from parent, then horizontal to child
@@ -1226,7 +1252,7 @@ class DiagnosticScreen(
         // Hover tooltip for blocks
         val hovered = hoveredBlock
         if (hovered != null) {
-            val label = BLOCK_LABELS[hovered.type] ?: hovered.type
+            val label = blockLabel(hovered.type)
             val posStr = "(${hovered.pos.x}, ${hovered.pos.y}, ${hovered.pos.z})"
             val cardStr = if (hovered.cards.isNotEmpty()) {
                 val counts = hovered.cards.groupBy { it.cardType }.map { "${it.value.size}x ${it.key}" }
@@ -1243,7 +1269,7 @@ class DiagnosticScreen(
             val group = stackGroups[hoveredGroupIdx]
             val lines = mutableListOf("${group.blocks.size} stacked blocks")
             for (b in group.blocks) {
-                val label = BLOCK_LABELS[b.type] ?: b.type
+                val label = blockLabel(b.type)
                 lines.add("  Y=${b.pos.y}: $label")
             }
             lines.add("Click [+] to expand")
@@ -1323,7 +1349,10 @@ class DiagnosticScreen(
         // from the client-side BE every frame. buildInspectorRows runs per render tick
         // and the client BE stays synced via standard chunk BE sync, so the value
         // live-updates without any extra plumbing.
-        val liveVariableValue = if (block.type == "variable") {
+        // Live-update path for Variable values. Stays client-side rather than going
+        // through DeviceType.diagnosticDetails because the value must re-read every
+        // render tick (the server-side details list is sent once per snapshot).
+        val liveVariableValue = if (block.type == damien.nodeworks.device.VariableDevice.typeId) {
             val lvl = net.minecraft.client.Minecraft.getInstance().level
             val be = lvl?.getBlockEntity(block.pos) as? damien.nodeworks.block.entity.VariableBlockEntity
             be?.let { "Value: ${if (it.variableValue.isEmpty()) "(empty)" else it.variableValue}" }
@@ -1342,7 +1371,8 @@ class DiagnosticScreen(
     }
 
     private fun getInspectorTotalBodyH(): Int {
-        val sel = selectedBlock ?: return 0
+        val sel = selectedBlock
+        if (sel == null) return 0
         val rows = buildInspectorRows(sel)
         var bodyH = 4
         for (row in rows) {
@@ -1357,7 +1387,8 @@ class DiagnosticScreen(
     }
 
     private fun getInspectorBounds(): IntArray? {
-        val sel = selectedBlock ?: return null
+        val sel = selectedBlock
+        if (sel == null) return null
         val headerH = 20
         val totalBodyH = getInspectorTotalBodyH()
         val maxH = contentH - 8
@@ -1368,8 +1399,10 @@ class DiagnosticScreen(
     }
 
     private fun renderInspector(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        val sel = selectedBlock ?: return
-        val bounds = getInspectorBounds() ?: return
+        val sel = selectedBlock
+        if (sel == null) return
+        val bounds = getInspectorBounds()
+        if (bounds == null) return
         val px = bounds[0];
         val py = bounds[1];
         val pw = bounds[2];
@@ -1379,9 +1412,9 @@ class DiagnosticScreen(
         NineSlice.PANEL_INSET.draw(graphics, px, py, pw, ph)
 
         // H1: block icon + title
-        val title = BLOCK_LABELS[sel.type] ?: sel.type
-        val titleColor = BLOCK_COLORS[sel.type] ?: WHITE
-        val itemStack = BLOCK_ITEMS[sel.type]
+        val title = blockLabel(sel.type)
+        val titleColor = blockColor(sel.type)
+        val itemStack = blockItem(sel.type)
         if (itemStack != null) {
             graphics.renderItem(itemStack, px + 2, py + 3)
         }
@@ -1514,7 +1547,8 @@ class DiagnosticScreen(
                         val ingrIdx = parts.getOrNull(5)?.toIntOrNull() ?: -1
                         val resolvedStack: ItemStack? = run {
                             if (recipeHash.isEmpty() || ingrIdx < 0) return@run null
-                            val api = menu.processingApis.firstOrNull { it.name == recipeHash } ?: return@run null
+                            val api = menu.processingApis.firstOrNull { it.name == recipeHash }
+                            if (api == null) return@run null
                             val list = if (isOutput) api.outputs else api.inputs
                             list.getOrNull(ingrIdx)?.stack
                         }
@@ -1539,7 +1573,7 @@ class DiagnosticScreen(
                     } else if (row.text.startsWith("__alias:")) {
                         // Format: __alias:<rgbInt>:<text>. Renders "Name:" in the
                         // standard key gray, value text in the device's sidebar tint
-                        // so the diagnostic colour-cues each device the same way the
+                        // so the diagnostic color-cues each device the same way the
                         // Scripting Terminal sidebar does.
                         val payload = row.text.removePrefix("__alias:")
                         val colon = payload.indexOf(':')
@@ -1648,11 +1682,11 @@ class DiagnosticScreen(
         }
 
         // Render the block's item icon (16x16 centered on sx,sy)
-        val itemStack = BLOCK_ITEMS[block.type]
+        val itemStack = blockItem(block.type)
         if (itemStack != null) {
             graphics.renderItem(itemStack, sx - 8, sy - 8)
         } else {
-            val color = BLOCK_COLORS[block.type] ?: 0xFFAAAAAA.toInt()
+            val color = blockColor(block.type)
             graphics.fill(sx - halfBlock, sy - halfBlock, sx + halfBlock, sy + halfBlock, color)
         }
 
@@ -1672,7 +1706,8 @@ class DiagnosticScreen(
             NineSlice.PILL.draw(graphics, pillX - 2, pillY, pillW + 4, pillH)
 
             for ((i, cardType) in uniqueTypes.withIndex()) {
-                val iconU = CARD_ICON_U[cardType] ?: continue
+                val iconU = CARD_ICON_U[cardType]
+                if (iconU == null) continue
                 val iconX = pillX + i * (iconSize + iconSpacing)
                 val iconY = pillY
                 // Render the full 16x16 atlas tile scaled down to iconSize

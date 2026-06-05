@@ -76,11 +76,11 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
         }
     }
 
-    /** Randomize the network colour on fresh placement. Uses HSV with V clamped to
+    /** Randomize the network color on fresh placement. Uses HSV with V clamped to
      *  [0.85, 1.0] so every auto-pick reads as "bright" rather than muddy, hue is fully
      *  random so neighbouring networks are easy to tell apart at a glance. Runs only
      *  when the ItemStack has no saved BlockEntityData, items that carry a stored
-     *  colour (e.g. wrenched-and-replaced) keep their original. */
+     *  color (e.g. wrenched-and-replaced) keep their original. */
     override fun setPlacedBy(
         level: Level,
         pos: BlockPos,

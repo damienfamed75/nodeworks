@@ -30,7 +30,8 @@ object MicroNetworkClientRegistry {
 
     @Synchronized
     fun unregister(id: UUID) {
-        val current = refCounts[id] ?: return
+        val current = refCounts[id]
+        if (current == null) return
         if (current <= 1) refCounts.remove(id) else refCounts[id] = current - 1
     }
 

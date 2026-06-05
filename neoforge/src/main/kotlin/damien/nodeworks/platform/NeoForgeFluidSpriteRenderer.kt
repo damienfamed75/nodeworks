@@ -19,12 +19,14 @@ import net.minecraft.resources.Identifier
  */
 class NeoForgeFluidSpriteRenderer : FluidSpriteRenderer {
     override fun render(graphics: GuiGraphicsExtractor, fluidId: String, x: Int, y: Int, size: Int) {
-        val id = Identifier.tryParse(fluidId) ?: return fallback(graphics, x, y, size)
-        val fluid = BuiltInRegistries.FLUID.getValue(id) ?: return fallback(graphics, x, y, size)
+        val id = Identifier.tryParse(fluidId)
+        if (id == null) return fallback(graphics, x, y, size)
+        val fluid = BuiltInRegistries.FLUID.getOptional(id).orElse(null)
+        if (fluid == null) return fallback(graphics, x, y, size)
         val fluidState = fluid.defaultFluidState()
-        val models = Minecraft.getInstance().modelManager.fluidStateModelSet ?: return fallback(graphics, x, y, size)
-        val fluidModel = models.get(fluidState) ?: return fallback(graphics, x, y, size)
-        val sprite = fluidModel.stillMaterial().sprite() ?: return fallback(graphics, x, y, size)
+        val models = Minecraft.getInstance().modelManager.fluidStateModelSet
+        val fluidModel = models.get(fluidState)
+        val sprite = fluidModel.stillMaterial().sprite()
 
         // BlockTintSource.color(BlockState) returns the "no-world-context" tint.
         // Biome-dependent sources (water) return -1 here and defer to colorInWorld,

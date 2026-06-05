@@ -877,7 +877,8 @@ class AutocompletePopup(
 
     /** Find `receiver:partial` context, handling nested expressions and method chains. */
     private fun findColonContext(line: String, beforeCursor: String): CursorContext? {
-        val colonMatch = COLON_PARTIAL.find(line) ?: return null
+        val colonMatch = COLON_PARTIAL.find(line)
+        if (colonMatch == null) return null
         val partial = colonMatch.groupValues[1]
         val beforeColon = line.substring(0, colonMatch.range.first)
         var trimBefore = beforeColon.trimEnd()
@@ -991,11 +992,13 @@ class AutocompletePopup(
      *  `local x = chain[N]` and the property-access inference for `chain[N].field`.
      *  Returns null when the prefix doesn't resolve to a container. */
     private fun resolveIndexedElementType(expr: String, symbols: Map<String, String>): String? {
-        val prefix = stripIndexBrackets(expr)?.trimEnd() ?: return null
+        val prefix = stripIndexBrackets(expr)?.trimEnd()
+        if (prefix == null) return null
         val rt = if (prefix.endsWith(")")) {
             resolveExpressionReturnType(prefix)
         } else {
-            val containerType = symbols[prefix] ?: return null
+            val containerType = symbols[prefix]
+            if (containerType == null) return null
             LuaApiDocs.parseReturnType("() → $containerType")
         }
         return if (rt != null && rt.container != LuaApiDocs.Container.NONE) rt.type else null
@@ -1012,7 +1015,8 @@ class AutocompletePopup(
             .firstOrNull { it.displayName == fieldName }
         if (registryProp != null) return registryProp.returnType.display
 
-        val legacySig = LuaApiDocs.get("$typeName.$fieldName")?.signature ?: return null
+        val legacySig = LuaApiDocs.get("$typeName.$fieldName")?.signature
+        if (legacySig == null) return null
         val colonIdx = legacySig.indexOf(':')
         if (colonIdx < 0) return null
         return legacySig.substring(colonIdx + 1).trim()
@@ -1026,7 +1030,8 @@ class AutocompletePopup(
      */
     private fun elementTypeOf(type: String?): String? {
         if (type == null) return null
-        val rt = LuaApiDocs.parseReturnType("() → $type") ?: return null
+        val rt = LuaApiDocs.parseReturnType("() → $type")
+        if (rt == null) return null
         return if (rt.container != LuaApiDocs.Container.NONE) rt.type else null
     }
 
@@ -1059,9 +1064,11 @@ class AutocompletePopup(
     private fun resolveExpressionReturnType(expr: String): LuaApiDocs.ReturnType? {
         val trimmed = expr.trimEnd()
         if (!trimmed.endsWith(")")) return null
-        val paren = findMatchingParenBackward(trimmed) ?: return null
+        val paren = findMatchingParenBackward(trimmed)
+        if (paren == null) return null
         val beforeParen = paren.first.trimEnd()
-        val methodName = TRAILING_WORD.find(beforeParen)?.groupValues?.get(1) ?: return null
+        val methodName = TRAILING_WORD.find(beforeParen)?.groupValues?.get(1)
+        if (methodName == null) return null
         val receiverType = extractReceiverType(beforeParen, methodName)
 
         // Network:getAll("type") and Channel:getAll("type") narrowing, both return a
@@ -1187,7 +1194,8 @@ class AutocompletePopup(
      *  value makes no sense, the for-loop inference path uses
      *  [LuaApiDocs.methodReturnType] directly to pull element types. */
     private fun scalarReturnTypeOf(methodName: String, receiverType: String? = null): String? {
-        val rt = LuaApiDocs.methodReturnType(methodName, receiverType) ?: return null
+        val rt = LuaApiDocs.methodReturnType(methodName, receiverType)
+        if (rt == null) return null
         return if (rt.container == LuaApiDocs.Container.NONE) rt.type else null
     }
 
@@ -1203,10 +1211,12 @@ class AutocompletePopup(
         val trimmed = expr.trimEnd()
         if (!trimmed.endsWith(")")) return null
 
-        val parenResult = findMatchingParenBackward(trimmed) ?: return null
+        val parenResult = findMatchingParenBackward(trimmed)
+        if (parenResult == null) return null
         val beforeParen = parenResult.first.trimEnd()
 
-        val methodMatch = TRAILING_WORD.find(beforeParen) ?: return null
+        val methodMatch = TRAILING_WORD.find(beforeParen)
+        if (methodMatch == null) return null
         val methodName = methodMatch.groupValues[1]
 
         if (forChaining && methodName in nonChainableMethods) return null
@@ -1296,7 +1306,8 @@ class AutocompletePopup(
      *  the input isn't a parameterised handle-list. */
     private fun handleListElement(type: String?): String? {
         if (type == null) return null
-        val match = HANDLELIST_PARAM.matchEntire(type) ?: return null
+        val match = HANDLELIST_PARAM.matchEntire(type)
+        if (match == null) return null
         return match.groupValues[1]
     }
 
@@ -1361,7 +1372,8 @@ class AutocompletePopup(
      *  by for-loop inference to resolve `for _, v in myFn() do` to the element type when
      *  `myFn`'s annotation is a container like `: { CardHandle }`. */
     private fun userFunctionReturnType(funcName: String, fullText: String): LuaApiDocs.ReturnType? {
-        val retType = allUserFunctions(fullText)[funcName] ?: return null
+        val retType = allUserFunctions(fullText)[funcName]
+        if (retType == null) return null
         return LuaApiDocs.parseReturnType("() → $retType")
     }
 
@@ -1418,7 +1430,8 @@ class AutocompletePopup(
 
     /** Find `receiver.partial` context, including after method chains. */
     private fun findDotContext(line: String): CursorContext? {
-        val dotMatch = DOT_PARTIAL.find(line) ?: return null
+        val dotMatch = DOT_PARTIAL.find(line)
+        if (dotMatch == null) return null
         val partial = dotMatch.groupValues[1]
         val beforeDot = line.substring(0, dotMatch.range.first).trimEnd()
         if (beforeDot.isEmpty()) return null
@@ -1482,7 +1495,8 @@ class AutocompletePopup(
         }
 
         // Simple `word.partial`
-        val receiverMatch = TRAILING_WORD.find(beforeDot) ?: return null
+        val receiverMatch = TRAILING_WORD.find(beforeDot)
+        if (receiverMatch == null) return null
         return CursorContext.PropertyAccess(receiverMatch.groupValues[1], partial)
     }
 
@@ -1503,7 +1517,8 @@ class AutocompletePopup(
         val pattern =
             Regex("""\bfunction\s+([\w.]*${Regex.escape(funcName)})\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
         for (text in allTexts) {
-            val match = pattern.find(text) ?: continue
+            val match = pattern.find(text)
+            if (match == null) continue
             val name = match.groupValues[1]
             val params = match.groupValues[2].trim().split(",").joinToString(", ") { it.trim() }
             val retType = match.groupValues[3].ifEmpty { null }
@@ -1545,7 +1560,8 @@ class AutocompletePopup(
             )
             for (m in pattern.findAll(fullText)) {
                 val varName = m.groupValues[1]
-                val element = channelElementType(m.groupValues[2]) ?: continue
+                val element = channelElementType(m.groupValues[2])
+                if (element == null) continue
                 pairs[varName] = "HandleList<$element>"
             }
             handleListLocals = pairs
@@ -1717,7 +1733,8 @@ class AutocompletePopup(
                 val keyName = match.groupValues[1]
                 val valName = match.groupValues[2].takeIf { it.isNotEmpty() }
                 val rawExpr = match.groupValues[3].trim()
-                val iterKind = containerFromIterExpr(rawExpr, fullText, containerVars) ?: continue
+                val iterKind = containerFromIterExpr(rawExpr, fullText, containerVars)
+                if (iterKind == null) continue
                 val (elementType, container) = iterKind
                 if (valName != null) {
                     symbols.putIfAbsent(valName, elementType)
@@ -1883,16 +1900,19 @@ class AutocompletePopup(
 
         // Bare identifier: look up the container var table built during `local` inference.
         if (BARE_IDENT.matches(unwrapped)) {
-            val entry = containerVars[unwrapped] ?: return null
+            val entry = containerVars[unwrapped]
+            if (entry == null) return null
             val (elementType, container) = entry
             return elementType to (forcedWrapper ?: container)
         }
 
         // Function/method call at the tail, resolve via LuaApiDocs or user fn annotations.
         if (!unwrapped.endsWith(")")) return null
-        val paren = findMatchingParenBackward(unwrapped) ?: return null
+        val paren = findMatchingParenBackward(unwrapped)
+        if (paren == null) return null
         val beforeParen = paren.first.trimEnd()
-        val methodName = TRAILING_WORD.find(beforeParen)?.groupValues?.get(1) ?: return null
+        val methodName = TRAILING_WORD.find(beforeParen)?.groupValues?.get(1)
+        if (methodName == null) return null
 
         // Arg-aware narrowing for `network:getAll("type")` and `Channel:getAll("type")`.
         // Both return `HandleList<T>` whose `:list()` is what for-loops iterate, we
@@ -1966,12 +1986,14 @@ class AutocompletePopup(
             is CursorContext.ChainedPropertyAccess -> suggestChainedPropertyAccess(ctx, symbols)
             is CursorContext.ChainedMethodCall -> suggestChainedMethodCall(ctx, symbols)
             is CursorContext.IndexedPropertyAccess -> {
-                val element = elementTypeOf(symbols[ctx.receiver]) ?: return emptyList()
+                val element = elementTypeOf(symbols[ctx.receiver])
+                if (element == null) return emptyList()
                 suggestPropertiesForType(element, ctx.partial)
             }
 
             is CursorContext.IndexedMethodCall -> {
-                val element = elementTypeOf(symbols[ctx.receiver]) ?: return emptyList()
+                val element = elementTypeOf(symbols[ctx.receiver])
+                if (element == null) return emptyList()
                 suggestMethodsForType(element, ctx.partial)
             }
 
@@ -2112,8 +2134,10 @@ class AutocompletePopup(
             .firstOrNull { it.displayName == methodName }
             ?: return null
 
-        val paramType = methodDoc.params.getOrNull(ctx.argIndex)?.type ?: return null
-        val baseSuggestions = suggestionsForType(paramType, ctx.partial) ?: return null
+        val paramType = methodDoc.params.getOrNull(ctx.argIndex)?.type
+        if (paramType == null) return null
+        val baseSuggestions = suggestionsForType(paramType, ctx.partial)
+        if (baseSuggestions == null) return null
 
         // When the method's shape is `(<string>, <function>)` and we're inside the
         // string arg, transform each suggestion into a full-snippet that includes
@@ -2178,8 +2202,10 @@ class AutocompletePopup(
         } else {
             extractFunctions(fullText).firstOrNull { it.name == ctx.funcExpr } ?: return null
         }
-        val typeName = parseParamType(func.params, ctx.argIndex) ?: return null
-        val resolvedType = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName) ?: return null
+        val typeName = parseParamType(func.params, ctx.argIndex)
+        if (typeName == null) return null
+        val resolvedType = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName)
+        if (resolvedType == null) return null
         return suggestionsForType(resolvedType, ctx.partial)
     }
 
@@ -2196,12 +2222,15 @@ class AutocompletePopup(
         if (funcName.contains('.')) return null
 
         val requirePattern = Regex("""\blocal\s+${Regex.escape(localVar)}\s*=\s*require\(\s*"(\w+)"\s*\)""")
-        val moduleName = requirePattern.find(fullText)?.groupValues?.get(1) ?: return null
+        val moduleName = requirePattern.find(fullText)?.groupValues?.get(1)
+        if (moduleName == null) return null
 
-        val moduleText = scripts()[moduleName] ?: return null
+        val moduleText = scripts()[moduleName]
+        if (moduleText == null) return null
         val funcPattern =
             Regex("""\bfunction\s+\w+\.${Regex.escape(funcName)}\s*\(([^)]*)\)\s*(?::\s*(\w+\??|\{[^}]*}))?""")
-        val match = funcPattern.find(moduleText) ?: return null
+        val match = funcPattern.find(moduleText)
+        if (match == null) return null
         val params = match.groupValues[1].trim().split(",").joinToString(", ") { it.trim() }
         val returnType = match.groupValues[2].ifEmpty { null }
         return FunctionInfo(funcName, params, returnType)
@@ -2224,8 +2253,10 @@ class AutocompletePopup(
         val text = ctx.precedingText
         if (text.isBlank()) return null
 
-        val typeName = parseTypedAssignmentType(text, symbols) ?: return null
-        val resolved = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName) ?: return null
+        val typeName = parseTypedAssignmentType(text, symbols)
+        if (typeName == null) return null
+        val resolved = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName)
+        if (resolved == null) return null
         return suggestionsForType(resolved, ctx.partial)
     }
 
@@ -2247,8 +2278,10 @@ class AutocompletePopup(
         val text = ctx.precedingText
         if (text.isBlank()) return null
 
-        val typeName = parseComparisonOperandType(text, symbols) ?: return null
-        val resolved = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName) ?: return null
+        val typeName = parseComparisonOperandType(text, symbols)
+        if (typeName == null) return null
+        val resolved = damien.nodeworks.script.api.LuaApiRegistry.stringTypeOf(typeName)
+        if (resolved == null) return null
         return suggestionsForType(resolved, ctx.partial)
     }
 
@@ -2262,7 +2295,8 @@ class AutocompletePopup(
         symbols: Map<String, String>,
     ): String? {
         val trimmed = precedingText.trimEnd()
-        val opMatch = COMPARISON_OPERATOR_TAIL.find(trimmed) ?: return null
+        val opMatch = COMPARISON_OPERATOR_TAIL.find(trimmed)
+        if (opMatch == null) return null
         val beforeOp = trimmed.substring(0, opMatch.range.first).trimEnd()
         if (beforeOp.isEmpty()) return null
 
@@ -2275,7 +2309,8 @@ class AutocompletePopup(
         if (dotField != null && dotField.range.last == beforeOp.lastIndex) {
             val field = dotField.groupValues[1]
             val receiverExpr = beforeOp.substring(0, dotField.range.first).trimEnd()
-            val receiverType = resolveOperandReceiverType(receiverExpr, symbols) ?: return null
+            val receiverType = resolveOperandReceiverType(receiverExpr, symbols)
+            if (receiverType == null) return null
             return lookupPropertyType(receiverType, field)?.trimEnd('?')
         }
 
@@ -2323,7 +2358,8 @@ class AutocompletePopup(
         // Bare-ident path: pull just the trailing word so leading keywords
         // (`if`, `while`, `return`) or assignment prefixes (`local x = `)
         // don't block the symbol-table lookup.
-        val tail = TRAILING_BARE_IDENT.find(trimmed) ?: return null
+        val tail = TRAILING_BARE_IDENT.find(trimmed)
+        if (tail == null) return null
         if (tail.range.last != trimmed.lastIndex) return null
         return symbols[tail.groupValues[1]]?.trimEnd('?')
     }
@@ -2362,7 +2398,8 @@ class AutocompletePopup(
     private fun parseParamType(paramsStr: String, argIndex: Int): String? {
         if (paramsStr.isBlank()) return null
         val segments = paramsStr.split(",")
-        val seg = segments.getOrNull(argIndex) ?: return null
+        val seg = segments.getOrNull(argIndex)
+        if (seg == null) return null
         val colonIdx = seg.indexOf(':')
         if (colonIdx < 0) return null
         return seg.substring(colonIdx + 1).trim().trimEnd('?')
@@ -2480,7 +2517,8 @@ class AutocompletePopup(
 
         val suffixGroups = aliases
             .mapNotNull { alias ->
-                val match = CARD_SUFFIX_REGEX.matchEntire(alias) ?: return@mapNotNull null
+                val match = CARD_SUFFIX_REGEX.matchEntire(alias)
+                if (match == null) return@mapNotNull null
                 match.groupValues[1] to alias
             }
             .groupBy({ it.first }, { it.second })
@@ -2504,7 +2542,8 @@ class AutocompletePopup(
         }
         for (alias in aliases) {
             if (alias in hiddenAliases) continue
-            val type = typeOf[alias] ?: continue
+            val type = typeOf[alias]
+            if (type == null) continue
             out += suggest(alias, "$alias ($type)", Kind.STRING)
         }
         return FuzzyMatch.filter(partial, out)
@@ -2578,8 +2617,10 @@ class AutocompletePopup(
 
         val plain = craftableOutputs.mapNotNull { itemId ->
             if (itemId in variantItemIdsFromApis && itemId !in plainItemIdsFromApis) return@mapNotNull null
-            val ident = net.minecraft.resources.Identifier.tryParse(itemId) ?: return@mapNotNull null
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: return@mapNotNull null
+            val ident = net.minecraft.resources.Identifier.tryParse(itemId)
+            if (ident == null) return@mapNotNull null
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+            if (item == null) return@mapNotNull null
             val stack = net.minecraft.world.item.ItemStack(item)
             Suggestion(
                 insertText = itemId,
@@ -3036,7 +3077,8 @@ class AutocompletePopup(
         // input slots. Computed at use-site here, the registry-side InputItems
         // surface is intentionally empty so this fallback fires.
         if (type == "InputItems") {
-            val api = enclosingHandlerApi ?: return emptyList()
+            val api = enclosingHandlerApi
+            if (api == null) return emptyList()
             val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputsAsPairs)
             return fuzzy(
                 partial,
@@ -3061,7 +3103,8 @@ class AutocompletePopup(
         ctx: CursorContext.ChainedPropertyAccess,
         symbols: Map<String, String>
     ): List<Suggestion> {
-        val fieldType = resolveChainedFieldType(ctx.outerVar, ctx.field, symbols) ?: return emptyList()
+        val fieldType = resolveChainedFieldType(ctx.outerVar, ctx.field, symbols)
+        if (fieldType == null) return emptyList()
         return suggestPropertiesForType(fieldType, ctx.partial)
     }
 
@@ -3069,7 +3112,8 @@ class AutocompletePopup(
         ctx: CursorContext.ChainedMethodCall,
         symbols: Map<String, String>
     ): List<Suggestion> {
-        val fieldType = resolveChainedFieldType(ctx.outerVar, ctx.field, symbols) ?: return emptyList()
+        val fieldType = resolveChainedFieldType(ctx.outerVar, ctx.field, symbols)
+        if (fieldType == null) return emptyList()
         return suggestMethodsForType(fieldType, ctx.partial)
     }
 
@@ -3084,10 +3128,12 @@ class AutocompletePopup(
         field: String,
         symbols: Map<String, String>
     ): String? {
-        val outerType = symbols[outerVar] ?: return null
+        val outerType = symbols[outerVar]
+        if (outerType == null) return null
         return when (outerType) {
             "InputItems" -> {
-                val api = enclosingHandlerApi ?: return null
+                val api = enclosingHandlerApi
+                if (api == null) return null
                 val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(api.inputsAsPairs)
                 if (field !in paramNames) null else "ItemsHandle"
             }
@@ -3102,7 +3148,8 @@ class AutocompletePopup(
      *  named API isn't loaded. Mirrors the dispatch used by the autocomplete's
      *  property-suggestion path so hover and completion stay in sync. */
     fun inputItemsFieldsAt(textBeforeOffset: String): List<String>? {
-        val api = findEnclosingHandlerApi(textBeforeOffset) ?: return null
+        val api = findEnclosingHandlerApi(textBeforeOffset)
+        if (api == null) return null
         return damien.nodeworks.card.HandlerParamNames.build(api.inputsAsPairs)
     }
 
@@ -3155,7 +3202,8 @@ class AutocompletePopup(
             }
         }
 
-        val innermostId = scopeStack.asReversed().firstOrNull { it != null } ?: return null
+        val innermostId = scopeStack.asReversed().firstOrNull { it != null }
+        if (innermostId == null) return null
         return localApis.firstOrNull { it.name == innermostId }
     }
 
@@ -3216,7 +3264,8 @@ class AutocompletePopup(
      */
     private fun checkHandleSnippetContext(beforeCursor: String): List<Suggestion>? {
         val currentLine = beforeCursor.substringAfterLast('\n')
-        val handleFnMatch = HANDLE_FN_PARTIAL.find(currentLine) ?: return null
+        val handleFnMatch = HANDLE_FN_PARTIAL.find(currentLine)
+        if (handleFnMatch == null) return null
         val partial = handleFnMatch.groupValues[2]
         customPrefix = partial
         // Uniform handler signature, `job: Job, items: InputItems` regardless of recipe.
@@ -3346,7 +3395,8 @@ class AutocompletePopup(
         val requireMatch = requirePattern.find(currentText)
         if (requireMatch != null) {
             val moduleName = requireMatch.groupValues[1]
-            val moduleText = scripts()[moduleName] ?: return emptyList()
+            val moduleText = scripts()[moduleName]
+            if (moduleText == null) return emptyList()
             // In required modules, scan all table vars for exports
             val tableVarPattern = LOCAL_EMPTY_TABLE
             val tableVars = tableVarPattern.findAll(moduleText).map { it.groupValues[1] }.toSet()

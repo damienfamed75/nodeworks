@@ -25,8 +25,8 @@ those pipes joins the network.
 
 ## Identity
 
-The Controller's GUI lets you name the network and pick a colour. The
-name is cosmetic, the colour tints the node glows so multiple networks
+The Controller's GUI lets you name the network and pick a color. The
+name is cosmetic, the color tints the node glows so multiple networks
 in the same area stay easy to tell apart.
 
 ## Chunk loading

@@ -179,10 +179,12 @@ class StockerBuilder(
     }
 
     override fun tickOnce() {
-        val snapshot = lastSnapshotSeen ?: return
+        val snapshot = lastSnapshotSeen
+        if (snapshot == null) return
         val level = engine.level
         val filterPred: (String) -> Boolean = { CardHandle.matchesFilter(it, filter) }
-        val targetRef = target ?: return
+        val targetRef = target
+        if (targetRef == null) return
 
         // 1. Figure out current stock in the target.
         val current = when (targetRef) {
@@ -192,7 +194,8 @@ class StockerBuilder(
                 .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             is CardRef.Named -> {
                 val card = resolvedTarget as? ResolvedRef.Card ?: return
-                val storage = CardStorage.forCard(level, card.snapshot, card.faceOverride) ?: return
+                val storage = CardStorage.forCard(level, card.snapshot, card.faceOverride)
+                if (storage == null) return
                 PlatformServices.storage.countItems(storage, filterPred)
                     .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             }
@@ -240,7 +243,8 @@ class StockerBuilder(
             if (need <= 0) break
             when (source) {
                 is ResolvedRef.Card -> {
-                    val srcStorage = CardStorage.forCard(level, source.snapshot, source.faceOverride) ?: continue
+                    val srcStorage = CardStorage.forCard(level, source.snapshot, source.faceOverride)
+                    if (srcStorage == null) continue
                     need -= moveFromStorageToTarget(snapshot, level, srcStorage, targetRef, filterPred, need.toLong())
                         .toInt().coerceAtLeast(0)
                 }
@@ -309,7 +313,8 @@ class StockerBuilder(
             for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
                 if (remaining <= 0L) break
                 if (!sourceChannel.matches(card.channel)) continue
-                val srcStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                val srcStorage = NetworkStorageHelper.getStorage(level, card)
+                if (srcStorage == null) continue
                 val moved = NetworkStorageHelper.insertItems(
                     level, snapshot, srcStorage, filter,
                     remaining, engine.routeTable, null, engine.inventoryCache,
@@ -323,14 +328,16 @@ class StockerBuilder(
 
         // Card target.
         val card = resolvedTarget as? ResolvedRef.Card ?: return 0L
-        val destStorage = CardStorage.forCard(level, card.snapshot, card.faceOverride) ?: return 0L
+        val destStorage = CardStorage.forCard(level, card.snapshot, card.faceOverride)
+        if (destStorage == null) return 0L
         val cache = engine.inventoryCache
         var remaining = maxCount
         var totalMoved = 0L
         for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
             if (!sourceChannel.matches(poolCard.channel)) continue
-            val storage = NetworkStorageHelper.getStorage(level, poolCard) ?: continue
+            val storage = NetworkStorageHelper.getStorage(level, poolCard)
+            if (storage == null) continue
             // Per-variant move so the cache gets a paired onExtracted for
             // each item leaving the pool (see [Importer.movePoolToCard]) and
             // two variants of one itemId aren't conflated.
@@ -361,8 +368,10 @@ class StockerBuilder(
      *  count. Once the pending job completes (success or failure), the next tick
      *  reassesses current stock and queues another batch if one is still needed. */
     private fun issueCraft(need: Int) {
-        val snapshot = lastSnapshotSeen ?: return
-        val itemId = craftItemId ?: return
+        val snapshot = lastSnapshotSeen
+        if (snapshot == null) return
+        val itemId = craftItemId
+        if (itemId == null) return
         val batch = if (batchSize > 0) batchSize else need
         if (batch <= 0) return
 

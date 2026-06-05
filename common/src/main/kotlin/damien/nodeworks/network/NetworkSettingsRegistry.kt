@@ -30,7 +30,7 @@ object NetworkSettingsRegistry {
     /**
      * Client-side hook fired whenever a network's settings change. Used to invalidate
      * the BlockTintCache for Connectable blocks belonging to that network, without
-     * it, the tint source returns the new colour but the cached per-chunk tint still
+     * it, the tint source returns the new color but the cached per-chunk tint still
      * shows the old one until the chunk re-renders for some unrelated reason.
      *
      * The hook is `null` on the logical server since this registry is also populated
@@ -47,8 +47,8 @@ object NetworkSettingsRegistry {
     /**
      * Fire [onChanged] without mutating the registry. Called from Connectable BE
      * `loadAdditional` so newly-synced blocks get their tint cache refreshed in
-     * the same frame. Fires for null too, so a block going from coloured to grey
-     * (controller removed, conflict entered) doesn't keep rendering the stale colour.
+     * the same frame. Fires for null too, so a block going from colored to grey
+     * (controller removed, conflict entered) doesn't keep rendering the stale color.
      *
      * NeoForge runs `loadAdditional` on async chunk-IO threads while the client
      * is mid-load, so this dispatches the [onChanged] body on the main render
@@ -61,7 +61,8 @@ object NetworkSettingsRegistry {
         // and would NoClassDefFoundError on first BE NBT load). The hook is
         // wired up only by NeoForgeClientSetup, so server-side onChanged
         // stays null forever.
-        val cb = onChanged ?: return
+        val cb = onChanged
+        if (cb == null) return
         val mc = net.minecraft.client.Minecraft.getInstance()
         if (mc.isSameThread) cb.invoke(networkId)
         else mc.execute { cb.invoke(networkId) }

@@ -6,16 +6,16 @@ package damien.nodeworks.script
  * guidebook `<LuaCode>` tag compiler.
  *
  * Extracted into the common module so all three surfaces tokenise identically, one set
- * of colours, one keyword list, one recovery rule for multi-line block comments. If Lua
+ * of colors, one keyword list, one recovery rule for multi-line block comments. If Lua
  * syntax awareness needs to grow later (e.g. distinguishing `self.foo` from `Foo.bar`),
  * changes here propagate everywhere automatically.
  *
- * Tokeniser is intentionally shallow: it classifies for colouring and docs-lookup
+ * Tokeniser is intentionally shallow: it classifies for coloring and docs-lookup
  * purposes, not for AST construction. No attempt at full Lua parsing.
  */
 object LuaTokenizer {
 
-    /** Classification of a tokenised slice. Drives colouring AND is inspected by
+    /** Classification of a tokenised slice. Drives coloring AND is inspected by
      *  [LuaApiDocs.resolveAt] to decide whether a token is eligible for a hover docstring
      *  (identifiers get docs, comments / strings / numbers don't). */
     enum class TokenType {
@@ -29,7 +29,7 @@ object LuaTokenizer {
         val type: TokenType = TokenType.DEFAULT,
     )
 
-    // ==== Colour palette (argb ints, opaque) ====
+    // ==== Color palette (argb ints, opaque) ====
     // Same hues the in-game editor has shipped with, keep in sync with the editor's
     // expected palette so copying a page's <LuaCode> block into the terminal looks
     // identical.
@@ -47,7 +47,7 @@ object LuaTokenizer {
         "return", "then", "true", "until", "while",
     )
 
-    /** Top-level globals the editor should highlight as function-coloured even when
+    /** Top-level globals the editor should highlight as function-colored even when
      *  they're referenced without a trailing call-parenthesis. Extend via [LuaApiDocs]
      *  entries whose key has no `:` or `.`, those automatically get included here. */
     val BUILTINS: Set<String> = setOf(

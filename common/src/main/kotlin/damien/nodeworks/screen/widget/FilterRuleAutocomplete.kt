@@ -169,7 +169,8 @@ class FilterRuleAutocomplete(private val font: Font) {
     /** Renders the dropdown directly below the bound EditBox. Caller must
      *  invoke this after the rest of the screen so the popup layers above. */
     fun render(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        val a = anchor ?: return
+        val a = anchor
+        if (a == null) return
         if (suggestions.isEmpty()) return
 
         val visibleCount = suggestions.size.coerceAtMost(MAX_VISIBLE)
@@ -255,7 +256,8 @@ class FilterRuleAutocomplete(private val font: Font) {
 
     /** Returns the new value if a row was clicked, else null. */
     fun mouseClicked(mouseX: Int, mouseY: Int): String? {
-        val a = anchor ?: return null
+        val a = anchor
+        if (a == null) return null
         if (suggestions.isEmpty()) return null
         val popupX = a.x
         val popupY = a.y + a.height + 1

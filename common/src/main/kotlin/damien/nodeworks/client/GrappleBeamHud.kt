@@ -44,7 +44,8 @@ object GrappleBeamHud {
     fun render(graphics: GuiGraphicsExtractor, delta: DeltaTracker) {
         val mc = Minecraft.getInstance()
         if (mc.options.hideGui) return
-        val player = mc.player ?: return
+        val player = mc.player
+        if (player == null) return
         val holdingMain = player.mainHandItem.item is GrappleBeamItem
         val holdingOff = player.offhandItem.item is GrappleBeamItem
         if (!holdingMain && !holdingOff) {
@@ -75,7 +76,8 @@ object GrappleBeamHud {
             var hitEntity = false
             for (e in candidates) {
                 val box = e.boundingBox.inflate(e.pickRadius.toDouble())
-                val clip = box.clip(eye, blockEnd).orElse(null) ?: continue
+                val clip = box.clip(eye, blockEnd).orElse(null)
+                if (clip == null) continue
                 val dsq = eye.distanceToSqr(clip)
                 if (dsq < closestSq) {
                     closestSq = dsq

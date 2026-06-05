@@ -142,7 +142,8 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         /** The card's display name. Cosmetic only after the canonical-id retire,
          *  recipe identity is the hash, not the name. */
         fun getCardName(stack: ItemStack): String {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return ""
             return customData.copyTag().getStringOr(NAME_KEY, "")
         }
 
@@ -181,11 +182,13 @@ class ProcessingSet(properties: Properties) : Item(properties) {
          *  `mayPlace` and similar fast paths use this instead of the full
          *  [getOutputs] decode. */
         fun hasOutputs(stack: ItemStack): Boolean {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return false
             val tag = customData.copyTag()
             val v2 = tag.get(OUTPUTS_V2_KEY) as? ListTag
             if (v2 != null && v2.size > 0) return true
-            val v1 = tag.getList(OUTPUTS_KEY).orElse(null) ?: return false
+            val v1 = tag.getList(OUTPUTS_KEY).orElse(null)
+            if (v1 == null) return false
             for (i in 0 until v1.size) {
                 if (v1.getStringOr(i, "").isNotEmpty()) return true
             }
@@ -193,12 +196,14 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         }
 
         fun getTimeout(stack: ItemStack): Int {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return 0
             return customData.copyTag().getIntOr(TIMEOUT_KEY, 0)
         }
 
         fun isSerial(stack: ItemStack): Boolean {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return false
             return customData.copyTag().getBooleanOr(SERIAL_KEY, false)
         }
 
@@ -206,7 +211,8 @@ class ProcessingSet(properties: Properties) : Item(properties) {
          *  inputs (e.g. any potion in the input slot, not specifically a
          *  Potion of Strength). Default false = exact-component matching. */
         fun isFuzzy(stack: ItemStack): Boolean {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return false
             return customData.copyTag().getBooleanOr(FUZZY_KEY, false)
         }
 
@@ -282,7 +288,8 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 // is the separate ENTRY_COUNT_KEY. Avoids the ItemStack codec
                 // refusing zero-count or huge-count stacks.
                 val template = ingr.stack.copyWithCount(1)
-                val stackTag = ItemStack.CODEC.encodeStart(ops, template).result().orElse(null) ?: continue
+                val stackTag = ItemStack.CODEC.encodeStart(ops, template).result().orElse(null)
+                if (stackTag == null) continue
                 entry.put(ENTRY_STACK_KEY, stackTag)
                 entry.putInt(ENTRY_COUNT_KEY, ingr.count.coerceAtLeast(1))
                 entry.putInt(ENTRY_SLOT_KEY, slotsOverride?.getOrElse(i) { i } ?: i)
@@ -298,7 +305,8 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             v1CountsKey: String,
             registries: net.minecraft.core.HolderLookup.Provider,
         ): List<RecipeIngredient> {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return emptyList()
             val tag = customData.copyTag()
 
             // v2 path: list of compound entries with full stacks. RegistryOps
@@ -312,9 +320,12 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             if (v2List != null) {
                 val out = ArrayList<RecipeIngredient>(v2List.size)
                 for (i in 0 until v2List.size) {
-                    val entry = v2List.getCompound(i).orElse(null) ?: continue
-                    val stackTag = entry.get(ENTRY_STACK_KEY) ?: continue
-                    val ingrStack = ItemStack.CODEC.parse(ops, stackTag).result().orElse(null) ?: continue
+                    val entry = v2List.getCompound(i).orElse(null)
+                    if (entry == null) continue
+                    val stackTag = entry.get(ENTRY_STACK_KEY)
+                    if (stackTag == null) continue
+                    val ingrStack = ItemStack.CODEC.parse(ops, stackTag).result().orElse(null)
+                    if (ingrStack == null) continue
                     if (ingrStack.isEmpty) continue
                     val count = entry.getInt(ENTRY_COUNT_KEY).orElse(1).coerceAtLeast(1)
                     out.add(RecipeIngredient(ingrStack, count))
@@ -323,14 +334,17 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             }
 
             // v1 path: parallel ListTag<String> + IntArray.
-            val ids = tag.getList(v1IdsKey).orElse(null) ?: return emptyList()
+            val ids = tag.getList(v1IdsKey).orElse(null)
+            if (ids == null) return emptyList()
             val counts = tag.getIntArray(v1CountsKey).orElse(IntArray(0))
             val out = ArrayList<RecipeIngredient>(ids.size)
             for (i in 0 until ids.size) {
                 val id = ids.getStringOr(i, "")
                 if (id.isEmpty()) continue
-                val identifier = Identifier.tryParse(id) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(identifier) ?: continue
+                val identifier = Identifier.tryParse(id)
+                if (identifier == null) continue
+                val item = BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+                if (item == null) continue
                 val count = counts.getOrElse(i) { 1 }.coerceAtLeast(1)
                 out.add(RecipeIngredient(ItemStack(item), count))
             }
@@ -343,7 +357,8 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             v1IdsKey: String,
             v1SlotsKey: String,
         ): IntArray {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return IntArray(0)
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return IntArray(0)
             val tag = customData.copyTag()
 
             val v2List = tag.get(v2Key) as? ListTag
@@ -357,7 +372,8 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             }
 
             // v1 fallback: parallel slot array.
-            val ids = tag.getList(v1IdsKey).orElse(null) ?: return IntArray(0)
+            val ids = tag.getList(v1IdsKey).orElse(null)
+            if (ids == null) return IntArray(0)
             val slots = tag.getIntArray(v1SlotsKey).orElse(IntArray(0))
             val result = ArrayList<Int>(ids.size)
             for (i in 0 until ids.size) {

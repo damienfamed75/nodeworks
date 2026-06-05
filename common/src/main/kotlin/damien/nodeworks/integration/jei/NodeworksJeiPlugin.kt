@@ -68,7 +68,7 @@ class NodeworksJeiPlugin : IModPlugin {
 
     override fun registerItemSubtypes(registration: ISubtypeRegistration) {
         // Cards / sets write CUSTOM_DATA when their settings GUI closes (channel
-        // colour, storage priority, recipe contents, etc.). JEI 29.5 treats any
+        // color, storage priority, recipe contents, etc.). JEI 29.5 treats any
         // components-modified ItemStack as a distinct "subtype" by default,
         // which makes the modified stack an unknown ingredient and drops the
         // JEI mod-name tooltip line. Returning null from the interpreter tells
@@ -211,7 +211,8 @@ class InventoryTerminalTransferHandler :
             // `ResourceKey<Recipe<?>>` in 26.1, the server rebuilds the key
             // from the flattened identifier.
             val fallback = (0 until 9).map { idx ->
-                val slot = inputSlots.getOrNull(idx) ?: return@map ""
+                val slot = inputSlots.getOrNull(idx)
+                if (slot == null) return@map ""
                 val displayed = slot.displayedIngredient.orElse(null)?.ingredient as? ItemStack
                 if (displayed == null || displayed.isEmpty) "" else
                     BuiltInRegistries.ITEM.getKey(displayed.item)?.toString().orEmpty()
@@ -247,13 +248,15 @@ class InventoryTerminalTransferHandler :
         for (i in 0 until player.inventory.containerSize) {
             val stack = player.inventory.getItem(i)
             if (stack.isEmpty) continue
-            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (id == null) continue
             available.merge(id, stack.count.toLong(), Long::plus)
         }
         for (i in 0 until 9) {
             val stack = menu.craftingContainer.getItem(i)
             if (stack.isEmpty) continue
-            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (id == null) continue
             available.merge(id, stack.count.toLong(), Long::plus)
         }
         // Only query the repo for ids the recipe mentions, so a huge
@@ -263,7 +266,8 @@ class InventoryTerminalTransferHandler :
             val sampled = HashSet<String>()
             for (slot in inputSlots) {
                 slot.getItemStacks().forEach { stack ->
-                    val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return@forEach
+                    val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                    if (id == null) return@forEach
                     if (sampled.add(id)) {
                         val networkCount = screen.repo.countItem(id)
                         if (networkCount > 0) available.merge(id, networkCount, Long::plus)
@@ -278,7 +282,8 @@ class InventoryTerminalTransferHandler :
             if (candidates.isEmpty()) continue  // no-ingredient slot, doesn't count as missing
             var satisfied = false
             for (stack in candidates) {
-                val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+                val id = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                if (id == null) continue
                 val have = available[id] ?: 0L
                 if (have >= stack.count) {
                     available[id] = have - stack.count
@@ -515,7 +520,8 @@ class StorageCardGhostHandler : IGhostIngredientHandler<StorageCardScreen> {
         doStart: Boolean
     ): List<IGhostIngredientHandler.Target<I>> {
         if (ingredient.ingredient !is ItemStack) return emptyList()
-        val rect = gui.rulePanelDropArea() ?: return emptyList()
+        val rect = gui.rulePanelDropArea()
+        if (rect == null) return emptyList()
         return listOf(StorageCardRuleTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
     }
 
@@ -546,7 +552,8 @@ class ExportChestGhostHandler : IGhostIngredientHandler<ExportChestScreen> {
         doStart: Boolean
     ): List<IGhostIngredientHandler.Target<I>> {
         if (ingredient.ingredient !is ItemStack) return emptyList()
-        val rect = gui.rulePanelDropArea() ?: return emptyList()
+        val rect = gui.rulePanelDropArea()
+        if (rect == null) return emptyList()
         return listOf(ExportChestRuleTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
     }
 
@@ -576,7 +583,8 @@ class UserGhostHandler : IGhostIngredientHandler<UserScreen> {
         doStart: Boolean
     ): List<IGhostIngredientHandler.Target<I>> {
         if (ingredient.ingredient !is ItemStack) return emptyList()
-        val rect = gui.filterDropArea() ?: return emptyList()
+        val rect = gui.filterDropArea()
+        if (rect == null) return emptyList()
         return listOf(UserFilterTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
     }
 
@@ -608,7 +616,8 @@ class BreakerGhostHandler : IGhostIngredientHandler<BreakerScreen> {
         doStart: Boolean
     ): List<IGhostIngredientHandler.Target<I>> {
         if (ingredient.ingredient !is ItemStack) return emptyList()
-        val rect = gui.filterDropArea() ?: return emptyList()
+        val rect = gui.filterDropArea()
+        if (rect == null) return emptyList()
         return listOf(BreakerFilterTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
     }
 
@@ -637,7 +646,8 @@ class PlacerGhostHandler : IGhostIngredientHandler<PlacerScreen> {
         doStart: Boolean
     ): List<IGhostIngredientHandler.Target<I>> {
         if (ingredient.ingredient !is ItemStack) return emptyList()
-        val rect = gui.filterDropArea() ?: return emptyList()
+        val rect = gui.filterDropArea()
+        if (rect == null) return emptyList()
         return listOf(PlacerFilterTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
     }
 
@@ -676,7 +686,8 @@ class TerminalScriptEditorGhostHandler : IGhostIngredientHandler<damien.nodework
         doStart: Boolean
     ): List<IGhostIngredientHandler.Target<I>> {
         if (ingredient.ingredient !is ItemStack) return emptyList()
-        val rect = gui.editorDropArea() ?: return emptyList()
+        val rect = gui.editorDropArea()
+        if (rect == null) return emptyList()
         if (doStart) gui.setJeiDragging(true)
         return listOf(TerminalEditorTarget(gui, Rect2i(rect[0], rect[1], rect[2], rect[3])))
     }

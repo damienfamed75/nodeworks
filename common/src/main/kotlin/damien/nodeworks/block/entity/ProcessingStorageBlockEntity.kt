@@ -60,7 +60,8 @@ class ProcessingStorageBlockEntity(
      *  [ProcessingApiInfo.name] carries the `recipe_<hash>` identity. */
     fun getProcessingApis(): List<ProcessingApiInfo> {
         val result = mutableListOf<ProcessingApiInfo>()
-        val registries = level?.registryAccess() ?: return emptyList()
+        val registries = level?.registryAccess()
+        if (registries == null) return emptyList()
         for (i in 0 until TOTAL_SLOTS) {
             val stack = items[i]
             if (stack.isEmpty || stack.item !is ProcessingSet) continue
@@ -78,7 +79,8 @@ class ProcessingStorageBlockEntity(
 
     /** All Processing Sets from this block plus every face-adjacent ProcessingStorage in the cluster. */
     fun getAllProcessingApis(): List<ProcessingApiInfo> {
-        val lvl = level ?: return getProcessingApis()
+        val lvl = level
+        if (lvl == null) return getProcessingApis()
         val all = mutableListOf<ProcessingApiInfo>()
         for (pos in clusterPositions(lvl)) {
             val entity = lvl.getBlockEntity(pos) as? ProcessingStorageBlockEntity ?: continue
@@ -90,7 +92,8 @@ class ProcessingStorageBlockEntity(
     /** Lex-lowest position in this cluster. Stable cluster identity for network-walk
      *  consumers that need to enumerate each cluster exactly once. */
     fun getClusterAnchor(): BlockPos {
-        val lvl = level ?: return worldPosition
+        val lvl = level
+        if (lvl == null) return worldPosition
         return clusterPositions(lvl).minByOrNull { it.asLong() } ?: worldPosition
     }
 

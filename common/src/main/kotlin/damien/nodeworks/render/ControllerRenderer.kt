@@ -19,12 +19,12 @@ import kotlin.math.sin
 
 /**
  * Renders a floating, rotating, bobbing crystal at the Controller's centre, same
- * aesthetic as the End Crystal, tinted with the network colour. Three concentric
+ * aesthetic as the End Crystal, tinted with the network color. Three concentric
  * cubes rotate together around a tilted axis (pattern copied from vanilla
  * EndCrystalModel / EndCrystalRenderer):
  *
- *   outer, network colour at low alpha → coloured glass shell
- *   inner, network colour at higher alpha → brighter middle layer
+ *   outer, network color at low alpha → colored glass shell
+ *   inner, network color at higher alpha → brighter middle layer
  *   core, pure white, opaque → white-hot centre the player reads as the "bulb"
  *
  * All three share the tilted-axis rotation + Y bob so they move as one crystal.
@@ -40,7 +40,7 @@ open class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
 
     companion object {
         /** Pure-white 1×1 texture. Using any textured render type pulls the texture's
-         *  colour into the output, we want the vertex colour (network colour for shells,
+         *  color into the output, we want the vertex color (network color for shells,
          *  255/255/255 for the core) to be the only tint source, so a uniform white
          *  texture is the cleanest path. */
         private val CRYSTAL_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/crystal_core.png")
@@ -113,7 +113,7 @@ open class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         poseStack.translate(0.5, 0.5 + bobY, 0.5)
 
         // Outer shell, half-width 0.22 (covers roughly the old inner_cube footprint),
-        // rotating forward. Base alpha (70) scaled by [alphaPulse] so the network-colour
+        // rotating forward. Base alpha (70) scaled by [alphaPulse] so the network-color
         // aura breathes. This layer is free to rotate independently of the inner/core
         // pair because the inner shell encloses the core geometrically.
         poseStack.pushPose()
@@ -139,7 +139,7 @@ open class ControllerRenderer(context: BlockEntityRendererProvider.Context) :
         // SubmitNodeStorage processes in numeric order (Int2ObjectAVLTreeMap). Every
         // other BER in the game (shells above, emissive blocks on other CPUs, vanilla
         // stuff) submits at order 0. Bucketing halo + core into 1 guarantees they render
-        // strictly after every order-0 batch, so the translucent coloured shells can
+        // strictly after every order-0 batch, so the translucent colored shells can
         // never blend over them regardless of how RenderType batching chose to interleave.
         val lateOrder = submitNodeCollector.order(1)
         submitCube(lateOrder, poseStack, crystalType, 0.22f * 0.5f, 255, 255, 255, 140)

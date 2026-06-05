@@ -220,7 +220,8 @@ class CraftScheduler(
     }
 
     private fun markCompleted(opId: Int) {
-        val p = plan ?: return
+        val p = plan
+        if (p == null) return
         if (opId in completed) return
         completed.add(opId)
         if (p.terminalOpIds.all { it in completed }) {
@@ -233,7 +234,8 @@ class CraftScheduler(
      *  their `execute` call can poll the async state. Each dispatch counts as one op
      *  against the parallelism budget (threadCount). */
     private fun readyOps(currentTick: Long): List<Operation> {
-        val p = plan ?: return emptyList()
+        val p = plan
+        if (p == null) return emptyList()
         val out = mutableListOf<Operation>()
         for (op in p.ops) {
             if (op.id in completed) continue
@@ -288,7 +290,8 @@ class CraftScheduler(
      *  Uses the op's own [Operation.baseCost] so Execute ops (expensive) wait longer than
      *  item-movement ops (cheap). Scales down with throttle^2 via [CpuRules.opCost]. */
     private fun scheduleNewlyReadyOps(currentTick: Long, throttle: Float) {
-        val p = plan ?: return
+        val p = plan
+        if (p == null) return
         for (op in p.ops) {
             if (op.id in completed) continue
             if (op.readyAt >= 0L) continue

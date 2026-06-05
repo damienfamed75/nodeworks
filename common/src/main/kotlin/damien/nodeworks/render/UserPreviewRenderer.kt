@@ -22,7 +22,7 @@ import kotlin.math.sqrt
  *
  * Drawn as a single box spanning every block in the User's straight-ahead
  * reach ([UserBlockEntity.REACH] blocks along facing), tinted the User's
- * channel colour so multiple Users on the same channel network read as a
+ * channel color so multiple Users on the same channel network read as a
  * group while different channels stay visually distinct. Drawn as bright
  * LINES via [RenderTypes.LINES] so the preview reads clearly through walls.
  *
@@ -51,7 +51,8 @@ object UserPreviewRenderer {
         cameraPos: net.minecraft.world.phys.Vec3,
     ) {
         val mc = Minecraft.getInstance()
-        val level = mc.level ?: return
+        val level = mc.level
+        if (level == null) return
 
         val buffer = consumers.getBuffer(RenderTypes.LINES)
         poseStack.pushPose()

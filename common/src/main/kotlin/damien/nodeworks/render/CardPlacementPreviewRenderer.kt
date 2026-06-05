@@ -17,7 +17,7 @@ import kotlin.math.sqrt
 /**
  * Live preview of which face of a Node a held Card will land on.
  *
- * Wireframe box in the card's tint colour, drawn slightly larger than the node
+ * Wireframe box in the card's tint color, drawn slightly larger than the node
  * body so the player can see at a glance which side is targeted. Covers the
  * three placement entry points routed through [NodeBlock.resolvePlacementTarget]:
  *  1. Aim at a node face. Preview on that face.
@@ -35,7 +35,7 @@ object CardPlacementPreviewRenderer {
 
     /** Per-card-type RGB. Mirrors [NodeRenderer]'s palette so the puff at
      *  placement time, the indicator on the node body, and this preview all
-     *  agree on what colour means what. */
+     *  agree on what color means what. */
     private val CARD_COLORS: Map<String, Int> = mapOf(
         "io" to 0x83E086,
         "storage" to 0xAA83E0,
@@ -68,8 +68,10 @@ object CardPlacementPreviewRenderer {
         cameraPos: net.minecraft.world.phys.Vec3,
     ) {
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return
-        val level = mc.level ?: return
+        val player = mc.player
+        if (player == null) return
+        val level = mc.level
+        if (level == null) return
 
         // Card in the main hand is the trigger. Off-hand cards intentionally don't
         // preview; the right-click placement only fires from the main hand anyway.
@@ -159,7 +161,7 @@ object CardPlacementPreviewRenderer {
      *  in 26.1 requires a per-vertex LineWidth element or BufferBuilder
      *  crashes; the value (in pixels) becomes the rendered line width. AE2's
      *  placement-preview overlay uses 3.0 via a baked-pipeline `LineStateShard`
-     *  for the same reason. We go a touch wider so the lighter card colours
+     *  for the same reason. We go a touch wider so the lighter card colors
      *  (observer yellow, io green) stay legible against bright skies. */
     private const val LINE_WIDTH = 4.0f
 

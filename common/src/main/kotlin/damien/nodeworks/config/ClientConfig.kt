@@ -32,7 +32,8 @@ object ClientConfig {
     }
 
     private fun load() {
-        val file = configFile ?: return
+        val file = configFile
+        if (file == null) return
         if (file.exists()) {
             try {
                 data = gson.fromJson(file.readText(), ConfigData::class.java) ?: ConfigData()
@@ -43,7 +44,8 @@ object ClientConfig {
     }
 
     fun save() {
-        val file = configFile ?: return
+        val file = configFile
+        if (file == null) return
         try {
             file.parentFile?.mkdirs()
             file.writeText(gson.toJson(data))

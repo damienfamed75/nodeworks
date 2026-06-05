@@ -12,7 +12,7 @@ import net.minecraft.world.phys.Vec3
 
 /**
  * Emissive overlay for the Receiver Antenna, glowing side faces (N/S/E/W, top/bottom
- * unlit), tinted with the current network colour.
+ * unlit), tinted with the current network color.
  */
 open class ReceiverAntennaRenderer(context: BlockEntityRendererProvider.Context) :
     ConnectableBER<ReceiverAntennaBlockEntity, ReceiverAntennaRenderer.AntennaState>(context) {

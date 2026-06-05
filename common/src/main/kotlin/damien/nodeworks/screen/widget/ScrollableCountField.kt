@@ -38,7 +38,8 @@ class ScrollableCountField(
         setBordered(true)
         value = initialValue.toString()
         setResponder { text ->
-            val parsed = text.toIntOrNull() ?: return@setResponder
+            val parsed = text.toIntOrNull()
+            if (parsed == null) return@setResponder
             val clamped = parsed.coerceIn(minValue, maxValue)
             onChange(clamped)
         }

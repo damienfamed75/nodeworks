@@ -159,7 +159,8 @@ class CardProgrammerMenu(
     /** Drain the input slot into the player's inventory with the template
      *  settings applied. No-op when the slot is empty. */
     private fun ejectInputSlot(player: Player) {
-        val slot = slots.getOrNull(1) ?: return
+        val slot = slots.getOrNull(1)
+        if (slot == null) return
         if (!slot.hasItem()) return
         val processed = slot.item.copy()
         applyTemplate(processed)
@@ -171,7 +172,8 @@ class CardProgrammerMenu(
     }
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
-        val slot = slots.getOrNull(slotIndex) ?: return ItemStack.EMPTY
+        val slot = slots.getOrNull(slotIndex)
+        if (slot == null) return ItemStack.EMPTY
         if (!slot.hasItem()) return ItemStack.EMPTY
 
         val stack = slot.item

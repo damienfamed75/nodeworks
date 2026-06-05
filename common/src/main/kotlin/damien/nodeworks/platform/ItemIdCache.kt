@@ -15,7 +15,8 @@ object ItemIdCache {
 
     fun get(item: Item): String? {
         cache[item]?.let { return it }
-        val id = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: return null
+        val id = BuiltInRegistries.ITEM.getKey(item)?.toString()
+        if (id == null) return null
         cache[item] = id
         return id
     }

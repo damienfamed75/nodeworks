@@ -88,7 +88,8 @@ class RecipeIconTooltipRenderer(
 
         // Input items at their grid positions.
         for (idx in 0 until RecipeIconTooltip.INPUT_SLOTS) {
-            val stack = data.inputs.getOrNull(idx) ?: continue
+            val stack = data.inputs.getOrNull(idx)
+            if (stack == null) continue
             if (stack.isEmpty) continue
             val col = idx % 3
             val row = idx / 3
@@ -99,7 +100,8 @@ class RecipeIconTooltipRenderer(
         }
         // Output items, top-to-bottom in the right column.
         for (idx in 0 until RecipeIconTooltip.MAX_OUTPUT_SLOTS) {
-            val stack = data.outputs.getOrNull(idx) ?: continue
+            val stack = data.outputs.getOrNull(idx)
+            if (stack == null) continue
             if (stack.isEmpty) continue
             val sx = outputX + 1
             val sy = gridY + idx * SLOT_SIZE + 1

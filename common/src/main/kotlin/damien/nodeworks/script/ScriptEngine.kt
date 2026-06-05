@@ -671,8 +671,10 @@ class ScriptEngine(
                 val varName = match.groupValues[1]
                 if (varName in containerVars) continue // explicit annotation wins
                 val rhs = match.groupValues[2].trim()
-                val methodName = Regex("""(\w+)\s*\(""").findAll(rhs).lastOrNull()?.groupValues?.get(1) ?: continue
-                val rt = LuaApiDocs.methodReturnType(methodName) ?: continue
+                val methodName = Regex("""(\w+)\s*\(""").findAll(rhs).lastOrNull()?.groupValues?.get(1)
+                if (methodName == null) continue
+                val rt = LuaApiDocs.methodReturnType(methodName)
+                if (rt == null) continue
                 if (rt.container != LuaApiDocs.Container.NONE) {
                     containerVars[varName] = rt.container
                 }
@@ -948,19 +950,23 @@ class ScriptEngine(
             override fun call(selfArg: LuaValue, typeArg: LuaValue): LuaValue {
                 val type = typeArg.checkjstring()
                 if (type == "variable") {
-                    val v = snapshot().variables.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    val v = snapshot().variables.firstOrNull { it.channel == color }
+                    if (v == null) return LuaValue.NIL
                     return createVariableTable(v)
                 }
                 if (type == "breaker") {
-                    val b = snapshot().breakers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    val b = snapshot().breakers.firstOrNull { it.channel == color }
+                    if (b == null) return LuaValue.NIL
                     return BreakerHandle.create(b, level)
                 }
                 if (type == "placer") {
-                    val p = snapshot().placers.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    val p = snapshot().placers.firstOrNull { it.channel == color }
+                    if (p == null) return LuaValue.NIL
                     return createPlacerTable(p)
                 }
                 if (type == "user") {
-                    val u = snapshot().users.firstOrNull { it.channel == color } ?: return LuaValue.NIL
+                    val u = snapshot().users.firstOrNull { it.channel == color }
+                    if (u == null) return LuaValue.NIL
                     return createUserTable(u)
                 }
                 val card = snapshot().allCards().firstOrNull {
@@ -1342,7 +1348,8 @@ class ScriptEngine(
             for (card in storageCards) {
                 if (capacity >= requested) break
                 if (!channel.matches(card.channel)) continue
-                val dest = NetworkStorageHelper.getFluidStorage(level, card) ?: continue
+                val dest = NetworkStorageHelper.getFluidStorage(level, card)
+                if (dest == null) continue
                 capacity += try {
                     damien.nodeworks.platform.PlatformServices.storage.simulateInsertFluid(
                         dest, itemsHandle.itemId, requested - capacity
@@ -1463,7 +1470,7 @@ class ScriptEngine(
     ): LuaValue {
         val id = net.minecraft.resources.Identifier.tryParse(bufSrc.itemId)
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id).orElse(null)
             ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
         val maxStack = item.getDefaultMaxStackSize().toLong()
         // Snapshot the buffer's variant template BEFORE the first extract so
@@ -1579,10 +1586,17 @@ class ScriptEngine(
                 val alias = aliasArg.checkjstring()
                 val s = snapshot()
                 s.findByAlias(alias)?.let { return createCardTable(it, alias) }
+                // Variables get the engine's rate-limited :set/:cas wrap.
                 s.findVariable(alias)?.let { return createVariableTable(it) }
                 s.findBreaker(alias)?.let { return BreakerHandle.create(it, level) }
                 s.findPlacer(alias)?.let { return createPlacerTable(it) }
                 s.findUser(alias)?.let { return createUserTable(it) }
+                // Other extension-mod devices, raw handle from the SPI.
+                s.findAnyExtDevice(alias)?.let { (type, snap) ->
+                    val table = type.handle(snap, level)
+                    if (table != null) return table
+                    throw LuaError("Device '$alias' has no Lua API")
+                }
                 throw LuaError("Not found on network: '$alias'")
             }
         })
@@ -1916,7 +1930,8 @@ class ScriptEngine(
                 // priority + route table, with the existing in-world drop fallback when
                 // storage is full (handled by `releaseCraftResult`'s downstream path).
                 fun autoStoreToNetwork() {
-                    val cr = craftResult ?: return
+                    val cr = craftResult
+                    if (cr == null) return
                     CraftingHelper.releaseCraftResult(cr)
                 }
 
@@ -1925,7 +1940,8 @@ class ScriptEngine(
                  *  `card:insert` / `network:insert`. After the callback returns, anything
                  *  still in the buffer is dropped in-world (see [dropRemainingBuffer]). */
                 fun createBufferHandle(cr: CraftingHelper.CraftResult): LuaValue {
-                    val cpu = cr.cpu ?: return LuaValue.NIL
+                    val cpu = cr.cpu
+                    if (cpu == null) return LuaValue.NIL
                     val id = net.minecraft.resources.Identifier.tryParse(cr.outputItemId)
                     val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
                     val maxStack = item?.getDefaultMaxStackSize() ?: 64
@@ -1953,7 +1969,8 @@ class ScriptEngine(
                  *  handle, you're responsible for moving the items." Failing to do so
                  *  isn't silent. */
                 fun dropRemainingBuffer(cr: CraftingHelper.CraftResult) {
-                    val cpu = cr.cpu ?: return
+                    val cpu = cr.cpu
+                    if (cpu == null) return
                     val remaining = cpu.getBufferCount(cr.outputItemId)
                     if (remaining <= 0L) {
                         if (cpu.isCrafting) {
@@ -1998,7 +2015,8 @@ class ScriptEngine(
                 var resolved = false
 
                 fun fireHandler(handle: LuaValue) {
-                    val fn = handler ?: return
+                    val fn = handler
+                    if (fn == null) return
                     try { fn.call(handle) }
                     catch (e: LuaError) { logCallback("craft callback error: ${gate.stripLuaTraceback(e.message)}", true) }
                 }

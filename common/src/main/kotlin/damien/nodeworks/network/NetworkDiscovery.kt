@@ -1,12 +1,18 @@
 package damien.nodeworks.network
 
-import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
+import damien.nodeworks.api.DeviceRegistry
+import damien.nodeworks.api.DeviceType
+import damien.nodeworks.api.NamedDeviceSnapshot
+import damien.nodeworks.block.entity.BreakerBlockEntity
+import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.InstructionStorageBlockEntity
 import damien.nodeworks.block.entity.NetworkControllerBlockEntity
 import damien.nodeworks.block.entity.NodeBlockEntity
-import damien.nodeworks.block.entity.CraftingCoreBlockEntity
+import damien.nodeworks.block.entity.PlacerBlockEntity
+import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
 import damien.nodeworks.block.entity.ReceiverAntennaBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
+import damien.nodeworks.block.entity.UserBlockEntity
 import damien.nodeworks.block.entity.VariableBlockEntity
 import damien.nodeworks.block.entity.VariableType
 import damien.nodeworks.card.SideCapability
@@ -69,187 +75,227 @@ object NetworkDiscovery {
     }
 
     private fun doDiscoverNetwork(level: ServerLevel, startPos: BlockPos): NetworkSnapshot {
-        val visited = mutableSetOf<BlockPos>()
+        val acc = DiscoveryAccumulator()
+        val visited = mutableSetOf(startPos)
         // BFS threads `entryFace` so boundary Connectables (Processing Handler)
         // can hide their other-side neighbors. See [NodeConnectionHelper.propagateNetworkId]
         // for the same shape.
         val queue = ArrayDeque<Pair<BlockPos, Direction?>>()
+        queue.add(startPos to null)
+
+        while (queue.isNotEmpty()) {
+            val (pos, entryFace) = queue.removeFirst()
+            val connectable = NodeConnectionHelper.getConnectable(level, pos)
+            if (connectable == null) continue
+
+            recordConnectable(connectable, level, acc)
+            enqueueLaserNeighbors(connectable, level, pos, entryFace, visited, queue)
+            enqueueAdjacencyNeighbors(connectable, level, pos, entryFace, visited, queue)
+        }
+
+        // Auto-generate aliases for unnamed cards (io_1, io_2, storage_1) AND
+        // unnamed devices (breaker_1, placer_1, user_1, ...) AND extension-mod devices
+        // contributed through the [damien.nodeworks.api.DeviceType] SPI (including the
+        // now-migrated Variable). Everything shares one namespace so a card named `tank`
+        // and a Tank device named `tank` collide and both get `_N` suffixed.
+        assignAutoAliases(acc.nodes, acc.breakers, acc.placers, acc.users, acc.customDevicesView())
+        return acc.toSnapshot()
+    }
+
+    private fun recordConnectable(
+        connectable: Connectable,
+        level: ServerLevel,
+        acc: DiscoveryAccumulator,
+    ) {
+        when (connectable) {
+            is NodeBlockEntity -> acc.nodes.add(snapshotNode(connectable))
+            is InstructionStorageBlockEntity -> recordInstructionStorage(connectable, acc)
+            is ProcessingStorageBlockEntity -> recordProcessingStorage(connectable, acc)
+            is ReceiverAntennaBlockEntity -> recordReceiverAntenna(connectable, level, acc)
+            is TerminalBlockEntity -> acc.terminalPositions.add(connectable.blockPos)
+            is NetworkControllerBlockEntity -> acc.recordController(connectable.blockPos, connectable.permanentId)
+            is CraftingCoreBlockEntity -> acc.cpus.add(
+                CpuSnapshot(connectable.blockPos, connectable.bufferUsed, connectable.bufferCapacity, connectable.isCrafting)
+            )
+            // Breakers/Placers/Users snapshot unconditionally so auto-aliasing produces
+            // breaker_N / placer_N / user_N for unnamed devices. The user-set
+            // [deviceName] becomes the alias when non-empty.
+            is BreakerBlockEntity -> acc.breakers.add(
+                BreakerSnapshot(connectable.blockPos, connectable.deviceName.takeIf { it.isNotEmpty() }, connectable.channel)
+            )
+            is PlacerBlockEntity -> acc.placers.add(
+                PlacerSnapshot(connectable.blockPos, connectable.deviceName.takeIf { it.isNotEmpty() }, connectable.channel)
+            )
+            is UserBlockEntity -> acc.users.add(
+                UserSnapshot(connectable.blockPos, connectable.deviceName.takeIf { it.isNotEmpty() }, connectable.channel)
+            )
+            // Extension SPI fallback for BEs the hardcoded branches don't claim. Hardcoded
+            // branches above win on a class match, so a future migration of one of those
+            // devices to the SPI is just a matter of removing its `is` branch.
+            else -> recordExtensionDevice(connectable, acc)
+        }
+    }
+
+    private fun recordExtensionDevice(connectable: Connectable, acc: DiscoveryAccumulator) {
+        val type = DeviceRegistry.byBE(connectable)
+        if (type == null) return
+        @Suppress("UNCHECKED_CAST")
+        val snap = (type as DeviceType<Connectable>).snapshot(connectable)
+        if (snap == null) return
+        acc.addCustomDevice(type, snap)
+    }
+
+    private fun recordInstructionStorage(storage: InstructionStorageBlockEntity, acc: DiscoveryAccumulator) {
+        if (!acc.markInstructionCluster(storage.getClusterAnchor())) return
+        val sets = storage.getAllInstructionSets()
+        if (sets.isEmpty()) return
+        acc.crafters.add(CrafterSnapshot(storage.blockPos, sets))
+    }
+
+    private fun recordProcessingStorage(storage: ProcessingStorageBlockEntity, acc: DiscoveryAccumulator) {
+        if (!acc.markProcessingCluster(storage.getClusterAnchor())) return
+        val apis = storage.getAllProcessingApis()
+        if (apis.isEmpty()) return
+        acc.processingApis.add(ProcessingApiSnapshot(storage.blockPos, apis))
+    }
+
+    /** Pull APIs from a remote Broadcast Antenna paired with [rx]. Guarded by
+     *  [activeProviderWalks] so two networks linked by paired antennas in both
+     *  directions can't bounce the discovery walk back and forth until the stack
+     *  overflows. */
+    private fun recordReceiverAntenna(
+        rx: ReceiverAntennaBlockEntity,
+        level: ServerLevel,
+        acc: DiscoveryAccumulator,
+    ) {
+        val broadcast = rx.getBroadcastAntenna(level)
+        if (broadcast == null) return
+        val broadcastLevel = broadcast.level as? ServerLevel
+        if (broadcastLevel == null) return
+
+        val activeWalks = activeProviderWalks.get()
+        val walkKey = broadcastLevel.dimension() to broadcast.blockPos
+        if (!activeWalks.add(walkKey)) return
+
+        try {
+            val remoteApis = broadcast.getAvailableApis()
+            if (remoteApis.isEmpty()) return
+            acc.processingApis.add(
+                ProcessingApiSnapshot(
+                    broadcast.blockPos,
+                    remoteApis,
+                    broadcast.getProviderTerminalPositions(),
+                    broadcastLevel.dimension(),
+                    broadcast.getSourceNetworkId(),
+                )
+            )
+        } finally {
+            activeWalks.remove(walkKey)
+        }
+    }
+
+    private fun enqueueLaserNeighbors(
+        src: Connectable,
+        level: ServerLevel,
+        pos: BlockPos,
+        entryFace: Direction?,
+        visited: MutableSet<BlockPos>,
+        queue: ArrayDeque<Pair<BlockPos, Direction?>>,
+    ) {
+        for (connection in src.connectionsFromFace(entryFace)) {
+            if (connection in visited) continue
+            if (!level.isLoaded(connection)) continue
+            if (NodeConnectionHelper.isPairBlocked(level, pos, connection)) continue
+            visited.add(connection)
+            queue.add(connection to faceFromTo(connection, pos))
+        }
+    }
+
+    /** Face-adjacent Connectables share the subgraph without a laser between
+     *  them. The bridging rule itself lives in [canBridgeAdjacent], shared
+     *  with [NodeConnectionHelper.adjacentConnectableNeighbors] so the two
+     *  walks can't drift. */
+    private fun enqueueAdjacencyNeighbors(
+        src: Connectable,
+        level: ServerLevel,
+        pos: BlockPos,
+        entryFace: Direction?,
+        visited: MutableSet<BlockPos>,
+        queue: ArrayDeque<Pair<BlockPos, Direction?>>,
+    ) {
+        if (!src.usesAdjacency()) return
+        for (dir in Direction.entries) {
+            val adjPos = pos.relative(dir)
+            if (adjPos in visited) continue
+            if (!level.isLoaded(adjPos)) continue
+            val neighbor = level.getBlockEntity(adjPos) as? Connectable
+            if (neighbor == null) continue
+            if (!canBridgeAdjacent(src, entryFace, neighbor, dir)) continue
+            visited.add(adjPos)
+            queue.add(adjPos to dir.opposite)
+        }
+    }
+
+    /** Mutable scratch space for one [doDiscoverNetwork] BFS. Owns the dedup
+     *  sets for multi-block clusters and the controller-conflict rule so
+     *  [recordConnectable]'s branches stay shallow. */
+    private class DiscoveryAccumulator {
         val nodes = mutableListOf<NodeSnapshot>()
         val crafters = mutableListOf<CrafterSnapshot>()
         val cpus = mutableListOf<CpuSnapshot>()
-        val variables = mutableListOf<VariableSnapshot>()
         val breakers = mutableListOf<BreakerSnapshot>()
         val placers = mutableListOf<PlacerSnapshot>()
         val users = mutableListOf<UserSnapshot>()
         val processingApis = mutableListOf<ProcessingApiSnapshot>()
         val terminalPositions = mutableListOf<BlockPos>()
-        var controller: ControllerSnapshot? = null
-        // A second controller in the same subgraph drops the snapshot's controller so
-        // the network reads as offline and downstream consumers refuse to run.
-        var controllerCount = 0
+
+        /** Snapshots contributed through the [damien.nodeworks.api.DeviceType] SPI.
+         *  Keyed by the registered type so the snapshot can route `network:device`
+         *  lookups without scanning every list. */
+        private val customDevices = mutableMapOf<DeviceType<*>, MutableList<NamedDeviceSnapshot>>()
+        fun addCustomDevice(type: DeviceType<*>, snap: NamedDeviceSnapshot) {
+            customDevices.getOrPut(type) { mutableListOf() }.add(snap)
+        }
+        /** Read-only view exposed to [assignAutoAliases] so it can fold extension
+         *  devices into the cross-type alias namespace without exposing the mutable
+         *  storage. */
+        fun customDevicesView(): Map<DeviceType<*>, List<NamedDeviceSnapshot>> = customDevices
+
         // Cluster anchors so each multi-block storage's recipes get recorded once,
         // not once per cluster member the BFS happens to visit.
-        val processingClustersSeen = mutableSetOf<BlockPos>()
-        val instructionClustersSeen = mutableSetOf<BlockPos>()
+        private val processingClustersSeen = mutableSetOf<BlockPos>()
+        private val instructionClustersSeen = mutableSetOf<BlockPos>()
+        fun markProcessingCluster(anchor: BlockPos): Boolean = processingClustersSeen.add(anchor)
+        fun markInstructionCluster(anchor: BlockPos): Boolean = instructionClustersSeen.add(anchor)
 
-        queue.add(startPos to null)
-        visited.add(startPos)
+        private var controller: ControllerSnapshot? = null
+        private var controllerCount = 0
 
-        while (queue.isNotEmpty()) {
-            val (pos, entryFace) = queue.removeFirst()
-            val connectable = NodeConnectionHelper.getConnectable(level, pos) ?: continue
-
-            when (connectable) {
-                is NodeBlockEntity -> nodes.add(snapshotNode(connectable))
-                is InstructionStorageBlockEntity -> {
-                    if (instructionClustersSeen.add(connectable.getClusterAnchor())) {
-                        val clusterSets = connectable.getAllInstructionSets()
-                        if (clusterSets.isNotEmpty()) {
-                            crafters.add(CrafterSnapshot(connectable.blockPos, clusterSets))
-                        }
-                    }
-                }
-                is ProcessingStorageBlockEntity -> {
-                    if (processingClustersSeen.add(connectable.getClusterAnchor())) {
-                        val clusterApis = connectable.getAllProcessingApis()
-                        if (clusterApis.isNotEmpty()) {
-                            processingApis.add(ProcessingApiSnapshot(connectable.blockPos, clusterApis))
-                        }
-                    }
-                }
-                is ReceiverAntennaBlockEntity -> {
-                    val broadcast = connectable.getBroadcastAntenna(level)
-                    val broadcastLevel = broadcast?.level as? ServerLevel
-                    if (broadcast != null && broadcastLevel != null) {
-                        val activeWalks = activeProviderWalks.get()
-                        val walkKey = broadcastLevel.dimension() to broadcast.blockPos
-                        if (activeWalks.add(walkKey)) {
-                            try {
-                                val remoteApis = broadcast.getAvailableApis()
-                                if (remoteApis.isNotEmpty()) {
-                                    val remoteTerminals = broadcast.getProviderTerminalPositions()
-                                    processingApis.add(
-                                        ProcessingApiSnapshot(
-                                            broadcast.blockPos,
-                                            remoteApis,
-                                            remoteTerminals,
-                                            broadcastLevel.dimension(),
-                                            broadcast.getSourceNetworkId(),
-                                        )
-                                    )
-                                }
-                            } finally {
-                                activeWalks.remove(walkKey)
-                            }
-                        }
-                    }
-                }
-                is TerminalBlockEntity -> terminalPositions.add(connectable.blockPos)
-                is NetworkControllerBlockEntity -> {
-                    controllerCount++
-                    controller = if (controllerCount == 1)
-                        ControllerSnapshot(connectable.blockPos, connectable.permanentId)
-                    else null
-                }
-                is CraftingCoreBlockEntity -> cpus.add(CpuSnapshot(
-                    connectable.blockPos, connectable.bufferUsed, connectable.bufferCapacity, connectable.isCrafting
-                ))
-                is VariableBlockEntity -> if (connectable.variableName.isNotEmpty()) {
-                    variables.add(
-                        VariableSnapshot(
-                            connectable.blockPos,
-                            connectable.variableName,
-                            connectable.variableType,
-                            connectable.channel,
-                        )
-                    )
-                }
-                is damien.nodeworks.block.entity.BreakerBlockEntity -> {
-                    // Always snapshot breakers (unlike variables which require a name) so
-                    // auto-aliasing produces breaker_N for unnamed devices. The user-set
-                    // [deviceName] becomes the alias if non-empty.
-                    breakers.add(
-                        BreakerSnapshot(
-                            connectable.blockPos,
-                            connectable.deviceName.takeIf { it.isNotEmpty() },
-                            connectable.channel,
-                        )
-                    )
-                }
-                is damien.nodeworks.block.entity.PlacerBlockEntity -> {
-                    placers.add(
-                        PlacerSnapshot(
-                            connectable.blockPos,
-                            connectable.deviceName.takeIf { it.isNotEmpty() },
-                            connectable.channel,
-                        )
-                    )
-                }
-                is damien.nodeworks.block.entity.UserBlockEntity -> {
-                    users.add(
-                        UserSnapshot(
-                            connectable.blockPos,
-                            connectable.deviceName.takeIf { it.isNotEmpty() },
-                            connectable.channel,
-                        )
-                    )
-                }
-            }
-
-            for (connection in connectable.connectionsFromFace(entryFace)) {
-                if (connection in visited) continue
-                if (!level.isLoaded(connection)) continue
-                if (level is net.minecraft.server.level.ServerLevel
-                    && NodeConnectionHelper.isPairBlocked(level, pos, connection)
-                ) continue
-                visited.add(connection)
-                queue.add(connection to faceFromTo(connection, pos))
-            }
-            // Face-adjacent Connectables share the subgraph without a laser between
-            // them. Both endpoints must opt in via [Connectable.usesAdjacency], so a
-            // Node next to a Controller doesn't silently bridge two networks.
-            // Both endpoints must also accept the pair via [Connectable.canConnectAdjacentTo],
-            // so leaves like the import/export chests don't auto-bridge each other's
-            // networks just by sitting face-to-face. Mirrors the gate in
-            // [NodeConnectionHelper.adjacentConnectableNeighbors].
-            if (connectable.usesAdjacency()) {
-                for (dir in Direction.entries) {
-                    if (!connectable.adjacencyFaceAllowed(dir, entryFace)) continue
-                    val adjPos = pos.relative(dir)
-                    if (adjPos in visited) continue
-                    if (!level.isLoaded(adjPos)) continue
-                    val neighbor = level.getBlockEntity(adjPos) as? Connectable ?: continue
-                    if (!neighbor.usesAdjacency()) continue
-                    if (!neighbor.adjacencyFaceAllowed(dir.opposite, dir.opposite)) continue
-                    if (!connectable.canConnectAdjacentTo(neighbor)) continue
-                    if (!neighbor.canConnectAdjacentTo(connectable)) continue
-                    if (connectable.forcedPipeBlocked(dir)) continue
-                    if (neighbor.forcedPipeBlocked(dir.opposite)) continue
-                    visited.add(adjPos)
-                    queue.add(adjPos to dir.opposite)
-                }
-            }
+        /** A second controller in the same subgraph drops the snapshot's controller
+         *  so the network reads as offline and downstream consumers refuse to run. */
+        fun recordController(pos: BlockPos, permanentId: UUID?) {
+            controllerCount++
+            controller = if (controllerCount == 1) ControllerSnapshot(pos, permanentId) else null
         }
 
-        // Auto-generate aliases for unnamed cards (e.g., io_1, io_2, storage_1) AND
-        // unnamed devices (breaker_1, placer_1, user_1, ...). Devices share the same
-        // counter namespace as cards so the alias prefix uniquely identifies the type.
-        assignAutoAliases(nodes, breakers, placers, users)
-
-        return NetworkSnapshot(nodes, crafters, variables, breakers, placers, users, cpus, processingApis, terminalPositions, controller)
+        fun toSnapshot(): NetworkSnapshot = NetworkSnapshot(
+            nodes, crafters, breakers, placers, users,
+            cpus, processingApis, terminalPositions, controller,
+            customDevices,
+        )
     }
 
-    /** Assign `<base>_N` auto-aliases so every card / breaker / placer on the
-     *  network has a unique script-facing identifier. See [assignAliasSuffixes]
-     *  for the rule. Cards, breakers and placers share the base namespace
-     *  here, a card named `miner` and a breaker named `miner` group under
-     *  the same base and suffix together, matching `network:get`'s
-     *  cross-type lookup. */
+    /** Assign `<base>_N` auto-aliases so every addressable card / device on the network
+     *  has a unique script-facing identifier. See [assignAliasSuffixes] for the rule.
+     *  Cards, breakers, placers, users, and extension-mod devices share one base
+     *  namespace, a card named `miner` and a Tank device named `miner` group together
+     *  and both get `_N` suffixed, matching `network:get`'s cross-type lookup. */
     private fun assignAutoAliases(
         nodes: List<NodeSnapshot>,
         breakers: List<BreakerSnapshot>,
         placers: List<PlacerSnapshot>,
         users: List<UserSnapshot>,
+        customDevices: Map<DeviceType<*>, List<NamedDeviceSnapshot>>,
     ) {
         val slots = mutableListOf<AliasSlot>()
         for (node in nodes) {
@@ -283,6 +329,18 @@ object NetworkDiscovery {
                 baseWhenUnnamed = autoAliasPrefix("user"),
                 setAutoAlias = { u.autoAlias = it },
             ))
+        }
+        // Extension devices (including Variable, post-migration) participate in the
+        // same cross-type namespace. Prefix comes from DeviceType.autoAliasPrefix so
+        // each mod's devices get a sensible default slug.
+        for ((type, snapshots) in customDevices) {
+            for (snap in snapshots) {
+                slots.add(AliasSlot(
+                    literalName = snap.name,
+                    baseWhenUnnamed = type.autoAliasPrefix,
+                    setAutoAlias = { snap.autoAlias = it },
+                ))
+            }
         }
         assignAliasSuffixes(slots)
     }
@@ -334,14 +392,18 @@ data class CpuSnapshot(
 )
 
 data class VariableSnapshot(
-    val pos: BlockPos,
-    val name: String,
+    override val pos: BlockPos,
+    override val name: String,
     val type: VariableType,
     /** Channel grouping color, mirroring [CardSnapshot.channel]. Variables are devices
      *  rather than slotted cards, so the channel lives on the [VariableBlockEntity]
      *  itself and is set via the variable GUI's channel picker. */
     val channel: net.minecraft.world.item.DyeColor = net.minecraft.world.item.DyeColor.WHITE,
-)
+) : damien.nodeworks.api.NamedDeviceSnapshot {
+    /** Set by the discovery walk's auto-aliasing pass when two or more variables share
+     *  a name. Until then [effectiveAlias] resolves to the literal [name]. */
+    override var autoAlias: String? = null
+}
 
 /** Snapshot for a Breaker device. [name] is the user-set alias from the GUI.
  *  [autoAlias] is set by [NetworkDiscovery.assignAutoAliases] when the breaker is
@@ -402,15 +464,27 @@ data class ProcessingApiSnapshot(
 data class NetworkSnapshot(
     val nodes: List<NodeSnapshot>,
     val crafters: List<CrafterSnapshot> = emptyList(),
-    val variables: List<VariableSnapshot> = emptyList(),
     val breakers: List<BreakerSnapshot> = emptyList(),
     val placers: List<PlacerSnapshot> = emptyList(),
     val users: List<UserSnapshot> = emptyList(),
     val cpus: List<CpuSnapshot> = emptyList(),
     val processingApis: List<ProcessingApiSnapshot> = emptyList(),
     val terminalPositions: List<BlockPos> = emptyList(),
-    val controller: ControllerSnapshot? = null
+    val controller: ControllerSnapshot? = null,
+    /** Devices contributed through the [damien.nodeworks.api.DeviceType] SPI, grouped by
+     *  the type that produced them. Variables, and any future migrated built-ins, live
+     *  here too. Lookup goes through [findDevice], typed iteration goes through this
+     *  map directly. */
+    val customDevices: Map<damien.nodeworks.api.DeviceType<*>, List<damien.nodeworks.api.NamedDeviceSnapshot>> = emptyMap(),
 ) {
+    /** Variables on this network. Derived from [customDevices] via
+     *  [damien.nodeworks.device.VariableDevice], the typed projection is preserved so
+     *  the many existing callers (`network:get`, `network:getAll("variable")`,
+     *  channel-scoped lookups, autocomplete data feeds) don't need to know the snapshot
+     *  data moved into the SPI map. Empty for networks with no variables. */
+    val variables: List<VariableSnapshot>
+        get() = (customDevices[damien.nodeworks.device.VariableDevice] ?: emptyList())
+            .filterIsInstance<VariableSnapshot>()
     /** Whether this network has a controller and is online. */
     val isOnline: Boolean get() = controller != null
 
@@ -468,8 +542,49 @@ data class NetworkSnapshot(
         map
     }
 
-    /** Find a variable by name. */
-    fun findVariable(name: String): VariableSnapshot? = variables.firstOrNull { it.name == name }
+    /** Find a variable by alias. Routes through [findAnyExtDevice] so the literal
+     *  [VariableSnapshot.name] AND the auto-suffixed [effectiveAlias] both resolve.
+     *  Returns null when the alias matches a non-Variable extension device. */
+    fun findVariable(name: String): VariableSnapshot? =
+        findAnyExtDevice(name)?.second as? VariableSnapshot
+
+    /** Find an extension-device snapshot by [DeviceType.typeId] and [name]. Returns null
+     *  when either the type is unregistered or no device with that name appears on this
+     *  network. Server-internal API for type-specific lookups, scripts use
+     *  `network:get(alias)` instead. */
+    fun findDevice(typeId: String, name: String): damien.nodeworks.api.NamedDeviceSnapshot? {
+        val type = damien.nodeworks.api.DeviceRegistry.byTypeId(typeId)
+        if (type == null) return null
+        val list = customDevices[type]
+        if (list == null) return null
+        return list.firstOrNull { it.name == name }
+    }
+
+    /** Alias map across every [customDevices] entry, populated on first read. Literal
+     *  [NamedDeviceSnapshot.name] entries win, then effective-alias entries fill in the
+     *  auto-suffixed forms. Mirrors [cardByAlias]'s shape so `network:get(alias)` reads
+     *  identically for cards and extension devices. */
+    private val extDeviceByAlias: Map<String, Pair<damien.nodeworks.api.DeviceType<*>, damien.nodeworks.api.NamedDeviceSnapshot>> by lazy {
+        val map = HashMap<String, Pair<damien.nodeworks.api.DeviceType<*>, damien.nodeworks.api.NamedDeviceSnapshot>>()
+        for ((type, snapshots) in customDevices) {
+            for (snap in snapshots) {
+                snap.name?.let { map.putIfAbsent(it, type to snap) }
+            }
+        }
+        for ((type, snapshots) in customDevices) {
+            for (snap in snapshots) {
+                if (snap.effectiveAlias.isNotEmpty()) map.putIfAbsent(snap.effectiveAlias, type to snap)
+            }
+        }
+        map
+    }
+
+    /** Find any extension device by alias across every registered [DeviceType]. Literal
+     *  [NamedDeviceSnapshot.name] wins, then [NamedDeviceSnapshot.effectiveAlias] (the
+     *  auto-suffixed form). Used by `network:get` to fold extension devices into the
+     *  same name-based lookup cards and built-in devices use. */
+    fun findAnyExtDevice(alias: String): Pair<damien.nodeworks.api.DeviceType<*>, damien.nodeworks.api.NamedDeviceSnapshot>? =
+        extDeviceByAlias[alias]
 
     /** Find a Breaker by alias. Literal name wins (so a player who named two
      *  breakers `miner` gets the first via `network:get("miner")`, matching
@@ -701,8 +816,10 @@ fun assignAliasSuffixes(slots: List<AliasSlot>) {
     val takenByBase = mutableMapOf<String, MutableSet<Int>>()
     val suffixRe = Regex("""^(.+)_(\d+)$""")
     for (slot in slots) {
-        val literal = slot.literalName ?: continue
-        val m = suffixRe.matchEntire(literal) ?: continue
+        val literal = slot.literalName
+        if (literal == null) continue
+        val m = suffixRe.matchEntire(literal)
+        if (m == null) continue
         takenByBase.getOrPut(m.groupValues[1]) { mutableSetOf() }
             .add(m.groupValues[2].toInt())
     }

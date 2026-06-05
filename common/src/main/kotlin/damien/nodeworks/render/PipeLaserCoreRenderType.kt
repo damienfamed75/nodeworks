@@ -13,7 +13,7 @@ import net.minecraft.resources.Identifier
 
 /**
  * Solid white cube drawn at the centre of Pipe junctions and Nodes to mask
- * the seam where multiple half-beams meet. Vertex-coloured (POSITION+COLOR,
+ * the seam where multiple half-beams meet. Vertex-colored (POSITION+COLOR,
  * no texture sampler), depth-write enabled, and pulled toward the camera
  * via VIEW_OFFSET_Z_LAYERING so it always wins the depth tie with the
  * translucent beam quads passing through the same point. Same approach

@@ -112,7 +112,8 @@ object GrappleBeamRenderer {
 
     private fun render(poseStack: PoseStack, consumers: MultiBufferSource, cameraPos: Vec3) {
         val mc = Minecraft.getInstance()
-        val level = mc.level ?: return
+        val level = mc.level
+        if (level == null) return
         val partial = mc.deltaTracker.getGameTimeDeltaPartialTick(true)
         val time = (System.currentTimeMillis() % 100_000L) / 1000f
 
@@ -124,7 +125,8 @@ object GrappleBeamRenderer {
             val dz = entity.z - cameraPos.z
             if (dx * dx + dy * dy + dz * dz > MAX_DRAW_DISTANCE_SQ) continue
 
-            val rope = ropes[entity.id] ?: continue
+            val rope = ropes[entity.id]
+            if (rope == null) continue
             val owner: Entity = entity.owner ?: continue
 
             // Live endpoints sampled every frame so the beam ends stay
@@ -134,7 +136,7 @@ object GrappleBeamRenderer {
             val liveStaffPos = staffEmitterPos(owner, partial)
             val liveAnchorPos = hookAnchorPos(entity, partial)
 
-            // Outer coloured glow disabled while evaluating the look.
+            // Outer colored glow disabled while evaluating the look.
             // val outerVc = consumers.getBuffer(OUTER_TYPE)
             // renderRope(
             //     outerVc, poseStack, cameraPos, rope, partial, time,

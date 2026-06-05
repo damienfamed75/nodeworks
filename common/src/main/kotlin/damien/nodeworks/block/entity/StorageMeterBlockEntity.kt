@@ -282,7 +282,8 @@ class StorageMeterBlockEntity(
         if (errorLines.lastOrNull() == reason) return
         errorLines.add(reason)
         while (errorLines.size > MAX_ERROR_LINES) errorLines.removeAt(0)
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         setChanged()
         lvl.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_CLIENTS)
     }

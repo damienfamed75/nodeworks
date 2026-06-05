@@ -144,8 +144,10 @@ class BufferState {
      *  template stack so the bucket is keyed under empty-hash. */
     fun insert(itemId: String, amount: Long): Boolean {
         if (amount <= 0) return true
-        val identifier = Identifier.tryParse(itemId) ?: return false
-        val item = BuiltInRegistries.ITEM.getValue(identifier) ?: return false
+        val identifier = Identifier.tryParse(itemId)
+        if (identifier == null) return false
+        val item = BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+        if (item == null) return false
         return insert(ItemStack(item), amount)
     }
 
@@ -154,7 +156,8 @@ class BufferState {
      *  the last of a variant is pulled out, freeing a types slot. */
     fun extract(key: BufferKey.Key, amount: Long): Long {
         if (amount <= 0) return 0L
-        val current = items[key] ?: return 0L
+        val current = items[key]
+        if (current == null) return 0L
         val extracted = minOf(current.count, amount)
         val remaining = current.count - extracted
         if (remaining == 0L) items.remove(key) else items[key] = current.copy(count = remaining)
@@ -196,7 +199,8 @@ class BufferState {
             // Save the components-bearing template stack with count = 1; the
             // authoritative count lives next to it as a Long so worlds with
             // > Int.MAX_VALUE buffered items still serialize correctly.
-            val stackTag = ItemStack.CODEC.encodeStart(ops, entry.template).result().orElse(null) ?: continue
+            val stackTag = ItemStack.CODEC.encodeStart(ops, entry.template).result().orElse(null)
+            if (stackTag == null) continue
             entryTag.put("stack", stackTag)
             entryTag.putLong("count", entry.count)
             entriesTag.add(entryTag)
@@ -218,9 +222,12 @@ class BufferState {
         val entriesTag = tag.get("entries") as? net.minecraft.nbt.ListTag
         if (entriesTag != null) {
             for (i in 0 until entriesTag.size) {
-                val entryTag = entriesTag.getCompound(i).orElse(null) ?: continue
-                val stackTag = entryTag.get("stack") ?: continue
-                val stack = ItemStack.CODEC.parse(ops, stackTag).result().orElse(null) ?: continue
+                val entryTag = entriesTag.getCompound(i).orElse(null)
+                if (entryTag == null) continue
+                val stackTag = entryTag.get("stack")
+                if (stackTag == null) continue
+                val stack = ItemStack.CODEC.parse(ops, stackTag).result().orElse(null)
+                if (stack == null) continue
                 if (stack.isEmpty) continue
                 val cnt = entryTag.getLong("count").orElse(0L)
                 if (cnt <= 0L) continue
@@ -248,8 +255,10 @@ class BufferState {
 
     private fun migrateLegacyEntry(itemId: String, count: Long) {
         if (count <= 0) return
-        val identifier = Identifier.tryParse(itemId) ?: return
-        val item = BuiltInRegistries.ITEM.getValue(identifier) ?: return
+        val identifier = Identifier.tryParse(itemId)
+        if (identifier == null) return
+        val item = BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+        if (item == null) return
         val stack = ItemStack(item)
         items[BufferKey.of(stack)] = Entry(stack.copyWithCount(1), count)
     }

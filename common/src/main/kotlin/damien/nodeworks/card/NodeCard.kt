@@ -38,7 +38,8 @@ abstract class NodeCard(properties: Properties) : Item(properties) {
      *  subclass's [use] open its settings GUI / lets vanilla open the clicked
      *  block normally. */
     override fun useOn(context: UseOnContext): InteractionResult {
-        val player = context.player ?: return InteractionResult.PASS
+        val player = context.player
+        if (player == null) return InteractionResult.PASS
         val target = NodeBlock.resolvePlacementTarget(
             context.level,
             context.clickedPos,

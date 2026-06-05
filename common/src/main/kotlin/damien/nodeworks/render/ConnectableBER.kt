@@ -83,7 +83,7 @@ abstract class ConnectableBER<T, S : ConnectableRenderState>(
      *  honours their long-range beams. */
     override fun shouldRenderOffScreen(): Boolean = false
 
-    /** Network colour for [blockEntity]. Defers to [Connectable.networkColor], which
+    /** Network color for [blockEntity]. Defers to [Connectable.networkColor], which
      *  trusts the propagated [Connectable.networkId]. GuideME scene blocks must set
      *  networkId at scene-construction time, otherwise they render grey. */
     protected fun resolveNetworkColor(blockEntity: T): Int = blockEntity.networkColor()

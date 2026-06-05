@@ -70,7 +70,8 @@ class BroadcastAntennaMenu(
     }
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
-        val slot = slots.getOrNull(slotIndex) ?: return ItemStack.EMPTY
+        val slot = slots.getOrNull(slotIndex)
+        if (slot == null) return ItemStack.EMPTY
         if (!slot.hasItem()) return ItemStack.EMPTY
         val stack = slot.item
         val original = stack.copy()

@@ -143,7 +143,8 @@ class BreakerBlockEntity(
         if (snapshot.controller == null) return false
         val target = targetPos
         val state = level.getBlockState(target)
-        val duration = computeBreakDuration(level, target, state) ?: return false
+        val duration = computeBreakDuration(level, target, state)
+        if (duration == null) return false
         targetSnapshot = state
         breakDurationTicks = duration
         breakProgress = 1

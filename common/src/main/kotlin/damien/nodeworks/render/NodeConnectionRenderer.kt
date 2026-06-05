@@ -62,7 +62,8 @@ object NodeConnectionRenderer {
         enqueueAdjacentConnectables(level, startPos, startEntity, visited, queue)
         while (queue.isNotEmpty() && visited.size < 32) {
             val pos = queue.removeFirst()
-            val entity = level.getBlockEntity(pos) ?: continue
+            val entity = level.getBlockEntity(pos)
+            if (entity == null) continue
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) return entity
             val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
             for (conn in connectable.getConnections()) {
@@ -95,7 +96,7 @@ object NodeConnectionRenderer {
         }
     }
 
-    /** Network colour for the Connectable BE at [startPos]. Defers to
+    /** Network color for the Connectable BE at [startPos]. Defers to
      *  [Connectable.networkColor] so screens and renderers all key off the same
      *  state propagate writes. */
     fun findNetworkColor(level: net.minecraft.world.level.Level?, startPos: BlockPos): Int {
@@ -107,7 +108,8 @@ object NodeConnectionRenderer {
      *  `Connectable.networkId != null`. */
     fun isReachable(pos: BlockPos): Boolean {
         val mc = Minecraft.getInstance()
-        val level = mc.level ?: return false
+        val level = mc.level
+        if (level == null) return false
         val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: return false
         return be.networkId != null
     }
@@ -155,13 +157,15 @@ object NodeConnectionRenderer {
         pendingDirtyNetworks.clear()
         if (networks.isEmpty()) return
         val mc = Minecraft.getInstance()
-        val level = mc.level ?: return
+        val level = mc.level
+        if (level == null) return
         val renderer = mc.levelRenderer
         val dirtied = java.util.HashSet<Long>()
         for (pos in knownNodes) {
             if (!level.isLoaded(pos)) continue
             val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
-            val id = be.networkId ?: continue
+            val id = be.networkId
+            if (id == null) continue
             if (id !in networks) continue
             val sx = net.minecraft.core.SectionPos.blockToSectionCoord(pos.x)
             val sy = net.minecraft.core.SectionPos.blockToSectionCoord(pos.y)
@@ -180,10 +184,13 @@ object NodeConnectionRenderer {
         consumers: MultiBufferSource,
         cameraPos: net.minecraft.world.phys.Vec3,
     ) {
-        val pos = NetworkWrenchItem.clientSelectedPos ?: return
+        val pos = NetworkWrenchItem.clientSelectedPos
+        if (pos == null) return
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return
-        val level = mc.level ?: return
+        val player = mc.player
+        if (player == null) return
+        val level = mc.level
+        if (level == null) return
         // Only show the halo while the wrench is in hand. The user might have
         // started a selection then swapped tools, the rendered halo confuses
         // more than it helps.
@@ -208,7 +215,8 @@ object NodeConnectionRenderer {
         cameraPos: net.minecraft.world.phys.Vec3
     ) {
         val mc = Minecraft.getInstance()
-        val level = mc.level ?: return
+        val level = mc.level
+        if (level == null) return
 
         // Monitor + Storage Meter count text + Craft Requester batch number,
         // kept here because each wants camera-relative work over the entire
@@ -438,10 +446,13 @@ object NodeConnectionRenderer {
         consumers: MultiBufferSource,
         cameraPos: net.minecraft.world.phys.Vec3
     ) {
-        val pos = pinnedBlock ?: return
+        val pos = pinnedBlock
+        if (pos == null) return
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return
-        val level = mc.level ?: return
+        val player = mc.player
+        if (player == null) return
+        val level = mc.level
+        if (level == null) return
 
         val mainItem = player.mainHandItem.item
         val offItem = player.offhandItem.item

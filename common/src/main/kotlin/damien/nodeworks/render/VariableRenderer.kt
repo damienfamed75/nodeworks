@@ -22,7 +22,7 @@ import net.minecraft.world.item.Items
 import net.minecraft.world.phys.Vec3
 
 /**
- * BER for the Variable block. Lays a network-colour-tinted emissive overlay
+ * BER for the Variable block. Lays a network-color-tinted emissive overlay
  * on the body using the same parent-model pattern the User / Placer /
  * Breaker use, AND floats a type-specific item (redstone for NUMBER, string
  * for STRING, lever for BOOL) inside the slime-cube so the player can read
@@ -152,7 +152,7 @@ open class VariableRenderer(context: BlockEntityRendererProvider.Context) :
         poseStack.popPose()
     }
 
-    /** Network-coloured additive overlay over the Variable's body. The baked
+    /** Network-colored additive overlay over the Variable's body. The baked
      *  quads carry variable.json's per-face UVs (since variable_emissive.json
      *  inherits geometry via JSON parent), so the overlay's texture sampling
      *  lands on the same atlas regions as the body model. The vertex tint

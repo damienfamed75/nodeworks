@@ -85,7 +85,8 @@ class BroadcastAntennaBlockEntity(
      * answer here would cause crystals to encode with the wrong kind.
      */
     fun detectSource(): Pair<BroadcastSourceKind, BlockPos>? {
-        val lvl = level ?: return null
+        val lvl = level
+        if (lvl == null) return null
         // Priority: Controller (most general) > Processing Storage > Export
         // Chest. Players who want a lower-priority broadcast can place the
         // antenna away from higher-priority sources.
@@ -118,7 +119,8 @@ class BroadcastAntennaBlockEntity(
 
     /** Scan adjacent Processing Storage clusters for all Processing Sets. */
     fun getAvailableApis(): List<ProcessingStorageBlockEntity.ProcessingApiInfo> {
-        val lvl = level ?: return emptyList()
+        val lvl = level
+        if (lvl == null) return emptyList()
         val result = mutableListOf<ProcessingStorageBlockEntity.ProcessingApiInfo>()
         val visited = mutableSetOf<BlockPos>()
 
@@ -168,7 +170,8 @@ class BroadcastAntennaBlockEntity(
             val neighbor = worldPosition.relative(dir)
             if (!lvl.isLoaded(neighbor)) continue
             val be = lvl.getBlockEntity(neighbor) as? damien.nodeworks.network.Connectable ?: continue
-            val id = be.networkId ?: continue
+            val id = be.networkId
+            if (id == null) continue
             return id
         }
         return null
@@ -195,7 +198,8 @@ class BroadcastAntennaBlockEntity(
         if (slot !in items.indices) return
         items[slot] = stack
         if (slot == SLOT_CHIP && stack.item is LinkCrystalItem) {
-            val lvl = level ?: return
+            val lvl = level
+            if (lvl == null) return
             // Only encode when a valid source is adjacent. An unsourced antenna leaves the
             // crystal blank so the player gets the "place me in a Broadcast Antenna"
             // tooltip rather than a paired-but-useless crystal pointing at nothing.

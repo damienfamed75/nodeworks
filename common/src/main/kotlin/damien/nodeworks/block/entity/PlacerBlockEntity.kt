@@ -213,9 +213,11 @@ class PlacerBlockEntity(
 
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (!isChannelMatching(card)) continue
-            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val storage = NetworkStorageHelper.getStorage(level, card)
+            if (storage == null) continue
             val extracted = PlatformServices.storage.extractStacksByPredicate(storage, blockItemPred, 1L)
-            val stack = extracted.firstOrNull { !it.isEmpty } ?: continue
+            val stack = extracted.firstOrNull { !it.isEmpty }
+            if (stack == null) continue
             // Return any over-extract back to storage. Stack count is bounded
             // at 1 by the maxCount above, but a slot might have yielded a
             // larger atomic batch on some loaders.

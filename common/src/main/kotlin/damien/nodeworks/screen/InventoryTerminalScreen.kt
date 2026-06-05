@@ -741,7 +741,8 @@ class InventoryTerminalScreen(
             val row = i / layout.cols
             if (row < 1) continue
             val viewIndex = scrollOffset * layout.cols + (i - layout.cols)
-            val entry = repo.getViewEntry(viewIndex) ?: continue
+            val entry = repo.getViewEntry(viewIndex)
+            if (entry == null) continue
             if (!entry.isFluid) continue
             val ix = slot.x + 1
             val iy = slot.y + 1
@@ -766,7 +767,8 @@ class InventoryTerminalScreen(
             val row = i / layout.cols
             if (row < 1) continue // skip pinned row
             val viewIndex = scrollOffset * layout.cols + (i - layout.cols)
-            val entry = repo.getViewEntry(viewIndex) ?: continue
+            val entry = repo.getViewEntry(viewIndex)
+            if (entry == null) continue
             if (entry.info.isCraftable) {
                 val ix = slot.x + 1
                 val iy = slot.y + 1
@@ -951,7 +953,7 @@ class InventoryTerminalScreen(
                     graphics.setTooltipForNextFrame(font, lines, java.util.Optional.empty(), mouseX, mouseY)
                 } else {
                     // Patch-aware overload so the tooltip reflects per-stack
-                    // components (enchantments, custom name, dye colour, etc.).
+                    // components (enchantments, custom name, dye color, etc.).
                     val stack = getItemStack(entry.info.itemId, entry.info.componentsPatch)
                     if (!stack.isEmpty) {
                         val lines = getTooltipFromItem(Minecraft.getInstance(), stack).toMutableList()
@@ -1700,8 +1702,10 @@ class InventoryTerminalScreen(
     /** For JEI: get the item ID of the hovered network grid item. */
     fun getHoveredNetworkItemId(mx: Int, my: Int): String? {
         repo.ensureUpdated()
-        val slot = networkGrid.getSlotAt(mx, my, scrollOffset) ?: return null
-        val entry = repo.getViewEntry(slot.index) ?: return null
+        val slot = networkGrid.getSlotAt(mx, my, scrollOffset)
+        if (slot == null) return null
+        val entry = repo.getViewEntry(slot.index)
+        if (entry == null) return null
         return entry.info.itemId
     }
 
@@ -1836,7 +1840,8 @@ class InventoryTerminalScreen(
     // ========== Helpers ==========
 
     private fun getItemStackForNetworkSlot(viewIndex: Int): ItemStack {
-        val entry = repo.getViewEntry(viewIndex) ?: return ItemStack.EMPTY
+        val entry = repo.getViewEntry(viewIndex)
+        if (entry == null) return ItemStack.EMPTY
         // Fluids don't use the item-stack render path, they're drawn in a second pass
         // (renderFluidOverlay) using the fluid's still texture. Returning EMPTY here
         // keeps the grid's item renderer from drawing anything in the fluid cell.
@@ -1847,7 +1852,8 @@ class InventoryTerminalScreen(
     private val countStringCache = HashMap<Long, String>()
 
     private fun getCountForNetworkSlot(viewIndex: Int): String? {
-        val entry = repo.getViewEntry(viewIndex) ?: return null
+        val entry = repo.getViewEntry(viewIndex)
+        if (entry == null) return null
         // Always show a count for fluids (in mB), the bucket icon alone doesn't convey amount.
         // Items keep the existing "hide on count ≤ 1" convention.
         if (!entry.isFluid && entry.info.count <= 1) return null
@@ -1864,8 +1870,10 @@ class InventoryTerminalScreen(
     private fun getItemStack(itemId: String, patch: DataComponentPatch): ItemStack {
         val cacheKey = if (patch.isEmpty) itemId else "$itemId:${patch.hashCode()}"
         return itemStackCache.getOrPut(cacheKey) {
-            val id = Identifier.tryParse(itemId) ?: return@getOrPut ItemStack.EMPTY
-            val item = BuiltInRegistries.ITEM.getValue(id) ?: return@getOrPut ItemStack.EMPTY
+            val id = Identifier.tryParse(itemId)
+            if (id == null) return@getOrPut ItemStack.EMPTY
+            val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+            if (item == null) return@getOrPut ItemStack.EMPTY
             val stack = ItemStack(item)
             if (!patch.isEmpty) stack.applyComponents(patch)
             stack

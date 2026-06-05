@@ -54,7 +54,8 @@ data class PortableNetworkColorTintSource(private val unit: Unit = Unit) : ItemT
         val crystal = PortableInventoryTerminalItem.getInstalledCrystal(stack)
         if (crystal.isEmpty) return DEFAULT_COLOR
 
-        val pairing = LinkCrystalItem.getPairingData(crystal) ?: return DEFAULT_COLOR
+        val pairing = LinkCrystalItem.getPairingData(crystal)
+        if (pairing == null) return DEFAULT_COLOR
         if (pairing.kind != BroadcastSourceKind.NETWORK_CONTROLLER) return DEFAULT_COLOR
 
         // Try a fresh lookup first, picks up color changes immediately when the
@@ -75,10 +76,12 @@ data class PortableNetworkColorTintSource(private val unit: Unit = Unit) : ItemT
         if (pairing.dimension != level.dimension()) return null
         val antenna = level.getBlockEntity(pairing.pos) as? BroadcastAntennaBlockEntity ?: return null
         if (antenna.frequencyId != pairing.frequencyId) return null
-        val source = antenna.detectSource() ?: return null
+        val source = antenna.detectSource()
+        if (source == null) return null
         if (source.first != BroadcastSourceKind.NETWORK_CONTROLLER) return null
         val controller = level.getBlockEntity(source.second) as? Connectable ?: return null
-        val networkId = controller.networkId ?: return null
+        val networkId = controller.networkId
+        if (networkId == null) return null
         // NetworkSettingsRegistry returns a packed RGB int, force alpha to 0xFF so the
         // tint is fully opaque (item-model tints are applied as ARGB to the texel).
         return 0xFF000000.toInt() or (NetworkSettingsRegistry.getColor(networkId) and 0xFFFFFF)

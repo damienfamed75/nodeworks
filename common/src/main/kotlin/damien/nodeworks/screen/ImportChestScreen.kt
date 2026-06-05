@@ -157,7 +157,8 @@ class ImportChestScreen(
             it.setMaxLength(damien.nodeworks.block.entity.ImportChestBlockEntity.MAX_TICK_INTERVAL.toString().length)
             it.setValue(menu.tickInterval.toString())
             it.setResponder { value ->
-                val v = value.toIntOrNull() ?: return@setResponder
+                val v = value.toIntOrNull()
+                if (v == null) return@setResponder
                 val clamped = v.coerceIn(
                     damien.nodeworks.block.entity.ImportChestBlockEntity.MIN_TICK_INTERVAL,
                     damien.nodeworks.block.entity.ImportChestBlockEntity.MAX_TICK_INTERVAL,

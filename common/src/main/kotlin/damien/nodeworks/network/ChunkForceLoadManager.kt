@@ -32,7 +32,8 @@ object ChunkForceLoadManager {
     /** Drop one claim on a chunk. If the refcount reaches 0, the chunk is actually
      *  unforced, otherwise other claimants keep it loaded. */
     fun unclaim(level: ServerLevel, chunkX: Int, chunkZ: Int) {
-        val map = refCounts[level.dimension()] ?: return
+        val map = refCounts[level.dimension()]
+        if (map == null) return
         val key = ChunkPos.pack(chunkX, chunkZ)
         val newCount = map.compute(key) { _, v -> if (v == null || v <= 1) null else v - 1 }
         if (newCount == null) level.setChunkForced(chunkX, chunkZ, false)

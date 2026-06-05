@@ -360,7 +360,8 @@ class NetworkControllerBlockEntity(
             if (forceLoadMissing) {
                 lvl.chunkSource.getChunk(pos.x shr 4, pos.z shr 4, true)
             }
-            val entity = NodeConnectionHelper.getConnectable(lvl, pos) ?: continue
+            val entity = NodeConnectionHelper.getConnectable(lvl, pos)
+            if (entity == null) continue
             // Only record chunks that actually contain a [Connectable] - a
             // dead-end via the explicit handler branch (no BE on the front
             // side) shouldn't pollute claimedChunks with a chunk we don't
@@ -467,7 +468,7 @@ class NetworkControllerBlockEntity(
             )
         )
         // Invalidate the chunk tint cache when membership flipped to/from null but
-        // colour settings stayed identical, [update] above doesn't fire onChanged then.
+        // color settings stayed identical, [update] above doesn't fire onChanged then.
         damien.nodeworks.network.NetworkSettingsRegistry.notifyConnectableChanged(networkId)
     }
 

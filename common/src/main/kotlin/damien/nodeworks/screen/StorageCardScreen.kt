@@ -395,7 +395,8 @@ class StorageCardScreen(
     private fun commitRuleField(visibleIdx: Int) {
         val ruleIdx = scrollOffset + visibleIdx
         if (ruleIdx !in localRules.indices) return
-        val field = ruleFields.getOrNull(visibleIdx) ?: return
+        val field = ruleFields.getOrNull(visibleIdx)
+        if (field == null) return
         if (field.value == localRules[ruleIdx]) return
         localRules[ruleIdx] = field.value
         sendRulesToServer()
@@ -609,7 +610,7 @@ class StorageCardScreen(
     private fun renderModeToggle(graphics: GuiGraphicsExtractor, x: Int, y: Int, mouseX: Int, mouseY: Int) {
         val mode = menu.getFilterMode()
         // Background stays neutral across states. The icons themselves carry
-        // the state cue (allow/deny art differs); recolouring the bg too made
+        // the state cue (allow/deny art differs); recoloring the bg too made
         // the button feel unsettled without adding readability.
         val icon = if (mode == StorageCard.Companion.FilterMode.ALLOW) Icons.FILTER_ALLOW else Icons.FILTER_DENY
         drawCycleButton(graphics, x, y, NEUTRAL_BG, icon = icon)
@@ -880,8 +881,10 @@ class StorageCardScreen(
                 ?: return null
             val parsed = damien.nodeworks.script.FilterRule.parse(core, registries)
             if (parsed is damien.nodeworks.script.FilterRule.Item) {
-                val ident = net.minecraft.resources.Identifier.tryParse(parsed.itemId) ?: return null
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: return null
+                val ident = net.minecraft.resources.Identifier.tryParse(parsed.itemId)
+                if (ident == null) return null
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+                if (item == null) return null
                 val stack = net.minecraft.world.item.ItemStack(item)
                 if (parsed.componentsPatch != null && parsed.componentsPatch.size() > 0) {
                     stack.applyComponents(parsed.componentsPatch)
@@ -890,13 +893,16 @@ class StorageCardScreen(
             }
             return null
         }
-        val ident = net.minecraft.resources.Identifier.tryParse(core) ?: return null
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: return null
+        val ident = net.minecraft.resources.Identifier.tryParse(core)
+        if (ident == null) return null
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+        if (item == null) return null
         return net.minecraft.world.item.ItemStack(item)
     }
 
     private fun lookupTagMembers(tagId: String): List<net.minecraft.world.item.Item> {
-        val ident = net.minecraft.resources.Identifier.tryParse(tagId) ?: return emptyList()
+        val ident = net.minecraft.resources.Identifier.tryParse(tagId)
+        if (ident == null) return emptyList()
         // 26.1's Registry exposes tags as a Stream of HolderSet.Named<T>; we
         // walk it to find the matching tag rather than calling the
         // version-volatile `Registry.get(TagKey)` overload.

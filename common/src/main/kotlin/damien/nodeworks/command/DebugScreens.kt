@@ -21,7 +21,8 @@ object DebugScreens {
 
     fun openCraftingCore() {
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return
+        val player = mc.player
+        if (player == null) return
 
         // Create a fake menu with populated data
         val data = SimpleContainerData(CraftingCoreMenu.DATA_SLOTS)
@@ -70,8 +71,10 @@ object DebugScreens {
             "minecraft:porkchop" to 32, "minecraft:egg" to 16
         )
         for ((id, count) in items) {
-            val ident = net.minecraft.resources.Identifier.tryParse(id) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident) ?: continue
+            val ident = net.minecraft.resources.Identifier.tryParse(id)
+            if (ident == null) continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+            if (item == null) continue
             fakeBuffer.add(net.minecraft.world.item.ItemStack(item) to count.toLong())
         }
         menu.clientBufferContents = fakeBuffer
@@ -122,7 +125,8 @@ object DebugScreens {
 
     fun openInventoryTerminal() {
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return
+        val player = mc.player
+        if (player == null) return
 
         val menu = InventoryTerminalMenu(998, player.inventory, null, BlockPos.ZERO)
 
@@ -132,7 +136,8 @@ object DebugScreens {
         val random = java.util.Random(42)
 
         for (item in BuiltInRegistries.ITEM) {
-            val id = BuiltInRegistries.ITEM.getKey(item)?.toString() ?: continue
+            val id = BuiltInRegistries.ITEM.getKey(item)?.toString()
+            if (id == null) continue
             val stack = ItemStack(item)
             if (stack.isEmpty) continue
             val name = stack.hoverName.string

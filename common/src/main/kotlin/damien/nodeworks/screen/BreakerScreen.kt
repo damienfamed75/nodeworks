@@ -360,8 +360,10 @@ class BreakerScreen(
                 ?: return null
             val parsed = damien.nodeworks.script.FilterRule.parse(core, registries)
             if (parsed is damien.nodeworks.script.FilterRule.Item) {
-                val ident = Identifier.tryParse(parsed.itemId) ?: return null
-                val item = BuiltInRegistries.ITEM.getValue(ident) ?: return null
+                val ident = Identifier.tryParse(parsed.itemId)
+                if (ident == null) return null
+                val item = BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+                if (item == null) return null
                 val stack = ItemStack(item)
                 if (parsed.componentsPatch != null && parsed.componentsPatch.size() > 0) {
                     stack.applyComponents(parsed.componentsPatch)
@@ -370,13 +372,16 @@ class BreakerScreen(
             }
             return null
         }
-        val ident = Identifier.tryParse(core) ?: return null
-        val item = BuiltInRegistries.ITEM.getValue(ident) ?: return null
+        val ident = Identifier.tryParse(core)
+        if (ident == null) return null
+        val item = BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+        if (item == null) return null
         return ItemStack(item)
     }
 
     private fun lookupTagMembers(tagId: String): List<Item> {
-        val ident = Identifier.tryParse(tagId) ?: return emptyList()
+        val ident = Identifier.tryParse(tagId)
+        if (ident == null) return emptyList()
         val match = BuiltInRegistries.ITEM.getTags()
             .filter { it.key().location == ident }
             .findFirst()

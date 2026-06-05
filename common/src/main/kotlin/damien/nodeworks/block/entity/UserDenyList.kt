@@ -34,7 +34,8 @@ object UserDenyList {
             val trimmed = entry.trim()
             if (trimmed.isEmpty()) continue
             if (trimmed.startsWith("#")) {
-                val id = Identifier.tryParse(trimmed.removePrefix("#")) ?: continue
+                val id = Identifier.tryParse(trimmed.removePrefix("#"))
+                if (id == null) continue
                 tags.add(TagKey.create(Registries.ITEM, id))
             } else {
                 ids.add(trimmed)

@@ -25,7 +25,8 @@ object WirelessBroadcastRegistry {
     }
 
     fun unregister(frequencyId: UUID, dimension: ResourceKey<Level>, pos: BlockPos) {
-        val set = byFrequency[frequencyId] ?: return
+        val set = byFrequency[frequencyId]
+        if (set == null) return
         set.remove(Receiver(dimension, pos))
         if (set.isEmpty()) byFrequency.remove(frequencyId)
     }

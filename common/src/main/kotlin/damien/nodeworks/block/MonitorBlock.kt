@@ -107,7 +107,8 @@ class MonitorBlock(properties: Properties) : BaseEntityBlock(properties), Wrench
         }
         if (level.isClientSide) return InteractionResult.SUCCESS
         val be = level.getBlockEntity(pos) as? MonitorBlockEntity ?: return InteractionResult.TRY_WITH_EMPTY_HAND
-        val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: return InteractionResult.TRY_WITH_EMPTY_HAND
+        val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+        if (itemId == null) return InteractionResult.TRY_WITH_EMPTY_HAND
         be.setTrackedItem(itemId)
         return InteractionResult.SUCCESS
     }

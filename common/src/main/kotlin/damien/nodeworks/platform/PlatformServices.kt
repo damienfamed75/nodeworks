@@ -189,7 +189,7 @@ interface StorageService {
      *  removed [ItemStack]s with all components / NBT preserved. Use this instead of
      *  [extractItems] when the caller is going to hand the items to a player or insert
      *  them into another inventory: rebuilding a stack from `ItemStack(item, count)`
-     *  would silently strip durability, enchantments, custom names, dyed colour, etc.
+     *  would silently strip durability, enchantments, custom names, dyed color, etc.
      *
      *  Returned stacks are already removed from the source storage. May return multiple
      *  stacks if matching items are split across slots with different components. */

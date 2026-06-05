@@ -240,7 +240,8 @@ class ProcessingHandlerScreen(
 
     private fun entity(): ProcessingHandlerBlockEntity? {
         val mc = Minecraft.getInstance()
-        val level = mc.level ?: return null
+        val level = mc.level
+        if (level == null) return null
         return level.getBlockEntity(menu.devicePos) as? ProcessingHandlerBlockEntity
     }
 
@@ -251,7 +252,8 @@ class ProcessingHandlerScreen(
         inputPickers.clear()
         inputsHeaderPicker = null
         outputsHeaderPicker = null
-        val be = entity() ?: return
+        val be = entity()
+        if (be == null) return
         val inputIds = be.snapshotInputChannels().keys.toList()
         lastBoundApiName = be.processingApiName
         lastInputItemIds = inputIds
@@ -340,7 +342,8 @@ class ProcessingHandlerScreen(
     }
 
     private fun syncPickersToBe() {
-        val be = entity() ?: return
+        val be = entity()
+        if (be == null) return
         // Cheap checks first: rebuild if scroll moved or the bound api changed,
         // before doing any per-frame map allocation. Snapshot only when we
         // actually need to compare input ids.
@@ -358,7 +361,8 @@ class ProcessingHandlerScreen(
             return
         }
         for ((bufferKey, picker) in inputPickers) {
-            val color = inputChannels[bufferKey] ?: continue
+            val color = inputChannels[bufferKey]
+            if (color == null) continue
             if (picker.currentColor != color) picker.setColor(color)
         }
         outputsHeaderPicker?.let { picker ->
@@ -643,7 +647,8 @@ class ProcessingHandlerScreen(
         mouseX: Int,
         mouseY: Int,
     ) {
-        val be = entity() ?: return
+        val be = entity()
+        if (be == null) return
         // When the bound recipe isn't on the network, outputs aren't recoverable
         // (the BE doesn't store them). Blank inputs too in this state so the two
         // sections stay consistent and the recipe-panel "click to pick" prompt
@@ -750,8 +755,9 @@ class ProcessingHandlerScreen(
             // Read-only ghost swatch, shares the editable swatch's wool icon
             // and slot frame so the visual matches. A translucent lock glyph
             // sits on top to signal "not clickable" without flattening the
-            // channel colour the way the previous gray overlay did.
-            val be = entity() ?: return
+            // channel color the way the previous gray overlay did.
+            val be = entity()
+            if (be == null) return
             val ghostX = interiorX + interiorW - ROW_PICKER_RIGHT_PAD - SMALL_SWATCH
             val ghostY = rowY + (ROW_H - SEPARATOR_OVERLAP - SMALL_SWATCH) / 2
             NineSlice.SLOT.draw(graphics, ghostX, ghostY, SMALL_SWATCH, SMALL_SWATCH)
@@ -952,7 +958,8 @@ class ProcessingHandlerScreen(
             pickerScroll = (pickerScroll - scrollY.toInt()).coerceIn(0, maxScroll)
             return true
         }
-        val be = entity() ?: return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+        val be = entity()
+        if (be == null) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
         val mxI = mouseX.toInt()
         val myI = mouseY.toInt()
         if (within(mxI, myI, leftPos + RIGHT_X, topPos + INPUTS_PANEL_Y, PANEL_W, PANEL_H)) {
@@ -977,7 +984,8 @@ class ProcessingHandlerScreen(
     // ---- Helpers ----
 
     private fun findBoundSet(): ProcessingHandlerOpenData.AvailableSet? {
-        val be = entity() ?: return null
+        val be = entity()
+        if (be == null) return null
         if (be.processingApiName.isEmpty()) return null
         val cached = boundSet
         if (cached != null && cached.name == be.processingApiName) return cached
@@ -985,8 +993,10 @@ class ProcessingHandlerScreen(
     }
 
     private fun stackOf(itemId: String, count: Int = 1): ItemStack {
-        val id = Identifier.tryParse(itemId) ?: return ItemStack.EMPTY
-        val item = BuiltInRegistries.ITEM.getValue(id) ?: return ItemStack.EMPTY
+        val id = Identifier.tryParse(itemId)
+        if (id == null) return ItemStack.EMPTY
+        val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return ItemStack.EMPTY
         return ItemStack(item, count.coerceIn(1, 99))
     }
 

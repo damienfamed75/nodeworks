@@ -85,7 +85,8 @@ object NetworkStorageHelper {
             if (!channel.matches(card.channel)) continue
             val cap = card.capability as? StorageSideCapability ?: continue
             if (!visited.add(cap.adjacentPos)) continue
-            val storage = getStorage(level, card) ?: continue
+            val storage = getStorage(level, card)
+            if (storage == null) continue
             total += PlatformServices.storage.countStacksByPredicate(storage) { stack ->
                 val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
                 sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == targetHash
@@ -115,7 +116,8 @@ object NetworkStorageHelper {
             if (!channel.matches(card.channel)) continue
             val cap = card.capability as? StorageSideCapability ?: continue
             if (!visited.add(cap.adjacentPos)) continue
-            val storage = getStorage(level, card) ?: continue
+            val storage = getStorage(level, card)
+            if (storage == null) continue
             val pulled = PlatformServices.storage.extractStacksByPredicate(storage, { stack ->
                 val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
                 sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == targetHash
@@ -157,7 +159,8 @@ object NetworkStorageHelper {
         card: CardSnapshot,
         filter: (String) -> Boolean,
     ): List<ItemInfo> {
-        val storage = getStorage(level, card) ?: return emptyList()
+        val storage = getStorage(level, card)
+        if (storage == null) return emptyList()
         return PlatformServices.storage.findAllItemInfo(storage, filter)
     }
 
@@ -165,7 +168,8 @@ object NetworkStorageHelper {
      *  storage handle. See [findAllItemInfoAt] for the double-chest /
      *  Sophisticated Storage rationale. */
     fun countItemsAt(level: ServerLevel, pos: BlockPos, card: CardSnapshot, filter: String): Long {
-        val storage = getStorage(level, card) ?: return 0L
+        val storage = getStorage(level, card)
+        if (storage == null) return 0L
         return PlatformServices.storage.countItems(storage) { CardHandle.matchesFilter(it, ResourceKind.ITEM, filter) }
     }
 
@@ -183,7 +187,8 @@ object NetworkStorageHelper {
             // Same dedup reasoning as [countItems]. No vanilla equivalent of
             // [Container] for fluids, so we accept the face-restricted view.
             if (!visited.add(cap.adjacentPos)) continue
-            val storage = getFluidStorage(level, card) ?: continue
+            val storage = getFluidStorage(level, card)
+            if (storage == null) continue
             total += PlatformServices.storage.countFluid(storage) { CardHandle.matchesFilter(it, ResourceKind.FLUID, filter) }
         }
         return total
@@ -214,7 +219,8 @@ object NetworkStorageHelper {
     ): Pair<FluidInfo, CardSnapshot>? {
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
-            val storage = getFluidStorage(level, card) ?: continue
+            val storage = getFluidStorage(level, card)
+            if (storage == null) continue
             val info = PlatformServices.storage.findFirstFluidInfo(storage) { CardHandle.matchesFilter(it, ResourceKind.FLUID, filter) }
             if (info != null) return Pair(info, card)
         }
@@ -234,7 +240,8 @@ object NetworkStorageHelper {
         for (card in getStorageCards(snapshot)) {
             if (remaining <= 0L) break
             if (!channel.matches(card.channel)) continue
-            val storage = getFluidStorage(level, card) ?: continue
+            val storage = getFluidStorage(level, card)
+            if (storage == null) continue
             val inserted = PlatformServices.storage.insertFluid(storage, fluidId, remaining)
             remaining -= inserted
         }
@@ -295,12 +302,15 @@ object NetworkStorageHelper {
         // shortfall guard below and return false without a bad partial state.
         val storageCards = getStorageCards(snapshot).filter { channel.matches(it.channel) }
         for ((itemId, need) in demand) {
-            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: return false
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return false
+            val id = net.minecraft.resources.Identifier.tryParse(itemId)
+            if (id == null) return false
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+            if (item == null) return false
             var capacity = 0L
             for (card in storageCards) {
                 if (capacity >= need) break
-                val dest = getStorage(level, card) ?: continue
+                val dest = getStorage(level, card)
+                if (dest == null) continue
                 capacity += try {
                     PlatformServices.storage.simulateInsertItem(dest, item, need - capacity)
                 } catch (_: Exception) { 0L }
@@ -327,7 +337,8 @@ object NetworkStorageHelper {
             var returned = 0L
             for (card in storageCards) {
                 if (toReturn <= 0L) break
-                val dest = getStorage(level, card) ?: continue
+                val dest = getStorage(level, card)
+                if (dest == null) continue
                 val back = try {
                     PlatformServices.storage.moveItems(dest, source, variantFilter, toReturn)
                 } catch (_: Exception) { 0L }
@@ -362,7 +373,8 @@ object NetworkStorageHelper {
         var capacity = 0L
         for (card in storageCards) {
             if (capacity >= amount) break
-            val storage = getFluidStorage(level, card) ?: continue
+            val storage = getFluidStorage(level, card)
+            if (storage == null) continue
             capacity += try {
                 PlatformServices.storage.simulateInsertFluid(storage, fluidId, amount - capacity)
             } catch (_: Exception) { 0L }
@@ -374,7 +386,8 @@ object NetworkStorageHelper {
         val committed = mutableListOf<Pair<FluidStorageHandle, Long>>()
         for (card in storageCards) {
             if (remaining <= 0L) break
-            val storage = getFluidStorage(level, card) ?: continue
+            val storage = getFluidStorage(level, card)
+            if (storage == null) continue
             val inserted = try {
                 PlatformServices.storage.insertFluid(storage, fluidId, remaining)
             } catch (_: Exception) { 0L }
@@ -407,7 +420,8 @@ object NetworkStorageHelper {
         val aggregated = LinkedHashMap<String, Pair<FluidInfo, CardSnapshot>>()
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
-            val storage = getFluidStorage(level, card) ?: continue
+            val storage = getFluidStorage(level, card)
+            if (storage == null) continue
             val fluids = PlatformServices.storage.findAllFluidInfo(storage) {
                 CardHandle.matchesFilter(it, ResourceKind.FLUID, filter)
             }
@@ -427,7 +441,8 @@ object NetworkStorageHelper {
     /** Find the first item ID across all Storage Cards matching the filter. */
     fun findFirstItemId(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): String? {
         for (card in getStorageCards(snapshot)) {
-            val storage = getStorage(level, card) ?: continue
+            val storage = getStorage(level, card)
+            if (storage == null) continue
             val itemId = PlatformServices.storage.findFirstItem(storage) { CardHandle.matchesFilter(it, filter) }
             if (itemId != null) return itemId
         }
@@ -444,7 +459,8 @@ object NetworkStorageHelper {
         val variantPatch = parsedVariantPatch(filter)
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
-            val storage = getStorage(level, card) ?: continue
+            val storage = getStorage(level, card)
+            if (storage == null) continue
             val info = PlatformServices.storage.findFirstItemInfo(storage) {
                 CardHandle.matchesFilter(it, filter)
             } ?: continue
@@ -474,9 +490,11 @@ object NetworkStorageHelper {
             filter.startsWith("\$fluid:") -> return null
             else -> filter
         }
-        val registries = damien.nodeworks.script.CardHandle.parsedRuleRegistries() ?: return null
+        val registries = damien.nodeworks.script.CardHandle.parsedRuleRegistries()
+        if (registries == null) return null
         val rule = FilterRule.parse(inner, registries) as? FilterRule.Item ?: return null
-        val patch = rule.componentsPatch ?: return null
+        val patch = rule.componentsPatch
+        if (patch == null) return null
         return rule.itemId to patch
     }
 
@@ -498,7 +516,8 @@ object NetworkStorageHelper {
         val wantHash = variantPatch?.let { damien.nodeworks.script.BufferKey.componentsHash(it) }
         for (card in getStorageCards(snapshot)) {
             if (!channel.matches(card.channel)) continue
-            val storage = getStorage(level, card) ?: continue
+            val storage = getStorage(level, card)
+            if (storage == null) continue
             val items = PlatformServices.storage.findAllItemInfo(storage) { CardHandle.matchesFilter(it, filter) }
             for (info in items) {
                 if (wantHash != null && damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch) != wantHash) continue
@@ -516,7 +535,8 @@ object NetworkStorageHelper {
 
     fun findItem(level: ServerLevel, snapshot: NetworkSnapshot, filter: String): CardSnapshot? {
         for (card in getStorageCards(snapshot)) {
-            val storage = getStorage(level, card) ?: continue
+            val storage = getStorage(level, card)
+            if (storage == null) continue
             val count = PlatformServices.storage.countItems(storage) { CardHandle.matchesFilter(it, filter) }
             if (count > 0) return card
         }
@@ -549,7 +569,8 @@ object NetworkStorageHelper {
             if (!channel.matches(card.channel)) continue
             val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
             if (cap != null && !cap.acceptsItem(stack, registries)) continue
-            val storage = getStorage(level, card) ?: continue
+            val storage = getStorage(level, card)
+            if (storage == null) continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
             remaining -= inserted
         }
@@ -743,7 +764,8 @@ object NetworkStorageHelper {
                 if (!channel.matches(card.channel)) continue
                 val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
                 if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
-                val destStorage = getStorage(level, card) ?: continue
+                val destStorage = getStorage(level, card)
+                if (destStorage == null) continue
                 val moved = try {
                     PlatformServices.storage.moveItemsByStackPredicate(source, destStorage, variantPred, remaining)
                 } catch (_: Exception) { 0L }

@@ -38,7 +38,7 @@ Storage Blocks can also be placed right next to each other to form a cluster.
 You only need to wire **one** block in a cluster, the rest tag along through
 the shared faces. Break the block that bridges two halves and the group
 splits back into two, each figuring out on its own whether it's still
-reachable. The block's emissive glow matches the network colour of whichever
+reachable. The block's emissive glow matches the network color of whichever
 network it belongs to, so at a glance you can tell which group goes where.
 
 ## Clustering Recipe Storage Blocks

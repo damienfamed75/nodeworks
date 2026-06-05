@@ -113,7 +113,8 @@ class CraftRequesterMenu(
 
     override fun quickMoveStack(player: Player, index: Int): ItemStack {
         if (index <= GHOST_SLOT_INDEX) return ItemStack.EMPTY
-        val slot = slots.getOrNull(index) ?: return ItemStack.EMPTY
+        val slot = slots.getOrNull(index)
+        if (slot == null) return ItemStack.EMPTY
         if (!slot.hasItem()) return ItemStack.EMPTY
         targetContainer.setItem(0, slot.item.copyWithCount(1))
         broadcastChanges()

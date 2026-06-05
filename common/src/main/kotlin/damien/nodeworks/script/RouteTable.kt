@@ -78,7 +78,8 @@ class RouteTable(
         val cacheKey = "${itemInfo.itemId}:${itemInfo.hasData}"
 
         val matchingRoute: Route? = if (routeCache.containsKey(cacheKey)) {
-            val cachedPattern = routeCache[cacheKey] ?: return emptyList()
+            val cachedPattern = routeCache[cacheKey]
+            if (cachedPattern == null) return emptyList()
             routes.find { it.pattern == cachedPattern }
         } else {
             val itemsHandle = ItemsHandle.fromItemInfo(
@@ -145,7 +146,8 @@ class RouteTable(
                 if (remaining <= 0L) break
                 val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
                 if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
-                val destStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                val destStorage = NetworkStorageHelper.getStorage(level, card)
+                if (destStorage == null) continue
                 val moved = try {
                     PlatformServices.storage.moveItemsByStackPredicate(source, destStorage, variantPred, remaining)
                 } catch (_: Exception) { 0L }
@@ -169,7 +171,8 @@ class RouteTable(
             // runs and `[component]` rules narrow to the variant.
             val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
             if (cap != null && !cap.acceptsItem(stack, registries)) continue
-            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val storage = NetworkStorageHelper.getStorage(level, card)
+            if (storage == null) continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
             remaining -= inserted
         }

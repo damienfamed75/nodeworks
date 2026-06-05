@@ -9,13 +9,13 @@ import net.minecraft.client.gui.components.MultiLineEditBox
 import net.minecraft.client.gui.components.MultilineTextField
 
 /**
- * Renders syntax-highlighted Lua text over a MultiLineEditBox. The editor's text colour
- * is set to transparent, this class draws coloured text at the same positions using the
+ * Renders syntax-highlighted Lua text over a MultiLineEditBox. The editor's text color
+ * is set to transparent, this class draws colored text at the same positions using the
  * shared [LuaTokenizer].
  *
- * The primary editor widget is now [ScriptEditor], which draws its own coloured text
+ * The primary editor widget is now [ScriptEditor], which draws its own colored text
  * directly without needing this overlay. This object remains as a lighter alternative
- * for screens that use the vanilla MultiLineEditBox and just want colouring layered on
+ * for screens that use the vanilla MultiLineEditBox and just want coloring layered on
  * top.
  */
 object LuaSyntaxHighlighter {

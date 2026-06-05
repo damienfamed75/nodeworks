@@ -29,7 +29,8 @@ object CardChannel {
 
     /** Read the channel from [stack]. Defaults to [DyeColor.WHITE] when no value is set. */
     fun get(stack: ItemStack): DyeColor {
-        val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return DyeColor.WHITE
+        val customData = stack.get(DataComponents.CUSTOM_DATA)
+        if (customData == null) return DyeColor.WHITE
         val tag = customData.copyTag()
         if (!tag.contains(KEY)) return DyeColor.WHITE
         val id = tag.getIntOr(KEY, 0)

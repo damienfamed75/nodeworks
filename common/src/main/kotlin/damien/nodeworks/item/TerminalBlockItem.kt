@@ -29,16 +29,19 @@ class TerminalBlockItem(block: Block, properties: Properties) : BlockItem(block,
         tooltipFlag: TooltipFlag
     ) {
         super.appendHoverText(stack, context, display, builder, tooltipFlag)
-        val typedEntityData = stack.get(DataComponents.BLOCK_ENTITY_DATA) ?: return
+        val typedEntityData = stack.get(DataComponents.BLOCK_ENTITY_DATA)
+        if (typedEntityData == null) return
         // The Terminal's saveAdditional writes a "scripts" list with one child per
         // script, we peek at the tag to count non-empty ones without instantiating a
         // full BE. `copyTagWithoutId` is the non-deprecated read path in 26.1.
         val tag = typedEntityData.copyTagWithoutId()
-        val scriptsList = tag.getList("scripts").orElse(null) ?: return
+        val scriptsList = tag.getList("scripts").orElse(null)
+        if (scriptsList == null) return
         var nonEmptyCount = 0
         val previewNames = mutableListOf<String>()
         for (i in 0 until scriptsList.size) {
-            val child = scriptsList.getCompound(i).orElse(null) ?: continue
+            val child = scriptsList.getCompound(i).orElse(null)
+            if (child == null) continue
             val name = child.getString("name").orElse("")
             val textLen = child.getString("text").orElse("").length
             if (textLen > 0) {

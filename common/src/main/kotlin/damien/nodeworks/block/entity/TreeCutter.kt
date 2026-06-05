@@ -146,7 +146,8 @@ object TreeCutter {
     private fun isLeaf(state: BlockState): Boolean = leafDistanceProperty(state) != null
 
     private fun leafDistance(state: BlockState): Int {
-        val prop = leafDistanceProperty(state) ?: return 0
+        val prop = leafDistanceProperty(state)
+        if (prop == null) return 0
         return state.getValue(prop)
     }
 

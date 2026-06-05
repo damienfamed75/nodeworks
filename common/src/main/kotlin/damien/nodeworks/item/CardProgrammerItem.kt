@@ -46,7 +46,8 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
 
     companion object {
         fun getTemplate(stack: ItemStack): ItemStack {
-            val contents = stack.get(DataComponents.CONTAINER) ?: return ItemStack.EMPTY
+            val contents = stack.get(DataComponents.CONTAINER)
+            if (contents == null) return ItemStack.EMPTY
             return contents.copyOne()
         }
 
@@ -64,7 +65,8 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
         }
 
         fun getCounter(stack: ItemStack): Int {
-            val data = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
+            val data = stack.get(DataComponents.CUSTOM_DATA)
+            if (data == null) return 0
             return data.copyTag().getIntOr("counter", 0)
         }
 
@@ -77,7 +79,8 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
         }
 
         fun getCopyName(stack: ItemStack): Boolean {
-            val data = stack.get(DataComponents.CUSTOM_DATA) ?: return true
+            val data = stack.get(DataComponents.CUSTOM_DATA)
+            if (data == null) return true
             return data.copyTag().getBooleanOr("copy_name", true)
         }
 
@@ -89,7 +92,8 @@ class CardProgrammerItem(properties: Properties) : Item(properties) {
         }
 
         fun getCopyChannel(stack: ItemStack): Boolean {
-            val data = stack.get(DataComponents.CUSTOM_DATA) ?: return true
+            val data = stack.get(DataComponents.CUSTOM_DATA)
+            if (data == null) return true
             return data.copyTag().getBooleanOr("copy_channel", true)
         }
 

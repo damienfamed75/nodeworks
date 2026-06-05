@@ -111,7 +111,7 @@ data class StorageSideCapability(
         if (componentsPatch.isEmpty) return acceptsItem(itemId, hasData = false)
         val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
             ?: return acceptsItem(itemId, hasData = true)
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier)
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
             ?: return acceptsItem(itemId, hasData = true)
         val stack = net.minecraft.world.item.ItemStack(item).apply { applyComponents(componentsPatch) }
         return acceptsItem(stack, registries)
@@ -119,8 +119,10 @@ data class StorageSideCapability(
 
     private fun stackabilityMatches(itemId: String): Boolean {
         if (stackability == StorageCard.Companion.StackabilityFilter.ANY) return true
-        val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return true
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return true
+        val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+        if (identifier == null) return true
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+        if (item == null) return true
         val isStackable = item.defaultMaxStackSize > 1
         return when (stackability) {
             StorageCard.Companion.StackabilityFilter.STACKABLE -> isStackable

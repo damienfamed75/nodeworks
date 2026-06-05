@@ -130,7 +130,7 @@ class CoveredPipeBlockEntity(
     override fun getUpdatePacket(): Packet<ClientGamePacketListener> =
         ClientboundBlockEntityDataPacket.create(this)
 
-    /** Covered Pipes are colourless on purpose, the network identity lives
+    /** Covered Pipes are colorless on purpose, the network identity lives
      *  on named devices (Controller / Terminal / antennas). Mirrors
      *  [PipeBlockEntity.networkColor]. */
     override fun networkColor(): Int =

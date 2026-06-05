@@ -14,7 +14,7 @@ import net.minecraft.world.phys.Vec3
 
 /**
  * Emissive overlay for the Terminal, glowing front-face screen, tinted with the
- * current network colour. The front face rotates with the block's `facing` property.
+ * current network color. The front face rotates with the block's `facing` property.
  */
 open class TerminalRenderer(context: BlockEntityRendererProvider.Context) :
     ConnectableBER<TerminalBlockEntity, TerminalRenderer.TerminalState>(context) {

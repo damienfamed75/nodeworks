@@ -92,7 +92,7 @@ class PipeBlockEntity(
     override fun getUpdatePacket(): Packet<ClientGamePacketListener> =
         ClientboundBlockEntityDataPacket.create(this)
 
-    /** Pipes are colourless on purpose, the network identity lives on named
+    /** Pipes are colorless on purpose, the network identity lives on named
      *  devices (Controller / Terminal / antennas). Returns the default grey
      *  so any code that reads [networkColor] gets a stable fallback. */
     override fun networkColor(): Int = damien.nodeworks.render.NodeConnectionRenderer.DEFAULT_NETWORK_COLOR

@@ -167,17 +167,21 @@ class ItemsHandle(
                 override fun call(selfArg: LuaValue, tagArg: LuaValue): LuaValue {
                     val tag = tagArg.checkjstring()
                     val tagId = if (tag.startsWith("#")) tag.substring(1) else tag
-                    val identifier = Identifier.tryParse(tagId) ?: return LuaValue.FALSE
-                    val resIdent = Identifier.tryParse(handle.itemId) ?: return LuaValue.FALSE
+                    val identifier = Identifier.tryParse(tagId)
+                    if (identifier == null) return LuaValue.FALSE
+                    val resIdent = Identifier.tryParse(handle.itemId)
+                    if (resIdent == null) return LuaValue.FALSE
                     return when (handle.kind) {
                         ResourceKind.ITEM -> {
                             val tagKey = TagKey.create(Registries.ITEM, identifier)
-                            val item = BuiltInRegistries.ITEM.getValue(resIdent) ?: return LuaValue.FALSE
+                            val item = BuiltInRegistries.ITEM.getOptional(resIdent).orElse(null)
+                            if (item == null) return LuaValue.FALSE
                             LuaValue.valueOf(item.builtInRegistryHolder().`is`(tagKey))
                         }
                         ResourceKind.FLUID -> {
                             val tagKey = TagKey.create(Registries.FLUID, identifier)
-                            val fluid = BuiltInRegistries.FLUID.getValue(resIdent) ?: return LuaValue.FALSE
+                            val fluid = BuiltInRegistries.FLUID.getOptional(resIdent).orElse(null)
+                            if (fluid == null) return LuaValue.FALSE
                             LuaValue.valueOf(fluid.builtInRegistryHolder().`is`(tagKey))
                         }
                     }

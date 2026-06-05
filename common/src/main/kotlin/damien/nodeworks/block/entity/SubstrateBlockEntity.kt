@@ -30,7 +30,8 @@ class SubstrateBlockEntity(
 ) : BlockEntity(ModBlockEntities.SUBSTRATE, pos, state), CpuComponentBlockEntity {
 
     private fun notifyAdjacentCores() {
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         CpuComponentBlockEntity.findConnectedCores(lvl, worldPosition).forEach { it.recalculateCapacity() }
     }
 

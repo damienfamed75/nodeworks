@@ -57,7 +57,8 @@ class MonitorBlockEntity(
         if (count == displayCount) return
         displayCount = count
         setChanged()
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         lvl.sendBlockUpdated(worldPosition, blockState, blockState, Block.UPDATE_CLIENTS)
     }
 
@@ -138,7 +139,7 @@ class MonitorBlockEntity(
     // `saveWithoutMetadata` delegates to `saveAdditional`, so the update packet
     // carries `networkId`, `connections`, `trackedItem`, and `count`. The client-side
     // BER and NodeConnectionRenderer both need networkId to tint the emissive face
-    // with the current network colour, without the full save they'd see
+    // with the current network color, without the full save they'd see
     // networkId=null and the glow would stay grey.
 
     override fun getUpdateTag(registries: HolderLookup.Provider): CompoundTag {

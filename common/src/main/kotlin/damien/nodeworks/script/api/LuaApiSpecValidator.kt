@@ -30,7 +30,8 @@ object LuaApiSpecValidator {
         val out = mutableListOf<Violation>()
         val knownTypeNames = LuaApiRegistry.knownTypes().map { it.name }.toSet()
         for (surface in LuaApiRegistry.allSurfaces().values) {
-            val parent = surface.parent ?: continue
+            val parent = surface.parent
+            if (parent == null) continue
             if (parent.name !in knownTypeNames) {
                 out += Violation.UnknownParent(surface.type.name, parent.name)
             }

@@ -25,7 +25,7 @@ import net.minecraft.world.item.DyeColor
  * underlying widget sees it.
  *
  * Persistence is the host's responsibility, the [onChange] callback fires the
- * moment the user picks a colour and the host's menu syncs the new value to the
+ * moment the user picks a color and the host's menu syncs the new value to the
  * server. The widget itself only owns transient UI state ([currentColor],
  * [expanded]).
  *
@@ -33,7 +33,7 @@ import net.minecraft.world.item.DyeColor
  * rendered as a black square with a red X. Picking it sets [isNone] = true and
  * fires `onChange(null)`. Hosts that don't need a "no channel" state pass the
  * default `canBeNone = false` and the callback is guaranteed to receive a
- * non-null colour.
+ * non-null color.
  */
 class ChannelPickerWidget(
     x: Int,
@@ -92,14 +92,14 @@ class ChannelPickerWidget(
         mouseY: Int,
         partialTick: Float,
     ) {
-        // Slot frame, then either the dye-coloured fill or the "none" black-with-X
+        // Slot frame, then either the dye-colored fill or the "none" black-with-X
         // glyph. Border looks the same as Storage Card's priority slot, keeps the
         // GUI visually consistent.
         NineSlice.SLOT.draw(graphics, x, y, swatchSize, swatchSize)
         if (isNone) {
             drawNoneGlyph(graphics, x, y, swatchSize)
         } else {
-            // White wool tinted with the dye colour fills the slot interior
+            // White wool tinted with the dye color fills the slot interior
             // (1 px inset on every side so the slot frame still reads). Gives
             // the swatch a wool texture instead of a flat fill while staying
             // chromatically identical to the picker grid below.
@@ -127,7 +127,7 @@ class ChannelPickerWidget(
 
     // ---- Popup overlay (host-driven render + click) ----
 
-    /** Bounds of the popup as (x, y, w, h). Includes the 4×4 colour grid, plus a
+    /** Bounds of the popup as (x, y, w, h). Includes the 4×4 color grid, plus a
      *  17th centred "none" cell at the bottom when [canBeNone] is true. The popup
      *  hangs DOWN from the swatch by default, but flips upward when the swatch is
      *  too close to the screen's bottom edge. Used by [renderOverlay] and
@@ -258,7 +258,7 @@ class ChannelPickerWidget(
         if (!expanded) return false
         val (px, py, pw, ph) = popupBounds().toList()
 
-        // Inside the colour grid → pick the swatch.
+        // Inside the color grid → pick the swatch.
         val gridX0 = px + POPUP_PAD
         val gridY0 = py + POPUP_PAD
         if (mouseX >= gridX0 && mouseY >= gridY0 &&
@@ -311,7 +311,7 @@ class ChannelPickerWidget(
         private const val POPUP_ROWS = 4
         private const val CELL = 12
         private const val POPUP_PAD = 4
-        /** Vertical gap between the 4×4 colour grid and the 17th "none" cell. */
+        /** Vertical gap between the 4×4 color grid and the 17th "none" cell. */
         private const val NONE_GAP = 3
     }
 }

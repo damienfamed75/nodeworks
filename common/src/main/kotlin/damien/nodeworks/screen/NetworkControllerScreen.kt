@@ -391,7 +391,8 @@ class NetworkControllerScreen(
     }
 
     private fun commitRetryField() {
-        val parsed = retryField.value.toIntOrNull() ?: return
+        val parsed = retryField.value.toIntOrNull()
+        if (parsed == null) return
         val clamped = parsed.coerceIn(0, 500)
         if (clamped != menu.handlerRetryLimit) sendHandlerRetryUpdate(clamped)
         retryField.value = clamped.toString()

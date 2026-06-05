@@ -147,7 +147,8 @@ class CraftTreeGraph {
             cachedLayout = layoutTree(tree)
             if (firstEver || structurallyChanged) needsAutoFit = true
         }
-        val layout = cachedLayout ?: return
+        val layout = cachedLayout
+        if (layout == null) return
 
         if (needsAutoFit) {
             autoFit(layout, w.toFloat(), h.toFloat())
@@ -183,7 +184,8 @@ class CraftTreeGraph {
             val isStorage = node.source == "storage"
             val isActive = !isStorage && node.nodeId in activeNodeIds
             for (child in node.children) {
-                val childPos = layout.positions[child] ?: continue
+                val childPos = layout.positions[child]
+                if (childPos == null) continue
                 val cx = (originX + childPos.first * zoom).roundToInt()
                 val cy = (originY + childPos.second * zoom).roundToInt()
                 val midY = (sy + 16 + cy) / 2
@@ -203,7 +205,8 @@ class CraftTreeGraph {
             val isStorage = node.source == "storage"
             val isActive = !isStorage && node.nodeId in activeNodeIds
             for (child in node.children) {
-                val childPos = layout.positions[child] ?: continue
+                val childPos = layout.positions[child]
+                if (childPos == null) continue
                 val cx = (originX + childPos.first * zoom).roundToInt()
                 val cy = (originY + childPos.second * zoom).roundToInt()
                 val midY = (sy + 16 + cy) / 2

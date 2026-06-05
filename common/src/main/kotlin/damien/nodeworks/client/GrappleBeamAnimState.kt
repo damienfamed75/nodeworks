@@ -157,8 +157,10 @@ object GrappleBeamAnimState {
 
     private fun activeHook(): GrappleBeamHookEntity? {
         val mc = Minecraft.getInstance()
-        val playerUuid = mc.player?.uuid ?: return null
-        val level = mc.level ?: return null
+        val playerUuid = mc.player?.uuid
+        if (playerUuid == null) return null
+        val level = mc.level
+        if (level == null) return null
         for (e in level.entitiesForRendering()) {
             if (e is GrappleBeamHookEntity) {
                 // UUID compare instead of identity. The client-side
@@ -175,7 +177,8 @@ object GrappleBeamAnimState {
     /** Pitch delta from look to anchor, clamped to [MAX_TILT]. */
     private fun computeStaffTilt(hook: GrappleBeamHookEntity): Float {
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return 0f
+        val player = mc.player
+        if (player == null) return 0f
         val toAnchor = hook.position().subtract(player.eyePosition)
         val len = toAnchor.length()
         if (len < 1e-3) return 0f
@@ -191,7 +194,8 @@ object GrappleBeamAnimState {
      *  of where the camera is looking. */
     private fun computeCubeAnchorRotation(hook: GrappleBeamHookEntity): Pair<Float, Float> {
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return 0f to 0f
+        val player = mc.player
+        if (player == null) return 0f to 0f
         val toAnchor = hook.position().subtract(player.eyePosition)
         if (toAnchor.lengthSqr() < 1e-6) return 0f to 0f
         val toAnchorN = toAnchor.normalize()
@@ -375,7 +379,8 @@ object GrappleBeamAnimState {
      *  `Vector3f.rotate*` / translate-by-subtraction left-multiplies,
      *  so invert outside-in: `T^-1` first, then `R_Z^-1`, then `R_X^-1`. */
     private fun stripBobView(v: Vector3f, player: AbstractClientPlayer, partial: Float) {
-        val p = bobViewParams(player, partial) ?: return
+        val p = bobViewParams(player, partial)
+        if (p == null) return
         v.x -= p.tx
         v.y -= p.ty
         v.rotateZ(-p.rz)
@@ -384,7 +389,8 @@ object GrappleBeamAnimState {
 
     /** Forward bobView, inside-out: `R_X`, then `R_Z`, then `T`. */
     private fun applyBobView(v: Vector3f, player: AbstractClientPlayer, partial: Float) {
-        val p = bobViewParams(player, partial) ?: return
+        val p = bobViewParams(player, partial)
+        if (p == null) return
         v.rotateX(p.rx)
         v.rotateZ(p.rz)
         v.x += p.tx

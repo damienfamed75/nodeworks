@@ -49,7 +49,7 @@ front to whatever machine actually carries out the recipe.
 Right-click the Handler to open its GUI and pick a
 <ItemLink id="processing_set" /> from the parent network's Processing
 Storage. Each ingredient in the Set gets its own row in the GUI with a
-channel colour, plus one channel colour for the recipe's outputs.
+channel color, plus one channel color for the recipe's outputs.
 
 ## Channel routing
 
@@ -58,10 +58,10 @@ The Handler uses channels to decide which
 
 - **Input channels** (one per ingredient, default blue). When the CPU
   starts a craft, each input is pushed to a storage card on the
-  micro-network whose channel matches that ingredient's colour.
+  micro-network whose channel matches that ingredient's color.
     - *Input items also respect Storage Card filters if you need custom routing by
     an expression, data on the item, or stackability*
-- **Output channel** (one shared colour, default red). The Handler
+- **Output channel** (one shared color, default red). The Handler
   watches storage cards on the micro-network with this channel and
   pulls finished outputs back into the parent network.
 
@@ -69,7 +69,7 @@ For the furnace example in the scene above: a blue storage card on top
 of the furnace receives the raw input, the furnace processes it, and a
 red storage card on the bottom collects the result.
 
-Different ingredients can use different colours when a single machine
+Different ingredients can use different colors when a single machine
 needs them in different slots, like fuel on one side and input on
 another.
 

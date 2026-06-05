@@ -50,7 +50,8 @@ object CraftQueueManager {
      *  currently looking at. */
     fun getQueueForNetwork(playerUUID: UUID, networkId: UUID?): List<CraftQueueEntry> {
         if (networkId == null) return emptyList()
-        val queue = queues[playerUUID] ?: return emptyList()
+        val queue = queues[playerUUID]
+        if (queue == null) return emptyList()
         return queue.filter { it.networkId == networkId }
     }
 
@@ -81,7 +82,8 @@ object CraftQueueManager {
      */
     fun getReservedCounts(playerUUID: UUID, networkId: UUID?): Map<String, Int> {
         if (networkId == null) return emptyMap()
-        val queue = queues[playerUUID] ?: return emptyMap()
+        val queue = queues[playerUUID]
+        if (queue == null) return emptyMap()
         val result = HashMap<String, Int>()
         for (entry in queue) {
             if (entry.networkId != networkId) continue

@@ -152,7 +152,8 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
      *  neighbours the same way [BroadcastAntennaBlockEntity.detectSource]
      *  does at encoding time. */
     private fun resolveNetworkName(pairing: LinkCrystalItem.Companion.PairingData): String? {
-        val level = net.minecraft.client.Minecraft.getInstance().level ?: return null
+        val level = net.minecraft.client.Minecraft.getInstance().level
+        if (level == null) return null
         if (level.dimension() != pairing.dimension) return null
         for (dir in net.minecraft.core.Direction.entries) {
             val neighbor = pairing.pos.relative(dir)

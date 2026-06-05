@@ -138,8 +138,10 @@ class CraftingCoreMenu(
     override fun broadcastChanges() {
         super.broadcastChanges()
 
-        val entity = serverEntity ?: return
-        val sender = packetSender ?: return
+        val entity = serverEntity
+        if (entity == null) return
+        val sender = packetSender
+        if (sender == null) return
 
         if (++bufferSyncTimer >= BUFFER_SYNC_INTERVAL) {
             bufferSyncTimer = 0
@@ -168,7 +170,8 @@ class CraftingCoreMenu(
     }
 
     private fun syncCraftTree(entity: CraftingCoreBlockEntity) {
-        val sender = packetSender ?: return
+        val sender = packetSender
+        if (sender == null) return
         val level = entity.level as? net.minecraft.server.level.ServerLevel ?: return
 
         var tree: damien.nodeworks.script.CraftTreeBuilder.CraftTreeNode?

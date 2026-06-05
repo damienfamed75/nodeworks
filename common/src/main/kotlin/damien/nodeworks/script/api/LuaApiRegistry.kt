@@ -166,7 +166,8 @@ object LuaApiRegistry {
         val seenSurfaces = mutableSetOf<String>()
         var t: String? = typeName
         while (t != null && seenSurfaces.add(t)) {
-            val surface = surfacesByType[t] ?: break
+            val surface = surfacesByType[t]
+            if (surface == null) break
             for (doc in select(surface)) {
                 if (seenNames.add(doc.displayName)) out.add(doc)
             }

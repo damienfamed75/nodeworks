@@ -85,7 +85,8 @@ open class InstructionStorageRenderer(context: BlockEntityRendererProvider.Conte
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
-        val facing = state.facing ?: return
+        val facing = state.facing
+        if (facing == null) return
 
         // Emissive front-face glow (network-tinted).
         val r = (state.networkColor shr 16) and 0xFF

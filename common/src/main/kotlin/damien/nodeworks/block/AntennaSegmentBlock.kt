@@ -77,7 +77,8 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
         player: Player, hitResult: BlockHitResult
     ): InteractionResult {
         // Forward right-click / wrench to the base antenna.
-        val basePos = findBase(level, pos) ?: return InteractionResult.PASS
+        val basePos = findBase(level, pos)
+        if (basePos == null) return InteractionResult.PASS
         val baseState = level.getBlockState(basePos)
         return baseState.useWithoutItem(level, player, hitResult)
     }

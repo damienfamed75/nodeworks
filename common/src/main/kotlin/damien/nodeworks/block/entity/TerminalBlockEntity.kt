@@ -146,7 +146,8 @@ class TerminalBlockEntity(
      */
     fun getNetworkStartPos(): BlockPos? {
         if (connections.isNotEmpty()) return worldPosition
-        val lvl = level ?: return null
+        val lvl = level
+        if (lvl == null) return null
         for (dir in Direction.entries) {
             val neighbor = lvl.getBlockEntity(worldPosition.relative(dir)) as? Connectable ?: continue
             if (neighbor.usesAdjacency()) return worldPosition

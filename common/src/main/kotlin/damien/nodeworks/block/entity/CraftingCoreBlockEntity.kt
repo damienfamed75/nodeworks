@@ -103,7 +103,8 @@ class CraftingCoreBlockEntity(
      *  scheduler/executor state every read. */
     val activeNodeIds: Set<Int>
         get() {
-            val plan = scheduler.currentPlan ?: return emptySet()
+            val plan = scheduler.currentPlan
+            if (plan == null) return emptySet()
             val active = opExecutor.activeProcessOpIds
             if (active.isEmpty()) return emptySet()
             val out = HashSet<Int>(active.size)
@@ -114,7 +115,8 @@ class CraftingCoreBlockEntity(
     /** Tree node IDs whose op has fully completed. */
     val completedNodeIds: Set<Int>
         get() {
-            val plan = scheduler.currentPlan ?: return emptySet()
+            val plan = scheduler.currentPlan
+            if (plan == null) return emptySet()
             val done = scheduler.completedOpIds
             if (done.isEmpty()) return emptySet()
             val out = HashSet<Int>(done.size)
@@ -351,7 +353,7 @@ class CraftingCoreBlockEntity(
 
     /** Component-aware buffer insertion. Use this when the caller has a real
      *  [ItemStack] (e.g. just pulled from storage) so durability / potion
-     *  contents / dye colour / enchantments live in the buffer template
+     *  contents / dye color / enchantments live in the buffer template
      *  instead of being stripped by the itemId-only overload. */
     fun addToBuffer(stack: net.minecraft.world.item.ItemStack, count: Long): Boolean {
         if (!bufferState.insert(stack, count)) return false
@@ -482,7 +484,8 @@ class CraftingCoreBlockEntity(
                 val neighbor = pos.relative(dir)
                 if (neighbor in visited) continue
                 visited.add(neighbor)
-                val entity = level?.getBlockEntity(neighbor) ?: continue
+                val entity = level?.getBlockEntity(neighbor)
+                if (entity == null) continue
                 if (entity is CpuComponentBlockEntity) {
                     queue.add(neighbor)
                     discovered++
@@ -620,7 +623,8 @@ class CraftingCoreBlockEntity(
         formed: Boolean,
         overheatLevelByPosition: Map<BlockPos, Int>
     ) {
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         val coFormed = damien.nodeworks.block.CoProcessorBlock.FORMED
         val coLevel = damien.nodeworks.block.CoProcessorBlock.OVERHEAT_LEVEL
         for (p in coProcessorPositions) {
@@ -652,7 +656,8 @@ class CraftingCoreBlockEntity(
      * so the block color provider re-evaluates the network color.
      */
     private fun updateBlockState() {
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         val state = blockState
         if (state.block !is damien.nodeworks.block.CraftingCoreBlock) return
         val formedProp = damien.nodeworks.block.CraftingCoreBlock.FORMED
@@ -823,8 +828,10 @@ class CraftingCoreBlockEntity(
         val snap = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(lvl, worldPosition)
         val leftovers = clearBuffer()
         for ((itemId, count) in leftovers) {
-            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
+            val id = net.minecraft.resources.Identifier.tryParse(itemId)
+            if (id == null) continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+            if (item == null) continue
             var remaining = count
             while (remaining > 0L) {
                 val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()

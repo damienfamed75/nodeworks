@@ -41,7 +41,7 @@ import damien.nodeworks.script.api.LuaType
  */
 object LuaDiagnostics {
 
-    /** Per-rule severity. Adjust here to flip a rule's underline colour and
+    /** Per-rule severity. Adjust here to flip a rule's underline color and
      *  tone of voice; rules read this table at emit time. */
     val severityForRule: Map<String, Severity> = mapOf(
         "unknown-identifier" to Severity.ERROR,
@@ -293,7 +293,7 @@ object LuaDiagnostics {
                 // DEFAULT and FUNCTION tokens are candidate identifier references.
                 // The tokenizer classifies any identifier followed by `(` as FUNCTION,
                 // including user-defined functions that don't exist (typos), so we
-                // can't skip FUNCTION-coloured tokens, we still need to check whether
+                // can't skip FUNCTION-colored tokens, we still need to check whether
                 // the name is actually declared. KEYWORDs, STRINGs, COMMENTs, NUMBERs
                 // are always non-references and are always skipped.
                 if (token.type != LuaTokenizer.TokenType.DEFAULT &&
@@ -431,7 +431,8 @@ object LuaDiagnostics {
                 // is fine, it's only the dereference that crashes on nil.
                 var nextIdx = tokIdx + 1
                 while (nextIdx < tokens.size && tokens[nextIdx].text.isBlank()) nextIdx++
-                val next = tokens.getOrNull(nextIdx) ?: continue
+                val next = tokens.getOrNull(nextIdx)
+                if (next == null) continue
                 if (next.text != ":" && next.text != ".") continue
 
                 val regions = narrowingByVar[token.text] ?: emptyList()
@@ -505,7 +506,8 @@ object LuaDiagnostics {
             // the call name (token just before, after blanks) and the receiver
             // (whatever's before the name's separator).
             if (t.text != "(") continue
-            val nameIdx = prevNonBlankIdx(flat, idx) ?: continue
+            val nameIdx = prevNonBlankIdx(flat, idx)
+            if (nameIdx == null) continue
             val nameTok = flat[nameIdx]
             if (!isIdentifierLike(nameTok.text)) continue
             if (nameTok.text in LuaTokenizer.KEYWORDS) continue
@@ -539,25 +541,29 @@ object LuaDiagnostics {
                     // declared as `function foo.bar(...)` (either in this script or
                     // imported via `require`). The receiver must be a bare ident so
                     // we can build the qualified key `foo.bar` to look up the spec.
-                    val recvIdx = prevNonBlankIdx(flat, prevIdx!!) ?: continue
+                    val recvIdx = prevNonBlankIdx(flat, prevIdx!!)
+                    if (recvIdx == null) continue
                     val recvTok = flat[recvIdx]
                     if (!isIdentifierLike(recvTok.text)) continue
                     if (recvTok.text in LuaTokenizer.KEYWORDS) continue
                     val key = "${recvTok.text}.$callName"
-                    val func = userFunctions[key] ?: continue
+                    val func = userFunctions[key]
+                    if (func == null) continue
                     ResolvedCall(func, key)
                 }
 
                 else -> {
                     // Bare function call. Look up user-defined functions; built-in
                     // globals are skipped (they take `Any` so wouldn't flag anyway).
-                    val func = userFunctions[callName] ?: continue
+                    val func = userFunctions[callName]
+                    if (func == null) continue
                     ResolvedCall(func, callName)
                 }
             }
 
             val openParenIdx = t.start
-            val closeParenIdx = findMatchingClose(text, openParenIdx) ?: continue
+            val closeParenIdx = findMatchingClose(text, openParenIdx)
+            if (closeParenIdx == null) continue
             val argRanges = splitTopLevelArgs(text, openParenIdx + 1, closeParenIdx)
 
             for ((argIdx, argRange) in argRanges.withIndex()) {
@@ -572,7 +578,8 @@ object LuaDiagnostics {
                 val regions = narrowingByVar[argName] ?: emptyList()
                 if (regions.any { nameStart in it }) continue
 
-                val param = resolved.params.getOrNull(argIdx) ?: continue
+                val param = resolved.params.getOrNull(argIdx)
+                if (param == null) continue
                 // Skip when the param's declared type tolerates nil. Optional<T>
                 // explicitly does, and primitives like `any` accept anything (they
                 // are the "we don't care" type). Only registered Named types
@@ -598,7 +605,7 @@ object LuaDiagnostics {
 
     // ──────────────────────────────────────────────────────────────────────
     // Rule: nullable chain access (reuses the `nullable-misuse` code so the
-    // squiggle colour and dial-up/down knob match)
+    // squiggle color and dial-up/down knob match)
     // ──────────────────────────────────────────────────────────────────────
 
     /** Flag `expr:method` / `expr.field` access where `expr`'s declared type is
@@ -636,7 +643,8 @@ object LuaDiagnostics {
 
             // Skip when the receiver is a bare identifier already in nullableVars,
             // [checkNullableMisuse] handles those (and includes narrowing).
-            val prevIdx = prevNonBlankIdx(flat, idx) ?: continue
+            val prevIdx = prevNonBlankIdx(flat, idx)
+            if (prevIdx == null) continue
             val prevTok = flat[prevIdx]
             if (isIdentifierLike(prevTok.text) && prevTok.text in nullableVars) continue
             // Likewise skip when the receiver is just a bare ident with no prior
@@ -649,12 +657,14 @@ object LuaDiagnostics {
                 ) continue
             }
 
-            val recvType = resolveExprReturnType(text, sepTok.start, symbols) ?: continue
+            val recvType = resolveExprReturnType(text, sepTok.start, symbols)
+            if (recvType == null) continue
             if (recvType !is LuaType.Optional) continue
 
             // Underline the member name (token after the separator). That's where
             // the dereference happens, so it's the most actionable location.
-            val memberIdx = nextNonBlankIdx(flat, idx) ?: continue
+            val memberIdx = nextNonBlankIdx(flat, idx)
+            if (memberIdx == null) continue
             val memberTok = flat[memberIdx]
             if (!isIdentifierLike(memberTok.text)) continue
             if (memberTok.text in LuaTokenizer.KEYWORDS) continue
@@ -686,7 +696,7 @@ object LuaDiagnostics {
      *  and newlines so positions computed against the masked text remain valid in
      *  the original. Lets the regex-based collectors below ignore declarations
      *  that the player has commented out. Detection is by [LuaTokenizer.COMMENT_COLOR]
-     *  rather than `TokenType.COMMENT`, the tokenizer assigns the colour but
+     *  rather than `TokenType.COMMENT`, the tokenizer assigns the color but
      *  leaves the type as DEFAULT for line comments and the body of block
      *  comments, only the explicit BLOCK_COMMENT_START/END markers carry a
      *  comment-specific TokenType. */
@@ -774,7 +784,8 @@ object LuaDiagnostics {
 
         // Call `expr(args)`, peel the `(args)` and recurse on the call name.
         if (ch == ')') {
-            val openIdx = findMatchingOpenBefore(text, i - 1) ?: return null
+            val openIdx = findMatchingOpenBefore(text, i - 1)
+            if (openIdx == null) return null
             var nameEnd = openIdx
             while (nameEnd > 0 && text[nameEnd - 1].isWhitespace()) nameEnd--
             var nameStart = nameEnd
@@ -831,7 +842,8 @@ object LuaDiagnostics {
         // Bare ident: module global or symbol-table local.
         val moduleType = LuaApiRegistry.moduleType(name)
         if (moduleType != null) return moduleType
-        val symType = symbols[name] ?: return null
+        val symType = symbols[name]
+        if (symType == null) return null
         val nullable = symType.endsWith("?")
         val baseName = symType.trimEnd('?')
         val baseType: LuaType = LuaApiRegistry.knownTypes()
@@ -860,7 +872,8 @@ object LuaDiagnostics {
         endOffset: Int,
         symbols: Map<String, String>,
     ): String? {
-        val rt = resolveExprReturnType(text, endOffset, symbols) ?: return null
+        val rt = resolveExprReturnType(text, endOffset, symbols)
+        if (rt == null) return null
         return (LuaType.unwrap(rt) as? LuaType.Named)?.name
     }
 
@@ -928,12 +941,14 @@ object LuaDiagnostics {
         for (m in REQUIRE_LOCAL.findAll(text)) {
             val localName = m.groupValues[1]
             val moduleName = m.groupValues[2]
-            val rawModuleText = otherScripts[moduleName] ?: continue
+            val rawModuleText = otherScripts[moduleName]
+            if (rawModuleText == null) continue
             // Strip the imported module's comments too, a fully-commented-out
             // module body should produce no exports, even if the comments contain
             // `function foo.bar(...)` shaped text.
             val moduleText = stripComments(rawModuleText)
-            val exportPrefix = findModuleExportPrefix(moduleText) ?: continue
+            val exportPrefix = findModuleExportPrefix(moduleText)
+            if (exportPrefix == null) continue
             val funcPattern = Regex(
                 """\bfunction\s+${Regex.escape(exportPrefix)}\.(\w+)\s*\(([^)]*)\)"""
             )
@@ -1098,7 +1113,8 @@ object LuaDiagnostics {
             if (name in out) continue
             val rhsStart = m.range.last + 1
             val rhsEnd = findStatementEnd(text, rhsStart)
-            val rt = resolveExprReturnType(text, rhsEnd, symbols) ?: continue
+            val rt = resolveExprReturnType(text, rhsEnd, symbols)
+            if (rt == null) continue
             if (rt is LuaType.Optional) out.add(name)
         }
 
@@ -1195,7 +1211,8 @@ object LuaDiagnostics {
         for (pat in truthyBranchHeads) {
             for (m in pat.findAll(text)) {
                 val thenEnd = m.range.last + 1
-                val endOffset = findBranchBoundary(text, thenEnd) ?: continue
+                val endOffset = findBranchBoundary(text, thenEnd)
+                if (endOffset == null) continue
                 regions.add(TextRange(thenEnd, endOffset))
             }
         }
@@ -1212,7 +1229,8 @@ object LuaDiagnostics {
         for (pat in nilGuardPatterns) {
             for (m in pat.findAll(text)) {
                 val thenEnd = m.range.last + 1
-                val endOffset = findMatchingEnd(text, thenEnd) ?: continue
+                val endOffset = findMatchingEnd(text, thenEnd)
+                if (endOffset == null) continue
                 val body = text.substring(thenEnd, endOffset)
                 // Require the body to contain SOMETHING that terminates control flow.
                 // Misses partial-flow cases (`if cond then return end` nested inside)
@@ -1556,7 +1574,8 @@ object LuaDiagnostics {
             val name = open.groupValues[1]
             // bodyStart is one past the `)` that closes the function signature.
             val bodyStart = open.range.last + 1
-            val bodyEnd = findMatchingHandlerEnd(stripped, bodyStart) ?: continue
+            val bodyEnd = findMatchingHandlerEnd(stripped, bodyStart)
+            if (bodyEnd == null) continue
             out += HandlerSpan(
                 name = name,
                 headerRange = TextRange(open.range.first, bodyStart),
@@ -1642,7 +1661,8 @@ object LuaDiagnostics {
         val byName = apis.associateBy { it.name }
         val out = mutableListOf<Diagnostic>()
         for (span in spans) {
-            val api = byName[span.name] ?: continue
+            val api = byName[span.name]
+            if (api == null) continue
             val pairs = api.inputsAsPairs
             if (pairs.isEmpty()) continue
             val expected =

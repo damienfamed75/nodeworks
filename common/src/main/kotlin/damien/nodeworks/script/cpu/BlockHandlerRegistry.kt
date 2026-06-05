@@ -40,7 +40,8 @@ object BlockHandlerRegistry {
      *  forever. */
     @Synchronized
     fun unregister(networkId: UUID, apiName: String) {
-        val inner = byNetwork[networkId] ?: return
+        val inner = byNetwork[networkId]
+        if (inner == null) return
         inner.remove(apiName)
         if (inner.isEmpty()) byNetwork.remove(networkId)
     }
@@ -99,7 +100,8 @@ object BlockHandlerRegistry {
         unregisterByPos(pos)
         val name = handler.processingApiName
         if (name.isEmpty()) return
-        val netId = handler.networkId ?: return
+        val netId = handler.networkId
+        if (netId == null) return
         register(netId, name, pos)
     }
 }

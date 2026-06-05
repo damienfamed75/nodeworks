@@ -73,15 +73,20 @@ class ReceiverAntennaBlockEntity(
      *  7=wrong source kind (Receiver Antennas only consume Processing Storage and
      *  Export Chest broadcasts). */
     fun getConnectionStatus(level: ServerLevel): Int {
-        val pos = pairedPos ?: return 0
-        val dim = pairedDimension ?: return 0
-        val freq = pairedFrequencyId ?: return 0
-        val kind = pairedKind ?: return 0
+        val pos = pairedPos
+        if (pos == null) return 0
+        val dim = pairedDimension
+        if (dim == null) return 0
+        val freq = pairedFrequencyId
+        if (freq == null) return 0
+        val kind = pairedKind
+        if (kind == null) return 0
         // PROCESSING_STORAGE (Set fan-out) and EXPORT_CHEST (wireless item
         // conveyor) are the two accepted kinds. NETWORK_CONTROLLER is for
         // Handheld Inventory Terminals only and never resolves here.
         if (kind != BroadcastSourceKind.PROCESSING_STORAGE && kind != BroadcastSourceKind.EXPORT_CHEST) return 7
-        val targetLevel = level.server.getLevel(dim) ?: return 3
+        val targetLevel = level.server.getLevel(dim)
+        if (targetLevel == null) return 3
         if (!targetLevel.isLoaded(pos)) return 5
         val broadcast = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return 3
         if (broadcast.frequencyId != freq) return 4
@@ -106,12 +111,16 @@ class ReceiverAntennaBlockEntity(
      *  A wrong-kind crystal resolves to null here so no caller receives a broadcast
      *  it wasn't meant to consume. */
     fun getBroadcastAntenna(level: ServerLevel): BroadcastAntennaBlockEntity? {
-        val pos = pairedPos ?: return null
-        val dim = pairedDimension ?: return null
-        val freq = pairedFrequencyId ?: return null
+        val pos = pairedPos
+        if (pos == null) return null
+        val dim = pairedDimension
+        if (dim == null) return null
+        val freq = pairedFrequencyId
+        if (freq == null) return null
         if (pairedKind != BroadcastSourceKind.PROCESSING_STORAGE && pairedKind != BroadcastSourceKind.EXPORT_CHEST) return null
 
-        val targetLevel = level.server.getLevel(dim) ?: return null
+        val targetLevel = level.server.getLevel(dim)
+        if (targetLevel == null) return null
         if (!targetLevel.isLoaded(pos)) return null
 
         val broadcast = targetLevel.getBlockEntity(pos) as? BroadcastAntennaBlockEntity ?: return null

@@ -184,7 +184,8 @@ open class NodeBlockEntity(
     enum class FaceRole { PIPE, DEVICE, FREE }
 
     fun faceRole(side: Direction): FaceRole {
-        val lvl = level ?: return FaceRole.FREE
+        val lvl = level
+        if (lvl == null) return FaceRole.FREE
         val neighborPos = worldPosition.relative(side)
         val neighborBe = lvl.getBlockEntity(neighborPos)
         val neighborConnectable = neighborBe as? damien.nodeworks.network.Connectable

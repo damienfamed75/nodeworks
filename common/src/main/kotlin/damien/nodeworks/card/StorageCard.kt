@@ -145,7 +145,8 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         enum class NbtFilter { ANY, HAS_DATA, NO_DATA }
 
         fun getPriority(stack: ItemStack): Int {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 0
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return 0
             return customData.copyTag().getIntOr("priority", 0)
         }
 
@@ -165,7 +166,8 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         }
 
         fun getFilterMode(stack: ItemStack): FilterMode {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return FilterMode.ALLOW
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return FilterMode.ALLOW
             val raw = customData.copyTag().getStringOr(FILTER_MODE_KEY, FilterMode.ALLOW.name)
             return runCatching { FilterMode.valueOf(raw) }.getOrDefault(FilterMode.ALLOW)
         }
@@ -182,8 +184,10 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
          *  Empty rules are stripped on save so a half-edited row doesn't
          *  silently accept everything. */
         fun getFilterRules(stack: ItemStack): List<String> {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return emptyList()
-            val list = customData.copyTag().getList(FILTER_RULES_KEY).orElse(null) ?: return emptyList()
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return emptyList()
+            val list = customData.copyTag().getList(FILTER_RULES_KEY).orElse(null)
+            if (list == null) return emptyList()
             return (0 until list.size).map { list.getStringOr(it, "") }.filter { it.isNotEmpty() }
         }
 
@@ -202,7 +206,8 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         }
 
         fun getStackabilityFilter(stack: ItemStack): StackabilityFilter {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return StackabilityFilter.ANY
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return StackabilityFilter.ANY
             val raw = customData.copyTag().getStringOr(FILTER_STACK_KEY, StackabilityFilter.ANY.name)
             return runCatching { StackabilityFilter.valueOf(raw) }.getOrDefault(StackabilityFilter.ANY)
         }
@@ -222,7 +227,8 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
         }
 
         fun getNbtFilter(stack: ItemStack): NbtFilter {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return NbtFilter.ANY
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return NbtFilter.ANY
             val raw = customData.copyTag().getStringOr(FILTER_NBT_KEY, NbtFilter.ANY.name)
             return runCatching { NbtFilter.valueOf(raw) }.getOrDefault(NbtFilter.ANY)
         }
@@ -244,7 +250,8 @@ class StorageCard(properties: Properties) : NodeCard(properties) {
          *  resolved at capability build-time using the node side the card is
          *  mounted on. */
         fun getCustomSide(stack: ItemStack): damien.nodeworks.screen.widget.RelDir? {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return null
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return null
             val raw = customData.copyTag().getStringOr(CUSTOM_SIDE_KEY, "")
             if (raw.isEmpty()) return null
             return runCatching { damien.nodeworks.screen.widget.RelDir.valueOf(raw) }.getOrNull()

@@ -316,8 +316,10 @@ class NetworkInventoryCache(
     /** Mark [outputId] as craftable, plain-components variant. Used by
      *  Instruction Set recipes whose output is always a plain itemId. */
     private fun addCraftablePhantom(outputId: String) {
-        val id = net.minecraft.resources.Identifier.tryParse(outputId) ?: return
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return
+        val id = net.minecraft.resources.Identifier.tryParse(outputId)
+        if (id == null) return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return
         addCraftablePhantom(ItemStack(item))
     }
 
@@ -466,7 +468,8 @@ class NetworkInventoryCache(
         // are effectively O(1) and variant-laden lookups (potions) are
         // O(variants) instead of O(total cache entries).
         if (isExactItemFilter(filter)) {
-            val variantKeys = keysByItemId[filter] ?: return 0L
+            val variantKeys = keysByItemId[filter]
+            if (variantKeys == null) return 0L
             var total = 0L
             for (key in variantKeys) {
                 total += entries[key]?.info?.count ?: 0L
@@ -549,8 +552,10 @@ class NetworkInventoryCache(
             ))
             changedSerials.add(existing.serial)
         } else {
-            val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+            val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+            if (identifier == null) return
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+            if (item == null) return
             val serial = nextSerial++
             // Build a representative stack so the displayed name reflects the
             // specific variant (e.g. "Potion of Strength" instead of "Potion").
@@ -595,7 +600,8 @@ class NetworkInventoryCache(
     fun onFluidExtracted(fluidId: String, amount: Long) {
         if (amount <= 0) return
         dirtyFluidKeys.add(fluidId)
-        val existing = fluidEntries[fluidId] ?: return
+        val existing = fluidEntries[fluidId]
+        if (existing == null) return
         val newAmount = existing.info.amount - amount
         if (newAmount <= 0) {
             fluidEntries.remove(fluidId)
@@ -616,7 +622,8 @@ class NetworkInventoryCache(
         if (amount <= 0) return
         val key = cacheKey(itemId, componentsPatch)
         dirtyKeys.add(key)
-        val existing = entries[key] ?: return
+        val existing = entries[key]
+        if (existing == null) return
         val newCount = existing.info.count - amount
         if (newCount <= 0) {
             if (existing.info.isCraftable) {

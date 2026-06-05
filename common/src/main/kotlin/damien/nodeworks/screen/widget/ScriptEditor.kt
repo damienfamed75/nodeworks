@@ -45,9 +45,9 @@ class ScriptEditor(
 ) : AbstractWidget(x, y, width, height, Component.empty()) {
 
     companion object {
-        // Syntax colours are sourced from [damien.nodeworks.script.LuaTokenizer] so the
+        // Syntax colors are sourced from [damien.nodeworks.script.LuaTokenizer] so the
         // editor, the overlay highlighter, and the guidebook's <LuaCode> tag all use the
-        // same palette. Only FOLD_COLOR and editor-chrome colours (selection, cursor,
+        // same palette. Only FOLD_COLOR and editor-chrome colors (selection, cursor,
         // background) stay local since they're not syntax classifications.
         private const val FOLD_COLOR = damien.nodeworks.script.LuaTokenizer.COMMENT_COLOR
         private const val SELECTION_BG = 0xFF264F78.toInt()
@@ -399,7 +399,8 @@ class ScriptEditor(
      *  accounting for active folds. If [col] falls inside a fold, returns the fold's
      *  start X (cursor visually pinned to the fold's leading edge). */
     private fun xOfCol(lineIdx: Int, col: Int): Int {
-        val line = lines.getOrNull(lineIdx) ?: return 0
+        val line = lines.getOrNull(lineIdx)
+        if (line == null) return 0
         val folds = activeFoldsForLine(lineIdx)
         var x = 0
         var c = 0
@@ -425,7 +426,8 @@ class ScriptEditor(
      *  matching vanilla EditBox feel. Clicks landing on a fold's display string put the
      *  cursor at the fold's start so the player can begin editing inside it. */
     private fun colAtX(lineIdx: Int, relX: Int): Int {
-        val line = lines.getOrNull(lineIdx) ?: return 0
+        val line = lines.getOrNull(lineIdx)
+        if (line == null) return 0
         val folds = activeFoldsForLine(lineIdx)
         var px = 0
         var c = 0
@@ -674,8 +676,8 @@ class ScriptEditor(
         // chrome and control z-order against the autocomplete popup etc.
     }
 
-    /** Draw a horizontally-tiling sawtooth underline beneath [diag]'s range, coloured
-     *  per [Severity]. Uses the white SQUIGGLE atlas region tinted to the severity colour
+    /** Draw a horizontally-tiling sawtooth underline beneath [diag]'s range, colored
+     *  per [Severity]. Uses the white SQUIGGLE atlas region tinted to the severity color
      *  so the wave shape lives in the texture (and can be redesigned by editing the atlas
      *  rather than this code). Multi-line diagnostics get a separate run per line. */
     private fun drawDiagnosticSquiggle(graphics: GuiGraphicsExtractor, diag: Diagnostic) {
@@ -754,7 +756,8 @@ class ScriptEditor(
         val lineBottom = lineTop + lineHeight
         if (relY < lineTop || relY >= lineBottom) return null
 
-        val tokens = renderedLineTokens[lineIdx] ?: return null
+        val tokens = renderedLineTokens[lineIdx]
+        if (tokens == null) return null
 
         // X matching via pixel extents, not col-space. Going through [colAtX] would
         // clamp mouse-left-of-all-text to col=0 and falsely report a hover on the
@@ -780,7 +783,8 @@ class ScriptEditor(
                 val combined = ArrayList<Token>()
                 var combinedIndex = -1
                 for (li in 0 until lineIdx) {
-                    val prior = renderedLineTokens[li] ?: continue
+                    val prior = renderedLineTokens[li]
+                    if (prior == null) continue
                     combined.addAll(prior)
                 }
                 combinedIndex = combined.size + i
@@ -806,7 +810,8 @@ class ScriptEditor(
      *  same Doc. */
     private fun resolveDocWithFallback(mouseX: Int, mouseY: Int): LuaApiDocs.Doc? {
         resolveDocUnderMouse(mouseX, mouseY)?.let { return it }
-        val word = getWordAt(mouseX.toDouble(), mouseY.toDouble()) ?: return null
+        val word = getWordAt(mouseX.toDouble(), mouseY.toDouble())
+        if (word == null) return null
         return extraDocResolver(word, mouseX, mouseY)
     }
 
@@ -1055,7 +1060,7 @@ class ScriptEditor(
             }
 
             86 -> if (ctrl) { // Ctrl+V, paste
-                val clipboard = Minecraft.getInstance().keyboardHandler.clipboard ?: ""
+                val clipboard = Minecraft.getInstance().keyboardHandler.clipboard
                 if (clipboard.isNotEmpty()) {
                     if (hasSelection) deleteSelection()
                     insertText(clipboard)

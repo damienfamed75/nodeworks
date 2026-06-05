@@ -123,6 +123,11 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             damien.nodeworks.registry.ModDataComponents.initialize()
             ModItems.initialize()
             ModBlockEntities.initialize()
+            // Register built-in DeviceTypes with the SPI registry. Devices migrated
+            // through the SPI are registered here, the discovery walk and the diagnostic
+            // / scripting UIs all dispatch through DeviceRegistry. Extension mods register
+            // their own DeviceTypes from their own init.
+            damien.nodeworks.api.DeviceRegistry.register(damien.nodeworks.device.VariableDevice)
             damien.nodeworks.registry.ModEntityTypes.initialize()
             damien.nodeworks.registry.ModSoundEvents.initialize()
             // Recipe types + serializers + display types. Ordering:
@@ -383,7 +388,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val player = context.player()
                 val menu = player.containerMenu
                 if (menu is NodeSideScreenHandler) {
-                    val side = net.minecraft.core.Direction.entries.getOrNull(payload.sideOrdinal) ?: return@enqueueWork
+                    val side = net.minecraft.core.Direction.entries.getOrNull(payload.sideOrdinal)
+                    if (side == null) return@enqueueWork
                     menu.switchSide(side)
                 }
             }
@@ -522,7 +528,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val last = deviceSettingsLastTick[player.uuid]
                 if (last != null && now - last < 2) return@enqueueWork
                 deviceSettingsLastTick[player.uuid] = now
-                val entity = level.getBlockEntity(payload.pos) ?: return@enqueueWork
+                val entity = level.getBlockEntity(payload.pos)
+                if (entity == null) return@enqueueWork
                 val newColor: net.minecraft.world.item.DyeColor? = if (payload.key == "channel") {
                     runCatching { net.minecraft.world.item.DyeColor.byId(payload.intValue) }.getOrNull()
                 } else null
@@ -711,7 +718,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val level = player.level() as? ServerLevel ?: return@enqueueWork
                 if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
                 val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity ?: return@enqueueWork
-                val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull() ?: return@enqueueWork
+                val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull()
+                if (color == null) return@enqueueWork
                 entity.setInputChannel(damien.nodeworks.script.BufferKey.Key(payload.itemId, payload.componentsHash), color)
             }
         }
@@ -724,7 +732,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val level = player.level() as? ServerLevel ?: return@enqueueWork
                 if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
                 val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity ?: return@enqueueWork
-                val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull() ?: return@enqueueWork
+                val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull()
+                if (color == null) return@enqueueWork
                 entity.setAllInputChannels(color)
             }
         }
@@ -737,7 +746,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val level = player.level() as? ServerLevel ?: return@enqueueWork
                 if (!player.blockPosition().closerThan(payload.pos, 8.0)) return@enqueueWork
                 val entity = level.getBlockEntity(payload.pos) as? damien.nodeworks.block.entity.ProcessingHandlerBlockEntity ?: return@enqueueWork
-                val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull() ?: return@enqueueWork
+                val color = runCatching { net.minecraft.world.item.DyeColor.byId(payload.channelId) }.getOrNull()
+                if (color == null) return@enqueueWork
                 entity.setOutputChannel(color)
             }
         }
@@ -773,7 +783,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         registrar.playToServer(damien.nodeworks.network.GrappleAdjustRopePayload.TYPE, damien.nodeworks.network.GrappleAdjustRopePayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
-                val hook = damien.nodeworks.item.GrappleBeamSessions.current(player) ?: return@enqueueWork
+                val hook = damien.nodeworks.item.GrappleBeamSessions.current(player)
+                if (hook == null) return@enqueueWork
                 if (hook.ropeLength < 0.0) return@enqueueWork
                 // 0.5 blocks per scroll tick is a comfortable speed.
                 // Sign convention depends on anchor type:
@@ -907,7 +918,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         }
         registrar.playToClient(BufferSyncPayload.TYPE, BufferSyncPayload.CODEC) { payload, context ->
             context.enqueueWork {
-                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val player = net.minecraft.client.Minecraft.getInstance().player
+                if (player == null) return@enqueueWork
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
                     menu.clientBufferContents = payload.entries
@@ -917,7 +929,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
         registrar.playToClient(CpuFailurePayload.TYPE, CpuFailurePayload.CODEC) { payload, context ->
             context.enqueueWork {
-                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val player = net.minecraft.client.Minecraft.getInstance().player
+                if (player == null) return@enqueueWork
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
                     menu.lastFailureReason = payload.reason
@@ -939,7 +952,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             damien.nodeworks.network.PortableConnectionStatusPayload.CODEC,
         ) { payload, context ->
             context.enqueueWork {
-                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val player = net.minecraft.client.Minecraft.getInstance().player
+                if (player == null) return@enqueueWork
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
                     menu.connectionStatus = damien.nodeworks.screen.PortableConnectionStatus.fromOrdinal(payload.statusOrdinal)
@@ -961,7 +975,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
         registrar.playToClient(CraftingCpuTreePayload.TYPE, CraftingCpuTreePayload.CODEC) { payload, context ->
             context.enqueueWork {
-                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val player = net.minecraft.client.Minecraft.getInstance().player
+                if (player == null) return@enqueueWork
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.CraftingCoreMenu && menu.containerId == payload.containerId) {
                     menu.craftTree = payload.tree
@@ -973,7 +988,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
         registrar.playToClient(CraftPreviewResponsePayload.TYPE, CraftPreviewResponsePayload.CODEC) { payload, context ->
             context.enqueueWork {
-                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val player = net.minecraft.client.Minecraft.getInstance().player
+                if (player == null) return@enqueueWork
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.DiagnosticMenu && menu.containerId == payload.containerId) {
                     menu.craftTree = payload.tree
@@ -1004,7 +1020,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
 
         registrar.playToClient(NetworkIdBatchPayload.TYPE, NetworkIdBatchPayload.CODEC) { payload, context ->
             context.enqueueWork {
-                val level = net.minecraft.client.Minecraft.getInstance().level ?: return@enqueueWork
+                val level = net.minecraft.client.Minecraft.getInstance().level
+                if (level == null) return@enqueueWork
                 for (pos in payload.positions) {
                     if (!level.isLoaded(pos)) continue
                     val be = level.getBlockEntity(pos) as? damien.nodeworks.network.Connectable ?: continue
@@ -1019,7 +1036,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             damien.nodeworks.network.DiagnosticTopologyChunkPayload.CODEC,
         ) { payload, context ->
             context.enqueueWork {
-                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val player = net.minecraft.client.Minecraft.getInstance().player
+                if (player == null) return@enqueueWork
                 val menu = player.containerMenu as? damien.nodeworks.screen.DiagnosticMenu ?: return@enqueueWork
                 menu.appendTopologyChunk(payload.blocks, payload.isLast)
             }
@@ -1030,7 +1048,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             damien.nodeworks.network.DiagnosticProcessingApisChunkPayload.CODEC,
         ) { payload, context ->
             context.enqueueWork {
-                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val player = net.minecraft.client.Minecraft.getInstance().player
+                if (player == null) return@enqueueWork
                 val menu = player.containerMenu as? damien.nodeworks.screen.DiagnosticMenu ?: return@enqueueWork
                 menu.appendProcessingApisChunk(payload.apis, payload.isLast)
             }
@@ -1041,7 +1060,8 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             damien.nodeworks.network.ProcessingHandlerStateSyncPayload.CODEC,
         ) { payload, context ->
             context.enqueueWork {
-                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val player = net.minecraft.client.Minecraft.getInstance().player
+                if (player == null) return@enqueueWork
                 val menu = player.containerMenu as? damien.nodeworks.screen.ProcessingHandlerMenu ?: return@enqueueWork
                 if (menu.devicePos != payload.data.pos) return@enqueueWork
                 menu.applyStateSync(payload.data)

@@ -230,7 +230,8 @@ class ExportChestBlockEntity(
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (totalSpace <= 0L) break
             if (!channel.matches(card.channel)) continue
-            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val storage = NetworkStorageHelper.getStorage(level, card)
+            if (storage == null) continue
             val extracted = PlatformServices.storage.extractStacksByPredicate(storage, filterPred, totalSpace)
             for (stack in extracted) {
                 if (stack.isEmpty) continue
@@ -287,7 +288,8 @@ class ExportChestBlockEntity(
      *  slots out round-robin to every paired Receiver Antenna that has an
      *  Import Chest below it. Two receivers split a 9-slot chest 5/4 per tick. */
     private fun pushWireless(level: ServerLevel) {
-        val broadcast = adjacentBroadcastAntenna(level) ?: return
+        val broadcast = adjacentBroadcastAntenna(level)
+        if (broadcast == null) return
         val freq = broadcast.frequencyId
         val receivers = damien.nodeworks.network.WirelessBroadcastRegistry.getReceivers(freq)
         if (receivers.isEmpty()) return
@@ -321,7 +323,8 @@ class ExportChestBlockEntity(
             val neighborPos = worldPosition.relative(dir)
             if (!level.isLoaded(neighborPos)) continue
             val be = level.getBlockEntity(neighborPos) as? BroadcastAntennaBlockEntity ?: continue
-            val source = be.detectSource() ?: continue
+            val source = be.detectSource()
+            if (source == null) continue
             if (source.first == damien.nodeworks.item.BroadcastSourceKind.EXPORT_CHEST
                 && source.second == worldPosition) return be
         }
@@ -335,7 +338,8 @@ class ExportChestBlockEntity(
         broadcast: BroadcastAntennaBlockEntity,
         receiver: damien.nodeworks.network.WirelessBroadcastRegistry.Receiver,
     ): damien.nodeworks.platform.ItemStorageHandle? {
-        val targetLevel = level.server.getLevel(receiver.dimension) ?: return null
+        val targetLevel = level.server.getLevel(receiver.dimension)
+        if (targetLevel == null) return null
         if (!targetLevel.isLoaded(receiver.pos)) return null
         val recvBe = targetLevel.getBlockEntity(receiver.pos) as? ReceiverAntennaBlockEntity ?: return null
         // Receiver lost its crystal mid-broadcast?
@@ -365,7 +369,8 @@ class ExportChestBlockEntity(
      *  inventories, modded machines, and pipes all work. */
     private fun pushToAdjacent(level: ServerLevel, face: Direction) {
         val adjPos = worldPosition.relative(face)
-        val dest = PlatformServices.storage.getItemStorage(level, adjPos, face.opposite) ?: return
+        val dest = PlatformServices.storage.getItemStorage(level, adjPos, face.opposite)
+        if (dest == null) return
         var changed = false
         for (i in 0 until SLOT_COUNT) {
             val slot = items[i]
@@ -456,9 +461,10 @@ class ExportChestBlockEntity(
 
     override fun startOpen(user: ContainerUser) {
         if (isRemoved) return
-        val living = user.livingEntity ?: return
+        val living = user.livingEntity
         if (living is Player && living.isSpectator) return
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         openersCounter.incrementOpeners(
             living, lvl, worldPosition, blockState,
             user.containerInteractionRange,
@@ -467,15 +473,17 @@ class ExportChestBlockEntity(
 
     override fun stopOpen(user: ContainerUser) {
         if (isRemoved) return
-        val living = user.livingEntity ?: return
+        val living = user.livingEntity
         if (living is Player && living.isSpectator) return
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         openersCounter.decrementOpeners(living, lvl, worldPosition, blockState)
     }
 
     fun recheckOpen() {
         if (isRemoved) return
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         openersCounter.recheckOpeners(lvl, worldPosition, blockState)
     }
 

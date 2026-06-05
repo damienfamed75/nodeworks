@@ -221,7 +221,7 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties) {
         }
 
         /** Tinted dust puff at the centre of the face the card was placed on,
-         *  colour matched to the card type so a row of cards visually says
+         *  color matched to the card type so a row of cards visually says
          *  what's where as the player drops them in. Mirrors the palette
          *  [damien.nodeworks.render.NodeRenderer] uses on the node body so the
          *  puff and the resulting indicator agree. */

@@ -26,7 +26,7 @@ import org.joml.Quaternionf
 
 /**
  * Block Entity renderer for the Craft Requester. Three submit passes:
- *  1. Emissive overlay tinted with the network colour, baked quads from
+ *  1. Emissive overlay tinted with the network color, baked quads from
  *     `craft_requester_emissive.json`. Skipped when disconnected.
  *  2. Redstone-active overlay, drawn while `signalActive`. Untinted.
  *  3. Target item icon on the facing face, in the model's 4×4 px pad.
@@ -68,7 +68,8 @@ class CraftRequesterRenderer(context: BlockEntityRendererProvider.Context) :
          *  culled by a sturdy neighbour or claimed by an active pipe
          *  connection. Shared with the batch-text pass so they hide together. */
         fun isFacingFaceVisible(blockEntity: CraftRequesterBlockEntity): Boolean {
-            val level = blockEntity.level ?: return false
+            val level = blockEntity.level
+            if (level == null) return false
             val facing = blockEntity.blockState.getValue(CraftRequesterBlock.FACING)
             val pos = blockEntity.blockPos
             val neighborPos = pos.relative(facing)
@@ -130,7 +131,7 @@ class CraftRequesterRenderer(context: BlockEntityRendererProvider.Context) :
         }
         val redstone = CraftRequesterRedstoneActiveModel.get()
         if (state.signalActive && redstone != null) {
-            // White tint, PNG carries its own colour.
+            // White tint, PNG carries its own color.
             submitOverlay(state.facing, poseStack, submitNodeCollector, redstone, 0xFFFFFF)
         }
 

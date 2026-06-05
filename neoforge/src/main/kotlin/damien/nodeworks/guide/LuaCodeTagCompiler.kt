@@ -66,7 +66,7 @@ import net.minecraft.network.chat.Component
  *
  * One `LytVBox` containing one `LytParagraph` per source line. Each paragraph's children
  * are [LytFlowText] spans per token, each with:
- *   - A text style whose `color` is the token's tokenizer colour (so the palette matches
+ *   - A text style whose `color` is the token's tokenizer color (so the palette matches
  *     what the in-game editor draws).
  *   - `whiteSpace = WhiteSpaceMode.PRE` so indentation / spacing renders verbatim and
  *     the paragraph layout engine doesn't collapse runs of whitespace.
@@ -100,7 +100,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
                 return
             }
 
-        // Custom container so we can fill with the editor's exact BG colour. LytBox's
+        // Custom container so we can fill with the editor's exact BG color. LytBox's
         // built-in backgroundColor takes a SymbolicColor, which only offers a washed-out
         // translucent BLOCKQUOTE_BACKGROUND or pure BLACK, neither matches the
         // #0D0D0D near-black the Scripting Terminal uses. Overriding `render` to fillRect
@@ -141,7 +141,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
                 val doc = LuaApiDocs.resolveAt(tokens, i)
                 if (doc != null) {
                     // Wrap in a tooltip span so hover surfaces the docstring. The span
-                    // keeps our coloured text as its visible content and adds the
+                    // keeps our colored text as its visible content and adds the
                     // interactivity layer on top.
                     val span = LytTooltipSpan()
                     span.append(text)
@@ -179,7 +179,8 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
         parent: LytBlockContainer,
         el: MdxJsxElementFields,
     ): String? {
-        val src = el.getAttributeString("src", null) ?: return null
+        val src = el.getAttributeString("src", null)
+        if (src == null) return null
         val absId = try {
             IdUtils.resolveLink(src, compiler.pageId)
         } catch (e: IdentifierException) {
@@ -233,7 +234,7 @@ class LuaCodeTagCompiler : BlockTagCompiler() {
          *  glyph width. */
         private const val TOOLTIP_MAX_WIDTH_PX = 200
 
-        /** Exact background colour of the Scripting Terminal's [ScriptEditor] (its
+        /** Exact background color of the Scripting Terminal's [ScriptEditor] (its
          *  `BG_COLOR` constant). Keeping the values in sync means code snippets in the
          *  guidebook look like they were lifted straight out of the editor. */
         private val EDITOR_BG_COLOR: ColorValue = ConstantColor(0xFF0D0D0D.toInt())

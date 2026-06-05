@@ -216,7 +216,8 @@ class ExportChestScreen(
             it.setMaxLength(damien.nodeworks.block.entity.ExportChestBlockEntity.MAX_TICK_INTERVAL.toString().length)
             it.setValue(menu.tickInterval.toString())
             it.setResponder { value ->
-                val v = value.toIntOrNull() ?: return@setResponder
+                val v = value.toIntOrNull()
+                if (v == null) return@setResponder
                 val clamped = v.coerceIn(
                     damien.nodeworks.block.entity.ExportChestBlockEntity.MIN_TICK_INTERVAL,
                     damien.nodeworks.block.entity.ExportChestBlockEntity.MAX_TICK_INTERVAL,
@@ -261,7 +262,8 @@ class ExportChestScreen(
     private fun commitRuleField(visibleIdx: Int): Boolean {
         val ruleIdx = scrollOffset + visibleIdx
         if (ruleIdx !in localRules.indices) return false
-        val field = ruleFields.getOrNull(visibleIdx) ?: return false
+        val field = ruleFields.getOrNull(visibleIdx)
+        if (field == null) return false
         if (field.value == localRules[ruleIdx]) return false
         localRules[ruleIdx] = field.value
         return true
@@ -674,8 +676,10 @@ class ExportChestScreen(
                 ?: return null
             val parsed = damien.nodeworks.script.FilterRule.parse(core, registries)
             if (parsed is damien.nodeworks.script.FilterRule.Item) {
-                val ident = Identifier.tryParse(parsed.itemId) ?: return null
-                val item = BuiltInRegistries.ITEM.getValue(ident) ?: return null
+                val ident = Identifier.tryParse(parsed.itemId)
+                if (ident == null) return null
+                val item = BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+                if (item == null) return null
                 val stack = ItemStack(item)
                 if (parsed.componentsPatch != null && parsed.componentsPatch.size() > 0) {
                     stack.applyComponents(parsed.componentsPatch)
@@ -684,13 +688,16 @@ class ExportChestScreen(
             }
             return null
         }
-        val ident = Identifier.tryParse(core) ?: return null
-        val item = BuiltInRegistries.ITEM.getValue(ident) ?: return null
+        val ident = Identifier.tryParse(core)
+        if (ident == null) return null
+        val item = BuiltInRegistries.ITEM.getOptional(ident).orElse(null)
+        if (item == null) return null
         return ItemStack(item)
     }
 
     private fun lookupTagMembers(tagId: String): List<Item> {
-        val ident = Identifier.tryParse(tagId) ?: return emptyList()
+        val ident = Identifier.tryParse(tagId)
+        if (ident == null) return emptyList()
         val match = BuiltInRegistries.ITEM.getTags()
             .filter { it.key().location == ident }
             .findFirst()
@@ -992,7 +999,8 @@ class ExportChestScreen(
 
     private fun chestFacing(): Direction {
         val mc = Minecraft.getInstance()
-        val level = mc.level ?: return Direction.SOUTH
+        val level = mc.level
+        if (level == null) return Direction.SOUTH
         val state = level.getBlockState(menu.devicePos)
         val block = state.block
         if (block !is damien.nodeworks.block.ExportChestBlock) return Direction.SOUTH

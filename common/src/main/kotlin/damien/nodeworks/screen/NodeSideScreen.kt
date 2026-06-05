@@ -83,7 +83,8 @@ class NodeSideScreen(
 
     private fun updateFacingBlocks() {
         val mc = net.minecraft.client.Minecraft.getInstance()
-        val level = mc.level ?: return
+        val level = mc.level
+        if (level == null) return
         val nodePos = menu.getNodePos()
         for (i in 0 until 6) {
             val dir = Direction.entries[i]

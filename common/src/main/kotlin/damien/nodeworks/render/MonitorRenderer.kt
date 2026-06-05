@@ -21,7 +21,7 @@ import org.joml.Quaternionf
 /**
  * Block Entity renderer for the standalone Monitor block.
  *
- *  1. Emissive front face, tinted with the network colour, same treatment as the
+ *  1. Emissive front face, tinted with the network color, same treatment as the
  *     Terminal. Drawn via the shared [EmissiveCubeRenderer] so the pipeline matches
  *     every other emissive block in the mod. Only the facing direction's face is
  *     emitted.
@@ -95,7 +95,7 @@ open class MonitorRenderer(context: BlockEntityRendererProvider.Context) :
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
-        // Emissive front + back faces, both tinted with the network colour. Separate
+        // Emissive front + back faces, both tinted with the network color. Separate
         // render types because each face has its own texture (the back design usually
         // differs from the front screen).
         val r = (state.color shr 16) and 0xFF

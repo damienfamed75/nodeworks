@@ -63,7 +63,8 @@ class InstructionStorageBlockEntity(
 
     /** All Instruction Sets from this block plus every face-adjacent InstructionStorage in the cluster. */
     fun getAllInstructionSets(): List<InstructionSetInfo> {
-        val lvl = level ?: return getInstructionSets()
+        val lvl = level
+        if (lvl == null) return getInstructionSets()
         val all = mutableListOf<InstructionSetInfo>()
         for (pos in clusterPositions(lvl)) {
             val entity = lvl.getBlockEntity(pos) as? InstructionStorageBlockEntity ?: continue
@@ -75,7 +76,8 @@ class InstructionStorageBlockEntity(
     /** Lex-lowest position in this cluster. Stable cluster identity for network-walk
      *  consumers that need to enumerate each cluster exactly once. */
     fun getClusterAnchor(): BlockPos {
-        val lvl = level ?: return worldPosition
+        val lvl = level
+        if (lvl == null) return worldPosition
         return clusterPositions(lvl).minByOrNull { it.asLong() } ?: worldPosition
     }
 

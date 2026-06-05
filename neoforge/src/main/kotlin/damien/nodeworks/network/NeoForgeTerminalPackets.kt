@@ -69,7 +69,8 @@ object NeoForgeTerminalPackets {
             }
             return false
         }
-        val nodePos = terminal.getNetworkStartPos() ?: return false
+        val nodePos = terminal.getNetworkStartPos()
+        if (nodePos == null) return false
         val gp = GlobalPos.of(level.dimension(), pos)
         activeEngines.remove(gp)?.stop()
 
@@ -113,7 +114,8 @@ object NeoForgeTerminalPackets {
     ): ScriptEngine? {
         val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
-            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)]
+            if (engine == null) continue
             if (engine.isRunning()) return engine
         }
         return null
@@ -130,7 +132,8 @@ object NeoForgeTerminalPackets {
     ): ScriptEngine? {
         val dimKey = overrideDimension ?: level.dimension()
         for (pos in terminalPositions) {
-            val engine = activeEngines[GlobalPos.of(dimKey, pos)] ?: continue
+            val engine = activeEngines[GlobalPos.of(dimKey, pos)]
+            if (engine == null) continue
             if (engine.isRunning() && engine.processingHandlers.containsKey(cardName)) {
                 return engine
             }
@@ -260,7 +263,8 @@ object NeoForgeTerminalPackets {
         pendingAutoRun.clear()
 
         for (gp in toStart) {
-            val level = server.getLevel(gp.dimension()) ?: continue
+            val level = server.getLevel(gp.dimension())
+            if (level == null) continue
             val pos = gp.pos()
             if (!level.isLoaded(pos)) continue
             val terminal = level.getBlockEntity(pos) as? TerminalBlockEntity ?: continue
@@ -329,7 +333,8 @@ object NeoForgeTerminalPackets {
             .sortedBy { it.value.vruntimeNs }
         for ((gp, _) in snapshot) {
             // Re-resolve in case a reentrant startEngine replaced the entry.
-            val engine = activeEngines[gp] ?: continue
+            val engine = activeEngines[gp]
+            if (engine == null) continue
             if (!engine.isRunning()) {
                 toRemove.add(gp)
                 continue
@@ -355,7 +360,8 @@ object NeoForgeTerminalPackets {
         // Only remove if the entry is still the same engine we were about to retire,
         // a reentrant startEngine may have installed a fresh one at this key.
         for (gp in toRemove) {
-            val engine = activeEngines[gp] ?: continue
+            val engine = activeEngines[gp]
+            if (engine == null) continue
             if (!engine.isRunning() || !engine.hasWork()) {
                 activeEngines.remove(gp)?.stop()
             }

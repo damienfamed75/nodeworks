@@ -2,7 +2,7 @@ package damien.nodeworks.script.diagnostics
 
 /**
  * A single editor diagnostic produced by [LuaDiagnostics]. The rendering layer
- * (ScriptEditor) draws an underline for each diagnostic at [range] coloured per
+ * (ScriptEditor) draws an underline for each diagnostic at [range] colored per
  * [severity], and the existing hover-tooltip path surfaces [message] when the
  * cursor lands on the range.
  *

@@ -53,7 +53,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
     companion object {
         private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
 
-        /** Per-card-type beam colour (r, g, b 0-255). */
+        /** Per-card-type beam color (r, g, b 0-255). */
         private val CARD_COLORS = mapOf(
             "io" to Triple(0x83, 0xE0, 0x86), // green
             "storage" to Triple(0xAA, 0x83, 0xE0), // purple

@@ -173,7 +173,8 @@ class ProcessingJob(
             }
             for (getter in getters) {
                 if (stillNeeded <= 0L) break
-                val storage = getter.getStorage() ?: continue
+                val storage = getter.getStorage()
+                if (storage == null) continue
                 val extractedStacks = PlatformServices.storage.extractStacksByPredicate(
                     storage, stackFilter, stillNeeded
                 )

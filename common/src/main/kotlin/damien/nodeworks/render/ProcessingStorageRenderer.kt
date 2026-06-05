@@ -83,7 +83,8 @@ open class ProcessingStorageRenderer(context: BlockEntityRendererProvider.Contex
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
-        val facing = state.facing ?: return
+        val facing = state.facing
+        if (facing == null) return
 
         // Emissive front-face glow (network-tinted). Submitted in block-local space,
         // no translate/rotate, [EmissiveCubeRenderer.faceOf] selects the correct

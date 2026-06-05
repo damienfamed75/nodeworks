@@ -19,7 +19,7 @@ import net.minecraft.world.phys.Vec3
  *    micro-styled so the visual transitions from "parent" to "micro" right
  *    inside the block.
  *  - **Transition cube**: small emissive cube in the centre using the
- *    `transition_cube.png` texture (white→yellow gradient) so the colour
+ *    `transition_cube.png` texture (white→yellow gradient) so the color
  *    handoff between the two stubs is visible at any angle.
  */
 class ProcessingHandlerRenderer(context: BlockEntityRendererProvider.Context) :
@@ -98,7 +98,7 @@ class ProcessingHandlerRenderer(context: BlockEntityRendererProvider.Context) :
             )
         }
         // Centre transition cube. Drawn whenever EITHER side is on a
-        // network so the player sees the colour handoff while diagnosing a
+        // network so the player sees the color handoff while diagnosing a
         // half-connected handler; suppressed entirely when both sides are
         // disconnected (matches stub gating).
         if (state.hasParentNetwork || state.hasMicroNetwork) {
@@ -108,9 +108,9 @@ class ProcessingHandlerRenderer(context: BlockEntityRendererProvider.Context) :
 
     /** Emit a small solid cube at the block centre using the same render
      *  type as Pipe / Node centre cubes ([PipeLaserCoreRenderType], position
-     *  + colour, no texture). Per-vertex tint is white on vertices facing
+     *  + color, no texture). Per-vertex tint is white on vertices facing
      *  the back of the Handler and yellow (#FFDC3B) on vertices facing the
-     *  front, so the cube reads as a colour handoff: solid white on the
+     *  front, so the cube reads as a color handoff: solid white on the
      *  back face, solid yellow on the front face, smooth gradient on the
      *  four side faces. */
     private fun emitTransitionCube(

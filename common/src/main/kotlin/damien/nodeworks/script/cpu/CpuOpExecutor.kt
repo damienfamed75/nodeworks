@@ -85,7 +85,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
      *  players can tune it in the Controller GUI without a server restart. Falls back to
      *  50 if no Controller is reachable (legacy default). */
     private fun maxHandlerRetries(): Int {
-        val lvl = cpu.level ?: return 50
+        val lvl = cpu.level
+        if (lvl == null) return 50
         return damien.nodeworks.render.NodeConnectionRenderer
             .findController(lvl, cpu.blockPos)?.handlerRetryLimit ?: 50
     }
@@ -177,7 +178,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val variantSensitive = op.componentsHash.isNotEmpty()
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
-            val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+            val storage = NetworkStorageHelper.getStorage(lvl, card)
+            if (storage == null) continue
             val extractedStacks = if (variantSensitive) {
                 PlatformServices.storage.extractStacksByPredicate(storage, { stack ->
                     val sid = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
@@ -219,7 +221,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         op: Operation.Execute,
         lvl: ServerLevel
     ): CraftScheduler.OpResult {
-        val recipeManager = lvl.recipeAccess() ?: return CraftScheduler.OpResult.Failed("No recipe manager")
+        val recipeManager = lvl.recipeAccess()
 
         val ingredientCounts = mutableMapOf<String, Int>()
         for (id in op.recipe) if (id.isNotEmpty()) ingredientCounts.merge(id, 1, Int::plus)
@@ -229,7 +231,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             else {
                 val id = Identifier.tryParse(itemId)
                     ?: return CraftScheduler.OpResult.Failed("Bad item id in recipe: $itemId")
-                val item = BuiltInRegistries.ITEM.getValue(id)
+                val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
                     ?: return CraftScheduler.OpResult.Failed("Unknown item in recipe: $itemId")
                 ItemStack(item, 1)
             }
@@ -295,7 +297,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val removed = cpu.removeFromBuffer(op.itemId, op.amount)
         val id = Identifier.tryParse(op.itemId)
             ?: return CraftScheduler.OpResult.Failed("Bad item id: ${op.itemId}")
-        val item = BuiltInRegistries.ITEM.getValue(id)
+        val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
             ?: return CraftScheduler.OpResult.Failed("Unknown item: ${op.itemId}")
 
         // Update the network's inventory cache as items land so the Inventory
@@ -542,7 +544,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             val (itemId, batchCount) = slotData
             val id = Identifier.tryParse(itemId)
                 ?: return CraftScheduler.OpResult.Failed("Bad input item id: $itemId")
-            val item = BuiltInRegistries.ITEM.getValue(id)
+            val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
                 ?: return CraftScheduler.OpResult.Failed("Unknown input item: $itemId")
             // Pair the slot with its recipe ingredient so the ItemsHandle's
             // BufferSource keys on the variant's BufferKey (e.g. strength-
@@ -1088,8 +1090,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         lvl: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ) {
-        val id = Identifier.tryParse(itemId) ?: return
-        val item = BuiltInRegistries.ITEM.getValue(id) ?: return
+        val id = Identifier.tryParse(itemId)
+        if (id == null) return
+        val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return
         var remaining = count
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()

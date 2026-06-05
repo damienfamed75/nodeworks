@@ -69,7 +69,8 @@ object BlockCraftSubmitter {
         }
         // Defensive, every craft() success returns a pending job today, the
         // nullable type is API-level slack.
-        val pending = result.pendingJob ?: return Result.Failed("Submission returned no job handle")
+        val pending = result.pendingJob
+        if (pending == null) return Result.Failed("Submission returned no job handle")
         return Result.Submitted(pending)
     }
 }

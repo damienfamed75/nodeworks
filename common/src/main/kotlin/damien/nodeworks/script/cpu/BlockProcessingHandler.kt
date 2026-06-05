@@ -200,8 +200,10 @@ object BlockProcessingHandler {
         count: Long,
         channel: ChannelFilter,
     ): Boolean {
-        val id = Identifier.tryParse(itemId) ?: return false
-        val item = BuiltInRegistries.ITEM.getValue(id) ?: return false
+        val id = Identifier.tryParse(itemId)
+        if (id == null) return false
+        val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return false
         val bufferKey = ingredient?.bufferKey() ?: damien.nodeworks.script.BufferKey.Key(itemId, "")
         val hasData = !bufferKey.isPlain
 
@@ -227,7 +229,8 @@ object BlockProcessingHandler {
         var capacity = 0L
         for (card in cards) {
             if (capacity >= count) break
-            val dest = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val dest = NetworkStorageHelper.getStorage(level, card)
+            if (dest == null) continue
             capacity += try {
                 PlatformServices.storage.simulateInsertItem(dest, item, count - capacity)
             } catch (_: Exception) { 0L }
@@ -272,7 +275,8 @@ object BlockProcessingHandler {
         val committed = ArrayList<Pair<CardSnapshot, Long>>(cards.size)
         for (card in cards) {
             if (remaining <= 0L) break
-            val dest = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val dest = NetworkStorageHelper.getStorage(level, card)
+            if (dest == null) continue
             var sim = try {
                 PlatformServices.storage.simulateInsertItem(dest, item, remaining)
             } catch (_: Exception) { 0L }
@@ -298,7 +302,8 @@ object BlockProcessingHandler {
             // Real insert accepted less than sim claimed (rare). Pull placed
             // items back so the slot's net effect on buffer + cards is zero.
             for ((card, amount) in committed) {
-                val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                val storage = NetworkStorageHelper.getStorage(level, card)
+                if (storage == null) continue
                 // Variant-aware rollback so a sibling variant in the card
                 // can't be grabbed instead of the one we inserted.
                 val pulledStacks = try {
@@ -361,7 +366,8 @@ object BlockProcessingHandler {
             for (card in allCards) {
                 if (stillNeeded <= 0L) break
                 if (!channel.matches(card.channel)) continue
-                val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                val storage = NetworkStorageHelper.getStorage(level, card)
+                if (storage == null) continue
                 // Variant-aware unwind: narrow to the specific (itemId, hash)
                 // bucket so the rollback grabs the exact potion / dyed armor
                 // we just routed out, not a fresh swap that drifted in.

@@ -23,7 +23,7 @@ import org.joml.Quaternionf
 
 /**
  * Block Entity renderer for the Storage Meter. Three submit passes:
- *  1. Emissive overlay tinted with the network colour, baked quads from
+ *  1. Emissive overlay tinted with the network color, baked quads from
  *     `storage_meter_emissive.json`. Skipped when disconnected.
  *  2. Redstone-active overlay, drawn when below threshold. Untinted.
  *  3. Target item icon on the front face. Count text is rendered on top by
@@ -97,7 +97,7 @@ class StorageMeterRenderer(context: BlockEntityRendererProvider.Context) :
         }
         val redstone = StorageMeterRedstoneActiveModel.get()
         if (state.isBelowThreshold && redstone != null) {
-            // White tint, PNG carries its own colour.
+            // White tint, PNG carries its own color.
             submitOverlay(state.facing, poseStack, submitNodeCollector, redstone, 0xFFFFFF)
         }
 

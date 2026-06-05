@@ -193,7 +193,8 @@ object NodeConnectionHelper {
 
     fun drainPendingRevalidations(server: net.minecraft.server.MinecraftServer) {
         for (level in server.allLevels) {
-            val pending = pendingRevalidateByDim[level.dimension()] ?: continue
+            val pending = pendingRevalidateByDim[level.dimension()]
+            if (pending == null) continue
             if (pending.isEmpty()) continue
             // Snapshot so we can clear and let setLevel calls that happen DURING processing
             // accumulate into the next-tick batch rather than mutate the set we're iterating.
@@ -207,7 +208,8 @@ object NodeConnectionHelper {
                 }
                 val pos = BlockPos.of(packed)
                 if (!level.isLoaded(pos)) continue
-                val entity = getConnectable(level, pos) ?: continue
+                val entity = getConnectable(level, pos)
+                if (entity == null) continue
                 revalidateOnLoad(level, entity)
                 processed++
             }
@@ -225,7 +227,8 @@ object NodeConnectionHelper {
     /** Remove a Connectable from the chunk index. The chunk's set is left
      *  in place when empty, cleanup happens lazily on the next [trackNode]. */
     fun untrackNode(level: ServerLevel, pos: BlockPos) {
-        val chunks = nodesByDimension[level.dimension()] ?: return
+        val chunks = nodesByDimension[level.dimension()]
+        if (chunks == null) return
         val key = chunkKeyOf(pos)
         chunks[key]?.remove(pos)
     }
@@ -282,7 +285,8 @@ object NodeConnectionHelper {
     }
 
     fun toggleConnection(level: ServerLevel, posA: BlockPos, posB: BlockPos): ConnectResult {
-        val entityA = getConnectable(level, posA) ?: return ConnectResult.InvalidEndpoint
+        val entityA = getConnectable(level, posA)
+        if (entityA == null) return ConnectResult.InvalidEndpoint
         if (entityA.hasConnection(posB)) {
             disconnect(level, posA, posB)
             return ConnectResult.AlreadyConnected
@@ -292,8 +296,10 @@ object NodeConnectionHelper {
 
     fun connect(level: ServerLevel, posA: BlockPos, posB: BlockPos): ConnectResult {
         if (posA == posB) return ConnectResult.SameEndpoint
-        val entityA = getConnectable(level, posA) ?: return ConnectResult.InvalidEndpoint
-        val entityB = getConnectable(level, posB) ?: return ConnectResult.InvalidEndpoint
+        val entityA = getConnectable(level, posA)
+        if (entityA == null) return ConnectResult.InvalidEndpoint
+        val entityB = getConnectable(level, posB)
+        if (entityB == null) return ConnectResult.InvalidEndpoint
         if (entityA.hasConnection(posB)) return ConnectResult.AlreadyConnected
 
         if (!isWithinRange(posA, posB)) return ConnectResult.OutOfRange
@@ -343,7 +349,8 @@ object NodeConnectionHelper {
         queue.add(startPos to null)
         while (queue.isNotEmpty()) {
             val (pos, entryFace) = queue.removeFirst()
-            val entity = getConnectable(level, pos) ?: continue
+            val entity = getConnectable(level, pos)
+            if (entity == null) continue
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
                 // Stable identity, the transient networkId may be null mid-conflict.
                 return entity.permanentId
@@ -401,7 +408,8 @@ object NodeConnectionHelper {
 
         while (queue.isNotEmpty()) {
             val (pos, entryFace) = queue.removeFirst()
-            val entity = getConnectable(level, pos) ?: continue
+            val entity = getConnectable(level, pos)
+            if (entity == null) continue
             for (conn in entity.connectionsFromFace(entryFace)) {
                 if (!level.isLoaded(conn)) continue
                 if (!checkLineOfSightCached(level, pos, conn)) continue
@@ -432,7 +440,8 @@ object NodeConnectionHelper {
         var microAnchor: Connectable? = null
         var boundaryDoubleVisited = false
         for ((pos, faces) in visited) {
-            val entity = getConnectable(level, pos) ?: continue
+            val entity = getConnectable(level, pos)
+            if (entity == null) continue
             if (entity is damien.nodeworks.block.entity.NetworkControllerBlockEntity) {
                 controllerCount++
                 if (controllerCount == 1) foundId = entity.permanentId
@@ -472,7 +481,8 @@ object NodeConnectionHelper {
         val previousIds = HashSet<java.util.UUID>()
         val otherSideRequeues = ArrayList<BlockPos>()
         for ((pos, faces) in visited) {
-            val entity = getConnectable(level, pos) ?: continue
+            val entity = getConnectable(level, pos)
+            if (entity == null) continue
             if (entity is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity) {
                 var sideChanged = false
                 if (entity.backFace in faces && entity.networkId != foundId) {
@@ -527,16 +537,9 @@ object NodeConnectionHelper {
         for (id in previousIds) NetworkDiscovery.invalidate(id)
     }
 
-    /** Face-adjacent Connectable BEs. Both endpoints must opt into adjacency, and both
-     *  must accept the pair via [Connectable.canConnectAdjacentTo]. Used by leaves
-     *  (import / export chests) to refuse other leaves so two chests don't auto-bridge.
-     *  Wrench force-blocks on either side's touching face also break the pair, so
-     *  the network propagation matches what the multipart blockstate is rendering.
-     *
-     *  [entryFace] is the face of [entity] through which the BFS arrived (or null
-     *  for the start node). Boundary Connectables (Processing Handler) use this
-     *  to gate per-face participation via [Connectable.adjacencyFaceAllowed], so a
-     *  back-side walk doesn't leak into the front-side micro-network. */
+    /** Face-adjacent Connectable BE positions reachable from [entity]. The
+     *  bridging rule lives in [canBridgeAdjacent], shared with
+     *  [NetworkDiscovery]'s adjacency pass. */
     private fun adjacentConnectableNeighbors(
         level: ServerLevel,
         pos: BlockPos,
@@ -546,17 +549,12 @@ object NodeConnectionHelper {
         if (!entity.usesAdjacency()) return emptyList()
         val out = ArrayList<BlockPos>(6)
         for (dir in Direction.entries) {
-            if (!entity.adjacencyFaceAllowed(dir, entryFace)) continue
-            val neighbor = pos.relative(dir)
-            if (!level.isLoaded(neighbor)) continue
-            val neighborBe = level.getBlockEntity(neighbor) as? Connectable ?: continue
-            if (!neighborBe.usesAdjacency()) continue
-            if (!neighborBe.adjacencyFaceAllowed(dir.opposite, dir.opposite)) continue
-            if (!entity.canConnectAdjacentTo(neighborBe)) continue
-            if (!neighborBe.canConnectAdjacentTo(entity)) continue
-            if (entity.forcedPipeBlocked(dir)) continue
-            if (neighborBe.forcedPipeBlocked(dir.opposite)) continue
-            out.add(neighbor)
+            val neighborPos = pos.relative(dir)
+            if (!level.isLoaded(neighborPos)) continue
+            val neighborBe = level.getBlockEntity(neighborPos) as? Connectable
+            if (neighborBe == null) continue
+            if (!canBridgeAdjacent(entity, entryFace, neighborBe, dir)) continue
+            out.add(neighborPos)
         }
         return out
     }
@@ -579,7 +577,8 @@ object NodeConnectionHelper {
         }
         // Already visited at least once. A second visit is only useful for
         // boundary Connectables and only when it brings a new entry face.
-        val entity = getConnectable(level, pos) ?: return false
+        val entity = getConnectable(level, pos)
+        if (entity == null) return false
         if (!entity.allowsRepeatVisitAcrossFaces()) return false
         if (entryFace in faces) return false
         faces.add(entryFace)
@@ -618,12 +617,14 @@ object NodeConnectionHelper {
     // only does real work for the small fraction of BEs that have laser links.
 
     fun onBlockChanged(level: ServerLevel, changedPos: BlockPos) {
-        val chunks = nodesByDimension[level.dimension()] ?: return
+        val chunks = nodesByDimension[level.dimension()]
+        if (chunks == null) return
         val cx = changedPos.x shr 4
         val cz = changedPos.z shr 4
         for (dx in -1..1) {
             for (dz in -1..1) {
-                val nodes = chunks[chunkKey(cx + dx, cz + dz)] ?: continue
+                val nodes = chunks[chunkKey(cx + dx, cz + dz)]
+                if (nodes == null) continue
                 for (nodePos in nodes) {
                     checkNodeConnections(level, nodePos, changedPos)
                 }
@@ -632,7 +633,8 @@ object NodeConnectionHelper {
     }
 
     private fun checkNodeConnections(level: ServerLevel, nodePos: BlockPos, changedPos: BlockPos) {
-        val entity = getConnectable(level, nodePos) ?: return
+        val entity = getConnectable(level, nodePos)
+        if (entity == null) return
         val connections = entity.getConnections()
         if (connections.isEmpty()) return
 
@@ -685,8 +687,10 @@ object NodeConnectionHelper {
         if (!isWithinRange(splicerPos, posB)) return false
         if (!checkLineOfSight(level, posA, splicerPos)) return false
         if (!checkLineOfSight(level, splicerPos, posB)) return false
-        val entityA = getConnectable(level, posA) ?: return false
-        val entityB = getConnectable(level, posB) ?: return false
+        val entityA = getConnectable(level, posA)
+        if (entityA == null) return false
+        val entityB = getConnectable(level, posB)
+        if (entityB == null) return false
 
         entityA.addConnection(splicerPos)
         splicer.addConnection(posA)

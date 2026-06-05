@@ -24,7 +24,8 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
     override fun useOn(context: UseOnContext): InteractionResult {
         val level = context.level
         val clickedPos = context.clickedPos
-        val player = context.player ?: return InteractionResult.PASS
+        val player = context.player
+        if (player == null) return InteractionResult.PASS
 
         if (level.isClientSide) return InteractionResult.SUCCESS
 
@@ -78,7 +79,8 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
 
         while (queue.isNotEmpty()) {
             val (curPos, entryFace) = queue.removeFirst()
-            val ce = NodeConnectionHelper.getConnectable(level, curPos) ?: continue
+            val ce = NodeConnectionHelper.getConnectable(level, curPos)
+            if (ce == null) continue
             forEachConnectableNeighbor(serverLevel, curPos, ce, entryFace) { nextPos, nextEntry ->
                 if (visited.add(nextPos)) queue.add(nextPos to nextEntry)
             }
@@ -94,7 +96,8 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
         }
 
         for (blockPos in nonPipePositions) {
-            val entity = NodeConnectionHelper.getConnectable(level, blockPos) ?: continue
+            val entity = NodeConnectionHelper.getConnectable(level, blockPos)
+            if (entity == null) continue
 
             val type = when (entity) {
                 // FocusNode extends Node, check the subclass first so Focus Nodes
@@ -106,7 +109,6 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                 is damien.nodeworks.block.entity.CraftingCoreBlockEntity -> "crafting_core"
                 is damien.nodeworks.block.entity.InstructionStorageBlockEntity -> "instruction_storage"
                 is damien.nodeworks.block.entity.ProcessingStorageBlockEntity -> "processing_storage"
-                is damien.nodeworks.block.entity.VariableBlockEntity -> "variable"
                 is damien.nodeworks.block.entity.ReceiverAntennaBlockEntity -> "receiver_antenna"
                 is damien.nodeworks.block.entity.InventoryTerminalBlockEntity -> "inventory_terminal"
                 is damien.nodeworks.block.entity.BreakerBlockEntity -> "breaker"
@@ -115,7 +117,10 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                 is damien.nodeworks.block.entity.ImportChestBlockEntity -> "import_chest"
                 is damien.nodeworks.block.entity.ExportChestBlockEntity -> "export_chest"
                 is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity -> "processing_handler"
-                else -> "unknown"
+                // SPI extension path: unknown BE classes fall back to the registry so
+                // extension-mod devices can light up the topology by registering a
+                // DeviceType with a non-null displayInfo.
+                else -> damien.nodeworks.api.DeviceRegistry.byBE(entity)?.typeId ?: "unknown"
             }
 
             val connections = computeLogicalNeighbors(serverLevel, blockPos, nonPipePositions)
@@ -195,12 +200,6 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                         details.add("  ${api.name}")
                     }
                 }
-                is damien.nodeworks.block.entity.VariableBlockEntity -> {
-                    if (entity.variableName.isNotEmpty()) {
-                        details.add(aliasMarker(VARIABLE_TINT, entity.variableName))
-                    }
-                    details.add("Type: ${entity.variableType}")
-                }
                 is damien.nodeworks.block.entity.BreakerBlockEntity -> {
                     if (entity.deviceName.isNotEmpty()) details.add(aliasMarker(BREAKER_TINT, entity.deviceName))
                     details.add(channelMarker(entity.channel))
@@ -270,7 +269,16 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                         }
                     }
                 }
-                else -> {}
+                // SPI extension path: detail rows for extension-mod devices come from
+                // DeviceType.diagnosticDetails(be). The cast is safe because byBE
+                // matches via Class.isInstance.
+                else -> {
+                    val deviceType = damien.nodeworks.api.DeviceRegistry.byBE(entity)
+                    if (deviceType != null) {
+                        @Suppress("UNCHECKED_CAST")
+                        details.addAll((deviceType as damien.nodeworks.api.DeviceType<damien.nodeworks.network.Connectable>).diagnosticDetails(entity))
+                    }
+                }
             }
 
             blocks.add(DiagnosticOpenData.NetworkBlock(blockPos, type, connections, cards, details))
@@ -417,11 +425,11 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
 
     /** Inspector marker for the device name. The renderer paints "Name:" gray
      *  and the value in [tintRgb], so each device matches its Scripting
-     *  Terminal sidebar colour. */
+     *  Terminal sidebar color. */
     private fun aliasMarker(tintRgb: Int, name: String): String = "__alias:$tintRgb:$name"
 
     /** Inspector marker for a [DyeColor] channel. The renderer paints "Channel:"
-     *  gray, then a wool swatch tinted with [color] and the colour name. */
+     *  gray, then a wool swatch tinted with [color] and the color name. */
     private fun channelMarker(color: net.minecraft.world.item.DyeColor): String {
         val rgb = color.textureDiffuseColor and 0xFFFFFF
         val label = color.name.lowercase().replaceFirstChar { it.uppercase() }
@@ -470,11 +478,12 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
          *  payload ceiling even when every ingredient is a maxed-out potion. */
         const val PROCESSING_API_CHUNK_SIZE = 16
 
-        /** Per-device tint colours mirror the Scripting Terminal sidebar so
-         *  the diagnostic colour-codes devices the same way the script editor
+        /** Per-device tint colors mirror the Scripting Terminal sidebar so
+         *  the diagnostic color-codes devices the same way the script editor
          *  does. See [damien.nodeworks.screen.TerminalScreen] sidebar entries
-         *  for the source-of-truth values. */
-        const val VARIABLE_TINT = 0xFFAA33
+         *  for the source-of-truth values. Variable's tint moved to
+         *  [damien.nodeworks.device.VariableDevice.TINT] as part of the SPI
+         *  migration, breakers/placers/users will follow when they migrate. */
         const val BREAKER_TINT = 0xC97847
         const val PLACER_TINT = 0x6BBCD0
         const val USER_TINT = 0x79E324
@@ -534,7 +543,8 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
         queue.add(Step(start, null, emptyList()))
         while (queue.isNotEmpty()) {
             val (cur, entryFace, path) = queue.removeFirst()
-            val ce = NodeConnectionHelper.getConnectable(level, cur) ?: continue
+            val ce = NodeConnectionHelper.getConnectable(level, cur)
+            if (ce == null) continue
             if (cur != start && cur in nonPipes) continue
             forEachConnectableNeighbor(level, cur, ce, entryFace) { nextPos, nextEntry ->
                 if (!seen.add(nextPos)) return@forEachConnectableNeighbor

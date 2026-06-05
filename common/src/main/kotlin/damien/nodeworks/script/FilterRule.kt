@@ -156,7 +156,8 @@ sealed class FilterRule {
                 if (!first) sb.append(',')
                 first = false
                 val type = entry.key
-                val typeId = BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(type) ?: continue
+                val typeId = BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(type)
+                if (typeId == null) continue
                 val opt = entry.value
                 if (!opt.isPresent) {
                     // Removed component, vanilla `!key` syntax.
@@ -165,7 +166,8 @@ sealed class FilterRule {
                 }
                 @Suppress("UNCHECKED_CAST")
                 val codec = type.codecOrThrow() as com.mojang.serialization.Codec<kotlin.Any>
-                val tag = codec.encodeStart(ops, opt.get()).result().orElse(null) ?: continue
+                val tag = codec.encodeStart(ops, opt.get()).result().orElse(null)
+                if (tag == null) continue
                 sb.append(typeId.toString()).append('=').append(tag.toString())
             }
             sb.append(']')
@@ -187,7 +189,8 @@ fun FilterRule.matches(stack: ItemStack): Boolean {
         is FilterRule.Any -> true
         is FilterRule.Item -> {
             if (itemId != this.itemId) return false
-            val expected = this.componentsPatch ?: return true
+            val expected = this.componentsPatch
+            if (expected == null) return true
             BufferKey.componentsHash(stack) == BufferKey.componentsHash(expected)
         }
         is FilterRule.Tag -> matchesIdAsTag(itemId, this.tagId, ResourceKind.ITEM)
@@ -215,17 +218,21 @@ fun FilterRule.matches(resourceId: String, kind: ResourceKind): Boolean {
 }
 
 private fun matchesIdAsTag(resourceId: String, tagId: String, kind: ResourceKind): Boolean {
-    val tagIdent = Identifier.tryParse(tagId) ?: return false
-    val resIdent = Identifier.tryParse(resourceId) ?: return false
+    val tagIdent = Identifier.tryParse(tagId)
+    if (tagIdent == null) return false
+    val resIdent = Identifier.tryParse(resourceId)
+    if (resIdent == null) return false
     return when (kind) {
         ResourceKind.ITEM -> {
             val tagKey = net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, tagIdent)
-            val item = BuiltInRegistries.ITEM.getValue(resIdent) ?: return false
+            val item = BuiltInRegistries.ITEM.getOptional(resIdent).orElse(null)
+            if (item == null) return false
             item.builtInRegistryHolder().`is`(tagKey)
         }
         ResourceKind.FLUID -> {
             val tagKey = net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.FLUID, tagIdent)
-            val fluid = BuiltInRegistries.FLUID.getValue(resIdent) ?: return false
+            val fluid = BuiltInRegistries.FLUID.getOptional(resIdent).orElse(null)
+            if (fluid == null) return false
             fluid.builtInRegistryHolder().`is`(tagKey)
         }
     }

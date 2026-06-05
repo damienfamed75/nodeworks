@@ -109,8 +109,10 @@ class CrystalBackedSource private constructor(
         // the crystal out or swapping in a different one closes the menu, the player
         // expects predictable "this is the network I opened" semantics, not a silent
         // re-pair mid-session.
-        val crystal = PortableInventoryTerminalState.getInstalledCrystal(held) ?: return false
-        val pairing = LinkCrystalItem.getPairingData(crystal) ?: return false
+        val crystal = PortableInventoryTerminalState.getInstalledCrystal(held)
+        if (crystal == null) return false
+        val pairing = LinkCrystalItem.getPairingData(crystal)
+        if (pairing == null) return false
         if (pairing.kind != BroadcastSourceKind.NETWORK_CONTROLLER) return false
         if (pairing.frequencyId != frequencyId) return false
 
@@ -120,7 +122,8 @@ class CrystalBackedSource private constructor(
         // ServerPlayer.server is package-private in MC, reach the server via the
         // player's current level (always a ServerLevel for ServerPlayer).
         val server = (player.level() as ServerLevel).server
-        val targetLevel = server.getLevel(dimension) ?: return false
+        val targetLevel = server.getLevel(dimension)
+        if (targetLevel == null) return false
         if (!targetLevel.isLoaded(antennaPos)) return false
 
         // Antenna still present and unchanged?
@@ -133,7 +136,8 @@ class CrystalBackedSource private constructor(
         // swap would produce a different network UUID anyway, and the cached entry
         // point won't find the old network, NetworkDiscovery will come back offline
         // and the menu will close via its own empty-snapshot handling.
-        val source = antenna.detectSource() ?: return false
+        val source = antenna.detectSource()
+        if (source == null) return false
         if (source.first != BroadcastSourceKind.NETWORK_CONTROLLER) return false
 
         // Range / dimension gate, same rules the Receiver uses. For cross-dim access

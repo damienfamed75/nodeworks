@@ -18,7 +18,7 @@ import net.minecraft.world.phys.Vec3
 
 /**
  * BER for the Breaker device. Drives two visual pieces:
- *  * A network-colour-tinted emissive overlay layered onto the body. Reads
+ *  * A network-color-tinted emissive overlay layered onto the body. Reads
  *    geometry + per-face UVs from `breaker_emissive.json` (which inherits
  *    `nodeworks:block/breaker`) so any emissive paint authored on
  *    breaker_emissive.png lights up exactly where breaker.png shows it.
@@ -107,10 +107,10 @@ open class BreakerRenderer(context: BlockEntityRendererProvider.Context) :
             )
         }
 
-        // Network-coloured emissive overlay on the body. Mirrors the User's
+        // Network-colored emissive overlay on the body. Mirrors the User's
         // approach: rotate + slightly-outset the baked emissive model and
         // route its quads through the additive-glow pipeline. Skipped when
-        // the device isn't on a network -- no sensible colour.
+        // the device isn't on a network -- no sensible color.
         val emissive = BreakerEmissiveModel.get()
         if (emissive != null && state.color != NodeConnectionRenderer.DEFAULT_NETWORK_COLOR) {
             poseStack.pushPose()
@@ -123,7 +123,7 @@ open class BreakerRenderer(context: BlockEntityRendererProvider.Context) :
         }
     }
 
-    /** Network-coloured additive overlay over the Breaker's body. The baked
+    /** Network-colored additive overlay over the Breaker's body. The baked
      *  quads carry breaker.json's per-face UVs (since breaker_emissive.json
      *  inherits geometry via JSON parent), so the overlay's texture
      *  sampling lands on the same atlas regions as the body model. The

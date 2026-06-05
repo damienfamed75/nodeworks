@@ -61,9 +61,12 @@ object PlacerHandle {
                     return LuaValue.FALSE
                 }
 
-                val itemId = resolvePlaceTargetItemId(arg) ?: return LuaValue.FALSE
-                val identifier = Identifier.tryParse(itemId) ?: return LuaValue.FALSE
-                val item = BuiltInRegistries.ITEM.getValue(identifier) ?: return LuaValue.FALSE
+                val itemId = resolvePlaceTargetItemId(arg)
+                if (itemId == null) return LuaValue.FALSE
+                val identifier = Identifier.tryParse(itemId)
+                if (identifier == null) return LuaValue.FALSE
+                val item = BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+                if (item == null) return LuaValue.FALSE
                 val blockItem = item as? BlockItem ?: return LuaValue.FALSE
                 val placedAgainst = level.getBlockState(entity.blockPos)
 
@@ -166,7 +169,8 @@ object PlacerHandle {
     ): Boolean {
         val matches: (String) -> Boolean = { it == itemId }
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val storage = NetworkStorageHelper.getStorage(level, card)
+            if (storage == null) continue
             val pulled = PlatformServices.storage.extractItems(storage, matches, 1L)
             if (pulled >= 1L) return true
         }

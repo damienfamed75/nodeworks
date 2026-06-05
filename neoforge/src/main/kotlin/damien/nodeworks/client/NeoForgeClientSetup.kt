@@ -202,7 +202,7 @@ object NeoForgeClientSetup {
     /** Emissive overlay model. Inherits geometry from `nodeworks:block/user`
      *  via JSON parent and only swaps `#0` to user_emissive.png, so any
      *  face the artist paints in user_emissive.png lights up at the
-     *  network colour with the SAME per-face UV layout user.json uses. */
+     *  network color with the SAME per-face UV layout user.json uses. */
     private val USER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:user_emissive" }
 
@@ -218,7 +218,7 @@ object NeoForgeClientSetup {
     private val BREAKER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:breaker_emissive" }
 
-    /** Storage Meter network-colour emissive overlay. Inherits the geometry of
+    /** Storage Meter network-color emissive overlay. Inherits the geometry of
      *  `nodeworks:block/storage_meter` and only swaps `#0` to
      *  storage_meter_emissive.png. */
     private val STORAGE_METER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
@@ -226,11 +226,11 @@ object NeoForgeClientSetup {
 
     /** Storage Meter redstone-active overlay. Same geometry inheritance, swaps
      *  `#0` to storage_meter_redstone_active.png. Drawn alongside the network-
-     *  colour overlay when the meter is below threshold. */
+     *  color overlay when the meter is below threshold. */
     private val STORAGE_METER_REDSTONE_ACTIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:storage_meter_redstone_active" }
 
-    /** Craft Requester network-colour emissive overlay. Inherits the geometry
+    /** Craft Requester network-color emissive overlay. Inherits the geometry
      *  of `nodeworks:block/craft_requester` and only swaps `#0` to
      *  craft_requester_emissive.png. */
     private val CRAFT_REQUESTER_EMISSIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
@@ -238,7 +238,7 @@ object NeoForgeClientSetup {
 
     /** Craft Requester redstone-active overlay. Same geometry inheritance,
      *  swaps `#0` to craft_requester_redstone_active.png. Drawn alongside the
-     *  network-colour overlay while the input signal is high. */
+     *  network-color overlay while the input signal is high. */
     private val CRAFT_REQUESTER_REDSTONE_ACTIVE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:craft_requester_redstone_active" }
 
@@ -402,7 +402,8 @@ object NeoForgeClientSetup {
         val blockModels = bakingResult.blockStateModels()
         val coveredPipeStates = damien.nodeworks.registry.ModBlocks.COVERED_PIPE.stateDefinition.possibleStates
         for (state in coveredPipeStates) {
-            val baselineModel = blockModels[state] ?: continue
+            val baselineModel = blockModels[state]
+            if (baselineModel == null) continue
             blockModels[state] = damien.nodeworks.client.model.CoveredPipeBakedModel(
                 indicatorPart = indicatorPart,
                 defaultCamo = baselineModel,
@@ -420,8 +421,10 @@ object NeoForgeClientSetup {
         // leave the static model in place rather than crash.
         val itemModels = bakingResult.itemStackModels()
         val itemId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "covered_pipe")
-        val baselineItem = itemModels[itemId] ?: return
-        val baselineProps = extractItemModelProperties(baselineItem) ?: return
+        val baselineItem = itemModels[itemId]
+        if (baselineItem == null) return
+        val baselineProps = extractItemModelProperties(baselineItem)
+        if (baselineProps == null) return
         itemModels[itemId] = damien.nodeworks.client.model.CoveredPipeItemModel(
             baselineProperties = baselineProps,
             indicatorPart = indicatorPart,

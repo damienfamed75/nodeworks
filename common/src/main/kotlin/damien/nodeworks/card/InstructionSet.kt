@@ -90,15 +90,18 @@ class InstructionSet(properties: Properties) : Item(properties) {
         private const val SUBSTITUTIONS_KEY = "allowSubstitutions"
 
         fun getRecipe(stack: ItemStack): List<String> {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return List(9) { "" }
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return List(9) { "" }
             val tag = customData.copyTag()
-            val list = tag.getList(RECIPE_KEY).orElse(null) ?: return List(9) { "" }
+            val list = tag.getList(RECIPE_KEY).orElse(null)
+            if (list == null) return List(9) { "" }
             if (list.size != 9) return List(9) { "" }
             return (0 until 9).map { list.getStringOr(it, "") }
         }
 
         fun getOutput(stack: ItemStack): String {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return ""
             return customData.copyTag().getStringOr(OUTPUT_KEY, "")
         }
 
@@ -107,7 +110,8 @@ class InstructionSet(properties: Properties) : Item(properties) {
          *  the previous render where every recipe rendered as a 1-count
          *  output regardless of the underlying crafting yield. */
         fun getOutputCount(stack: ItemStack): Int {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return 1
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return 1
             return customData.copyTag().getIntOr(OUTPUT_COUNT_KEY, 1).coerceIn(1, 99)
         }
 
@@ -116,7 +120,8 @@ class InstructionSet(properties: Properties) : Item(properties) {
          *  recipe). Defaults to true, so a fresh card and any older saved card
          *  without the field both behave as substitution-enabled. */
         fun getSubstitutions(stack: ItemStack): Boolean {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return true
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return true
             return customData.copyTag().getBooleanOr(SUBSTITUTIONS_KEY, true)
         }
 

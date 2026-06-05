@@ -53,7 +53,8 @@ object MonitorUpdateHelper {
                 toRemove.add(pos)
                 continue
             }
-            val itemId = be.trackedItemId ?: continue
+            val itemId = be.trackedItemId
+            if (itemId == null) continue
             val entry = Entry(be, itemId)
             val nid = be.networkId
             if (nid == null) orphans.add(entry) else {
@@ -67,7 +68,8 @@ object MonitorUpdateHelper {
         // the controller UUID so every monitor on the same network hits the same slot.
         val cachesByNet = HashMap<UUID, NetworkInventoryCache>(uniqueNetIds.size)
         for (entry in entries) {
-            val nid = entry.be.networkId ?: continue
+            val nid = entry.be.networkId
+            if (nid == null) continue
             val cache = cachesByNet.getOrPut(nid) {
                 NetworkInventoryCache.getOrCreate(level, entry.be.blockPos)
             }

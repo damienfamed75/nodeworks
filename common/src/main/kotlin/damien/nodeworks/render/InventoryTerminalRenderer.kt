@@ -14,7 +14,7 @@ import net.minecraft.world.phys.Vec3
 
 /**
  * Emissive overlay for the Inventory Terminal, front + back faces tinted with the
- * current network colour. Same pipeline as the Terminal / Monitor / Variable etc.
+ * current network color. Same pipeline as the Terminal / Monitor / Variable etc.
  */
 open class InventoryTerminalRenderer(context: BlockEntityRendererProvider.Context) :
     ConnectableBER<InventoryTerminalBlockEntity, InventoryTerminalRenderer.State>(context) {

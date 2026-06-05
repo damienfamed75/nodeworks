@@ -31,7 +31,8 @@ class CoveredPipeBlockItem(block: Block, properties: Properties) : BlockItem(blo
         flag: TooltipFlag,
     ) {
         super.appendHoverText(stack, context, display, builder, flag)
-        val camo = stack.get(ModDataComponents.CAMO_BLOCK_STATE) ?: return
+        val camo = stack.get(ModDataComponents.CAMO_BLOCK_STATE)
+        if (camo == null) return
         val name = camo.block.name.copy().withStyle(ChatFormatting.GRAY)
         builder.accept(
             Component.translatable("tooltip.nodeworks.covered_pipe.camo", name)

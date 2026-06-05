@@ -64,9 +64,9 @@ class TerminalScreen(
          *  `font.split` at this limit so the panel stays readable. */
         private const val TOOLTIP_MAX_WIDTH_PX = 200
 
-        // Tooltip line colours match [AutocompletePopup]'s name/hint pair so hover
+        // Tooltip line colors match [AutocompletePopup]'s name/hint pair so hover
         // tooltips and completion suggestions read as one visual language, signature
-        // in the bright-name colour, description + fallback hints in the dim-hint one.
+        // in the bright-name color, description + fallback hints in the dim-hint one.
         private const val COLOR_SIGNATURE = 0xFFCCCCCC.toInt()
         private const val COLOR_DESCRIPTION = 0xFF888888.toInt()
         private const val COLOR_PLAIN = 0xFFCCCCCC.toInt()
@@ -142,6 +142,18 @@ class TerminalScreen(
     private fun isControlHeld(): Boolean =
         net.minecraft.client.Minecraft.getInstance().hasControlDown()
 
+    /** Render [stack] at ([x], [y]) scaled uniformly by [scale]. Used for SPI extension
+     *  sidebar icons where the registered DeviceType supplies a full 16×16 item but the
+     *  sidebar row reserves an 8×8 slot. */
+    private fun renderItemAtScale(graphics: net.minecraft.client.gui.GuiGraphicsExtractor, stack: net.minecraft.world.item.ItemStack, x: Int, y: Int, scale: Float) {
+        val pose = graphics.pose()
+        pose.pushMatrix()
+        pose.translate(x.toFloat(), y.toFloat())
+        pose.scale(scale, scale)
+        graphics.renderItem(stack, 0, 0)
+        pose.popMatrix()
+    }
+
     private lateinit var autocomplete: AutocompletePopup
 
     /** Cached output of the last [damien.nodeworks.script.diagnostics.LuaDiagnostics.analyze]
@@ -179,6 +191,11 @@ class TerminalScreen(
     private val breakerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
     private val placerEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
     private val userEntries: List<Pair<String, net.minecraft.world.item.DyeColor>>
+
+    /** SPI extension devices found by the client-side network walk: each entry pairs
+     *  a registered [damien.nodeworks.api.DeviceType] with one of its named snapshots.
+     *  Drives the sidebar's extension rows. */
+    private val extDevices: List<Pair<damien.nodeworks.api.DeviceType<*>, damien.nodeworks.api.NamedDeviceSnapshot>>
 
     /** Literal names that appear ≥2 times across cards / breakers / placers on
      *  this network. Drives the script editor's `ambiguous-card-name` HINT for
@@ -512,6 +529,11 @@ class TerminalScreen(
          *  is treated as null so the default channel doesn't render a pip, only
          *  explicitly-dyed cards/devices show one. */
         val channel: net.minecraft.world.item.DyeColor? = null,
+        /** SPI extension entry. Non-null when this row was contributed by a registered
+         *  [damien.nodeworks.api.DeviceType] rather than a built-in. Drives the icon
+         *  (item-rendered, not atlas-sprite) and the click-insert line shape
+         *  (`network:device(typeId, name)` instead of `network:get(name)`). */
+        val extType: damien.nodeworks.api.DeviceType<*>? = null,
     )
 
     enum class TerminalLayout(val w: Int, val h: Int, val icon: Icons) {
@@ -573,6 +595,13 @@ class TerminalScreen(
             mutableListOf<damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo>()
         val scannedProcessable = mutableListOf<String>()
         val scannedCraftable = mutableListOf<String>()
+        // SPI extension devices: (DeviceType, snapshot) pairs picked up by the client
+        // walk for any BE matching a registered DeviceType that the hardcoded `when`
+        // branches don't claim. Drives the Scripting Terminal sidebar's extension row
+        // path (gated on hasLuaApi + non-null displayInfo).
+        val scannedExtDevices = mutableListOf<
+            Pair<damien.nodeworks.api.DeviceType<*>, damien.nodeworks.api.NamedDeviceSnapshot>
+        >()
         // Cluster anchors so each multi-block storage's recipes get enumerated once
         // even when the BFS visits multiple members, [getAllProcessingApis] /
         // [getAllInstructionSets] each return the full cluster from any member.
@@ -621,7 +650,8 @@ class TerminalScreen(
                 while (queue.isNotEmpty() && visited.size < 128) {
                     val pos = queue.removeFirst()
                     if (!clientLevel.isLoaded(pos)) continue
-                    val entity = clientLevel.getBlockEntity(pos) ?: continue
+                    val entity = clientLevel.getBlockEntity(pos)
+                    if (entity == null) continue
 
                     when (entity) {
                         is damien.nodeworks.block.entity.NodeBlockEntity -> {
@@ -637,13 +667,6 @@ class TerminalScreen(
                                         )
                                     )
                                 }
-                            }
-                        }
-
-                        is damien.nodeworks.block.entity.VariableBlockEntity -> {
-                            if (entity.variableName.isNotEmpty()) {
-                                scannedVars.add(entity.variableName to entity.variableType.ordinal)
-                                scannedVarChannels[entity.variableName] = entity.channel
                             }
                         }
 
@@ -713,10 +736,35 @@ class TerminalScreen(
                     }
 
                     val connectable = entity as? damien.nodeworks.network.Connectable ?: continue
+
+                    // SPI extension path: BEs the hardcoded `when` above didn't claim
+                    // still get a chance to surface in the sidebar. Built-ins win first
+                    // because they're checked higher up, so this only fires for genuinely
+                    // unknown classes. The cast is safe because byBE matches via
+                    // Class.isInstance.
+                    val deviceType = damien.nodeworks.api.DeviceRegistry.byBE(connectable)
+                    if (deviceType != null) {
+                        @Suppress("UNCHECKED_CAST")
+                        val snap = (deviceType as damien.nodeworks.api.DeviceType<damien.nodeworks.network.Connectable>).snapshot(connectable)
+                        if (snap != null) scannedExtDevices.add(deviceType to snap)
+                    }
+
                     for (conn in connectable.getConnections()) tryEnqueueLaser(conn)
                     for (dir in net.minecraft.core.Direction.entries) tryEnqueueAdjacent(connectable, pos.relative(dir))
                 }
             }
+        }
+
+        // Variables: derive scannedVars / scannedVarChannels from the SPI's extDevices
+        // list. Variable's snapshot now lives there (the walk catches it via the SPI
+        // else-arm because [damien.nodeworks.device.VariableDevice] is registered). The
+        // typed projections are preserved because AutocompletePopup still consumes them
+        // through the existing (name, typeOrd) shape.
+        for ((deviceType, snap) in scannedExtDevices) {
+            if (deviceType !== damien.nodeworks.device.VariableDevice) continue
+            val varSnap = snap as? damien.nodeworks.network.VariableSnapshot ?: continue
+            scannedVars.add(varSnap.name to varSnap.type.ordinal)
+            scannedVarChannels[varSnap.name] = varSnap.channel
         }
 
         // Remote cross-dim APIs pre-resolved by the server (via the Receiver Antenna's
@@ -835,6 +883,7 @@ class TerminalScreen(
         breakerEntries = scannedBreakerEntries
         placerEntries = scannedPlacerEntries
         userEntries = scannedUserEntries
+        extDevices = scannedExtDevices
         localApiNames = scannedLocal.distinct()
         localApis = scannedLocalApis
         craftableOutputs = (scannedCraftable + scannedProcessable).distinct()
@@ -1174,13 +1223,25 @@ class TerminalScreen(
             val ch = card.channel.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
             entries.add(SidebarEntry(card.effectiveAlias, color, iconU, 16, "card", ch))
         }
-        for ((name, typeOrd) in variables) {
-            // Same white→null collapse rule as cards so the default channel
-            // doesn't render a stripe.
-            val ch = variableChannels[name]?.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
-            entries.add(SidebarEntry(name, 0xFFFFAA33.toInt(), 48, 16, "var", ch))
+        // SPI extension devices (including the migrated built-in Variable, registered
+        // first so it leads this group). Slotted between cards and the remaining
+        // hardcoded built-in devices so variables stay right after cards, matching the
+        // pre-migration sidebar order. Gated on hasLuaApi + non-null displayInfo so
+        // diagnostic-only devices don't pollute the script-author surface.
+        // Channel is read off VariableSnapshot specifically, the SPI doesn't have a
+        // generic "channel" concept yet, can be lifted into NamedDeviceSnapshot when a
+        // second device wants it.
+        for ((deviceType, snap) in extDevices) {
+            val info = deviceType.displayInfo
+            if (info == null) continue
+            if (!deviceType.hasLuaApi) continue
+            val alias = snap.effectiveAlias
+            if (alias.isEmpty()) continue
+            val ch = (snap as? damien.nodeworks.network.VariableSnapshot)?.channel
+                ?.takeIf { it != net.minecraft.world.item.DyeColor.WHITE }
+            entries.add(SidebarEntry(alias, info.tintColor, 0, 0, "ext", ch, deviceType))
         }
-        // Devices: each gets its own iconU discriminator + name colour. Without
+        // Devices: each gets its own iconU discriminator + name color. Without
         // this branch the connected breakers / placers exist on the network but
         // never surface in the terminal sidebar, players can address them in
         // scripts but can't see them.
@@ -1217,7 +1278,9 @@ class TerminalScreen(
                 graphics.fill(leftPos + 5, y, leftPos + 75, y + cardLineHeight, 0x30FFFFFF.toInt())
             }
 
-            // 8x8 icon cropped from center of 16x16 tile in atlas
+            // 8x8 icon cropped from center of 16x16 tile in atlas. SPI extension rows
+            // render their icon item directly (set to null here so the post-atlas
+            // render below picks the item-rendering path instead).
             val icon = when (entry.type) {
                 "card" -> when (entry.iconU) {
                     0 -> Icons.IO_CARD
@@ -1231,6 +1294,7 @@ class TerminalScreen(
                 "breaker" -> Icons.BREAKER
                 "placer" -> Icons.PLACER
                 "user" -> Icons.USER
+                "ext" -> null
                 else -> Icons.IO_CARD
             }
             // Channel pip, 2×9 vertical stripe LEFT of the icon when the row is
@@ -1247,8 +1311,24 @@ class TerminalScreen(
             // standard 8×8 small-render crops its outer columns. Draw a 10×8 slice
             // (1px wider on each side) shifted left by 1px to keep it centred under
             // the same anchor as the other 8-wide card icons.
-            if (entry.iconU == 64) icon.drawSmallWide(graphics, leftPos + 9, y + 1)
-            else icon.drawSmall(graphics, leftPos + 10, y + 1)
+            if (icon != null) {
+                if (entry.iconU == 64) icon.drawSmallWide(graphics, leftPos + 9, y + 1)
+                else icon.drawSmall(graphics, leftPos + 10, y + 1)
+            } else if (entry.extType != null) {
+                val info = entry.extType.displayInfo
+                val custom = info?.sidebarRender
+                if (custom != null) {
+                    // Mod-supplied pixel-tuned render, the path Variable uses for its
+                    // atlas sprite. Matches the look of built-in devices.
+                    custom(graphics, leftPos + 10, y + 1)
+                } else {
+                    // Default: scale the diagnostic-tool icon item down to 8×8. Works
+                    // for any device with a registered item, may look soft compared to
+                    // a hand-tuned sprite.
+                    val stack = info?.icon?.invoke()
+                    if (stack != null) renderItemAtScale(graphics, stack, leftPos + 10, y + 1, 0.5f)
+                }
+            }
 
             // Track hover state for scroll timing
             if (hovered) {
@@ -1542,14 +1622,14 @@ class TerminalScreen(
             mouseY < editorY || mouseY > editorY + editor.height
         ) return
 
-        // One accumulated list of lines. Each line has its own colour so signatures
+        // One accumulated list of lines. Each line has its own color so signatures
         // render yellow and descriptions render gray within the same 9-sliced panel.
         data class Line(val text: String, val color: Int)
 
         val accum = mutableListOf<Line>()
 
         // Diagnostic header. When the mouse is over a flagged span we surface the
-        // analyzer's message coloured per severity, on top of (not instead of) the
+        // analyzer's message colored per severity, on top of (not instead of) the
         // regular doc/word tooltip. So a hover on a typo'd `prit` shows
         // "Unknown identifier 'prit'" followed by no doc, while a hover on
         // `card:fnid()` (where `card` is typed) shows the unknown-method message
@@ -1714,7 +1794,8 @@ class TerminalScreen(
             editor.value,
             editor.value.substring(0, clamped),
         )
-        val baseType = symbols[word] ?: return null
+        val baseType = symbols[word]
+        if (baseType == null) return null
         // Surface nullability the same way the diagnostic analyzer sees it: a
         // name flagged as nullable here that isn't inside a narrowing region
         // renders as `T?`. Inside `if word then ... end` the narrowing region
@@ -2217,12 +2298,15 @@ class TerminalScreen(
                     "breaker" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "breaker")
                     "placer" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "placer")
                     "user" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "user")
+                    "ext" -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "dev")
                     else -> damien.nodeworks.script.LuaIdent.toLuaIdentifier(entry.name, "x")
                 }
                 val line = when (entry.type) {
-                    // Cards, variables, and devices all ride the unified `network:get`
-                    // accessor, same generated line shape for any click-to-import.
-                    "card", "var", "breaker", "placer", "user" ->
+                    // Every addressable network member resolves through `network:get`:
+                    // cards, built-in devices, extension-mod devices. Click-insert uses
+                    // the device's effective alias (auto-suffixed for collisions) so the
+                    // generated line resolves the intended device unambiguously.
+                    "card", "var", "breaker", "placer", "user", "ext" ->
                         "local $ident = network:get(\"${entry.name}\")"
 
                     else -> null

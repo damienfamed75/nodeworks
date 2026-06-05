@@ -84,7 +84,8 @@ class CoveredPipeBakedModel(
         state: BlockState,
     ): Material.Baked {
         val be = level.getBlockEntity(pos) as? CoveredPipeBlockEntity
-        val camoState = be?.camoBlockState ?: return defaultCamo.particleMaterial()
+        val camoState = be?.camoBlockState
+        if (camoState == null) return defaultCamo.particleMaterial()
         val camoModel = Minecraft.getInstance().modelManager.blockStateModelSet.get(camoState)
         return camoModel.particleMaterial(level, pos, camoState)
     }

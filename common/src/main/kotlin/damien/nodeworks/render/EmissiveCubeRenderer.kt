@@ -317,8 +317,8 @@ object EmissiveCubeRenderer {
      * slightly outward via [INSET]) into [submitter]. Only faces whose bit is set in
      * [faceMask] are emitted, skipping unwanted faces keeps the quad count minimal.
      *
-     * Vertex colour is `(r, g, b, a)`, for network-tinted overlays, callers pass the
-     * network colour's RGB with full alpha, for plain white overlays,
+     * Vertex color is `(r, g, b, a)`, for network-tinted overlays, callers pass the
+     * network color's RGB with full alpha, for plain white overlays,
      * `(255, 255, 255, 255)`.
      */
     fun submit(

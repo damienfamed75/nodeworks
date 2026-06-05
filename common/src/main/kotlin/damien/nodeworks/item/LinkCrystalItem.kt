@@ -94,12 +94,14 @@ class LinkCrystalItem(properties: Properties) : Item(properties) {
          * keeps existing saves' crystals working without a migration step.
          */
         fun getPairingData(stack: ItemStack): PairingData? {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return null
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return null
             val tag = customData.copyTag()
             val freqStr = tag.getStringOr(FREQ_KEY, "")
             if (freqStr.isEmpty()) return null
             val pos = BlockPos.of(tag.getLongOr(POS_KEY, 0L))
-            val dimId = Identifier.tryParse(tag.getStringOr(DIM_KEY, "")) ?: return null
+            val dimId = Identifier.tryParse(tag.getStringOr(DIM_KEY, ""))
+            if (dimId == null) return null
             val dimension = ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, dimId)
             val freq = try { UUID.fromString(freqStr) } catch (_: Exception) { return null }
             val kindStr = tag.getStringOr(KIND_KEY, "")
@@ -130,7 +132,8 @@ class LinkCrystalItem(properties: Properties) : Item(properties) {
         }
 
         fun isEncoded(stack: ItemStack): Boolean {
-            val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
+            val customData = stack.get(DataComponents.CUSTOM_DATA)
+            if (customData == null) return false
             return customData.copyTag().contains(FREQ_KEY)
         }
     }

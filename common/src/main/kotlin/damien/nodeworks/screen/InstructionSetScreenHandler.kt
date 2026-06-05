@@ -58,8 +58,10 @@ class InstructionSetScreenHandler(
             val grid = SimpleContainer(9)
             for (i in 0 until 9) {
                 if (recipe[i].isNotEmpty()) {
-                    val id = Identifier.tryParse(recipe[i]) ?: continue
-                    val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
+                    val id = Identifier.tryParse(recipe[i])
+                    if (id == null) continue
+                    val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+                    if (item == null) continue
                     grid.setItem(i, ItemStack(item, 1))
                 }
             }
@@ -128,7 +130,7 @@ class InstructionSetScreenHandler(
         if (level.isClientSide) return // Recipe lookup is server-side only
 
         val serverLevel = level as? net.minecraft.server.level.ServerLevel ?: return
-        val recipeManager = serverLevel.recipeAccess() ?: return
+        val recipeManager = serverLevel.recipeAccess()
 
         val items = (0 until 9).map { recipeGrid.getItem(it) }
         val input = CraftingInput.of(3, 3, items)
@@ -178,7 +180,8 @@ class InstructionSetScreenHandler(
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
         // Shift-click from player inventory → copy to first empty ghost slot
         if (slotIndex >= 10) { // 0-8 = grid, 9 = result, 10+ = player inv
-            val slot = slots.getOrNull(slotIndex) ?: return ItemStack.EMPTY
+            val slot = slots.getOrNull(slotIndex)
+            if (slot == null) return ItemStack.EMPTY
             if (!slot.hasItem()) return ItemStack.EMPTY
             val stack = slot.item
             for (i in 0..8) {
@@ -264,8 +267,10 @@ class InstructionSetScreenHandler(
             if (items[i].isEmpty()) {
                 recipeGrid.setItem(i, ItemStack.EMPTY)
             } else {
-                val id = Identifier.tryParse(items[i]) ?: continue
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: continue
+                val id = Identifier.tryParse(items[i])
+                if (id == null) continue
+                val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+                if (item == null) continue
                 recipeGrid.setItem(i, ItemStack(item, 1))
             }
         }

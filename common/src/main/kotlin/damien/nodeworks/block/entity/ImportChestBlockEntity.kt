@@ -247,7 +247,8 @@ class ImportChestBlockEntity(
                         .getKey(stack.item)?.toString()
                     val hasData = !stack.componentsPatch.isEmpty
                     if (cap != null && !cap.acceptsItem(stack, registries)) continue
-                    val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                    val storage = NetworkStorageHelper.getStorage(level, card)
+                    if (storage == null) continue
                     val moved = damien.nodeworks.platform.PlatformServices.storage.insertItemStack(
                         storage, stack.copyWithCount(1)
                     )
@@ -340,9 +341,10 @@ class ImportChestBlockEntity(
 
     override fun startOpen(user: ContainerUser) {
         if (isRemoved) return
-        val living = user.livingEntity ?: return
+        val living = user.livingEntity
         if (living is Player && living.isSpectator) return
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         openersCounter.incrementOpeners(
             living, lvl, worldPosition, blockState,
             user.containerInteractionRange,
@@ -351,15 +353,17 @@ class ImportChestBlockEntity(
 
     override fun stopOpen(user: ContainerUser) {
         if (isRemoved) return
-        val living = user.livingEntity ?: return
+        val living = user.livingEntity
         if (living is Player && living.isSpectator) return
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         openersCounter.decrementOpeners(living, lvl, worldPosition, blockState)
     }
 
     fun recheckOpen() {
         if (isRemoved) return
-        val lvl = level ?: return
+        val lvl = level
+        if (lvl == null) return
         openersCounter.recheckOpeners(lvl, worldPosition, blockState)
     }
 

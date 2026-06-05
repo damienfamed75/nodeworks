@@ -57,7 +57,7 @@ object FocusBeamRenderer {
 
     /** Pre-extracted render data for one beam. Coordinates are block-relative
      *  so the BER's pose transform (already at the source block) renders
-     *  without an extra translate. [blocked] flips the colour to red. */
+     *  without an extra translate. [blocked] flips the color to red. */
     data class Beam(
         val toDx: Float,
         val toDy: Float,
@@ -78,7 +78,8 @@ object FocusBeamRenderer {
      *  visible from there either, so this matches what the player sees. */
     fun extract(connectable: Connectable): List<Beam> {
         val be = connectable as? net.minecraft.world.level.block.entity.BlockEntity ?: return emptyList()
-        val level = be.level ?: return emptyList()
+        val level = be.level
+        if (level == null) return emptyList()
         val myPos = be.blockPos
 
         val networkId = connectable.networkId

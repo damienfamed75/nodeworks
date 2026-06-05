@@ -18,7 +18,8 @@ class NeoForgeStorageService : StorageService {
         //  Capabilities.Item.BLOCK (ResourceHandler<ItemResource>). The IItemHandler.of(...)
         //  adapter is NeoForge's official migration ease path, keeps existing slot-based
         //  logic intact while consuming the new resource-handler capability.
-        val resourceHandler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
+        val resourceHandler = level.getCapability(Capabilities.Item.BLOCK, pos, face)
+        if (resourceHandler == null) return null
         return NeoForgeItemStorageHandle(IItemHandler.of(resourceHandler))
     }
 
@@ -32,7 +33,8 @@ class NeoForgeStorageService : StorageService {
             if (remaining <= 0) break
             val stack = src.getStackInSlot(slot)
             if (stack.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId == null) continue
             if (!filter(itemId)) continue
 
             val toMove = minOf(remaining, stack.count.toLong()).toInt()
@@ -60,7 +62,8 @@ class NeoForgeStorageService : StorageService {
             if (remaining <= 0) break
             val stack = src.getStackInSlot(slot)
             if (stack.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId == null) continue
             val hasData = stack.componentsPatch.size() > 0
             if (!filter(itemId, hasData)) continue
 
@@ -119,7 +122,8 @@ class NeoForgeStorageService : StorageService {
         for (slot in 0 until handler.slots) {
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId == null) continue
             if (filter(itemId)) {
                 total += stack.count
             }
@@ -135,7 +139,8 @@ class NeoForgeStorageService : StorageService {
             if (remaining <= 0) break
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId == null) continue
             if (!filter(itemId)) continue
             val toExtract = minOf(remaining, stack.count.toLong()).toInt()
             val extracted = handler.extractItem(slot, toExtract, false)
@@ -158,12 +163,13 @@ class NeoForgeStorageService : StorageService {
             if (remaining <= 0L) break
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId == null) continue
             if (!filter(itemId)) continue
             val toExtract = minOf(remaining, stack.count.toLong()).toInt()
             // extractItem returns a real stack with the slot's components intact,
             // unlike extractItems which only sums counts. Returning these directly
-            // preserves durability, enchantments, custom names, dye colour, etc.
+            // preserves durability, enchantments, custom names, dye color, etc.
             val extracted = handler.extractItem(slot, toExtract, false)
             if (extracted.isEmpty) continue
             out.add(extracted)
@@ -274,7 +280,8 @@ class NeoForgeStorageService : StorageService {
             if (remaining <= 0L) break
             val s = src.getStackInSlot(slot)
             if (s.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(s.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(s.item)?.toString()
+            if (itemId == null) continue
             if (!filter(itemId)) continue
             val take = minOf(remaining, s.count.toLong()).toInt()
             val e = src.extractItem(slot, take, false)
@@ -353,7 +360,8 @@ class NeoForgeStorageService : StorageService {
         for (slot in 0 until handler.slots) {
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId == null) continue
             if (filter(itemId)) return itemId
         }
         return null
@@ -364,7 +372,8 @@ class NeoForgeStorageService : StorageService {
         for (slot in 0 until handler.slots) {
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId == null) continue
             if (filter(itemId)) {
                 return ItemInfo(
                     itemId = itemId,
@@ -391,7 +400,8 @@ class NeoForgeStorageService : StorageService {
         for (slot in 0 until handler.slots) {
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
-            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+            val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+            if (itemId == null) continue
             if (!filter(itemId)) continue
             val cacheKey = damien.nodeworks.script.BufferKey.of(stack)
             val existing = aggregated[cacheKey]
@@ -417,14 +427,16 @@ class NeoForgeStorageService : StorageService {
     }
 
     override fun getSlottedStorage(level: ServerLevel, pos: BlockPos, face: Direction): SlottedItemStorageHandle? {
-        val resourceHandler = level.getCapability(Capabilities.Item.BLOCK, pos, face) ?: return null
+        val resourceHandler = level.getCapability(Capabilities.Item.BLOCK, pos, face)
+        if (resourceHandler == null) return null
         return NeoForgeSlottedStorageHandle(IItemHandler.of(resourceHandler))
     }
 
     // --- Fluid side ---
 
     override fun getFluidStorage(level: ServerLevel, pos: BlockPos, face: Direction): FluidStorageHandle? {
-        val resourceHandler = level.getCapability(Capabilities.Fluid.BLOCK, pos, face) ?: return null
+        val resourceHandler = level.getCapability(Capabilities.Fluid.BLOCK, pos, face)
+        if (resourceHandler == null) return null
         return NeoForgeFluidStorageHandle(IFluidHandler.of(resourceHandler))
     }
 
@@ -437,7 +449,8 @@ class NeoForgeStorageService : StorageService {
         for (tank in 0 until handler.tanks) {
             val s = handler.getFluidInTank(tank)
             if (s.isEmpty) continue
-            val id = fluidIdOf(s) ?: continue
+            val id = fluidIdOf(s)
+            if (id == null) continue
             if (filter(id)) total += s.amount.toLong()
         }
         return total
@@ -452,7 +465,8 @@ class NeoForgeStorageService : StorageService {
         for (tank in 0 until handler.tanks) {
             val s = handler.getFluidInTank(tank)
             if (s.isEmpty) continue
-            val id = fluidIdOf(s) ?: continue
+            val id = fluidIdOf(s)
+            if (id == null) continue
             if (!filter(id)) continue
             if (firstId == null) {
                 firstId = id
@@ -469,7 +483,8 @@ class NeoForgeStorageService : StorageService {
         for (tank in 0 until handler.tanks) {
             val s = handler.getFluidInTank(tank)
             if (s.isEmpty) continue
-            val id = fluidIdOf(s) ?: continue
+            val id = fluidIdOf(s)
+            if (id == null) continue
             if (!filter(id)) continue
             val existing = aggregated[id]
             if (existing != null) {
@@ -491,7 +506,8 @@ class NeoForgeStorageService : StorageService {
             if (remaining <= 0L) break
             val s = src.getFluidInTank(tank)
             if (s.isEmpty) continue
-            val id = fluidIdOf(s) ?: continue
+            val id = fluidIdOf(s)
+            if (id == null) continue
             if (!filter(id)) continue
             val take = minOf(remaining, s.amount.toLong()).toInt()
             val probe = s.copyWithAmount(take)
@@ -523,7 +539,8 @@ class NeoForgeStorageService : StorageService {
         for (tank in 0 until src.tanks) {
             val s = src.getFluidInTank(tank)
             if (s.isEmpty) continue
-            val id = fluidIdOf(s) ?: continue
+            val id = fluidIdOf(s)
+            if (id == null) continue
             if (!filter(id)) continue
             if (chosenId == null) chosenId = id
             if (id == chosenId) available += s.amount.toLong()
@@ -558,8 +575,10 @@ class NeoForgeStorageService : StorageService {
 
     override fun insertFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Long {
         if (amount <= 0L) return 0L
-        val id = net.minecraft.resources.Identifier.tryParse(fluidId) ?: return 0L
-        val fluid = BuiltInRegistries.FLUID.getValue(id) ?: return 0L
+        val id = net.minecraft.resources.Identifier.tryParse(fluidId)
+        if (id == null) return 0L
+        val fluid = BuiltInRegistries.FLUID.getOptional(id).orElse(null)
+        if (fluid == null) return 0L
         val handler = (dest as NeoForgeFluidStorageHandle).handler
         val toFill = minOf(amount, Int.MAX_VALUE.toLong()).toInt()
         val stack = FluidStack(fluid, toFill)
@@ -568,8 +587,10 @@ class NeoForgeStorageService : StorageService {
 
     override fun simulateInsertFluid(dest: FluidStorageHandle, fluidId: String, maxAmount: Long): Long {
         if (maxAmount <= 0L) return 0L
-        val id = net.minecraft.resources.Identifier.tryParse(fluidId) ?: return 0L
-        val fluid = BuiltInRegistries.FLUID.getValue(id) ?: return 0L
+        val id = net.minecraft.resources.Identifier.tryParse(fluidId)
+        if (id == null) return 0L
+        val fluid = BuiltInRegistries.FLUID.getOptional(id).orElse(null)
+        if (fluid == null) return 0L
         val handler = (dest as NeoForgeFluidStorageHandle).handler
         val capped = minOf(maxAmount, Int.MAX_VALUE.toLong()).toInt()
         val stack = FluidStack(fluid, capped)
@@ -579,8 +600,10 @@ class NeoForgeStorageService : StorageService {
     override fun tryInsertAllFluid(dest: FluidStorageHandle, fluidId: String, amount: Long): Boolean {
         if (amount <= 0L) return true
         if (amount > Int.MAX_VALUE.toLong()) return false
-        val id = net.minecraft.resources.Identifier.tryParse(fluidId) ?: return false
-        val fluid = BuiltInRegistries.FLUID.getValue(id) ?: return false
+        val id = net.minecraft.resources.Identifier.tryParse(fluidId)
+        if (id == null) return false
+        val fluid = BuiltInRegistries.FLUID.getOptional(id).orElse(null)
+        if (fluid == null) return false
         val handler = (dest as NeoForgeFluidStorageHandle).handler
         val stack = FluidStack(fluid, amount.toInt())
         val sim = handler.fill(stack.copy(), IFluidHandler.FluidAction.SIMULATE)
@@ -603,7 +626,8 @@ class NeoForgeStorageService : StorageService {
             if (remaining <= 0L) break
             val s = handler.getFluidInTank(tank)
             if (s.isEmpty) continue
-            val id = fluidIdOf(s) ?: continue
+            val id = fluidIdOf(s)
+            if (id == null) continue
             if (!filter(id)) continue
             val take = minOf(remaining, s.amount.toLong()).toInt()
             val drained = handler.drain(s.copyWithAmount(take), IFluidHandler.FluidAction.EXECUTE)

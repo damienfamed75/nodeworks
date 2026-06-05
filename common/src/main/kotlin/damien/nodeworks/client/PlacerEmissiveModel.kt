@@ -3,7 +3,7 @@ package damien.nodeworks.client
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart
 
 /**
- * Holder for the network-colour-tinted emissive overlay on the Placer's
+ * Holder for the network-color-tinted emissive overlay on the Placer's
  * body. Geometry mirrors `nodeworks:block/placer` (via JSON parent
  * inheritance) so the author can paint emissive content on any face of any
  * element via placer_emissive.png and it just lights up. Mirrors the role

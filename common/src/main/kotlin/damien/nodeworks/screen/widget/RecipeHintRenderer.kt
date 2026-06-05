@@ -54,7 +54,8 @@ object RecipeHintRenderer {
      * so callers can resolve it directly against the snapshot.
      */
     fun detectHandleId(line: String): String? {
-        val match = HANDLE_CALL_REGEX.find(line) ?: return null
+        val match = HANDLE_CALL_REGEX.find(line)
+        if (match == null) return null
         val arg = match.groupValues[1]
         return if (RecipeId.isRecipeId(arg)) arg else null
     }

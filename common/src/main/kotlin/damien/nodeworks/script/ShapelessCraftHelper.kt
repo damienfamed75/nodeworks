@@ -36,13 +36,15 @@ object ShapelessCraftHelper {
         snapshot: NetworkSnapshot,
         cache: NetworkInventoryCache? = null
     ): CraftResult? {
-        val recipeManager = level.recipeAccess() ?: return null
+        val recipeManager = level.recipeAccess()
 
         // Build the 3x3 crafting grid from the ingredients
         val gridItems = mutableListOf<ItemStack>()
         for ((itemId, count) in ingredients) {
-            val identifier = Identifier.tryParse(itemId) ?: return null
-            val item = BuiltInRegistries.ITEM.getValue(identifier) ?: return null
+            val identifier = Identifier.tryParse(itemId)
+            if (identifier == null) return null
+            val item = BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+            if (item == null) return null
             repeat(count) { gridItems.add(ItemStack(item, 1)) }
         }
 
@@ -147,7 +149,8 @@ object ShapelessCraftHelper {
             var remaining = needed.toLong()
             for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
                 if (remaining <= 0) break
-                val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+                val storage = NetworkStorageHelper.getStorage(level, card)
+                if (storage == null) continue
                 val removed = PlatformServices.storage.extractItems(storage, { CardHandle.matchesFilter(it, itemId) }, remaining)
                 if (removed > 0) cache?.onExtracted(itemId, false, removed)
                 remaining -= removed
@@ -165,7 +168,8 @@ object ShapelessCraftHelper {
             return null
         }
 
-        val outputId = BuiltInRegistries.ITEM.getKey(resultStack.item)?.toString() ?: return null
+        val outputId = BuiltInRegistries.ITEM.getKey(resultStack.item)?.toString()
+        if (outputId == null) return null
         val outputName = resultStack.hoverName.string
 
         return CraftResult(outputId, outputName, resultStack.count)

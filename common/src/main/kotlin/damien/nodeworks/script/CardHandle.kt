@@ -142,7 +142,8 @@ class CardHandle private constructor(
                 filter.startsWith("\$fluid:") -> return null
                 else -> filter
             }
-            val registries = fallbackRegistries ?: return null
+            val registries = fallbackRegistries
+            if (registries == null) return null
             val rule = cachedRule(inner, registries)
             return (rule as? FilterRule.Item)?.componentsPatch
         }
@@ -261,7 +262,8 @@ class CardHandle private constructor(
         requested: Long,
         atomic: Boolean
     ): Long {
-        val sourceStorage = itemsHandle.fluidSourceStorage() ?: return 0L
+        val sourceStorage = itemsHandle.fluidSourceStorage()
+        if (sourceStorage == null) return 0L
         val fluidId = itemsHandle.itemId
         return if (atomic) {
             val ok = try {
@@ -299,8 +301,10 @@ class CardHandle private constructor(
         requested: Long,
         atomic: Boolean
     ): Long {
-        val id = Identifier.tryParse(bufSrc.itemId) ?: return 0L
-        val item = BuiltInRegistries.ITEM.getValue(id) ?: return 0L
+        val id = Identifier.tryParse(bufSrc.itemId)
+        if (id == null) return 0L
+        val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return 0L
         // Snapshot the buffer template ONCE before any extract. The bucket
         // gets removed when the last item is drained, so a later read of
         // bufSrc.template would return EMPTY and we'd write bare items to
@@ -392,7 +396,8 @@ class CardHandle private constructor(
         requested: Long,
         atomic: Boolean
     ): Long {
-        val sourceStorage = itemsHandle.sourceStorage() ?: return 0L
+        val sourceStorage = itemsHandle.sourceStorage()
+        if (sourceStorage == null) return 0L
         // When the destination is a Storage Card with configured filter rules,
         // gate the insert on its [acceptsItem] check too. Direct `card:insert`
         // calls respect the card's configuration so a script dumping a mixed
@@ -434,7 +439,8 @@ class CardHandle private constructor(
      *  removal or moving the card to a different node throws. No-op when
      *  [snapshotFn] is null (legacy / GuideME callers). */
     private fun verifyCardOnNetwork() {
-        val fn = snapshotFn ?: return
+        val fn = snapshotFn
+        if (fn == null) return
         val ourPos = card.capability.adjacentPos
         val ourType = card.capability.type
         val ourSlot = card.slotIndex
@@ -455,7 +461,8 @@ class CardHandle private constructor(
         val face = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
 
         if (slotFilter != null) {
-            val slotted = PlatformServices.storage.getSlottedStorage(level, targetPos, face) ?: return null
+            val slotted = PlatformServices.storage.getSlottedStorage(level, targetPos, face)
+            if (slotted == null) return null
             return slotted.filteredBySlots(slotFilter)
         }
         return PlatformServices.storage.getItemStorage(level, targetPos, face)
@@ -488,7 +495,8 @@ class CardHandle private constructor(
         table.setGuarded("CardHandle", "face", object : TwoArgFunction() {
             override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
-                val dir = faceName(name) ?: throw LuaError("Unknown face: $name")
+                val dir = faceName(name)
+                if (dir == null) throw LuaError("Unknown face: $name")
                 return CardHandle(card, level, dir, slotFilter, networkId, snapshotFn).toLuaTable()
             }
         })

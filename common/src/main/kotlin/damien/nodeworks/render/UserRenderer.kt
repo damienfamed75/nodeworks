@@ -104,7 +104,7 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
         submitNodeCollector: SubmitNodeCollector,
         camera: CameraRenderState,
     ) {
-        // Tiny network-coloured laser stub inside the body. Runs from block
+        // Tiny network-colored laser stub inside the body. Runs from block
         // centre toward the FRONT face for [INNER_LASER_HALF_LENGTH] block
         // units, so the visible span sits at pixels 3..8 along the
         // front-back axis - inside the model's throat region where the
@@ -125,7 +125,7 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
             )
         }
 
-        // Network-coloured emissive overlay on the body. user_emissive.json
+        // Network-colored emissive overlay on the body. user_emissive.json
         // inherits user.json's elements + per-face UVs (only the texture
         // ref differs), so iterating its baked quads through the additive-
         // glow pipeline produces a glow that aligns precisely with the
@@ -137,7 +137,7 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
         //     faces sit a hair outside the body's faces, winning the
         //     LEQUAL depth test cleanly. EmissiveCubeRenderer's submit
         //     does the same with -0.000625 INSET on its hand-rolled cube.
-        // Skipped when the device isn't on a network -- no sensible colour.
+        // Skipped when the device isn't on a network -- no sensible color.
         val emissive = UserEmissiveModel.get()
         if (emissive != null && state.networkColor != NodeConnectionRenderer.DEFAULT_NETWORK_COLOR) {
             poseStack.pushPose()
@@ -151,7 +151,7 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
 
         // Arm + held item temporarily disabled for an animation-less model
         // test. The body model (chunk-rendered from blockstates/user.json)
-        // and the network-coloured emissive overlay above stay live; only
+        // and the network-colored emissive overlay above stay live; only
         // the BER-driven extending arm and its held item are silenced.
         // Re-enable alongside the matching extract block.
         // val armModel = UserArmModel.get() ?: return
@@ -199,7 +199,7 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
         }
     }
 
-    /** Network-coloured additive overlay over the User's body. The baked
+    /** Network-colored additive overlay over the User's body. The baked
      *  quads carry user.json's per-face UVs (since user_emissive.json
      *  inherits geometry via JSON parent) so the overlay's texture
      *  sampling lands on the same atlas regions as the body model. The
@@ -235,7 +235,8 @@ open class UserRenderer(context: BlockEntityRendererProvider.Context) :
      *  retract-end check) runs on the linear value -- mixing easing into
      *  the BE side would couple animation curves to gameplay timing. */
     private fun computeRawExtension(be: UserBlockEntity, partialTicks: Float): Float {
-        val level = be.level ?: return 0f
+        val level = be.level
+        if (level == null) return 0f
         val now = level.gameTime + partialTicks
         val extendTicks = UserBlockEntity.EXTEND_TICKS.toFloat()
 

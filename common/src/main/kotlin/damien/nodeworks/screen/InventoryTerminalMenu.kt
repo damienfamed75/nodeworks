@@ -201,8 +201,10 @@ class InventoryTerminalMenu(
      * crystal disconnects with the grid rendering empty.
      */
     private fun onCrystalSlotChanged() {
-        val provider = crystalHolderProvider ?: return
-        val container = crystalContainer ?: return
+        val provider = crystalHolderProvider
+        if (provider == null) return
+        val container = crystalContainer
+        if (container == null) return
         val portable = provider()
         if (!portable.isEmpty && portable.item is damien.nodeworks.item.PortableInventoryTerminalItem) {
             damien.nodeworks.item.PortableInventoryTerminalItem.setInstalledCrystal(
@@ -269,8 +271,10 @@ class InventoryTerminalMenu(
      *     antennas), triggering a full sync on the next broadcast.
      */
     private fun tryResolveSource() {
-        val holder = crystalHolderProvider ?: return
-        val container = crystalContainer ?: return
+        val holder = crystalHolderProvider
+        if (holder == null) return
+        val container = crystalContainer
+        if (container == null) return
         val serverPlayer = playerInventory.player as? ServerPlayer ?: return
 
         val crystal = container.getItem(0)
@@ -541,7 +545,8 @@ class InventoryTerminalMenu(
      * own don't get locked, only the specific stack driving this menu.
      */
     private fun isHeldPortableInvSlot(invIndex: Int): Boolean {
-        val holder = crystalHolderProvider ?: return false
+        val holder = crystalHolderProvider
+        if (holder == null) return false
         if (invIndex < 0 || invIndex >= playerInventory.containerSize) return false
         val held = holder()
         if (held.isEmpty) return false
@@ -569,15 +574,19 @@ class InventoryTerminalMenu(
         action: Int,
         componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ) {
-        val lvl = serverLevel ?: return
-        val snap = snapshot ?: return
+        val lvl = serverLevel
+        if (lvl == null) return
+        val snap = snapshot
+        if (snap == null) return
         val c = cache
         val variantPatch = if (componentsPatch.size() > 0) componentsPatch else null
 
         when (action) {
             0, 2, 3 -> {
-                val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+                val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+                if (identifier == null) return
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+                if (item == null) return
 
                 val available = if (variantPatch != null) {
                     NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch)
@@ -656,8 +665,10 @@ class InventoryTerminalMenu(
                 // from a component-bearing grid entry (e.g. Strength Potion)
                 // pulls that specific variant rather than any potion sharing
                 // the itemId.
-                val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+                val identifier = net.minecraft.resources.Identifier.tryParse(itemId)
+                if (identifier == null) return
+                val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+                if (item == null) return
                 val available = if (variantPatch != null) {
                     NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch)
                 } else if (c != null) c.count(itemId) else NetworkStorageHelper.countItems(lvl, snap, itemId)
@@ -687,12 +698,16 @@ class InventoryTerminalMenu(
      *         3 = shift-click, route filled bucket into player inventory.
      */
     fun handleFluidGridClick(player: Player, fluidId: String, action: Int) {
-        val lvl = serverLevel ?: return
-        val snap = snapshot ?: return
+        val lvl = serverLevel
+        if (lvl == null) return
+        val snap = snapshot
+        if (snap == null) return
         val c = cache
 
-        val fluidIdentifier = net.minecraft.resources.Identifier.tryParse(fluidId) ?: return
-        val fluid = net.minecraft.core.registries.BuiltInRegistries.FLUID.getValue(fluidIdentifier) ?: return
+        val fluidIdentifier = net.minecraft.resources.Identifier.tryParse(fluidId)
+        if (fluidIdentifier == null) return
+        val fluid = net.minecraft.core.registries.BuiltInRegistries.FLUID.getOptional(fluidIdentifier).orElse(null)
+        if (fluid == null) return
         val filledBucketItem = fluid.bucket
         if (filledBucketItem == null || filledBucketItem == net.minecraft.world.item.Items.AIR) return
 
@@ -724,7 +739,8 @@ class InventoryTerminalMenu(
         var drained = 0L
         for (card in NetworkStorageHelper.getStorageCards(snap)) {
             if (drained >= BUCKET_MB) break
-            val storage = NetworkStorageHelper.getFluidStorage(lvl, card) ?: continue
+            val storage = NetworkStorageHelper.getFluidStorage(lvl, card)
+            if (storage == null) continue
             val got = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
                 storage, { it == fluidId }, BUCKET_MB - drained
             )
@@ -747,7 +763,8 @@ class InventoryTerminalMenu(
                 var consumed = 0L
                 for (card in NetworkStorageHelper.getStorageCards(snap)) {
                     if (consumed >= 1L) break
-                    val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+                    val storage = NetworkStorageHelper.getStorage(lvl, card)
+                    if (storage == null) continue
                     val got = damien.nodeworks.platform.PlatformServices.storage.extractItems(
                         storage, { it == emptyBucketId }, 1L - consumed
                     )
@@ -943,7 +960,8 @@ class InventoryTerminalMenu(
             if (slot >= craftingContainer.containerSize) break
             val fallbackId = fallback.getOrNull(slot).orEmpty()
             if (fallbackId.isEmpty()) continue
-            val taken = takeOneOf(pickCandidatesFor(fallbackId, ingredients, claimed)) ?: continue
+            val taken = takeOneOf(pickCandidatesFor(fallbackId, ingredients, claimed))
+            if (taken == null) continue
             craftingContainer.setItem(slot, taken)
         }
 
@@ -958,12 +976,14 @@ class InventoryTerminalMenu(
         recipeId: net.minecraft.resources.Identifier?,
     ): List<net.minecraft.world.item.crafting.Ingredient> {
         if (recipeId == null) return emptyList()
-        val lvl = serverLevel ?: return emptyList()
+        val lvl = serverLevel
+        if (lvl == null) return emptyList()
         val key = net.minecraft.resources.ResourceKey.create(
             net.minecraft.core.registries.Registries.RECIPE,
             recipeId,
         )
-        val holder = lvl.recipeAccess().byKey(key).orElse(null) ?: return emptyList()
+        val holder = lvl.recipeAccess().byKey(key).orElse(null)
+        if (holder == null) return emptyList()
         val recipe = holder.value() as? net.minecraft.world.item.crafting.CraftingRecipe ?: return emptyList()
         return recipe.placementInfo().ingredients()
     }
@@ -978,8 +998,10 @@ class InventoryTerminalMenu(
         ingredients: List<net.minecraft.world.item.crafting.Ingredient>,
         claimed: BooleanArray,
     ): List<String> {
-        val id = net.minecraft.resources.Identifier.tryParse(fallbackId) ?: return listOf(fallbackId)
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return listOf(fallbackId)
+        val id = net.minecraft.resources.Identifier.tryParse(fallbackId)
+        if (id == null) return listOf(fallbackId)
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return listOf(fallbackId)
         val probe = ItemStack(item)
         for (ingredientIdx in ingredients.indices) {
             if (claimed[ingredientIdx]) continue
@@ -999,7 +1021,7 @@ class InventoryTerminalMenu(
 
     /** Extract up to [maxCount] of [itemId] from network storage, returning the
      *  actual [ItemStack]s with components preserved (durability, enchantments,
-     *  custom names, dyed colour, etc.).
+     *  custom names, dyed color, etc.).
      *
      *  Replaces the count-only `extractItems` path because rebuilding a stack
      *  from `ItemStack(item, count)` after a count-only extract silently strips
@@ -1027,7 +1049,8 @@ class InventoryTerminalMenu(
         var remaining = maxCount
         for (card in NetworkStorageHelper.getStorageCards(snap)) {
             if (remaining <= 0L) break
-            val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
+            val storage = NetworkStorageHelper.getStorage(lvl, card)
+            if (storage == null) continue
             // Use the stack-aware predicate when narrowing to a variant so
             // the platform can filter at the slot level instead of returning
             // all variants and forcing the caller to re-insert mismatches.
@@ -1064,16 +1087,20 @@ class InventoryTerminalMenu(
     private fun takeOneOf(candidates: List<String>): ItemStack? {
         for (itemId in candidates) {
             if (itemId.isEmpty()) continue
-            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
+            val id = net.minecraft.resources.Identifier.tryParse(itemId)
+            if (id == null) continue
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+            if (item == null) continue
 
             val invSlot = playerInventory.findSlotMatchingItem(ItemStack(item))
             if (invSlot >= 0) {
                 return playerInventory.getItem(invSlot).split(1)
             }
 
-            val lvl = serverLevel ?: continue
-            val snap = snapshot ?: continue
+            val lvl = serverLevel
+            if (lvl == null) continue
+            val snap = snapshot
+            if (snap == null) continue
             val stacks = extractRealStacks(lvl, snap, cache, itemId, 1L)
             if (stacks.isNotEmpty()) return stacks.first()
         }
@@ -1113,8 +1140,10 @@ class InventoryTerminalMenu(
             }
             1 -> {
                 // Clear: deposit all crafting grid items into network storage
-                val lvl = serverLevel ?: return
-                val snap = snapshot ?: return
+                val lvl = serverLevel
+                if (lvl == null) return
+                val snap = snapshot
+                if (snap == null) return
                 for (i in 0 until craftingContainer.containerSize) {
                     val stack = craftingContainer.getItem(i)
                     if (!stack.isEmpty) {
@@ -1141,10 +1170,13 @@ class InventoryTerminalMenu(
      */
     private fun autoPullRefill() {
         if (!autoPull) return
-        val lvl = serverLevel ?: return
-        val snap = snapshot ?: return
+        val lvl = serverLevel
+        if (lvl == null) return
+        val snap = snapshot
+        if (snap == null) return
         val c = cache
-        val pattern = autoPullPattern ?: return
+        val pattern = autoPullPattern
+        if (pattern == null) return
         autoPullPattern = null
 
         // Suppress slotsChanged during refill, intermediate states can match
@@ -1157,7 +1189,8 @@ class InventoryTerminalMenu(
                 if (!current.isEmpty) continue
 
                 val stacks = extractRealStacks(lvl, snap, c, itemId, 1L)
-                val refill = stacks.firstOrNull() ?: continue
+                val refill = stacks.firstOrNull()
+                if (refill == null) continue
                 craftingContainer.setItem(i, refill)
             }
         } finally {
@@ -1235,8 +1268,10 @@ class InventoryTerminalMenu(
      */
     fun handleCollect(player: Player, itemId: String) {
         val carried = carried
-        val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return
+        val id = net.minecraft.resources.Identifier.tryParse(itemId)
+        if (id == null) return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return
         val maxStack = item.getDefaultMaxStackSize()
 
         // Start with what's on cursor (may already have items from first click)
@@ -1299,8 +1334,10 @@ class InventoryTerminalMenu(
         count: Int,
         componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ) {
-        val lvl = serverLevel ?: return
-        val snap = snapshot ?: return
+        val lvl = serverLevel
+        if (lvl == null) return
+        val snap = snapshot
+        if (snap == null) return
         if (count <= 0 || count > 999) return
 
         // Display name prefers the variant's hover name (e.g. "Potion of Strength")
@@ -1425,7 +1462,8 @@ class InventoryTerminalMenu(
             val held = holder()
             return !held.isEmpty && held.item is damien.nodeworks.item.PortableInventoryTerminalItem
         }
-        val src = source ?: return true
+        val src = source
+        if (src == null) return true
         return src.isValid(serverPlayer)
     }
 
@@ -1478,18 +1516,23 @@ class InventoryTerminalMenu(
      * action: 0=extract to cursor, 1=shift to inventory, 2=extract half
      */
     fun handleQueueExtract(player: Player, entryId: Int, action: Int) {
-        val lvl = serverLevel ?: return
-        val snap = snapshot ?: return
+        val lvl = serverLevel
+        if (lvl == null) return
+        val snap = snapshot
+        if (snap == null) return
         val queue = CraftQueueManager.getQueue(player.uuid)
-        val entry = queue.firstOrNull { it.id == entryId } ?: return
+        val entry = queue.firstOrNull { it.id == entryId }
+        if (entry == null) return
         // Reject extract requests for entries that belong to another network. The
         // client only ever sees this network's slice of the queue, but a malicious
         // client could try to drain a craft sitting in a different network's CPU.
         if (entry.networkId != snap.networkId) return
         if (entry.availableCount <= 0) return
 
-        val identifier = net.minecraft.resources.Identifier.tryParse(entry.itemId) ?: return
-        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
+        val identifier = net.minecraft.resources.Identifier.tryParse(entry.itemId)
+        if (identifier == null) return
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(identifier).orElse(null)
+        if (item == null) return
         val maxStack = item.getDefaultMaxStackSize().toLong()
 
         val toExtract = when (action) {

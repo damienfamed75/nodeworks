@@ -448,7 +448,8 @@ class UserBlockEntity(
         if (filterRule.isEmpty()) {
             heldStack = ItemStack.EMPTY
         } else {
-            val pulled = pullStackFromNetwork(level, snapshot) ?: return false
+            val pulled = pullStackFromNetwork(level, snapshot)
+            if (pulled == null) return false
             if (UserDenyList.isDenied(pulled, level)) {
                 // Silent no-op: refund the pull so a misconfigured filter
                 // doesn't strand the item between snapshots.
@@ -726,7 +727,8 @@ class UserBlockEntity(
         val filterPred: (ItemStack) -> Boolean = { stack -> CardHandle.matchesFilter(stack, filterRule, registries) }
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (!isChannelMatching(card)) continue
-            val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val storage = NetworkStorageHelper.getStorage(level, card)
+            if (storage == null) continue
             val stacks = PlatformServices.storage.extractStacksByPredicate(storage, filterPred, 1L)
             for (stack in stacks) {
                 if (!stack.isEmpty) return stack

@@ -94,8 +94,8 @@ interface Connectable {
         get() = null
 
     /** Client-only. References [damien.nodeworks.render.NodeConnectionRenderer]
-     *  for the default colour fallback. Server code should read [networkId]
-     *  directly and look up the colour via [NetworkSettingsRegistry].
+     *  for the default color fallback. Server code should read [networkId]
+     *  directly and look up the color via [NetworkSettingsRegistry].
      *
      *  Micro-networks (anchored by a Processing Handler) don't live in
      *  [NetworkSettingsRegistry] because there's no Network Controller to
@@ -107,7 +107,8 @@ interface Connectable {
      *  shared hazard yellow so chest bodies, ghost laser stubs, and BER
      *  overlays all match the in-pipe beam treatment. */
     fun networkColor(): Int {
-        val id = networkId ?: return damien.nodeworks.render.NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
+        val id = networkId
+        if (id == null) return damien.nodeworks.render.NodeConnectionRenderer.DEFAULT_NETWORK_COLOR
         if (damien.nodeworks.render.MicroNetworkClientRegistry.isMicro(id)) {
             return damien.nodeworks.render.MicroNetworkClientRegistry.MICRO_NETWORK_COLOR
         }
@@ -120,4 +121,42 @@ interface Connectable {
          *  paths can `side in ALL_FACES`-check without allocating each call. */
         @JvmField val ALL_FACES: Set<Direction> = java.util.EnumSet.allOf(Direction::class.java)
     }
+}
+
+/** Canonical "can the discovery BFS bridge from [src] to [neighbor] across
+ *  face [dir]?" decision. Every adjacency-walking pass in the project routes
+ *  through this one helper, so adding a new rule changes one place.
+ *
+ *  Extension mods adding their own [Connectable] BEs should override the
+ *  hooks below rather than reimplement bridging logic. The hooks consulted
+ *  here, in order:
+ *
+ *    * [Connectable.usesAdjacency] - opt the BE out of face-adjacency entirely.
+ *    * [Connectable.adjacencyFaceAllowed] - gate which faces participate. The
+ *      default consults [Connectable.activeFaces], which is the easiest knob
+ *      for "this device only connects on its back face".
+ *    * [Connectable.canConnectAdjacentTo] - peer-pair refusal. Import / export
+ *      chests use this to refuse other leaves so face-to-face placement
+ *      doesn't auto-bridge networks.
+ *    * [Connectable.forcedPipeBlocked] - per-face wrench blocks. Default false
+ *      for everything except Pipe / Node.
+ *
+ *  [srcEntryFace] is the face on [src] through which the BFS arrived, or
+ *  null when [src] is the start node. The neighbor side passes [dir]`.opposite`
+ *  for both face and entry-face, since the symmetric per-face entry context
+ *  only exists on the side that did the walking. */
+fun canBridgeAdjacent(
+    src: Connectable,
+    srcEntryFace: Direction?,
+    neighbor: Connectable,
+    dir: Direction,
+): Boolean {
+    if (!src.usesAdjacency() || !neighbor.usesAdjacency()) return false
+    if (!src.adjacencyFaceAllowed(dir, srcEntryFace)) return false
+    if (!neighbor.adjacencyFaceAllowed(dir.opposite, dir.opposite)) return false
+    if (!src.canConnectAdjacentTo(neighbor)) return false
+    if (!neighbor.canConnectAdjacentTo(src)) return false
+    if (src.forcedPipeBlocked(dir)) return false
+    if (neighbor.forcedPipeBlocked(dir.opposite)) return false
+    return true
 }

@@ -195,7 +195,8 @@ object LuaApiDocs {
         }
 
         // Scalar form: first identifier after the arrow, strip any `|` union or `?` suffix.
-        val scalarMatch = Regex("""^([\w?|\s]+?)(?:\s|$)""").find(rhs) ?: return null
+        val scalarMatch = Regex("""^([\w?|\s]+?)(?:\s|$)""").find(rhs)
+        if (scalarMatch == null) return null
         val scalar = scalarMatch.groupValues[1].trim().substringBefore('|').trim().trimEnd('?')
         if (scalar.isEmpty()) return null
         return ReturnType(scalar, Container.NONE)
@@ -332,8 +333,10 @@ object LuaApiDocs {
         return when (prev.text) {
             ")" -> resolveChainEndType(tokens, n, variableTypes)
             else -> {
-                val varType = variableTypes[prev.text] ?: return null
-                val rt = parseReturnType("() → $varType") ?: return null
+                val varType = variableTypes[prev.text]
+                if (varType == null) return null
+                val rt = parseReturnType("() → $varType")
+                if (rt == null) return null
                 if (rt.container != Container.NONE) rt.type else null
             }
         }
@@ -365,7 +368,8 @@ object LuaApiDocs {
         variableTypes: Map<String, String> = emptyMap(),
         inputItemsFields: List<String>? = null,
     ): Doc? {
-        val tok = tokens.getOrNull(index) ?: return null
+        val tok = tokens.getOrNull(index)
+        if (tok == null) return null
         val eligible = tok.type == LuaTokenizer.TokenType.DEFAULT ||
                 tok.type == LuaTokenizer.TokenType.FUNCTION ||
                 tok.type == LuaTokenizer.TokenType.KEYWORD

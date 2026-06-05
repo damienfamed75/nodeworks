@@ -149,7 +149,7 @@ fun GuiGraphicsExtractor.blit(texture: Identifier, x: Int, y: Int, u: Int, v: In
 /**
  * Tinted blit. Replaces the old `RenderSystem.setShaderColor(r, g, b, a)` +
  * `graphics.blit(...)` + `setShaderColor(1,1,1,1)` sandwich. In 26.1 the tint is
- * a per-draw ARGB argument, so every monochrome icon that wants a colour overlay
+ * a per-draw ARGB argument, so every monochrome icon that wants a color overlay
  * passes its color here instead of wrapping the draw call in shader-color state.
  *
  * [argb] is packed 0xAARRGGBB, pass `0xFFFFFFFF.toInt()` for "no tint" (default).
@@ -223,21 +223,21 @@ val CharacterEvent.character: Char get() = this.codepoint.toChar()
 // InputConstants.
 
 fun hasShiftDownCompat(): Boolean {
-    val mc = net.minecraft.client.Minecraft.getInstance() ?: return false
+    val mc = net.minecraft.client.Minecraft.getInstance()
     val handle = mc.getWindow()
     return com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, com.mojang.blaze3d.platform.InputConstants.KEY_LSHIFT) ||
            com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, 344) // GLFW_KEY_RIGHT_SHIFT
 }
 
 fun hasAltDownCompat(): Boolean {
-    val mc = net.minecraft.client.Minecraft.getInstance() ?: return false
+    val mc = net.minecraft.client.Minecraft.getInstance()
     val handle = mc.getWindow()
     return com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, 342) || // GLFW_KEY_LEFT_ALT
            com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, 346)    // GLFW_KEY_RIGHT_ALT
 }
 
 fun hasControlDownCompat(): Boolean {
-    val mc = net.minecraft.client.Minecraft.getInstance() ?: return false
+    val mc = net.minecraft.client.Minecraft.getInstance()
     val handle = mc.getWindow()
     return com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, com.mojang.blaze3d.platform.InputConstants.KEY_LCONTROL) ||
            com.mojang.blaze3d.platform.InputConstants.isKeyDown(handle, 345) // GLFW_KEY_RIGHT_CONTROL

@@ -248,7 +248,8 @@ class ProcessingSetScreenHandler(
 
     override fun quickMoveStack(player: Player, slotIndex: Int): ItemStack {
         if (slotIndex >= TOTAL_GHOST_SLOTS) {
-            val slot = slots.getOrNull(slotIndex) ?: return ItemStack.EMPTY
+            val slot = slots.getOrNull(slotIndex)
+            if (slot == null) return ItemStack.EMPTY
             if (!slot.hasItem()) return ItemStack.EMPTY
             val stack = slot.item
             for (i in 0 until INPUT_SLOTS) {

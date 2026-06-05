@@ -173,7 +173,8 @@ class ImporterBuilder(
     }
 
     override fun tickOnce() {
-        val snapshot = lastSnapshotSeen ?: return
+        val snapshot = lastSnapshotSeen
+        if (snapshot == null) return
         val level = engine.level
         val filterPred: (String) -> Boolean = { CardHandle.matchesFilter(it, filter) }
 
@@ -275,10 +276,12 @@ class ImporterBuilder(
         if (maxCount <= 0L) return 0L
         return when (source) {
             is ResolvedRef.Card -> {
-                val srcStorage = CardStorage.forCard(level, source.snapshot, source.faceOverride) ?: return 0L
+                val srcStorage = CardStorage.forCard(level, source.snapshot, source.faceOverride)
+                if (srcStorage == null) return 0L
                 when (target) {
                     is ResolvedRef.Card -> {
-                        val dest = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
+                        val dest = CardStorage.forCard(level, target.snapshot, target.faceOverride)
+                        if (dest == null) return 0L
                         PlatformServices.storage.moveItems(srcStorage, dest, filterPred, maxCount)
                     }
                     is ResolvedRef.Pool -> NetworkStorageHelper.insertItems(
@@ -341,7 +344,8 @@ class ImporterBuilder(
         for (srcCard in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
             if (!sourceChannel.matches(srcCard.channel)) continue
-            val srcStorage = NetworkStorageHelper.getStorage(level, srcCard) ?: continue
+            val srcStorage = NetworkStorageHelper.getStorage(level, srcCard)
+            if (srcStorage == null) continue
             val moved = NetworkStorageHelper.insertItems(
                 level, snapshot, srcStorage, filter,
                 remaining, engine.routeTable, null, engine.inventoryCache,
@@ -370,14 +374,16 @@ class ImporterBuilder(
         maxCount: Long,
         sourceChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ): Long {
-        val destStorage = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
+        val destStorage = CardStorage.forCard(level, target.snapshot, target.faceOverride)
+        if (destStorage == null) return 0L
         val cache = engine.inventoryCache
         var remaining = maxCount
         var totalMoved = 0L
         for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
             if (!sourceChannel.matches(poolCard.channel)) continue
-            val poolStorage = NetworkStorageHelper.getStorage(level, poolCard) ?: continue
+            val poolStorage = NetworkStorageHelper.getStorage(level, poolCard)
+            if (poolStorage == null) continue
             val infos = PlatformServices.storage.findAllItemInfo(poolStorage) { filterPred(it) }
             for (info in infos) {
                 if (remaining <= 0L) break

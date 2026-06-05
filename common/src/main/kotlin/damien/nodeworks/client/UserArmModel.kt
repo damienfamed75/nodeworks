@@ -25,7 +25,7 @@ object UserArmModel {
 }
 
 /**
- * Holder for the network-colour-tinted emissive overlay on the User's main
+ * Holder for the network-color-tinted emissive overlay on the User's main
  * body. Geometry mirrors `nodeworks:block/user` (via JSON parent
  * inheritance) so the user.json author can paint emissive content on any
  * face of any element via user_emissive.png and it just lights up. The

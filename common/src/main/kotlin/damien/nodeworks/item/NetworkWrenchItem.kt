@@ -71,7 +71,8 @@ class NetworkWrenchItem(properties: Properties) : Item(properties) {
     override fun useOn(ctx: UseOnContext): InteractionResult {
         val level = ctx.level
         val pos = ctx.clickedPos
-        val player = ctx.player ?: return InteractionResult.PASS
+        val player = ctx.player
+        if (player == null) return InteractionResult.PASS
         val be = level.getBlockEntity(pos) as? Connectable ?: return InteractionResult.PASS
 
         return if (player.isShiftKeyDown) shiftClick(ctx, level, pos, be)

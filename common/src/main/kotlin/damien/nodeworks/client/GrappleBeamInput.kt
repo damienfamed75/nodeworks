@@ -89,7 +89,8 @@ object GrappleBeamInput {
      *  (player swap, level unload); the steady-state path keeps the
      *  instance alive at volume 0. */
     private fun releaseIdleSound() {
-        val current = idleSound ?: return
+        val current = idleSound
+        if (current == null) return
         current.setVolume(0f)
         Minecraft.getInstance().soundManager.stop(current)
         idleSound = null
@@ -103,8 +104,10 @@ object GrappleBeamInput {
      *  can return a different Java object than `mc.player`. */
     private fun ownsAttachedHook(): Boolean {
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return false
-        val level = mc.level ?: return false
+        val player = mc.player
+        if (player == null) return false
+        val level = mc.level
+        if (level == null) return false
         val uuid = player.uuid
         return level.entitiesForRendering().any { e ->
             e is GrappleBeamHookEntity && e.attached && e.owner?.uuid == uuid
@@ -122,8 +125,10 @@ object GrappleBeamInput {
 
     private fun ownsActiveHook(): Boolean {
         val mc = Minecraft.getInstance()
-        val player = mc.player ?: return false
-        val level = mc.level ?: return false
+        val player = mc.player
+        if (player == null) return false
+        val level = mc.level
+        if (level == null) return false
         return level.entitiesForRendering().any { e ->
             e is GrappleBeamHookEntity && e.owner === player
         }

@@ -14,7 +14,7 @@ import java.util.EnumSet
 
 /**
  * Inside-pipe network laser. Pulls the connected directions off the
- * blockstate, the colour and mode out of [NetworkSettingsRegistry], hands
+ * blockstate, the color and mode out of [NetworkSettingsRegistry], hands
  * everything to [PipeLaserBeam]. PipeBlockEntity.networkColor() is
  * hardcoded grey so the model stays neutral copper, the laser tint goes
  * through a direct registry lookup instead.

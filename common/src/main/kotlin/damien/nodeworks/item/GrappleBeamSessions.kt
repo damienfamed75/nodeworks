@@ -24,7 +24,8 @@ object GrappleBeamSessions {
      *  or null if none. Validates the entity still exists, clearing the
      *  entry if the hook was removed without going through [release]. */
     fun current(player: Player): GrappleBeamHookEntity? {
-        val id = active[player.uuid] ?: return null
+        val id = active[player.uuid]
+        if (id == null) return null
         val level = player.level() as? ServerLevel ?: return null
         val entity = level.getEntity(id) as? GrappleBeamHookEntity
         if (entity == null || entity.isRemoved) {
@@ -44,7 +45,8 @@ object GrappleBeamSessions {
     /** Discards the player's current hook and clears the entry. No-op when
      *  the player has no active hook. */
     fun release(player: Player) {
-        val id = active.remove(player.uuid) ?: return
+        val id = active.remove(player.uuid)
+        if (id == null) return
         val level = player.level() as? ServerLevel ?: return
         val entity = level.getEntity(id) as? GrappleBeamHookEntity
         if (entity != null && !entity.isRemoved) {

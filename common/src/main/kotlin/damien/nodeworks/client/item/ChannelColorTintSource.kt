@@ -18,7 +18,7 @@ import net.minecraft.world.item.ItemStack
  * `-1` to leave the base card texture untinted. The same source serves every card
  * type (IO / Storage / Redstone / Observer), each card's item-model JSON references
  * `nodeworks:channel_color` and the read of [CardChannel.get] is what differentiates
- * the displayed colour at runtime.
+ * the displayed color at runtime.
  *
  * Registered in [damien.nodeworks.client.NeoForgeClientSetup.onRegisterItemTintSources].
  */

@@ -117,7 +117,8 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
         // sticking around until the script is restarted. Cost is one
         // network walk per preset interval, fine for typical networks.
         engine.refreshSnapshot()
-        val snap = engine.currentSnapshot() ?: return
+        val snap = engine.currentSnapshot()
+        if (snap == null) return
         if (snap !== lastSnapshotSeen) {
             onSnapshotChanged(snap)
             lastSnapshotSeen = snap

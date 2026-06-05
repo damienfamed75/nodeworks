@@ -250,7 +250,8 @@ sealed class Operation {
         private fun readItemList(tag: CompoundTag, key: String): List<Pair<String, Long>> {
             val list = tag.getListOrEmpty(key)
             return (0 until list.size).mapNotNull { i ->
-                val c = list.getCompound(i).orElse(null) ?: return@mapNotNull null
+                val c = list.getCompound(i).orElse(null)
+                if (c == null) return@mapNotNull null
                 c.getStringOr("id", "") to c.getLongOr("ct", 0L)
             }
         }

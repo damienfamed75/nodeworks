@@ -407,12 +407,14 @@ object CraftTreeBuilder {
     ): Pair<List<String>, Boolean> {
         if (!allowSubstitutions) return recipe to false
 
-        val rm = level.recipeAccess() ?: return recipe to false
+        val rm = level.recipeAccess()
         val exemplarItems = recipe.map { itemId ->
             if (itemId.isEmpty()) ItemStack.EMPTY
             else {
-                val id = Identifier.tryParse(itemId) ?: return recipe to false
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: return recipe to false
+                val id = Identifier.tryParse(itemId)
+                if (id == null) return recipe to false
+                val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+                if (item == null) return recipe to false
                 ItemStack(item, 1)
             }
         }
@@ -448,7 +450,8 @@ object CraftTreeBuilder {
             if (ingredientIdx < 0) continue
             val candidates = candidatesPerIngredient[ingredientIdx]
 
-            val choice = pickSlotCandidate(originalId, candidates, batches, ::availableFor) ?: continue
+            val choice = pickSlotCandidate(originalId, candidates, batches, ::availableFor)
+            if (choice == null) continue
             if (choice != originalId) swapped = true
             concrete[slot] = choice
             local[choice] = (local[choice] ?: 0) + batches
@@ -479,12 +482,14 @@ object CraftTreeBuilder {
      *  output count. Returns 1 if no matching recipe (safe default, planner will still fail
      *  downstream with a clearer error). */
     private fun resolveRecipeOutputCount(recipe: List<String>, level: ServerLevel): Int {
-        val rm = level.recipeAccess() ?: return 1
+        val rm = level.recipeAccess()
         val items = recipe.map { itemId ->
             if (itemId.isEmpty()) ItemStack.EMPTY
             else {
-                val id = Identifier.tryParse(itemId) ?: return 1
-                val item = BuiltInRegistries.ITEM.getValue(id) ?: return 1
+                val id = Identifier.tryParse(itemId)
+                if (id == null) return 1
+                val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+                if (item == null) return 1
                 ItemStack(item, 1)
             }
         }
@@ -499,8 +504,10 @@ object CraftTreeBuilder {
         itemId: String,
         componentsPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     ): String {
-        val id = Identifier.tryParse(itemId) ?: return itemId.substringAfter(':')
-        val item = BuiltInRegistries.ITEM.getValue(id) ?: return itemId.substringAfter(':')
+        val id = Identifier.tryParse(itemId)
+        if (id == null) return itemId.substringAfter(':')
+        val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return itemId.substringAfter(':')
         val stack = ItemStack(item).apply {
             if (componentsPatch.size() > 0) applyComponents(componentsPatch)
         }

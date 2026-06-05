@@ -61,9 +61,12 @@ object CraftingHelper {
      * matching the standard plan-failure flow.
      */
     fun releaseCraftResult(result: CraftResult, submitterUuid: java.util.UUID? = null) {
-        val cpu = result.cpu ?: return
-        val level = result.level ?: return
-        val snapshot = result.snapshot ?: return
+        val cpu = result.cpu
+        if (cpu == null) return
+        val level = result.level
+        if (level == null) return
+        val snapshot = result.snapshot
+        if (snapshot == null) return
         val droppedTotals = mutableMapOf<String, Long>()
         if (cpu.bufferUsed > 0L) {
             // Component-aware flush so component-bearing variants (potions
@@ -317,8 +320,10 @@ object CraftingHelper {
     // =====================================================================
 
     private fun resolveItemName(itemId: String): String {
-        val id = Identifier.tryParse(itemId) ?: return itemId
-        val item = BuiltInRegistries.ITEM.getValue(id) ?: return itemId
+        val id = Identifier.tryParse(itemId)
+        if (id == null) return itemId
+        val item = BuiltInRegistries.ITEM.getOptional(id).orElse(null)
+        if (item == null) return itemId
         return ItemStack(item).hoverName.string
     }
 }

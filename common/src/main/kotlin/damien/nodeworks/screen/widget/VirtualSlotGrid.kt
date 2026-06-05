@@ -91,7 +91,8 @@ class VirtualSlotGrid(
 
     fun renderItems(graphics: GuiGraphicsExtractor, scrollOffset: Int = 0, totalItems: Int = slots.size, skipRows: Int = 0) {
         val font = Minecraft.getInstance().font
-        val provider = stackProvider ?: return
+        val provider = stackProvider
+        if (provider == null) return
         val formatter = countFormatter
 
         for ((i, slot) in slots.withIndex()) {
@@ -173,7 +174,8 @@ class VirtualSlotGrid(
 
     /** Render a highlight on the hovered slot. */
     fun renderHoverHighlight(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, scrollOffset: Int = 0) {
-        val slot = getSlotAt(mouseX, mouseY, scrollOffset) ?: return
+        val slot = getSlotAt(mouseX, mouseY, scrollOffset)
+        if (slot == null) return
         val ix = slot.x + 1
         val iy = slot.y + 1
         graphics.fill(ix, iy, ix + 16, iy + 16, 0x80FFFFFF.toInt())
