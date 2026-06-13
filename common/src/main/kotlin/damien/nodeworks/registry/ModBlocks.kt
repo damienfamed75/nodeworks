@@ -8,6 +8,8 @@ import damien.nodeworks.block.NodeBlock
 import damien.nodeworks.block.PipeBlock
 import damien.nodeworks.block.TerminalBlock
 import damien.nodeworks.block.ProcessingStorageBlock
+import damien.nodeworks.block.StorageRepoBlock
+import damien.nodeworks.block.repo.StorageRepoTiers
 import damien.nodeworks.block.AntennaSegmentBlock
 import damien.nodeworks.block.BreakerBlock
 import damien.nodeworks.block.BroadcastAntennaBlock
@@ -230,6 +232,21 @@ object ModBlocks {
     val PROCESSING_STORAGE: Block = register(
         "processing_storage",
         ::ProcessingStorageBlock,
+        BlockBehaviour.Properties.of()
+            .strength(3.0f, 6.0f)
+            .requiresCorrectToolForDrops()
+    )
+
+    // ---- Storage Repo (bulk item storage) ----
+    //
+    // Per-tier registration via [StorageRepoTiers.ALL] so adding Tier 2 / Tier 3 is one
+    // append in StorageRepoTiers.ALL plus one `register(...)` call below. The cluster
+    // BFS keys on block identity so tiers never merge with each other. Tier 1 carries
+    // the unadorned `storage_repo` id (the base item); higher tiers will use
+    // `storage_repo_tier_2`, etc.
+    val STORAGE_REPO: Block = register(
+        "storage_repo",
+        { props -> StorageRepoBlock(StorageRepoTiers.TIER_1, props) },
         BlockBehaviour.Properties.of()
             .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()

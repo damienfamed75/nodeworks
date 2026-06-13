@@ -276,6 +276,14 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                     damien.nodeworks.screen.StorageCardMenu.clientFactory(syncId, inv, data)
                 }
             )
+            ModScreenHandlers.STORAGE_REPO = Registry.register(
+                BuiltInRegistries.MENU,
+                ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "storage_repo")),
+                IMenuTypeExtension.create { syncId, inv, buf ->
+                    val data = damien.nodeworks.screen.StorageRepoOpenData.STREAM_CODEC.decode(buf)
+                    damien.nodeworks.screen.StorageRepoMenu.clientFactory(syncId, inv, data)
+                }
+            )
             ModScreenHandlers.CARD_SETTINGS = Registry.register(
                 BuiltInRegistries.MENU,
                 ResourceKey.create(Registries.MENU, Identifier.fromNamespaceAndPath("nodeworks", "card_settings")),
@@ -363,6 +371,11 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             net.neoforged.neoforge.transfer.item.VanillaContainerWrapper.of(be)
         }
         event.registerBlockEntity(itemBlock, ModBlockEntities.EXPORT_CHEST) { be, _ ->
+            net.neoforged.neoforge.transfer.item.VanillaContainerWrapper.of(be)
+        }
+        // Storage Repos expose the same item capability so the discovery-synthesized
+        // Storage Cards can open their inventories through PlatformServices.storage.
+        event.registerBlockEntity(itemBlock, ModBlockEntities.STORAGE_REPO) { be, _ ->
             net.neoforged.neoforge.transfer.item.VanillaContainerWrapper.of(be)
         }
     }
@@ -649,6 +662,19 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 val player = context.player()
                 val menu = player.containerMenu
                 if (menu is damien.nodeworks.screen.StorageCardMenu && menu.containerId == payload.containerId) {
+                    menu.replaceFilterRules(payload.rules)
+                }
+            }
+        }
+
+        registrar.playToServer(
+            damien.nodeworks.network.SetStorageRepoFilterRulesPayload.TYPE,
+            damien.nodeworks.network.SetStorageRepoFilterRulesPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.StorageRepoMenu && menu.containerId == payload.containerId) {
                     menu.replaceFilterRules(payload.rules)
                 }
             }

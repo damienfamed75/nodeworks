@@ -1,0 +1,13 @@
+{
+  "comment": "CAP_TOP role — block in the top layer of a valid silo. Roof on top, wall on sides. The down face uses the wall texture too; it's typically culled by the block below, but if exposed (e.g. silo built off the ground) the wall texture looks right.",
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "up": "minecraft:block/gold_block",
+    "down": "minecraft:block/copper_block",
+    "north": "minecraft:block/copper_block",
+    "south": "minecraft:block/copper_block",
+    "east": "minecraft:block/copper_block",
+    "west": "minecraft:block/copper_block",
+    "particle": "minecraft:block/copper_block"
+  }
+}

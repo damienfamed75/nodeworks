@@ -1,0 +1,7 @@
+{
+  "comment": "STANDALONE role — default look when the block isn't part of a valid silo shape. Vanilla iron block as a placeholder; real artwork will replace these texture refs.",
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "minecraft:block/iron_block"
+  }
+}

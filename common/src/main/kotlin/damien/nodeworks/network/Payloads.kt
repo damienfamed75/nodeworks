@@ -937,6 +937,36 @@ data class SetStorageCardFilterRulesPayload(val containerId: Int, val rules: Lis
 }
 
 /**
+ * C2S: Replace the filter-rule list on an open [damien.nodeworks.screen.StorageRepoMenu].
+ * Same shape and bounds as [SetStorageCardFilterRulesPayload], parallel payload
+ * because the menu types and click handlers are distinct.
+ */
+data class SetStorageRepoFilterRulesPayload(val containerId: Int, val rules: List<String>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetStorageRepoFilterRulesPayload> = CustomPacketPayload.Type(
+            Identifier.fromNamespaceAndPath("nodeworks", "set_storage_repo_filter_rules")
+        )
+        const val MAX_RULES = 32
+        const val MAX_RULE_LENGTH = 256
+        val CODEC: StreamCodec<FriendlyByteBuf, SetStorageRepoFilterRulesPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                buf.writeVarInt(p.containerId)
+                val cropped = p.rules.take(MAX_RULES)
+                buf.writeVarInt(cropped.size)
+                for (rule in cropped) buf.writeUtf(rule.take(MAX_RULE_LENGTH), MAX_RULE_LENGTH)
+            },
+            { buf ->
+                val id = buf.readVarInt()
+                val count = buf.readVarInt().coerceIn(0, MAX_RULES)
+                val rules = (0 until count).map { buf.readUtf(MAX_RULE_LENGTH) }
+                SetStorageRepoFilterRulesPayload(id, rules)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/**
  * C2S: Push the full Export Chest filter rule list to the server. Same shape
  * as [SetStorageCardFilterRulesPayload] but addressed at the chest's BE via
  * its menu container ID, so the server-side handler can route to the right

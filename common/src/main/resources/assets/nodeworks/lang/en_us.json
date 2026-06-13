@@ -82,6 +82,8 @@
   "container.nodeworks.processing_set": "Processing Set",
   "block.nodeworks.processing_storage": "Processing Storage",
   "container.nodeworks.processing_storage": "Processing Storage",
+  "block.nodeworks.storage_repo": "Storage Repo",
+  "container.nodeworks.storage_repo": "Storage Repo",
   "item.nodeworks.link_crystal": "Link Crystal",
   "item.nodeworks.antenna_coil_assembly": "Antenna Coil Assembly",
   "item.nodeworks.celestine_antenna_array": "Celestine Antenna Array",

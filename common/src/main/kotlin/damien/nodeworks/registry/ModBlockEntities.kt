@@ -11,6 +11,8 @@ import damien.nodeworks.block.entity.NodeBlockEntity
 import damien.nodeworks.block.entity.PipeBlockEntity
 import damien.nodeworks.block.entity.TerminalBlockEntity
 import damien.nodeworks.block.entity.ProcessingStorageBlockEntity
+import damien.nodeworks.block.entity.StorageRepoBlockEntity
+import damien.nodeworks.block.repo.StorageRepoTiers
 import damien.nodeworks.block.entity.BroadcastAntennaBlockEntity
 import damien.nodeworks.block.entity.CoveredPipeBlockEntity
 import damien.nodeworks.block.entity.CraftingCoreBlockEntity
@@ -120,6 +122,17 @@ object ModBlockEntities {
     val PROCESSING_STORAGE: BlockEntityType<ProcessingStorageBlockEntity> = register(
         "processing_storage",
         PlatformServices.blockEntity.createBlockEntityType(::ProcessingStorageBlockEntity, ModBlocks.PROCESSING_STORAGE)
+    )
+
+    // One BE type shared by every Storage Repo tier. When Tier 2/3 ship, register
+    // them as additional block entries in the vararg below and switch the factory
+    // to a `when (state.block)` lookup.
+    val STORAGE_REPO: BlockEntityType<StorageRepoBlockEntity> = register(
+        "storage_repo",
+        PlatformServices.blockEntity.createBlockEntityType(
+            { pos, state -> StorageRepoBlockEntity(StorageRepoTiers.TIER_1, pos, state) },
+            ModBlocks.STORAGE_REPO,
+        )
     )
 
     val BROADCAST_ANTENNA: BlockEntityType<BroadcastAntennaBlockEntity> = register(

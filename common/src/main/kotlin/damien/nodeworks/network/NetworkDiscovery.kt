@@ -83,6 +83,10 @@ object NetworkDiscovery {
         val users = mutableListOf<UserSnapshot>()
         val processingApis = mutableListOf<ProcessingApiSnapshot>()
         val terminalPositions = mutableListOf<BlockPos>()
+        // Synthetic Storage Card snapshots produced by Storage Repo clusters. One per
+        // Repo block, all sharing the cluster anchor's filter/channel/priority. See the
+        // [StorageRepoBlockEntity] branch in the BFS [when] below.
+        val repoStorageCards = mutableListOf<CardSnapshot>()
         var controller: ControllerSnapshot? = null
         // A second controller in the same subgraph drops the snapshot's controller so
         // the network reads as offline and downstream consumers refuse to run.
@@ -116,6 +120,30 @@ object NetworkDiscovery {
                             processingApis.add(ProcessingApiSnapshot(connectable.blockPos, clusterApis))
                         }
                     }
+                }
+                is damien.nodeworks.block.entity.StorageRepoBlockEntity -> {
+                    // Synthesize one Storage Card per Repo block, all carrying the cluster
+                    // anchor's filter / channel / priority settings. The card points back
+                    // at this block's own position; NetworkStorageHelper opens its
+                    // IItemHandler via PlatformServices.storage at query time.
+                    val anchor = connectable.getAnchor() ?: connectable
+                    val capability = damien.nodeworks.card.StorageSideCapability(
+                        adjacentPos = connectable.blockPos,
+                        defaultFace = Direction.UP,
+                        priority = anchor.priority,
+                        filterMode = anchor.filterMode,
+                        filterRules = anchor.filterRules,
+                        stackability = anchor.stackability,
+                        nbtFilter = anchor.nbtFilter,
+                    )
+                    repoStorageCards.add(
+                        CardSnapshot(
+                            capability = capability,
+                            alias = null,
+                            slotIndex = -1,
+                            channel = anchor.channel,
+                        )
+                    )
                 }
                 is ReceiverAntennaBlockEntity -> {
                     val broadcast = connectable.getBroadcastAntenna(level)
@@ -236,7 +264,11 @@ object NetworkDiscovery {
         // counter namespace as cards so the alias prefix uniquely identifies the type.
         assignAutoAliases(nodes, breakers, placers, users)
 
-        return NetworkSnapshot(nodes, crafters, variables, breakers, placers, users, cpus, processingApis, terminalPositions, controller)
+        return NetworkSnapshot(
+            nodes, crafters, variables, breakers, placers, users, cpus,
+            processingApis, terminalPositions, controller,
+            repoStorageCards = repoStorageCards,
+        )
     }
 
     /** Assign `<base>_N` auto-aliases so every card / breaker / placer on the
@@ -409,7 +441,12 @@ data class NetworkSnapshot(
     val cpus: List<CpuSnapshot> = emptyList(),
     val processingApis: List<ProcessingApiSnapshot> = emptyList(),
     val terminalPositions: List<BlockPos> = emptyList(),
-    val controller: ControllerSnapshot? = null
+    val controller: ControllerSnapshot? = null,
+    /** Synthetic Storage Card snapshots produced by Storage Repo clusters at discovery
+     *  time. Folded into [storageCards] so the existing storage iteration in
+     *  [damien.nodeworks.script.NetworkStorageHelper] picks them up without special
+     *  casing. One entry per Repo block, all carrying the cluster anchor's settings. */
+    val repoStorageCards: List<CardSnapshot> = emptyList(),
 ) {
     /** Whether this network has a controller and is online. */
     val isOnline: Boolean get() = controller != null
@@ -426,13 +463,22 @@ data class NetworkSnapshot(
         nodes.flatMap { node -> node.sides.values.flatten() }
     }
 
-    /** Storage cards on this network, sorted by priority (descending). Lazy
+    /** Storage cards on this network, sorted by priority (descending), then by
+     *  whether the card carries explicit filter rules (filtered wins ties). The
+     *  filter tie-break makes a `cobblestone`-filtered card beat an unfiltered
+     *  one at the same priority for cobblestone inserts, which matches the
+     *  player expectation that "specific destination wins over catch-all". Lazy
      *  because [damien.nodeworks.script.NetworkStorageHelper.getStorageCards]
      *  is called many times per Lua command and per device tick. */
     val storageCards: List<CardSnapshot> by lazy {
-        flattenedCards
-            .filter { it.capability is damien.nodeworks.card.StorageSideCapability }
-            .sortedByDescending { (it.capability as damien.nodeworks.card.StorageSideCapability).priority }
+        val fromNodes = flattenedCards.filter { it.capability is damien.nodeworks.card.StorageSideCapability }
+        // [repoStorageCards] are pre-filtered to StorageSideCapability at discovery so
+        // they don't need a re-filter pass here.
+        (fromNodes + repoStorageCards)
+            .sortedWith(
+                compareByDescending<CardSnapshot> { (it.capability as damien.nodeworks.card.StorageSideCapability).priority }
+                    .thenByDescending { (it.capability as damien.nodeworks.card.StorageSideCapability).filterRules.isNotEmpty() }
+            )
     }
 
     /** Alias → card lookup, populated on first read. The literal [CardSnapshot.alias]

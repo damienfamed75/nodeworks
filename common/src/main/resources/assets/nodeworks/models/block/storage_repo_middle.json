@@ -1,0 +1,7 @@
+{
+  "comment": "MIDDLE role — block in a middle layer of a tall valid silo (height ≥ 3). Wall texture on all faces; top/bottom faces are typically culled by neighbouring Repos in the same cluster.",
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "minecraft:block/copper_block"
+  }
+}

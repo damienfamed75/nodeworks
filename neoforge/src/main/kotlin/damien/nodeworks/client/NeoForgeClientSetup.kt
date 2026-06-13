@@ -262,6 +262,18 @@ object NeoForgeClientSetup {
     private val GRAPPLE_BEAM_CUBE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
         net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:grapple_beam_cube" }
 
+    /** Per-cluster-role Storage Repo model parts. The default (STANDALONE) look is
+     *  the baseline `storage_repo` blockstate model itself; these three are the
+     *  top-cap, bottom-cap, and middle-layer variants the
+     *  [damien.nodeworks.client.model.StorageRepoBakedModel] swaps in when the
+     *  block is part of a valid silo cluster. */
+    private val STORAGE_REPO_TOP_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:storage_repo_top" }
+    private val STORAGE_REPO_BOTTOM_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:storage_repo_bottom" }
+    private val STORAGE_REPO_MIDDLE_MODEL_KEY: net.neoforged.neoforge.client.model.standalone.StandaloneModelKey<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> =
+        net.neoforged.neoforge.client.model.standalone.StandaloneModelKey { "nodeworks:storage_repo_middle" }
+
     private fun onRegisterStandaloneModels(
         event: net.neoforged.neoforge.client.event.ModelEvent.RegisterStandalone
     ) {
@@ -375,6 +387,22 @@ object NeoForgeClientSetup {
             GRAPPLE_BEAM_CUBE_MODEL_KEY,
             net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(grappleBeamCubeId),
         )
+
+        val storageRepoTopId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/storage_repo_top")
+        event.register(
+            STORAGE_REPO_TOP_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(storageRepoTopId),
+        )
+        val storageRepoBottomId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/storage_repo_bottom")
+        event.register(
+            STORAGE_REPO_BOTTOM_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(storageRepoBottomId),
+        )
+        val storageRepoMiddleId = net.minecraft.resources.Identifier.fromNamespaceAndPath("nodeworks", "block/storage_repo_middle")
+        event.register(
+            STORAGE_REPO_MIDDLE_MODEL_KEY,
+            net.neoforged.neoforge.client.model.standalone.SimpleUnbakedStandaloneModel.simpleModelWrapper(storageRepoMiddleId),
+        )
     }
 
     /**
@@ -441,6 +469,26 @@ object NeoForgeClientSetup {
                     baselineStaff = grappleBaseline,
                     cubeProperties = grappleProps,
                     cubePart = grappleCubePart,
+                )
+            }
+        }
+
+        // Storage Repo: swap every blockstate's baked model with the dynamic role
+        // dispatcher. Each chunk mesh consults the BE's [getClusterRole] and emits
+        // the right pre-baked variant (top cap / bottom cap / middle wall) or falls
+        // back to the standalone baseline (the `storage_repo.json` cube_all).
+        val repoTopPart = bakingResult.standaloneModels().get(STORAGE_REPO_TOP_MODEL_KEY)
+        val repoBottomPart = bakingResult.standaloneModels().get(STORAGE_REPO_BOTTOM_MODEL_KEY)
+        val repoMiddlePart = bakingResult.standaloneModels().get(STORAGE_REPO_MIDDLE_MODEL_KEY)
+        if (repoTopPart != null && repoBottomPart != null && repoMiddlePart != null) {
+            val repoStates = damien.nodeworks.registry.ModBlocks.STORAGE_REPO.stateDefinition.possibleStates
+            for (state in repoStates) {
+                val baseline = blockModels[state] ?: continue
+                blockModels[state] = damien.nodeworks.client.model.StorageRepoBakedModel(
+                    standaloneModel = baseline,
+                    topPart = repoTopPart,
+                    bottomPart = repoBottomPart,
+                    middlePart = repoMiddlePart,
                 )
             }
         }
@@ -549,6 +597,9 @@ object NeoForgeClientSetup {
         }
         event.register(ModScreenHandlers.STORAGE_CARD) { menu, inventory, title ->
             damien.nodeworks.screen.StorageCardScreen(menu, inventory, title)
+        }
+        event.register(ModScreenHandlers.STORAGE_REPO) { menu, inventory, title ->
+            damien.nodeworks.screen.StorageRepoScreen(menu, inventory, title)
         }
         event.register(ModScreenHandlers.CARD_SETTINGS) { menu, inventory, title ->
             damien.nodeworks.screen.CardSettingsScreen(menu, inventory, title)
