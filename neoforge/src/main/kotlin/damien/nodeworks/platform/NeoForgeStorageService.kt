@@ -42,7 +42,7 @@ class NeoForgeStorageService : StorageService {
         Transaction.openRoot().use { tx ->
             for (slot in 0 until src.size()) {
                 if (remaining <= 0) break
-                val resource = src.getResource(slot);
+                val resource = src.getResource(slot)
                 if (resource.isEmpty) continue
                 val itemId = itemIdOf(resource)
                 if (!filter(itemId)) continue
@@ -74,7 +74,7 @@ class NeoForgeStorageService : StorageService {
         Transaction.openRoot().use { tx ->
             for (slot in 0 until src.size()) {
                 if (remaining <= 0) break
-                val resource = src.getResource(slot);
+                val resource = src.getResource(slot)
                 if (resource.isEmpty) continue
                 val itemId = itemIdOf(resource)
                 val hasData = resource.componentsPatch.size() > 0
@@ -110,7 +110,7 @@ class NeoForgeStorageService : StorageService {
                 if (remaining <= 0) break
                 // Predicate sees the full slot stack for component-aware matching.
                 if (!filter(src.getStack(slot))) continue
-                val resource = src.getResource(slot);
+                val resource = src.getResource(slot)
                 if (resource.isEmpty) continue
 
                 val toMove = minOf(remaining, src.getAmountAsLong(slot)).toInt()
