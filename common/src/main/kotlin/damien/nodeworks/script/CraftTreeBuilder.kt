@@ -109,9 +109,10 @@ object CraftTreeBuilder {
         }
 
         val itemName = getItemName(itemId, componentsPatch)
-        val inStorageTotal = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
+        val inStorageTotal = NetworkStorageHelper.countItems(level, snapshot, itemId)
         val reservedAmount = reserved[itemId] ?: 0
         val availableFromStorage = maxOf(0, inStorageTotal - reservedAmount)
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
         // Prevent infinite loops for circular recipes. Key by (itemId,
         // componentsHash) so a potion-processing chain where one variant

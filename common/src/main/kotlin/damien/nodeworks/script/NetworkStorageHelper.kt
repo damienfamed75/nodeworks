@@ -29,7 +29,7 @@ object NetworkStorageHelper {
      */
     fun getStorage(level: ServerLevel, card: CardSnapshot): ItemStorageHandle? {
         val cap = card.capability as? StorageSideCapability ?: return null
-        if (PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, cap.defaultFace) != null) return null
+        //if (PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, cap.defaultFace) != null) return null
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, cap.defaultFace)
     }
 
