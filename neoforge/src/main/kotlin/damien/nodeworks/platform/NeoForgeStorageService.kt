@@ -146,7 +146,7 @@ class NeoForgeStorageService : StorageService {
         var remaining = maxCount
 
         Transaction.openRoot().use { tx ->
-            for (slot in (0 until handler.size()).reversed()) {
+            for (slot in 0 until handler.size()) {
                 if (remaining <= 0) break
                 val resource = handler.getResource(slot)
                 if (resource.isEmpty) continue
@@ -173,7 +173,7 @@ class NeoForgeStorageService : StorageService {
         var remaining = maxCount
 
         Transaction.openRoot().use { tx ->
-            for (slot in (0 until handler.size()).reversed()) {
+            for (slot in 0 until handler.size()) {
                 if (remaining <= 0L) break
                 val resource = handler.getResource(slot)
                 if (resource.isEmpty) continue
@@ -204,7 +204,7 @@ class NeoForgeStorageService : StorageService {
         var remaining = maxCount
 
         Transaction.openRoot().use { tx ->
-            for (slot in (0 until handler.size()).reversed()) {
+            for (slot in 0 until handler.size()) {
                 if (remaining <= 0L) break
                 val resource = handler.getResource(slot)
                 if (resource.isEmpty) continue
@@ -458,7 +458,7 @@ class NeoForgeStorageService : StorageService {
         var remaining = maxAmount
 
         Transaction.openRoot().use { tx ->
-            for (tank in (0 until src.size()).reversed()) {
+            for (tank in 0 until src.size()) {
                 if (remaining <= 0L) break
                 val resource = src.getResource(tank)
                 if (resource.isEmpty) continue
@@ -489,7 +489,7 @@ class NeoForgeStorageService : StorageService {
         // Find the first matching fluid to move (fluids don't inter-mix across types in one call).
         var chosen: FluidResource? = null
         var available = 0L
-        for (tank in (0 until src.size()).reversed()) {
+        for (tank in 0 until src.size()) {
             val resource = src.getResource(tank)
             if (resource.isEmpty) continue
             val id = fluidIdOf(resource)
@@ -554,7 +554,7 @@ class NeoForgeStorageService : StorageService {
         var removed = 0L
         var remaining = maxAmount
         Transaction.openRoot().use { tx ->
-            for (tank in (0 until handler.size()).reversed()) {
+            for (tank in 0 until handler.size()) {
                 if (remaining <= 0L) break
                 val resource = handler.getResource(tank)
                 if (resource.isEmpty) continue
