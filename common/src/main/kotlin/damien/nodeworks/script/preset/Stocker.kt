@@ -186,10 +186,9 @@ class StockerBuilder(
 
         // 1. Figure out current stock in the target.
         val current = when (targetRef) {
-            is CardRef.Pool -> NetworkStorageHelper.countItems(level, snapshot, filter).toInt()
+            is CardRef.Pool -> NetworkStorageHelper.countItemsInt(level, snapshot, filter)
             is CardRef.Channel -> NetworkStorageHelper
-                .countItems(level, snapshot, filter, damien.nodeworks.network.ChannelFilter.Color(targetRef.color))
-                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                .countItemsInt(level, snapshot, filter, damien.nodeworks.network.ChannelFilter.Color(targetRef.color))
             is CardRef.Named -> {
                 val card = resolvedTarget as? ResolvedRef.Card ?: return
                 val storage = CardStorage.forCard(level, card.snapshot, card.faceOverride) ?: return

@@ -431,6 +431,14 @@ class NeoForgeStorageService : StorageService {
     private fun fluidIdOf(stack: FluidStack): String? =
         BuiltInRegistries.FLUID.getKey(stack.fluid)?.toString()
 
+    override fun hasFluidCapacity(storage: FluidStorageHandle): Boolean {
+        val handler = (storage as NeoForgeFluidStorageHandle).handler
+        for (tank in 0 until handler.tanks) {
+            if (handler.getTankCapacity(tank) > 0) return true
+        }
+        return false
+    }
+
     override fun countFluid(storage: FluidStorageHandle, filter: (String) -> Boolean): Long {
         val handler = (storage as NeoForgeFluidStorageHandle).handler
         var total = 0L

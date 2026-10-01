@@ -286,6 +286,11 @@ interface StorageService {
 
     // --- Fluid side (default no-op to keep non-implementing loaders compiling) ---
 
+    /** True when [storage] has at least one tank with nonzero capacity.
+     *  Some blocks expose a fluid capability with no usable tanks, which
+     *  must not count as fluid storage for the fluid-first card policy. */
+    fun hasFluidCapacity(storage: FluidStorageHandle): Boolean = false
+
     /** Count fluid (in mB) matching [filter] in [storage]. */
     fun countFluid(storage: FluidStorageHandle, filter: (String) -> Boolean): Long = 0L
 

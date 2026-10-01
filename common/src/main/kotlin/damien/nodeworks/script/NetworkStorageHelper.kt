@@ -23,13 +23,16 @@ object NetworkStorageHelper {
     fun getStorageCards(snapshot: NetworkSnapshot): List<CardSnapshot> = snapshot.storageCards
 
     /**
-     * Storage cards are fluid-first: if the adjacent block exposes a fluid capability,
-     * item I/O is disabled on that card. This keeps the Inventory Terminal from mixing
-     * item and fluid totals on hybrid blocks that expose both caps.
+     * Storage cards are fluid-first: a block with real tank capacity gets its
+     * item I/O disabled so the Inventory Terminal never mixes item and fluid
+     * totals. The capacity check matters because some mods expose a fluid
+     * capability with no usable tanks on pure item storage, which must not
+     * hide the block's items (#68).
      */
     fun getStorage(level: ServerLevel, card: CardSnapshot): ItemStorageHandle? {
         val cap = card.capability as? StorageSideCapability ?: return null
-        if (PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, cap.defaultFace) != null) return null
+        val fluid = PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, cap.defaultFace)
+        if (fluid != null && PlatformServices.storage.hasFluidCapacity(fluid)) return null
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, cap.defaultFace)
     }
 
@@ -65,6 +68,27 @@ object NetworkStorageHelper {
         }
         return total
     }
+
+    /** Int-saturating [countItems]. Modded storage can report counts past
+     *  Int.MAX_VALUE and a raw toInt() wraps, reading huge stock as none
+     *  (#68). Floors at 0 in case the Long sum itself overflowed. */
+    fun countItemsInt(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        filter: String,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Int = countItems(level, snapshot, filter, channel)
+        .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+
+    /** Int-saturating [countVariantAcrossNetwork], same rationale as [countItemsInt]. */
+    fun countVariantAcrossNetworkInt(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        itemId: String,
+        componentsPatch: net.minecraft.core.component.DataComponentPatch,
+        channel: ChannelFilter = ChannelFilter.All,
+    ): Int = countVariantAcrossNetwork(level, snapshot, itemId, componentsPatch, channel)
+        .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
     /** Count items across the network whose itemId AND DataComponents match
      *  the target variant. Used by the planner's component-aware

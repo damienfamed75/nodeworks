@@ -109,7 +109,7 @@ object CraftTreeBuilder {
         }
 
         val itemName = getItemName(itemId, componentsPatch)
-        val inStorageTotal = NetworkStorageHelper.countItems(level, snapshot, itemId).toInt()
+        val inStorageTotal = NetworkStorageHelper.countItemsInt(level, snapshot, itemId)
         val reservedAmount = reserved[itemId] ?: 0
         val availableFromStorage = maxOf(0, inStorageTotal - reservedAmount)
 
@@ -284,9 +284,9 @@ object CraftTreeBuilder {
         // counts roll forward without migration.
         val reservedKey = if (componentsHash.isEmpty()) ingId else "$ingId#$componentsHash"
         val ingInStorage = if (componentsHash.isEmpty()) {
-            NetworkStorageHelper.countItems(level, snapshot, ingId).toInt()
+            NetworkStorageHelper.countItemsInt(level, snapshot, ingId)
         } else {
-            NetworkStorageHelper.countVariantAcrossNetwork(level, snapshot, ingId, ingredientPatch).toInt()
+            NetworkStorageHelper.countVariantAcrossNetworkInt(level, snapshot, ingId, ingredientPatch)
         }
         val ingReserved = reserved[reservedKey] ?: 0
         val ingAvailable = maxOf(0, ingInStorage - ingReserved)
@@ -430,7 +430,7 @@ object CraftTreeBuilder {
         // double-claimed across slots, sibling tree nodes, or both.
         val local = HashMap<String, Int>()
         fun availableFor(id: String): Int {
-            val total = NetworkStorageHelper.countItems(level, snapshot, id).toInt()
+            val total = NetworkStorageHelper.countItemsInt(level, snapshot, id)
             return maxOf(0, total - (reserved[id] ?: 0) - (local[id] ?: 0))
         }
 
