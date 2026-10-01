@@ -449,47 +449,66 @@ class InventoryTerminalMenu(
             // Snapshot pattern BEFORE onTake consumes ingredients
             if (autoPull) autoPullPattern = snapshotCraftPattern()
             val firstResult = slot.item.copy()
-            // Server-side: loop crafts off the existing grid contents until
-            // the recipe stops matching (grid depleted, pattern broken by
-            // remaining items like buckets, etc.) or the player inventory
-            // can't accept more output. The 4096 safety bound covers a full
+            // Server-side: loop crafts off the grid (refilling from network
+            // stock when auto-pull is on) until the recipe stops matching or
+            // the next FULL result no longer fits in the player inventory.
+            // Each craft is gated on [canFitFully] rather than the return of
+            // Inventory.add: add() reports success on partial inserts (and
+            // unconditionally in creative), so trusting it consumes the
+            // ingredients and voids the overflow once the inventory
+            // approaches full. The 4096 safety bound covers a full
             // 9-input × 64-per-stack grid even for recipes that yield a
-            // small count per craft. Client-side does a single iteration so
-            // vanilla's QUICK_MOVE while-loop sees the cleared slot and
-            // exits; the server's authoritative state syncs back.
+            // small count per craft.
             if (serverLevel != null) {
                 var safety = 0
                 while (slot.hasItem() && safety < 4096) {
                     safety++
                     val nextResult = slot.item.copy()
-                    if (!playerInventory.add(nextResult.copy())) break
+                    if (!canFitFully(nextResult)) break
+                    val inserted = nextResult.copy()
+                    playerInventory.add(inserted)
+                    // canFitFully guarantees a full insert; if anything is
+                    // somehow left over, route it to network storage so no
+                    // code path can void crafted output.
+                    if (!inserted.isEmpty) {
+                        val lvl = serverLevel
+                        val snap = snapshot
+                        if (lvl != null && snap != null) {
+                            NetworkStorageHelper.insertItemStack(lvl, snap, inserted, cache)
+                        }
+                    }
+                    // Re-snapshot each craft: autoPullRefill consumes the
+                    // pattern, and it must be captured while the grid still
+                    // holds the ingredients.
+                    if (autoPull) autoPullPattern = snapshotCraftPattern()
                     slot.onTake(player, nextResult)
                     // slot.onTake consumes one of each grid slot, triggering
                     // slotsChanged which re-assembles the recipe and writes
-                    // the next result (or EMPTY if no match). Next iteration
-                    // observes the updated slot.
+                    // the next result (or EMPTY if no match). Refill inline
+                    // so the loop chains crafts off network stock itself;
+                    // vanilla's QUICK_MOVE re-entry must not drive chaining
+                    // (see the return below).
+                    if (autoPull && !slot.hasItem()) autoPullRefill()
                 }
-            } else {
-                if (!playerInventory.add(firstResult.copy())) return ItemStack.EMPTY
-                slot.onTake(player, firstResult)
+                // Always EMPTY: vanilla's QUICK_MOVE while-loop re-enters as
+                // long as the returned stack is non-empty and the result slot
+                // holds a matching item. With auto-pull refilling the slot, a
+                // non-empty return once the inventory is full re-enters
+                // forever and hangs the server thread, so the batched server
+                // path terminates the loop via its return value and leaves
+                // the result slot's live state visible.
+                return ItemStack.EMPTY
             }
-            // Clear the live result stack so vanilla's QUICK_MOVE loop
-            // terminates after this one (potentially batched) iteration.
-            // Our [slotsChanged] is server-gated for recipe re-assembly, so
-            // without this the client's prediction can't see the slot empty
-            // and re-enters quickMoveStack until it fills the player
-            // inventory with a phantom stack.
+            // Client-side: single predicted iteration mirroring the server's
+            // full-fit gate so prediction agrees with the authoritative
+            // result. Clearing the slot makes the client's QUICK_MOVE loop
+            // exit (our [slotsChanged] is server-gated for recipe
+            // re-assembly, so the prediction can't otherwise see the slot
+            // empty); the server's state syncs back.
+            if (!canFitFully(firstResult)) return ItemStack.EMPTY
+            if (!playerInventory.add(firstResult.copy())) return ItemStack.EMPTY
+            slot.onTake(player, firstResult)
             slot.set(ItemStack.EMPTY)
-            // Refill from network inline so the server's QUICK_MOVE loop
-            // can chain crafts off the player's network stock instead of
-            // capping at one batch per click. The refill triggers
-            // [slotsChanged] which repopulates [resultContainer], the loop
-            // then sees a fresh result and continues. Client-side this is
-            // a no-op (server-only network access), so the prediction
-            // still exits after one iteration as desired.
-            if (autoPull) {
-                autoPullRefill()
-            }
             return firstResult
         }
         // Crafting input slots: move back to player inventory
@@ -546,6 +565,32 @@ class InventoryTerminalMenu(
         val held = holder()
         if (held.isEmpty) return false
         return playerInventory.getItem(invIndex) === held
+    }
+
+    /**
+     * True when the player inventory can absorb ALL of [stack], simulating
+     * exactly where vanilla's Inventory.add places items: matching partial
+     * stacks in the main 36 slots plus the offhand (via
+     * getSlotWithRemainingSpace), and empty slots in the main 36 only (via
+     * getFreeSlot). Used to gate each shift-click craft so a partial fit
+     * never consumes ingredients and voids the overflow.
+     */
+    private fun canFitFully(stack: ItemStack): Boolean {
+        if (stack.isEmpty) return true
+        var room = 0
+        for (slotStack in playerInventory.nonEquipmentItems) {
+            room += if (slotStack.isEmpty) {
+                playerInventory.getMaxStackSize(stack)
+            } else if (ItemStack.isSameItemSameComponents(slotStack, stack) && slotStack.isStackable) {
+                (playerInventory.getMaxStackSize(slotStack) - slotStack.count).coerceAtLeast(0)
+            } else 0
+            if (room >= stack.count) return true
+        }
+        val offhand = playerInventory.getItem(net.minecraft.world.entity.player.Inventory.SLOT_OFFHAND)
+        if (!offhand.isEmpty && ItemStack.isSameItemSameComponents(offhand, stack) && offhand.isStackable) {
+            room += (playerInventory.getMaxStackSize(offhand) - offhand.count).coerceAtLeast(0)
+        }
+        return room >= stack.count
     }
 
     private fun snapshotCraftPattern(): List<String> {
@@ -612,8 +657,16 @@ class InventoryTerminalMenu(
                         val carried = carried
                         if (carried.isEmpty) {
                             setCarried(first)
-                        } else if (ItemStack.isSameItemSameComponents(carried, first) && carried.count + first.count <= carried.maxStackSize) {
-                            carried.grow(first.count)
+                        } else if (ItemStack.isSameItemSameComponents(carried, first)) {
+                            // Top up the carried stack and return the rest,
+                            // rather than rejecting the merge outright when
+                            // the whole extract doesn't fit.
+                            val take = minOf(carried.maxStackSize - carried.count, first.count)
+                            carried.grow(take)
+                            first.shrink(take)
+                            if (!first.isEmpty) {
+                                NetworkStorageHelper.insertItemStack(lvl, snap, first, c)
+                            }
                         } else {
                             NetworkStorageHelper.insertItemStack(lvl, snap, first, c)
                         }
@@ -1053,7 +1106,25 @@ class InventoryTerminalMenu(
                 remaining -= stack.count
             }
         }
-        return out
+        // Coalesce fragments of the same variant: storage can hold an item
+        // split across many physical stacks (e.g. 43 + 21 diamonds), and
+        // callers treat each returned stack as a distinct variant, putting
+        // only the first on the cursor. Merging here keeps that contract:
+        // one stack per component-distinct variant, capped at maxStackSize.
+        val merged = ArrayList<ItemStack>(out.size)
+        for (stack in out) {
+            var leftover = stack
+            for (existing in merged) {
+                if (leftover.isEmpty) break
+                if (ItemStack.isSameItemSameComponents(existing, leftover) && existing.count < existing.maxStackSize) {
+                    val take = minOf(existing.maxStackSize - existing.count, leftover.count)
+                    existing.grow(take)
+                    leftover.shrink(take)
+                }
+            }
+            if (!leftover.isEmpty) merged.add(leftover)
+        }
+        return merged
     }
 
     /** Try each candidate id in order and return a 1-count [ItemStack] the
