@@ -657,8 +657,16 @@ class InventoryTerminalMenu(
                         val carried = carried
                         if (carried.isEmpty) {
                             setCarried(first)
-                        } else if (ItemStack.isSameItemSameComponents(carried, first) && carried.count + first.count <= carried.maxStackSize) {
-                            carried.grow(first.count)
+                        } else if (ItemStack.isSameItemSameComponents(carried, first)) {
+                            // Top up the carried stack and return the rest,
+                            // rather than rejecting the merge outright when
+                            // the whole extract doesn't fit.
+                            val take = minOf(carried.maxStackSize - carried.count, first.count)
+                            carried.grow(take)
+                            first.shrink(take)
+                            if (!first.isEmpty) {
+                                NetworkStorageHelper.insertItemStack(lvl, snap, first, c)
+                            }
                         } else {
                             NetworkStorageHelper.insertItemStack(lvl, snap, first, c)
                         }
@@ -1098,7 +1106,25 @@ class InventoryTerminalMenu(
                 remaining -= stack.count
             }
         }
-        return out
+        // Coalesce fragments of the same variant: storage can hold an item
+        // split across many physical stacks (e.g. 43 + 21 diamonds), and
+        // callers treat each returned stack as a distinct variant, putting
+        // only the first on the cursor. Merging here keeps that contract:
+        // one stack per component-distinct variant, capped at maxStackSize.
+        val merged = ArrayList<ItemStack>(out.size)
+        for (stack in out) {
+            var leftover = stack
+            for (existing in merged) {
+                if (leftover.isEmpty) break
+                if (ItemStack.isSameItemSameComponents(existing, leftover) && existing.count < existing.maxStackSize) {
+                    val take = minOf(existing.maxStackSize - existing.count, leftover.count)
+                    existing.grow(take)
+                    leftover.shrink(take)
+                }
+            }
+            if (!leftover.isEmpty) merged.add(leftover)
+        }
+        return merged
     }
 
     /** Try each candidate id in order and return a 1-count [ItemStack] the
