@@ -378,6 +378,9 @@ object ModBlocks {
             .strength(3.0f, 6.0f)
             .requiresCorrectToolForDrops()
             .noOcclusion()
+            // No item form: breaking a segment cascades into destroyBlock on
+            // the antenna base, whose loot table drops the antenna item.
+            .noLootTable()
     )
 
     /** Variant used when the block is a non-NodeBlock (e.g. vanilla AmethystBlock

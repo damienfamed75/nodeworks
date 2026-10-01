@@ -7,6 +7,8 @@
     "nodeworks:covered_pipe",
     "nodeworks:terminal",
     "nodeworks:monitor",
+    "nodeworks:storage_meter",
+    "nodeworks:craft_requester",
     "nodeworks:inventory_terminal",
     "nodeworks:network_controller",
     "nodeworks:breaker",
