@@ -434,12 +434,12 @@ class BreakerBlockEntity(
         const val IDLE_POLL_INTERVAL_TICKS = 20
 
         /** Pick a diamond / wooden tool pair appropriate for [state]. Tries
-         *  pickaxe, axe, then shovel and returns the first whose diamond
-         *  variant is the correct tool for drops. Null when none of the three
-         *  match (block needs a non-mining tool like shears, or is above
-         *  diamond tier). The wooden variant of the same class drives the
-         *  break-speed formula, so wood breaks at wooden-axe speed, dirt at
-         *  wooden-shovel speed, etc. */
+         *  pickaxe, axe, shovel, then hoe, returning the first whose diamond
+         *  variant is correct for drops. Blocks needing no tool at all
+         *  (glass, wool, moss carpet) get a bare-hand pair so drops hit the
+         *  no-tool loot branch. Null when no class fits (shears-only, or
+         *  above diamond tier). The wooden variant drives the break-speed
+         *  formula. */
         fun pickToolPair(state: BlockState): Pair<ItemStack, ItemStack>? {
             val pick = ItemStack(Items.DIAMOND_PICKAXE)
             if (pick.isCorrectToolForDrops(state)) return pick to ItemStack(Items.WOODEN_PICKAXE)
@@ -447,6 +447,9 @@ class BreakerBlockEntity(
             if (axe.isCorrectToolForDrops(state)) return axe to ItemStack(Items.WOODEN_AXE)
             val shovel = ItemStack(Items.DIAMOND_SHOVEL)
             if (shovel.isCorrectToolForDrops(state)) return shovel to ItemStack(Items.WOODEN_SHOVEL)
+            val hoe = ItemStack(Items.DIAMOND_HOE)
+            if (hoe.isCorrectToolForDrops(state)) return hoe to ItemStack(Items.WOODEN_HOE)
+            if (!state.requiresCorrectToolForDrops()) return ItemStack.EMPTY to ItemStack.EMPTY
             return null
         }
 
@@ -467,7 +470,9 @@ class BreakerBlockEntity(
             // Floor at 1.0 so a 0-speed reading (modded edges where the tool's
             // class doesn't apply at all) still yields a finite tick count.
             val woodSpeed = rawWoodSpeed.coerceAtLeast(1f)
-            val canHarvestWithWood = woodenTool.isCorrectToolForDrops(state)
+            // No required tool means anything harvests, including the
+            // bare-hand pair whose empty stack has no tool component.
+            val canHarvestWithWood = woodenTool.isCorrectToolForDrops(state) || !state.requiresCorrectToolForDrops()
             // Three-tier divisor scales the per-tick damage:
             //   - wooden harvests fully (e.g., cobblestone): fast path (30)
             //   - wooden's class applies but wrong tier (vanilla iron ore, obsidian): 100
