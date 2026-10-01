@@ -26,8 +26,8 @@ object NetworkStorageHelper {
      * Storage cards are fluid-first: a block with real tank capacity gets its
      * item I/O disabled so the Inventory Terminal never mixes item and fluid
      * totals. The capacity check matters because some mods expose a fluid
-     * capability on pure item storage (Sophisticated Storage chests without
-     * a fluid upgrade), which must not hide the block's items (#68).
+     * capability with no usable tanks on pure item storage, which must not
+     * hide the block's items (#68).
      */
     fun getStorage(level: ServerLevel, card: CardSnapshot): ItemStorageHandle? {
         val cap = card.capability as? StorageSideCapability ?: return null
