@@ -949,26 +949,23 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // they stop trying to pour items into this (now-idle) CPU's buffer. Their next
         // tryExtract will see stale jobGeneration and route pulled items to network storage.
         cpu.invalidateInFlightPolls()
-        // For omit-deliver plans (network:craft), the produced items are SUPPOSED to
-        // still be in the buffer at this point so the script's `:connect(fn)` callback
-        // can claim them via a buffer-backed handle. Skipping the flush here is what
-        // makes that contract work, the completion listener (run below) takes
-        // ownership of the buffer instead.
-        if (!plan.omitDeliver) {
+        // Omit-deliver plans skip the flush: the completion listener owns the
+        // buffer so the script's `:connect(fn)` can claim it. No listener means
+        // the plan resumed from NBT and nobody will ever claim it, so flush and
+        // release like a normal plan instead of stranding items and the CPU.
+        val listener = completionListeners.remove(plan)
+        if (!plan.omitDeliver || listener == null) {
             flushBufferToStorage()
         }
         // A successful craft clears any lingering failure message from a previous failed run.
         if (cpu.lastFailureReason.isNotEmpty()) cpu.lastFailureReason = ""
-        // omit-deliver: don't clear craft state yet, the runtime's `dropRemainingBuffer`
-        // does it after the user's callback runs. Clearing here would also wipe
-        // `originalCraftId` and `craftTreeSnapshot` which the script-side completion
-        // path doesn't currently rely on, but keeping them consistent across the two
-        // exit paths means future code can treat "in-buffer items" as "craft still alive".
-        if (!plan.omitDeliver) {
+        // omit-deliver with a live listener: don't clear craft state yet, the runtime's
+        // `dropRemainingBuffer` does it after the user's callback runs.
+        if (!plan.omitDeliver || listener == null) {
             cpu.clearAllCraftState()
             cpu.setCrafting(false)
         }
-        completionListeners.remove(plan)?.invoke(true)
+        listener?.invoke(true)
     }
 
     override fun onPlanFailed(plan: CraftPlan, reason: String) {

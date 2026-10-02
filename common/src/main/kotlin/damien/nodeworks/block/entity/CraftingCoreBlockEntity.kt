@@ -154,8 +154,41 @@ class CraftingCoreBlockEntity(
         if (!capacityInitialized) {
             capacityInitialized = true
             recalculateCapacity()
+            rebuildResumedQueueEntries()
         }
         scheduler.tick(level.gameTime)
+    }
+
+    /** Re-register terminal craft-queue rows for plans restored from NBT.
+     *  The queue and completion listeners are memory only, so a resumed
+     *  craft would otherwise run headless. Scripted crafts (omitDeliver)
+     *  never had a row, the executor's flush fallback covers them. A
+     *  matching pending row (chunk reloaded mid-session) is reused so it
+     *  gets a fresh listener instead of a duplicate. */
+    private fun rebuildResumedQueueEntries() {
+        val plans = listOfNotNull(scheduler.currentPlan) + scheduler.queuedPlans
+        for (plan in plans) {
+            val submitter = plan.submitterUuid ?: continue
+            if (plan.omitDeliver) continue
+            val entry = damien.nodeworks.screen.CraftQueueManager.getQueue(submitter).firstOrNull {
+                it.networkId == networkId && it.itemId == plan.rootItemId && !it.isComplete
+            } ?: damien.nodeworks.screen.CraftQueueManager.addEntry(
+                submitter,
+                networkId,
+                plan.rootItemId,
+                net.minecraft.resources.Identifier.tryParse(plan.rootItemId)?.path?.replace('_', ' ')
+                    ?: plan.rootItemId,
+                plan.rootCount.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
+            )
+            opExecutor.registerCompletionListener(plan) { success ->
+                if (success) {
+                    entry.completedOps = 1
+                } else {
+                    damien.nodeworks.screen.CraftQueueManager.getQueue(submitter).remove(entry)
+                }
+                entry.dirty = true
+            }
+        }
     }
 
     /** Total items currently held (Long-safe for networks with billions of items). */
