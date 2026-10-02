@@ -18,8 +18,8 @@ object ResumeScheduler {
         if (!initialized) {
             scheduler.initialize(tickCount)
             initialized = true
-            // Clear stale craft queue entries from previous session
-            damien.nodeworks.screen.CraftQueueManager.clearAll()
+            // Craft queue cleanup lives in [onServerStop]. Clearing here ran
+            // AFTER CPUs rebuilt resumed queue rows on first tick, wiping them.
         }
         scheduler.tick(tickCount)
     }
