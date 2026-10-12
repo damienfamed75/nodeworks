@@ -586,7 +586,8 @@ class InventoryTerminalMenu(
 
     /**
      * Handle a click on the network item grid.
-     * action: 0=extract full stack, 1=insert carried, 2=extract half, 3=shift-click to inventory
+     * action: 0=extract full stack, 1=insert carried, 2=extract half, 3=shift-click to inventory,
+     *         7=extract one to cursor (shift+right-click)
      *
      * [componentsPatch] is non-empty when the clicked cell carried a specific
      * variant (e.g. Strength Potion). Used to narrow the extract so the same
@@ -604,7 +605,7 @@ class InventoryTerminalMenu(
         val variantPatch = if (componentsPatch.size() > 0) componentsPatch else null
 
         when (action) {
-            0, 2, 3 -> {
+            0, 2, 3, 7 -> {
                 val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
 
@@ -618,6 +619,7 @@ class InventoryTerminalMenu(
                 val maxStack = item.getDefaultMaxStackSize().toLong()
                 val toExtract = when (action) {
                     2 -> maxOf(1L, minOf(available, maxStack) / 2)
+                    7 -> 1L
                     else -> minOf(available, maxStack)
                 }
 

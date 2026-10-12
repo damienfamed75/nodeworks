@@ -1393,6 +1393,7 @@ class InventoryTerminalScreen(
             }
             if (menu.carried.isEmpty && entry != null && entry.info.count > 0) {
                 val action = when {
+                    hasShiftDownCompat() && button == 1 -> 7
                     hasShiftDownCompat() -> 3
                     button == 1 -> 2
                     else -> 0
