@@ -874,11 +874,12 @@ class InventoryTerminalScreen(
         playerHotbarGrid.renderHoverHighlight(graphics, mouseX, mouseY)
 
         // Left-drag preview: show distributed items
-        if (slotDragButton == 0 && !slotDragShift && slotDragVisited.size > 1 && !slotDragStack.isEmpty) {
+        val previewTargets = if (slotDragButton == 0 && !slotDragShift && slotDragVisited.size > 1) dragTargets() else emptyList()
+        if (previewTargets.isNotEmpty() && !slotDragStack.isEmpty) {
             val total = slotDragStack.count
-            val perSlot = total / slotDragVisited.size
-            val remainder = total % slotDragVisited.size
-            for ((idx, ref) in slotDragVisited.withIndex()) {
+            val perSlot = total / previewTargets.size
+            val remainder = total % previewTargets.size
+            for ((idx, ref) in previewTargets.withIndex()) {
                 val amount = perSlot + if (idx < remainder) 1 else 0
                 if (amount <= 0) continue
                 val previewStack = slotDragStack.copyWithCount(amount)
@@ -1481,6 +1482,7 @@ class InventoryTerminalScreen(
                 if (craftSlot >= 0) {
                     val slotIdx = InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot
                     val ref = DragSlotRef(0, slotIdx)
+                    if (!slotDragShift && !canDragInto(ref)) return true
                     if (shouldTriggerDragOn(ref)) {
                         if (slotDragShift) {
                             slotClicked(menu.slots[slotIdx], slotIdx, 0, net.minecraft.world.inventory.ContainerInput.QUICK_MOVE)
@@ -1499,6 +1501,7 @@ class InventoryTerminalScreen(
             if (playerSlot != null) {
                 val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
                 val ref = DragSlotRef(1, virtualIndex)
+                if (!slotDragShift && !canDragInto(ref)) return true
                 if (shouldTriggerDragOn(ref)) {
                     if (slotDragShift) {
                         PlatformServices.clientNetworking.sendToServer(
@@ -1552,14 +1555,19 @@ class InventoryTerminalScreen(
                     )
                 }
             } else {
-                // Multi-slot drag, send distribute packet to server
-                val slotType = slotDragVisited.first().slotType
-                PlatformServices.clientNetworking.sendToServer(
-                    damien.nodeworks.network.InvTerminalDistributePayload(
-                        menu.containerId, slotType,
-                        slotDragVisited.map { it.index }
+                // Multi-slot drag, send distribute packet to server. The press
+                // slot stays in the visited list so a plain click still swaps,
+                // drop it here if it cannot take the carried item.
+                val targets = dragTargets()
+                if (targets.isNotEmpty()) {
+                    val slotType = targets.first().slotType
+                    PlatformServices.clientNetworking.sendToServer(
+                        damien.nodeworks.network.InvTerminalDistributePayload(
+                            menu.containerId, slotType,
+                            targets.map { it.index }
+                        )
                     )
-                )
+                }
             }
         }
         slotDragButton = -1
@@ -1728,14 +1736,30 @@ class InventoryTerminalScreen(
     /** Client-side item count at the slot referenced by [ref], used by
      *  shift-drag to skip slot-entry triggers when there's nothing to
      *  insert. Returns 0 for unknown slot types. */
-    private fun dragSlotItemCount(ref: DragSlotRef): Int = when (ref.slotType) {
-        0 -> menu.craftingContainer.getItem(ref.index - InventoryTerminalMenu.CRAFT_INPUT_START).count
+    private fun dragSlotItemCount(ref: DragSlotRef): Int = dragSlotStack(ref).count
+
+    /** Client-side stack at [ref], EMPTY for unknown slot types. */
+    private fun dragSlotStack(ref: DragSlotRef): ItemStack = when (ref.slotType) {
+        0 -> menu.craftingContainer.getItem(ref.index - InventoryTerminalMenu.CRAFT_INPUT_START)
         1 -> {
             val invIndex = if (ref.index < 27) ref.index + 9 else ref.index - 27
-            (Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY).count
+            Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY
         }
-        else -> 0
+        else -> ItemStack.EMPTY
     }
+
+    /** Mirrors vanilla canItemQuickReplace: a drag only paints into empty slots or
+     *  same-item slots with room. A plain click on a different item still swaps. */
+    private fun canDragInto(ref: DragSlotRef): Boolean {
+        val carried = menu.carried
+        if (carried.isEmpty) return false
+        val existing = dragSlotStack(ref)
+        if (existing.isEmpty) return true
+        return ItemStack.isSameItemSameComponents(existing, carried) && existing.count < carried.maxStackSize
+    }
+
+    /** Visited slots that can actually take the carried item. */
+    private fun dragTargets(): List<DragSlotRef> = slotDragVisited.filter { canDragInto(it) }
 
     /** Drop the search field's focus, also clearing the screen-level tracker
      *  when it was pointing here. Without the `setFocused(null)` route, vanilla's

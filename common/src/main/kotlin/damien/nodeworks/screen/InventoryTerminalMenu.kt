@@ -1217,6 +1217,23 @@ class InventoryTerminalMenu(
         needsImmediateSync = true
     }
 
+    /** Whether a distribute drag may place into [slotIndex]: empty, or the same item
+     *  with room. Matches the client gate so a slot holding something else neither
+     *  receives items nor shrinks the share of the others. */
+    private fun canDistributeInto(slotType: Int, slotIndex: Int, carried: ItemStack): Boolean {
+        val existing = when (slotType) {
+            0 -> if (slotIndex in CRAFT_INPUT_START until CRAFT_OUTPUT_SLOT) slots[slotIndex].item else return false
+            1 -> {
+                if (slotIndex < 0 || slotIndex >= 36) return false
+                val invIndex = if (slotIndex < 27) slotIndex + 9 else slotIndex - 27
+                if (isHeldPortableInvSlot(invIndex)) return false
+                playerInventory.getItem(invIndex)
+            }
+            else -> return false
+        }
+        return existing.isEmpty || (ItemStack.isSameItemSameComponents(existing, carried) && existing.count < existing.maxStackSize)
+    }
+
     /**
      * Distribute the carried item evenly across the specified crafting slot indices.
      * Used for left-click drag.
@@ -1230,14 +1247,16 @@ class InventoryTerminalMenu(
         val carried = carried
         if (carried.isEmpty || slotIndices.isEmpty()) return
 
+        val targets = slotIndices.filter { canDistributeInto(slotType, it, carried) }
+        if (targets.isEmpty()) return
         val total = carried.count
-        val count = slotIndices.size
+        val count = targets.size
         val perSlot = total / count
         val remainder = total % count
         if (perSlot <= 0 && remainder <= 0) return
 
         var distributed = 0
-        for ((idx, slotIndex) in slotIndices.withIndex()) {
+        for ((idx, slotIndex) in targets.withIndex()) {
             val amount = perSlot + if (idx < remainder) 1 else 0
             if (amount <= 0) continue
 
