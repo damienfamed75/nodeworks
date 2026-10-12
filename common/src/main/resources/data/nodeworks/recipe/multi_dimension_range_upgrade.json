@@ -9,7 +9,7 @@
     "N": "minecraft:netherite_ingot",
     "C": "minecraft:end_crystal",
     "D": "minecraft:deepslate",
-    "E": "minecraft:ender_eye",
+    "E": "nodeworks:dimension_range_upgrade",
     "S": "minecraft:echo_shard"
   },
   "result": {
