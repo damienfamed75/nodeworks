@@ -1266,6 +1266,19 @@ class InventoryTerminalScreen(
             return false
         }
 
+        // Same slot twice inside the double-click window, regardless of cursor
+        // contents. Shift paths need this since a shift-click leaves the cursor empty.
+        fun isRepeatClick(slotType: Int, slotIndex: Int): Boolean {
+            val repeat = button == 0
+                && now - lastClickTime < 400
+                && lastClickSlotType == slotType
+                && lastClickSlotIndex == slotIndex
+            lastClickTime = if (repeat) 0 else now
+            lastClickSlotType = slotType
+            lastClickSlotIndex = slotIndex
+            return repeat
+        }
+
         // Crafting grid click
         if (!craftingCollapsed) {
             val craftSlot = getCraftSlotAt(mx, my)
@@ -1408,13 +1421,24 @@ class InventoryTerminalScreen(
         if (playerSlot != null) {
             val virtualIndex = if (playerSlot.gridType == VirtualSlot.GridType.PLAYER_MAIN) playerSlot.index else playerSlot.index + 27
             val invIndex = if (virtualIndex < 27) virtualIndex + 9 else virtualIndex - 27
-            // Double-click collect, works with item on cursor (from first click)
-            val collectItem = if (!menu.carried.isEmpty) menu.carried else (Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY)
-            if (!collectItem.isEmpty) {
-                val playerItemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(collectItem.item)?.toString() ?: ""
-                if (checkDoubleClick(1, virtualIndex, playerItemId)) return true
+            if (!hasShiftDownCompat()) {
+                // Double-click collect, works with item on cursor (from first click)
+                val collectItem = if (!menu.carried.isEmpty) menu.carried else (Minecraft.getInstance().player?.inventory?.getItem(invIndex) ?: ItemStack.EMPTY)
+                if (!collectItem.isEmpty) {
+                    val playerItemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(collectItem.item)?.toString() ?: ""
+                    if (checkDoubleClick(1, virtualIndex, playerItemId)) return true
+                }
             }
             if (hasShiftDownCompat()) {
+                // Shift double-click moves every matching stack into the network,
+                // vanilla style. The first click already emptied this slot, so the
+                // server matches on the item it just took rather than the slot.
+                if (isRepeatClick(1, virtualIndex)) {
+                    PlatformServices.clientNetworking.sendToServer(
+                        InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 3)
+                    )
+                    return true
+                }
                 // Shift-click: insert into network
                 PlatformServices.clientNetworking.sendToServer(
                     InvTerminalSlotClickPayload(menu.containerId, virtualIndex, 2)

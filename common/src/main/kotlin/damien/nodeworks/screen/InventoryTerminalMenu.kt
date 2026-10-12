@@ -107,6 +107,9 @@ class InventoryTerminalMenu(
 
     // Crafting grid
     var autoPull: Boolean = false
+    // Template of the stack the last shift-click moved into the network. A shift
+    // double-click sweeps everything matching it, the clicked slot is already empty.
+    private var lastShiftInserted: ItemStack = ItemStack.EMPTY
     private var autoPullPattern: List<String>? = null  // captured right before craft output is taken
     private var suppressSlotsChanged = false
     private var pendingAutoPull = false  // deferred to next tick to avoid MC packet reconciliation conflicts
@@ -898,6 +901,8 @@ class InventoryTerminalMenu(
                 }
             }
             2 -> { // Shift-click, crystal → crystal slot (Handheld), else network
+                // Reset so a shift double-click on an empty slot sweeps nothing.
+                lastShiftInserted = ItemStack.EMPTY
                 val slotStack = playerInventory.getItem(invIndex)
                 if (!slotStack.isEmpty) {
                     val cContainer = crystalContainer
@@ -916,6 +921,7 @@ class InventoryTerminalMenu(
                         val lvl = serverLevel
                         val snap = snapshot
                         if (lvl != null && snap != null) {
+                            lastShiftInserted = slotStack.copyWithCount(1)
                             val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, slotStack, cache)
                             if (inserted > 0) {
                                 slotStack.shrink(inserted)
@@ -925,12 +931,31 @@ class InventoryTerminalMenu(
                     }
                 }
             }
+            3 -> { // Shift double-click, move every stack matching the last shift-inserted item
+                val template = lastShiftInserted
+                val lvl = serverLevel
+                val snap = snapshot
+                if (!template.isEmpty && lvl != null && snap != null) {
+                    for (i in 0 until 36) {
+                        if (isHeldPortableInvSlot(i)) continue
+                        val stack = playerInventory.getItem(i)
+                        if (stack.isEmpty || !ItemStack.isSameItemSameComponents(stack, template)) continue
+                        val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                        if (inserted > 0) {
+                            stack.shrink(inserted)
+                            if (stack.isEmpty) playerInventory.setItem(i, ItemStack.EMPTY)
+                        }
+                        // Network stopped accepting, the rest would be refused too.
+                        if (!stack.isEmpty) break
+                    }
+                }
+            }
         }
 
         // Mark inventory dirty so the player's inventoryMenu syncs the change
         playerInventory.setChanged()
         // Force immediate network inventory sync if we inserted into network
-        if (action == 2) needsImmediateSync = true
+        if (action == 2 || action == 3) needsImmediateSync = true
     }
 
     /** Fill the crafting grid from a JEI recipe transfer. The server
