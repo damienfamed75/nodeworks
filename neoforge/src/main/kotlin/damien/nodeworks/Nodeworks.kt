@@ -404,6 +404,15 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 }
             }
         }
+        registrar.playToServer(
+            damien.nodeworks.network.OpenPortableTerminalPayload.TYPE,
+            damien.nodeworks.network.OpenPortableTerminalPayload.CODEC,
+        ) { _, context ->
+            context.enqueueWork {
+                val player = context.player() as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
+                damien.nodeworks.item.PortableTerminalOpener.openFromInventory(player)
+            }
+        }
         registrar.playToServer(InvTerminalSlotClickPayload.TYPE, InvTerminalSlotClickPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()

@@ -54,37 +54,8 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
         val serverPlayer = player as? ServerPlayer ?: return InteractionResult.PASS
         val serverLevel = level as? ServerLevel ?: return InteractionResult.PASS
 
-        // holderProvider re-reads the same hand slot every tick so the menu's
-        // validity check and crystal write-back always see the live Portable stack
-        // (the player may swap hands, reorganize inventory, etc.).
-        val holderProvider: () -> ItemStack = { player.getItemInHand(hand) }
-
-        PlatformServices.menu.openExtendedMenu(
-            serverPlayer,
-            Component.translatable("container.nodeworks.portable_inventory_terminal"),
-            // Portable has no world position, null tells the client "no SetLayout
-            // round-trip target." See InventoryTerminalOpenData for the nullable
-            // terminalPos handling.
-            InventoryTerminalOpenData(terminalPos = null, hasCrystalSlot = true),
-            InventoryTerminalOpenData.STREAM_CODEC,
-            { syncId, inv, _ ->
-                // Open with no source. The menu seeds the crystal slot from the
-                // Portable's component and then calls tryResolveSource() itself to
-                // connect (or stay disconnected) based on the crystal's state.
-                // serverLevel is the player's current level, used as a fallback
-                // for recipe lookups until resolve swaps it for the network's
-                // actual dimension.
-                InventoryTerminalMenu.createServer(
-                    syncId = syncId,
-                    inv = inv,
-                    level = serverLevel,
-                    source = null,
-                    displayPos = null,
-                    hasCrystalSlot = true,
-                    crystalHolderProvider = holderProvider,
-                )
-            }
-        )
+        // Re-read the hand each tick so the menu tracks the live stack through hand swaps.
+        PortableTerminalOpener.open(serverPlayer, serverLevel) { player.getItemInHand(hand) }
         return InteractionResult.CONSUME
     }
 
@@ -200,5 +171,42 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
                 )
             }
         }
+    }
+}
+
+/** Shared menu-open path for the Portable, used by right-click and the Ctrl+E hotkey. */
+object PortableTerminalOpener {
+    /** [holderProvider] is re-read every tick so validity checks and crystal
+     *  write-back always see the live Portable stack. */
+    fun open(player: ServerPlayer, level: ServerLevel, holderProvider: () -> ItemStack) {
+        PlatformServices.menu.openExtendedMenu(
+            player,
+            Component.translatable("container.nodeworks.portable_inventory_terminal"),
+            // No world position, null tells the client there is no SetLayout target.
+            InventoryTerminalOpenData(terminalPos = null, hasCrystalSlot = true),
+            InventoryTerminalOpenData.STREAM_CODEC,
+            { syncId, inv, _ ->
+                // Opens with no source. The menu seeds the crystal slot from the
+                // Portable component and resolves (or stays disconnected) itself.
+                InventoryTerminalMenu.createServer(
+                    syncId = syncId,
+                    inv = inv,
+                    level = level,
+                    source = null,
+                    displayPos = null,
+                    hasCrystalSlot = true,
+                    crystalHolderProvider = holderProvider,
+                )
+            }
+        )
+    }
+
+    /** Hotkey entry. First Portable by inventory slot order: hotbar, main, then offhand. */
+    fun openFromInventory(player: ServerPlayer): Boolean {
+        val inv = player.inventory
+        val slots = (0 until 36) + net.minecraft.world.entity.player.Inventory.SLOT_OFFHAND
+        val slot = slots.firstOrNull { inv.getItem(it).item is PortableInventoryTerminalItem } ?: return false
+        open(player, player.level()) { inv.getItem(slot) }
+        return true
     }
 }

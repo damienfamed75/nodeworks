@@ -106,5 +106,8 @@
   "item.nodeworks.portable_inventory_terminal": "Portable Inventory Terminal",
   "container.nodeworks.portable_inventory_terminal": "Portable Inventory Terminal",
   "subtitle.nodeworks.grapple_beam.activate": "Grapple Beam latches",
-  "subtitle.nodeworks.grapple_beam.deactivate": "Grapple Beam releases"
+  "subtitle.nodeworks.grapple_beam.deactivate": "Grapple Beam releases",
+  "key.category.nodeworks.nodeworks": "Nodeworks",
+  "key.nodeworks.open_docs": "Open Docs on Hover",
+  "key.nodeworks.open_portable_terminal": "Open Portable Inventory Terminal"
 }

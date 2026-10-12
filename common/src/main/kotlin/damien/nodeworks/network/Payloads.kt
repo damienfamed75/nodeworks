@@ -337,6 +337,13 @@ data class InvTerminalSlotClickPayload(val containerId: Int, val slotIndex: Int,
     override fun type() = TYPE
 }
 
+/** C2S: Open the first Portable Inventory Terminal in the player inventory (hotkey). */
+data object OpenPortableTerminalPayload : CustomPacketPayload {
+    val TYPE: CustomPacketPayload.Type<OpenPortableTerminalPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "open_portable_terminal"))
+    val CODEC: StreamCodec<FriendlyByteBuf, OpenPortableTerminalPayload> = StreamCodec.unit(this)
+    override fun type() = TYPE
+}
+
 /** C2S: Update a network controller setting (color, name, redstone mode). */
 data class ControllerSettingsPayload(val pos: BlockPos, val key: String, val intValue: Int, val strValue: String) : CustomPacketPayload {
     companion object {

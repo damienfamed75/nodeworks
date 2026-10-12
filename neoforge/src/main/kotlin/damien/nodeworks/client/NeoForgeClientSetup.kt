@@ -109,6 +109,12 @@ object NeoForgeClientSetup {
             }
         }
 
+        // Pre, not Post: vanilla handles keybinds inside Minecraft.tick, and the
+        // Portable hotkey must eat the paired inventory click before that runs.
+        NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.client.event.ClientTickEvent.Pre ->
+            NodeworksKeyBindings.tickOpenPortable()
+        }
+
         // Polls keyUse each client tick so we can fire a release packet on
         // the falling edge when the player lets go of right-click while a
         // Grapple Beam hook is attached. The item bypasses Player.startUsingItem
