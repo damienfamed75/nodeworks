@@ -74,6 +74,9 @@ class DiagnosticScreen(
             "import_chest" to 0xFFB8915C.toInt(),
             "export_chest" to 0xFFB8915C.toInt(),
             "processing_handler" to 0xFFDD55DD.toInt(),
+            "craft_requester" to 0xFFFFAA55.toInt(),
+            "storage_meter" to 0xFF9DC88D.toInt(),
+            "monitor" to 0xFFAE8FE0.toInt(),
         )
 
         private val CARD_COLORS = mapOf(
@@ -101,6 +104,9 @@ class DiagnosticScreen(
             "import_chest" to "Import Chest",
             "export_chest" to "Export Chest",
             "processing_handler" to "Processing Handler",
+            "craft_requester" to "Craft Requester",
+            "storage_meter" to "Storage Meter",
+            "monitor" to "Monitor",
         )
 
         private val TAB_NAMES = listOf("Topology", "Route", "Craft", "Jobs")
@@ -126,6 +132,9 @@ class DiagnosticScreen(
                 "import_chest" to ItemStack(reg.IMPORT_CHEST),
                 "export_chest" to ItemStack(reg.EXPORT_CHEST),
                 "processing_handler" to ItemStack(reg.PROCESSING_HANDLER),
+                "craft_requester" to ItemStack(reg.CRAFT_REQUESTER),
+                "storage_meter" to ItemStack(reg.STORAGE_METER),
+                "monitor" to ItemStack(reg.MONITOR),
             )
         }
     }

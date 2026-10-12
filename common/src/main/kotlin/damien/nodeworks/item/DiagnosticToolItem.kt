@@ -17,6 +17,7 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.item.Item
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.context.UseOnContext
 
 class DiagnosticToolItem(properties: Properties) : Item(properties) {
@@ -115,6 +116,9 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                 is damien.nodeworks.block.entity.ImportChestBlockEntity -> "import_chest"
                 is damien.nodeworks.block.entity.ExportChestBlockEntity -> "export_chest"
                 is damien.nodeworks.block.entity.ProcessingHandlerBlockEntity -> "processing_handler"
+                is damien.nodeworks.block.entity.CraftRequesterBlockEntity -> "craft_requester"
+                is damien.nodeworks.block.entity.StorageMeterBlockEntity -> "storage_meter"
+                is damien.nodeworks.block.entity.MonitorBlockEntity -> "monitor"
                 else -> "unknown"
             }
 
@@ -270,6 +274,30 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                         }
                     }
                 }
+                is damien.nodeworks.block.entity.CraftRequesterBlockEntity -> {
+                    details.add("Target: ${formatTarget(entity.target)}")
+                    details.add("Batch: ${entity.batchSize}")
+                    details.add(channelFilterMarker(entity.outputChannel))
+                    details.add("Signal: ${if (entity.signalActive) "powered" else "idle"}")
+                    if (entity.hasActiveJob) details.add("Crafting: yes")
+                    entity.errorLines.lastOrNull()?.let { details.add("__error:$it") }
+                }
+                is damien.nodeworks.block.entity.StorageMeterBlockEntity -> {
+                    details.add("Target: ${formatTarget(entity.target)}")
+                    details.add("Stored: ${entity.displayCount}")
+                    // 0 disables the meter entirely, call that out rather than
+                    // leaving the player to infer it from the number.
+                    details.add("Threshold: ${if (entity.threshold == 0) "0 (disabled)" else entity.threshold.toString()}")
+                    details.add(channelFilterMarker(entity.channel))
+                    details.add("Autocraft: ${if (entity.autocraftEnabled) "on" else "off"}")
+                    details.add("Below threshold: ${if (entity.isBelowThreshold) "yes" else "no"}")
+                    if (entity.hasActiveJob) details.add("Crafting: yes")
+                    entity.errorLines.lastOrNull()?.let { details.add("__error:$it") }
+                }
+                is damien.nodeworks.block.entity.MonitorBlockEntity -> {
+                    details.add("Tracking: ${formatItemId(entity.trackedItemId)}")
+                    details.add("Count: ${entity.displayCount}")
+                }
                 else -> {}
             }
 
@@ -405,6 +433,21 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
      *  already know. */
     private fun formatFilter(rule: String): String =
         if (rule.isEmpty()) "*" else rule
+
+    /** Hover name so component-bearing targets read as the player sees them,
+     *  e.g. "Potion of Strength" rather than `minecraft:potion`. */
+    private fun formatTarget(stack: ItemStack): String =
+        if (stack.isEmpty) "(none)" else stack.hoverName.string
+
+    /** Same display as [formatTarget] for devices that store a bare item id.
+     *  Falls back to the raw id when the item is no longer registered. */
+    private fun formatItemId(itemId: String?): String {
+        if (itemId.isNullOrEmpty()) return "(none)"
+        val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: return itemId
+        val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id)
+        if (item == net.minecraft.world.item.Items.AIR) return itemId
+        return ItemStack(item).hoverName.string
+    }
 
     /** Maps the 0/1/2 [redstoneMode] enum to a human label. Matches the values
      *  in [BreakerBlockEntity]/[PlacerBlockEntity]/[UserBlockEntity]: 0 is
