@@ -3,14 +3,17 @@ package damien.nodeworks.compat.ae2
 import appeng.api.AECapabilities
 import appeng.api.config.Actionable
 import appeng.api.networking.security.IActionSource
+import appeng.api.networking.storage.IStorageService
 import appeng.api.stacks.AEFluidKey
 import appeng.api.stacks.AEItemKey
 import appeng.api.stacks.AEKey
+import appeng.api.stacks.KeyCounter
 import appeng.api.storage.MEStorage
 import damien.nodeworks.platform.FluidInfo
 import damien.nodeworks.platform.FluidStorageHandle
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
+import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
@@ -19,14 +22,17 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.material.Fluids
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /** Item view of an ME network reached through [AECapabilities.ME_STORAGE], which an
  *  unconfigured ME Interface exposes. AE2 keeps counts aggregated per key, so every
- *  operation here is O(distinct types) with no slot iteration at all. */
-class Ae2ItemStorageHandle(val me: MEStorage) : ItemStorageHandle
+ *  operation here is O(distinct types) with no slot iteration at all. [grid] is the
+ *  owning network when the block is a grid node, used to read its inventory cache. */
+class Ae2ItemStorageHandle(val me: MEStorage, val grid: IStorageService?) : ItemStorageHandle
 
 /** Fluid view of the same network. One [MEStorage] holds both, keys are filtered by type. */
-class Ae2FluidStorageHandle(val me: MEStorage) : FluidStorageHandle
+class Ae2FluidStorageHandle(val me: MEStorage, val grid: IStorageService?) : FluidStorageHandle
 
 object Ae2Storage {
     private val source: IActionSource = IActionSource.empty()
@@ -37,19 +43,55 @@ object Ae2Storage {
      *  [damien.nodeworks.platform.CompositeStorageService]. */
     private const val MAX_STACKS_PER_EXTRACT = 16_384
 
-    fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle? =
-        level.getCapability(AECapabilities.ME_STORAGE, pos, face)?.let { Ae2ItemStorageHandle(it) }
+    fun getItemStorage(level: ServerLevel, pos: BlockPos, face: Direction): ItemStorageHandle? {
+        val me = level.getCapability(AECapabilities.ME_STORAGE, pos, face) ?: return null
+        return Ae2ItemStorageHandle(me, gridStorage(level, pos, face))
+    }
 
-    fun getFluidStorage(level: ServerLevel, pos: BlockPos, face: Direction): FluidStorageHandle? =
-        level.getCapability(AECapabilities.ME_STORAGE, pos, face)?.let { Ae2FluidStorageHandle(it) }
+    fun getFluidStorage(level: ServerLevel, pos: BlockPos, face: Direction): FluidStorageHandle? {
+        val me = level.getCapability(AECapabilities.ME_STORAGE, pos, face) ?: return null
+        return Ae2FluidStorageHandle(me, gridStorage(level, pos, face))
+    }
+
+    private fun gridStorage(level: ServerLevel, pos: BlockPos, face: Direction): IStorageService? =
+        level.getCapability(AECapabilities.IN_WORLD_GRID_NODE_HOST, pos, null)
+            ?.getGridNode(face)?.grid?.storageService
+
+    // ---- per-tick snapshot ----
+    // One snapshot per ME storage per tick, shared by every device that asks, so AE2
+    // walks its cells at most once per tick per grid. The grid inventory itself has a
+    // cache AE2 already maintains, read for free. Our own writes invalidate the entry.
+
+    private var snapshotTick = Long.MIN_VALUE
+    private val snapshots = IdentityHashMap<MEStorage, KeyCounter>()
+    private val mutated: MutableSet<MEStorage> = Collections.newSetFromMap(IdentityHashMap())
+
+    private fun snapshot(me: MEStorage, grid: IStorageService?): KeyCounter {
+        val tick = PlatformServices.modState.tickCount
+        if (tick != snapshotTick) {
+            snapshots.clear()
+            mutated.clear()
+            snapshotTick = tick
+        }
+        snapshots[me]?.let { return it }
+        val fresh = if (grid != null && grid.inventory === me && me !in mutated) grid.cachedInventory else me.availableStacks
+        snapshots[me] = fresh
+        return fresh
+    }
+
+    private fun invalidate(me: MEStorage) {
+        snapshots.remove(me)
+        mutated.add(me)
+    }
 
     private fun idOf(key: AEKey): String = key.id.toString()
 
     // ---- items ----
 
-    /** getAvailableStacks returns a fresh snapshot, so extracting while iterating is safe. */
-    private inline fun forEachItem(me: MEStorage, filter: (String) -> Boolean, visit: (AEItemKey, Long) -> Unit) {
-        for (entry in me.availableStacks) {
+    /** The snapshot is either a private copy or AE2's tick-stable cache, and
+     *  extract never touches that cache, so mutating while iterating is safe. */
+    private inline fun forEachItem(h: Ae2ItemStorageHandle, filter: (String) -> Boolean, visit: (AEItemKey, Long) -> Unit) {
+        for (entry in snapshot(h.me, h.grid)) {
             val key = entry.key as? AEItemKey ?: continue
             if (entry.longValue <= 0L) continue
             if (filter(idOf(key))) visit(key, entry.longValue)
@@ -68,23 +110,23 @@ object Ae2Storage {
 
     fun countItems(h: Ae2ItemStorageHandle, filter: (String) -> Boolean): Long {
         var total = 0L
-        forEachItem(h.me, filter) { _, n -> total += n }
+        forEachItem(h, filter) { _, n -> total += n }
         return total
     }
 
     fun findFirstItem(h: Ae2ItemStorageHandle, filter: (String) -> Boolean): String? {
-        forEachItem(h.me, filter) { key, _ -> return idOf(key) }
+        forEachItem(h, filter) { key, _ -> return idOf(key) }
         return null
     }
 
     fun findFirstItemInfo(h: Ae2ItemStorageHandle, filter: (String) -> Boolean): ItemInfo? {
-        forEachItem(h.me, filter) { key, n -> return info(key, n) }
+        forEachItem(h, filter) { key, n -> return info(key, n) }
         return null
     }
 
     fun findAllItemInfo(h: Ae2ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
         val out = ArrayList<ItemInfo>()
-        forEachItem(h.me, filter) { key, n -> out += info(key, n) }
+        forEachItem(h, filter) { key, n -> out += info(key, n) }
         return out
     }
 
@@ -92,9 +134,10 @@ object Ae2Storage {
     fun extractItems(h: Ae2ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
         var remaining = maxCount
         var total = 0L
-        forEachItem(h.me, filter) { key, available ->
+        forEachItem(h, filter) { key, available ->
             if (remaining <= 0L) return total
             val got = h.me.extract(key, minOf(remaining, available), Actionable.MODULATE, source)
+            if (got > 0L) invalidate(h.me)
             total += got
             remaining -= got
         }
@@ -110,6 +153,7 @@ object Ae2Storage {
         val cap = minOf(maxCount, Int.MAX_VALUE.toLong(), stackBudget * max)
         if (cap <= 0L) return 0L
         val got = me.extract(key, cap, Actionable.MODULATE, source)
+        if (got > 0L) invalidate(me)
         var left = got
         while (left > 0L) {
             val n = minOf(left, max).toInt()
@@ -122,7 +166,7 @@ object Ae2Storage {
     fun extractItemStacksMatching(h: Ae2ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): List<ItemStack> {
         val out = ArrayList<ItemStack>()
         var remaining = maxCount
-        forEachItem(h.me, filter) { key, available ->
+        forEachItem(h, filter) { key, available ->
             if (remaining <= 0L || out.size >= MAX_STACKS_PER_EXTRACT) return out
             remaining -= extractStacks(h.me, key, minOf(remaining, available), MAX_STACKS_PER_EXTRACT - out.size, out)
         }
@@ -132,7 +176,7 @@ object Ae2Storage {
     fun extractStacksByPredicate(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): List<ItemStack> {
         val out = ArrayList<ItemStack>()
         var remaining = maxCount
-        forEachItem(h.me, { true }) { key, available ->
+        forEachItem(h, { true }) { key, available ->
             if (remaining <= 0L || out.size >= MAX_STACKS_PER_EXTRACT) return out
             if (filter(key.readOnlyStack)) {
                 remaining -= extractStacks(h.me, key, minOf(remaining, available), MAX_STACKS_PER_EXTRACT - out.size, out)
@@ -143,14 +187,16 @@ object Ae2Storage {
 
     fun countStacksByPredicate(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean): Long {
         var total = 0L
-        forEachItem(h.me, { true }) { key, n -> if (filter(key.readOnlyStack)) total += n }
+        forEachItem(h, { true }) { key, n -> if (filter(key.readOnlyStack)) total += n }
         return total
     }
 
     fun insertItemStack(h: Ae2ItemStorageHandle, stack: ItemStack): Int {
         if (stack.isEmpty) return 0
         val key = AEItemKey.of(stack) ?: return 0
-        return h.me.insert(key, stack.count.toLong(), Actionable.MODULATE, source).toInt()
+        val put = h.me.insert(key, stack.count.toLong(), Actionable.MODULATE, source)
+        if (put > 0L) invalidate(h.me)
+        return put.toInt()
     }
 
     fun simulateInsertItem(h: Ae2ItemStorageHandle, item: Item, maxCount: Long): Long =
@@ -161,6 +207,7 @@ object Ae2Storage {
         val key = AEItemKey.of(item)
         if (h.me.insert(key, count, Actionable.SIMULATE, source) < count) return false
         val inserted = h.me.insert(key, count, Actionable.MODULATE, source)
+        if (inserted > 0L) invalidate(h.me)
         if (inserted < count) {
             // Network changed between the two calls, keep the all-or-nothing contract.
             h.me.extract(key, inserted, Actionable.MODULATE, source)
@@ -174,12 +221,14 @@ object Ae2Storage {
     fun moveKeys(src: Ae2ItemStorageHandle, dst: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): Long {
         var remaining = maxCount
         var moved = 0L
-        forEachItem(src.me, { true }) { key, available ->
+        forEachItem(src, { true }) { key, available ->
             if (remaining <= 0L) return moved
             if (!filter(key.readOnlyStack)) return@forEachItem
             val got = src.me.extract(key, minOf(remaining, available), Actionable.MODULATE, source)
             if (got <= 0L) return@forEachItem
+            invalidate(src.me)
             val put = dst.me.insert(key, got, Actionable.MODULATE, source)
+            if (put > 0L) invalidate(dst.me)
             if (put < got) src.me.insert(key, got - put, Actionable.MODULATE, source)
             moved += put
             remaining -= put
@@ -194,8 +243,8 @@ object Ae2Storage {
     private fun toAe(mb: Long): Long = if (AEFluidKey.AMOUNT_BUCKET == 1000) mb else mb * AEFluidKey.AMOUNT_BUCKET / 1000L
     private fun toMb(ae: Long): Long = if (AEFluidKey.AMOUNT_BUCKET == 1000) ae else ae * 1000L / AEFluidKey.AMOUNT_BUCKET
 
-    private inline fun forEachFluid(me: MEStorage, filter: (String) -> Boolean, visit: (AEFluidKey, Long) -> Unit) {
-        for (entry in me.availableStacks) {
+    private inline fun forEachFluid(h: Ae2FluidStorageHandle, filter: (String) -> Boolean, visit: (AEFluidKey, Long) -> Unit) {
+        for (entry in snapshot(h.me, h.grid)) {
             val key = entry.key as? AEFluidKey ?: continue
             if (entry.longValue <= 0L) continue
             if (filter(idOf(key))) visit(key, toMb(entry.longValue))
@@ -210,25 +259,27 @@ object Ae2Storage {
 
     fun countFluid(h: Ae2FluidStorageHandle, filter: (String) -> Boolean): Long {
         var total = 0L
-        forEachFluid(h.me, filter) { _, mb -> total += mb }
+        forEachFluid(h, filter) { _, mb -> total += mb }
         return total
     }
 
     fun findFirstFluidInfo(h: Ae2FluidStorageHandle, filter: (String) -> Boolean): FluidInfo? {
-        forEachFluid(h.me, filter) { key, mb -> return FluidInfo(idOf(key), key.displayName.string, mb) }
+        forEachFluid(h, filter) { key, mb -> return FluidInfo(idOf(key), key.displayName.string, mb) }
         return null
     }
 
     fun findAllFluidInfo(h: Ae2FluidStorageHandle, filter: (String) -> Boolean): List<FluidInfo> {
         val out = ArrayList<FluidInfo>()
-        forEachFluid(h.me, filter) { key, mb -> out += FluidInfo(idOf(key), key.displayName.string, mb) }
+        forEachFluid(h, filter) { key, mb -> out += FluidInfo(idOf(key), key.displayName.string, mb) }
         return out
     }
 
     fun insertFluid(h: Ae2FluidStorageHandle, fluidId: String, amountMb: Long): Long {
         if (amountMb <= 0L) return 0L
         val key = fluidKey(fluidId) ?: return 0L
-        return toMb(h.me.insert(key, toAe(amountMb), Actionable.MODULATE, source))
+        val put = h.me.insert(key, toAe(amountMb), Actionable.MODULATE, source)
+        if (put > 0L) invalidate(h.me)
+        return toMb(put)
     }
 
     fun simulateInsertFluid(h: Ae2FluidStorageHandle, fluidId: String, maxMb: Long): Long {
@@ -243,6 +294,7 @@ object Ae2Storage {
         val want = toAe(amountMb)
         if (h.me.insert(key, want, Actionable.SIMULATE, source) < want) return false
         val inserted = h.me.insert(key, want, Actionable.MODULATE, source)
+        if (inserted > 0L) invalidate(h.me)
         if (inserted < want) {
             h.me.extract(key, inserted, Actionable.MODULATE, source)
             return false
@@ -253,9 +305,10 @@ object Ae2Storage {
     fun extractFluid(h: Ae2FluidStorageHandle, filter: (String) -> Boolean, maxMb: Long): Long {
         var remaining = maxMb
         var total = 0L
-        forEachFluid(h.me, filter) { key, availableMb ->
+        forEachFluid(h, filter) { key, availableMb ->
             if (remaining <= 0L) return total
             val got = toMb(h.me.extract(key, toAe(minOf(remaining, availableMb)), Actionable.MODULATE, source))
+            if (got > 0L) invalidate(h.me)
             total += got
             remaining -= got
         }
