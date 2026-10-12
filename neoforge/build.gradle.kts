@@ -128,10 +128,9 @@ dependencies {
     // Dev-only testing mods (not bundled in release)
     runtimeOnly("mezz.jei:jei-${providers.gradleProperty("minecraft_version").get()}-neoforge:${providers.gradleProperty("jei_version").get()}")
 
-    // Applied Energistics 2, optional ME Interface storage bridge. compileOnly for the
-    // API, runtimeOnly so dev runs load it for testing. Not bundled in the release jar.
+    // Applied Energistics 2, optional ME Interface storage bridge. Compile-time only so
+    // the bridge builds against the real API. Not loaded in dev runs or bundled in the jar.
     compileOnly("maven.modrinth:ae2:${providers.gradleProperty("ae2_version").get()}")
-    runtimeOnly("maven.modrinth:ae2:${providers.gradleProperty("ae2_version").get()}")
 }
 
 // Copy common resources + guidebook content alongside neoforge resources
