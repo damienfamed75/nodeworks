@@ -37,3 +37,12 @@ modId = "guideme"
 type = "required"
 versionRange = "[26.1,)"
 side = "CLIENT"
+
+# Applied Energistics 2, optional. With it present, a Storage Card facing an
+# unconfigured ME Interface reads the whole ME network through AE2's MEStorage.
+[[dependencies.nodeworks]]
+modId = "ae2"
+type = "optional"
+versionRange = "[26.1,)"
+ordering = "AFTER"
+side = "BOTH"

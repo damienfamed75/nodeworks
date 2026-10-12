@@ -58,7 +58,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         // Initialize platform services BEFORE any registration
         PlatformServices.blockEntity = NeoForgeBlockEntityService()
         PlatformServices.menu = NeoForgeMenuService()
-        PlatformServices.storage = NeoForgeStorageService()
+        PlatformServices.storage = damien.nodeworks.platform.CompositeStorageService(NeoForgeStorageService())
         PlatformServices.modState = NeoForgeModStateService()
         PlatformServices.fakePlayer = damien.nodeworks.platform.NeoForgeFakePlayerService()
         PlatformServices.serverNetworking = NeoForgeServerNetworkingService()
