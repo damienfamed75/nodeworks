@@ -210,11 +210,6 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
 
     // ---- fluids ----
 
-    // An ME network is unified item and fluid storage, so an AE2-backed card is never
-    // treated as fluid-only. Both views stay visible through the same interface.
-    override fun hasFluidCapacity(storage: FluidStorageHandle): Boolean =
-        if (ae2(storage) != null) false else base.hasFluidCapacity(storage)
-
     override fun countFluid(storage: FluidStorageHandle, filter: (String) -> Boolean): Long {
         val a = ae2(storage)
         return if (a != null) Ae2Storage.countFluid(a, filter) else base.countFluid(storage, filter)

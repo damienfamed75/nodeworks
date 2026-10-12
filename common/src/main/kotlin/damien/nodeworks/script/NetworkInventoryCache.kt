@@ -263,9 +263,8 @@ class NetworkInventoryCache(
                 }
             }
         }
-        // Storage cards are fluid-first (see NetworkStorageHelper.getStorage): getStorage
-        // returns null when the block exposes a fluid cap, and getFluidStorage handles
-        // the fluid side. The two branches are mutually exclusive for a given card.
+        // Independent of the item branch: a hybrid block (casting table, ME network)
+        // contributes to both buffers in the same poll.
         val fluidStorage = NetworkStorageHelper.getFluidStorage(level, card)
         if (fluidStorage != null) {
             val fluids = PlatformServices.storage.findAllFluidInfo(fluidStorage) { true }

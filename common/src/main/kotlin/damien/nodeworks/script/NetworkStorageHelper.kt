@@ -22,17 +22,11 @@ object NetworkStorageHelper {
 
     fun getStorageCards(snapshot: NetworkSnapshot): List<CardSnapshot> = snapshot.storageCards
 
-    /**
-     * Storage cards are fluid-first: a block with real tank capacity gets its
-     * item I/O disabled so the Inventory Terminal never mixes item and fluid
-     * totals. The capacity check matters because some mods expose a fluid
-     * capability with no usable tanks on pure item storage, which must not
-     * hide the block's items (#68).
-     */
+    /** Item view of the block a Storage Card faces. Hybrid blocks that also hold
+     *  fluids (casting tables, smelteries, ME networks) stay visible here, the
+     *  fluid side is read separately through [getFluidStorage]. */
     fun getStorage(level: ServerLevel, card: CardSnapshot): ItemStorageHandle? {
         val cap = card.capability as? StorageSideCapability ?: return null
-        val fluid = PlatformServices.storage.getFluidStorage(level, cap.adjacentPos, cap.defaultFace)
-        if (fluid != null && PlatformServices.storage.hasFluidCapacity(fluid)) return null
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, cap.defaultFace)
     }
 
