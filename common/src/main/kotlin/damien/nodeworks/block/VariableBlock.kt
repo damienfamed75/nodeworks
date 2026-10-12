@@ -19,12 +19,16 @@ import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
+import net.minecraft.world.item.context.BlockPlaceContext
+import net.minecraft.world.level.block.SimpleWaterloggedBlock
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.material.FluidState
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
 import net.minecraft.world.phys.shapes.VoxelShape
 
-class VariableBlock(properties: Properties) : BaseEntityBlock(properties) {
+class VariableBlock(properties: Properties) : BaseEntityBlock(properties), SimpleWaterloggedBlock {
 
     companion object {
         val CODEC: MapCodec<VariableBlock> = simpleCodec(::VariableBlock)
@@ -34,6 +38,20 @@ class VariableBlock(properties: Properties) : BaseEntityBlock(properties) {
          *  axis-agnostic shape is enough. */
         private val SHAPE: VoxelShape = Block.box(1.0, 0.0, 1.0, 15.0, 16.0, 15.0)
     }
+
+    init {
+        registerDefaultState(stateDefinition.any().setValue(WATERLOGGED, false))
+    }
+
+    override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
+        builder.add(WATERLOGGED)
+    }
+
+    override fun getStateForPlacement(context: BlockPlaceContext): BlockState =
+        defaultBlockState().setValue(WATERLOGGED, context.placedInWater())
+
+    override fun getFluidState(state: BlockState): FluidState =
+        waterloggedFluid(state) ?: super.getFluidState(state)
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL

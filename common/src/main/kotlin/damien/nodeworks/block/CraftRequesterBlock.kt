@@ -21,8 +21,10 @@ import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.entity.BlockEntityTicker
 import net.minecraft.world.level.block.entity.BlockEntityType
+import net.minecraft.world.level.block.SimpleWaterloggedBlock
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.material.FluidState
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.Shapes
@@ -36,7 +38,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * Right-click with any other item sets that item as the target.
  * Right-click with a wrench rotates the block via [Wrenchable].
  */
-class CraftRequesterBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
+class CraftRequesterBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable, SimpleWaterloggedBlock {
 
     companion object {
         val CODEC: MapCodec<CraftRequesterBlock> = simpleCodec(::CraftRequesterBlock)
@@ -54,12 +56,15 @@ class CraftRequesterBlock(properties: Properties) : BaseEntityBlock(properties),
     }
 
     init {
-        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH))
+        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH).setValue(WATERLOGGED, false))
     }
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
-        builder.add(FACING)
+        builder.add(FACING, WATERLOGGED)
     }
+
+    override fun getFluidState(state: BlockState): FluidState =
+        waterloggedFluid(state) ?: super.getFluidState(state)
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
@@ -67,6 +72,7 @@ class CraftRequesterBlock(properties: Properties) : BaseEntityBlock(properties),
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState =
         defaultBlockState().setValue(FACING, context.horizontalDirection.opposite)
+            .setValue(WATERLOGGED, context.placedInWater())
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity =
         CraftRequesterBlockEntity(pos, state)

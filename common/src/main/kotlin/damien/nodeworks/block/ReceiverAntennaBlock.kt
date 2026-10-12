@@ -19,7 +19,6 @@ import net.minecraft.world.item.context.BlockPlaceContext
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
-import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
@@ -79,11 +78,13 @@ class ReceiverAntennaBlock(properties: Properties) : BaseEntityBlock(properties)
         super.setPlacedBy(level, pos, state, placer, stack)
         if (level.isClientSide) return
         val facing = state.getValue(FACING)
+        val above = pos.above()
         level.setBlock(
-            pos.above(),
+            above,
             ModBlocks.ANTENNA_SEGMENT.defaultBlockState()
                 .setValue(AntennaSegmentBlock.PART, AntennaSegmentBlock.Part.RECEIVER)
-                .setValue(AntennaSegmentBlock.FACING, facing),
+                .setValue(AntennaSegmentBlock.FACING, facing)
+                .setValue(WATERLOGGED, isWaterAt(level, above)),
             Block.UPDATE_ALL
         )
     }
@@ -112,7 +113,7 @@ class ReceiverAntennaBlock(properties: Properties) : BaseEntityBlock(properties)
         if (entity != null) Containers.dropContents(level, pos, entity)
         val above = pos.above()
         if (level.getBlockState(above).block is AntennaSegmentBlock) {
-            level.setBlock(above, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
+            level.setBlock(above, level.getFluidState(above).createLegacyBlock(), Block.UPDATE_ALL)
         }
         super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)
     }

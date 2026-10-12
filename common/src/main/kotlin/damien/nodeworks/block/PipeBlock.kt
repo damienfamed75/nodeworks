@@ -14,8 +14,11 @@ import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
+import net.minecraft.world.level.block.SimpleWaterloggedBlock
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.material.FluidState
+import net.minecraft.world.level.material.Fluids
 import net.minecraft.world.level.block.state.properties.BooleanProperty
 import net.minecraft.world.level.block.state.properties.EnumProperty
 import net.minecraft.world.phys.shapes.CollisionContext
@@ -34,7 +37,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * variant. Recomputed via [updateShape] whenever a neighbour changes, the
  * vanilla pattern fences and chains use.
  */
-class PipeBlock(properties: Properties) : BaseEntityBlock(properties) {
+class PipeBlock(properties: Properties) : BaseEntityBlock(properties), SimpleWaterloggedBlock {
 
     init {
         registerDefaultState(
@@ -46,6 +49,7 @@ class PipeBlock(properties: Properties) : BaseEntityBlock(properties) {
                 .setValue(PIPE_WEST, false)
                 .setValue(PIPE_EAST, false)
                 .setValue(PIPE_AXIS, PipeAxis.NONE)
+                .setValue(WATERLOGGED, false)
         )
     }
 
@@ -160,7 +164,7 @@ class PipeBlock(properties: Properties) : BaseEntityBlock(properties) {
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
-        builder.add(PIPE_DOWN, PIPE_UP, PIPE_NORTH, PIPE_SOUTH, PIPE_WEST, PIPE_EAST, PIPE_AXIS)
+        builder.add(PIPE_DOWN, PIPE_UP, PIPE_NORTH, PIPE_SOUTH, PIPE_WEST, PIPE_EAST, PIPE_AXIS, WATERLOGGED)
     }
 
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
@@ -185,6 +189,7 @@ class PipeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun getStateForPlacement(ctx: BlockPlaceContext): BlockState =
         rebuildState(ctx.level, ctx.clickedPos, defaultBlockState())
+            .setValue(WATERLOGGED, ctx.placedInWater())
 
     override fun updateShape(
         state: BlockState,
@@ -195,7 +200,15 @@ class PipeBlock(properties: Properties) : BaseEntityBlock(properties) {
         neighborPos: BlockPos,
         neighborState: BlockState,
         random: RandomSource,
-    ): BlockState = rebuildState(level, pos, state)
+    ): BlockState {
+        if (state.getValue(WATERLOGGED)) {
+            ticks.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(level))
+        }
+        return rebuildState(level, pos, state)
+    }
+
+    override fun getFluidState(state: BlockState): FluidState =
+        waterloggedFluid(state) ?: super.getFluidState(state)
 
     override fun getShape(
         state: BlockState,

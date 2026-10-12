@@ -21,8 +21,10 @@ import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
+import net.minecraft.world.level.block.SimpleWaterloggedBlock
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.material.FluidState
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
@@ -35,7 +37,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * (sapling replant, sugar cane, kelp, sweet berries). Synchronous: the placement
  * resolves in the same tick `placer:place(...)` is called, no ticker needed.
  */
-class PlacerBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
+class PlacerBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable, SimpleWaterloggedBlock {
 
     companion object {
         val CODEC: MapCodec<PlacerBlock> = simpleCodec(::PlacerBlock)
@@ -50,12 +52,15 @@ class PlacerBlock(properties: Properties) : BaseEntityBlock(properties), Wrencha
     }
 
     init {
-        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH))
+        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH).setValue(WATERLOGGED, false))
     }
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
-        builder.add(FACING)
+        builder.add(FACING, WATERLOGGED)
     }
+
+    override fun getFluidState(state: BlockState): FluidState =
+        waterloggedFluid(state) ?: super.getFluidState(state)
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
@@ -74,6 +79,7 @@ class PlacerBlock(properties: Properties) : BaseEntityBlock(properties), Wrencha
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState? =
         defaultBlockState().setValue(FACING, context.nearestLookingDirection.opposite)
+            .setValue(WATERLOGGED, context.placedInWater())
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity =
         PlacerBlockEntity(pos, state)

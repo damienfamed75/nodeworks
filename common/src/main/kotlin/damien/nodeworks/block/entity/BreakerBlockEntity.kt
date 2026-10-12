@@ -16,7 +16,7 @@ import net.minecraft.world.item.DyeColor
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
 import net.minecraft.world.level.block.Block
-import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.block.LiquidBlock
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
@@ -215,7 +215,7 @@ class BreakerBlockEntity(
         if (!redstoneAllows(level)) return
         val target = targetPos
         val state = level.getBlockState(target)
-        if (state.isAir) return
+        if (!isBreakableTarget(state)) return
         val effective = filterRule.ifEmpty { "*" }
         val blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.block).toString()
         if (!damien.nodeworks.script.CardHandle.matchesFilter(blockId, effective)) return
@@ -273,7 +273,7 @@ class BreakerBlockEntity(
 
         // Remove the block. UPDATE_ALL fires neighbor updates so connected redstone
         // / pistons / observers see the change.
-        level.setBlock(target, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
+        level.setBlock(target, level.getFluidState(target).createLegacyBlock(), Block.UPDATE_ALL)
 
         // Tree felling. Drops accumulate into [drops] so a felled tree is
         // indistinguishable from a single break to downstream routing.
@@ -309,7 +309,7 @@ class BreakerBlockEntity(
 
     private fun breakOneForFell(level: ServerLevel, pos: BlockPos, sink: MutableList<ItemStack>) {
         val state = level.getBlockState(pos)
-        if (state.isAir) return
+        if (!isBreakableTarget(state)) return
         if (!PlatformServices.fakePlayer.mayBreak(level, pos, state, ownerUuid)) return
         // Empty-tool fallback hits the loot table's no-tool branch for leaves
         // (saplings + sticks), pickToolPair gives diamond axe for logs.
@@ -319,7 +319,7 @@ class BreakerBlockEntity(
         // UPDATE_CLIENTS only, skip the neighbour-update cascade so a 500-block
         // fell doesn't trigger redstone/observer/leaf-decay churn on every
         // adjacent block. The cut pos already fired UPDATE_ALL above.
-        level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS)
+        level.setBlock(pos, level.getFluidState(pos).createLegacyBlock(), Block.UPDATE_CLIENTS)
     }
 
     private fun markDirtyAndSync() {
@@ -433,6 +433,10 @@ class BreakerBlockEntity(
          *  in lockstep. */
         const val IDLE_POLL_INTERVAL_TICKS = 20
 
+        /** Fluids are ignored, a waterlogged solid block is still a target. */
+        fun isBreakableTarget(state: BlockState): Boolean =
+            !state.isAir && state.block !is LiquidBlock
+
         /** Pick a diamond / wooden tool pair appropriate for [state]. Tries
          *  pickaxe, axe, shovel, then hoe, returning the first whose diamond
          *  variant is correct for drops. Blocks needing no tool at all
@@ -462,7 +466,7 @@ class BreakerBlockEntity(
          *  above-tier (no matching diamond tool). Callers treat null as a silent
          *  no-op, matches the user's preference for failed breaks not to spam errors. */
         fun computeBreakDuration(level: net.minecraft.world.level.Level, pos: BlockPos, state: BlockState): Int? {
-            if (state.isAir) return null
+            if (!isBreakableTarget(state)) return null
             val (_, woodenTool) = pickToolPair(state) ?: return null
             val hardness = state.getDestroySpeed(level, pos)
             if (hardness < 0f) return null

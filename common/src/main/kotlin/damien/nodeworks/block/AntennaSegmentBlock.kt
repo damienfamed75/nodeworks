@@ -9,8 +9,9 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
-import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.block.SimpleWaterloggedBlock
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.material.FluidState
 import net.minecraft.world.level.block.state.StateDefinition
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.level.block.state.properties.EnumProperty
@@ -24,7 +25,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * auto-places three [Part.MIDDLE] and one [Part.TOP] segments above it, breaking any part of
  * the stack cascades to remove the rest. Right-click / wrench forwards to the bottom block.
  */
-class AntennaSegmentBlock(properties: Properties) : Block(properties) {
+class AntennaSegmentBlock(properties: Properties) : Block(properties), SimpleWaterloggedBlock {
 
     companion object {
         val PART: EnumProperty<Part> = EnumProperty.create("part", Part::class.java)
@@ -63,12 +64,16 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
                 .setValue(PART, Part.MIDDLE)
                 .setValue(FACING, Direction.NORTH)
                 .setValue(CONNECTED, false)
+                .setValue(WATERLOGGED, false)
         )
     }
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
-        builder.add(PART, FACING, CONNECTED)
+        builder.add(PART, FACING, CONNECTED, WATERLOGGED)
     }
+
+    override fun getFluidState(state: BlockState): FluidState =
+        waterloggedFluid(state) ?: super.getFluidState(state)
 
     override fun getShape(state: BlockState, level: BlockGetter, pos: BlockPos, context: CollisionContext): VoxelShape = SHAPE
 
@@ -92,13 +97,13 @@ class AntennaSegmentBlock(properties: Properties) : Block(properties) {
         // AIR so the base's upward scan would stop at the gap if we don't clear these now.
         var cursor = pos.above()
         while (level.getBlockState(cursor).block is AntennaSegmentBlock) {
-            level.setBlock(cursor, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
+            level.setBlock(cursor, level.getFluidState(cursor).createLegacyBlock(), Block.UPDATE_ALL)
             cursor = cursor.above()
         }
         // Remove segments BELOW (between us and the base).
         var below = pos.below()
         while (level.getBlockState(below).block is AntennaSegmentBlock) {
-            level.setBlock(below, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
+            level.setBlock(below, level.getFluidState(below).createLegacyBlock(), Block.UPDATE_ALL)
             below = below.below()
         }
         // Destroy the base, drops antenna item + inventory via the base's onRemove.

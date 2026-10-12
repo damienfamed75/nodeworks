@@ -21,7 +21,11 @@ import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.entity.BlockEntityTicker
 import net.minecraft.world.level.block.entity.BlockEntityType
+import net.minecraft.world.item.context.BlockPlaceContext
+import net.minecraft.world.level.block.SimpleWaterloggedBlock
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.material.FluidState
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
 import net.minecraft.world.phys.shapes.VoxelShape
@@ -34,7 +38,7 @@ import kotlin.math.floor
  * Connects to the network via lasers. One per network.
  * Breaking this block takes the entire network offline.
  */
-class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(properties) {
+class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(properties), SimpleWaterloggedBlock {
 
     companion object {
         val CODEC: MapCodec<NetworkControllerBlock> = simpleCodec(::NetworkControllerBlock)
@@ -45,6 +49,20 @@ class NetworkControllerBlock(properties: Properties) : BaseEntityBlock(propertie
         // fixes the per-face darkening when something is placed next to it.
         val SHAPE: VoxelShape = Block.box(1.0, 0.0, 1.0, 15.0, 16.0, 15.0)
     }
+
+    init {
+        registerDefaultState(stateDefinition.any().setValue(WATERLOGGED, false))
+    }
+
+    override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
+        builder.add(WATERLOGGED)
+    }
+
+    override fun getStateForPlacement(context: BlockPlaceContext): BlockState =
+        defaultBlockState().setValue(WATERLOGGED, context.placedInWater())
+
+    override fun getFluidState(state: BlockState): FluidState =
+        waterloggedFluid(state) ?: super.getFluidState(state)
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL

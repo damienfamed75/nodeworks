@@ -19,10 +19,12 @@ import net.minecraft.world.level.BlockGetter
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.BaseEntityBlock
 import net.minecraft.world.level.block.Block
-import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.RenderShape
 import net.minecraft.world.level.block.entity.BlockEntity
+import net.minecraft.world.level.block.SimpleWaterloggedBlock
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.material.FluidState
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
 import net.minecraft.world.phys.shapes.Shapes
@@ -33,7 +35,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * all gameplay logic, the four [AntennaSegmentBlock]s above it are purely decorative
  * and forward interactions back down.
  */
-class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties) {
+class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties), SimpleWaterloggedBlock {
 
     companion object {
         val CODEC: MapCodec<BroadcastAntennaBlock> = simpleCodec(::BroadcastAntennaBlock)
@@ -45,6 +47,17 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
          *  y+1..y+3 → segment MIDDLE, y+4 → segment TOP. */
         private const val STACK_HEIGHT = 4
     }
+
+    init {
+        registerDefaultState(stateDefinition.any().setValue(WATERLOGGED, false))
+    }
+
+    override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
+        builder.add(WATERLOGGED)
+    }
+
+    override fun getFluidState(state: BlockState): FluidState =
+        waterloggedFluid(state) ?: super.getFluidState(state)
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
@@ -61,7 +74,7 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
         for (i in 1..STACK_HEIGHT) {
             if (!level.getBlockState(pos.above(i)).canBeReplaced(context)) return null
         }
-        return defaultBlockState()
+        return defaultBlockState().setValue(WATERLOGGED, context.placedInWater())
     }
 
     override fun setPlacedBy(level: Level, pos: BlockPos, state: BlockState, placer: LivingEntity?, stack: ItemStack) {
@@ -69,9 +82,13 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
         if (level.isClientSide) return
         val segment = ModBlocks.ANTENNA_SEGMENT.defaultBlockState()
         for (i in 1..3) {
-            level.setBlock(pos.above(i), segment.setValue(AntennaSegmentBlock.PART, AntennaSegmentBlock.Part.MIDDLE), Block.UPDATE_ALL)
+            val p = pos.above(i)
+            level.setBlock(p, segment.setValue(AntennaSegmentBlock.PART, AntennaSegmentBlock.Part.MIDDLE)
+                .setValue(WATERLOGGED, isWaterAt(level, p)), Block.UPDATE_ALL)
         }
-        level.setBlock(pos.above(STACK_HEIGHT), segment.setValue(AntennaSegmentBlock.PART, AntennaSegmentBlock.Part.TOP), Block.UPDATE_ALL)
+        val top = pos.above(STACK_HEIGHT)
+        level.setBlock(top, segment.setValue(AntennaSegmentBlock.PART, AntennaSegmentBlock.Part.TOP)
+            .setValue(WATERLOGGED, isWaterAt(level, top)), Block.UPDATE_ALL)
     }
 
     override fun useWithoutItem(
@@ -98,7 +115,7 @@ class BroadcastAntennaBlock(properties: Properties) : BaseEntityBlock(properties
         if (entity != null) Containers.dropContents(level, pos, entity)
         var cursor = pos.above()
         while (level.getBlockState(cursor).block is AntennaSegmentBlock) {
-            level.setBlock(cursor, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
+            level.setBlock(cursor, level.getFluidState(cursor).createLegacyBlock(), Block.UPDATE_ALL)
             cursor = cursor.above()
         }
         super.affectNeighborsAfterRemoval(state, level, pos, movedByPiston)

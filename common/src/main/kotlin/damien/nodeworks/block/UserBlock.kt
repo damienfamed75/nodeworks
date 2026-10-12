@@ -25,8 +25,10 @@ import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.entity.BlockEntityTicker
 import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.BlockGetter
+import net.minecraft.world.level.block.SimpleWaterloggedBlock
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.StateDefinition
+import net.minecraft.world.level.material.FluidState
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.phys.shapes.CollisionContext
@@ -40,7 +42,7 @@ import net.minecraft.world.phys.shapes.VoxelShape
  * companion to Breaker / Placer for closing automation loops that need a
  * use-on-block or use-on-entity step.
  */
-class UserBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable {
+class UserBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchable, SimpleWaterloggedBlock {
 
     companion object {
         val CODEC: MapCodec<UserBlock> = simpleCodec(::UserBlock)
@@ -55,12 +57,15 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchabl
     }
 
     init {
-        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH))
+        registerDefaultState(stateDefinition.any().setValue(FACING, Direction.NORTH).setValue(WATERLOGGED, false))
     }
 
     override fun createBlockStateDefinition(builder: StateDefinition.Builder<Block, BlockState>) {
-        builder.add(FACING)
+        builder.add(FACING, WATERLOGGED)
     }
+
+    override fun getFluidState(state: BlockState): FluidState =
+        waterloggedFluid(state) ?: super.getFluidState(state)
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
     override fun getRenderShape(state: BlockState): RenderShape = RenderShape.MODEL
@@ -79,6 +84,7 @@ class UserBlock(properties: Properties) : BaseEntityBlock(properties), Wrenchabl
 
     override fun getStateForPlacement(context: BlockPlaceContext): BlockState? =
         defaultBlockState().setValue(FACING, context.nearestLookingDirection.opposite)
+            .setValue(WATERLOGGED, context.placedInWater())
 
     override fun newBlockEntity(pos: BlockPos, state: BlockState): BlockEntity =
         UserBlockEntity(pos, state)
