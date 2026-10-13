@@ -245,7 +245,9 @@ class ImportChestBlockEntity(
                     val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
                     val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
                         .getKey(stack.item)?.toString()
-                    val hasData = !stack.componentsPatch.isEmpty
+                    // Read before shrinking, an emptied stack reports an empty patch.
+                    val patch = stack.componentsPatch
+                    val hasData = !patch.isEmpty
                     if (cap != null && !cap.acceptsItem(stack, registries)) continue
                     val storage = NetworkStorageHelper.getStorage(level, card) ?: continue
                     val moved = damien.nodeworks.platform.PlatformServices.storage.insertItemStack(
@@ -254,7 +256,7 @@ class ImportChestBlockEntity(
                     if (moved > 0) {
                         stack.shrink(moved)
                         if (itemId != null) {
-                            cache?.onInserted(itemId, hasData, moved.toLong(), stack.componentsPatch)
+                            cache?.onInserted(itemId, hasData, moved.toLong(), patch)
                         }
                         roundRobinIndex = (idx + 1).mod(cards.size)
                         changed = true
