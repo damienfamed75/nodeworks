@@ -1,5 +1,6 @@
 plugins {
     id("net.neoforged.moddev")
+    id("com.gradleup.shadow") version "9.6.1"
 }
 
 base {
@@ -97,6 +98,10 @@ repositories {
 // own configuration so it doesn't bloat the production jar or normal dev runs,
 // but wired into NeoForge's `additionalRuntimeClasspath` so the headless
 // `runGuideExport` Minecraft launch can resolve it. Mirrors AE2's setup.
+// Libraries copied (relocated) into the release jar by shadowJar. Non-transitive so
+// only what is listed here is shaded, never the rest of the runtime classpath.
+val shade: Configuration by configurations.creating { isTransitive = false }
+
 val guideExportOnly: Configuration by configurations.creating
 configurations.compileClasspath.get().extendsFrom(guideExportOnly)
 configurations.runtimeClasspath.get().extendsFrom(guideExportOnly)
@@ -111,9 +116,10 @@ dependencies {
     // KotlinForForge
     implementation("thedarkcolour:kotlinforforge-neoforge:${providers.gradleProperty("kotlinforforge_version").get()}")
 
-    // Lua scripting engine
+    // Lua scripting engine. Shaded into the jar by shadowJar below rather than
+    // nested, dev runs and tests use the unrelocated library from implementation.
     implementation("org.luaj:luaj-jse:3.0")
-    jarJar("org.luaj:luaj-jse:3.0")
+    shade("org.luaj:luaj-jse:3.0")
 
     // GuideME, in-game guidebook (see docs/authoring.md). Not bundled, players install
     // it as a required dependency, the same way AE2 ships it.
@@ -152,4 +158,39 @@ tasks.processResources {
 tasks.jar {
     from(project(":common").sourceSets.main.get().output)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// The release jar. LuaJ is shaded in and relocated: a nested or unrelocated copy would
+// share the org.luaj package with any other mod bundling LuaJ, and two modules exporting
+// one package is a hard crash at boot. Only the classes Nodeworks can reach are kept, the
+// rest (process spawning, Java reflection bridge, runtime bytecode compiler, JSR-223
+// engine) are never loaded and only trip malware scanners on upload.
+tasks.shadowJar {
+    archiveClassifier.set("")
+    configurations = listOf(shade)
+    from(project(":common").sourceSets.main.get().output)
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    relocate("org.luaj", "damien.nodeworks.shadow.luaj")
+
+    exclude("lua.class", "luac.class", "luajc.class", "luajc$*.class")
+    exclude("org/luaj/vm2/ast/**", "org/luaj/vm2/parser/**", "org/luaj/vm2/luajc/**", "org/luaj/vm2/script/**")
+    exclude("org/luaj/vm2/lib/CoroutineLib*", "org/luaj/vm2/lib/IoLib*", "org/luaj/vm2/lib/OsLib*")
+    exclude(
+        "org/luaj/vm2/lib/jse/Coerce*", "org/luaj/vm2/lib/jse/Java*", "org/luaj/vm2/lib/jse/JseIoLib*",
+        "org/luaj/vm2/lib/jse/JseOsLib*", "org/luaj/vm2/lib/jse/JsePlatform*", "org/luaj/vm2/lib/jse/JseProcess*",
+        "org/luaj/vm2/lib/jse/LuajavaLib*",
+    )
+    // Names a provider class that is stripped above, ServiceLoader would throw for any
+    // mod that enumerates javax.script engines.
+    exclude("META-INF/services/javax.script.ScriptEngineFactory")
+}
+
+// The unshaded jar keeps a classifier so it never collides with the release jar name.
+tasks.jar {
+    archiveClassifier.set("slim")
+}
+
+tasks.assemble {
+    dependsOn(tasks.shadowJar)
 }
