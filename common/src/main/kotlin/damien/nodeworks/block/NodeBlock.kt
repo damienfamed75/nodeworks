@@ -212,6 +212,8 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties), Simp
             }
             if (emptySlot == -1) return InteractionResult.TRY_WITH_EMPTY_HAND
             if (level.isClientSide) return InteractionResult.SUCCESS
+            // Read before shrinking, the last card in hand leaves an empty stack whose item is AIR.
+            val card = stack.item as damien.nodeworks.card.NodeCard
             be.setStack(target.side, emptySlot, stack.copyWithCount(1))
             if (!player.abilities.instabuild) stack.shrink(1)
             level.playSound(
@@ -220,7 +222,7 @@ open class NodeBlock(properties: Properties) : BaseEntityBlock(properties), Simp
                 net.minecraft.sounds.SoundSource.BLOCKS,
                 1.0f, 1.0f,
             )
-            spawnCardPlacementPuff(level, target.nodePos, target.side, stack.item as damien.nodeworks.card.NodeCard)
+            spawnCardPlacementPuff(level, target.nodePos, target.side, card)
             return InteractionResult.SUCCESS
         }
 
