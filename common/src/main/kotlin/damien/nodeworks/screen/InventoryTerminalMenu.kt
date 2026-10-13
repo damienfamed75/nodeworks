@@ -1025,11 +1025,13 @@ class InventoryTerminalMenu(
         // get greedy-matched to all 8 slots of a chest pattern, leaving
         // the rest empty.
         val claimed = BooleanArray(ingredients.size)
+        // Built after the clear so items just pushed out of the grid count.
+        val stock = GridFillStock()
         for (slot in 0 until 9) {
             if (slot >= craftingContainer.containerSize) break
             val fallbackId = fallback.getOrNull(slot).orEmpty()
             if (fallbackId.isEmpty()) continue
-            val taken = takeOneOf(pickCandidatesFor(fallbackId, ingredients, claimed)) ?: continue
+            val taken = stock.take(pickCandidatesFor(fallbackId, ingredients, claimed)) ?: continue
             craftingContainer.setItem(slot, taken)
         }
 
@@ -1158,28 +1160,92 @@ class InventoryTerminalMenu(
         return merged
     }
 
-    /** Try each candidate id in order and return a 1-count [ItemStack] the
-     *  moment one resolves. Mutates the source inventory / network in place,
-     *  so successive calls see the running total drained: candidate
-     *  `oak_planks` resolves until oak runs out, then `birch_planks` picks
-     *  up the rest. */
-    private fun takeOneOf(candidates: List<String>): ItemStack? {
-        for (itemId in candidates) {
-            if (itemId.isEmpty()) continue
-            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: continue
-            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: continue
+    /** Sources one item per call for a JEI grid fill. Pockets before network,
+     *  and within each source the most-stocked candidate first, so a chest
+     *  fills with a single plank type whenever one covers it.
+     *
+     *  Each candidate list is ranked once and tracked locally from there.
+     *  Re-ranking after every take would alternate near-equal types slot by
+     *  slot, and re-querying would rescan storage for every slot. Network
+     *  counts are read lazily, only for candidates whose pockets ran dry, and
+     *  at most once per item id for the whole fill. */
+    private inner class GridFillStock {
+        // Plain stacks only, the same ones [takeFromPocket] can take.
+        private val pocket = HashMap<String, Int>()
+        private val network = HashMap<String, Long>()
+        private val pocketRank = HashMap<List<String>, List<String>>()
+        private val networkRank = HashMap<List<String>, List<String>>()
 
-            val invSlot = playerInventory.findSlotMatchingItem(ItemStack(item))
-            if (invSlot >= 0) {
-                return playerInventory.getItem(invSlot).split(1)
+        init {
+            for (i in 0 until PLAYER_SLOT_COUNT) {
+                if (isHeldPortableInvSlot(i)) continue
+                val stack = playerInventory.getItem(i)
+                if (stack.isEmpty || !ItemStack.isSameItemSameComponents(stack, ItemStack(stack.item))) continue
+                val id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
+                pocket.merge(id, stack.count, Int::plus)
+            }
+        }
+
+        fun take(candidates: List<String>): ItemStack? {
+            val fromPocket = pocketRank.getOrPut(candidates) {
+                candidates.filter { (pocket[it] ?: 0) > 0 }.sortedByDescending { pocket[it] ?: 0 }
+            }
+            for (id in fromPocket) {
+                val have = pocket[id] ?: 0
+                if (have <= 0) continue
+                val taken = takeFromPocket(id)
+                // A miss means the tally drifted, retire the id rather than retry it.
+                pocket[id] = if (taken != null) have - 1 else 0
+                if (taken != null) return taken
             }
 
-            val lvl = serverLevel ?: continue
-            val snap = snapshot ?: continue
-            val stacks = extractRealStacks(lvl, snap, cache, itemId, 1L)
-            if (stacks.isNotEmpty()) return stacks.first()
+            val lvl = serverLevel ?: return null
+            val snap = snapshot ?: return null
+            val fromNetwork = networkRank.getOrPut(candidates) { rankNetwork(candidates) }
+            for (id in fromNetwork) {
+                val have = network[id] ?: 0L
+                if (have <= 0L) continue
+                val taken = extractRealStacks(lvl, snap, cache, id, 1L).firstOrNull()
+                network[id] = if (taken != null) have - 1 else 0L
+                if (taken != null) return taken
+            }
+            return null
         }
-        return null
+
+        /** Highest network stock first, ties keep tag order (stable sort).
+         *  Zero-stock candidates are dropped so a slot nothing can fill
+         *  doesn't scan every storage card once per candidate. Without a
+         *  cache there's nothing to rank by, so tag order and a try each. */
+        private fun rankNetwork(candidates: List<String>): List<String> {
+            // Fallback ids come from the client. Only registered items get
+            // through, anything else (`*`, `#tag`, `/regex/`) would make
+            // count() walk every entry or run a client-supplied regex.
+            val valid = candidates.filter { raw ->
+                val id = net.minecraft.resources.Identifier.tryParse(raw)
+                id != null && net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(id)
+            }
+            val c = cache
+            if (c == null) {
+                for (id in valid) network.putIfAbsent(id, Long.MAX_VALUE)
+                return valid
+            }
+            for (id in valid) {
+                if (id !in network) network[id] = c.count(id)
+            }
+            return valid.filter { (network[it] ?: 0L) > 0L }.sortedByDescending { network[it] ?: 0L }
+        }
+
+        private fun takeFromPocket(itemId: String): ItemStack? {
+            val id = net.minecraft.resources.Identifier.tryParse(itemId) ?: return null
+            val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) ?: return null
+            val template = ItemStack(item)
+            for (i in 0 until PLAYER_SLOT_COUNT) {
+                if (isHeldPortableInvSlot(i)) continue
+                val stack = playerInventory.getItem(i)
+                if (!stack.isEmpty && ItemStack.isSameItemSameComponents(stack, template)) return stack.split(1)
+            }
+            return null
+        }
     }
 
     /**
