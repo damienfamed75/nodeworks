@@ -113,6 +113,9 @@ class InventoryTerminalMenu(
     private var autoPullPattern: List<String>? = null  // captured right before craft output is taken
     private var suppressSlotsChanged = false
     private var pendingAutoPull = false  // deferred to next tick to avoid MC packet reconciliation conflicts
+    // Scoped to one [clicked] call. Any other route into [quickMoveStack]
+    // (other mods, vanilla paths) gets the one-stack default.
+    private var craftAllOnQuickMove = false
     val craftingContainer = TransientCraftingContainer(this, 3, 3)
     val resultContainer = ResultContainer()
 
@@ -402,6 +405,10 @@ class InventoryTerminalMenu(
         /** Link crystal slot index for Handheld menus. Absent (no slot) for fixed
          *  terminals, only valid when `menu.hasCrystalSlot` is true. */
         const val CRYSTAL_SLOT = 46
+        /** QUICK_MOVE button on [CRAFT_OUTPUT_SLOT] meaning "craft as many as fit"
+         *  (Ctrl+Shift-click). Buttons 0/1 craft one stack's worth. Vanilla only
+         *  acts on 0/1, so [clicked] maps this back to 0 before delegating. */
+        const val CRAFT_ALL_BUTTON = 2
         private const val BUCKET_MB = 1000L
 
         /**
@@ -458,13 +465,23 @@ class InventoryTerminalMenu(
             // (always, in creative) and would void the overflow. The 4096
             // bound covers a full 9-input 64-per-stack grid.
             if (serverLevel != null) {
+                var crafted = 0
                 var safety = 0
                 while (slot.hasItem() && safety < 4096) {
                     safety++
                     val nextResult = slot.item.copy()
+                    // Leftovers (buckets etc.) can make the grid match a
+                    // different recipe. Same stop rule as vanilla's loop.
+                    if (!ItemStack.isSameItem(nextResult, firstResult)) break
+                    // One stack's worth unless Ctrl+Shift. Counted in items so
+                    // a 4-per-craft recipe stops at 64, and the first craft
+                    // always runs so tools and oversized yields still work.
+                    if (!craftAllOnQuickMove && crafted > 0 &&
+                        crafted + nextResult.count > firstResult.maxStackSize) break
                     if (!canFitFully(nextResult)) break
                     val inserted = nextResult.copy()
                     playerInventory.add(inserted)
+                    crafted += nextResult.count
                     // The gate guarantees a full insert. Route any leftover
                     // to network storage rather than voiding it.
                     if (!inserted.isEmpty) {
@@ -527,7 +544,17 @@ class InventoryTerminalMenu(
         if (slotId == CRAFT_OUTPUT_SLOT && !resultContainer.getItem(0).isEmpty && autoPull) {
             autoPullPattern = snapshotCraftPattern()
         }
-        super.clicked(slotId, button, clickType, player)
+        val craftAll = slotId == CRAFT_OUTPUT_SLOT &&
+            clickType == net.minecraft.world.inventory.ContainerInput.QUICK_MOVE &&
+            button == CRAFT_ALL_BUTTON
+        // try/finally so a throw mid-craft can't leave the flag set and turn
+        // the next plain shift-click into a craft-all.
+        craftAllOnQuickMove = craftAll
+        try {
+            super.clicked(slotId, if (craftAll) 0 else button, clickType, player)
+        } finally {
+            craftAllOnQuickMove = false
+        }
         if (autoPullPattern != null) {
             pendingAutoPull = true
         }

@@ -41,6 +41,8 @@ And in the center is a collapsible crafting grid with buttons to:
 - Distribute ingredients evenly in the crafting grid
 - Push ingredients in the crafting grid to the network storage
 
+Shift-clicking the crafting result crafts one stack into your inventory. `Ctrl` + Shift-click crafts as many as will fit.
+
 ## Recipes
 
 <RecipeFor id="inventory_terminal" />

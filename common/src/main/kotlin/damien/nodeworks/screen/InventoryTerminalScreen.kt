@@ -1320,8 +1320,11 @@ class InventoryTerminalScreen(
             }
             // Output slot
             if (isCraftOutputAt(mx, my)) {
-                val clickType = if (hasShiftDownCompat()) net.minecraft.world.inventory.ContainerInput.QUICK_MOVE else net.minecraft.world.inventory.ContainerInput.PICKUP
-                slotClicked(menu.slots[InventoryTerminalMenu.CRAFT_OUTPUT_SLOT], InventoryTerminalMenu.CRAFT_OUTPUT_SLOT, button, clickType)
+                val shift = hasShiftDownCompat()
+                val clickType = if (shift) net.minecraft.world.inventory.ContainerInput.QUICK_MOVE else net.minecraft.world.inventory.ContainerInput.PICKUP
+                // Shift crafts one stack, Ctrl+Shift crafts as many as fit.
+                val clickButton = if (shift && hasControlDownCompat()) InventoryTerminalMenu.CRAFT_ALL_BUTTON else button
+                slotClicked(menu.slots[InventoryTerminalMenu.CRAFT_OUTPUT_SLOT], InventoryTerminalMenu.CRAFT_OUTPUT_SLOT, clickButton, clickType)
                 return true
             }
         }
