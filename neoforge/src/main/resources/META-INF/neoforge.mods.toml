@@ -35,7 +35,7 @@ side = "BOTH"
 [[dependencies.nodeworks]]
 modId = "guideme"
 type = "required"
-versionRange = "[26.1,)"
+versionRange = "[26.1.11-beta,)"
 side = "CLIENT"
 
 # Applied Energistics 2, optional. With it present, a Storage Card facing an

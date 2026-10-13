@@ -115,10 +115,9 @@ dependencies {
     implementation("org.luaj:luaj-jse:3.0")
     jarJar("org.luaj:luaj-jse:3.0")
 
-    // GuideME, in-game guidebook (see docs/authoring.md).
-    // jarJar-bundled so players don't need to install it separately.
+    // GuideME, in-game guidebook (see docs/authoring.md). Not bundled, players install
+    // it as a required dependency, the same way AE2 ships it.
     implementation("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
-    jarJar("org.appliedenergistics:guideme:${providers.gradleProperty("guideme_version").get()}")
 
     // FFmpeg/JavaCPP, used only by `runGuideExport` for WebP encoding of
     // `<GameScene>` snapshots. Pulled via the `guideExportOnly` configuration
