@@ -140,9 +140,18 @@ object NeoForgeTerminalPackets {
 
     // --- Server handlers ---
 
+    /** These packets act on a position the client names, so a modified client could
+     *  target any loaded terminal in the dimension. The GUIs that send them close past
+     *  8 blocks, the extra margin covers client and server disagreeing on position. */
+    private const val MAX_PACKET_DISTANCE_SQ = 16.0 * 16.0
+
+    private fun inReach(player: net.minecraft.world.entity.player.Player, pos: BlockPos): Boolean =
+        player.distanceToSqr(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) <= MAX_PACKET_DISTANCE_SQ
+
     fun handleRunScript(payload: RunScriptPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
+            if (!inReach(player, payload.terminalPos)) return@enqueueWork
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             startEngine(level, payload.terminalPos)
         }
@@ -151,6 +160,7 @@ object NeoForgeTerminalPackets {
     fun handleStopScript(payload: StopScriptPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
+            if (!inReach(player, payload.terminalPos)) return@enqueueWork
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val gp = GlobalPos.of(level.dimension(), payload.terminalPos)
             activeEngines.remove(gp)?.stop()
@@ -161,6 +171,7 @@ object NeoForgeTerminalPackets {
     fun handleSaveScript(payload: SaveScriptPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
+            if (!inReach(player, payload.terminalPos)) return@enqueueWork
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
             terminal.setScript(payload.scriptName, payload.scriptText)
@@ -170,6 +181,7 @@ object NeoForgeTerminalPackets {
     fun handleCreateScriptTab(payload: CreateScriptTabPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
+            if (!inReach(player, payload.terminalPos)) return@enqueueWork
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
             terminal.createScript(payload.scriptName)
@@ -179,6 +191,7 @@ object NeoForgeTerminalPackets {
     fun handleDeleteScriptTab(payload: DeleteScriptTabPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
+            if (!inReach(player, payload.terminalPos)) return@enqueueWork
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
             terminal.deleteScript(payload.scriptName)
@@ -188,6 +201,7 @@ object NeoForgeTerminalPackets {
     fun handleOpenInstructionSet(payload: OpenInstructionSetPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
+            if (!inReach(player, payload.nodePos)) return@enqueueWork
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val serverPlayer = player as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
             val nodeEntity = level.getBlockEntity(payload.nodePos) as? NodeBlockEntity ?: return@enqueueWork
@@ -212,6 +226,7 @@ object NeoForgeTerminalPackets {
     fun handleSetLayout(payload: SetLayoutPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
+            if (!inReach(player, payload.terminalPos)) return@enqueueWork
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val entity = level.getBlockEntity(payload.terminalPos)
             when (entity) {
@@ -227,6 +242,7 @@ object NeoForgeTerminalPackets {
     fun handleToggleAutoRun(payload: ToggleAutoRunPayload, context: IPayloadContext) {
         context.enqueueWork {
             val player = context.player()
+            if (!inReach(player, payload.terminalPos)) return@enqueueWork
             val level = player.level() as? ServerLevel ?: return@enqueueWork
             val terminal = level.getBlockEntity(payload.terminalPos) as? TerminalBlockEntity ?: return@enqueueWork
             terminal.setAutoRun(payload.enabled)
