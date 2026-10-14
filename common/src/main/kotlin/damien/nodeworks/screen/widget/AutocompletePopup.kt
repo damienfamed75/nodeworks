@@ -413,6 +413,21 @@ class AutocompletePopup(
     }
 
     companion object {
+        /** Lists at least this long are treated as registry id lists, whose rows are cached. */
+        private const val CACHED_ROWS_MIN = 256
+
+        /** Suggestion rows for the registry id lists, by list identity. Those lists come
+         *  from [damien.nodeworks.client.RegistryIdCache] and only change on tag reload,
+         *  so their rows are built once instead of once per keystroke. */
+        private val cachedRows = java.util.IdentityHashMap<List<String>, MutableMap<Kind, List<Suggestion>>>()
+
+        private fun rowsFor(items: List<String>, kind: Kind): List<Suggestion> {
+            // Old snapshots' lists would otherwise stay reachable forever.
+            if (cachedRows.size > 8 && items !in cachedRows) cachedRows.clear()
+            return cachedRows.getOrPut(items) { HashMap() }
+                .getOrPut(kind) { items.map { Suggestion(it, it, kind = kind) } }
+        }
+
         /** Size of the square Kind badge drawn in each row (px). Chosen so the single-letter
          *  glyph centers neatly with the default font. */
         private const val BADGE_SIZE = 9
@@ -537,8 +552,8 @@ class AutocompletePopup(
     }
 
     private fun fuzzyStrings(query: String, items: List<String>, kind: Kind = Kind.STRING): List<Suggestion> {
-        return if (query.isEmpty()) items.map { suggest(it, kind = kind) }
-        else items.map { suggest(it, kind = kind) }.let { FuzzyMatch.filter(query, it) }
+        val rows = if (items.size >= CACHED_ROWS_MIN) rowsFor(items, kind) else items.map { suggest(it, kind = kind) }
+        return if (query.isEmpty()) rows else FuzzyMatch.filter(query, rows)
     }
 
     // ========== Cursor Context Parser ==========
@@ -2052,7 +2067,7 @@ class AutocompletePopup(
             // suggestions because vanilla doesn't care about ingredient order, there's no
             // "flip-flop" to resolve in the completion layer itself.
             ctx.funcExpr.endsWith("network:shapeless") -> {
-                val suggestions = itemIds.map { Suggestion(it, it, kind = Kind.STRING) }
+                val suggestions = rowsFor(itemIds, Kind.STRING)
                 FuzzyMatch.filter(ctx.partial, suggestions).take(20)
             }
 

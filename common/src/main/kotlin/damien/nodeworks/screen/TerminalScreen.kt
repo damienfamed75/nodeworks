@@ -792,34 +792,14 @@ class TerminalScreen(
         val scannedPlacerAliases = scannedPlacerEntries.map { it.first }
         val scannedUserAliases = scannedUserEntries.map { it.first }
 
-        // Item + fluid tag/id lists from the client registry, 26.1 replaces `getTagNames()`
-        // (Stream<TagKey>) with `getTags()` (Stream<HolderSet.Named<T>>), the
-        // tag key is exposed via key(), and its Identifier via the record
-        // component `location`.
-        val scannedTags = net.minecraft.core.registries.BuiltInRegistries.ITEM.getTags()
-            .map { it.key().location.toString() }
-            .sorted()
-            .toList()
-        val scannedFluidTags = net.minecraft.core.registries.BuiltInRegistries.FLUID.getTags()
-            .map { it.key().location.toString() }
-            .sorted()
-            .toList()
-        val scannedItemIds = net.minecraft.core.registries.BuiltInRegistries.ITEM.keySet()
-            .map { it.toString() }
-            .sorted()
-            .toList()
-        // Filter out minecraft:empty and flowing variants, users almost always want source
-        // fluids (minecraft:water, not minecraft:flowing_water) since that's what shows up
-        // inside tanks.
-        val scannedFluidIds = net.minecraft.core.registries.BuiltInRegistries.FLUID.keySet()
-            .map { it.toString() }
-            .filter { !it.endsWith(":empty") && !it.contains(":flowing_") }
-            .sorted()
-            .toList()
-        val scannedBlockIds = net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet()
-            .map { it.toString() }
-            .sorted()
-            .toList()
+        // Prebuilt in the background at login, sorting every registry here stalled
+        // each open in large packs.
+        val registryIds = damien.nodeworks.client.RegistryIdCache.get()
+        val scannedTags = registryIds.itemTags
+        val scannedFluidTags = registryIds.fluidTags
+        val scannedItemIds = registryIds.itemIds
+        val scannedFluidIds = registryIds.fluidIds
+        val scannedBlockIds = registryIds.blockIds
 
         cards = scannedCards
         itemTags = scannedTags

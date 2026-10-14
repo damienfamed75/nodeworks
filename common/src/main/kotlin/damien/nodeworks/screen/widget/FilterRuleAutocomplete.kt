@@ -4,7 +4,7 @@ import damien.nodeworks.compat.drawString
 import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
-import net.minecraft.core.registries.BuiltInRegistries
+import damien.nodeworks.client.RegistryIdCache
 
 /**
  * Lightweight filter-string autocomplete dropdown for a single [EditBox].
@@ -32,37 +32,9 @@ class FilterRuleAutocomplete(private val font: Font) {
         /** Single row pixel height. Tight on purpose so 8 rows fit in ~88 px. */
         const val ROW_H = 11
 
-        // Registry-backed completion sources, computed once. Kept lazy so a
-        // dedicated server with no item registry doesn't crash, the widget
-        // is client-side anyway but the lazy avoids paying for registry walk
-        // until the first card GUI opens.
-        private val itemIds: List<String> by lazy {
-            BuiltInRegistries.ITEM.keySet().map { it.toString() }.sorted()
-        }
-
-        private val fluidIds: List<String> by lazy {
-            BuiltInRegistries.FLUID.keySet()
-                .map { it.toString() }
-                .filter { !it.endsWith(":empty") && !it.contains(":flowing_") }
-                .sorted()
-        }
-
-        private val itemTags: List<String> by lazy {
-            BuiltInRegistries.ITEM.getTags().map { "#" + it.key().location.toString() }.sorted().toList()
-        }
-
-        private val fluidTags: List<String> by lazy {
-            BuiltInRegistries.FLUID.getTags().map { "#" + it.key().location.toString() }.sorted().toList()
-        }
-
-        /** Component-type ids for `id[...]` component-arg completion. Sorted
-         *  so the popup reads alphabetically without a fuzzy match. */
-        private val componentTypeIds: List<String> by lazy {
-            BuiltInRegistries.DATA_COMPONENT_TYPE.keySet().map { it.toString() }.sorted()
-        }
-
-        /** Sigils + bare wildcard for the empty-partial case. */
-        private val sigils: List<String> = listOf("*", "\$item:", "\$fluid:")
+        // Registry-backed pools come prebuilt from [RegistryIdCache], which sorts
+        // and lowercases them in the background at login.
+        private val sigilPool = RegistryIdCache.SearchPool(listOf("\$item:", "\$fluid:"))
     }
 
     private var anchor: EditBox? = null
@@ -102,8 +74,8 @@ class FilterRuleAutocomplete(private val font: Font) {
             if (!segment.contains('=')) {
                 val negated = segment.startsWith('!')
                 val staticPrefix = partial.substring(0, partial.length - segment.length)
-                val pool = componentTypeIds.map { staticPrefix + (if (negated) "!" else "") + it }
-                return rebuild(staticPrefix + segment, pool)
+                val pool = RegistryIdCache.get().componentTypeIds.map { staticPrefix + (if (negated) "!" else "") + it }
+                return rebuild(staticPrefix + segment, RegistryIdCache.SearchPool(pool))
             }
             // Inside a value, no suggestions, dismiss the popup.
             suggestions = emptyList()
@@ -111,34 +83,29 @@ class FilterRuleAutocomplete(private val font: Font) {
             return
         }
 
+        val ids = RegistryIdCache.get()
         val pool = when {
-            partial.startsWith("#") -> itemTags + fluidTags
-            partial.startsWith("\$item:") -> {
-                val inner = partial.removePrefix("\$item:")
-                return rebuild(inner, itemIds.map { "\$item:$it" })
-            }
-            partial.startsWith("\$fluid:") -> {
-                val inner = partial.removePrefix("\$fluid:")
-                return rebuild(inner, fluidIds.map { "\$fluid:$it" })
-            }
-            partial.startsWith("\$") -> listOf("\$item:", "\$fluid:")
-            else -> sigils + itemIds + itemTags + fluidIds.map { "\$fluid:$it" } + fluidTags
+            partial.startsWith("#") -> ids.filterTags
+            partial.startsWith("\$item:") -> return rebuild(partial.removePrefix("\$item:"), ids.filterItemSigil)
+            partial.startsWith("\$fluid:") -> return rebuild(partial.removePrefix("\$fluid:"), ids.filterFluidSigil)
+            partial.startsWith("\$") -> sigilPool
+            else -> ids.filterAll
         }
         rebuild(partial, pool)
     }
 
-    private fun rebuild(query: String, pool: List<String>) {
+    private fun rebuild(query: String, pool: RegistryIdCache.SearchPool) {
         suggestions = if (query.isEmpty()) {
-            pool.take(MAX_VISIBLE * 4)
+            pool.values.take(MAX_VISIBLE * 4)
         } else {
             val q = query.lowercase()
-            pool
+            pool.values.indices
                 .asSequence()
-                .filter { it.lowercase() != q }
-                .map { it to scoreFuzzy(q, it.lowercase()) }
+                .filter { pool.lower[it] != q }
+                .map { it to scoreFuzzy(q, pool.lower[it]) }
                 .filter { it.second > 0 }
                 .sortedByDescending { it.second }
-                .map { it.first }
+                .map { pool.values[it.first] }
                 .take(MAX_VISIBLE * 4)
                 .toList()
         }

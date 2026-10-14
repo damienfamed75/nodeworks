@@ -89,6 +89,16 @@ object NeoForgeClientSetup {
             damien.nodeworks.item.NetworkWrenchItem.clientSelectedPos = null
         }
 
+        // Build autocomplete id lists in the background before any screen needs them.
+        // The client-side tag event fires on the client thread on join and /reload, in
+        // singleplayer too. Login is a fallback in case tags were bound before it fired.
+        NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingIn ->
+            damien.nodeworks.client.RegistryIdCache.preload()
+        }
+        NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.event.TagsUpdatedEvent.ClientPacketReceived ->
+            damien.nodeworks.client.RegistryIdCache.preload()
+        }
+
         // Block other mods (JEI) from stealing key events when our terminal editor is active.
         // JEI hooks into ScreenEvent.KeyPressed.Pre which fires before Screen.keyPressed().
         // We cancel the event to prevent JEI from seeing it, then manually forward to our screen.
