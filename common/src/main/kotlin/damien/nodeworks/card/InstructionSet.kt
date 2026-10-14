@@ -71,12 +71,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
                 ?.let { ItemStack(it) }
                 ?: ItemStack.EMPTY
         }
-        val outputId = getOutput(stack)
-        val outputStack = if (outputId.isNotEmpty()) {
-            Identifier.tryParse(outputId)
-                ?.let { BuiltInRegistries.ITEM.getValue(it) }
-                ?.let { ItemStack(it, getOutputCount(stack)) }
-        } else null
+        val outputStack = getOutputStack(stack).takeIf { !it.isEmpty }?.copyWithCount(getOutputCount(stack))
         val anyInput = inputs.any { !it.isEmpty }
         if (!anyInput && outputStack == null) return java.util.Optional.empty()
         val outputs = if (outputStack != null) listOf(outputStack) else emptyList()
@@ -100,6 +95,27 @@ class InstructionSet(properties: Properties) : Item(properties) {
         fun getOutput(stack: ItemStack): String {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return ""
             return customData.copyTag().getStringOr(OUTPUT_KEY, "")
+        }
+
+        /** The recipe's output with its components, e.g. an oak barrel rather than a plain
+         *  one. Falls back to the plain output item when the card has no stored result
+         *  (saved before it existed) or the stored one doesn't match the output id. */
+        fun getOutputStack(stack: ItemStack): ItemStack {
+            val outputId = getOutput(stack)
+            if (outputId.isEmpty()) return ItemStack.EMPTY
+            val stored = stack.get(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_OUTPUT)?.stack
+            if (stored != null && !stored.isEmpty && BuiltInRegistries.ITEM.getKey(stored.item).toString() == outputId) {
+                return stored.copyWithCount(1)
+            }
+            val item = Identifier.tryParse(outputId)?.let { BuiltInRegistries.ITEM.getValue(it) } ?: return ItemStack.EMPTY
+            return ItemStack(item)
+        }
+
+        /** Store [result] as the card's output stack when it matches the saved output id.
+         *  Only adds information, the recipe data is left as it is. */
+        fun setOutputStack(stack: ItemStack, result: ItemStack) {
+            if (result.isEmpty || BuiltInRegistries.ITEM.getKey(result.item).toString() != getOutput(stack)) return
+            stack.set(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_OUTPUT, damien.nodeworks.item.InstalledCrystal(result.copyWithCount(1)))
         }
 
         /** Per-craft output count resolved when the recipe was saved. Defaults
@@ -126,6 +142,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
             output: String = "",
             outputCount: Int = 1,
             allowSubstitutions: Boolean = true,
+            outputStack: ItemStack = ItemStack.EMPTY,
         ) {
             require(recipe.size == 9)
             val tag = CompoundTag()
@@ -138,6 +155,9 @@ class InstructionSet(properties: Properties) : Item(properties) {
             tag.putInt(OUTPUT_COUNT_KEY, outputCount.coerceIn(1, 99))
             tag.putBoolean(SUBSTITUTIONS_KEY, allowSubstitutions)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+            // A stale result from the previous recipe must not outlive it.
+            stack.remove(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_OUTPUT)
+            setOutputStack(stack, outputStack)
         }
     }
 }

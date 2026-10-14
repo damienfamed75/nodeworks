@@ -57,6 +57,16 @@ object ModDataComponents {
         private set
 
     /**
+     * The real result of an Instruction Set's recipe, components included, so outputs
+     * like a Sophisticated Storage barrel show their wood type. Stored next to the
+     * recipe in custom data, never replacing it. Absent on cards saved before it
+     * existed, which then fall back to the plain output item. Reuses the
+     * value-equality stack wrapper from [PORTABLE_INVENTORY_TERMINAL_CRYSTAL].
+     */
+    lateinit var INSTRUCTION_SET_OUTPUT: DataComponentType<InstalledCrystal>
+        private set
+
+    /**
      * Register all component types. Call from the block-registry RegisterEvent after
      * blocks are registered and before items, so any item that wants a component as a
      * default value has the component available.
@@ -80,6 +90,14 @@ object ModDataComponents {
             DataComponentType.builder<BlockState>()
                 .persistent(BlockState.CODEC)
                 .networkSynchronized(ByteBufCodecs.fromCodec(BlockState.CODEC))
+                .build(),
+        )
+
+        INSTRUCTION_SET_OUTPUT = register(
+            "instruction_set_output",
+            DataComponentType.builder<InstalledCrystal>()
+                .persistent(InstalledCrystal.CODEC)
+                .networkSynchronized(InstalledCrystal.STREAM_CODEC)
                 .build(),
         )
     }

@@ -2007,12 +2007,14 @@ class ScriptEngine(
                     }
                     val id = net.minecraft.resources.Identifier.tryParse(cr.outputItemId)
                     val item = if (id != null) net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(id) else null
+                    val template = cpu.getBufferTemplate(damien.nodeworks.script.BufferKey.Key(cr.outputItemId, ""))
                     if (item != null) {
                         val maxStack = item.getDefaultMaxStackSize().toLong()
                         var stillRemaining = remaining
                         while (stillRemaining > 0L) {
                             val batch = minOf(stillRemaining, maxStack).toInt()
-                            val stack = net.minecraft.world.item.ItemStack(item, batch)
+                            val stack = template?.takeIf { it.item == item }?.copyWithCount(batch)
+                                ?: net.minecraft.world.item.ItemStack(item, batch)
                             net.minecraft.world.Containers.dropItemStack(
                                 level,
                                 cpu.blockPos.x + 0.5,

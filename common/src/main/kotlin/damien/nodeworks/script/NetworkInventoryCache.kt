@@ -539,7 +539,14 @@ class NetworkInventoryCache(
                 for (iset in crafter.instructionSets) {
                     val outputId = iset.outputItemId
                     if (outputId.isEmpty()) continue
-                    addCraftablePhantom(outputId)
+                    if (iset.outputComponents.isEmpty) {
+                        addCraftablePhantom(outputId)
+                        continue
+                    }
+                    // Shown as the variant the recipe makes, e.g. an oak barrel.
+                    val item = net.minecraft.resources.Identifier.tryParse(outputId)
+                        ?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) } ?: continue
+                    addCraftablePhantom(ItemStack(item).also { it.applyComponents(iset.outputComponents) })
                 }
             }
             for (api in snapshot.processingApis) {

@@ -267,7 +267,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 }
             }
             val output = expected.copyWithCount(expected.getCount())
-            if (!cpu.addToBuffer(expectedItemId, output.getCount().toLong())) {
+            // Keeps the recipe's components (a barrel's wood type), the bucket stays plain.
+            if (!cpu.addCraftedToBuffer(expectedItemId, output, output.getCount().toLong())) {
                 return CraftScheduler.OpResult.Failed(
                     "Buffer refused crafted $expectedItemId x${output.getCount()}"
                 )
@@ -286,6 +287,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         lvl: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ): CraftScheduler.OpResult {
+        // Captured before removing, the bucket goes away once drained.
+        val template = cpu.getBufferTemplate(damien.nodeworks.script.BufferKey.Key(op.itemId, ""))
         val inBuffer = cpu.getBufferCount(op.itemId)
         if (inBuffer < op.amount) {
             return CraftScheduler.OpResult.Failed(
@@ -309,7 +312,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         var droppedCount = 0L
         while (remaining > 0L) {
             val batch = minOf(remaining, item.getDefaultMaxStackSize().toLong()).toInt()
-            val stack = ItemStack(item, batch)
+            val stack = template?.takeIf { it.item == item }?.copyWithCount(batch) ?: ItemStack(item, batch)
             val inserted = NetworkStorageHelper.insertItemStack(lvl, snapshot, stack, deliverCache, op.outputChannel)
             if (inserted == 0) {
                 // Network storage refused, drop the batch on the ground so the finished
@@ -322,7 +325,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     "Deliver: network storage refused {}, dropping {} in-world at {}",
                     op.itemId, batch, cpu.blockPos
                 )
-                val dropStack = ItemStack(item, batch)
+                val dropStack = stack.copy()
                 net.minecraft.world.Containers.dropItemStack(
                     lvl, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, dropStack
                 )

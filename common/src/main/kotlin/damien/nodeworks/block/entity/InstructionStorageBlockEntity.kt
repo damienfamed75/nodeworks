@@ -56,7 +56,7 @@ class InstructionStorageBlockEntity(
             val output = InstructionSet.getOutput(stack)
             val alias = stack.hoverName.string.takeIf { it != "Instruction Set" }
             val subs = InstructionSet.getSubstitutions(stack)
-            result.add(InstructionSetInfo(recipe, output, alias, i, subs))
+            result.add(InstructionSetInfo(recipe, output, alias, i, subs, InstructionSet.getOutputStack(stack).componentsPatch))
         }
         return result
     }
@@ -106,6 +106,9 @@ class InstructionStorageBlockEntity(
          *  `Ingredient` predicate and may swap exemplar items for any acceptable
          *  alternative the network has in stock. */
         val allowSubstitutions: Boolean = true,
+        /** Components of the recipe's real result (a barrel's wood type). Empty for plain
+         *  outputs and for cards saved before the result was stored. */
+        val outputComponents: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     )
 
     // --- Connectable ---

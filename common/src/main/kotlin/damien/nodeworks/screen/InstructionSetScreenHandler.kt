@@ -200,8 +200,37 @@ class InstructionSetScreenHandler(
         // this guards against.
         val recipe = readRecipe()
         val subs = getSubstitutions()
-        if (recipe == initialRecipe && subs == initialSubstitutionsValue) return
+        if (recipe == initialRecipe && subs == initialSubstitutionsValue) {
+            backfillOutputStack(player)
+            return
+        }
         saveRecipe(player, recipe, subs)
+    }
+
+    /** Cards saved before the output stack was stored get it on their next open, so they
+     *  show the real result (a barrel's wood type). Only adds the component, and only
+     *  when the current result is the item the card already outputs, nothing is cleared
+     *  or rewritten. */
+    private fun backfillOutputStack(player: Player) {
+        val result = resultContainer.getItem(0)
+        if (result.isEmpty) return
+        val card = when (val mode = saveMode) {
+            is SaveMode.Handheld -> player.getItemInHand(mode.hand)
+            is SaveMode.InNode -> {
+                val node = player.level().getBlockEntity(mode.nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity ?: return
+                val side = Direction.entries[mode.sideOrdinal]
+                node.getItem(side.ordinal * damien.nodeworks.block.entity.NodeBlockEntity.SLOTS_PER_SIDE + mode.slotIndex)
+            }
+            is SaveMode.ClientDummy -> return
+        }
+        if (card.item !is InstructionSet) return
+        if (card.has(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_OUTPUT)) return
+        InstructionSet.setOutputStack(card, result)
+        if (card.has(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_OUTPUT)) {
+            (saveMode as? SaveMode.InNode)?.let { mode ->
+                (player.level().getBlockEntity(mode.nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity)?.setChanged()
+            }
+        }
     }
 
     private fun readRecipe(): List<String> = (0 until 9).map { i ->
@@ -229,13 +258,13 @@ class InstructionSetScreenHandler(
                     // it into the player's inventory.
                     if (stack.count > 1) {
                         val configured = stack.copyWithCount(1)
-                        InstructionSet.setRecipe(configured, recipe, output, outputCount, allowSubstitutions)
+                        InstructionSet.setRecipe(configured, recipe, output, outputCount, allowSubstitutions, resultStack)
                         stack.shrink(1)
                         if (!player.inventory.add(configured)) {
                             player.drop(configured, false)
                         }
                     } else {
-                        InstructionSet.setRecipe(stack, recipe, output, outputCount, allowSubstitutions)
+                        InstructionSet.setRecipe(stack, recipe, output, outputCount, allowSubstitutions, resultStack)
                     }
                 }
             }
@@ -246,7 +275,7 @@ class InstructionSetScreenHandler(
                 val globalSlot = side.ordinal * damien.nodeworks.block.entity.NodeBlockEntity.SLOTS_PER_SIDE + mode.slotIndex
                 val cardStack = nodeEntity.getItem(globalSlot)
                 if (cardStack.item is InstructionSet) {
-                    InstructionSet.setRecipe(cardStack, recipe, output, outputCount, allowSubstitutions)
+                    InstructionSet.setRecipe(cardStack, recipe, output, outputCount, allowSubstitutions, resultStack)
                     nodeEntity.setChanged()
                 }
             }

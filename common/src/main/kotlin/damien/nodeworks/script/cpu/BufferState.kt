@@ -140,6 +140,21 @@ class BufferState {
         return true
     }
 
+    /** Insert a crafting result into [itemId]'s plain bucket, keeping [template]'s
+     *  components as the bucket's template. Crafting ops and their consumers address
+     *  outputs by item id, so the bucket stays plain while stacks rebuilt from it carry
+     *  what the recipe actually produced (wood type, colour). */
+    fun insertCrafted(itemId: String, template: ItemStack, amount: Long): Boolean {
+        if (amount <= 0) return true
+        val key = BufferKey.Key(itemId, "")
+        if (!canAccept(key, amount)) return false
+        val existing = items[key]
+        // An existing bucket keeps its template, exactly as a plain insert would.
+        items[key] = if (existing == null) Entry(template.copyWithCount(1), amount)
+            else existing.copy(count = existing.count + amount)
+        return true
+    }
+
     /** Backward-compat itemId-only insertion. Builds a plain (empty-components)
      *  template stack so the bucket is keyed under empty-hash. */
     fun insert(itemId: String, amount: Long): Boolean {
@@ -190,9 +205,12 @@ class BufferState {
     fun saveToNBT(tag: CompoundTag, registryAccess: net.minecraft.core.HolderLookup.Provider) {
         val ops = RegistryOps.create(NbtOps.INSTANCE, registryAccess)
         val entriesTag = net.minecraft.nbt.ListTag()
-        for ((_, entry) in items) {
+        for ((key, entry) in items) {
             if (entry.count <= 0) continue
             val entryTag = CompoundTag()
+            // The key is saved too, a crafted output sits in a plain bucket whose template
+            // has components, re-deriving the key from the template would move it.
+            entryTag.putString("hash", key.componentsHash)
             // Save the components-bearing template stack with count = 1; the
             // authoritative count lives next to it as a Long so worlds with
             // > Int.MAX_VALUE buffered items still serialize correctly.
@@ -224,7 +242,10 @@ class BufferState {
                 if (stack.isEmpty) continue
                 val cnt = entryTag.getLong("count").orElse(0L)
                 if (cnt <= 0L) continue
-                items[BufferKey.of(stack)] = Entry(stack.copyWithCount(1), cnt)
+                val derived = BufferKey.of(stack)
+                val hash = entryTag.getString("hash").orElse(null)
+                val key = if (hash != null) BufferKey.Key(derived.itemId, hash) else derived
+                items[key] = Entry(stack.copyWithCount(1), cnt)
             }
         } else {
             // Legacy migration: itemId → count, no components. Each entry lands
