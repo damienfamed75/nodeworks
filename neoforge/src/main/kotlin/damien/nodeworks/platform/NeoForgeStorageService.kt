@@ -272,6 +272,23 @@ class NeoForgeStorageService : StorageService {
         return ArrayList(merged.values)
     }
 
+    /** The item types [dest] can still take, as one-item templates, when it is a plain
+     *  inventory with no empty slot: only what is already in it. Null when it might take
+     *  anything, because it has an empty slot or routes inserts itself. */
+    fun acceptedTypes(dest: ItemStorageHandle): List<ItemStack>? {
+        val handle = dest as NeoForgeItemStorageHandle
+        val routed = handle.routed
+        if (routed != null && routesInsert(routed)) return null
+        val handler = handle.handler
+        val types = LinkedHashMap<ItemResource, ItemStack>()
+        for (slot in 0 until handler.slots) {
+            val stack = handler.getStackInSlot(slot)
+            if (stack.isEmpty) return null
+            types.putIfAbsent(ItemResource.of(stack), stack.copyWithCount(1))
+        }
+        return ArrayList(types.values)
+    }
+
     /** How many of [stacks] [dest] would accept, all simulated in one transaction that is
      *  never committed, so each stack sees the space the earlier ones used. Null when
      *  [dest] is a slot view with no handler to simulate against. */

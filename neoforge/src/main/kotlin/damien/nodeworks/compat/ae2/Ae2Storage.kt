@@ -292,6 +292,28 @@ object Ae2Storage {
         return out
     }
 
+    /** Visit matching item types as one-item templates with their counts, in snapshot
+     *  order, until [visit] returns false. */
+    fun forEachStack(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, visit: (ItemStack, Long) -> Boolean) {
+        forEachItem(h, { true }) { key, n ->
+            if (filter(key.readOnlyStack) && !visit(key.toStack(1), n)) return
+        }
+    }
+
+    /** How many of [template]'s exact type the network holds. */
+    fun countOf(h: Ae2ItemStorageHandle, template: ItemStack): Long {
+        val key = AEItemKey.of(template) ?: return 0L
+        return snapshot(h.me, h.grid).get(key)
+    }
+
+    /** Extract up to [maxCount] of [template]'s exact type, a direct key lookup. */
+    fun extractOf(h: Ae2ItemStorageHandle, template: ItemStack, maxCount: Long): List<ItemStack> {
+        val key = AEItemKey.of(template) ?: return emptyList()
+        val out = ArrayList<ItemStack>()
+        extractStacks(h.me, key, maxCount, MAX_STACKS_PER_EXTRACT, out)
+        return out
+    }
+
     /** How many of [stacks] the network would accept. Each key is simulated on its own,
      *  so tight byte space shared between keys can read slightly high. */
     fun simulateInsertStacks(h: Ae2ItemStorageHandle, stacks: List<ItemStack>): Long {

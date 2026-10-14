@@ -121,40 +121,31 @@ class RouteTable(
 
     /**
      * Insert items using default priority routing, but ONLY into open (unrouted) storages.
-     * Enumerates source variants and moves each per-variant so a card's
-     * filter rules apply to the right variant.
+     * Walks the open cards in priority order and asks each for everything it accepts in
+     * one move, so each card's filter rules apply per stack without first listing every
+     * variant in the source.
      */
     fun insertDefault(source: ItemStorageHandle, filter: String, maxCount: Long): Long {
         var totalMoved = 0L
         var remaining = maxCount
         val registries = level.registryAccess()
-        val variants = PlatformServices.storage.findAllItemInfo(source) {
-            CardHandle.matchesFilter(it, filter)
-        }
-        for (info in variants) {
+        for (card in openStorageCards) {
             if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
-            val itemId = info.itemId
-            val componentsPatch = info.componentsPatch
-            val wantHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
-            // Matches only this exact variant.
-            val variantPred: (net.minecraft.world.item.ItemStack) -> Boolean = { stack ->
-                val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
-                sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+            val destStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+            val accepts: (net.minecraft.world.item.ItemStack) -> Boolean = { stack ->
+                CardHandle.matchesFilter(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString(), filter) &&
+                    (cap == null || cap.acceptsItem(stack, registries))
             }
-            for (card in openStorageCards) {
-                if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
-                val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-                if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
-                val destStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
-                val moved = try {
-                    PlatformServices.storage.moveItemsByStackPredicate(source, destStorage, variantPred, remaining)
-                } catch (_: Exception) { 0L }
-                totalMoved += moved
-                remaining -= moved
-            }
+            val moved = try {
+                PlatformServices.storage.moveItemsByStackPredicate(source, destStorage, accepts, remaining)
+            } catch (_: Exception) { 0L }
+            totalMoved += moved
+            remaining -= moved
         }
         return totalMoved
     }
+
 
     /**
      * Insert an ItemStack using default routing into open storages only.

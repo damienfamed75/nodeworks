@@ -483,11 +483,12 @@ class CardHandle private constructor(
             { id, _ -> matchesFilter(id, itemsHandle.filter) }
         }
         // A full destination costs one simulation instead of an extract and a give back.
-        // Only the first stretch is simulated to keep it cheap. When that didn't cover the
-        // whole source, later items might still fit, so only a complete view can skip.
+        // Only the first stretch is simulated to keep it cheap. The move takes whichever
+        // items fit, not just the first ones, so it can only be skipped when the dry run
+        // saw everything the source has.
         val previewed = minOf(requested, NetworkBudget.MAX_ATOMIC_ITEMS)
         val preview = preview(sourceStorage, destStorage, previewed) { variantPredicate(idOf(it), it.componentsPatch.size() > 0) }
-        if (preview != null && preview.fits == 0L && (previewed == requested || preview.available < previewed)) return 0L
+        if (preview != null && preview.fits == 0L && preview.available < previewed) return 0L
         return try {
             withSpill { PlatformServices.storage.moveItemsVariant(sourceStorage, destStorage, variantPredicate, requested) }
         } catch (e: Exception) {
