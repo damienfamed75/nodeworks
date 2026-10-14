@@ -213,6 +213,16 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         return moveInRounds(source, dest, maxCount) { extractStacksByPredicate(source, filter, it) }
     }
 
+    /** Reads the source and simulates the destination, so the cost is a source scan plus
+     *  one simulated insert per distinct item, with nothing extracted. */
+    override fun previewMove(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): MovePreview {
+        val s = ae2(source)
+        val stacks = if (s != null) Ae2Storage.previewStacks(s, filter, maxCount) else base.previewStacks(source, filter, maxCount)
+        val d = ae2(dest)
+        val fits = if (d != null) Ae2Storage.simulateInsertStacks(d, stacks) else base.simulateInsertStacks(dest, stacks)
+        return MovePreview(stacks.sumOf { it.count.toLong() }, fits)
+    }
+
     /** Atomic. A request larger than one extraction can materialize fails cleanly
      *  (everything goes back) rather than allocating without bound. Used for every
      *  backend, the base version regroups stacks by item and strips their components. */

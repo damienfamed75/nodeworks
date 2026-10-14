@@ -109,8 +109,15 @@ data class ServerSafetySettings(
      *  through the same helper). Independent of [maxItemMoveCallsPerTick]
      *  (a single call can move 64 items, so call count != item count).
      *  When this is exhausted, `tryInsert` returns partial counts and atomic
-     *  `insert` short-circuits to false. 0 means unlimited. */
-    val maxItemsMovedPerTickPerNetwork: Long = 0,
+     *  `insert` short-circuits to false. 0 means unlimited. 16384 is 256 full
+     *  stacks per tick, enough to drain big storage in seconds while keeping
+     *  any one tick cheap. */
+    val maxItemsMovedPerTickPerNetwork: Long = 16384,
+
+    /** Max items one importer or stocker run moves. Separate from the script limit
+     *  above, each preset gets its own allowance per run. A run that hits it stops
+     *  and the rest moves on later runs, like a `tryInsert` in a loop. 0 means unlimited. */
+    val maxItemsPerPresetRun: Long = 8192,
 
     /** Max simultaneously-registered callbacks per kind, per engine. Each kind
      *  (scheduler tasks, redstone handlers, observer handlers, processing

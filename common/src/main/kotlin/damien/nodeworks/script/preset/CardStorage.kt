@@ -7,6 +7,7 @@ import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.platform.ItemStorageHandle
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.core.Direction
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.server.level.ServerLevel
 
 /**
@@ -29,5 +30,16 @@ internal object CardStorage {
         }
         if (cap is RedstoneSideCapability) return null
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, face)
+    }
+
+    /** False when a dry run shows [dest] would take none of the matching items, so a full
+     *  target costs one simulation per run instead of an extract and a give back. */
+    fun hasRoom(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Boolean {
+        val preview = try {
+            PlatformServices.storage.previewMove(source, dest, { filter(BuiltInRegistries.ITEM.getKey(it.item).toString()) }, maxCount)
+        } catch (e: Exception) {
+            null
+        }
+        return preview?.fits != 0L
     }
 }

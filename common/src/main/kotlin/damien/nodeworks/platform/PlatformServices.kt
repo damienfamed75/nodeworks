@@ -296,6 +296,16 @@ interface StorageService {
      */
     fun simulateInsertItem(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, maxCount: Long): Long = 0L
 
+    /** Dry run of a move of up to [maxCount] items matching [filter], touching neither
+     *  side. Lets callers refuse a move that cannot fit before extracting anything, which
+     *  is both faster and never puts items in flight. Null when it can't be predicted. */
+    fun previewMove(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+    ): MovePreview? = null
+
     /**
      * Move up to [count] items matching [filter] from [source] to [dest] atomically.
      *
@@ -366,6 +376,11 @@ data class ItemInfo(
 ) {
     val stackable: Boolean get() = maxStackSize > 1
 }
+
+/** Result of [StorageService.previewMove]. [available] is how many matching items the
+ *  source holds, up to the asked amount. [fits] is how many of those the destination
+ *  would accept, null when the destination can't simulate. */
+data class MovePreview(val available: Long, val fits: Long?)
 
 /** Metadata for a fluid found in storage. Counts are in millibuckets. */
 data class FluidInfo(

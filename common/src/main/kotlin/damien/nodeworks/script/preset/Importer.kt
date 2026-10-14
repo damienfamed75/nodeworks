@@ -262,9 +262,19 @@ class ImporterBuilder(
         return maxCount - remaining
     }
 
-    /** Move items from [source] to [target] with the given per-call cap. Dispatches
-     *  on all four source/target combinations. */
+    /** Move items from [source] to [target], at most [maxCount] and never past this
+     *  run's allowance. */
     private fun movePair(
+        snapshot: NetworkSnapshot,
+        level: net.minecraft.server.level.ServerLevel,
+        source: ResolvedRef,
+        target: ResolvedRef,
+        filterPred: (String) -> Boolean,
+        maxCount: Long,
+    ): Long = capped(maxCount) { movePairUncapped(snapshot, level, source, target, filterPred, it) }
+
+    /** Dispatches on all four source/target combinations. */
+    private fun movePairUncapped(
         snapshot: NetworkSnapshot,
         level: net.minecraft.server.level.ServerLevel,
         source: ResolvedRef,
@@ -279,6 +289,7 @@ class ImporterBuilder(
                 when (target) {
                     is ResolvedRef.Card -> {
                         val dest = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
+                        if (!CardStorage.hasRoom(srcStorage, dest, filterPred, maxCount)) return 0L
                         PlatformServices.storage.moveItems(srcStorage, dest, filterPred, maxCount)
                     }
                     is ResolvedRef.Pool -> NetworkStorageHelper.insertItems(

@@ -37,6 +37,9 @@ class CardHandle private constructor(
      *  clear LuaError instead of silently writing to the original chest.
      *  Null skips the check (preconstructed handles in GuideME scenes). */
     private val snapshotFn: (() -> damien.nodeworks.network.NetworkSnapshot)?,
+    /** Sends a failed-move explanation to the script terminal as (throttle key, message).
+     *  Null logs to the server instead (GuideME scenes). */
+    private val report: ((String, String) -> Unit)?,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger("nodeworks-cardhandle")
@@ -152,8 +155,9 @@ class CardHandle private constructor(
             level: ServerLevel,
             networkId: UUID? = null,
             snapshotFn: (() -> damien.nodeworks.network.NetworkSnapshot)? = null,
+            report: ((String, String) -> Unit)? = null,
         ): LuaTable {
-            return CardHandle(card, level, null, null, networkId, snapshotFn).toLuaTable()
+            return CardHandle(card, level, null, null, networkId, snapshotFn, report).toLuaTable()
         }
 
         private fun faceName(name: String): Direction? = when (name.lowercase()) {
@@ -222,10 +226,11 @@ class CardHandle private constructor(
                 val budget = if (isItem) callBudget else null
                 val available = if (isItem) budget!!.availableItems(tick) else Long.MAX_VALUE
                 if (isItem && available < requested) {
-                    if (budget!!.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {
-                        logger.info("[card:insert items moved rate-limited this tick on network {}]", self.networkId)
+                    if (atomic) {
+                        val op = "card:insert into '${self.card.effectiveAlias}'"
+                        self.reportFailure("limit", NetworkBudget.itemLimitMessage(op, requested, available))
+                        return LuaValue.FALSE
                     }
-                    if (atomic) return LuaValue.FALSE
                     if (available <= 0L) return LuaValue.valueOf(0)
                 }
                 val clamped = minOf(requested, available)
@@ -325,7 +330,10 @@ class CardHandle private constructor(
             val capacity = try {
                 PlatformServices.storage.simulateInsertItem(destStorage, item, requested)
             } catch (_: Exception) { 0L }
-            if (capacity < requested) return 0L
+            if (capacity < requested) {
+                reportFailure("space", "card:insert into '${card.effectiveAlias}' moved nothing: not enough space, only $capacity of the $requested items fit.")
+                return 0L
+            }
 
             val extracted = bufSrc.extract(requested)
             if (extracted < requested) {
@@ -426,14 +434,31 @@ class CardHandle private constructor(
             } else {
                 { matchesFilter(it, itemsHandle.filter) }
             }
+            val alias = card.effectiveAlias
+            // Refuse up front when the move can't complete, so nothing is extracted and put back.
+            val preview = preview(sourceStorage, destStorage, requested) { predicate(idOf(it)) }
+            if (preview != null) {
+                if (preview.available < requested) {
+                    val where = if (destCap != null) "in the source that this card's filter allows" else "in the source"
+                    reportFailure("source", "card:insert into '$alias' moved nothing: only ${preview.available} of the $requested items are $where.")
+                    return 0L
+                }
+                val fits = preview.fits
+                if (fits != null && fits < requested) {
+                    reportFailure("space", "card:insert into '$alias' moved nothing: not enough space, only $fits of the $requested items fit.")
+                    return 0L
+                }
+            }
             // A throwing storage gets its in-flight items returned by the move itself,
             // logged here so the cause is visible instead of silently failing.
             val ok = try {
                 withSpill { PlatformServices.storage.tryMoveAll(sourceStorage, destStorage, predicate, requested) }
             } catch (e: Exception) {
-                logger.warn("card:insert into '{}' failed", card.effectiveAlias, e)
-                false
+                logger.warn("card:insert into '{}' failed", alias, e)
+                reportFailure("error", "card:insert into '$alias' moved nothing: a storage threw an error, see the server log.")
+                return 0L
             }
+            if (!ok) reportFailure("refused", "card:insert into '$alias' moved nothing: the destination refused some of the items.")
             return if (ok) requested else 0L
         }
         val variantPredicate: (String, Boolean) -> Boolean = if (destCap != null) {
@@ -441,12 +466,38 @@ class CardHandle private constructor(
         } else {
             { id, _ -> matchesFilter(id, itemsHandle.filter) }
         }
+        // A full destination costs one simulation instead of an extract and a give back.
+        val preview = preview(sourceStorage, destStorage, requested) { variantPredicate(idOf(it), it.componentsPatch.size() > 0) }
+        if (preview?.fits == 0L) return 0L
         return try {
             withSpill { PlatformServices.storage.moveItemsVariant(sourceStorage, destStorage, variantPredicate, requested) }
         } catch (e: Exception) {
             logger.warn("card:tryInsert into '{}' failed", card.effectiveAlias, e)
             0L
         }
+    }
+
+    private fun idOf(stack: net.minecraft.world.item.ItemStack): String =
+        BuiltInRegistries.ITEM.getKey(stack.item).toString()
+
+    /** Dry run of a move. A preview that throws is skipped, the move itself still runs
+     *  with its own rollback. */
+    private fun preview(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        requested: Long,
+        filter: (net.minecraft.world.item.ItemStack) -> Boolean,
+    ): damien.nodeworks.platform.MovePreview? = try {
+        PlatformServices.storage.previewMove(source, dest, filter, requested)
+    } catch (e: Exception) {
+        logger.warn("Move preview into '{}' failed", card.effectiveAlias, e)
+        null
+    }
+
+    /** Explain a failed move in the script terminal, throttled per card and [reason]. */
+    private fun reportFailure(reason: String, msg: String) {
+        val r = report
+        if (r != null) r("${card.effectiveAlias}:$reason", msg) else logger.info(msg)
     }
 
     /** Items a failed move could neither deliver nor return drop on top of the card's
@@ -519,7 +570,7 @@ class CardHandle private constructor(
             override fun call(selfArg: LuaValue, nameArg: LuaValue): LuaValue {
                 val name = nameArg.checkjstring()
                 val dir = faceName(name) ?: throw LuaError("Unknown face: $name")
-                return CardHandle(card, level, dir, slotFilter, networkId, snapshotFn).toLuaTable()
+                return CardHandle(card, level, dir, slotFilter, networkId, snapshotFn, report).toLuaTable()
             }
         })
 
@@ -530,7 +581,7 @@ class CardHandle private constructor(
                 for (i in 2..args.narg()) {
                     slots.add(args.checkint(i) - 1) // Lua 1-indexed → 0-indexed
                 }
-                return CardHandle(card, level, accessFace, slots, networkId, snapshotFn).toLuaTable()
+                return CardHandle(card, level, accessFace, slots, networkId, snapshotFn, report).toLuaTable()
             }
         })
 

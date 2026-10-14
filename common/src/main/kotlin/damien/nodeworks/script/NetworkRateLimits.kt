@@ -167,12 +167,22 @@ class NetworkBudget {
     }
 
     companion object {
+        /** Terminal text for an insert refused by the items-per-tick limit. [op] names the
+         *  call, e.g. `card:insert into 'chest'`. tryInsert caps silently instead. */
+        fun itemLimitMessage(op: String, requested: Long, available: Long): String {
+            val cap = ServerPolicy.current.maxItemsMovedPerTickPerNetwork
+            return when {
+                requested > cap -> "$op moved nothing: $requested items is over this network's limit of $cap items per tick. " +
+                    "Use tryInsert in a loop to move them in batches."
+                else -> "$op moved nothing: only $available of this network's $cap items per tick are left this tick."
+            }
+        }
+
         const val WARN_ITEM_MOVE: Int = 1 shl 0
         const val WARN_PLACEMENT: Int = 1 shl 1
         const val WARN_REDSTONE_WRITE: Int = 1 shl 2
         const val WARN_VARIABLE_WRITE: Int = 1 shl 3
         const val WARN_PRINT: Int = 1 shl 4
         const val WARN_ERROR_LOG: Int = 1 shl 5
-        const val WARN_ITEMS_MOVED: Int = 1 shl 6
     }
 }

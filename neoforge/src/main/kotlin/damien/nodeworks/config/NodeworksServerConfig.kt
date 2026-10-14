@@ -29,6 +29,7 @@ object NodeworksServerConfig {
     val MAX_VARIABLE_WRITES_PER_TICK: ModConfigSpec.IntValue
     val MAX_ERROR_LOGS_PER_TICK: ModConfigSpec.IntValue
     val MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK: ModConfigSpec.IntValue
+    val MAX_ITEMS_PER_PRESET_RUN: ModConfigSpec.IntValue
     val MAX_CALLBACKS_PER_KIND: ModConfigSpec.IntValue
     val ENABLED_MODULES: ModConfigSpec.ConfigValue<List<String>>
     val DISABLED_METHODS: ModConfigSpec.ConfigValue<List<String>>
@@ -242,15 +243,29 @@ object NodeworksServerConfig {
 
         MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK = builder
             .comment(
-                " Max items moved per tick per network across all network:insert and",
-                " network:tryInsert calls. Independent of maxItemMoveCallsPerTick (a",
-                " single call can move 64 items, so call count != item count). 0 means",
-                " unlimited. When exhausted, tryInsert returns partial counts and atomic",
-                " insert short-circuits to false."
+                " Max items moved per tick per network across all script insert and",
+                " tryInsert calls. Independent of maxItemMoveCallsPerTick (a single call",
+                " can move many items, so call count != item count). When exhausted,",
+                " tryInsert silently moves what it can and insert fails with an error in the",
+                " terminal. The default of 16384 is 256 full stacks per tick. 0 means",
+                " unlimited, which lets one script move an entire storage in a single tick."
             )
             .defineInRange(
                 "maxItemsMovedPerTickPerNetwork",
                 ServerSafetySettings.Defaults.maxItemsMovedPerTickPerNetwork.toInt(),
+                0,
+                Int.MAX_VALUE,
+            )
+
+        MAX_ITEMS_PER_PRESET_RUN = builder
+            .comment(
+                " Max items one importer or stocker run moves. Separate from",
+                " maxItemsMovedPerTickPerNetwork, each preset gets its own allowance per run.",
+                " A run that hits it stops and the rest moves on later runs. 0 means unlimited."
+            )
+            .defineInRange(
+                "maxItemsPerPresetRun",
+                ServerSafetySettings.Defaults.maxItemsPerPresetRun.toInt(),
                 0,
                 Int.MAX_VALUE,
             )
@@ -408,6 +423,7 @@ object NodeworksServerConfig {
         maxVariableWritesPerTick = MAX_VARIABLE_WRITES_PER_TICK.get(),
         maxErrorLogsPerTick = MAX_ERROR_LOGS_PER_TICK.get(),
         maxItemsMovedPerTickPerNetwork = MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK.get().toLong(),
+        maxItemsPerPresetRun = MAX_ITEMS_PER_PRESET_RUN.get().toLong(),
         maxCallbacksPerKind = MAX_CALLBACKS_PER_KIND.get(),
         enabledModules = ENABLED_MODULES.get().toSet(),
         disabledMethods = DISABLED_METHODS.get().toSet(),

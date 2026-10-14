@@ -162,6 +162,18 @@ class ScriptEngine(
      *  a tick throws so the player sees the error without the preset unscheduling. */
     internal fun logError(msg: String) = logCallback(msg, true)
 
+    private val lastReportTick = HashMap<String, Long>()
+
+    /** Terminal error for a move that failed without throwing. At most one per [key] per
+     *  second, so a script retrying every tick doesn't bury its own output. */
+    internal fun reportMoveFailure(key: String, msg: String) {
+        val tick = PlatformServices.modState.tickCount
+        val last = lastReportTick[key]
+        if (last != null && tick - last < 20L && tick >= last) return
+        lastReportTick[key] = tick
+        logCallback(msg, true)
+    }
+
     /** Whether a card with the given physical identity still exists in the
      *  current network. Same identity rule as [CardHandle.verifyCardOnNetwork]
      *  so card-removal handling is consistent across the synchronous Lua API
@@ -780,6 +792,7 @@ class ScriptEngine(
             level,
             currentSnapshot()?.controller?.networkId,
             ::currentNetworkSnapshot,
+            ::reportMoveFailure,
         )
         // Per-tick call cap is enforced inside [CardHandle.buildInsertFn] so all
         // insert paths share the budget uniformly, including handles returned from
@@ -1424,10 +1437,10 @@ class ScriptEngine(
         val budget = NetworkRateLimits.forNetwork(snapshot.controller?.networkId)
         val available = budget.availableItems(tick)
         if (available < requested) {
-            if (budget.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {
-                logCallback("[items moved rate-limited this tick on this network]", true)
+            if (atomic) {
+                reportMoveFailure("network:insert:limit", NetworkBudget.itemLimitMessage("network:insert", requested, available))
+                return LuaValue.FALSE
             }
-            if (atomic) return LuaValue.FALSE
             if (available <= 0L) return LuaValue.valueOf(0)
         }
         val clamped = minOf(requested, available)
@@ -1435,7 +1448,8 @@ class ScriptEngine(
         return if (atomic) {
             val ok = NetworkStorageHelper.tryInsertItemsAcrossNetwork(
                 level, snapshot, sourceStorage, itemsHandle.filter,
-                clamped, routeTable, inventoryCache, channel
+                clamped, routeTable, inventoryCache, channel,
+                onFail = { reason, msg -> reportMoveFailure("network:insert:$reason", msg) },
             )
             if (ok) budget.noteItemsMoved(tick, clamped)
             LuaValue.valueOf(ok)
@@ -1481,10 +1495,10 @@ class ScriptEngine(
         val budget = NetworkRateLimits.forNetwork(snapshot.controller?.networkId)
         val available = budget.availableItems(tick)
         if (available < requested) {
-            if (budget.warnOnce(NetworkBudget.WARN_ITEMS_MOVED)) {
-                logCallback("[items moved rate-limited this tick on this network]", true)
+            if (atomic) {
+                reportMoveFailure("network:insert:limit", NetworkBudget.itemLimitMessage("network:insert", requested, available))
+                return LuaValue.FALSE
             }
-            if (atomic) return LuaValue.FALSE
             if (available <= 0L) return LuaValue.valueOf(0)
         }
         val clamped = minOf(requested, available)
@@ -1506,6 +1520,7 @@ class ScriptEngine(
                 if (inserted == 0L) break
             }
             if (totalInserted < extracted) {
+                reportMoveFailure("network:insert:space", "network:insert moved nothing: not enough space, only $totalInserted of the $extracted items fit.")
                 // Partial commit. `atomic=false` must mean "nothing moved",
                 // so pull placed items back out and return all to the buffer.
                 if (totalInserted > 0L) {

@@ -63,36 +63,62 @@ object Ae2Storage {
     // ---- per-tick snapshot ----
     // One snapshot per ME storage per tick, shared by every device that asks, so AE2
     // walks its cells at most once per tick per grid. The grid inventory itself has a
-    // cache AE2 already maintains, read for free. Our own writes invalidate the entry.
+    // cache AE2 already maintains, read for free. Our own writes are applied to the
+    // snapshot as deltas, so a script making many moves in one tick never rewalks.
 
     private var snapshotTick = Long.MIN_VALUE
     private val snapshots = IdentityHashMap<MEStorage, KeyCounter>()
     private val mutated: MutableSet<MEStorage> = Collections.newSetFromMap(IdentityHashMap())
 
-    private fun snapshot(me: MEStorage, grid: IStorageService?): KeyCounter {
+    /** Snapshots that are our private copies, safe to apply deltas to. */
+    private val owned: MutableSet<MEStorage> = Collections.newSetFromMap(IdentityHashMap())
+
+    private fun rollTick() {
         val tick = PlatformServices.modState.tickCount
-        if (tick != snapshotTick) {
-            snapshots.clear()
-            mutated.clear()
-            snapshotTick = tick
-        }
+        if (tick == snapshotTick) return
+        snapshots.clear()
+        mutated.clear()
+        owned.clear()
+        snapshotTick = tick
+    }
+
+    private fun snapshot(me: MEStorage, grid: IStorageService?): KeyCounter {
+        rollTick()
         snapshots[me]?.let { return it }
-        val fresh = if (grid != null && grid.inventory === me && me !in mutated) grid.cachedInventory else me.availableStacks
+        // AE2's cache lags our own writes until its next tick, so after one, walk the cells.
+        val shared = grid != null && grid.inventory === me && me !in mutated
+        val fresh = if (shared) grid!!.cachedInventory else me.availableStacks
+        if (!shared) owned.add(me)
         snapshots[me] = fresh
         return fresh
     }
 
-    private fun invalidate(me: MEStorage) {
-        snapshots.remove(me)
+    /** Record that we moved [delta] of [key] in or out of [me] this tick. AE2's shared
+     *  cache is never written, it is copied on our first change. A key not already in
+     *  the copy gets a fresh copy rather than an insert, so a loop iterating the old
+     *  counter is never disturbed by a rehash. */
+    private fun noteChange(me: MEStorage, key: AEKey, delta: Long) {
+        if (delta == 0L) return
+        rollTick()
         mutated.add(me)
+        val snap = snapshots[me] ?: return
+        if (me in owned && snap.get(key) != 0L) {
+            snap.add(key, delta)
+            return
+        }
+        val copy = KeyCounter()
+        copy.addAll(snap)
+        copy.add(key, delta)
+        snapshots[me] = copy
+        owned.add(me)
     }
 
     private fun idOf(key: AEKey): String = key.id.toString()
 
     // ---- items ----
 
-    /** The snapshot is either a private copy or AE2's tick-stable cache, and
-     *  extract never touches that cache, so mutating while iterating is safe. */
+    /** AE2's cache is never written, and our deltas only change existing keys in place
+     *  or swap in a new copy, so mutating while iterating is safe. */
     private inline fun forEachItem(h: Ae2ItemStorageHandle, filter: (String) -> Boolean, visit: (AEItemKey, Long) -> Unit) {
         for (entry in snapshot(h.me, h.grid)) {
             val key = entry.key as? AEItemKey ?: continue
@@ -197,7 +223,7 @@ object Ae2Storage {
         forEachItem(h, filter) { key, available ->
             if (remaining <= 0L) return total
             val got = h.me.extract(key, minOf(remaining, available), Actionable.MODULATE, source)
-            if (got > 0L) invalidate(h.me)
+            noteChange(h.me, key, -got)
             total += got
             remaining -= got
         }
@@ -213,7 +239,7 @@ object Ae2Storage {
         val cap = minOf(maxCount, Int.MAX_VALUE.toLong(), stackBudget * max)
         if (cap <= 0L) return 0L
         val got = me.extract(key, cap, Actionable.MODULATE, source)
-        if (got > 0L) invalidate(me)
+        noteChange(me, key, -got)
         var left = got
         while (left > 0L) {
             val n = minOf(left, max).toInt()
@@ -251,11 +277,37 @@ object Ae2Storage {
         return total
     }
 
+    /** What an extract of [maxCount] matching items would return, one stack per key with
+     *  the total as its count, read from the snapshot without touching the network. */
+    fun previewStacks(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): List<ItemStack> {
+        val out = ArrayList<ItemStack>()
+        var remaining = maxCount
+        forEachItem(h, { true }) { key, available ->
+            if (remaining <= 0L) return out
+            if (!filter(key.readOnlyStack)) return@forEachItem
+            val take = minOf(remaining, available, Int.MAX_VALUE.toLong())
+            out += key.toStack(take.toInt())
+            remaining -= take
+        }
+        return out
+    }
+
+    /** How many of [stacks] the network would accept. Each key is simulated on its own,
+     *  so tight byte space shared between keys can read slightly high. */
+    fun simulateInsertStacks(h: Ae2ItemStorageHandle, stacks: List<ItemStack>): Long {
+        var total = 0L
+        for (stack in stacks) {
+            val key = AEItemKey.of(stack) ?: continue
+            total += h.me.insert(key, stack.count.toLong(), Actionable.SIMULATE, source)
+        }
+        return total
+    }
+
     fun insertItemStack(h: Ae2ItemStorageHandle, stack: ItemStack): Int {
         if (stack.isEmpty) return 0
         val key = AEItemKey.of(stack) ?: return 0
         val put = h.me.insert(key, stack.count.toLong(), Actionable.MODULATE, source)
-        if (put > 0L) invalidate(h.me)
+        noteChange(h.me, key, put)
         return put.toInt()
     }
 
@@ -267,10 +319,10 @@ object Ae2Storage {
         val key = AEItemKey.of(item)
         if (h.me.insert(key, count, Actionable.SIMULATE, source) < count) return false
         val inserted = h.me.insert(key, count, Actionable.MODULATE, source)
-        if (inserted > 0L) invalidate(h.me)
+        noteChange(h.me, key, inserted)
         if (inserted < count) {
             // Network changed between the two calls, keep the all-or-nothing contract.
-            h.me.extract(key, inserted, Actionable.MODULATE, source)
+            noteChange(h.me, key, -h.me.extract(key, inserted, Actionable.MODULATE, source))
             return false
         }
         return true
@@ -286,14 +338,14 @@ object Ae2Storage {
             if (!filter(key.readOnlyStack)) return@forEachItem
             val got = src.me.extract(key, minOf(remaining, available), Actionable.MODULATE, source)
             if (got <= 0L) return@forEachItem
-            invalidate(src.me)
+            noteChange(src.me, key, -got)
             val put = try {
                 dst.me.insert(key, got, Actionable.MODULATE, source)
             } catch (e: Throwable) {
                 giveBack(src, key, got)
                 throw e
             }
-            if (put > 0L) invalidate(dst.me)
+            noteChange(dst.me, key, put)
             if (put < got) giveBack(src, key, got - put)
             moved += put
             remaining -= put
@@ -305,7 +357,7 @@ object Ae2Storage {
      *  stacks, so a key move can never delete items. */
     private fun giveBack(src: Ae2ItemStorageHandle, key: AEItemKey, amount: Long) {
         val back = try { src.me.insert(key, amount, Actionable.MODULATE, source) } catch (e: Exception) { 0L }
-        if (back > 0L) invalidate(src.me)
+        noteChange(src.me, key, back)
         var left = amount - back
         val max = key.maxStackSize.coerceAtLeast(1).toLong()
         while (left > 0L) {
@@ -357,7 +409,7 @@ object Ae2Storage {
         if (amountMb <= 0L) return 0L
         val key = fluidKey(fluidId) ?: return 0L
         val put = h.me.insert(key, toAe(amountMb), Actionable.MODULATE, source)
-        if (put > 0L) invalidate(h.me)
+        noteChange(h.me, key, put)
         return toMb(put)
     }
 
@@ -373,9 +425,9 @@ object Ae2Storage {
         val want = toAe(amountMb)
         if (h.me.insert(key, want, Actionable.SIMULATE, source) < want) return false
         val inserted = h.me.insert(key, want, Actionable.MODULATE, source)
-        if (inserted > 0L) invalidate(h.me)
+        noteChange(h.me, key, inserted)
         if (inserted < want) {
-            h.me.extract(key, inserted, Actionable.MODULATE, source)
+            noteChange(h.me, key, -h.me.extract(key, inserted, Actionable.MODULATE, source))
             return false
         }
         return true
@@ -386,8 +438,9 @@ object Ae2Storage {
         var total = 0L
         forEachFluid(h, filter) { key, availableMb ->
             if (remaining <= 0L) return total
-            val got = toMb(h.me.extract(key, toAe(minOf(remaining, availableMb)), Actionable.MODULATE, source))
-            if (got > 0L) invalidate(h.me)
+            val gotAe = h.me.extract(key, toAe(minOf(remaining, availableMb)), Actionable.MODULATE, source)
+            noteChange(h.me, key, -gotAe)
+            val got = toMb(gotAe)
             total += got
             remaining -= got
         }

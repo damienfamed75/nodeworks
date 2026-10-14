@@ -39,6 +39,21 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
     protected var lastSnapshotSeen: NetworkSnapshot? = null
         private set
 
+    /** Items this run may still move. Reset before each run from
+     *  [damien.nodeworks.script.ServerSafetySettings.maxItemsPerPresetRun], so a big
+     *  backlog drains over several runs instead of all in one tick. */
+    protected var runItemsLeft: Long = Long.MAX_VALUE
+
+    /** Run [move] with at most [maxCount] clamped to what this run has left, charging
+     *  what it reports moved. */
+    protected fun capped(maxCount: Long, move: (Long) -> Long): Long {
+        val allowed = minOf(maxCount, runItemsLeft)
+        if (allowed <= 0L) return 0L
+        val moved = move(allowed)
+        runItemsLeft -= moved
+        return moved
+    }
+
     /** Index in the engine's presets registry. Set by [ScriptEngine.registerPreset]. */
     internal var registryIndex: Int = -1
 
@@ -122,6 +137,8 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
             onSnapshotChanged(snap)
             lastSnapshotSeen = snap
         }
+        val cap = damien.nodeworks.script.ServerPolicy.current.maxItemsPerPresetRun
+        runItemsLeft = if (cap > 0L) cap else Long.MAX_VALUE
         try {
             tickOnce()
         } catch (e: LuaError) {

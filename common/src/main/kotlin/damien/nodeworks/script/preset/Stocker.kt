@@ -213,7 +213,7 @@ class StockerBuilder(
         // sources so it needs the explicit move. Pool target needs no drain (CPU's flush
         // already lands in the pool).
         if (mode == StockerMode.CRAFT_ONLY && (targetRef is CardRef.Named || targetRef is CardRef.Channel)) {
-            val drained = movePoolToTarget(snapshot, level, targetRef, filterPred, need.toLong())
+            val drained = capped(need.toLong()) { movePoolToTarget(snapshot, level, targetRef, filterPred, it) }
             need = (need - drained.toInt()).coerceAtLeast(0)
             if (need <= 0) return
         }
@@ -240,18 +240,20 @@ class StockerBuilder(
             when (source) {
                 is ResolvedRef.Card -> {
                     val srcStorage = CardStorage.forCard(level, source.snapshot, source.faceOverride) ?: continue
-                    need -= moveFromStorageToTarget(snapshot, level, srcStorage, targetRef, filterPred, need.toLong())
+                    need -= capped(need.toLong()) { moveFromStorageToTarget(snapshot, level, srcStorage, targetRef, filterPred, it) }
                         .toInt().coerceAtLeast(0)
                 }
                 is ResolvedRef.Pool -> {
-                    need -= movePoolToTarget(snapshot, level, targetRef, filterPred, need.toLong())
+                    need -= capped(need.toLong()) { movePoolToTarget(snapshot, level, targetRef, filterPred, it) }
                         .toInt().coerceAtLeast(0)
                 }
                 is ResolvedRef.ChannelPool -> {
-                    need -= movePoolToTarget(
-                        snapshot, level, targetRef, filterPred, need.toLong(),
-                        sourceChannel = damien.nodeworks.network.ChannelFilter.Color(source.color),
-                    ).toInt().coerceAtLeast(0)
+                    need -= capped(need.toLong()) {
+                        movePoolToTarget(
+                            snapshot, level, targetRef, filterPred, it,
+                            sourceChannel = damien.nodeworks.network.ChannelFilter.Color(source.color),
+                        )
+                    }.toInt().coerceAtLeast(0)
                 }
             }
         }
@@ -269,7 +271,7 @@ class StockerBuilder(
         is CardRef.Named -> {
             val card = resolvedTarget as? ResolvedRef.Card
             val destStorage = card?.let { CardStorage.forCard(level, it.snapshot, it.faceOverride) }
-            if (destStorage == null) 0L
+            if (destStorage == null || !CardStorage.hasRoom(source, destStorage, filterPred, maxCount)) 0L
             else PlatformServices.storage.moveItems(source, destStorage, filterPred, maxCount)
         }
         is CardRef.Pool -> NetworkStorageHelper.insertItems(

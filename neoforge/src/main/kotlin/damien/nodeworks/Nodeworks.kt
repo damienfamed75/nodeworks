@@ -1218,7 +1218,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             }
         }
         logger.info(
-            "Nodeworks server config loaded: topLevelSoftAbort={}ms callbackSoftAbort={}ms localTickBudget={}ms globalTickBudget={}ms instructionsPerCheck={} maxItemMoveCalls={} maxPlacements={} maxRedstoneWrites={} maxVariableWrites={} maxPrints={} maxErrorLogs={} maxItemsMovedPerTick={} maxCallbacksPerKind={}",
+            "Nodeworks server config loaded: topLevelSoftAbort={}ms callbackSoftAbort={}ms localTickBudget={}ms globalTickBudget={}ms instructionsPerCheck={} maxItemMoveCalls={} maxPlacements={} maxRedstoneWrites={} maxVariableWrites={} maxPrints={} maxErrorLogs={} maxItemsMovedPerTick={} maxItemsPerPresetRun={} maxCallbacksPerKind={}",
             newSettings.topLevelSoftAbortMs,
             newSettings.callbackSoftAbortMs,
             newSettings.localTickBudgetMs,
@@ -1231,6 +1231,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             newSettings.maxPrintsPerTick,
             newSettings.maxErrorLogsPerTick,
             newSettings.maxItemsMovedPerTickPerNetwork,
+            newSettings.maxItemsPerPresetRun,
             newSettings.maxCallbacksPerKind,
         )
     }

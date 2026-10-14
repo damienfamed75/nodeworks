@@ -11,6 +11,7 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler
 import net.neoforged.neoforge.items.IItemHandler
 import net.neoforged.neoforge.items.ItemHandlerHelper
 import net.neoforged.neoforge.transfer.ResourceHandler
+import net.neoforged.neoforge.transfer.ResourceHandlerUtil
 import net.neoforged.neoforge.transfer.item.ItemResource
 import net.neoforged.neoforge.transfer.resource.Resource
 import net.neoforged.neoforge.transfer.transaction.Transaction
@@ -249,6 +250,53 @@ class NeoForgeStorageService : StorageService {
 
     override fun insertItemStack(storage: ItemStorageHandle, stack: ItemStack): Int =
         insertInto(storage as NeoForgeItemStorageHandle, stack, simulate = false)
+
+    /** What an extract of [maxCount] matching items would return, merged to one stack per
+     *  distinct item and components with the total as its count. Read-only. */
+    fun previewStacks(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): List<ItemStack> {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        val merged = LinkedHashMap<ItemResource, ItemStack>()
+        var remaining = maxCount
+        for (slot in 0 until handler.slots) {
+            if (remaining <= 0L) break
+            val stack = handler.getStackInSlot(slot)
+            if (stack.isEmpty || !filter(stack)) continue
+            val take = minOf(remaining, stack.count.toLong()).toInt()
+            val key = ItemResource.of(stack)
+            val existing = merged[key]
+            if (existing == null) merged[key] = stack.copyWithCount(take) else existing.grow(take)
+            remaining -= take
+        }
+        return ArrayList(merged.values)
+    }
+
+    /** How many of [stacks] [dest] would accept, all simulated in one transaction that is
+     *  never committed, so each stack sees the space the earlier ones used. Null when
+     *  [dest] is a slot view with no handler to simulate against. */
+    fun simulateInsertStacks(dest: ItemStorageHandle, stacks: List<ItemStack>): Long? {
+        val routed = (dest as NeoForgeItemStorageHandle).routed ?: return null
+        val routes = routesInsert(routed)
+        var total = 0L
+        Transaction.openRoot().use { tx ->
+            for (stack in stacks) {
+                if (stack.isEmpty) continue
+                val resource = ItemResource.of(stack)
+                if (!routes) {
+                    total += ResourceHandlerUtil.insertStacking(routed, resource, stack.count, tx)
+                    continue
+                }
+                // Repeat until refused, a storage may fill only part of a merged stack per call.
+                var left = stack.count
+                while (left > 0) {
+                    val put = routed.insert(resource, left, tx)
+                    if (put <= 0) break
+                    total += put
+                    left -= put
+                }
+            }
+        }
+        return total
+    }
 
     override fun simulateInsertItem(dest: ItemStorageHandle, item: net.minecraft.world.item.Item, maxCount: Long): Long {
         if (maxCount <= 0L) return 0L
