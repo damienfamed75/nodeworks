@@ -176,6 +176,10 @@ class PortableInventoryTerminalItem(properties: Properties) : Item(properties) {
 
 /** Shared menu-open path for the Portable, used by right-click and the Ctrl+E hotkey. */
 object PortableTerminalOpener {
+    /** Other places a Portable can be carried, such as a Curios slot. Each returns a live
+     *  holder for the first Portable it finds, or null. Registered by optional integrations. */
+    val extraHolders: MutableList<(ServerPlayer) -> (() -> ItemStack)?> = java.util.concurrent.CopyOnWriteArrayList()
+
     /** [holderProvider] is re-read every tick so validity checks and crystal
      *  write-back always see the live Portable stack. */
     fun open(player: ServerPlayer, level: ServerLevel, holderProvider: () -> ItemStack) {
@@ -201,12 +205,21 @@ object PortableTerminalOpener {
         )
     }
 
-    /** Hotkey entry. First Portable by inventory slot order: hotbar, main, then offhand. */
+    /** Hotkey entry. First Portable by inventory slot order: hotbar, main, then offhand,
+     *  then any [extraHolders]. */
     fun openFromInventory(player: ServerPlayer): Boolean {
         val inv = player.inventory
         val slots = (0 until 36) + net.minecraft.world.entity.player.Inventory.SLOT_OFFHAND
-        val slot = slots.firstOrNull { inv.getItem(it).item is PortableInventoryTerminalItem } ?: return false
-        open(player, player.level()) { inv.getItem(slot) }
-        return true
+        val slot = slots.firstOrNull { inv.getItem(it).item is PortableInventoryTerminalItem }
+        if (slot != null) {
+            open(player, player.level()) { inv.getItem(slot) }
+            return true
+        }
+        for (find in extraHolders) {
+            val holder = find(player) ?: continue
+            open(player, player.level(), holder)
+            return true
+        }
+        return false
     }
 }

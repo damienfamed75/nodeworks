@@ -63,6 +63,9 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         PlatformServices.fakePlayer = damien.nodeworks.platform.NeoForgeFakePlayerService()
         PlatformServices.serverNetworking = NeoForgeServerNetworkingService()
 
+        // Optional Curios slot for the Portable, a no-op without Curios.
+        damien.nodeworks.compat.curios.CuriosCompat.init()
+
         // Register the server-scoped config. Per-world file at
         // `serverconfig/nodeworks-server.toml` is auto-generated on first load
         // with the in-code defaults. Edit + `/reload` (or restart) to apply.

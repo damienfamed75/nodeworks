@@ -136,6 +136,10 @@ dependencies {
     // Applied Energistics 2, optional ME Interface storage bridge. Compile-time only so
     // the bridge builds against the real API. Not loaded in dev runs or bundled in the jar.
     compileOnly("maven.modrinth:ae2:${providers.gradleProperty("ae2_version").get()}")
+
+    // Curios, optional slot for the Portable Inventory Terminal. Compile-time only, the
+    // integration only loads when Curios is installed.
+    compileOnly("maven.modrinth:curios:${providers.gradleProperty("curios_version").get()}")
 }
 
 // Copy common resources + guidebook content alongside neoforge resources

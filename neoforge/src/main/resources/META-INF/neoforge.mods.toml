@@ -46,3 +46,12 @@ type = "optional"
 versionRange = "[26.1,)"
 ordering = "AFTER"
 side = "BOTH"
+
+# Curios, optional. With it present, players get a slot for the Portable Inventory
+# Terminal, and Ctrl+E opens a Portable worn there.
+[[dependencies.nodeworks]]
+modId = "curios"
+type = "optional"
+versionRange = "[15.0.0,)"
+ordering = "AFTER"
+side = "BOTH"
