@@ -124,7 +124,7 @@ data class ServerSafetySettings(
      *  already moved, so moving everything out of a huge storage is spread over ticks
      *  however the storage is built. Can't be turned off, this is the backstop for storages
      *  slow enough that even [maxItemsMovedPerTickPerNetwork] items take too long. */
-    val maxItemMoveMsPerTickPerNetwork: Long = 5,
+    val maxItemMoveMsPerTickPerNetwork: Long = 10,
 
     /** Max simultaneously-registered callbacks per kind, per engine. Each kind
      *  (scheduler tasks, redstone handlers, observer handlers, processing
