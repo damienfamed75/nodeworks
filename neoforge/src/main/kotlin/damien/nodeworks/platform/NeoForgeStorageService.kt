@@ -95,11 +95,9 @@ class NeoForgeStorageService : StorageService {
         return total
     }
 
-    /** Take up to [amount] from [slot], asking again until it is met or the slot gives
-     *  nothing. An item handler hands back at most one normal stack per call, so a slot
-     *  holding more (drawers, upgraded storage) gave only 64 when asked once. Bounded by
-     *  [amount], so a storage that never runs dry can't loop forever. Repeats stop if the
-     *  slot now holds something else, in case a storage shifts items into an emptied slot. */
+    /** Take up to [amount] from [slot], asking until it is met or the slot is empty. A
+     *  handler returns at most one stack per call, so slots holding more (drawers) need
+     *  repeated asks. Stops if the slot starts holding a different item. */
     private inline fun drainSlot(handler: IItemHandler, slot: Int, amount: Long, take: (ItemStack) -> Unit): Long {
         var got = 0L
         var first: ItemStack? = null
@@ -116,8 +114,7 @@ class NeoForgeStorageService : StorageService {
     }
 
     /** Move up to [amount] from one source slot into [dest], one stack per round, until
-     *  it is met, the slot runs dry, dest stops taking it, or the [MoveDeadline] passes.
-     *  Inserts first and extracts what landed, as the single-round version did. */
+     *  it is met, the slot runs dry, dest refuses, or the [MoveDeadline] passes. */
     private fun moveFromSlot(src: IItemHandler, slot: Int, dest: NeoForgeItemStorageHandle, amount: Long): Long {
         var moved = 0L
         var first: ItemStack? = null
@@ -125,7 +122,7 @@ class NeoForgeStorageService : StorageService {
             if (moved > 0L && MoveDeadline.expired()) break
             val offered = src.extractItem(slot, minOf(amount - moved, Int.MAX_VALUE.toLong()).toInt(), true)
             if (offered.isEmpty) break
-            // Stop if the slot now holds something else, see [drainSlot].
+            // Same guard as [drainSlot].
             if (first != null && !ItemStack.isSameItemSameComponents(offered, first)) break
             if (first == null) first = offered.copyWithCount(1)
             val inserted = insertInto(dest, offered, simulate = false)

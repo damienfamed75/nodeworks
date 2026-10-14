@@ -106,8 +106,7 @@ class InstructionStorageBlockEntity(
          *  `Ingredient` predicate and may swap exemplar items for any acceptable
          *  alternative the network has in stock. */
         val allowSubstitutions: Boolean = true,
-        /** Components of the recipe's real result (a barrel's wood type). Empty for plain
-         *  outputs and for cards saved before the result was stored. */
+        /** Components of the recipe's result, empty for plain outputs and older cards. */
         val outputComponents: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
     )
 

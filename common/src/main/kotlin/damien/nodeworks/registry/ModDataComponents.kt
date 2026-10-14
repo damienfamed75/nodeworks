@@ -57,10 +57,8 @@ object ModDataComponents {
         private set
 
     /**
-     * The real result of an Instruction Set's recipe, components included, so outputs
-     * like a Sophisticated Storage barrel show their wood type. Stored next to the
-     * recipe in custom data, never replacing it. Absent on cards saved before it
-     * existed, which then fall back to the plain output item. Reuses the
+     * Full result of an Instruction Set's recipe, components included (a barrel's wood
+     * type). Absent on older cards, which fall back to the plain output item. Reuses the
      * value-equality stack wrapper from [PORTABLE_INVENTORY_TERMINAL_CRYSTAL].
      */
     lateinit var INSTRUCTION_SET_OUTPUT: DataComponentType<InstalledCrystal>

@@ -638,8 +638,7 @@ object NetworkStorageHelper {
         // are processed independently.
         val processedVariants = mutableSetOf<damien.nodeworks.script.BufferKey.Key>()
 
-        // One scan up front. Re-scanning the source for every variant was quadratic in
-        // the number of item types, which an ME network can have thousands of.
+        // One scan up front, an ME source can hold thousands of types.
         val variants = PlatformServices.storage.findAllItemInfo(source) { CardHandle.matchesFilter(it, filter) }
         for (itemInfo in variants) {
             if (remaining <= 0 || MoveDeadline.expired()) break
@@ -732,10 +731,7 @@ object NetworkStorageHelper {
 
     /** Default priority-based routing across ALL storage cards (no route filtering).
      *  Walks the destination cards in priority order and asks each for everything it
-     *  accepts in one move, the storage layer then takes only the item types that fit.
-     *  Listing every source variant first and trying each against each card was a full
-     *  scan with display names of the source per call, slow enough on an ME network to
-     *  use a whole run's time before reaching the later cards. */
+     *  accepts in one move, so the source is never listed in full. */
     private fun insertItemsDefault(
         level: ServerLevel,
         snapshot: NetworkSnapshot,

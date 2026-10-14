@@ -792,8 +792,7 @@ class TerminalScreen(
         val scannedPlacerAliases = scannedPlacerEntries.map { it.first }
         val scannedUserAliases = scannedUserEntries.map { it.first }
 
-        // Prebuilt in the background at login, sorting every registry here stalled
-        // each open in large packs.
+        // Prebuilt in the background at login so opening never sorts every registry.
         val registryIds = damien.nodeworks.client.RegistryIdCache.get()
         val scannedTags = registryIds.itemTags
         val scannedFluidTags = registryIds.fluidTags

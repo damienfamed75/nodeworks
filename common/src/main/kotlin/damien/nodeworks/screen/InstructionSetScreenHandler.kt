@@ -207,10 +207,8 @@ class InstructionSetScreenHandler(
         saveRecipe(player, recipe, subs)
     }
 
-    /** Cards saved before the output stack was stored get it on their next open, so they
-     *  show the real result (a barrel's wood type). Only adds the component, and only
-     *  when the current result is the item the card already outputs, nothing is cleared
-     *  or rewritten. */
+    /** Give an older card its output stack on open. Only adds the component, and only
+     *  when the result is the item the card already outputs. */
     private fun backfillOutputStack(player: Player) {
         val result = resultContainer.getItem(0)
         if (result.isEmpty) return

@@ -267,7 +267,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 }
             }
             val output = expected.copyWithCount(expected.getCount())
-            // Keeps the recipe's components (a barrel's wood type), the bucket stays plain.
+            // Keeps the recipe's components, the bucket stays plain.
             if (!cpu.addCraftedToBuffer(expectedItemId, output, output.getCount().toLong())) {
                 return CraftScheduler.OpResult.Failed(
                     "Buffer refused crafted $expectedItemId x${output.getCount()}"
@@ -287,7 +287,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         lvl: ServerLevel,
         snapshot: damien.nodeworks.network.NetworkSnapshot
     ): CraftScheduler.OpResult {
-        // Captured before removing, the bucket goes away once drained.
+        // Read before removing, the bucket goes away once drained.
         val template = cpu.getBufferTemplate(damien.nodeworks.script.BufferKey.Key(op.itemId, ""))
         val inBuffer = cpu.getBufferCount(op.itemId)
         if (inBuffer < op.amount) {

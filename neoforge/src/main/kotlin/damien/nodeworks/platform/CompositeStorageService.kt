@@ -190,12 +190,10 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         return moved
     }
 
-    /** ME into a slotted storage, one item type at a time. Each type is simulated first and
-     *  only what fits is taken, so a destination that only accepts some items (a chest
-     *  full of one item, drawers) still gets them, instead of the move giving up when
-     *  the first items in the network don't fit. A full plain inventory can only take
-     *  what it already holds, so those types are looked up directly instead of
-     *  walking every type in the network. */
+    /** ME into a slotted storage, one item type at a time, taking only what fits so a
+     *  destination that accepts some items (drawers, a full chest) still gets them. A
+     *  full plain inventory can only take what it holds, so those types are looked up
+     *  directly instead of walking the network. */
     private fun moveFromMe(s: Ae2ItemStorageHandle, dest: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): Long {
         var remaining = maxCount
         var moved = 0L

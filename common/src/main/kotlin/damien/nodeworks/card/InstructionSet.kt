@@ -97,9 +97,8 @@ class InstructionSet(properties: Properties) : Item(properties) {
             return customData.copyTag().getStringOr(OUTPUT_KEY, "")
         }
 
-        /** The recipe's output with its components, e.g. an oak barrel rather than a plain
-         *  one. Falls back to the plain output item when the card has no stored result
-         *  (saved before it existed) or the stored one doesn't match the output id. */
+        /** The recipe's output with its components. Falls back to the plain output item
+         *  when none is stored or it doesn't match the output id. */
         fun getOutputStack(stack: ItemStack): ItemStack {
             val outputId = getOutput(stack)
             if (outputId.isEmpty()) return ItemStack.EMPTY
@@ -111,8 +110,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
             return ItemStack(item)
         }
 
-        /** Store [result] as the card's output stack when it matches the saved output id.
-         *  Only adds information, the recipe data is left as it is. */
+        /** Store [result] as the output stack when it matches the saved output id. */
         fun setOutputStack(stack: ItemStack, result: ItemStack) {
             if (result.isEmpty || BuiltInRegistries.ITEM.getKey(result.item).toString() != getOutput(stack)) return
             stack.set(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_OUTPUT, damien.nodeworks.item.InstalledCrystal(result.copyWithCount(1)))
@@ -155,7 +153,7 @@ class InstructionSet(properties: Properties) : Item(properties) {
             tag.putInt(OUTPUT_COUNT_KEY, outputCount.coerceIn(1, 99))
             tag.putBoolean(SUBSTITUTIONS_KEY, allowSubstitutions)
             stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
-            // A stale result from the previous recipe must not outlive it.
+            // The previous recipe's result no longer applies.
             stack.remove(damien.nodeworks.registry.ModDataComponents.INSTRUCTION_SET_OUTPUT)
             setOutputStack(stack, outputStack)
         }

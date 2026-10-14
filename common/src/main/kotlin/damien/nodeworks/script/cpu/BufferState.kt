@@ -140,16 +140,15 @@ class BufferState {
         return true
     }
 
-    /** Insert a crafting result into [itemId]'s plain bucket, keeping [template]'s
-     *  components as the bucket's template. Crafting ops and their consumers address
-     *  outputs by item id, so the bucket stays plain while stacks rebuilt from it carry
-     *  what the recipe actually produced (wood type, colour). */
+    /** Insert a crafting result into [itemId]'s plain bucket with [template] as its
+     *  template. Crafting ops address outputs by item id, the template keeps what the
+     *  recipe produced. */
     fun insertCrafted(itemId: String, template: ItemStack, amount: Long): Boolean {
         if (amount <= 0) return true
         val key = BufferKey.Key(itemId, "")
         if (!canAccept(key, amount)) return false
         val existing = items[key]
-        // An existing bucket keeps its template, exactly as a plain insert would.
+        // An existing bucket keeps its template.
         items[key] = if (existing == null) Entry(template.copyWithCount(1), amount)
             else existing.copy(count = existing.count + amount)
         return true
@@ -208,8 +207,8 @@ class BufferState {
         for ((key, entry) in items) {
             if (entry.count <= 0) continue
             val entryTag = CompoundTag()
-            // The key is saved too, a crafted output sits in a plain bucket whose template
-            // has components, re-deriving the key from the template would move it.
+            // A crafted output's plain bucket has a template with components, so its key
+            // can't be derived from the template on load.
             entryTag.putString("hash", key.componentsHash)
             // Save the components-bearing template stack with count = 1; the
             // authoritative count lives next to it as a Long so worlds with
