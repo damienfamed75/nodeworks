@@ -109,6 +109,21 @@ class NetworkInventoryCache(
         }
     }
 
+    // Per-channel counts so the Inventory Terminal can show one channel. Filled by the
+    // same poll as [frontBuffer], from the channel of each card read, and swapped in at
+    // cycle end like [entries]. Kept current between polls by the channel deltas.
+    private var channelFront = HashMap<net.minecraft.world.item.DyeColor, HashMap<BufferKey.Key, Long>>()
+    private var channelFluidFront = HashMap<net.minecraft.world.item.DyeColor, HashMap<String, Long>>()
+    private var channelItems = HashMap<net.minecraft.world.item.DyeColor, HashMap<BufferKey.Key, Long>>()
+    private var channelFluids = HashMap<net.minecraft.world.item.DyeColor, HashMap<String, Long>>()
+
+    /** Channel of the card being polled, read by [addToFrontBuffer]. */
+    private var pollChannel: net.minecraft.world.item.DyeColor? = null
+
+    /** Bumped on every change to any count, so a filtered view can skip quiet ticks. */
+    var version: Long = 0L
+        private set
+
     // Change tracking for delta sync (shared serial space, items + fluids)
     private val changedSerials = mutableSetOf<Long>()
     private val removedSerials = mutableSetOf<Long>()
@@ -310,6 +325,8 @@ class NetworkInventoryCache(
     private fun snapshotCardsForCycle(): List<PollUnit> {
         frontBuffer.clear()
         fluidFrontBuffer.clear()
+        channelFront = HashMap()
+        channelFluidFront = HashMap()
         staging.clear()
         entryPasses.clear()
         val snapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
@@ -368,6 +385,7 @@ class NetworkInventoryCache(
      *  unit for a later poll. */
     private fun pollUnit(unit: PollUnit, defer: (PollUnit) -> Unit): Int {
         if (staging.isAbandoned(unit.pos)) return 0
+        pollChannel = unit.card.channel
         // The card list is frozen at cycle start. Later ranges re-check the card
         // so a pulled one stops being read, and the chunk so a continuation
         // never force-loads one.
@@ -403,6 +421,7 @@ class NetworkInventoryCache(
                 } else {
                     fluidFrontBuffer[info.fluidId] = info
                 }
+                channelFluidFront.getOrPut(unit.card.channel) { HashMap() }.merge(info.fluidId, info.amount, Long::plus)
             }
         }
         return work
@@ -451,7 +470,9 @@ class NetworkInventoryCache(
         } else {
             if (work > 0) reader.read(unit.from, end) { key, info -> staging.stage(unit.pos, key, info) }
             if (end >= limit) {
-                staging.commit(unit.pos, frontBuffer)
+                val committed = LinkedHashMap<BufferKey.Key, ItemInfo>()
+                staging.commit(unit.pos, committed)
+                for ((key, info) in committed) addToFrontBuffer(key, info)
                 finishPass(unit.pos)
             } else if (open) {
                 defer(PollUnit(unit.card, unit.pos, unit.nodePos, unit.side, end, Int.MAX_VALUE, SLOTS_PER_UNIT))
@@ -473,6 +494,7 @@ class NetworkInventoryCache(
     private fun addToFrontBuffer(key: BufferKey.Key, info: ItemInfo) {
         val existing = frontBuffer[key]
         frontBuffer[key] = if (existing != null) existing.copy(count = existing.count + info.count) else info
+        pollChannel?.let { channelFront.getOrPut(it) { HashMap() }.merge(key, info.count, Long::plus) }
     }
 
     private fun addToFrontBuffer(items: List<ItemInfo>) {
@@ -535,7 +557,10 @@ class NetworkInventoryCache(
             }
         }
         cycleSnapshot = null
-        return applyDiff()
+        val channelsChanged = swapChannelCounts()
+        val changed = applyDiff()
+        if (changed || channelsChanged) version++
+        return changed
     }
 
     /** Mark [outputId] as craftable, plain-components variant. Used by
@@ -669,6 +694,80 @@ class NetworkInventoryCache(
         return changed
     }
 
+    /** Adopt this cycle's per-channel counts. Keys updated by a hook this cycle keep
+     *  their current counts, same as [applyDiff], so a poll older than the hook
+     *  can't revert them. Must run before [applyDiff] clears the dirty sets. */
+    private fun swapChannelCounts(): Boolean {
+        for (key in dirtyKeys) keepCurrent(key, channelItems, channelFront)
+        for (key in dirtyFluidKeys) keepCurrent(key, channelFluids, channelFluidFront)
+        val changed = channelFront != channelItems || channelFluidFront != channelFluids
+        channelItems = channelFront
+        channelFluids = channelFluidFront
+        channelFront = HashMap()
+        channelFluidFront = HashMap()
+        return changed
+    }
+
+    private fun <K> keepCurrent(
+        key: K,
+        current: Map<net.minecraft.world.item.DyeColor, Map<K, Long>>,
+        polled: HashMap<net.minecraft.world.item.DyeColor, HashMap<K, Long>>,
+    ) {
+        for (channel in current.keys + polled.keys) {
+            val now = current[channel]?.get(key)
+            if (now == null) polled[channel]?.remove(key)
+            else polled.getOrPut(channel) { HashMap() }[key] = now
+        }
+    }
+
+    // --- Per-channel queries and deltas ---
+
+    /** Item counts held by [channel]'s Storage Cards, keyed like [entries]. */
+    fun channelItemCounts(channel: net.minecraft.world.item.DyeColor): Map<BufferKey.Key, Long> =
+        channelItems[channel] ?: emptyMap()
+
+    fun channelFluidCounts(channel: net.minecraft.world.item.DyeColor): Map<String, Long> =
+        channelFluids[channel] ?: emptyMap()
+
+    /** Every variant of [itemId] held by [channel]. */
+    fun channelCount(channel: net.minecraft.world.item.DyeColor, itemId: String): Long {
+        val counts = channelItems[channel] ?: return 0L
+        return keysByItemId[itemId]?.sumOf { counts[it] ?: 0L } ?: 0L
+    }
+
+    /** Pairs every entry with its key, for views that look counts up per channel. */
+    fun forEachEntry(visit: (BufferKey.Key, SerialEntry) -> Unit) {
+        for ((key, entry) in entries) visit(key, entry)
+    }
+
+    fun forEachFluidEntry(visit: (String, FluidSerialEntry) -> Unit) {
+        for ((key, entry) in fluidEntries) visit(key, entry)
+    }
+
+    /** Record [delta] items moved in or out of a card on [channel]. Pairs with
+     *  [onInserted] / [onExtracted], which only see the network total. */
+    fun onChannelDelta(
+        channel: net.minecraft.world.item.DyeColor,
+        itemId: String,
+        componentsPatch: DataComponentPatch,
+        delta: Long,
+    ) {
+        if (delta == 0L) return
+        val counts = channelItems.getOrPut(channel) { HashMap() }
+        val key = cacheKey(itemId, componentsPatch)
+        val next = (counts[key] ?: 0L) + delta
+        if (next > 0L) counts[key] = next else counts.remove(key)
+        version++
+    }
+
+    fun onChannelFluidDelta(channel: net.minecraft.world.item.DyeColor, fluidId: String, delta: Long) {
+        if (delta == 0L) return
+        val counts = channelFluids.getOrPut(channel) { HashMap() }
+        val next = (counts[fluidId] ?: 0L) + delta
+        if (next > 0L) counts[fluidId] = next else counts.remove(fluidId)
+        version++
+    }
+
     // --- Queries ---
 
     /** True for filters that resolve to an exact item id with no wildcards or
@@ -759,6 +858,7 @@ class NetworkInventoryCache(
         componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
     ) {
         if (amount <= 0) return
+        version++
         // Bucket on (itemId, componentsHash) so an inserted strength potion
         // doesn't collide with a healing potion bucket. The legacy [hasData]
         // boolean param survives for API stability but the patch is authoritative.
@@ -801,6 +901,7 @@ class NetworkInventoryCache(
      *  skip syncing until the next poll (up to MAX_SLICES ticks later). */
     fun onFluidInserted(fluidId: String, amount: Long) {
         if (amount <= 0) return
+        version++
         dirtyFluidKeys.add(fluidId)
         val existing = fluidEntries[fluidId]
         if (existing != null) {
@@ -819,6 +920,7 @@ class NetworkInventoryCache(
 
     fun onFluidExtracted(fluidId: String, amount: Long) {
         if (amount <= 0) return
+        version++
         dirtyFluidKeys.add(fluidId)
         val existing = fluidEntries[fluidId] ?: return
         val newAmount = existing.info.amount - amount
@@ -839,6 +941,7 @@ class NetworkInventoryCache(
         componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
     ) {
         if (amount <= 0) return
+        version++
         val key = cacheKey(itemId, componentsPatch)
         dirtyKeys.add(key)
         val existing = entries[key] ?: return

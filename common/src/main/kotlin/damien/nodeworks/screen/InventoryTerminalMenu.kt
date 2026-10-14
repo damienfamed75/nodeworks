@@ -81,6 +81,26 @@ class InventoryTerminalMenu(
     private var crystalHolderProvider: (() -> ItemStack)? = null
 
     private var cache: NetworkInventoryCache? = null
+
+    /** Channel the grid shows and every extract and insert goes through. Starts on all
+     *  channels each time the terminal opens. Set on the server by [selectChannel], and
+     *  mirrored on the client copy by the screen. */
+    var channel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All
+
+    /** Entries last sent while filtered to one channel, by serial, so changes go out as
+     *  deltas. Null when showing all channels. */
+    private var filteredSent: HashMap<Long, InventorySyncPayload.SyncEntry>? = null
+    private var filteredVersion = -1L
+
+    /** Set on connect so the next broadcast tells the client which network it's on,
+     *  so its picker shows the channel and later changes save under that network. */
+    private var networkNeedsSync = false
+
+    private var requestedChannel: damien.nodeworks.network.ChannelFilter? = null
+    private var lastChannelSwitch = -CHANNEL_SWITCH_TICKS
+
+    /** Client copy only: the network the server said this menu is on. */
+    var networkId: java.util.UUID? = null
     private var snapshot: damien.nodeworks.network.NetworkSnapshot? = null
     private var needsFullSync = true
     private var needsImmediateSync = false
@@ -350,6 +370,10 @@ class InventoryTerminalMenu(
         serverLevel = level
         snapshot = NetworkDiscovery.discoverNetwork(level, newSource.entryPoint)
         cache = NetworkInventoryCache.getOrCreate(level, newSource.entryPoint)
+        // Open on the channel this player's client saved for the network, no round trip.
+        channel = InvTerminalChannelPrefs.get(playerInventory.player.uuid, snapshot?.networkId)
+        filteredSent = null
+        networkNeedsSync = true
         // Abandon any in-flight chunked sync, the entry set is about to change
         // wholesale, so the remaining chunks would be addressing the old network.
         fullSyncChunks = null
@@ -365,6 +389,37 @@ class InventoryTerminalMenu(
      * No-op if already disconnected, avoids redundant empty syncs every tick while
      * the player fiddles with an invalid crystal.
      */
+    /** Ask to show [filter]. Applied by [applyRequestedChannel] on the next broadcast. */
+    fun selectChannel(filter: damien.nodeworks.network.ChannelFilter) {
+        requestedChannel = filter
+    }
+
+    /** Switch to the requested channel, re-sending the whole grid for it. A switch costs a
+     *  full rebuild, so a client spamming them gets the latest one at most every
+     *  [CHANNEL_SWITCH_TICKS], the first one is still immediate. */
+    private fun applyRequestedChannel() {
+        val filter = requestedChannel ?: return
+        if (tickCounter - lastChannelSwitch < CHANNEL_SWITCH_TICKS) return
+        requestedChannel = null
+        if (filter == channel) return
+        lastChannelSwitch = tickCounter
+        channel = filter
+        InvTerminalChannelPrefs.set(playerInventory.player.uuid, snapshot?.networkId, filter)
+        filteredSent = null
+        fullSyncChunks = null
+        fullSyncChunkIndex = 0
+        needsFullSync = true
+    }
+
+    private fun channelCards(snap: damien.nodeworks.network.NetworkSnapshot) =
+        NetworkStorageHelper.getStorageCards(snap).filter { channel.matches(it.channel) }
+
+    /** [itemId] across all variants in the selected channel, read from the cache. */
+    private fun cachedCount(c: NetworkInventoryCache, itemId: String): Long = when (val ch = channel) {
+        damien.nodeworks.network.ChannelFilter.All -> c.count(itemId)
+        is damien.nodeworks.network.ChannelFilter.Color -> c.channelCount(ch.color, itemId)
+    }
+
     private fun disconnect() {
         if (source == null && snapshot == null && cache == null) return
         source = null
@@ -399,6 +454,8 @@ class InventoryTerminalMenu(
     }
 
     companion object {
+        private const val CHANNEL_SWITCH_TICKS = 5
+
         const val PLAYER_SLOT_COUNT = 36
         const val CRAFT_INPUT_START = 36
         const val CRAFT_OUTPUT_SLOT = 45
@@ -488,7 +545,7 @@ class InventoryTerminalMenu(
                         val lvl = serverLevel
                         val snap = snapshot
                         if (lvl != null && snap != null) {
-                            NetworkStorageHelper.insertItemStack(lvl, snap, inserted, cache)
+                            NetworkStorageHelper.insertItemStack(lvl, snap, inserted, cache, channel = channel)
                         }
                     }
                     // Refill consumes the pattern, re-snapshot while the
@@ -637,11 +694,11 @@ class InventoryTerminalMenu(
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
 
                 val available = if (variantPatch != null) {
-                    NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch)
+                    NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch, channel = channel)
                 } else if (c != null) {
-                    c.count(itemId)
+                    cachedCount(c, itemId)
                 } else {
-                    NetworkStorageHelper.countItems(lvl, snap, itemId)
+                    NetworkStorageHelper.countItems(lvl, snap, itemId, channel = channel)
                 }
                 val maxStack = item.getDefaultMaxStackSize().toLong()
                 val toExtract = when (action) {
@@ -658,7 +715,7 @@ class InventoryTerminalMenu(
                         // pickaxe end up in different slots, matching vanilla.
                         for (stack in stacks) {
                             if (!playerInventory.add(stack)) {
-                                NetworkStorageHelper.insertItemStack(lvl, snap, stack, c)
+                                NetworkStorageHelper.insertItemStack(lvl, snap, stack, c, channel = channel)
                             }
                         }
                     } else {
@@ -676,13 +733,13 @@ class InventoryTerminalMenu(
                             carried.grow(take)
                             first.shrink(take)
                             if (!first.isEmpty) {
-                                NetworkStorageHelper.insertItemStack(lvl, snap, first, c)
+                                NetworkStorageHelper.insertItemStack(lvl, snap, first, c, channel = channel)
                             }
                         } else {
-                            NetworkStorageHelper.insertItemStack(lvl, snap, first, c)
+                            NetworkStorageHelper.insertItemStack(lvl, snap, first, c, channel = channel)
                         }
                         for (i in 1 until stacks.size) {
-                            NetworkStorageHelper.insertItemStack(lvl, snap, stacks[i], c)
+                            NetworkStorageHelper.insertItemStack(lvl, snap, stacks[i], c, channel = channel)
                         }
                     }
                 }
@@ -690,7 +747,7 @@ class InventoryTerminalMenu(
             1 -> {
                 val carried = carried
                 if (!carried.isEmpty) {
-                    val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, carried, c)
+                    val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, carried, c, channel = channel)
                     if (inserted > 0) {
                         carried.shrink(inserted)
                         if (carried.isEmpty) setCarried(ItemStack.EMPTY)
@@ -702,7 +759,7 @@ class InventoryTerminalMenu(
                 val carried = carried
                 if (!carried.isEmpty) {
                     val single = carried.copyWithCount(1)
-                    val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, single, c)
+                    val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, single, c, channel = channel)
                     if (inserted > 0) {
                         carried.shrink(1)
                         if (carried.isEmpty) setCarried(ItemStack.EMPTY)
@@ -723,8 +780,8 @@ class InventoryTerminalMenu(
                 val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
                 val available = if (variantPatch != null) {
-                    NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch)
-                } else if (c != null) c.count(itemId) else NetworkStorageHelper.countItems(lvl, snap, itemId)
+                    NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch, channel = channel)
+                } else if (c != null) cachedCount(c, itemId) else NetworkStorageHelper.countItems(lvl, snap, itemId, channel = channel)
                 val maxStack = item.getDefaultMaxStackSize().toLong()
                 val toDrop = if (action == 5) 1L else minOf(available, maxStack)
 
@@ -761,7 +818,7 @@ class InventoryTerminalMenu(
         if (filledBucketItem == null || filledBucketItem == net.minecraft.world.item.Items.AIR) return
 
         // Confirm the network has 1000 mB available.
-        val available = NetworkStorageHelper.countFluid(lvl, snap, fluidId)
+        val available = NetworkStorageHelper.countFluid(lvl, snap, fluidId, channel = channel)
         if (available < BUCKET_MB) return
 
         val carried = carried
@@ -775,8 +832,8 @@ class InventoryTerminalMenu(
             carried.isEmpty -> {
                 // Check network for an empty bucket before committing to the drain.
                 val emptyBucketId = "minecraft:bucket"
-                val emptyAvailable = if (c != null) c.count(emptyBucketId) else
-                    NetworkStorageHelper.countItems(lvl, snap, emptyBucketId)
+                val emptyAvailable = if (c != null) cachedCount(c, emptyBucketId) else
+                    NetworkStorageHelper.countItems(lvl, snap, emptyBucketId, channel = channel)
                 if (emptyAvailable < 1L) return
                 BucketSource.NETWORK
             }
@@ -786,7 +843,7 @@ class InventoryTerminalMenu(
         // Step 2, pull 1000 mB from the network's fluid storage. If drain falls short,
         //  put back what we got and abort (no half-state).
         var drained = 0L
-        for (card in NetworkStorageHelper.getStorageCards(snap)) {
+        for (card in channelCards(snap)) {
             if (drained >= BUCKET_MB) break
             val storage = NetworkStorageHelper.getFluidStorage(lvl, card) ?: continue
             val got = damien.nodeworks.platform.PlatformServices.storage.extractFluid(
@@ -794,12 +851,13 @@ class InventoryTerminalMenu(
             )
             if (got > 0) {
                 c?.onFluidExtracted(fluidId, got)
+                c?.onChannelFluidDelta(card.channel, fluidId, -got)
                 drained += got
             }
         }
         if (drained < BUCKET_MB) {
             // Roll back partial drain, push back into any fluid storage that will accept it.
-            if (drained > 0) NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, drained, c)
+            if (drained > 0) NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, drained, c, channel = channel)
             return
         }
 
@@ -809,7 +867,7 @@ class InventoryTerminalMenu(
             BucketSource.NETWORK -> {
                 val emptyBucketId = "minecraft:bucket"
                 var consumed = 0L
-                for (card in NetworkStorageHelper.getStorageCards(snap)) {
+                for (card in channelCards(snap)) {
                     if (consumed >= 1L) break
                     val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
                     val got = damien.nodeworks.platform.PlatformServices.storage.extractItems(
@@ -817,13 +875,14 @@ class InventoryTerminalMenu(
                     )
                     if (got > 0) {
                         c?.onExtracted(emptyBucketId, false, got)
+                        c?.onChannelDelta(card.channel, emptyBucketId, net.minecraft.core.component.DataComponentPatch.EMPTY, -got)
                         consumed += got
                     }
                 }
                 if (consumed < 1L) {
                     // Bucket vanished between pre-check and commit (another player extracted it).
                     // Return the drained fluid and bail.
-                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB, c)
+                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB, c, channel = channel)
                     return
                 }
             }
@@ -838,9 +897,9 @@ class InventoryTerminalMenu(
                     setCarried(filled)
                 } else {
                     // Last-ditch: put the fluid back so the player can try again with space.
-                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB, c)
+                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB, c, channel = channel)
                     if (bucketSource == BucketSource.CURSOR) carried.grow(1)
-                    else NetworkStorageHelper.insertItemStack(lvl, snap, ItemStack(net.minecraft.world.item.Items.BUCKET), c)
+                    else NetworkStorageHelper.insertItemStack(lvl, snap, ItemStack(net.minecraft.world.item.Items.BUCKET), c, channel = channel)
                     return
                 }
             }
@@ -853,9 +912,9 @@ class InventoryTerminalMenu(
             } else {
                 // Can't stack onto carried, try to put into inventory, else rollback.
                 if (!playerInventory.add(filled)) {
-                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB)
+                    NetworkStorageHelper.insertFluidAcrossNetwork(lvl, snap, fluidId, BUCKET_MB, channel = channel)
                     if (bucketSource == BucketSource.CURSOR) carried.grow(1)
-                    else NetworkStorageHelper.insertItemStack(lvl, snap, ItemStack(net.minecraft.world.item.Items.BUCKET), c)
+                    else NetworkStorageHelper.insertItemStack(lvl, snap, ItemStack(net.minecraft.world.item.Items.BUCKET), c, channel = channel)
                     return
                 }
             }
@@ -951,7 +1010,7 @@ class InventoryTerminalMenu(
                         val snap = snapshot
                         if (lvl != null && snap != null) {
                             lastShiftInserted = slotStack.copyWithCount(1)
-                            val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, slotStack, cache)
+                            val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, slotStack, cache, channel = channel)
                             if (inserted > 0) {
                                 slotStack.shrink(inserted)
                                 if (slotStack.isEmpty) playerInventory.setItem(invIndex, ItemStack.EMPTY)
@@ -969,7 +1028,7 @@ class InventoryTerminalMenu(
                         if (isHeldPortableInvSlot(i)) continue
                         val stack = playerInventory.getItem(i)
                         if (stack.isEmpty || !ItemStack.isSameItemSameComponents(stack, template)) continue
-                        val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                        val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache, channel = channel)
                         if (inserted > 0) {
                             stack.shrink(inserted)
                             if (stack.isEmpty) playerInventory.setItem(i, ItemStack.EMPTY)
@@ -1008,7 +1067,7 @@ class InventoryTerminalMenu(
             val stack = craftingContainer.getItem(i)
             if (stack.isEmpty) continue
             if (lvl != null && snap != null) {
-                val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache, channel = channel)
                 if (inserted > 0) stack.shrink(inserted)
             }
             if (!stack.isEmpty) {
@@ -1113,7 +1172,7 @@ class InventoryTerminalMenu(
         val wantHash = componentsPatch?.let { damien.nodeworks.script.BufferKey.componentsHash(it) }
         val out = ArrayList<ItemStack>()
         var remaining = maxCount
-        for (card in NetworkStorageHelper.getStorageCards(snap)) {
+        for (card in channelCards(snap)) {
             if (remaining <= 0L) break
             val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
             // Use the stack-aware predicate when narrowing to a variant so
@@ -1137,6 +1196,7 @@ class InventoryTerminalMenu(
                 if (stack.isEmpty) continue
                 val hasData = !stack.componentsPatch.isEmpty
                 c?.onExtracted(itemId, hasData, stack.count.toLong(), stack.componentsPatch)
+                c?.onChannelDelta(card.channel, itemId, stack.componentsPatch, -stack.count.toLong())
                 out.add(stack)
                 remaining -= stack.count
             }
@@ -1230,7 +1290,7 @@ class InventoryTerminalMenu(
                 return valid
             }
             for (id in valid) {
-                if (id !in network) network[id] = c.count(id)
+                if (id !in network) network[id] = cachedCount(c, id)
             }
             return valid.filter { (network[it] ?: 0L) > 0L }.sortedByDescending { network[it] ?: 0L }
         }
@@ -1286,7 +1346,7 @@ class InventoryTerminalMenu(
                 for (i in 0 until craftingContainer.containerSize) {
                     val stack = craftingContainer.getItem(i)
                     if (!stack.isEmpty) {
-                        val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                        val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache, channel = channel)
                         if (inserted > 0) {
                             stack.shrink(inserted)
                             if (stack.isEmpty) craftingContainer.setItem(i, ItemStack.EMPTY)
@@ -1650,7 +1710,7 @@ class InventoryTerminalMenu(
             for (i in 0 until craftingContainer.containerSize) {
                 val stack = craftingContainer.getItem(i)
                 if (stack.isEmpty) continue
-                val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack)
+                val inserted = NetworkStorageHelper.insertItemStack(lvl, snap, stack, channel = channel)
                 if (inserted > 0) {
                     stack.shrink(inserted)
                     if (stack.isEmpty) craftingContainer.setItem(i, ItemStack.EMPTY)
@@ -1692,7 +1752,7 @@ class InventoryTerminalMenu(
             if (action == 1) {
                 for (stack in stacks) {
                     if (!playerInventory.add(stack)) {
-                        NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache)
+                        NetworkStorageHelper.insertItemStack(lvl, snap, stack, cache, channel = channel)
                     }
                 }
             } else {
@@ -1703,10 +1763,10 @@ class InventoryTerminalMenu(
                 } else if (ItemStack.isSameItemSameComponents(carried, first) && carried.count + first.count <= carried.maxStackSize) {
                     carried.grow(first.count)
                 } else {
-                    NetworkStorageHelper.insertItemStack(lvl, snap, first, cache)
+                    NetworkStorageHelper.insertItemStack(lvl, snap, first, cache, channel = channel)
                 }
                 for (i in 1 until stacks.size) {
-                    NetworkStorageHelper.insertItemStack(lvl, snap, stacks[i], cache)
+                    NetworkStorageHelper.insertItemStack(lvl, snap, stacks[i], cache, channel = channel)
                 }
             }
         }
@@ -1737,6 +1797,7 @@ class InventoryTerminalMenu(
 
         val serverPlayer = playerInventory.player as? ServerPlayer ?: return
         tickCounter++
+        applyRequestedChannel()
 
         // Handheld recovery: once per second verify the source is still valid and
         // re-attempt resolve if the menu is disconnected. Fixed terminals skip this.
@@ -1761,6 +1822,15 @@ class InventoryTerminalMenu(
             }
         }
 
+        if (networkNeedsSync) {
+            networkNeedsSync = false
+            serverPlayer.connection.send(
+                net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(
+                    damien.nodeworks.network.InvTerminalNetworkPayload(containerId, snapshot?.networkId?.toString() ?: "")
+                )
+            )
+        }
+
         // On first sync: purge acknowledged entries from the player's full queue
         // (across networks, since seenComplete only flips for the current-network
         // entries inside [removed], so this is correct cleanup either way).
@@ -1780,7 +1850,14 @@ class InventoryTerminalMenu(
             // Build all entries (items + fluids) and split into chunks. When we're
             // disconnected (no cache) we still ship a single empty chunk so the
             // client replaces whatever was previously displayed with a blank grid.
-            val allEntries: List<InventorySyncPayload.SyncEntry> = if (c != null) {
+            val color = (channel as? damien.nodeworks.network.ChannelFilter.Color)?.color
+            filteredSent = null
+            val allEntries: List<InventorySyncPayload.SyncEntry> = if (c != null && color != null) {
+                val entries = channelEntries(c, color, reserved)
+                filteredSent = entries.associateByTo(HashMap()) { it.serial }
+                filteredVersion = c.version
+                entries
+            } else if (c != null) {
                 val itemEntries = c.getAllEntries().map { entry ->
                     val deduct = reserved[entry.info.itemId] ?: 0
                     InventorySyncPayload.SyncEntry(
@@ -1850,6 +1927,15 @@ class InventoryTerminalMenu(
         }
 
         if (!immediate && tickCounter % 5 != 0) return
+
+        // One channel: the shared change list is network-wide, so diff this view instead.
+        val color = (channel as? damien.nodeworks.network.ChannelFilter.Color)?.color
+        if (color != null) {
+            if (c.version == filteredVersion) return
+            filteredVersion = c.version
+            sendChannelDelta(serverPlayer, c, color, reserved)
+            return
+        }
         if (!c.hasChanges() && !queueDirty) return
 
         if (c.hasChanges()) {
@@ -1882,6 +1968,77 @@ class InventoryTerminalMenu(
             }
             sendToClient(serverPlayer, InventorySyncPayload(false, itemEntries + fluidEntries, removed))
         }
+    }
+
+    /** Grid entries for one channel. Uses the network's serials so the client treats
+     *  them like the unfiltered grid. Craftable entries stay so crafting still works.
+     *  With [since], only entries that differ from it are built, and [live] collects
+     *  every serial still shown, so an unchanged grid allocates nothing. */
+    private fun channelEntries(
+        c: NetworkInventoryCache,
+        color: net.minecraft.world.item.DyeColor,
+        reserved: Map<String, Int>,
+        since: Map<Long, InventorySyncPayload.SyncEntry>? = null,
+        live: MutableSet<Long>? = null,
+    ): List<InventorySyncPayload.SyncEntry> {
+        val out = ArrayList<InventorySyncPayload.SyncEntry>()
+        val counts = c.channelItemCounts(color)
+        c.forEachEntry { key, entry ->
+            val info = entry.info
+            val n = counts[key] ?: 0L
+            if (n <= 0L && !info.isCraftable) return@forEachEntry
+            val count = maxOf(0L, n - (reserved[info.itemId] ?: 0))
+            live?.add(entry.serial)
+            val prev = since?.get(entry.serial)
+            if (prev != null && prev.count == count && prev.craftable == info.isCraftable &&
+                prev.name == info.name && prev.componentsPatch == info.componentsPatch
+            ) return@forEachEntry
+            out += InventorySyncPayload.SyncEntry(
+                serial = entry.serial,
+                itemId = info.itemId,
+                name = info.name,
+                count = count,
+                maxStackSize = info.maxStackSize,
+                hasData = info.hasData,
+                craftable = info.isCraftable,
+                componentsPatch = info.componentsPatch,
+            )
+        }
+        val fluidCounts = c.channelFluidCounts(color)
+        c.forEachFluidEntry { key, entry ->
+            val n = fluidCounts[key] ?: return@forEachFluidEntry
+            live?.add(entry.serial)
+            val prev = since?.get(entry.serial)
+            if (prev != null && prev.count == n && prev.name == entry.info.name) return@forEachFluidEntry
+            out += InventorySyncPayload.SyncEntry(
+                serial = entry.serial,
+                itemId = entry.info.fluidId,
+                name = entry.info.name,
+                count = n,
+                maxStackSize = 1,
+                hasData = false,
+                craftable = false,
+                kind = 1,
+            )
+        }
+        return out
+    }
+
+    /** Send what changed in the one-channel view since the last send. */
+    private fun sendChannelDelta(
+        player: ServerPlayer,
+        c: NetworkInventoryCache,
+        color: net.minecraft.world.item.DyeColor,
+        reserved: Map<String, Int>,
+    ) {
+        val sent = filteredSent ?: return
+        val live = HashSet<Long>(sent.size)
+        val changed = channelEntries(c, color, reserved, sent, live)
+        val removed = sent.keys.filter { it !in live }
+        for (serial in removed) sent.remove(serial)
+        for (e in changed) sent[e.serial] = e
+        if (changed.isEmpty() && removed.isEmpty()) return
+        sendToClient(player, InventorySyncPayload(false, changed, removed))
     }
 
     private fun sendQueueSync(player: ServerPlayer, queue: List<CraftQueueManager.CraftQueueEntry>) {

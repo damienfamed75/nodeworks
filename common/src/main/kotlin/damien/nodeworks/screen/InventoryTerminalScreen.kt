@@ -187,6 +187,29 @@ class InventoryTerminalScreen(
      *  detect changes typed in JEI while the terminal is open. */
     private var lastJeiSeenText: String = ""
 
+    private var channelPicker: damien.nodeworks.screen.widget.ChannelPickerWidget? = null
+    /** The server said which network this is, restore the channel saved for it. */
+    fun onNetworkSynced() {
+        val id = menu.networkId ?: return
+        val saved = damien.nodeworks.network.ChannelFilter.fromNbtInt(ClientConfig.invTerminalChannel(id.toString()))
+        if (saved == menu.channel) return
+        showChannel(saved)
+        when (saved) {
+            damien.nodeworks.network.ChannelFilter.All -> channelPicker?.setNone()
+            is damien.nodeworks.network.ChannelFilter.Color -> channelPicker?.setColor(saved.color)
+        }
+    }
+
+    private fun showChannel(filter: damien.nodeworks.network.ChannelFilter) {
+        menu.channel = filter
+        scrollOffset = 0
+        PlatformServices.clientNetworking.sendToServer(
+            damien.nodeworks.network.InvTerminalSetChannelPayload(menu.containerId, filter.toNbtInt())
+        )
+    }
+
+    private var channelBtnX = 0
+    private var channelBtnY = 0
     private var cachedNetworkColor: Int? = null
     private var itemStackCache = HashMap<String, ItemStack>()
     // Reused container for JEI hoveredSlot, avoids allocating new SimpleContainer every frame
@@ -421,6 +444,27 @@ class InventoryTerminalScreen(
             }
             rebuildWidgets()
         })
+        sideBtnY += SIDE_BTN_W + SIDE_BTN_GAP
+
+        // Channel filter. The "none" cell means all channels, the default on open.
+        channelBtnX = sideBtnX
+        channelBtnY = sideBtnY
+        val shown = menu.channel
+        channelPicker = damien.nodeworks.screen.widget.ChannelPickerWidget(
+            sideBtnX + (SIDE_BTN_W - damien.nodeworks.screen.widget.ChannelPickerWidget.SWATCH) / 2,
+            sideBtnY + (SIDE_BTN_W - damien.nodeworks.screen.widget.ChannelPickerWidget.SWATCH) / 2,
+            initialColor = (shown as? damien.nodeworks.network.ChannelFilter.Color)?.color ?: net.minecraft.world.item.DyeColor.WHITE,
+            canBeNone = true,
+            initialIsNone = shown == damien.nodeworks.network.ChannelFilter.All,
+            tooltipPrefix = "Show items from",
+        ) { color ->
+            val filter = if (color == null) damien.nodeworks.network.ChannelFilter.All
+                else damien.nodeworks.network.ChannelFilter.Color(color)
+            showChannel(filter)
+            menu.networkId?.let { ClientConfig.setInvTerminalChannel(it.toString(), filter.toNbtInt()) }
+        }.also { addRenderableWidget(it) }
+        // The network can be known before the screen opened, restore its channel now.
+        onNetworkSynced()
 
         // Crafting grid utility buttons (left of 3x3 grid, only when expanded)
         if (!craftingCollapsed) {
@@ -502,6 +546,15 @@ class InventoryTerminalScreen(
             } else -1
             NineSlice.drawTitleBar(graphics, font, title, leftPos, topPos, imageWidth, TOP_BAR_H, networkColor)
         }
+
+        // Button frame behind the channel swatch, matching the other side buttons.
+        val hovered = mouseX in channelBtnX until channelBtnX + SIDE_BTN_W && mouseY in channelBtnY until channelBtnY + SIDE_BTN_W
+        val btn = when {
+            channelPicker?.expanded == true -> NineSlice.BUTTON_ACTIVE
+            hovered -> NineSlice.BUTTON_HOVER
+            else -> NineSlice.BUTTON
+        }
+        btn.draw(graphics, channelBtnX, channelBtnY, SIDE_BTN_W, SIDE_BTN_W)
 
         // Network item grid background
         networkGrid.renderBackground(graphics)
@@ -1111,6 +1164,8 @@ class InventoryTerminalScreen(
             graphics.pose().popMatrix()
         }
 
+        if (craftDialogueItemId == null) channelPicker?.renderOverlay(graphics, mouseX, mouseY)
+
         // Render carried item on cursor
         val carried = menu.carried
         if (!carried.isEmpty) {
@@ -1130,6 +1185,9 @@ class InventoryTerminalScreen(
     // ========== Input ==========
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        // An open channel popup takes the click before anything under it.
+        val picker = channelPicker
+        if (picker != null && picker.expanded && picker.handleOverlayClick(event.mouseX, event.mouseY)) return true
         val mouseX = event.mouseX
         val mouseY = event.mouseY
         val button = event.buttonNum
@@ -1615,6 +1673,10 @@ class InventoryTerminalScreen(
 
     override fun keyPressed(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
+        if (channelPicker?.expanded == true && keyCode == InputConstants.KEY_ESCAPE) {
+            channelPicker?.closePopup()
+            return true
+        }
         val scanCode = event.scan
         val modifiers = event.modifierBits
         // Craft dialogue keys

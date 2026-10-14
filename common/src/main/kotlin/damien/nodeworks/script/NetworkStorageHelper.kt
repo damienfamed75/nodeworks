@@ -254,6 +254,7 @@ object NetworkStorageHelper {
             if (!channel.matches(card.channel)) continue
             val storage = getFluidStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertFluid(storage, fluidId, remaining)
+            if (inserted > 0L) cache?.onChannelFluidDelta(card.channel, fluidId, inserted)
             remaining -= inserted
         }
         val placed = amount - remaining
@@ -577,6 +578,7 @@ object NetworkStorageHelper {
             if (cap != null && !cap.acceptsItem(stack, registries)) continue
             val storage = getStorage(level, card) ?: continue
             val inserted = PlatformServices.storage.insertItemStack(storage, stack.copyWithCount(remaining))
+            if (inserted > 0 && itemId != null) cache?.onChannelDelta(card.channel, itemId, stack.componentsPatch, inserted.toLong())
             remaining -= inserted
         }
         val totalInserted = stack.count - remaining

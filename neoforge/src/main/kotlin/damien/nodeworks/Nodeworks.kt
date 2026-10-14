@@ -449,6 +449,19 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                 }
             }
         }
+        registrar.playToServer(InvTerminalChannelPrefsPayload.TYPE, InvTerminalChannelPrefsPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                damien.nodeworks.screen.InvTerminalChannelPrefs.replace(context.player().uuid, payload.entries, damien.nodeworks.platform.PlatformServices.modState.tickCount)
+            }
+        }
+        registrar.playToServer(InvTerminalSetChannelPayload.TYPE, InvTerminalSetChannelPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val menu = context.player().containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.selectChannel(damien.nodeworks.network.ChannelFilter.fromNbtInt(payload.channel))
+                }
+            }
+        }
         registrar.playToServer(InvTerminalCollectPayload.TYPE, InvTerminalCollectPayload.CODEC) { payload, context ->
             context.enqueueWork {
                 val player = context.player()
@@ -943,6 +956,17 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
             }
         }
 
+        registrar.playToClient(InvTerminalNetworkPayload.TYPE, InvTerminalNetworkPayload.CODEC) { payload, context ->
+            context.enqueueWork {
+                val player = net.minecraft.client.Minecraft.getInstance().player ?: return@enqueueWork
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.InventoryTerminalMenu && menu.containerId == payload.containerId) {
+                    menu.networkId = runCatching { java.util.UUID.fromString(payload.networkId) }.getOrNull()
+                    (net.minecraft.client.Minecraft.getInstance().screen as? damien.nodeworks.screen.InventoryTerminalScreen)?.onNetworkSynced()
+                }
+            }
+        }
+
         registrar.playToClient(
             damien.nodeworks.network.PortableConnectionStatusPayload.TYPE,
             damien.nodeworks.network.PortableConnectionStatusPayload.CODEC,
@@ -1146,6 +1170,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         diagnosticPreviewLastTick.remove(event.entity.uuid)
         deviceSettingsLastTick.remove(event.entity.uuid)
         damien.nodeworks.item.GrappleBeamSessions.clearForPlayer(event.entity.uuid)
+        damien.nodeworks.screen.InvTerminalChannelPrefs.clear(event.entity.uuid)
     }
 
     private fun onRightClickBlock(event: net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock) {

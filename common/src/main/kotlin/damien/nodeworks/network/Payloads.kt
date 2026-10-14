@@ -251,6 +251,55 @@ data class InvTerminalCraftGridActionPayload(val containerId: Int, val action: I
     override fun type() = TYPE
 }
 
+/** C2S: Show one channel in the Inventory Terminal grid. [channel] uses the
+ *  [damien.nodeworks.network.ChannelFilter] NBT encoding, -1 for all channels. */
+data class InvTerminalSetChannelPayload(val containerId: Int, val channel: Int) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalSetChannelPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_set_channel"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalSetChannelPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.channel) },
+            { buf -> InvTerminalSetChannelPayload(buf.readVarInt(), buf.readVarInt()) }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** C2S: The client's saved Inventory Terminal channel per network id, sent on join
+ *  so terminals open straight onto the saved channel. */
+data class InvTerminalChannelPrefsPayload(val entries: Map<String, Int>) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalChannelPrefsPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_channel_prefs"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalChannelPrefsPayload> = CustomPacketPayload.codec(
+            { p, buf ->
+                val sent = p.entries.entries.take(damien.nodeworks.screen.InvTerminalChannelPrefs.MAX_ENTRIES)
+                buf.writeVarInt(sent.size)
+                for ((network, channel) in sent) { buf.writeUtf(network, 64); buf.writeVarInt(channel) }
+            },
+            { buf ->
+                val size = buf.readVarInt()
+                if (size !in 0..damien.nodeworks.screen.InvTerminalChannelPrefs.MAX_ENTRIES) throw IllegalArgumentException("Too many channel prefs: $size")
+                val entries = HashMap<String, Int>(size)
+                repeat(size) { entries[buf.readUtf(64)] = buf.readVarInt() }
+                InvTerminalChannelPrefsPayload(entries)
+            }
+        )
+    }
+    override fun type() = TYPE
+}
+
+/** S2C: The network an Inventory Terminal menu is on, so the client can restore the
+ *  channel it saved for that network. [networkId] is empty when there is none. */
+data class InvTerminalNetworkPayload(val containerId: Int, val networkId: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<InvTerminalNetworkPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "inv_terminal_network"))
+        val CODEC: StreamCodec<FriendlyByteBuf, InvTerminalNetworkPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeUtf(p.networkId) },
+            { buf -> InvTerminalNetworkPayload(buf.readVarInt(), buf.readUtf(64)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /**
  * C2S: Distribute carried item evenly across specified crafting slot indices.
  * Used for left-click drag in the crafting grid.

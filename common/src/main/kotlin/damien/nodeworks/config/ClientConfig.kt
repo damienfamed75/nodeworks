@@ -23,6 +23,8 @@ object ClientConfig {
         var invTerminalFilterMode: String = "BOTH",
         var invTerminalKindMode: String = "BOTH",
         var invTerminalJeiSync: Boolean = false,
+        // Inventory Terminal channel filter per network id, ChannelFilter NBT encoding.
+        var invTerminalChannels: MutableMap<String, Int>? = HashMap(),
         var scriptTerminalLayout: Int = 0
     )
 
@@ -83,6 +85,17 @@ object ClientConfig {
     var invTerminalJeiSync: Boolean
         get() = data.invTerminalJeiSync
         set(value) { data.invTerminalJeiSync = value; save() }
+
+    /** Channel last shown on [networkId], -1 (all channels) when never set. */
+    fun invTerminalChannel(networkId: String): Int = data.invTerminalChannels?.get(networkId) ?: -1
+
+    fun invTerminalChannels(): Map<String, Int> = HashMap(data.invTerminalChannels ?: emptyMap())
+
+    fun setInvTerminalChannel(networkId: String, channel: Int) {
+        val map = data.invTerminalChannels ?: HashMap<String, Int>().also { data.invTerminalChannels = it }
+        if (channel < 0) map.remove(networkId) else map[networkId] = channel
+        save()
+    }
 
     // --- Scripting Terminal ---
 

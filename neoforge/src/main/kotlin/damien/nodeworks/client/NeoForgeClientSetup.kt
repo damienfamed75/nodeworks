@@ -94,6 +94,15 @@ object NeoForgeClientSetup {
         // singleplayer too. Login is a fallback in case tags were bound before it fired.
         NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingIn ->
             damien.nodeworks.client.RegistryIdCache.preload()
+            // Saved terminal channels go up now, so opening a terminal never waits on them.
+            // Skipped on servers without Nodeworks, which don't know the packet.
+            val saved = damien.nodeworks.config.ClientConfig.invTerminalChannels()
+            val type = damien.nodeworks.network.InvTerminalChannelPrefsPayload.TYPE
+            if (saved.isNotEmpty() && net.minecraft.client.Minecraft.getInstance().connection?.hasChannel(type) == true) {
+                damien.nodeworks.platform.PlatformServices.clientNetworking.sendToServer(
+                    damien.nodeworks.network.InvTerminalChannelPrefsPayload(saved)
+                )
+            }
         }
         NeoForge.EVENT_BUS.addListener { _: net.neoforged.neoforge.event.TagsUpdatedEvent.ClientPacketReceived ->
             damien.nodeworks.client.RegistryIdCache.preload()
