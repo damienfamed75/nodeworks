@@ -182,6 +182,35 @@ interface StorageService {
     /** Find ALL unique item types in storage matching the filter, with full metadata. */
     fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo>
 
+    /** Slots a ranged scan can address, or -1 when [storage] isn't slot-addressable
+     *  (an ME network) and can only be scanned whole via [findAllItemInfo]. */
+    fun slotCount(storage: ItemStorageHandle): Int = -1
+
+    /** [findAllItemInfo] over slots `[from, until)`, [until] clamped to the current
+     *  slot count. Lets the inventory cache spread one huge handler across ticks. */
+    fun findAllItemInfoInRange(
+        storage: ItemStorageHandle,
+        from: Int,
+        until: Int,
+        filter: (String) -> Boolean,
+    ): List<ItemInfo> = if (from == 0) findAllItemInfo(storage, filter) else emptyList()
+
+    /** Freeze a whole-only storage's entries (an ME network's item types) into an
+     *  indexable snapshot, so the inventory cache can read it in ranges across
+     *  ticks like slots. [memo] is the [EntrySnapshot.memo] of the previous
+     *  snapshot taken for the same storage, letting unchanged entries be reused
+     *  instead of rebuilt. Null when [storage] doesn't support this. */
+    fun snapshotEntries(storage: ItemStorageHandle, memo: Any?): EntrySnapshot? = null
+
+    /** Visit entries `[from, until)` of [snapshot] with their cache key. Entries
+     *  unchanged since the memo'd snapshot come back as the same objects. */
+    fun readEntries(
+        snapshot: EntrySnapshot,
+        from: Int,
+        until: Int,
+        visit: (damien.nodeworks.script.BufferKey.Key, ItemInfo) -> Unit,
+    ) {}
+
     /** Extract (remove) items from storage matching the filter. Returns count actually removed. */
     fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
 
@@ -350,6 +379,16 @@ interface ItemStorageHandle
 
 /** Opaque handle to a fluid storage, platform-specific implementation. */
 interface FluidStorageHandle
+
+/** A whole-only storage's entries frozen at one moment, see
+ *  [StorageService.snapshotEntries]. Platform-specific, opaque to callers. */
+interface EntrySnapshot {
+    /** Entries in the snapshot, the index space of [StorageService.readEntries]. */
+    val size: Int
+    /** Reuse state to pass to the next [StorageService.snapshotEntries] call for
+     *  the same storage. Only meaningful once this snapshot was read to its end. */
+    val memo: Any
+}
 
 /** Opaque handle to a slotted item storage. */
 interface SlottedItemStorageHandle : ItemStorageHandle {

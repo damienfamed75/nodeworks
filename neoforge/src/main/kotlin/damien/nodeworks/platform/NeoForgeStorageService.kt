@@ -379,7 +379,18 @@ class NeoForgeStorageService : StorageService {
         return null
     }
 
-    override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> {
+    override fun findAllItemInfo(storage: ItemStorageHandle, filter: (String) -> Boolean): List<ItemInfo> =
+        findAllItemInfoInRange(storage, 0, Int.MAX_VALUE, filter)
+
+    override fun slotCount(storage: ItemStorageHandle): Int =
+        (storage as? NeoForgeItemStorageHandle)?.handler?.slots ?: -1
+
+    override fun findAllItemInfoInRange(
+        storage: ItemStorageHandle,
+        from: Int,
+        until: Int,
+        filter: (String) -> Boolean,
+    ): List<ItemInfo> {
         val handler = (storage as NeoForgeItemStorageHandle).handler
         // Aggregation key is the full BufferKey so stacks with distinct
         // DataComponents (different potions, dyed armor, enchanted books) stay
@@ -388,7 +399,8 @@ class NeoForgeStorageService : StorageService {
         // hashed all five potion variants together and the Inventory Terminal
         // / network:find / card:find all displayed one with the wrong count.
         val aggregated = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, ItemInfo>()
-        for (slot in 0 until handler.slots) {
+        val end = minOf(until, handler.slots)
+        for (slot in from.coerceAtLeast(0) until end) {
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
             val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue

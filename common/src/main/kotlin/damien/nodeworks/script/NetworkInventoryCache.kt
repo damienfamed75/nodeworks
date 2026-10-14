@@ -3,8 +3,10 @@ package damien.nodeworks.script
 import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.NetworkDiscovery
 import damien.nodeworks.network.NetworkSnapshot
+import damien.nodeworks.platform.EntrySnapshot
 import damien.nodeworks.platform.FluidInfo
 import damien.nodeworks.platform.ItemInfo
+import damien.nodeworks.platform.ItemStorageHandle
 import damien.nodeworks.platform.PlatformServices
 import net.minecraft.world.item.ItemStack
 import net.minecraft.core.BlockPos
@@ -31,9 +33,32 @@ class NetworkInventoryCache(
     fun rebindEntryPoint(pos: BlockPos) {
         if (networkEntryNode == pos) return
         networkEntryNode = pos
-        val cards = snapshotCardsForCycle()
-        for (card in cards) pollCard(card)
-        finalizeAndDiff()
+        fullScan()
+    }
+
+    /** Synchronous scan of every card, then restart the poll cycle. A cycle left
+     *  running would keep adding its remaining units into the front buffer this
+     *  just filled and diffed, double counting them at its end. Ranges are
+     *  planned from last measured sizes, unmeasured cards are read whole. */
+    private fun fullScan() {
+        val queue = ArrayDeque(snapshotCardsForCycle())
+        var work = 0L
+        var nanos = 0L
+        // Continuations go back on the local queue, so a storage of unknown size
+        // is still read to its end before this returns.
+        while (queue.isNotEmpty()) {
+            val start = System.nanoTime()
+            val done = pollUnit(queue.removeFirst(), queue::addLast)
+            if (done >= 0) {
+                work += done
+                nanos += System.nanoTime() - start
+            }
+        }
+        // Timed so the first planned cycle is sized from this network's real
+        // per-slot cost. Whole-only reads are left out, as in [PollCycle].
+        pollCycle.seedCost(nanos, work)
+        finalizeAndDiff(complete = true)
+        pollCycle.restart()
     }
 
     data class SerialEntry(
@@ -89,13 +114,51 @@ class NetworkInventoryCache(
     private val removedSerials = mutableSetOf<Long>()
     private val changedFluidSerials = mutableSetOf<Long>()
 
-    // Round-robin polling state. The previous "poll all cards every N ticks" model
-    // is replaced with "spread one full poll across N ticks, polling 1/N of the
-    // cards per tick." Same effective rate, no per-tick burst when networks have
-    // many storage cards. The cycle state machine lives in [PollCycle], this class
-    // just wires its callbacks to the cache-specific buffer-swap, per-card poll,
-    // and apply-diff steps.
-    private val pollCycle = PollCycle<CardSnapshot>(MIN_SLICES, MAX_SLICES)
+    // Round-robin polling state. One full poll is spread across a cycle of ticks,
+    // balanced by slots read rather than card count, so one card on a giant
+    // storage controller can't land its whole scan on a single tick. The cycle
+    // state machine lives in [PollCycle], this class wires its callbacks to the
+    // cache-specific buffer-swap, per-unit poll, and apply-diff steps.
+    private val pollCycle = PollCycle<PollUnit>(MIN_SLICES, MAX_SLICES)
+
+    /** One unit of poll work: a card's whole inventory, or one slot range of a
+     *  large one. An [until] of Int.MAX_VALUE is open-ended: it reads one range
+     *  from [from] and defers the rest, so a handler of unknown or grown size is
+     *  read in full without any single poll exceeding [SLOTS_PER_UNIT] slots.
+     *  [nodePos] and [side] locate the card, for the still-attached check on
+     *  later ranges. Null only if the card wasn't found on a node. */
+    private class PollUnit(
+        val card: CardSnapshot,
+        val pos: BlockPos,
+        val nodePos: BlockPos?,
+        val side: net.minecraft.core.Direction?,
+        val from: Int,
+        val until: Int,
+        val weight: Int,
+    )
+
+    // Ranges of storages being read across ticks, merged into [frontBuffer] only
+    // once a storage is read to its end. See [SplitScanStaging].
+    private val staging = SplitScanStaging<BlockPos, BufferKey.Key, ItemInfo> { a, b ->
+        a.copy(count = a.count + b.count)
+    }
+
+    /** Size seen on the last poll of a storage position, plans the next cycle's
+     *  split. [indexed] false means a handle that can only be read whole. */
+    private class MeasuredSize(val weight: Int, val indexed: Boolean)
+    private val measuredSizes = HashMap<BlockPos, MeasuredSize>()
+
+    // Entry snapshots (ME networks) being read across ticks this cycle, one per
+    // storage, taken by its first range and shared by the rest.
+    private val entryPasses = HashMap<BlockPos, EntrySnapshot>()
+    // Per-storage reuse state kept across cycles, see [StorageService.snapshotEntries].
+    private val entryMemos = HashMap<BlockPos, Any>()
+
+    /** A storage read by index range: live slots, or a frozen entry snapshot. */
+    private class RangeReader(
+        val size: Int,
+        val read: (from: Int, until: Int, visit: (BufferKey.Key, ItemInfo) -> Unit) -> Unit,
+    )
 
     // Snapshot held between [snapshotCardsForCycle] and [finalizeAndDiff] so the
     // craftable-phantom pass at cycle end can read the same network topology that
@@ -118,6 +181,14 @@ class NetworkInventoryCache(
         // MAX = idle cycle (60 ticks per cycle, scan ~1/60 of cards each tick).
         private const val MIN_SLICES = 5
         private const val MAX_SLICES = 60
+        // Handlers above this many slots are read in ranges of this size, each
+        // range scheduled like its own card.
+        private const val SLOTS_PER_UNIT = 1024
+        // Slots past this on one handler are never read. Real setups are far
+        // below it (1000 large chests is ~100k), it stops a handler reporting
+        // an absurd slot count from planning millions of units every cycle.
+        private const val MAX_SLOTS_PER_HANDLER = 1 shl 20
+        private val logger = org.slf4j.LoggerFactory.getLogger("nodeworks-inventory-cache")
 
         /** Global registry of caches. Keyed by UUID string when controller exists, or dim:pos as fallback. */
         private val caches = ConcurrentHashMap<String, NetworkInventoryCache>()
@@ -171,9 +242,7 @@ class NetworkInventoryCache(
         // Bypasses the round-robin path (a multi-tick first scan would leave the cache
         // empty for several ticks, which Inventory Terminal opens would briefly show
         // as "empty network").
-        val cards = snapshotCardsForCycle()
-        for (card in cards) pollCard(card)
-        finalizeAndDiff()
+        fullScan()
     }
 
     /**
@@ -195,17 +264,23 @@ class NetworkInventoryCache(
         // (cycle-end tick), so we need both the pre-tick value (the slice that was
         // just polled) and the post-tick state (to detect cycle end).
         val cycleTickBefore = pollCycle.cycleTick
-        val sliceCountBefore = pollCycle.sliceCount
 
-        val changed = pollCycle.tick(
+        val changed = pollCycle.tickWeighted(
             beginCycle = ::snapshotCardsForCycle,
+            weightOf = { it.weight },
             pollItem = if (polledThisTick != null) {
-                { card -> polledThisTick.add(card); pollCard(card) }
+                { unit ->
+                    // A split card shows once per tick, not once per range.
+                    if (polledThisTick.lastOrNull() !== unit.card) polledThisTick.add(unit.card)
+                    pollUnit(unit, pollCycle::defer)
+                }
             } else {
-                ::pollCard
+                { unit -> pollUnit(unit, pollCycle::defer) }
             },
-            endCycle = ::finalizeAndDiff,
+            endCycle = { finalizeAndDiff(pollCycle.cycleComplete) },
         )
+        // Planned at the start of the cycle this tick belongs to, unchanged until the next one.
+        val cycleLength = pollCycle.cycleLength
 
         if (debug) {
             // pollCycle.cycleTick == 0 after the tick means the cycle just ended (it
@@ -217,7 +292,7 @@ class NetworkInventoryCache(
                 networkEntryNode = networkEntryNode,
                 tick = level.gameTime,
                 cycleTick = cycleTickBefore,
-                sliceCount = sliceCountBefore,
+                sliceCount = cycleLength,
                 polled = polledThisTick ?: emptyList(),
                 cycleEnded = cycleEnded,
                 cycleChanged = changed,
@@ -227,45 +302,98 @@ class NetworkInventoryCache(
     }
 
     /** Start a new poll cycle: clear the front buffers, capture the network
-     *  snapshot for the cycle, return the frozen card list to scan. Cards are
+     *  snapshot for the cycle, return the frozen unit list to scan. Cards are
      *  deduped by adjacentPos so multi-face setups on one block don't poll
-     *  the inventory more than once per cycle. */
-    private fun snapshotCardsForCycle(): List<CardSnapshot> {
+     *  the inventory more than once per cycle. Cards last measured above
+     *  [SLOTS_PER_UNIT] slots become one unit per slot range, unmeasured and
+     *  whole-only cards stay one unit. */
+    private fun snapshotCardsForCycle(): List<PollUnit> {
         frontBuffer.clear()
         fluidFrontBuffer.clear()
+        staging.clear()
+        entryPasses.clear()
         val snapshot = NetworkDiscovery.discoverNetwork(level, networkEntryNode)
         cycleSnapshot = snapshot
-        return NetworkStorageHelper.getDedupedStorageCards(snapshot)
-    }
-
-    /** Read one storage card's items and fluids into the front buffers. Called
-     *  once per card per cycle, distributed across the cycle's ticks. */
-    private fun pollCard(card: CardSnapshot) {
-        val storage = NetworkStorageHelper.getStorage(level, card)
-        if (storage != null) {
-            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-            // findAllItemInfoAt walks the underlying Container directly when
-            // available so all slots are visible regardless of [card]'s
-            // face. Falls back to [storage] (face-restricted handle) for
-            // modded inventories.
-            val items = if (cap != null) {
-                NetworkStorageHelper.findAllItemInfoAt(level, cap.adjacentPos, card) { true }
-            } else {
-                PlatformServices.storage.findAllItemInfo(storage) { true }
-            }
-            for (info in items) {
-                val key = cacheKey(info)
-                val existing = frontBuffer[key]
-                if (existing != null) {
-                    frontBuffer[key] = existing.copy(count = existing.count + info.count)
-                } else {
-                    frontBuffer[key] = info
-                }
+        val cards = NetworkStorageHelper.getDedupedStorageCards(snapshot)
+        // Which node and side each card is mounted on. Same instances the
+        // storage card list is built from, so identity lookup is exact.
+        val mounts = java.util.IdentityHashMap<CardSnapshot, Pair<BlockPos, net.minecraft.core.Direction>>()
+        for (node in snapshot.nodes) {
+            for ((side, sideCards) in node.sides) {
+                for (c in sideCards) mounts[c] = node.pos to side
             }
         }
+        val units = ArrayList<PollUnit>(cards.size)
+        val livePositions = HashSet<BlockPos>()
+        for (card in cards) {
+            val pos = (card.capability as? damien.nodeworks.card.StorageSideCapability)?.adjacentPos ?: continue
+            livePositions.add(pos)
+            val mount = mounts[card]
+            val size = measuredSizes[pos]
+            if (size == null || !size.indexed || size.weight <= SLOTS_PER_UNIT) {
+                units.add(PollUnit(card, pos, mount?.first, mount?.second, 0, Int.MAX_VALUE, size?.weight ?: 1))
+                continue
+            }
+            val planned = minOf(size.weight, MAX_SLOTS_PER_HANDLER)
+            var from = 0
+            while (from < planned) {
+                val next = from + SLOTS_PER_UNIT
+                val last = next >= planned
+                units.add(PollUnit(
+                    card, pos, mount?.first, mount?.second,
+                    from, if (last) Int.MAX_VALUE else next, minOf(next, planned) - from,
+                ))
+                from = next
+            }
+        }
+        // Forget removed storages so these can't grow without bound.
+        measuredSizes.keys.retainAll(livePositions)
+        entryMemos.keys.retainAll(livePositions)
+        return units
+    }
+
+    /** Read one unit's items (and, on a card's first unit, its fluids). Returns
+     *  the entries read so [PollCycle] can measure cost, or
+     *  [PollCycle.UNMEASURED] for a handle that can only be read whole.
+     *
+     *  A storage read in one unit goes straight into [frontBuffer]. One read
+     *  across several units is staged and only merged once its last range is
+     *  read, so it never counts partially. If it goes away partway (card
+     *  pulled, block broken, chunk unloaded, handler changed kind) it's
+     *  abandoned for the cycle and its items drop out cleanly. Slot handles
+     *  are re-resolved per unit and each range clamped to the live slot count,
+     *  so a storage that shrank or grew mid-cycle is read safely. An ME
+     *  network is read from one snapshot taken by its first range, so every
+     *  range sees the same moment. [defer] queues the rest of an open-ended
+     *  unit for a later poll. */
+    private fun pollUnit(unit: PollUnit, defer: (PollUnit) -> Unit): Int {
+        if (staging.isAbandoned(unit.pos)) return 0
+        // The card list is frozen at cycle start. Later ranges re-check the card
+        // so a pulled one stops being read, and the chunk so a continuation
+        // never force-loads one.
+        if (unit.from > 0 && !isStillAttached(unit)) {
+            abandon(unit.pos)
+            return 0
+        }
+        var work = 0
+        val storage = NetworkStorageHelper.getStorage(level, unit.card)
+        val reader = if (storage != null) rangeReaderFor(unit, storage) else null
+        when {
+            storage == null -> if (unit.from > 0) abandon(unit.pos)
+            reader != null -> work = readRange(unit, reader, defer)
+            unit.from == 0 -> {
+                val items = PlatformServices.storage.findAllItemInfo(storage) { true }
+                // Its cost per entry isn't a per-slot cost, keep it out of the estimate.
+                work = PollCycle.UNMEASURED
+                measuredSizes[unit.pos] = MeasuredSize(items.size, indexed = false)
+                addToFrontBuffer(items)
+            }
+            // A later range with nothing left to read it from.
+            else -> abandon(unit.pos)
+        }
         // Independent of the item branch: a hybrid block (casting table, ME network)
-        // contributes to both buffers in the same poll.
-        val fluidStorage = NetworkStorageHelper.getFluidStorage(level, card)
+        // contributes to both buffers in the same poll. Once per card, on its first unit.
+        val fluidStorage = if (unit.from == 0) NetworkStorageHelper.getFluidStorage(level, unit.card) else null
         if (fluidStorage != null) {
             val fluids = PlatformServices.storage.findAllFluidInfo(fluidStorage) { true }
             for (info in fluids) {
@@ -277,12 +405,110 @@ class NetworkInventoryCache(
                 }
             }
         }
+        return work
+    }
+
+    /** Live slots when the handle has them. Otherwise an entry snapshot: the
+     *  first range takes it, later ranges reuse it even if the live handle
+     *  changed, since the snapshot is self-contained. Null when neither applies. */
+    private fun rangeReaderFor(unit: PollUnit, storage: ItemStorageHandle): RangeReader? {
+        val pass = entryPasses[unit.pos]
+        if (unit.from == 0 || pass == null) {
+            val slots = PlatformServices.storage.slotCount(storage)
+            if (slots >= 0) {
+                // A later slot range of a storage this cycle started as entries.
+                if (unit.from > 0 && pass != null) return null
+                return RangeReader(slots) { from, until, visit ->
+                    for (info in PlatformServices.storage.findAllItemInfoInRange(storage, from, until) { true }) {
+                        visit(cacheKey(info), info)
+                    }
+                }
+            }
+            if (unit.from > 0) return null
+        }
+        val snapshot = if (unit.from == 0) {
+            PlatformServices.storage.snapshotEntries(storage, entryMemos[unit.pos])
+                ?.also { entryPasses[unit.pos] = it } ?: return null
+        } else {
+            pass ?: return null
+        }
+        return RangeReader(snapshot.size) { from, until, visit ->
+            PlatformServices.storage.readEntries(snapshot, from, until, visit)
+        }
+    }
+
+    /** Read [unit]'s range from [reader], staging or committing as described on
+     *  [pollUnit]. Returns entries read. */
+    private fun readRange(unit: PollUnit, reader: RangeReader, defer: (PollUnit) -> Unit): Int {
+        measuredSizes[unit.pos] = MeasuredSize(reader.size, indexed = true)
+        val limit = minOf(reader.size, MAX_SLOTS_PER_HANDLER)
+        val open = unit.until == Int.MAX_VALUE
+        val end = if (open) minOf(limit, unit.from + SLOTS_PER_UNIT) else minOf(unit.until, limit)
+        val work = (end - unit.from).coerceAtLeast(0)
+        if (unit.from == 0 && end >= limit) {
+            if (work > 0) reader.read(0, end, ::addToFrontBuffer)
+            finishPass(unit.pos)
+        } else {
+            if (work > 0) reader.read(unit.from, end) { key, info -> staging.stage(unit.pos, key, info) }
+            if (end >= limit) {
+                staging.commit(unit.pos, frontBuffer)
+                finishPass(unit.pos)
+            } else if (open) {
+                defer(PollUnit(unit.card, unit.pos, unit.nodePos, unit.side, end, Int.MAX_VALUE, SLOTS_PER_UNIT))
+            }
+        }
+        return work
+    }
+
+    /** A storage was read to its end: keep its entry snapshot's reuse state. */
+    private fun finishPass(pos: BlockPos) {
+        entryPasses.remove(pos)?.let { entryMemos[pos] = it.memo }
+    }
+
+    private fun abandon(pos: BlockPos) {
+        staging.abandon(pos)
+        entryPasses.remove(pos)
+    }
+
+    private fun addToFrontBuffer(key: BufferKey.Key, info: ItemInfo) {
+        val existing = frontBuffer[key]
+        frontBuffer[key] = if (existing != null) existing.copy(count = existing.count + info.count) else info
+    }
+
+    private fun addToFrontBuffer(items: List<ItemInfo>) {
+        for (info in items) addToFrontBuffer(cacheKey(info), info)
+    }
+
+    /** Whether a later range of [unit] should still be read: its chunks are
+     *  loaded and its node still holds a Storage Card in the same slot. */
+    private fun isStillAttached(unit: PollUnit): Boolean {
+        if (!level.isLoaded(unit.pos)) return false
+        val nodePos = unit.nodePos ?: return true
+        val side = unit.side ?: return true
+        if (!level.isLoaded(nodePos)) return false
+        val node = level.getBlockEntity(nodePos) as? damien.nodeworks.block.entity.NodeBlockEntity ?: return false
+        return node.getCards(side).any {
+            it.slotIndex == unit.card.slotIndex && it.card is damien.nodeworks.card.StorageCard
+        }
     }
 
     /** Finalise a poll cycle: apply craftable phantoms (per-cycle, not per-card)
      *  and diff the front/back buffers. The slice-budget adaptation lives on
-     *  [pollCycle] now and runs after this returns. */
-    private fun finalizeAndDiff(): Boolean {
+     *  [pollCycle] now and runs after this returns.
+     *
+     *  An incomplete cycle (deferred work dropped at the hard cap) didn't see
+     *  everything, and diffing it would remove items that were never read. It's
+     *  skipped and the last good state is kept. Every split storage is committed
+     *  or abandoned before a complete cycle ends, anything still staged would be
+     *  a partial read and is discarded rather than counted. */
+    private fun finalizeAndDiff(complete: Boolean): Boolean {
+        val stray = staging.hasPending
+        staging.clear()
+        if (!complete) {
+            cycleSnapshot = null
+            return false
+        }
+        if (stray) logger.debug("Inventory cache at {} ended a cycle with a storage half-read, discarded it", networkEntryNode)
         val snapshot = cycleSnapshot
         if (snapshot != null) {
             // Phantom craftable entries for recipe outputs not already in storage.

@@ -68,6 +68,36 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         return if (a != null) Ae2Storage.findAllItemInfo(a, filter) else base.findAllItemInfo(storage, filter)
     }
 
+    // An ME network has no slots, so it reports -1 and is always scanned whole.
+    override fun slotCount(storage: ItemStorageHandle): Int =
+        if (ae2(storage) != null) -1 else base.slotCount(storage)
+
+    override fun findAllItemInfoInRange(
+        storage: ItemStorageHandle,
+        from: Int,
+        until: Int,
+        filter: (String) -> Boolean,
+    ): List<ItemInfo> {
+        val a = ae2(storage)
+        return if (a != null) { if (from == 0) Ae2Storage.findAllItemInfo(a, filter) else emptyList() }
+        else base.findAllItemInfoInRange(storage, from, until, filter)
+    }
+
+    override fun snapshotEntries(storage: ItemStorageHandle, memo: Any?): EntrySnapshot? =
+        ae2(storage)?.let { Ae2Storage.snapshotEntries(it, memo) }
+
+    override fun readEntries(
+        snapshot: EntrySnapshot,
+        from: Int,
+        until: Int,
+        visit: (damien.nodeworks.script.BufferKey.Key, ItemInfo) -> Unit,
+    ) {
+        // Guarded like [ae2] so a server without AE2 never loads its classes.
+        if (Ae2Compat.isLoaded && snapshot is Ae2Storage.Ae2EntrySnapshot) {
+            Ae2Storage.readEntries(snapshot, from, until, visit)
+        }
+    }
+
     override fun extractItems(storage: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
         val a = ae2(storage)
         return if (a != null) Ae2Storage.extractItems(a, filter, maxCount) else base.extractItems(storage, filter, maxCount)

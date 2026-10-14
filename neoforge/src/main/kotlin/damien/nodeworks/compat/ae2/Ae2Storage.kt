@@ -9,11 +9,14 @@ import appeng.api.stacks.AEItemKey
 import appeng.api.stacks.AEKey
 import appeng.api.stacks.KeyCounter
 import appeng.api.storage.MEStorage
+import damien.nodeworks.platform.EntrySnapshot
 import damien.nodeworks.platform.FluidInfo
 import damien.nodeworks.platform.FluidStorageHandle
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
 import damien.nodeworks.platform.PlatformServices
+import damien.nodeworks.script.BufferKey
+import damien.nodeworks.script.EntryReuse
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.core.registries.BuiltInRegistries
@@ -128,6 +131,63 @@ object Ae2Storage {
         val out = ArrayList<ItemInfo>()
         forEachItem(h, filter) { key, n -> out += info(key, n) }
         return out
+    }
+
+    // ---- ranged polling for the inventory cache ----
+    // Building an ItemInfo (id string, display name, components hash) is the
+    // expensive part of reading a network, not walking AE2's cache. Entries are
+    // built once per type and reused while the type stays in the network, so a
+    // steady network costs a map lookup and a count compare per type per poll.
+
+    internal class PolledEntry(val key: BufferKey.Key, var info: ItemInfo)
+
+    class Ae2EntrySnapshot internal constructor(
+        internal val keys: Array<AEItemKey>,
+        internal val counts: LongArray,
+        internal val reuse: EntryReuse<AEItemKey, PolledEntry>,
+        internal val pass: EntryReuse<AEItemKey, PolledEntry>.Pass,
+    ) : EntrySnapshot {
+        override val size: Int get() = keys.size
+        override val memo: Any get() = reuse
+    }
+
+    /** Copy the network's item types and counts in one pass, frozen so the cache
+     *  can read them in ranges over later ticks and get one consistent picture.
+     *  Reads the grid's cache even right after our own extract, where [snapshot]
+     *  would walk every cell instead: at most a tick stale, and the inventory
+     *  cache's own insert/extract hooks already carry our changes. */
+    fun snapshotEntries(h: Ae2ItemStorageHandle, memo: Any?): EntrySnapshot {
+        val grid = h.grid
+        val counter = if (grid != null && grid.inventory === h.me) grid.cachedInventory else snapshot(h.me, grid)
+        val keys = ArrayList<AEItemKey>()
+        val counts = it.unimi.dsi.fastutil.longs.LongArrayList()
+        for (entry in counter) {
+            val key = entry.key as? AEItemKey ?: continue
+            val n = entry.longValue
+            if (n <= 0L) continue
+            keys.add(key)
+            counts.add(n)
+        }
+        @Suppress("UNCHECKED_CAST")
+        val reuse = memo as? EntryReuse<AEItemKey, PolledEntry> ?: EntryReuse()
+        return Ae2EntrySnapshot(keys.toTypedArray(), counts.toLongArray(), reuse, reuse.startPass(keys.size))
+    }
+
+    fun readEntries(s: Ae2EntrySnapshot, from: Int, until: Int, visit: (BufferKey.Key, ItemInfo) -> Unit) {
+        val end = minOf(until, s.keys.size)
+        for (i in from.coerceAtLeast(0) until end) {
+            val key = s.keys[i]
+            val count = s.counts[i]
+            val entry = s.pass.get(key) {
+                PolledEntry(
+                    BufferKey.Key(idOf(key), BufferKey.componentsHash(key.readOnlyStack.componentsPatch)),
+                    info(key, count),
+                )
+            }
+            if (entry.info.count != count) entry.info = entry.info.copy(count = count)
+            visit(entry.key, entry.info)
+        }
+        if (end >= s.keys.size) s.pass.complete()
     }
 
     /** Count-only extraction, no stacks allocated, so any amount is safe. */
