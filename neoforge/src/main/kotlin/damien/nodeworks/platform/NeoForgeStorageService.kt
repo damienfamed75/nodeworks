@@ -109,6 +109,8 @@ class NeoForgeStorageService : StorageService {
             if (first == null) first = extracted.copyWithCount(1)
             take(extracted)
             got += extracted.count
+            // Less than asked and less than a stack means the slot ran out, skip asking again.
+            if (extracted.count < minOf(ask, extracted.maxStackSize)) break
         }
         return got
     }
@@ -127,9 +129,12 @@ class NeoForgeStorageService : StorageService {
             if (first == null) first = offered.copyWithCount(1)
             val inserted = insertInto(dest, offered, simulate = false)
             if (inserted <= 0) break
-            src.extractItem(slot, inserted, false)
+            val taken = src.extractItem(slot, inserted, false).count
             moved += inserted
-            if (inserted < offered.count) break
+            // A source giving back less than it offered would duplicate, never repeat that.
+            if (taken < inserted || inserted < offered.count) break
+            // Less than a stack means the slot ran out or the request is met.
+            if (offered.count < offered.maxStackSize) break
         }
         return moved
     }
