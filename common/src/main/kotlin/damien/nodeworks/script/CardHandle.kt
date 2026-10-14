@@ -200,6 +200,10 @@ class CardHandle private constructor(
                     throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
                 }
                 val itemsHandle = ref.handle
+                if (itemsHandle.origin == self.origin()) {
+                    val op = if (atomic) "insert" else "tryInsert"
+                    throw LuaError("Card '${self.card.effectiveAlias}' can't $op items into the same storage they came from")
+                }
                 val requested = minOf(maxCount, itemsHandle.count.toLong())
                 if (requested <= 0L) {
                     return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
@@ -529,11 +533,19 @@ class CardHandle private constructor(
         }
     }
 
+    private fun effectiveFace(): Direction =
+        accessFace ?: (card.capability as? IOSideCapability)?.defaultFace ?: Direction.UP
+
+    /** The block, face and slots this handle reads and writes, compared against an
+     *  inserted handle's origin so a card can't insert into itself. */
+    private fun origin(): ItemsHandle.Origin.Block =
+        ItemsHandle.Origin.Block(card.capability.adjacentPos, effectiveFace(), slotFilter)
+
     private fun getItemStorage(): ItemStorageHandle? {
         verifyCardOnNetwork()
         val cap = card.capability
         val targetPos = cap.adjacentPos
-        val face = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
+        val face = effectiveFace()
 
         if (slotFilter != null) {
             val slotted = PlatformServices.storage.getSlottedStorage(level, targetPos, face) ?: return null
@@ -546,7 +558,7 @@ class CardHandle private constructor(
         verifyCardOnNetwork()
         val cap = card.capability
         val targetPos = cap.adjacentPos
-        val face = accessFace ?: (cap as? IOSideCapability)?.defaultFace ?: Direction.UP
+        val face = effectiveFace()
         return PlatformServices.storage.getFluidStorage(level, targetPos, face)
     }
 
@@ -608,7 +620,7 @@ class CardHandle private constructor(
                             val totalCount = narrowed.sumOf { it.count }
                             val aggregatedInfo = info.copy(count = totalCount)
                             val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
-                            return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
+                            return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level, self.origin()))
                         }
                     }
                 }
@@ -620,7 +632,7 @@ class CardHandle private constructor(
                             val totalAmount = PlatformServices.storage.countFluid(storage) { matchesFilter(it, ResourceKind.FLUID, filter) }
                             val aggregated = damien.nodeworks.platform.FluidInfo(info.fluidId, info.name, totalAmount)
                             val fluidSource: () -> FluidStorageHandle? = { self.getFluidStorage() }
-                            return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level))
+                            return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level, self.origin()))
                         }
                     }
                 }
@@ -641,7 +653,7 @@ class CardHandle private constructor(
                         val items = PlatformServices.storage.findAllItemInfo(storage) { matchesFilter(it, ResourceKind.ITEM, filter) }
                         val sourceStorage: () -> damien.nodeworks.platform.ItemStorageHandle? = { self.getItemStorage() }
                         for (info in items) {
-                            val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                            val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level, self.origin())
                             result.set(idx++, ItemsHandle.toLuaTable(handle))
                         }
                     }
@@ -652,7 +664,7 @@ class CardHandle private constructor(
                         val fluids = PlatformServices.storage.findAllFluidInfo(storage) { matchesFilter(it, ResourceKind.FLUID, filter) }
                         val fluidSource: () -> FluidStorageHandle? = { self.getFluidStorage() }
                         for (info in fluids) {
-                            val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level)
+                            val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level, self.origin())
                             result.set(idx++, ItemsHandle.toLuaTable(handle))
                         }
                     }

@@ -1093,7 +1093,7 @@ class ScriptEngine(
                                     } else null
                                 }
                         }
-                        return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregated, filter, sourceStorage, level))
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregated, filter, sourceStorage, level, ItemsHandle.Origin.Pool(color)))
                     }
                 }
                 if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
@@ -1113,7 +1113,7 @@ class ScriptEngine(
                                     } else null
                                 }
                         }
-                        return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level))
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level, ItemsHandle.Origin.Pool(color)))
                     }
                 }
                 return LuaValue.NIL
@@ -1146,7 +1146,7 @@ class ScriptEngine(
                                     } else null
                                 }
                         }
-                        val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                        val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level, ItemsHandle.Origin.Pool(color))
                         result.set(idx++, ItemsHandle.toLuaTable(handle))
                     }
                 }
@@ -1170,7 +1170,7 @@ class ScriptEngine(
                                     } else null
                                 }
                         }
-                        val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level)
+                        val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level, ItemsHandle.Origin.Pool(color))
                         result.set(idx++, ItemsHandle.toLuaTable(handle))
                     }
                 }
@@ -1312,6 +1312,11 @@ class ScriptEngine(
                     throw LuaError("Expected an ItemsHandle from :find() or network:craft()")
                 }
                 val itemsHandle = ref.handle
+                val origin = itemsHandle.origin
+                if (origin is ItemsHandle.Origin.Pool && channel.overlaps(origin.channel)) {
+                    val op = if (atomic) "insert" else "tryInsert"
+                    throw LuaError(" can't move network items back into the same network storage")
+                }
                 val requested = minOf(maxCount, itemsHandle.count.toLong())
                 if (requested <= 0L) {
                     return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
@@ -1744,7 +1749,7 @@ class ScriptEngine(
                                 } else null
                             }
                         }
-                        return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level))
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromItemInfo(aggregatedInfo, filter, sourceStorage, level, ItemsHandle.Origin.Pool(null)))
                     }
                 }
                 if (kindGate == null || kindGate == damien.nodeworks.platform.ResourceKind.FLUID) {
@@ -1762,7 +1767,7 @@ class ScriptEngine(
                                 } else null
                             }
                         }
-                        return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level))
+                        return ItemsHandle.toLuaTable(ItemsHandle.fromFluidInfo(aggregated, filter, fluidSource, level, ItemsHandle.Origin.Pool(null)))
                     }
                 }
                 return LuaValue.NIL
@@ -1797,7 +1802,7 @@ class ScriptEngine(
                                 } else null
                             }
                         }
-                        val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level)
+                        val handle = ItemsHandle.fromItemInfo(info, info.itemId, sourceStorage, level, ItemsHandle.Origin.Pool(null))
                         result.set(idx++, ItemsHandle.toLuaTable(handle))
                     }
                 }
@@ -1821,7 +1826,7 @@ class ScriptEngine(
                                 } else null
                             }
                         }
-                        val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level)
+                        val handle = ItemsHandle.fromFluidInfo(info, "\$fluid:${info.fluidId}", fluidSource, level, ItemsHandle.Origin.Pool(null))
                         result.set(idx++, ItemsHandle.toLuaTable(handle))
                     }
                 }

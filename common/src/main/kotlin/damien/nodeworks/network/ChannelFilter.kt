@@ -25,6 +25,13 @@ sealed class ChannelFilter {
         is Color -> channel == color
     }
 
+    /** True when this filter shares storage with [other], a channel or null for the whole
+     *  network. Moving between overlapping scopes would put items back where they were. */
+    fun overlaps(other: DyeColor?): Boolean = when (this) {
+        All -> true
+        is Color -> other == null || other == color
+    }
+
     /** Compact NBT representation. See class kdoc for the encoding. */
     fun toNbtInt(): Int = when (this) {
         All -> -1

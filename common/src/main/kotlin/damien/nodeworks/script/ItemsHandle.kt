@@ -100,13 +100,30 @@ class ItemsHandle(
     val level: ServerLevel,
     val bufferSource: BufferSource? = null,
     val kind: ResourceKind = ResourceKind.ITEM,
-    val fluidSourceStorage: () -> FluidStorageHandle? = { null }
+    val fluidSourceStorage: () -> FluidStorageHandle? = { null },
+    /** Where the items live, so an insert can refuse to move them back into the same
+     *  place. Null when unknown (craft results, buffers). */
+    val origin: Origin? = null,
 ) {
     val stackable: Boolean get() = kind == ResourceKind.ITEM && maxStackSize > 1
 
+    sealed interface Origin {
+        /** Network storage, [channel] null for the whole network. */
+        data class Pool(val channel: net.minecraft.world.item.DyeColor?) : Origin
+
+        /** One block reached through a card, as seen from [face], limited to [slots] when set. */
+        data class Block(val pos: net.minecraft.core.BlockPos, val face: net.minecraft.core.Direction, val slots: Set<Int>?) : Origin
+    }
+
     companion object {
         /** Create an ItemsHandle from an ItemInfo and source storage reference. */
-        fun fromItemInfo(info: ItemInfo, filter: String, sourceStorage: () -> ItemStorageHandle?, level: ServerLevel): ItemsHandle {
+        fun fromItemInfo(
+            info: ItemInfo,
+            filter: String,
+            sourceStorage: () -> ItemStorageHandle?,
+            level: ServerLevel,
+            origin: Origin? = null,
+        ): ItemsHandle {
             return ItemsHandle(
                 itemId = info.itemId,
                 itemName = info.name,
@@ -115,12 +132,19 @@ class ItemsHandle(
                 hasData = info.hasData,
                 filter = filter,
                 sourceStorage = sourceStorage,
-                level = level
+                level = level,
+                origin = origin,
             )
         }
 
         /** Create a fluid-backed ItemsHandle from a FluidInfo. Counts are mB. */
-        fun fromFluidInfo(info: FluidInfo, filter: String, fluidSourceStorage: () -> FluidStorageHandle?, level: ServerLevel): ItemsHandle {
+        fun fromFluidInfo(
+            info: FluidInfo,
+            filter: String,
+            fluidSourceStorage: () -> FluidStorageHandle?,
+            level: ServerLevel,
+            origin: Origin? = null,
+        ): ItemsHandle {
             return ItemsHandle(
                 itemId = info.fluidId,
                 itemName = info.name,
@@ -131,7 +155,8 @@ class ItemsHandle(
                 sourceStorage = { null },
                 level = level,
                 kind = ResourceKind.FLUID,
-                fluidSourceStorage = fluidSourceStorage
+                fluidSourceStorage = fluidSourceStorage,
+                origin = origin,
             )
         }
 
