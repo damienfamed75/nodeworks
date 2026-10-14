@@ -83,7 +83,8 @@ class CoveredPipeRecipe(
             if (stack.isEmpty) return false
             val blockItem = stack.item as? BlockItem ?: return false
             val state: BlockState = blockItem.block.defaultBlockState()
-            if (state.isAir) return false
+            // Also rules out a Covered Pipe in the centre, which is a full cube.
+            if (!damien.nodeworks.block.CoveredPipeBlock.isAllowedCamo(state)) return false
             // Full-cube test: the default-state collision shape must equal
             // the unit cube. Uses EmptyBlockGetter / BlockPos.ZERO since a
             // recipe doesn't have world context - blocks with state-driven

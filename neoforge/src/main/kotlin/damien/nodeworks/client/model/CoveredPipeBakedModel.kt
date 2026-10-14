@@ -1,5 +1,6 @@
 package damien.nodeworks.client.model
 
+import damien.nodeworks.block.CoveredPipeBlock
 import damien.nodeworks.block.entity.CoveredPipeBlockEntity
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.block.BlockAndTintGetter
@@ -54,7 +55,9 @@ class CoveredPipeBakedModel(
         output: MutableList<BlockStateModelPart>,
     ) {
         val be = level.getBlockEntity(pos) as? CoveredPipeBlockEntity
-        val camoState = be?.camoBlockState
+        // Re-checked here, not just trusted from the BE: a Covered Pipe camo
+        // would recurse into this model forever on the chunk-build thread.
+        val camoState = be?.camoBlockState?.takeIf { CoveredPipeBlock.isAllowedCamo(it) }
         if (camoState != null) {
             val camoModel = Minecraft.getInstance().modelManager.blockStateModelSet.get(camoState)
             camoModel.collectParts(level, pos, camoState, random, output)
@@ -84,7 +87,8 @@ class CoveredPipeBakedModel(
         state: BlockState,
     ): Material.Baked {
         val be = level.getBlockEntity(pos) as? CoveredPipeBlockEntity
-        val camoState = be?.camoBlockState ?: return defaultCamo.particleMaterial()
+        val camoState = be?.camoBlockState?.takeIf { CoveredPipeBlock.isAllowedCamo(it) }
+            ?: return defaultCamo.particleMaterial()
         val camoModel = Minecraft.getInstance().modelManager.blockStateModelSet.get(camoState)
         return camoModel.particleMaterial(level, pos, camoState)
     }

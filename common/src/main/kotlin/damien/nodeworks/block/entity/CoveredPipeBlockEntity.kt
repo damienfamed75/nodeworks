@@ -51,10 +51,11 @@ class CoveredPipeBlockEntity(
      *  to the client. Defaults to [Blocks.STONE] so a freshly-created BE
      *  (e.g. /setblock without an item component) still renders something
      *  visible instead of leaving the cube blank. */
-    var camoBlockState: BlockState = Blocks.STONE.defaultBlockState()
+    var camoBlockState: BlockState = damien.nodeworks.block.CoveredPipeBlock.DEFAULT_CAMO
         set(value) {
-            if (field == value) return
-            field = value
+            val allowed = damien.nodeworks.block.CoveredPipeBlock.sanitizeCamo(value)
+            if (field == allowed) return
+            field = allowed
             setChanged()
             level?.sendBlockUpdated(
                 worldPosition, blockState, blockState,

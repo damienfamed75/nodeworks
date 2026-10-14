@@ -1,5 +1,6 @@
 package damien.nodeworks.client.model
 
+import damien.nodeworks.block.CoveredPipeBlock
 import com.google.common.base.Suppliers
 import damien.nodeworks.registry.ModDataComponents
 import net.minecraft.client.Minecraft
@@ -54,10 +55,6 @@ class CoveredPipeItemModel(
             Direction.DOWN, Direction.UP, Direction.NORTH,
             Direction.SOUTH, Direction.WEST, Direction.EAST, null,
         )
-        /** Falls back to Stone when an item has no camo set - matches the
-         *  Block side's default so /give-bypass and creative-tab items
-         *  render as a Stone-camo'd cube. */
-        private val DEFAULT_CAMO: BlockState = Blocks.STONE.defaultBlockState()
     }
 
     override fun update(
@@ -69,7 +66,9 @@ class CoveredPipeItemModel(
         owner: ItemOwner?,
         seed: Int,
     ) {
-        val camoState = item.get(ModDataComponents.CAMO_BLOCK_STATE) ?: DEFAULT_CAMO
+        // Sanitized so a Covered Pipe camo on a stack (old crafts, /give) can't
+        // render through this model's own block model.
+        val camoState = CoveredPipeBlock.sanitizeCamo(item.get(ModDataComponents.CAMO_BLOCK_STATE))
         // Identity drives GUI-rendering cache keys (TrackingItemStackRenderState
         // hashes the appended elements). Without the camo state every Covered
         // Pipe stack shares the same key and the first rendered camo gets

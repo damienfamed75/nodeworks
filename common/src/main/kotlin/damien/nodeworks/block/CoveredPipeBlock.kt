@@ -33,6 +33,21 @@ class CoveredPipeBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     companion object {
         val CODEC: MapCodec<CoveredPipeBlock> = simpleCodec(::CoveredPipeBlock)
+
+        /** Shown when there's no camo, or the stored one isn't allowed. */
+        val DEFAULT_CAMO: BlockState get() = net.minecraft.world.level.block.Blocks.STONE.defaultBlockState()
+
+        /** Whether [state] may be a Covered Pipe's camo. A Covered Pipe never
+         *  may: its model renders the camo's model at the same position, so a
+         *  Covered Pipe camo renders itself forever and the chunk-build thread
+         *  dies with a StackOverflowError. Air would render nothing at all. */
+        fun isAllowedCamo(state: BlockState): Boolean = !state.isAir && state.block !is CoveredPipeBlock
+
+        /** [state] if it's an allowed camo, otherwise [DEFAULT_CAMO]. Every
+         *  place that reads or stores a camo goes through this, so a bad value
+         *  from an old save, `/give`, or another mod can't reach rendering. */
+        fun sanitizeCamo(state: BlockState?): BlockState =
+            if (state != null && isAllowedCamo(state)) state else DEFAULT_CAMO
     }
 
     override fun codec(): MapCodec<out BaseEntityBlock> = CODEC
