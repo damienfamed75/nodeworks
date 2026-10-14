@@ -30,6 +30,7 @@ object NodeworksServerConfig {
     val MAX_ERROR_LOGS_PER_TICK: ModConfigSpec.IntValue
     val MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK: ModConfigSpec.IntValue
     val MAX_ITEMS_PER_PRESET_RUN: ModConfigSpec.IntValue
+    val MAX_ITEM_MOVE_MS_PER_TICK_PER_NETWORK: ModConfigSpec.IntValue
     val MAX_CALLBACKS_PER_KIND: ModConfigSpec.IntValue
     val ENABLED_MODULES: ModConfigSpec.ConfigValue<List<String>>
     val DISABLED_METHODS: ModConfigSpec.ConfigValue<List<String>>
@@ -247,8 +248,8 @@ object NodeworksServerConfig {
                 " tryInsert calls. Independent of maxItemMoveCallsPerTick (a single call",
                 " can move many items, so call count != item count). When exhausted,",
                 " tryInsert silently moves what it can and insert fails with an error in the",
-                " terminal. The default of 16384 is 256 full stacks per tick. 0 means",
-                " unlimited, which lets one script move an entire storage in a single tick."
+                " terminal. The default of 16384 is 256 full stacks per tick. 0 also means",
+                " 16384, this one has no unlimited setting."
             )
             .defineInRange(
                 "maxItemsMovedPerTickPerNetwork",
@@ -268,6 +269,21 @@ object NodeworksServerConfig {
                 ServerSafetySettings.Defaults.maxItemsPerPresetRun.toInt(),
                 0,
                 Int.MAX_VALUE,
+            )
+
+        MAX_ITEM_MOVE_MS_PER_TICK_PER_NETWORK = builder
+            .comment(
+                " Milliseconds per tick per network that tryInsert moves may spend, and the time",
+                " each importer or stocker run gets. A move that runs out stops and keeps what",
+                " already moved, the rest moves on later ticks. This is the backstop for storages",
+                " slow enough that even maxItemsMovedPerTickPerNetwork items take too long, so it",
+                " can't be turned off."
+            )
+            .defineInRange(
+                "maxItemMoveMsPerTickPerNetwork",
+                ServerSafetySettings.Defaults.maxItemMoveMsPerTickPerNetwork.toInt(),
+                1,
+                50,
             )
 
         builder.pop()
@@ -424,6 +440,7 @@ object NodeworksServerConfig {
         maxErrorLogsPerTick = MAX_ERROR_LOGS_PER_TICK.get(),
         maxItemsMovedPerTickPerNetwork = MAX_ITEMS_MOVED_PER_TICK_PER_NETWORK.get().toLong(),
         maxItemsPerPresetRun = MAX_ITEMS_PER_PRESET_RUN.get().toLong(),
+        maxItemMoveMsPerTickPerNetwork = MAX_ITEM_MOVE_MS_PER_TICK_PER_NETWORK.get().toLong(),
         maxCallbacksPerKind = MAX_CALLBACKS_PER_KIND.get(),
         enabledModules = ENABLED_MODULES.get().toSet(),
         disabledMethods = DISABLED_METHODS.get().toSet(),

@@ -5,6 +5,7 @@ import damien.nodeworks.network.CardSnapshot
 import damien.nodeworks.network.ChannelFilter
 import damien.nodeworks.network.NetworkSnapshot
 import damien.nodeworks.platform.FluidInfo
+import damien.nodeworks.platform.MoveDeadline
 import damien.nodeworks.platform.FluidStorageHandle
 import damien.nodeworks.platform.ItemInfo
 import damien.nodeworks.platform.ItemStorageHandle
@@ -339,7 +340,10 @@ object NetworkStorageHelper {
         // vanilla IItemHandler but defensive for modded storages), we treat the shortfall
         // as a hard failure and unwind by reverse-moving the committed items back to
         // source. This keeps the atomic contract even on pathological edge cases.
-        val moved = insertItems(level, snapshot, source, filter, requested, routeTable, null, cache, channel)
+        // Atomic, so never cut short by a deadline from the caller.
+        val moved = MoveDeadline.suspended {
+            insertItems(level, snapshot, source, filter, requested, routeTable, null, cache, channel)
+        }
         if (moved == requested) return true
         onFail?.invoke("refused", "network:insert moved nothing: the network refused some of the items.")
 
@@ -634,30 +638,18 @@ object NetworkStorageHelper {
         // are processed independently.
         val processedVariants = mutableSetOf<damien.nodeworks.script.BufferKey.Key>()
 
-        while (remaining > 0) {
-            val itemInfo = PlatformServices.storage.findFirstItemInfo(source) {
-                CardHandle.matchesFilter(it, filter)
-            }?.takeIf {
-                damien.nodeworks.script.BufferKey.Key(
-                    it.itemId, damien.nodeworks.script.BufferKey.componentsHash(it.componentsPatch),
-                ) !in processedVariants
-            } ?: run {
-                // findFirstItemInfo only returns the first match; scan for the
-                // next unprocessed variant once that one's done.
-                PlatformServices.storage.findAllItemInfo(source) { CardHandle.matchesFilter(it, filter) }
-                    .firstOrNull {
-                        damien.nodeworks.script.BufferKey.Key(
-                            it.itemId, damien.nodeworks.script.BufferKey.componentsHash(it.componentsPatch),
-                        ) !in processedVariants
-                    }
-            } ?: break
+        // One scan up front. Re-scanning the source for every variant was quadratic in
+        // the number of item types, which an ME network can have thousands of.
+        val variants = PlatformServices.storage.findAllItemInfo(source) { CardHandle.matchesFilter(it, filter) }
+        for (itemInfo in variants) {
+            if (remaining <= 0 || MoveDeadline.expired()) break
             val itemId = itemInfo.itemId
             val hasData = itemInfo.hasData
             val componentsPatch = itemInfo.componentsPatch
             val wantHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
             val variantKey = damien.nodeworks.script.BufferKey.Key(itemId, wantHash)
 
-            processedVariants.add(variantKey)
+            if (!processedVariants.add(variantKey)) continue
 
             // Matches only this exact variant.
             val variantPred: (net.minecraft.world.item.ItemStack) -> Boolean = { stack ->
@@ -757,7 +749,7 @@ object NetworkStorageHelper {
             CardHandle.matchesFilter(it, filter)
         }
         for (info in variants) {
-            if (remaining <= 0L) break
+            if (remaining <= 0L || MoveDeadline.expired()) break
             val itemId = info.itemId
             val componentsPatch = info.componentsPatch
             val wantHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
@@ -767,7 +759,7 @@ object NetworkStorageHelper {
                 sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
             }
             for (card in getStorageCards(snapshot)) {
-                if (remaining <= 0L) break
+                if (remaining <= 0L || MoveDeadline.expired()) break
                 if (!channel.matches(card.channel)) continue
                 val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
                 if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue

@@ -44,12 +44,17 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
      *  backlog drains over several runs instead of all in one tick. */
     protected var runItemsLeft: Long = Long.MAX_VALUE
 
+    /** When this run must stop moving, from
+     *  [damien.nodeworks.script.ServerSafetySettings.maxItemMoveMsPerTickPerNetwork]. */
+    private var runDeadline: Long = 0L
+
     /** Run [move] with at most [maxCount] clamped to what this run has left, charging
-     *  what it reports moved. */
+     *  what it reports moved. The move also stops when the run's time is up. */
     protected fun capped(maxCount: Long, move: (Long) -> Long): Long {
         val allowed = minOf(maxCount, runItemsLeft)
-        if (allowed <= 0L) return 0L
-        val moved = move(allowed)
+        val timeLeft = runDeadline - System.nanoTime()
+        if (allowed <= 0L || timeLeft <= 0L) return 0L
+        val moved = damien.nodeworks.platform.MoveDeadline.within(timeLeft) { move(allowed) }
         runItemsLeft -= moved
         return moved
     }
@@ -139,6 +144,8 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
         }
         val cap = damien.nodeworks.script.ServerPolicy.current.maxItemsPerPresetRun
         runItemsLeft = if (cap > 0L) cap else Long.MAX_VALUE
+        runDeadline = System.nanoTime() +
+            damien.nodeworks.script.ServerPolicy.current.maxItemMoveMsPerTickPerNetwork.coerceAtLeast(1L) * 1_000_000L
         try {
             tickOnce()
         } catch (e: LuaError) {

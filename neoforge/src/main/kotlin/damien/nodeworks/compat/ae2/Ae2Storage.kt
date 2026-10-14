@@ -308,6 +308,7 @@ object Ae2Storage {
         val key = AEItemKey.of(stack) ?: return 0
         val put = h.me.insert(key, stack.count.toLong(), Actionable.MODULATE, source)
         noteChange(h.me, key, put)
+        if (put > 0L) damien.nodeworks.platform.MoveDeadline.progressed()
         return put.toInt()
     }
 
@@ -334,7 +335,7 @@ object Ae2Storage {
         var remaining = maxCount
         var moved = 0L
         forEachItem(src, { true }) { key, available ->
-            if (remaining <= 0L) return moved
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) return moved
             if (!filter(key.readOnlyStack)) return@forEachItem
             val got = src.me.extract(key, minOf(remaining, available), Actionable.MODULATE, source)
             if (got <= 0L) return@forEachItem
@@ -346,6 +347,7 @@ object Ae2Storage {
                 throw e
             }
             noteChange(dst.me, key, put)
+            if (put > 0L) damien.nodeworks.platform.MoveDeadline.progressed()
             if (put < got) giveBack(src, key, got - put)
             moved += put
             remaining -= put

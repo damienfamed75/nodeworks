@@ -56,6 +56,7 @@ class NetworkBudget {
 
     private var itemMoveCalls: Int = 0
     private var itemsMoved: Long = 0L
+    private var moveNanos: Long = 0L
     private var placements: Int = 0
     private var redstoneWrites: Int = 0
     private var variableWrites: Int = 0
@@ -72,6 +73,7 @@ class NetworkBudget {
         lastTick = tick
         itemMoveCalls = 0
         itemsMoved = 0L
+        moveNanos = 0L
         placements = 0
         redstoneWrites = 0
         variableWrites = 0
@@ -135,16 +137,14 @@ class NetworkBudget {
     }
 
     /** Available headroom under [ServerSafetySettings.maxItemsMovedPerTickPerNetwork]
-     *  for this tick. Returns [Long.MAX_VALUE] when the cap is 0 (unlimited).
+     *  for this tick. A cap of 0 means the default, [DEFAULT_ITEMS_PER_TICK].
      *  Callers use this to clamp `tryInsert` requests or short-circuit atomic
      *  inserts that wouldn't fit. Doesn't deduct from the counter, pair with
      *  [noteItemsMoved] after the actual move to charge the budget for what was
      *  really moved. */
     fun availableItems(tick: Long): Long {
         ensureCurrentTick(tick)
-        val cap = ServerPolicy.current.maxItemsMovedPerTickPerNetwork
-        if (cap <= 0L) return Long.MAX_VALUE
-        return (cap - itemsMoved).coerceAtLeast(0L)
+        return (itemCap() - itemsMoved).coerceAtLeast(0L)
     }
 
     /** Charge [count] items against this network's per-tick item budget. Pair
@@ -154,8 +154,27 @@ class NetworkBudget {
     fun noteItemsMoved(tick: Long, count: Long) {
         if (count <= 0L) return
         ensureCurrentTick(tick)
-        if (ServerPolicy.current.maxItemsMovedPerTickPerNetwork <= 0L) return
         itemsMoved += count
+    }
+
+    /** Move time left this tick under [ServerSafetySettings.maxItemMoveMsPerTickPerNetwork]. */
+    fun moveTimeLeftNanos(tick: Long): Long {
+        ensureCurrentTick(tick)
+        return ServerPolicy.current.maxItemMoveMsPerTickPerNetwork.coerceAtLeast(1L) * 1_000_000L - moveNanos
+    }
+
+    /** Run a move, charging its wall-clock time to this tick. A best-effort one is also
+     *  stopped once the time left runs out, keeping what it moved. An atomic one can't
+     *  stop halfway, it is bounded by [MAX_ATOMIC_ITEMS] instead. */
+    fun <T> timedMove(tick: Long, atomic: Boolean, block: () -> T): T {
+        val start = System.nanoTime()
+        try {
+            return if (atomic) damien.nodeworks.platform.MoveDeadline.suspended(block)
+            else damien.nodeworks.platform.MoveDeadline.within(moveTimeLeftNanos(tick), block)
+        } finally {
+            ensureCurrentTick(tick)
+            moveNanos += System.nanoTime() - start
+        }
     }
 
     /** Returns true exactly once per tick per [op] for callers that want to log
@@ -167,10 +186,27 @@ class NetworkBudget {
     }
 
     companion object {
+        /** Most items one atomic insert may move, whatever the config says. An atomic move
+         *  runs in one go and can't be spread over ticks, so this bounds its cost. */
+        const val MAX_ATOMIC_ITEMS: Long = 16_384L
+
+        /** Items per tick per network when the config is 0. */
+        const val DEFAULT_ITEMS_PER_TICK: Long = 16_384L
+
+        /** The configured items-per-tick cap, with 0 meaning [DEFAULT_ITEMS_PER_TICK]. */
+        fun itemCap(): Long = ServerPolicy.current.maxItemsMovedPerTickPerNetwork.takeIf { it > 0L } ?: DEFAULT_ITEMS_PER_TICK
+
+        fun atomicCeilingMessage(op: String, requested: Long): String =
+            "$op moved nothing: $requested items is over the $MAX_ATOMIC_ITEMS item limit for a single insert. " +
+                "Use tryInsert in a loop to move them in batches."
+
+        fun moveTimeMessage(op: String): String =
+            "$op moved nothing: this network already used its item-moving time this tick. Try again next tick, or use tryInsert."
+
         /** Terminal text for an insert refused by the items-per-tick limit. [op] names the
          *  call, e.g. `card:insert into 'chest'`. tryInsert caps silently instead. */
         fun itemLimitMessage(op: String, requested: Long, available: Long): String {
-            val cap = ServerPolicy.current.maxItemsMovedPerTickPerNetwork
+            val cap = itemCap()
             return when {
                 requested > cap -> "$op moved nothing: $requested items is over this network's limit of $cap items per tick. " +
                     "Use tryInsert in a loop to move them in batches."

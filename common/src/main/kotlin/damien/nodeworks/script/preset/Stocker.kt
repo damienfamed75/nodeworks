@@ -308,7 +308,7 @@ class StockerBuilder(
             var remaining = maxCount
             var totalMoved = 0L
             for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
-                if (remaining <= 0L) break
+                if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
                 if (!sourceChannel.matches(card.channel)) continue
                 val srcStorage = NetworkStorageHelper.getStorage(level, card) ?: continue
                 val moved = NetworkStorageHelper.insertItems(
@@ -329,7 +329,7 @@ class StockerBuilder(
         var remaining = maxCount
         var totalMoved = 0L
         for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {
-            if (remaining <= 0L) break
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
             if (!sourceChannel.matches(poolCard.channel)) continue
             val storage = NetworkStorageHelper.getStorage(level, poolCard) ?: continue
             // Per-variant move so the cache gets a paired onExtracted for
@@ -337,7 +337,7 @@ class StockerBuilder(
             // two variants of one itemId aren't conflated.
             val infos = PlatformServices.storage.findAllItemInfo(storage) { filterPred(it) }
             for (info in infos) {
-                if (remaining <= 0L) break
+                if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
                 val wantHash = damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch)
                 val moved = PlatformServices.storage.moveItemsByStackPredicate(
                     storage, destStorage,

@@ -256,7 +256,7 @@ class ImporterBuilder(
         if (maxCount <= 0L) return 0L
         var remaining = maxCount
         for (source in resolvedSources) {
-            if (remaining <= 0L) break
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
             remaining -= movePair(snapshot, level, source, target, filterPred, remaining)
         }
         return maxCount - remaining
@@ -350,7 +350,7 @@ class ImporterBuilder(
         var remaining = maxCount
         var totalMoved = 0L
         for (srcCard in NetworkStorageHelper.getStorageCards(snapshot)) {
-            if (remaining <= 0L) break
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
             if (!sourceChannel.matches(srcCard.channel)) continue
             val srcStorage = NetworkStorageHelper.getStorage(level, srcCard) ?: continue
             val moved = NetworkStorageHelper.insertItems(
@@ -386,12 +386,12 @@ class ImporterBuilder(
         var remaining = maxCount
         var totalMoved = 0L
         for (poolCard in NetworkStorageHelper.getStorageCards(snapshot)) {
-            if (remaining <= 0L) break
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
             if (!sourceChannel.matches(poolCard.channel)) continue
             val poolStorage = NetworkStorageHelper.getStorage(level, poolCard) ?: continue
             val infos = PlatformServices.storage.findAllItemInfo(poolStorage) { filterPred(it) }
             for (info in infos) {
-                if (remaining <= 0L) break
+                if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
                 // Per-variant move so two variants of one itemId aren't conflated.
                 val wantHash = damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch)
                 val moved = PlatformServices.storage.moveItemsByStackPredicate(

@@ -228,10 +228,20 @@ class CardHandle private constructor(
                 // count, best-effort clamps and charges only what actually moved.
                 val isItem = itemsHandle.kind != ResourceKind.FLUID
                 val budget = if (isItem) callBudget else null
+                val op = "card:${if (atomic) "insert" else "tryInsert"} into '${self.card.effectiveAlias}'"
+                if (isItem && atomic && requested > NetworkBudget.MAX_ATOMIC_ITEMS) {
+                    self.reportFailure("ceiling", NetworkBudget.atomicCeilingMessage(op, requested))
+                    return LuaValue.FALSE
+                }
+                // Item moves share a per-tick time budget, tryInsert stops quietly when it's spent.
+                if (isItem && callBudget.moveTimeLeftNanos(tick) <= 0L) {
+                    if (!atomic) return LuaValue.valueOf(0)
+                    self.reportFailure("time", NetworkBudget.moveTimeMessage(op))
+                    return LuaValue.FALSE
+                }
                 val available = if (isItem) budget!!.availableItems(tick) else Long.MAX_VALUE
                 if (isItem && available < requested) {
                     if (atomic) {
-                        val op = "card:insert into '${self.card.effectiveAlias}'"
                         self.reportFailure("limit", NetworkBudget.itemLimitMessage(op, requested, available))
                         return LuaValue.FALSE
                     }
@@ -250,8 +260,10 @@ class CardHandle private constructor(
                     val destStorage = self.getItemStorage()
                         ?: return if (atomic) LuaValue.FALSE else LuaValue.valueOf(0)
                     val bufSrc = itemsHandle.bufferSource
-                    if (bufSrc != null) moveFromBuffer(bufSrc, destStorage, clamped, atomic)
-                    else moveFromStorage(itemsHandle, destStorage, clamped, atomic)
+                    callBudget.timedMove(tick, atomic) {
+                        if (bufSrc != null) moveFromBuffer(bufSrc, destStorage, clamped, atomic)
+                        else moveFromStorage(itemsHandle, destStorage, clamped, atomic)
+                    }
                 }
                 if (isItem) budget!!.noteItemsMoved(tick, moved)
 
@@ -383,7 +395,7 @@ class CardHandle private constructor(
         val maxStack = item.getDefaultMaxStackSize().toLong()
         var totalMoved = 0L
         var remaining = requested
-        while (remaining > 0L) {
+        while (remaining > 0L && !damien.nodeworks.platform.MoveDeadline.expired()) {
             val batch = minOf(remaining, maxStack)
             val extracted = bufSrc.extract(batch)
             if (extracted == 0L) break
@@ -471,8 +483,11 @@ class CardHandle private constructor(
             { id, _ -> matchesFilter(id, itemsHandle.filter) }
         }
         // A full destination costs one simulation instead of an extract and a give back.
-        val preview = preview(sourceStorage, destStorage, requested) { variantPredicate(idOf(it), it.componentsPatch.size() > 0) }
-        if (preview?.fits == 0L) return 0L
+        // Only the first stretch is simulated to keep it cheap. When that didn't cover the
+        // whole source, later items might still fit, so only a complete view can skip.
+        val previewed = minOf(requested, NetworkBudget.MAX_ATOMIC_ITEMS)
+        val preview = preview(sourceStorage, destStorage, previewed) { variantPredicate(idOf(it), it.componentsPatch.size() > 0) }
+        if (preview != null && preview.fits == 0L && (previewed == requested || preview.available < previewed)) return 0L
         return try {
             withSpill { PlatformServices.storage.moveItemsVariant(sourceStorage, destStorage, variantPredicate, requested) }
         } catch (e: Exception) {

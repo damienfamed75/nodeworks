@@ -132,7 +132,7 @@ class RouteTable(
             CardHandle.matchesFilter(it, filter)
         }
         for (info in variants) {
-            if (remaining <= 0L) break
+            if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
             val itemId = info.itemId
             val componentsPatch = info.componentsPatch
             val wantHash = damien.nodeworks.script.BufferKey.componentsHash(componentsPatch)
@@ -142,7 +142,7 @@ class RouteTable(
                 sid == itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
             }
             for (card in openStorageCards) {
-                if (remaining <= 0L) break
+                if (remaining <= 0L || damien.nodeworks.platform.MoveDeadline.expired()) break
                 val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
                 if (cap != null && !cap.acceptsItem(itemId, componentsPatch, registries)) continue
                 val destStorage = NetworkStorageHelper.getStorage(level, card) ?: continue

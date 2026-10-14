@@ -20,6 +20,10 @@ import org.slf4j.LoggerFactory
  */
 class CompositeStorageService(private val base: NeoForgeStorageService) : StorageService {
 
+    private companion object {
+        const val ROUND_ITEMS = 4096L
+    }
+
     private val logger = LoggerFactory.getLogger("nodeworks-storage")
 
     private fun ae2(h: ItemStorageHandle): Ae2ItemStorageHandle? =
@@ -168,14 +172,15 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         for (i in from until taken.size) returnToSource(source, dest, taken[i])
     }
 
-    /** Moves in rounds so a huge request against an unbounded source (an ME network)
-     *  never holds more than one extraction's worth of stacks at a time. Stops when the
-     *  request is met, the source runs dry, or dest starts rejecting. */
+    /** Moves in rounds of at most [ROUND_ITEMS] so a huge request against an unbounded
+     *  source (an ME network) holds little in flight and can stop at a deadline between
+     *  rounds. Stops when the request is met, the source runs dry, dest starts rejecting,
+     *  or the [MoveDeadline] passes. */
     private fun moveInRounds(source: ItemStorageHandle, dest: ItemStorageHandle, maxCount: Long, extract: (Long) -> List<ItemStack>): Long {
         var remaining = maxCount
         var moved = 0L
-        while (remaining > 0L) {
-            val taken = extract(remaining)
+        while (remaining > 0L && !MoveDeadline.expired()) {
+            val taken = extract(minOf(remaining, ROUND_ITEMS))
             if (taken.isEmpty()) break
             val movedNow = moveStacks(source, dest, taken)
             moved += movedNow

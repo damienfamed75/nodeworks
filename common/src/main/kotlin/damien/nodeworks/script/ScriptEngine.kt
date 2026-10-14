@@ -1440,6 +1440,7 @@ class ScriptEngine(
         // shortfalls don't burn budget on items that didn't actually move).
         val tick = PlatformServices.modState.tickCount
         val budget = NetworkRateLimits.forNetwork(snapshot.controller?.networkId)
+        moveGate(budget, tick, requested, atomic)?.let { return it }
         val available = budget.availableItems(tick)
         if (available < requested) {
             if (atomic) {
@@ -1451,21 +1452,39 @@ class ScriptEngine(
         val clamped = minOf(requested, available)
 
         return if (atomic) {
-            val ok = NetworkStorageHelper.tryInsertItemsAcrossNetwork(
-                level, snapshot, sourceStorage, itemsHandle.filter,
-                clamped, routeTable, inventoryCache, channel,
-                onFail = { reason, msg -> reportMoveFailure("network:insert:$reason", msg) },
-            )
+            val ok = budget.timedMove(tick, atomic = true) {
+                NetworkStorageHelper.tryInsertItemsAcrossNetwork(
+                    level, snapshot, sourceStorage, itemsHandle.filter,
+                    clamped, routeTable, inventoryCache, channel,
+                    onFail = { reason, msg -> reportMoveFailure("network:insert:$reason", msg) },
+                )
+            }
             if (ok) budget.noteItemsMoved(tick, clamped)
             LuaValue.valueOf(ok)
         } else {
-            val moved = NetworkStorageHelper.insertItems(
-                level, snapshot, sourceStorage, itemsHandle.filter,
-                clamped, routeTable, null, inventoryCache, channel
-            )
+            val moved = budget.timedMove(tick, atomic = false) {
+                NetworkStorageHelper.insertItems(
+                    level, snapshot, sourceStorage, itemsHandle.filter,
+                    clamped, routeTable, null, inventoryCache, channel
+                )
+            }
             budget.noteItemsMoved(tick, moved)
             LuaValue.valueOf(moved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         }
+    }
+
+    /** The 16k ceiling for atomic inserts and the per-tick move time, shared by the network
+     *  insert paths. Returns the result to hand back when the move must not run, null to go
+     *  ahead. tryInsert stops quietly once time is spent, insert says why. */
+    private fun moveGate(budget: NetworkBudget, tick: Long, requested: Long, atomic: Boolean): LuaValue? {
+        if (atomic && requested > NetworkBudget.MAX_ATOMIC_ITEMS) {
+            reportMoveFailure("network:insert:ceiling", NetworkBudget.atomicCeilingMessage("network:insert", requested))
+            return LuaValue.FALSE
+        }
+        if (budget.moveTimeLeftNanos(tick) > 0L) return null
+        if (!atomic) return LuaValue.valueOf(0)
+        reportMoveFailure("network:insert:time", NetworkBudget.moveTimeMessage("network:insert"))
+        return LuaValue.FALSE
     }
 
     /** Drain [requested] items from a CPU buffer into network storage. Atomic mode
@@ -1498,6 +1517,7 @@ class ScriptEngine(
         // best-effort clamps and charges only what actually moved.
         val tick = PlatformServices.modState.tickCount
         val budget = NetworkRateLimits.forNetwork(snapshot.controller?.networkId)
+        moveGate(budget, tick, requested, atomic)?.let { return it }
         val available = budget.availableItems(tick)
         if (available < requested) {
             if (atomic) {
@@ -1552,20 +1572,23 @@ class ScriptEngine(
             return LuaValue.TRUE
         }
 
-        var totalMoved = 0L
-        var remaining = clamped
-        while (remaining > 0L) {
-            val batch = minOf(remaining, maxStack)
-            val extracted = bufSrc.extract(batch)
-            if (extracted == 0L) break
-            val stack = capturedTemplate.copyWithCount(extracted.toInt())
-            val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache, channel).toLong()
-            totalMoved += inserted
-            if (inserted < extracted) {
-                bufSrc.returnUnused(extracted - inserted)
-                break
+        val totalMoved = budget.timedMove(tick, atomic = false) {
+            var moved = 0L
+            var remaining = clamped
+            while (remaining > 0L && !damien.nodeworks.platform.MoveDeadline.expired()) {
+                val batch = minOf(remaining, maxStack)
+                val extracted = bufSrc.extract(batch)
+                if (extracted == 0L) break
+                val stack = capturedTemplate.copyWithCount(extracted.toInt())
+                val inserted = NetworkStorageHelper.insertItemStack(level, snapshot, stack, inventoryCache, channel).toLong()
+                moved += inserted
+                if (inserted < extracted) {
+                    bufSrc.returnUnused(extracted - inserted)
+                    break
+                }
+                remaining -= inserted
             }
-            remaining -= inserted
+            moved
         }
         budget.noteItemsMoved(tick, totalMoved)
         return LuaValue.valueOf(totalMoved.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
