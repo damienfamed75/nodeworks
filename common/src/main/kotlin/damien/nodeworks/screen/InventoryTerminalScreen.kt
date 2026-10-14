@@ -59,8 +59,8 @@ class InventoryTerminalScreen(
 
     enum class Layout(val cols: Int, val rows: Int, val icon: Icons) {
         SMALL(9, 5, Icons.LAYOUT_SMALL),
-        WIDE(9, 7, Icons.LAYOUT_WIDE),
-        TALL(13, 5, Icons.LAYOUT_TALL),
+        WIDE(13, 5, Icons.LAYOUT_WIDE),
+        TALL(9, 7, Icons.LAYOUT_TALL),
         LARGE(13, 7, Icons.LAYOUT_LARGE);
 
         companion object {
