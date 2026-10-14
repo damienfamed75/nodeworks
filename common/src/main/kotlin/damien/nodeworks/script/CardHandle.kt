@@ -270,7 +270,10 @@ class CardHandle private constructor(
                     { it == fluidId },
                     requested
                 )
-            } catch (_: Exception) { false }
+            } catch (e: Exception) {
+                logger.warn("card:insert of fluid into '{}' failed", card.effectiveAlias, e)
+                false
+            }
             if (ok) requested else 0L
         } else {
             try {
@@ -279,7 +282,10 @@ class CardHandle private constructor(
                     { it == fluidId },
                     requested
                 )
-            } catch (_: Exception) { 0L }
+            } catch (e: Exception) {
+                logger.warn("card:tryInsert of fluid into '{}' failed", card.effectiveAlias, e)
+                0L
+            }
         }
     }
 
@@ -329,13 +335,19 @@ class CardHandle private constructor(
 
             var inserted = 0L
             var remaining = extracted
-            while (remaining > 0L) {
-                val batch = minOf(remaining, maxStack)
-                val stack = templateFn(batch.toInt())
-                val put = PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
-                inserted += put
-                remaining -= put
-                if (put < batch) break  // sim/commit divergence, bail to rollback
+            try {
+                while (remaining > 0L) {
+                    val batch = minOf(remaining, maxStack)
+                    val stack = templateFn(batch.toInt())
+                    val put = PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
+                    inserted += put
+                    remaining -= put
+                    if (put < batch) break  // sim/commit divergence, bail to rollback
+                }
+            } catch (e: Throwable) {
+                // Everything not confirmed inserted goes back to the buffer.
+                bufSrc.returnUnused(extracted - inserted)
+                throw e
             }
 
             if (inserted < extracted) {
@@ -364,7 +376,12 @@ class CardHandle private constructor(
             val extracted = bufSrc.extract(batch)
             if (extracted == 0L) break
             val stack = templateFn(extracted.toInt())
-            val inserted = PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
+            val inserted = try {
+                PlatformServices.storage.insertItemStack(destStorage, stack).toLong()
+            } catch (e: Throwable) {
+                bufSrc.returnUnused(extracted)
+                throw e
+            }
             if (inserted < extracted) {
                 bufSrc.returnUnused(extracted - inserted)
                 totalMoved += inserted
@@ -409,9 +426,12 @@ class CardHandle private constructor(
             } else {
                 { matchesFilter(it, itemsHandle.filter) }
             }
+            // A throwing storage gets its in-flight items returned by the move itself,
+            // logged here so the cause is visible instead of silently failing.
             val ok = try {
-                PlatformServices.storage.tryMoveAll(sourceStorage, destStorage, predicate, requested)
-            } catch (_: Exception) {
+                withSpill { PlatformServices.storage.tryMoveAll(sourceStorage, destStorage, predicate, requested) }
+            } catch (e: Exception) {
+                logger.warn("card:insert into '{}' failed", card.effectiveAlias, e)
                 false
             }
             return if (ok) requested else 0L
@@ -422,10 +442,20 @@ class CardHandle private constructor(
             { id, _ -> matchesFilter(id, itemsHandle.filter) }
         }
         return try {
-            PlatformServices.storage.moveItemsVariant(sourceStorage, destStorage, variantPredicate, requested)
-        } catch (_: Exception) {
+            withSpill { PlatformServices.storage.moveItemsVariant(sourceStorage, destStorage, variantPredicate, requested) }
+        } catch (e: Exception) {
+            logger.warn("card:tryInsert into '{}' failed", card.effectiveAlias, e)
             0L
         }
+    }
+
+    /** Items a failed move could neither deliver nor return drop on top of the card's
+     *  block, recoverable rather than deleted. */
+    private fun <T> withSpill(block: () -> T): T {
+        val pos = card.capability.adjacentPos
+        return damien.nodeworks.platform.MoveSpill.around({ stack ->
+            net.minecraft.world.Containers.dropItemStack(level, pos.x + 0.5, pos.y + 1.0, pos.z + 0.5, stack)
+        }, block)
     }
 
     /** Confirm this handle's underlying card still occupies the same physical

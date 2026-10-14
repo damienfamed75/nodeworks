@@ -110,7 +110,7 @@ class ItemsHandle(
             return ItemsHandle(
                 itemId = info.itemId,
                 itemName = info.name,
-                count = info.count.toInt(),
+                count = info.count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 maxStackSize = info.maxStackSize,
                 hasData = info.hasData,
                 filter = filter,

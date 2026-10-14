@@ -287,13 +287,32 @@ object Ae2Storage {
             val got = src.me.extract(key, minOf(remaining, available), Actionable.MODULATE, source)
             if (got <= 0L) return@forEachItem
             invalidate(src.me)
-            val put = dst.me.insert(key, got, Actionable.MODULATE, source)
+            val put = try {
+                dst.me.insert(key, got, Actionable.MODULATE, source)
+            } catch (e: Throwable) {
+                giveBack(src, key, got)
+                throw e
+            }
             if (put > 0L) invalidate(dst.me)
-            if (put < got) src.me.insert(key, got - put, Actionable.MODULATE, source)
+            if (put < got) giveBack(src, key, got - put)
             moved += put
             remaining -= put
         }
         return moved
+    }
+
+    /** Return [amount] of [key] taken from [src]. Whatever it refuses is spilled as
+     *  stacks, so a key move can never delete items. */
+    private fun giveBack(src: Ae2ItemStorageHandle, key: AEItemKey, amount: Long) {
+        val back = try { src.me.insert(key, amount, Actionable.MODULATE, source) } catch (e: Exception) { 0L }
+        if (back > 0L) invalidate(src.me)
+        var left = amount - back
+        val max = key.maxStackSize.coerceAtLeast(1).toLong()
+        while (left > 0L) {
+            val n = minOf(left, max).toInt()
+            damien.nodeworks.platform.MoveSpill.spill(key.toStack(n), "ME move rollback: the source refused the items")
+            left -= n
+        }
     }
 
     // ---- fluids ----

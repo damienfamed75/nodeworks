@@ -143,13 +143,29 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
     /** Loss-free move on the routed primitives: whatever dest rejects goes back to source. */
     private fun moveStacks(source: ItemStorageHandle, dest: ItemStorageHandle, taken: List<ItemStack>): Long {
         var moved = 0L
-        for (stack in taken) {
-            if (stack.isEmpty) continue
-            val inserted = insertItemStack(dest, stack)
-            moved += inserted
-            if (inserted < stack.count) insertItemStack(source, stack.copyWithCount(stack.count - inserted))
+        // First stack not yet handed to dest, everything from here on is still ours.
+        var next = 0
+        try {
+            while (next < taken.size) {
+                val stack = taken[next]
+                if (stack.isEmpty) { next++; continue }
+                val inserted = insertItemStack(dest, stack)
+                next++
+                moved += inserted
+                if (inserted < stack.count) returnToSource(source, dest, stack.copyWithCount(stack.count - inserted))
+            }
+        } catch (e: Throwable) {
+            returnRemaining(source, dest, taken, next)
+            throw e
         }
         return moved
+    }
+
+    /** A storage threw mid-move. The stack being inserted may have partly landed, so
+     *  returning it whole risks a duplicate, which beats deleting it. */
+    private fun returnRemaining(source: ItemStorageHandle, dest: ItemStorageHandle, taken: List<ItemStack>, from: Int) {
+        logger.error("A storage threw during a move, returning {} held stacks to the source", taken.size - from)
+        for (i in from until taken.size) returnToSource(source, dest, taken[i])
     }
 
     /** Moves in rounds so a huge request against an unbounded source (an ME network)
@@ -198,44 +214,68 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
     }
 
     /** Atomic. A request larger than one extraction can materialize fails cleanly
-     *  (everything goes back) rather than allocating without bound. */
+     *  (everything goes back) rather than allocating without bound. Used for every
+     *  backend, the base version regroups stacks by item and strips their components. */
     override fun tryMoveAll(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, count: Long): Boolean {
-        if (!crossesBackend(source, dest)) return base.tryMoveAll(source, dest, filter, count)
         if (count <= 0L) return true
         if (countItems(source, filter) < count) return false
 
         val taken = extractItemStacksMatching(source, filter, count)
         if (taken.sumOf { it.count.toLong() } < count) {
-            for (s in taken) returnToSource(source, s)
+            for (s in taken) returnToSource(source, dest, s)
             return false
         }
 
         val landed = ArrayList<ItemStack>()
         val leftovers = ArrayList<ItemStack>()
-        for ((i, stack) in taken.withIndex()) {
-            val inserted = insertItemStack(dest, stack)
-            if (inserted > 0) landed += stack.copyWithCount(inserted)
-            if (inserted < stack.count) {
-                leftovers += stack.copyWithCount(stack.count - inserted)
-                leftovers += taken.subList(i + 1, taken.size)
-                break
+        // First stack not yet handed to dest, everything from here on is still ours.
+        var next = 0
+        try {
+            while (next < taken.size) {
+                val stack = taken[next]
+                val inserted = insertItemStack(dest, stack)
+                next++
+                if (inserted > 0) landed += stack.copyWithCount(inserted)
+                if (inserted < stack.count) {
+                    leftovers += stack.copyWithCount(stack.count - inserted)
+                    break
+                }
             }
+        } catch (e: Throwable) {
+            returnRemaining(source, dest, taken, next)
+            throw e
         }
+        if (next < taken.size) leftovers += taken.subList(next, taken.size)
         if (leftovers.isEmpty()) return true
 
         // Unwind: pull back what landed in dest, then return everything to source.
+        // Whatever can't be pulled back stays in dest, delivered rather than lost.
         for (l in landed) {
-            leftovers += extractStacksByPredicate(dest, { ItemStack.isSameItemSameComponents(it, l) }, l.count.toLong())
+            leftovers += try {
+                extractStacksByPredicate(dest, { ItemStack.isSameItemSameComponents(it, l) }, l.count.toLong())
+            } catch (e: Exception) {
+                logger.warn("tryMoveAll unwind: could not pull {} back from the destination", l.item, e)
+                emptyList()
+            }
         }
-        for (s in leftovers) returnToSource(source, s)
+        for (s in leftovers) returnToSource(source, dest, s)
         return false
     }
 
-    private fun returnToSource(source: ItemStorageHandle, stack: ItemStack) {
-        val back = insertItemStack(source, stack)
-        if (back < stack.count) {
-            logger.warn("tryMoveAll rollback: source refused returning {} x{}. State may diverge.", stack.item, stack.count - back)
+    /** Put [stack] back where it came from. Never throws and never deletes: if the
+     *  source refuses it, the destination it was headed for gets it, and if neither
+     *  takes it, it is spilled into the world. */
+    private fun returnToSource(source: ItemStorageHandle, dest: ItemStorageHandle, stack: ItemStack) {
+        var left = stack
+        for (target in listOf(source, dest)) {
+            if (left.isEmpty) return
+            try {
+                left = left.copyWithCount(left.count - insertItemStack(target, left))
+            } catch (e: Exception) {
+                logger.warn("Move rollback: a storage threw taking {} back", left.item, e)
+            }
         }
+        if (!left.isEmpty) MoveSpill.spill(left, "Move rollback: neither storage would take the items back")
     }
 
     // ---- fluids ----
@@ -286,8 +326,8 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         val room = simulateInsertFluid(dest, info.fluidId, minOf(maxAmount, info.amount))
         if (room <= 0L) return 0L
         val drained = extractFluid(source, { it == info.fluidId }, room)
-        val filled = insertFluid(dest, info.fluidId, drained)
-        if (filled < drained) insertFluid(source, info.fluidId, drained - filled)
+        val filled = fillOrReturn(source, dest, info.fluidId, drained)
+        if (filled < drained) returnFluid(source, info.fluidId, drained - filled)
         return filled
     }
 
@@ -299,15 +339,30 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         if (simulateInsertFluid(dest, info.fluidId, amount) < amount) return false
         val drained = extractFluid(source, { it == info.fluidId }, amount)
         if (drained < amount) {
-            insertFluid(source, info.fluidId, drained)
+            returnFluid(source, info.fluidId, drained)
             return false
         }
-        val filled = insertFluid(dest, info.fluidId, drained)
+        val filled = fillOrReturn(source, dest, info.fluidId, drained)
         if (filled < drained) {
             extractFluid(dest, { it == info.fluidId }, filled)
-            insertFluid(source, info.fluidId, drained)
+            returnFluid(source, info.fluidId, drained)
             return false
         }
         return true
+    }
+
+    /** Fill [dest] with fluid already drained from [source]. A throw returns it all first. */
+    private fun fillOrReturn(source: FluidStorageHandle, dest: FluidStorageHandle, fluidId: String, drained: Long): Long =
+        try {
+            insertFluid(dest, fluidId, drained)
+        } catch (e: Throwable) {
+            returnFluid(source, fluidId, drained)
+            throw e
+        }
+
+    /** Fluid has no world form to spill, so a refused return is logged as an error. */
+    private fun returnFluid(source: FluidStorageHandle, fluidId: String, amount: Long) {
+        val back = try { insertFluid(source, fluidId, amount) } catch (e: Exception) { 0L }
+        if (back < amount) logger.error("Fluid move rollback: source refused {} mB of {}", amount - back, fluidId)
     }
 }
