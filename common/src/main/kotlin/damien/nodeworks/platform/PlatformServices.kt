@@ -315,7 +315,9 @@ interface StorageService {
         filter: (ItemStack) -> Boolean,
         maxCount: Long,
         /** Stop after this many distinct items. Fullness checks pass a small cap so a
-         *  source full of unique items doesn't cost one simulated insert per item. */
+         *  source full of unique items doesn't cost one simulated insert per item. A capped
+         *  run that stops early can't rule the move out, so it skips the simulation and
+         *  reports null [MovePreview.fits]. */
         maxStacks: Int = Int.MAX_VALUE,
     ): MovePreview? = null
 
@@ -394,6 +396,10 @@ data class ItemInfo(
  *  past the end of the source starts again at the first slot. */
 class ScanCursor {
     var slot: Int = 0
+
+    /** For a source with no slots (ME), the item type the last call stopped on. The next
+     *  call starts after it, or from the top when it is gone. */
+    var key: Any? = null
 }
 
 /** Result of [StorageService.previewMove]. [available] is how many matching items the

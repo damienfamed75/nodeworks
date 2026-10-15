@@ -194,7 +194,13 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
      *  destination that accepts some items (drawers, a full chest) still gets them. A
      *  full plain inventory can only take what it holds, so those types are looked up
      *  directly instead of walking the network. */
-    private fun moveFromMe(s: Ae2ItemStorageHandle, dest: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): Long {
+    private fun moveFromMe(
+        s: Ae2ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+        cursor: ScanCursor? = null,
+    ): Long {
         var remaining = maxCount
         var moved = 0L
         val step: (ItemStack, Long) -> Boolean = step@{ template, available ->
@@ -210,7 +216,10 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         }
         val accepted = base.acceptedTypes(dest)
         if (accepted == null) {
-            Ae2Storage.forEachStack(s, filter, step)
+            // Resuming where the last call stopped means every type gets its turn, even when
+            // dest is slow to ask and a call only gets through part of a big network.
+            if (cursor != null) cursor.key = Ae2Storage.forEachStackFrom(s, filter, cursor.key, step)
+            else Ae2Storage.forEachStack(s, filter, step)
         } else {
             for (template in accepted) {
                 if (!filter(template)) continue
@@ -232,8 +241,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         val s = ae2(source)
         val d = ae2(dest)
         if (s != null && d != null) return Ae2Storage.moveKeys(s, d, { filter(idOf(it)) }, maxCount)
-        if (s != null) return moveFromMe(s, dest, { filter(idOf(it)) }, maxCount)
-        // Only a slotted source can resume a scan, ME has no slots.
+        if (s != null) return moveFromMe(s, dest, { filter(idOf(it)) }, maxCount, cursor)
         val handler = (source as? NeoForgeItemStorageHandle)?.handler
         if (cursor != null && d != null && handler != null) return moveSlotsToMe(source, handler, d, filter, maxCount, cursor)
         return moveInRounds(source, dest, maxCount) { extractItemStacksMatching(source, filter, it) }
@@ -314,9 +322,12 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         val s = ae2(source)
         val (stacks, sawAll) = if (s != null) Ae2Storage.previewStacks(s, filter, maxCount, maxStacks)
             else base.previewStacks(source, filter, maxCount, maxStacks)
+        val available = stacks.sumOf { it.count.toLong() }
+        // A capped run that stopped early can't rule the move out, so don't pay for asking dest.
+        if (maxStacks != Int.MAX_VALUE && !sawAll) return MovePreview(available, null, false)
         val d = ae2(dest)
         val fits = if (d != null) Ae2Storage.simulateInsertStacks(d, stacks) else base.simulateInsertStacks(dest, stacks)
-        return MovePreview(stacks.sumOf { it.count.toLong() }, fits, sawAll)
+        return MovePreview(available, fits, sawAll)
     }
 
     /** Atomic. A request larger than one extraction can materialize fails cleanly

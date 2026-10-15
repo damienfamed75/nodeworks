@@ -302,6 +302,21 @@ object Ae2Storage {
         }
     }
 
+    /** Like [forEachStack], but starts at the type after [after] when it is still there
+     *  and wraps, visiting each type at most once. Returns the type [visit] stopped on, or
+     *  null when every type was visited. */
+    fun forEachStackFrom(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, after: Any?, visit: (ItemStack, Long) -> Boolean): Any? {
+        val entries = ArrayList<Pair<AEItemKey, Long>>()
+        forEachItem(h, { true }) { key, n -> if (filter(key.readOnlyStack)) entries += key to n }
+        if (entries.isEmpty()) return null
+        val start = (entries.indexOfFirst { it.first == after } + 1) % entries.size
+        for (i in entries.indices) {
+            val (key, n) = entries[(start + i) % entries.size]
+            if (!visit(key.toStack(1), n)) return key
+        }
+        return null
+    }
+
     /** How many of [template]'s exact type the network holds. */
     fun countOf(h: Ae2ItemStorageHandle, template: ItemStack): Long {
         val key = AEItemKey.of(template) ?: return 0L
