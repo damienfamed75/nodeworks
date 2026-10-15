@@ -255,9 +255,16 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val executions = ((desired + perBatch - 1) / perBatch).coerceAtLeast(1L)
         // What a recipe hands back, like an empty bucket or a worn crystal. A leftover that is
         // one of the recipe's own ingredients is used again by the next craft, the way it stays
-        // in a player's grid. Everything else, and whatever is still held at the end, goes to
-        // the buffer, which returns it to storage when the craft finishes.
+        // in a player's grid. Everything else, and whatever is still held at the end, goes
+        // straight to network storage in one pass, so leftovers never fill the CPU buffer.
         val held = mutableMapOf<String, ArrayDeque<ItemStack>>()
+        val spare = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Pair<ItemStack, Long>>()
+        fun keepLeftover(stack: ItemStack) {
+            if (stack.isEmpty) return
+            val key = damien.nodeworks.script.BufferKey.of(stack)
+            val prev = spare[key]
+            spare[key] = (prev?.first ?: stack.copyWithCount(1)) to ((prev?.second ?: 0L) + stack.count)
+        }
         try {
             var done = 0L
             while (done < executions) {
@@ -268,7 +275,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     val stack = held[ing]?.removeFirstOrNull() ?: takeIngredient(ing)
                     if (stack == null) {
                         val had = taken.count { it != null && BuiltInRegistries.ITEM.getKey(it.item).toString() == ing }
-                        for (s in taken) if (s != null) keepLeftover(s, lvl)
+                        for (s in taken) if (s != null) keepLeftover(s)
                         return CraftScheduler.OpResult.Failed(
                             "Execute iteration underflow: $ing x${ingredientCounts[ing]} (had $had)"
                         )
@@ -278,7 +285,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 val output = expected.copyWithCount(expected.getCount())
                 // Keeps the recipe's components, the bucket stays plain.
                 if (!cpu.addCraftedToBuffer(expectedItemId, output, output.getCount().toLong())) {
-                    for (s in taken) if (s != null) keepLeftover(s, lvl)
+                    for (s in taken) if (s != null) keepLeftover(s)
                     return CraftScheduler.OpResult.Failed(
                         "Buffer refused crafted $expectedItemId x${output.getCount()}"
                     )
@@ -293,13 +300,17 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     if (left.isEmpty) continue
                     val leftId = BuiltInRegistries.ITEM.getKey(left.item).toString()
                     if (leftId in ingredientCounts) held.getOrPut(leftId) { ArrayDeque() }.addLast(left)
-                    else keepLeftover(left, lvl)
+                    else keepLeftover(left)
                 }
                 done++
             }
             return CraftScheduler.OpResult.Completed
         } finally {
-            for (stacks in held.values) for (s in stacks) keepLeftover(s, lvl)
+            for (stacks in held.values) for (s in stacks) keepLeftover(s)
+            if (spare.isNotEmpty()) {
+                val snap = snapshotForTick(lvl)
+                for ((template, count) in spare.values) tryReturnStackToStorage(template, count, lvl, snap)
+            }
         }
     }
 
@@ -324,15 +335,6 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return ItemStack(item, 1)
         }
         return null
-    }
-
-    /** Back into the buffer with its components, or dropped at the CPU when the buffer is full. */
-    private fun keepLeftover(stack: ItemStack, lvl: ServerLevel) {
-        if (stack.isEmpty || cpu.addToBuffer(stack, stack.count.toLong())) return
-        logger.warn("Buffer full, dropping leftover {} at {}", stack, cpu.blockPos)
-        net.minecraft.world.Containers.dropItemStack(
-            lvl, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, stack.copy()
-        )
     }
 
     // =====================================================================
