@@ -185,6 +185,8 @@ object CraftingHelper {
          *  always use [ChannelFilter.All]. Default [ChannelFilter.All] preserves
          *  existing routing for Inventory Terminal / Lua callers. */
         outputChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
+        /** The block submitting this craft, recorded on the plan. See [CraftPlan.requester]. */
+        requesterPos: BlockPos? = null,
     ): CraftResult? {
         lastFailReason = null
         currentPendingJob = null
@@ -238,7 +240,9 @@ object CraftingHelper {
         // 4. Save the tree snapshot for the diagnostic GUI, then submit to the scheduler.
         cpu.craftTreeSnapshot = tree
         val pending = PendingHandlerJob()
-        val planWithSubmitter = if (submitterUuid != null) plan.copy(submitterUuid = submitterUuid) else plan
+        var planWithSubmitter = plan
+        if (submitterUuid != null) planWithSubmitter = planWithSubmitter.copy(submitterUuid = submitterUuid)
+        if (requesterPos != null) planWithSubmitter = planWithSubmitter.copy(requester = requesterPos)
         cpu.submitCraft(planWithSubmitter, level.gameTime) { success ->
             pending.complete(success)
         }

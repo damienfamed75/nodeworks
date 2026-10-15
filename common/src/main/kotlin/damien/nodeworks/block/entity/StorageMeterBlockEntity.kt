@@ -109,8 +109,13 @@ class StorageMeterBlockEntity(
     @Transient
     internal var aboveThresholdSinceTick: Long = -1L
 
+    /** In-memory handle for the running job. Only used for the failure reason, the job
+     *  itself is tracked on the CPU, see [jobStillRunning]. */
     @Transient
     internal var pendingJob: CraftingHelper.PendingHandlerJob? = null
+
+    /** The CPU the running job was submitted to, saved so a reload can find the job again. */
+    internal var jobCpu: BlockPos? = null
 
     // Mirrored to the client so the BER and GUI can react.
     var hasActiveJob: Boolean = false
@@ -187,20 +192,17 @@ class StorageMeterBlockEntity(
                     appendError(reason)
                 }
                 pendingJob = null
-                setHasActiveJob(false, level)
-                // Cooldown anchors to completion to keep the lock-step
-                // semantics the Requester uses.
-                lastJobAttemptTick = tick
-                // Refresh count so a duplicate submit doesn't fire off stale
-                // data once the cooldown elapses.
+                // The CPU scan in updateCount notices the job is gone and refreshes the
+                // count, so a duplicate submit doesn't fire off stale data.
                 updateCount(level, tick)
             }
         }
 
         if (tick % COUNT_INTERVAL_TICKS == 0L) updateCount(level, tick)
 
+        // One job at a time, gated on the plan the CPU holds, not on memory.
         if (autocraftEnabled
-            && isBelowThreshold && pendingJob == null
+            && isBelowThreshold && !hasActiveJob
             && tick - lastJobAttemptTick >= JOB_COOLDOWN_TICKS
         ) {
             submitCraft(level)
@@ -210,6 +212,7 @@ class StorageMeterBlockEntity(
 
     private fun updateCount(level: ServerLevel, tick: Long) {
         val snapshot = NetworkDiscovery.discoverNetwork(level, worldPosition)
+        refreshJobState(level, snapshot, tick)
         val controller = snapshot.controller
         val count = if (controller == null) 0L else {
             val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(target.item).toString()
@@ -249,6 +252,58 @@ class StorageMeterBlockEntity(
         }
     }
 
+    /** Whether the job this meter submitted is still on a CPU. Plans are saved with their
+     *  CPU and carry the submitting block, so this holds across reloads. A CPU that can't
+     *  be seen right now counts as still working, waiting is the safe side. */
+    private fun jobStillRunning(level: ServerLevel, snapshot: damien.nodeworks.network.NetworkSnapshot): Boolean {
+        val mine = findJobCpu(level, snapshot)
+        if (mine != null) {
+            jobCpu = mine
+            return true
+        }
+        val cpuPos = jobCpu
+        if (cpuPos != null) {
+            if (!level.isLoaded(cpuPos)) return true
+            // Loaded with no plan of ours, finished, cancelled or the CPU is gone.
+            return false
+        }
+        // A job from a save made before plans recorded their block. Nothing can be
+        // attributed, so wait until no CPU on the network is making the item at all.
+        if (hasActiveJob) {
+            val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(target.item).toString()
+            return cpusOf(level, snapshot).any { cpu -> plansOf(cpu).any { it.rootItemId == itemId } }
+        }
+        return false
+    }
+
+    /** The CPU holding a plan this meter submitted, [jobCpu] first, then the network. */
+    private fun findJobCpu(level: ServerLevel, snapshot: damien.nodeworks.network.NetworkSnapshot): BlockPos? {
+        val remembered = jobCpu?.takeIf { level.isLoaded(it) }
+            ?.let { level.getBlockEntity(it) as? CraftingCoreBlockEntity }
+        if (remembered != null && plansOf(remembered).any { it.requester == worldPosition }) return remembered.blockPos
+        return cpusOf(level, snapshot).firstOrNull { cpu -> plansOf(cpu).any { it.requester == worldPosition } }?.blockPos
+    }
+
+    private fun cpusOf(level: ServerLevel, snapshot: damien.nodeworks.network.NetworkSnapshot): List<CraftingCoreBlockEntity> =
+        snapshot.cpus.mapNotNull { level.getBlockEntity(it.pos) as? CraftingCoreBlockEntity }
+
+    private fun plansOf(cpu: CraftingCoreBlockEntity): List<damien.nodeworks.script.cpu.CraftPlan> =
+        listOfNotNull(cpu.scheduler.currentPlan) + cpu.scheduler.queuedPlans
+
+    /** Sync [hasActiveJob] with what the CPUs hold. A finished job anchors the cooldown
+     *  so the next submit waits for the delivered items to be counted. */
+    private fun refreshJobState(level: ServerLevel, snapshot: damien.nodeworks.network.NetworkSnapshot, tick: Long) {
+        val running = jobStillRunning(level, snapshot)
+        if (hasActiveJob && !running) {
+            jobCpu = null
+            pendingJob = null
+            lastJobAttemptTick = tick
+            setHasActiveJob(false, level)
+        } else if (!hasActiveJob && running) {
+            setHasActiveJob(true, level)
+        }
+    }
+
     private fun submitCraft(level: ServerLevel) {
         val want = threshold.toLong() - displayCount
         if (want <= 0L) return
@@ -259,6 +314,7 @@ class StorageMeterBlockEntity(
         when (result) {
             is BlockCraftSubmitter.Result.Submitted -> {
                 pendingJob = result.pending
+                jobCpu = result.cpuPos
                 if (errorLines.isNotEmpty()) errorLines.clear()
                 setHasActiveJob(true, level)
             }
@@ -353,6 +409,7 @@ class StorageMeterBlockEntity(
         if (displayCount != 0L) output.putLong("count", displayCount)
         if (isBelowThreshold) output.putBoolean("low", true)
         if (hasActiveJob) output.putBoolean("active", true)
+        jobCpu?.let { output.putLong("jobCpu", it.asLong()) }
         if (errorLines.isNotEmpty()) {
             output.store(
                 "errorLines",
@@ -377,6 +434,7 @@ class StorageMeterBlockEntity(
         displayCount = input.getLongOrNull("count") ?: 0L
         isBelowThreshold = input.getBooleanOr("low", false)
         hasActiveJob = input.getBooleanOr("active", false)
+        jobCpu = input.getLongOrNull("jobCpu")?.let { BlockPos.of(it) }
         errorLines.clear()
         val loaded = input.read(
             "errorLines",

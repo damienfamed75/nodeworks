@@ -27,6 +27,10 @@ data class CraftPlan(
      *  `:connect(fn)` callback) to claim them via a buffer-backed [ItemsHandle]. The
      *  caller is then on the hook for routing or dropping leftovers. */
     val omitDeliver: Boolean = false,
+    /** Position of the block that submitted this craft (Storage Meter, Craft Requester),
+     *  null for players and scripts. Saved with the plan, so a block can find its job on
+     *  the CPU again after a reload instead of trusting a handle it no longer has. */
+    val requester: net.minecraft.core.BlockPos? = null,
 ) {
     /** O(1) lookup by op id. Built once. */
     private val byId: Map<Int, Operation> = ops.associateBy { it.id }
@@ -52,6 +56,7 @@ data class CraftPlan(
         //  UUIDUtil.CODEC for one field.
         submitterUuid?.let { tag.putString("submitter", it.toString()) }
         if (omitDeliver) tag.putBoolean("omitDeliver", true)
+        requester?.let { tag.putLong("requester", it.asLong()) }
     }
 
     companion object {
@@ -68,7 +73,8 @@ data class CraftPlan(
                 try { java.util.UUID.fromString(it) } catch (_: Exception) { null }
             }
             val omitDeliver = tag.getBooleanOr("omitDeliver", false)
-            return CraftPlan(rootItemId, rootCount, ops, terms, submitter, omitDeliver)
+            val requester = tag.getLong("requester").orElse(null)?.let { net.minecraft.core.BlockPos.of(it) }
+            return CraftPlan(rootItemId, rootCount, ops, terms, submitter, omitDeliver, requester)
         }
     }
 }

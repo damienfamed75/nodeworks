@@ -20,9 +20,9 @@ import net.minecraft.world.item.ItemStack
 object BlockCraftSubmitter {
 
     sealed class Result {
-        /** Job submitted. Poll [pending.isComplete] and read [pending.success]
-         *  when complete, then clear the BE's reference. */
-        data class Submitted(val pending: CraftingHelper.PendingHandlerJob) : Result()
+        /** Job submitted. [pending] completes in memory only, so a block that must
+         *  survive a reload tracks its plan on the CPU at [cpuPos] instead. */
+        data class Submitted(val pending: CraftingHelper.PendingHandlerJob, val cpuPos: BlockPos?) : Result()
 
         /** Device isn't on a network. Caller-policy: Storage Meter treats this
          *  as a silent idle (the missing network glow is already visible on
@@ -63,6 +63,7 @@ object BlockCraftSubmitter {
             snapshot = snapshot,
             componentsPatch = target.componentsPatch,
             outputChannel = outputChannel,
+            requesterPos = pos,
         )
         if (result == null) {
             return Result.Failed(CraftingHelper.lastFailReason ?: "Craft submission failed")
@@ -70,6 +71,6 @@ object BlockCraftSubmitter {
         // Defensive, every craft() success returns a pending job today, the
         // nullable type is API-level slack.
         val pending = result.pendingJob ?: return Result.Failed("Submission returned no job handle")
-        return Result.Submitted(pending)
+        return Result.Submitted(pending, result.cpu?.blockPos)
     }
 }
