@@ -272,19 +272,38 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             while (done < executions) {
                 // Real stacks per slot, so leftovers come from the actual item (a crystal keeps its wear).
                 val taken = arrayOfNulls<ItemStack>(op.recipe.size)
+                // Slots holding a worn copy or a reused leftover rather than a fresh one.
+                val worn = BooleanArray(op.recipe.size)
                 inHand = taken
+                fun underflow(ing: String): CraftScheduler.OpResult {
+                    val had = taken.count { it != null && BuiltInRegistries.ITEM.getKey(it.item).toString() == ing }
+                    inHand = null
+                    for (s in taken) if (s != null) keepLeftover(s)
+                    return CraftScheduler.OpResult.Failed(
+                        "Execute iteration underflow: $ing x${ingredientCounts[ing]} (had $had)"
+                    )
+                }
                 for ((slot, ing) in op.recipe.withIndex()) {
                     if (ing.isEmpty()) continue
-                    val stack = held[ing]?.removeFirstOrNull() ?: takeIngredient(ing)
-                    if (stack == null) {
-                        val had = taken.count { it != null && BuiltInRegistries.ITEM.getKey(it.item).toString() == ing }
-                        inHand = null
-                        for (s in taken) if (s != null) keepLeftover(s)
-                        return CraftScheduler.OpResult.Failed(
-                            "Execute iteration underflow: $ing x${ingredientCounts[ing]} (had $had)"
-                        )
+                    val reused = held[ing]?.removeFirstOrNull()
+                    if (reused != null) {
+                        taken[slot] = reused
+                        worn[slot] = true
+                        continue
                     }
+                    val (stack, fresh) = takeIngredient(ing, allowWorn = true) ?: return underflow(ing)
                     taken[slot] = stack
+                    worn[slot] = !fresh
+                }
+                // The output was worked out from fresh ingredients. If a worn copy would change it,
+                // like repairing damaged tools, those slots take fresh copies instead.
+                if (worn.any { it } && !craftsAsPlanned(recipeHolder.value(), taken, expected, lvl)) {
+                    for ((slot, ing) in op.recipe.withIndex()) {
+                        if (!worn[slot]) continue
+                        taken[slot]?.let { keepLeftover(it) }
+                        taken[slot] = null
+                        taken[slot] = takeIngredient(ing, allowWorn = false)?.first ?: return underflow(ing)
+                    }
                 }
                 val output = expected.copyWithCount(expected.getCount())
                 // Keeps the recipe's components, the bucket stays plain.
@@ -321,12 +340,29 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
     }
 
-    /** One [itemId] out of the buffer as a real stack. The plain bucket goes first, then a
-     *  copy that differs only by wear, so a worn crystal back in storage still crafts. A
-     *  renamed or enchanted copy is never used up. */
-    private fun takeIngredient(itemId: String): ItemStack? {
+    /** True when [taken] still matches [recipe] and crafts exactly [expected]. */
+    private fun craftsAsPlanned(
+        recipe: net.minecraft.world.item.crafting.CraftingRecipe,
+        taken: Array<ItemStack?>,
+        expected: ItemStack,
+        lvl: ServerLevel,
+    ): Boolean = try {
+        val input = CraftingInput.of(3, 3, taken.map { it ?: ItemStack.EMPTY })
+        recipe.matches(input, lvl) && recipe.assemble(input).let {
+            it.count == expected.count && ItemStack.isSameItemSameComponents(it, expected)
+        }
+    } catch (e: Exception) {
+        false
+    }
+
+    /** One [itemId] out of the buffer as a real stack, paired with true when it is a fresh
+     *  copy. The plain bucket goes first, then, with [allowWorn], a copy that differs only by
+     *  wear, so a worn crystal back in storage still crafts. A renamed or enchanted copy is
+     *  never used up. */
+    private fun takeIngredient(itemId: String, allowWorn: Boolean): Pair<ItemStack, Boolean>? {
         val plain = damien.nodeworks.script.BufferKey.Key(itemId, "")
         val keys = sequenceOf(plain) + sequence {
+            if (!allowWorn) return@sequence
             for ((key, entry) in cpu.bufferState.contents()) {
                 if (key.itemId != itemId || key == plain) continue
                 val patch = entry.template.componentsPatch
@@ -335,11 +371,12 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
         for (key in keys) {
             if (cpu.getBufferCount(key) <= 0L) continue
-            val template = cpu.getBufferTemplate(key)
+            // Built before removing, so an item that can't be rebuilt is never taken.
+            val stack = cpu.getBufferTemplate(key)?.takeIf { !it.isEmpty }?.copyWithCount(1)
+                ?: Identifier.tryParse(itemId)?.let { BuiltInRegistries.ITEM.getValue(it) }?.let { ItemStack(it, 1) }
+                ?: continue
             if (cpu.removeFromBuffer(key, 1L) < 1L) continue
-            if (template != null && !template.isEmpty) return template.copyWithCount(1)
-            val item = Identifier.tryParse(itemId)?.let { BuiltInRegistries.ITEM.getValue(it) } ?: return null
-            return ItemStack(item, 1)
+            return stack to (key == plain)
         }
         return null
     }
