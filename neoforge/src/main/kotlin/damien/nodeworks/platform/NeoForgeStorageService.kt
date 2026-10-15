@@ -268,22 +268,28 @@ class NeoForgeStorageService : StorageService {
         insertInto(storage as NeoForgeItemStorageHandle, stack, simulate = false)
 
     /** What an extract of [maxCount] matching items would return, merged to one stack per
-     *  distinct item and components with the total as its count. Read-only. */
-    fun previewStacks(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): List<ItemStack> {
+     *  distinct item and components with the total as its count, at most [maxStacks] of
+     *  them. Read-only. The flag is true when every slot was looked at. */
+    fun previewStacks(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long, maxStacks: Int): Pair<List<ItemStack>, Boolean> {
         val handler = (storage as NeoForgeItemStorageHandle).handler
         val merged = LinkedHashMap<ItemResource, ItemStack>()
         var remaining = maxCount
         for (slot in 0 until handler.slots) {
-            if (remaining <= 0L) break
+            if (remaining <= 0L) return ArrayList(merged.values) to false
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty || !filter(stack)) continue
             val take = minOf(remaining, stack.count.toLong()).toInt()
             val key = ItemResource.of(stack)
             val existing = merged[key]
-            if (existing == null) merged[key] = stack.copyWithCount(take) else existing.grow(take)
+            if (existing == null) {
+                if (merged.size >= maxStacks) return ArrayList(merged.values) to false
+                merged[key] = stack.copyWithCount(take)
+            } else {
+                existing.grow(take)
+            }
             remaining -= take
         }
-        return ArrayList(merged.values)
+        return ArrayList(merged.values) to (remaining > 0L)
     }
 
     /** The item types [dest] can still take, as one-item templates, when it is a plain

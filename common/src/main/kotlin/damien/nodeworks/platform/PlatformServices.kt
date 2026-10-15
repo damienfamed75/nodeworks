@@ -306,6 +306,9 @@ interface StorageService {
         dest: ItemStorageHandle,
         filter: (ItemStack) -> Boolean,
         maxCount: Long,
+        /** Stop after this many distinct items. Fullness checks pass a small cap so a
+         *  source full of unique items doesn't cost one simulated insert per item. */
+        maxStacks: Int = Int.MAX_VALUE,
     ): MovePreview? = null
 
     /**
@@ -381,8 +384,9 @@ data class ItemInfo(
 
 /** Result of [StorageService.previewMove]. [available] is how many matching items the
  *  source holds, up to the asked amount. [fits] is how many of those the destination
- *  would accept, null when the destination can't simulate. */
-data class MovePreview(val available: Long, val fits: Long?)
+ *  would accept, null when the destination can't simulate. [sawAll] is true when the
+ *  dry run saw every matching item in the source. */
+data class MovePreview(val available: Long, val fits: Long?, val sawAll: Boolean)
 
 /** Metadata for a fluid found in storage. Counts are in millibuckets. */
 data class FluidInfo(

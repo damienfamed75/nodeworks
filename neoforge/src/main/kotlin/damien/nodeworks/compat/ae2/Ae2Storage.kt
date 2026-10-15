@@ -278,18 +278,20 @@ object Ae2Storage {
     }
 
     /** What an extract of [maxCount] matching items would return, one stack per key with
-     *  the total as its count, read from the snapshot without touching the network. */
-    fun previewStacks(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): List<ItemStack> {
+     *  the total as its count, at most [maxStacks] of them. Read from the snapshot without
+     *  touching the network. The flag is true when every key was looked at. */
+    fun previewStacks(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long, maxStacks: Int): Pair<List<ItemStack>, Boolean> {
         val out = ArrayList<ItemStack>()
         var remaining = maxCount
         forEachItem(h, { true }) { key, available ->
-            if (remaining <= 0L) return out
+            if (remaining <= 0L) return out to false
             if (!filter(key.readOnlyStack)) return@forEachItem
+            if (out.size >= maxStacks) return out to false
             val take = minOf(remaining, available, Int.MAX_VALUE.toLong())
             out += key.toStack(take.toInt())
             remaining -= take
         }
-        return out
+        return out to (remaining > 0L)
     }
 
     /** Visit matching item types as one-item templates with their counts, in snapshot

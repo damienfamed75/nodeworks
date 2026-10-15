@@ -32,17 +32,18 @@ internal object CardStorage {
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, face)
     }
 
-    /** False when a dry run shows [dest] would take none of the matching items, so a full
-     *  target costs one simulation per run instead of an extract and a give back. Only the
-     *  first stretch is simulated, and the move takes whichever items fit, so only a dry
-     *  run that saw everything the source has can rule it out. */
+    /** False when a dry run that saw everything the source has shows [dest] takes none
+     *  of it, so a full target costs a cheap simulation instead of an extract and a give back. */
     fun hasRoom(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Boolean {
         val previewed = minOf(maxCount, damien.nodeworks.script.NetworkBudget.MAX_ATOMIC_ITEMS)
         val preview = try {
-            PlatformServices.storage.previewMove(source, dest, { filter(BuiltInRegistries.ITEM.getKey(it.item).toString()) }, previewed)
+            PlatformServices.storage.previewMove(
+                source, dest, { filter(BuiltInRegistries.ITEM.getKey(it.item).toString()) },
+                previewed, damien.nodeworks.script.NetworkBudget.FULLNESS_CHECK_STACKS,
+            )
         } catch (e: Exception) {
             null
         } ?: return true
-        return preview.fits != 0L || preview.available >= previewed
+        return preview.fits != 0L || !preview.sawAll
     }
 }

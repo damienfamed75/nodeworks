@@ -482,13 +482,13 @@ class CardHandle private constructor(
         } else {
             { id, _ -> matchesFilter(id, itemsHandle.filter) }
         }
-        // A full destination costs one simulation instead of an extract and a give back.
-        // Only the first stretch is simulated to keep it cheap. The move takes whichever
-        // items fit, not just the first ones, so it can only be skipped when the dry run
-        // saw everything the source has.
+        // A full destination costs a cheap dry run instead of an extract and a give back.
+        // The move is only skipped when the dry run saw everything the source has.
         val previewed = minOf(requested, NetworkBudget.MAX_ATOMIC_ITEMS)
-        val preview = preview(sourceStorage, destStorage, previewed) { variantPredicate(idOf(it), it.componentsPatch.size() > 0) }
-        if (preview != null && preview.fits == 0L && preview.available < previewed) return 0L
+        val preview = preview(sourceStorage, destStorage, previewed, NetworkBudget.FULLNESS_CHECK_STACKS) {
+            variantPredicate(idOf(it), it.componentsPatch.size() > 0)
+        }
+        if (preview != null && preview.fits == 0L && preview.sawAll) return 0L
         return try {
             withSpill { PlatformServices.storage.moveItemsVariant(sourceStorage, destStorage, variantPredicate, requested) }
         } catch (e: Exception) {
@@ -506,9 +506,10 @@ class CardHandle private constructor(
         source: ItemStorageHandle,
         dest: ItemStorageHandle,
         requested: Long,
+        maxStacks: Int = Int.MAX_VALUE,
         filter: (net.minecraft.world.item.ItemStack) -> Boolean,
     ): damien.nodeworks.platform.MovePreview? = try {
-        PlatformServices.storage.previewMove(source, dest, filter, requested)
+        PlatformServices.storage.previewMove(source, dest, filter, requested, maxStacks)
     } catch (e: Exception) {
         logger.warn("Move preview into '{}' failed", card.effectiveAlias, e)
         null

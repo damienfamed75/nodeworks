@@ -190,6 +190,9 @@ class NetworkBudget {
          *  runs in one go and can't be spread over ticks, so this bounds its cost. */
         const val MAX_ATOMIC_ITEMS: Long = 16_384L
 
+        /** Distinct items a fullness dry run simulates before just trying the move. */
+        const val FULLNESS_CHECK_STACKS: Int = 64
+
         /** Items per tick per network when the config is 0. */
         const val DEFAULT_ITEMS_PER_TICK: Long = 16_384L
 
