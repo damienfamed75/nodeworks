@@ -736,6 +736,9 @@ class NetworkInventoryCache(
     fun channelFluidCounts(channel: net.minecraft.world.item.DyeColor): Map<String, Long> =
         channelFluids[channel] ?: emptyMap()
 
+    /** How many of one exact variant the network holds, plain included. */
+    fun variantCount(key: BufferKey.Key): Long = entries[key]?.info?.count ?: 0L
+
     /** Every variant of [itemId] held by [channel]. */
     fun channelCount(channel: net.minecraft.world.item.DyeColor, itemId: String): Long {
         val counts = channelItems[channel] ?: return 0L

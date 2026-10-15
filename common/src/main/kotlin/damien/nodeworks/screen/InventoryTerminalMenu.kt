@@ -130,7 +130,7 @@ class InventoryTerminalMenu(
     // Template of the stack the last shift-click moved into the network. A shift
     // double-click sweeps everything matching it, the clicked slot is already empty.
     private var lastShiftInserted: ItemStack = ItemStack.EMPTY
-    private var autoPullPattern: List<String>? = null  // captured right before craft output is taken
+    private var autoPullPattern: List<ItemStack>? = null  // captured right before craft output is taken
     private var suppressSlotsChanged = false
     private var pendingAutoPull = false  // deferred to next tick to avoid MC packet reconciliation conflicts
     // Scoped to one [clicked] call. Any other route into [quickMoveStack]
@@ -420,6 +420,23 @@ class InventoryTerminalMenu(
         is damien.nodeworks.network.ChannelFilter.Color -> c.channelCount(ch.color, itemId)
     }
 
+    /** One exact variant of [itemId] in the selected channel, plain when [patch] is empty.
+     *  Read from the cache, falling back to a storage walk without one. */
+    private fun variantCount(
+        c: NetworkInventoryCache?,
+        lvl: ServerLevel,
+        snap: damien.nodeworks.network.NetworkSnapshot,
+        itemId: String,
+        patch: net.minecraft.core.component.DataComponentPatch,
+    ): Long {
+        if (c == null) return NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, patch, channel = channel)
+        val key = damien.nodeworks.script.BufferKey.Key(itemId, damien.nodeworks.script.BufferKey.componentsHash(patch))
+        return when (val ch = channel) {
+            damien.nodeworks.network.ChannelFilter.All -> c.variantCount(key)
+            is damien.nodeworks.network.ChannelFilter.Color -> c.channelItemCounts(ch.color)[key] ?: 0L
+        }
+    }
+
     private fun disconnect() {
         if (source == null && snapshot == null && cache == null) return
         source = null
@@ -661,10 +678,11 @@ class InventoryTerminalMenu(
         return room >= stack.count
     }
 
-    private fun snapshotCraftPattern(): List<String> {
+    /** One-item copy of each grid slot, so auto-pull refills the same variant. */
+    private fun snapshotCraftPattern(): List<ItemStack> {
         return (0 until craftingContainer.containerSize).map { i ->
             val stack = craftingContainer.getItem(i)
-            if (stack.isEmpty) "" else net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString()
+            if (stack.isEmpty) ItemStack.EMPTY else stack.copyWithCount(1)
         }
     }
 
@@ -686,20 +704,15 @@ class InventoryTerminalMenu(
         val lvl = serverLevel ?: return
         val snap = snapshot ?: return
         val c = cache
-        val variantPatch = if (componentsPatch.size() > 0) componentsPatch else null
+        // The clicked cell is one exact variant, a plain cell only takes plain stacks.
+        val variantPatch = componentsPatch
 
         when (action) {
             0, 2, 3, 7 -> {
                 val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
 
-                val available = if (variantPatch != null) {
-                    NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch, channel = channel)
-                } else if (c != null) {
-                    cachedCount(c, itemId)
-                } else {
-                    NetworkStorageHelper.countItems(lvl, snap, itemId, channel = channel)
-                }
+                val available = variantCount(c, lvl, snap, itemId, variantPatch)
                 val maxStack = item.getDefaultMaxStackSize().toLong()
                 val toExtract = when (action) {
                     2 -> maxOf(1L, minOf(available, maxStack) / 2)
@@ -779,9 +792,7 @@ class InventoryTerminalMenu(
                 // the itemId.
                 val identifier = net.minecraft.resources.Identifier.tryParse(itemId) ?: return
                 val item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(identifier) ?: return
-                val available = if (variantPatch != null) {
-                    NetworkStorageHelper.countVariantAcrossNetwork(lvl, snap, itemId, variantPatch, channel = channel)
-                } else if (c != null) cachedCount(c, itemId) else NetworkStorageHelper.countItems(lvl, snap, itemId, channel = channel)
+                val available = variantCount(c, lvl, snap, itemId, variantPatch)
                 val maxStack = item.getDefaultMaxStackSize().toLong()
                 val toDrop = if (action == 5) 1L else minOf(available, maxStack)
 
@@ -1265,7 +1276,9 @@ class InventoryTerminalMenu(
             for (id in fromNetwork) {
                 val have = network[id] ?: 0L
                 if (have <= 0L) continue
-                val taken = extractRealStacks(lvl, snap, cache, id, 1L).firstOrNull()
+                // Plain first, as pockets are, any variant only when no plain copy is left.
+                val taken = extractRealStacks(lvl, snap, cache, id, 1L, net.minecraft.core.component.DataComponentPatch.EMPTY).firstOrNull()
+                    ?: extractRealStacks(lvl, snap, cache, id, 1L).firstOrNull()
                 network[id] = if (taken != null) have - 1 else 0L
                 if (taken != null) return taken
             }
@@ -1379,12 +1392,13 @@ class InventoryTerminalMenu(
         // different recipes and corrupt lastCraftPattern
         suppressSlotsChanged = true
         try {
-            for ((i, itemId) in pattern.withIndex()) {
-                if (itemId.isEmpty()) continue
+            for ((i, template) in pattern.withIndex()) {
+                if (template.isEmpty) continue
                 val current = craftingContainer.getItem(i)
                 if (!current.isEmpty) continue
 
-                val stacks = extractRealStacks(lvl, snap, c, itemId, 1L)
+                val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(template.item).toString()
+                val stacks = extractRealStacks(lvl, snap, c, itemId, 1L, template.componentsPatch)
                 val refill = stacks.firstOrNull() ?: continue
                 craftingContainer.setItem(i, refill)
             }
@@ -1550,14 +1564,19 @@ class InventoryTerminalMenu(
         val snap = snapshot ?: return
         if (count <= 0 || count > 999) return
 
+        // The queue entry tracks the variant the craft produces. A plain request takes the
+        // Instruction Set's stored output, e.g. a barrel's wood type.
+        val queuedPatch = if (componentsPatch.size() > 0) componentsPatch
+            else snap.findInstructionSet(itemId)?.instructionSet?.outputComponents ?: componentsPatch
+
         // Display name prefers the variant's hover name (e.g. "Potion of Strength")
         // when the request carries components, falling back to the identifier path.
-        val itemName = if (componentsPatch.size() > 0) {
+        val itemName = if (queuedPatch.size() > 0) {
             val id = net.minecraft.resources.Identifier.tryParse(itemId)
             val item = id?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
             if (item != null) {
                 val stack = net.minecraft.world.item.ItemStack(item)
-                stack.applyComponents(componentsPatch)
+                stack.applyComponents(queuedPatch)
                 stack.hoverName.string
             } else {
                 itemId
@@ -1568,7 +1587,7 @@ class InventoryTerminalMenu(
 
         // Create queue entry (pending until the whole job completes), scoped to the
         // network that owns this craft so other networks' terminals don't display it.
-        val entry = CraftQueueManager.addEntry(player.uuid, snap.networkId, itemId, itemName, count, componentsPatch)
+        val entry = CraftQueueManager.addEntry(player.uuid, snap.networkId, itemId, itemName, count, queuedPatch)
 
         try {
             // CraftingHelper.craft does feasibility-aware CPU selection across every CPU on
@@ -1744,7 +1763,9 @@ class InventoryTerminalMenu(
             else -> minOf(entry.availableCount.toLong(), maxStack)
         }
 
-        val stacks = extractRealStacks(lvl, snap, cache, entry.itemId, toExtract)
+        // Only the crafted variant, never another one already in storage.
+        val variant = entry.componentsPatch.takeIf { it.size() > 0 }
+        val stacks = extractRealStacks(lvl, snap, cache, entry.itemId, toExtract, variant)
         if (stacks.isNotEmpty()) {
             val totalExtracted = stacks.sumOf { it.count }
             entry.takenCount += totalExtracted
@@ -1859,7 +1880,7 @@ class InventoryTerminalMenu(
                 entries
             } else if (c != null) {
                 val itemEntries = c.getAllEntries().map { entry ->
-                    val deduct = reserved[entry.info.itemId] ?: 0
+                    val deduct = reservedFor(reserved, entry.info)
                     InventorySyncPayload.SyncEntry(
                         serial = entry.serial,
                         itemId = entry.info.itemId,
@@ -1942,7 +1963,7 @@ class InventoryTerminalMenu(
             val (changed, removed) = c.consumeChanges()
             val changedFluids = c.consumeFluidChanges()
             val itemEntries = changed.map { entry ->
-                val deduct = reserved[entry.info.itemId] ?: 0
+                val deduct = reservedFor(reserved, entry.info)
                 InventorySyncPayload.SyncEntry(
                     serial = entry.serial,
                     itemId = entry.info.itemId,
@@ -1970,6 +1991,9 @@ class InventoryTerminalMenu(
         }
     }
 
+    private fun reservedFor(reserved: Map<damien.nodeworks.script.BufferKey.Key, Int>, info: damien.nodeworks.platform.ItemInfo): Int =
+        reserved[damien.nodeworks.script.BufferKey.Key(info.itemId, damien.nodeworks.script.BufferKey.componentsHash(info.componentsPatch))] ?: 0
+
     /** Grid entries for one channel. Uses the network's serials so the client treats
      *  them like the unfiltered grid. Craftable entries stay so crafting still works.
      *  With [since], only entries that differ from it are built, and [live] collects
@@ -1977,7 +2001,7 @@ class InventoryTerminalMenu(
     private fun channelEntries(
         c: NetworkInventoryCache,
         color: net.minecraft.world.item.DyeColor,
-        reserved: Map<String, Int>,
+        reserved: Map<damien.nodeworks.script.BufferKey.Key, Int>,
         since: Map<Long, InventorySyncPayload.SyncEntry>? = null,
         live: MutableSet<Long>? = null,
     ): List<InventorySyncPayload.SyncEntry> {
@@ -1987,7 +2011,7 @@ class InventoryTerminalMenu(
             val info = entry.info
             val n = counts[key] ?: 0L
             if (n <= 0L && !info.isCraftable) return@forEachEntry
-            val count = maxOf(0L, n - (reserved[info.itemId] ?: 0))
+            val count = maxOf(0L, n - (reserved[key] ?: 0))
             live?.add(entry.serial)
             val prev = since?.get(entry.serial)
             if (prev != null && prev.count == count && prev.craftable == info.isCraftable &&
@@ -2029,7 +2053,7 @@ class InventoryTerminalMenu(
         player: ServerPlayer,
         c: NetworkInventoryCache,
         color: net.minecraft.world.item.DyeColor,
-        reserved: Map<String, Int>,
+        reserved: Map<damien.nodeworks.script.BufferKey.Key, Int>,
     ) {
         val sent = filteredSent ?: return
         val live = HashSet<Long>(sent.size)

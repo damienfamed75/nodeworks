@@ -75,18 +75,20 @@ object CraftQueueManager {
     }
 
     /**
-     * Available (ready but not taken) counts per itemId, scoped to one network.
+     * Available (ready but not taken) counts per variant, keyed like the inventory
+     * cache, scoped to one network.
      * Reserved items live in that network's CPU buffer / storage, so deducting
      * them from a *different* network's inventory display would be wrong.
      */
-    fun getReservedCounts(playerUUID: UUID, networkId: UUID?): Map<String, Int> {
+    fun getReservedCounts(playerUUID: UUID, networkId: UUID?): Map<damien.nodeworks.script.BufferKey.Key, Int> {
         if (networkId == null) return emptyMap()
         val queue = queues[playerUUID] ?: return emptyMap()
-        val result = HashMap<String, Int>()
+        val result = HashMap<damien.nodeworks.script.BufferKey.Key, Int>()
         for (entry in queue) {
             if (entry.networkId != networkId) continue
             if (entry.availableCount > 0) {
-                result[entry.itemId] = (result[entry.itemId] ?: 0) + entry.availableCount
+                val key = damien.nodeworks.script.BufferKey.Key(entry.itemId, damien.nodeworks.script.BufferKey.componentsHash(entry.componentsPatch))
+                result.merge(key, entry.availableCount, Int::plus)
             }
         }
         return result
