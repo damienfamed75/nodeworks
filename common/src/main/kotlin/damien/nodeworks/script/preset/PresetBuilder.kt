@@ -142,8 +142,7 @@ abstract class PresetBuilder<TSelf : PresetBuilder<TSelf>>(
             onSnapshotChanged(snap)
             lastSnapshotSeen = snap
         }
-        val cap = damien.nodeworks.script.ServerPolicy.current.maxItemsPerPresetRun
-        runItemsLeft = if (cap > 0L) cap else Long.MAX_VALUE
+        runItemsLeft = damien.nodeworks.script.NetworkBudget.presetRunCap()
         runDeadline = System.nanoTime() +
             damien.nodeworks.script.ServerPolicy.current.maxItemMoveMsPerTickPerNetwork.coerceAtLeast(1L) * 1_000_000L
         try {

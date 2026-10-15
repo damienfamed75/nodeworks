@@ -262,7 +262,8 @@ object NodeworksServerConfig {
             .comment(
                 " Max items one importer or stocker run moves. Separate from",
                 " maxItemsMovedPerTickPerNetwork, each preset gets its own allowance per run.",
-                " A run that hits it stops and the rest moves on later runs. 0 means unlimited."
+                " A run that hits it stops and the rest moves on later runs. 0, or anything",
+                " above 16384, means 16384, this one has no unlimited setting."
             )
             .defineInRange(
                 "maxItemsPerPresetRun",

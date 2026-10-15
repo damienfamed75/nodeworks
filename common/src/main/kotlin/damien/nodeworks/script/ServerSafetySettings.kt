@@ -116,7 +116,8 @@ data class ServerSafetySettings(
 
     /** Max items one importer or stocker run moves. Separate from the script limit
      *  above, each preset gets its own allowance per run. A run that hits it stops
-     *  and the rest moves on later runs, like a `tryInsert` in a loop. 0 means unlimited. */
+     *  and the rest moves on later runs, like a `tryInsert` in a loop. 0, or anything
+     *  above 16384, means 16384, so one run's work stays bounded. */
     val maxItemsPerPresetRun: Long = 8192,
 
     /** Wall-clock time per tick per network that `tryInsert` moves may use, and the

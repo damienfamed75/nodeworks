@@ -199,6 +199,15 @@ class NetworkBudget {
         /** The configured items-per-tick cap, with 0 meaning [DEFAULT_ITEMS_PER_TICK]. */
         fun itemCap(): Long = ServerPolicy.current.maxItemsMovedPerTickPerNetwork.takeIf { it > 0L } ?: DEFAULT_ITEMS_PER_TICK
 
+        /** Most items one importer or stocker run may move, whatever the config says, so one
+         *  run's work, including a single huge drawer slot, stays bounded. */
+        const val MAX_ITEMS_PER_PRESET_RUN: Long = 16_384L
+
+        /** The configured per-run preset cap. 0, or anything above [MAX_ITEMS_PER_PRESET_RUN],
+         *  means that ceiling. */
+        fun presetRunCap(): Long =
+            ServerPolicy.current.maxItemsPerPresetRun.takeIf { it in 1L..MAX_ITEMS_PER_PRESET_RUN } ?: MAX_ITEMS_PER_PRESET_RUN
+
         fun atomicCeilingMessage(op: String, requested: Long): String =
             "$op moved nothing: $requested items is over the $MAX_ATOMIC_ITEMS item limit for a single insert. " +
                 "Use tryInsert in a loop to move them in batches."
