@@ -253,29 +253,81 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val perBatch = expected.getCount().coerceAtLeast(1).toLong()
         val desired = op.outputCount.coerceAtLeast(1L)
         val executions = ((desired + perBatch - 1) / perBatch).coerceAtLeast(1L)
-        var done = 0L
-        while (done < executions) {
-            // Consume ingredients
-            for ((ing, needed) in ingredientCounts) {
-                val removed = cpu.removeFromBuffer(ing, needed.toLong())
-                if (removed < needed) {
-                    // Partial failure, put back what we already consumed this iteration, abort
-                    cpu.addToBuffer(ing, removed)
+        // What a recipe hands back, like an empty bucket or a worn crystal. A leftover that is
+        // one of the recipe's own ingredients is used again by the next craft, the way it stays
+        // in a player's grid. Everything else, and whatever is still held at the end, goes to
+        // the buffer, which returns it to storage when the craft finishes.
+        val held = mutableMapOf<String, ArrayDeque<ItemStack>>()
+        try {
+            var done = 0L
+            while (done < executions) {
+                // Real stacks per slot, so leftovers come from the actual item (a crystal keeps its wear).
+                val taken = arrayOfNulls<ItemStack>(op.recipe.size)
+                for ((slot, ing) in op.recipe.withIndex()) {
+                    if (ing.isEmpty()) continue
+                    val stack = held[ing]?.removeFirstOrNull() ?: takeIngredient(ing)
+                    if (stack == null) {
+                        val had = taken.count { it != null && BuiltInRegistries.ITEM.getKey(it.item).toString() == ing }
+                        for (s in taken) if (s != null) keepLeftover(s, lvl)
+                        return CraftScheduler.OpResult.Failed(
+                            "Execute iteration underflow: $ing x${ingredientCounts[ing]} (had $had)"
+                        )
+                    }
+                    taken[slot] = stack
+                }
+                val output = expected.copyWithCount(expected.getCount())
+                // Keeps the recipe's components, the bucket stays plain.
+                if (!cpu.addCraftedToBuffer(expectedItemId, output, output.getCount().toLong())) {
+                    for (s in taken) if (s != null) keepLeftover(s, lvl)
                     return CraftScheduler.OpResult.Failed(
-                        "Execute iteration underflow: $ing x$needed (had $removed)"
+                        "Buffer refused crafted $expectedItemId x${output.getCount()}"
                     )
                 }
+                val leftovers = try {
+                    recipeHolder.value().getRemainingItems(CraftingInput.of(3, 3, taken.map { it ?: ItemStack.EMPTY }))
+                } catch (e: Exception) {
+                    logger.warn("Leftovers for {} threw, none kept: {}", expectedItemId, e.message)
+                    emptyList()
+                }
+                for (left in leftovers) {
+                    if (left.isEmpty) continue
+                    val leftId = BuiltInRegistries.ITEM.getKey(left.item).toString()
+                    if (leftId in ingredientCounts) held.getOrPut(leftId) { ArrayDeque() }.addLast(left)
+                    else keepLeftover(left, lvl)
+                }
+                done++
             }
-            val output = expected.copyWithCount(expected.getCount())
-            // Keeps the recipe's components, the bucket stays plain.
-            if (!cpu.addCraftedToBuffer(expectedItemId, output, output.getCount().toLong())) {
-                return CraftScheduler.OpResult.Failed(
-                    "Buffer refused crafted $expectedItemId x${output.getCount()}"
-                )
-            }
-            done++
+            return CraftScheduler.OpResult.Completed
+        } finally {
+            for (stacks in held.values) for (s in stacks) keepLeftover(s, lvl)
         }
-        return CraftScheduler.OpResult.Completed
+    }
+
+    /** One [itemId] out of the buffer as a real stack. The plain bucket goes first, then
+     *  any variant of the item, so a worn crystal back in storage still crafts. */
+    private fun takeIngredient(itemId: String): ItemStack? {
+        val plain = damien.nodeworks.script.BufferKey.Key(itemId, "")
+        val keys = sequenceOf(plain) + sequence {
+            yieldAll(cpu.bufferState.contents().keys.filter { it.itemId == itemId && it != plain })
+        }
+        for (key in keys) {
+            if (cpu.getBufferCount(key) <= 0L) continue
+            val template = cpu.getBufferTemplate(key)
+            if (cpu.removeFromBuffer(key, 1L) < 1L) continue
+            if (template != null && !template.isEmpty) return template.copyWithCount(1)
+            val item = Identifier.tryParse(itemId)?.let { BuiltInRegistries.ITEM.getValue(it) } ?: return null
+            return ItemStack(item, 1)
+        }
+        return null
+    }
+
+    /** Back into the buffer with its components, or dropped at the CPU when the buffer is full. */
+    private fun keepLeftover(stack: ItemStack, lvl: ServerLevel) {
+        if (stack.isEmpty || cpu.addToBuffer(stack, stack.count.toLong())) return
+        logger.warn("Buffer full, dropping leftover {} at {}", stack, cpu.blockPos)
+        net.minecraft.world.Containers.dropItemStack(
+            lvl, cpu.blockPos.x + 0.5, cpu.blockPos.y + 1.0, cpu.blockPos.z + 0.5, stack.copy()
+        )
     }
 
     // =====================================================================
