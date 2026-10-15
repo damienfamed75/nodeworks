@@ -347,7 +347,7 @@ class CraftingCoreBlockEntity(
 
     /** Recipe batches of a parallel Process op that a block handler runs in chunks, as many
      *  as the machine takes at once. [inFlight] batches are in the machine. [fit] is the chunk
-     *  size a Lua handler last managed, 0 to try everything left. Saved so a reload mid-request
+     *  size a Lua handler tries next, 0 to try everything left. Saved so a reload mid-request
      *  carries on with the remaining chunks. */
     data class ChunkProgress(val total: Long, val done: Long, val inFlight: Long, val fit: Long = 0L)
 

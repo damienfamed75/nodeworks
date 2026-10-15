@@ -436,8 +436,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     return CraftScheduler.OpResult.Failed("Processing handler failed: ${op.processingApiName}")
                 }
                 // One batch done. Advance progress, if more batches remain, start the next one.
-                val progress = processBatchProgress[op.id]
-                if (progress != null && finishBatch(op, progress)) {
+                if (finishBatch(op, processBatchProgress[op.id])) {
                     processRetries.remove(op.id)
                     processBatchProgress.remove(op.id)
                     return CraftScheduler.OpResult.Completed
@@ -599,8 +598,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
 
     /** Parallel Lua-handler call for the next chunk of the op's batches. A handler can't be
      *  probed, so when it moves nothing the next try halves the chunk without using up a
-     *  retry, and the size that worked is kept for the chunks after it. Everything fitting
-     *  in one go behaves exactly as before. */
+     *  retry, and after a chunk that worked the next one tries double, so a machine that was
+     *  only briefly busy gets back to full size. Everything fitting in one go behaves exactly
+     *  as before. */
     private fun invokeLuaChunk(
         op: Operation.Process,
         state: ProcessState,
@@ -614,12 +614,13 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val pre = declaredInputs.mapValues { (id, _) -> cpu.getBufferCount(id) }
         val retriesBefore = processRetries[op.id]
         val result = invokeHandlerAndAnalyze(op, state, declaredInputs, apiMatch.api.name, apiMatch.api.outputsAsPairs)
+        val grown = if (tried > Long.MAX_VALUE / 2L) tried else tried * 2L
         if (processState[op.id] === state) {
-            cpu.setChunkProgress(op.id, chunk.copy(inFlight = tried, fit = tried))
+            cpu.setChunkProgress(op.id, chunk.copy(inFlight = tried, fit = grown))
             return result
         }
         if (result is CraftScheduler.OpResult.Completed) {
-            cpu.setChunkProgress(op.id, chunk.copy(inFlight = tried, fit = tried))
+            cpu.setChunkProgress(op.id, chunk.copy(inFlight = tried, fit = grown))
             if (!finishBatch(op, progress)) return CraftScheduler.OpResult.InProgress
             processRetries.remove(op.id)
             processBatchProgress.remove(op.id)
@@ -684,13 +685,17 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         var allConsumed = true
         var anyConsumed = false
         var stranded: String? = null
+        var unmoved: String? = null
         for ((id, required) in declaredInputs) {
             val preCount = pre[id] ?: 0L
             val now = cpu.getBufferCount(id)
             val consumed = preCount - now  // items that actually left the buffer
             when {
-                consumed == required -> anyConsumed = true
-                consumed == 0L -> allConsumed = false
+                consumed == required -> if (required > 0L) anyConsumed = true
+                consumed == 0L -> {
+                    allConsumed = false
+                    if (unmoved == null) unmoved = id
+                }
                 else -> { // partial move for this input
                     stranded = id
                     allConsumed = false
@@ -703,6 +708,15 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             cancelInvocationPulls(state)
             return CraftScheduler.OpResult.Failed(
                 "Handler '$apiName' partially consumed input '$stranded', " +
+                "all inputs must move together (use :hasSpaceFor or restructure the handler)."
+            )
+        }
+        if (anyConsumed && !allConsumed) {
+            // Some inputs moved and others didn't. A retry can't recover, the moved ones
+            // already left the buffer.
+            cancelInvocationPulls(state)
+            return CraftScheduler.OpResult.Failed(
+                "Handler '$apiName' moved some inputs but not '$unmoved', " +
                 "all inputs must move together (use :hasSpaceFor or restructure the handler)."
             )
         }
@@ -870,7 +884,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     /** Count a handler call that just finished, true when the op is done. A chunked op adds
      *  its in-flight chunk and is done once every batch has run, otherwise its progress is
      *  dropped so the next dispatch rebuilds it and sends the next chunk. */
-    private fun finishBatch(op: Operation.Process, progress: BatchProgress): Boolean {
+    private fun finishBatch(op: Operation.Process, progress: BatchProgress?): Boolean {
         val chunk = cpu.opChunkProgress[op.id]
         if (chunk != null && chunk.inFlight > 0L) {
             val done = chunk.done + chunk.inFlight
@@ -883,6 +897,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             processRetries.remove(op.id)
             return false
         }
+        if (progress == null) return false
         progress.batchesDone++
         return progress.batchesDone >= progress.totalBatches
     }
@@ -950,8 +965,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return if (pending.success) {
                 // A chunked op still has chunks to run after the one that was in flight.
                 if (cpu.opChunkProgress[op.id] != null) {
-                    val progress = processBatchProgress[op.id]
-                    if (progress != null && !finishBatch(op, progress)) return CraftScheduler.OpResult.InProgress
+                    if (!finishBatch(op, processBatchProgress[op.id])) return CraftScheduler.OpResult.InProgress
                 }
                 processBatchProgress[op.id]?.let { it.batchesDone = it.totalBatches }
                 CraftScheduler.OpResult.Completed
