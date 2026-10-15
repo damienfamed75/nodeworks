@@ -174,7 +174,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // would pick up any first-found potion variant and the Process op's
         // feasibility check (which keys on the recipe's variant bucket) would
         // fail. Plain Pulls (empty hash) fall back to the itemId-only filter.
-        val variantSensitive = op.componentsHash.isNotEmpty()
+        val variantSensitive = op.componentsHash.isNotEmpty() || op.exactVariant
         for (card in NetworkStorageHelper.getStorageCards(snapshot)) {
             if (remaining <= 0L) break
             val storage = NetworkStorageHelper.getStorage(lvl, card) ?: continue
@@ -696,7 +696,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // apiMatch.api.inputs provides the same ordering, we use ProcessingSet's shared
         // naming helper to keep the autocomplete editor's view in perfect sync with what
         // the runtime actually binds.
-        val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(apiMatch.api.inputsAsPairs)
+        val paramNames = damien.nodeworks.card.ProcessingSet.buildHandlerParamNames(apiMatch.api.handlerParamSource)
         if (paramNames.size != progress.perBatchInputs.size) {
             return CraftScheduler.OpResult.Failed(
                 "Processing handler arg mismatch: ${paramNames.size} param names vs " +

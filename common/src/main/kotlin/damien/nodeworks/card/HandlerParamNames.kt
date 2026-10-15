@@ -22,15 +22,18 @@ object HandlerParamNames {
     /**
      * Convert an item id into a camelCase Lua identifier:
      * `minecraft:copper_ingot` → `copperIngot`. Strips the namespace, splits
-     * on `_`, lowercases the first chunk, and capitalises the leading char of
-     * each later chunk before joining.
+     * on anything that can't be in a Lua name (so a tag path like
+     * `c:storage_blocks/iron` gives `storageBlocksIron`), and capitalises the
+     * leading char of each chunk after the first before joining. A leading
+     * digit gets an underscore in front so the result is still a valid name.
      */
     fun itemIdToParamName(itemId: String): String {
         val shortId = itemId.substringAfter(':')
-        val parts = shortId.split('_')
-        return parts.mapIndexed { i, part ->
+        val parts = shortId.split(Regex("[^A-Za-z0-9]+")).filter { it.isNotEmpty() }
+        val joined = parts.mapIndexed { i, part ->
             if (i == 0) part else part.replaceFirstChar { it.uppercase() }
         }.joinToString("")
+        return if (joined.firstOrNull()?.isDigit() == true) "_$joined" else joined
     }
 
     /**

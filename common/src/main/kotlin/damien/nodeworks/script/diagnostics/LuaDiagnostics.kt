@@ -1643,7 +1643,7 @@ object LuaDiagnostics {
         val out = mutableListOf<Diagnostic>()
         for (span in spans) {
             val api = byName[span.name] ?: continue
-            val pairs = api.inputsAsPairs
+            val pairs = api.handlerParamSource
             if (pairs.isEmpty()) continue
             val expected =
                 damien.nodeworks.card.HandlerParamNames.build(pairs)

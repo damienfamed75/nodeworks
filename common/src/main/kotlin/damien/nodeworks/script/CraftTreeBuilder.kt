@@ -35,6 +35,10 @@ object CraftTreeBuilder {
          *  concrete item each recipe input uses in this craft, parallel to the set's
          *  inputs. Null means the set's own inputs. */
         val resolvedInputs: List<damien.nodeworks.script.RecipeIngredient>? = null,
+        /** For storage nodes: pull only stacks whose components equal [componentsPatch],
+         *  so a plain Processing Set input never ends up with a renamed or otherwise
+         *  varied copy its step can't use. Instruction Set inputs take any variant. */
+        val exactVariant: Boolean = false,
         /** Component patch identifying the requested variant. Empty for
          *  plain items (the common case). Carries through to the planner so
          *  Pull ops can filter storage by component, e.g. asking specifically
@@ -230,6 +234,7 @@ object CraftTreeBuilder {
                 resolveIngredient(
                     ingr.itemId, ingr.count * batches, level, snapshot, depth, visited, reserved,
                     ingredientPatch = ingr.stack.componentsPatch,
+                    exactVariant = true,
                 )
             }
 
@@ -287,6 +292,10 @@ object CraftTreeBuilder {
          *  different variants of the same itemId (e.g. swiftness + fire-res
          *  potion) don't double-count or double-reserve the same storage items. */
         ingredientPatch: net.minecraft.core.component.DataComponentPatch = net.minecraft.core.component.DataComponentPatch.EMPTY,
+        /** Count and pull only stacks whose components equal [ingredientPatch], a plain
+         *  patch included. Processing Set steps consume one exact bucket, so anything
+         *  else pulled would sit in the buffer unused. */
+        exactVariant: Boolean = false,
     ): List<CraftTreeNode> {
         val componentsHash = damien.nodeworks.script.BufferKey.componentsHash(ingredientPatch)
         // Reservation key embeds the components hash so different variants of
@@ -294,7 +303,7 @@ object CraftTreeBuilder {
         // (empty hash) keep the old `itemId` key so existing reservation
         // counts roll forward without migration.
         val reservedKey = if (componentsHash.isEmpty()) ingId else "$ingId#$componentsHash"
-        val ingInStorage = if (componentsHash.isEmpty()) {
+        val ingInStorage = if (componentsHash.isEmpty() && !exactVariant) {
             NetworkStorageHelper.countItemsInt(level, snapshot, ingId)
         } else {
             NetworkStorageHelper.countVariantAcrossNetworkInt(level, snapshot, ingId, ingredientPatch)
@@ -307,6 +316,7 @@ object CraftTreeBuilder {
                 reserved[reservedKey] = ingReserved + needed
                 listOf(CraftTreeNode(
                     ingId, getItemName(ingId, ingredientPatch), needed, "storage", "", "storage", ingAvailable, emptyList(),
+                    exactVariant = exactVariant,
                     componentsPatch = ingredientPatch,
                 ))
             }
@@ -314,6 +324,7 @@ object CraftTreeBuilder {
                 reserved[reservedKey] = ingReserved + ingAvailable
                 val fromStorage = CraftTreeNode(
                     ingId, getItemName(ingId, ingredientPatch), ingAvailable, "storage", "", "storage", ingAvailable, emptyList(),
+                    exactVariant = exactVariant,
                     componentsPatch = ingredientPatch,
                 )
                 val toCraft = needed - ingAvailable
@@ -489,9 +500,12 @@ object CraftTreeBuilder {
         visited: Set<damien.nodeworks.script.BufferKey.Key>,
     ): List<RecipeIngredient> {
         val local = HashMap<String, Int>()
+        // Every variant of an item counts here, so every variant's reservation comes off.
+        fun reservedAll(map: Map<String, Int>, id: String): Int =
+            map.entries.sumOf { (key, n) -> if (key == id || key.startsWith("$id#")) n else 0 }
         fun availableFor(id: String): Int {
             val total = NetworkStorageHelper.countItemsInt(level, snapshot, id)
-            return maxOf(0, total - (reserved[id] ?: 0) - (local[id] ?: 0))
+            return maxOf(0, total - reservedAll(reserved, id) - reservedAll(local, id))
         }
         fun craftable(id: String): Boolean =
             damien.nodeworks.script.BufferKey.Key(id, "") !in visited &&
@@ -508,9 +522,11 @@ object CraftTreeBuilder {
             } else ingr.itemId
             val item = Identifier.tryParse(itemId)?.let { BuiltInRegistries.ITEM.getValue(it) }
                 ?: return@map ingr
-            // Then the variant: the example's own when it is stocked enough, else the most
-            // stocked one, so the pull and the step agree on exactly which items to use. A tag
-            // member other than the example starts from its plain form, tags are item-based.
+            // Then the variant: the example's own when it is stocked enough, else another
+            // that covers the whole demand, so the pull and the step agree on exactly which
+            // items to use. Short stock everywhere keeps the example, which may be craftable.
+            // A tag member other than the example starts from its plain form, tags are
+            // item-based.
             val base = if (itemId == ingr.itemId) ingr.stack.copyWithCount(1) else ItemStack(item)
             val baseHash = damien.nodeworks.script.BufferKey.componentsHash(base)
             fun reservedKey(hash: String) = if (hash.isEmpty()) itemId else "$itemId#$hash"
@@ -522,7 +538,7 @@ object CraftTreeBuilder {
             }
             val baseVariant = variants.firstOrNull { damien.nodeworks.script.BufferKey.componentsHash(it.first) == baseHash }
             val pick = if (baseVariant != null && available(baseVariant) >= needed) baseVariant
-                else variants.maxByOrNull { available(it) }?.takeIf { available(it) > 0 } ?: baseVariant
+                else variants.maxByOrNull { available(it) }?.takeIf { available(it) >= needed } ?: baseVariant
             val hash = if (pick == null) baseHash else damien.nodeworks.script.BufferKey.componentsHash(pick.first)
             local[reservedKey(hash)] = (local[reservedKey(hash)] ?: 0) + needed
             when {

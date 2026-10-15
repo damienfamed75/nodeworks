@@ -61,6 +61,9 @@ sealed class Operation {
         val itemId: String,
         val amount: Long,
         val componentsPatch: net.minecraft.core.component.DataComponentPatch? = null,
+        /** Take only stacks whose components equal [componentsPatch], a plain one included.
+         *  Without it a plain pull takes any variant of the item. */
+        val exactVariant: Boolean = false,
     ) : Operation() {
         override val baseCost: Int get() = CpuRules.PULL_BASE_COST
 
@@ -139,6 +142,7 @@ sealed class Operation {
                 tag.putString("kind", "pull")
                 tag.putString("itemId", itemId)
                 tag.putLong("amount", amount)
+                if (exactVariant) tag.putBoolean("exact", true)
                 // Persist the patch (registry-id encoded), not the hash.
                 val patch = componentsPatch
                 if (patch != null && patch.size() > 0) {
@@ -220,6 +224,7 @@ sealed class Operation {
                         tag.getStringOr("itemId", ""),
                         tag.getLongOr("amount", 0L),
                         patch,
+                        tag.getBooleanOr("exact", false),
                     )
                 }
                 "process" -> Process(

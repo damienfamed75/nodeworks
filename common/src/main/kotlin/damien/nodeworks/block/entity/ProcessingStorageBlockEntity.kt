@@ -144,6 +144,12 @@ class ProcessingStorageBlockEntity(
         val outputsAsPairs: List<Pair<String, Int>>
             get() = outputsPairsOverride ?: outputs.map { it.itemId to it.count }
 
+        /** What each input's Lua parameter is named from. A tag input of a set with
+         *  substitutions on is named from its tag, since sets built from the same tag
+         *  recipe share a handler whatever example item each one shows. */
+        val handlerParamSource: List<Pair<String, Int>>
+            get() = inputsPairsOverride ?: inputs.map { (if (fuzzy && it.tag != null) it.tag else it.itemId) to it.count }
+
         companion object {
             /** Test/legacy fixture: build a [ProcessingApiInfo] from
              *  `(itemId, count)` pairs without constructing real

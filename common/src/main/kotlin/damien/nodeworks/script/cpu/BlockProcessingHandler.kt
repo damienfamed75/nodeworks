@@ -365,21 +365,22 @@ object BlockProcessingHandler {
         val snapshot = NetworkDiscovery.discoverNetwork(handlerLevel, handlerBE.blockPos.relative(handlerBE.frontFace))
         val outputChannel = ChannelFilter.Color(handlerBE.outputChannel)
         if (NetworkStorageHelper.getStorageCards(snapshot).none { outputChannel.matches(it.channel) }) return maxBatches
-        // Duplicate slots of one input share its capacity, so they are summed per batch.
-        val perBatch = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Pair<damien.nodeworks.script.RecipeIngredient, Long>>()
-        val channelOf = HashMap<damien.nodeworks.script.BufferKey.Key, damien.nodeworks.script.BufferKey.Key>()
+        // Slots sending one item to one channel share its capacity, so they are summed per
+        // batch. The same item bound for two channels is checked on each.
+        val perBatch = LinkedHashMap<Pair<damien.nodeworks.script.BufferKey.Key, damien.nodeworks.script.BufferKey.Key>, Pair<damien.nodeworks.script.RecipeIngredient, Long>>()
         for ((idx, ingr) in inputs.withIndex()) {
             val key = ingr.bufferKey()
-            val prev = perBatch[key]
-            perBatch[key] = ingr to ((prev?.second ?: 0L) + ingr.count.toLong())
-            channelOf.putIfAbsent(key, channelKeys.getOrNull(idx) ?: key)
+            val group = key to (channelKeys.getOrNull(idx) ?: key)
+            val prev = perBatch[group]
+            perBatch[group] = ingr to ((prev?.second ?: 0L) + ingr.count.toLong())
         }
         var best = maxBatches
-        for ((key, entry) in perBatch) {
+        for ((group, entry) in perBatch) {
+            val (key, channelKey) = group
             val (ingr, count) = entry
             if (count <= 0L) continue
             val item = ingr.stack.item
-            val channel = ChannelFilter.Color(handlerBE.getInputChannel(channelOf[key] ?: key))
+            val channel = ChannelFilter.Color(handlerBE.getInputChannel(channelKey))
             val need = count * best
             var capacity = 0L
             for (card in inputCards(handlerLevel, snapshot, key.itemId, ingr, channel)) {

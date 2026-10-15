@@ -100,6 +100,7 @@ object CraftPlanner {
                         // Variant patch so executePull asks for the specific
                         // variant; it also persists cleanly across reloads.
                         componentsPatch = node.componentsPatch,
+                        exactVariant = node.exactVariant,
                     )
                     op.outputNodeId = node.nodeId
                     ops += op
