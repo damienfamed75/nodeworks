@@ -86,7 +86,10 @@ sealed class Operation {
         override val dependsOn: List<Int>,
         val processingApiName: String,
         val inputs: List<Pair<String, Long>>,
-        val outputs: List<Pair<String, Long>>
+        val outputs: List<Pair<String, Long>>,
+        /** With substitutions, the concrete item per recipe input this op runs with,
+         *  parallel to the recipe's inputs. Null runs the recipe's own inputs. */
+        val resolvedInputs: List<damien.nodeworks.script.RecipeIngredient>? = null,
     ) : Operation() {
         override val baseCost: Int get() = CpuRules.PROCESS_BASE_COST
     }
@@ -152,6 +155,19 @@ sealed class Operation {
                 tag.putString("api", processingApiName)
                 writeItemList(tag, "inputs", inputs)
                 writeItemList(tag, "outputs", outputs)
+                resolvedInputs?.let { resolved ->
+                    val ops = net.minecraft.resources.RegistryOps.create(net.minecraft.nbt.NbtOps.INSTANCE, registries)
+                    val list = ListTag()
+                    for (ingr in resolved) {
+                        val c = CompoundTag()
+                        val stackTag = net.minecraft.world.item.ItemStack.CODEC
+                            .encodeStart(ops, ingr.stack.copyWithCount(1)).result().orElse(null) ?: continue
+                        c.put("stack", stackTag)
+                        c.putInt("ct", ingr.count)
+                        list.add(c)
+                    }
+                    tag.put("resolved", list)
+                }
             }
             is Execute -> {
                 tag.putString("kind", "execute")
@@ -209,7 +225,8 @@ sealed class Operation {
                 "process" -> Process(
                     id, deps, tag.getStringOr("api", ""),
                     readItemList(tag, "inputs"),
-                    readItemList(tag, "outputs")
+                    readItemList(tag, "outputs"),
+                    readResolvedInputs(tag, registries),
                 )
                 "execute" -> {
                     val rec = tag.getListOrEmpty("recipe")
@@ -245,6 +262,26 @@ sealed class Operation {
                 list.add(c)
             }
             tag.put(key, list)
+        }
+
+        /** The saved substituted inputs, or null when absent or any entry fails to parse,
+         *  so the op never runs on a partial list. */
+        private fun readResolvedInputs(
+            tag: CompoundTag,
+            registries: net.minecraft.core.HolderLookup.Provider,
+        ): List<damien.nodeworks.script.RecipeIngredient>? {
+            if (!tag.contains("resolved")) return null
+            val ops = net.minecraft.resources.RegistryOps.create(net.minecraft.nbt.NbtOps.INSTANCE, registries)
+            val list = tag.getListOrEmpty("resolved")
+            val out = ArrayList<damien.nodeworks.script.RecipeIngredient>(list.size)
+            for (i in 0 until list.size) {
+                val c = list.getCompound(i).orElse(null) ?: return null
+                val stackTag = c.get("stack") ?: return null
+                val stack = net.minecraft.world.item.ItemStack.CODEC.parse(ops, stackTag).result().orElse(null) ?: return null
+                if (stack.isEmpty) return null
+                out.add(damien.nodeworks.script.RecipeIngredient(stack, c.getIntOr("ct", 1).coerceAtLeast(1)))
+            }
+            return out
         }
 
         private fun readItemList(tag: CompoundTag, key: String): List<Pair<String, Long>> {

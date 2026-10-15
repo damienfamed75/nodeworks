@@ -3,6 +3,7 @@ package damien.nodeworks.integration.jei
 import damien.nodeworks.network.SetInstructionGridPayload
 import damien.nodeworks.network.SetProcessingApiDataPayload
 import damien.nodeworks.network.SetProcessingApiSlotPayload
+import damien.nodeworks.network.SetProcessingApiSlotTagPayload
 import damien.nodeworks.platform.PlatformServices
 import damien.nodeworks.registry.ModScreenHandlers
 import damien.nodeworks.screen.InstructionSetScreenHandler
@@ -394,7 +395,8 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
             //  / modded machine), not just CraftingRecipe.
             val inputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.INPUT)
             for (index in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
-                val (stack, count) = extractStackAndCount(inputSlots.getOrNull(index))
+                val slotView = inputSlots.getOrNull(index)
+                val (stack, count) = extractStackAndCount(slotView)
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(container.containerId, index, stack)
                 )
@@ -403,6 +405,17 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiDataPayload(container.containerId, "input", index, count)
                 )
+                // A slot JEI shows several items for is a tag ingredient. Keep the tag so
+                // the recipe accepts any member once substitutions are on. The server
+                // clears the tag when it sets the item, so this goes after it.
+                val tag = detectTag(slotView, stack)
+                // Set directly on the client, its slot item only arrives with the next sync.
+                container.inputTags[index] = tag
+                if (tag != null) {
+                    PlatformServices.clientNetworking.sendToServer(
+                        SetProcessingApiSlotTagPayload(container.containerId, index, tag)
+                    )
+                }
             }
 
             val outputSlots = recipeSlots.getSlotViews(RecipeIngredientRole.OUTPUT)
@@ -421,6 +434,19 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
             }
         }
         return null
+    }
+
+    /** The tag behind a JEI ingredient that shows several items: a tag of the example
+     *  item whose members are exactly the shown items, so the recipe never widens past
+     *  what the machine takes. Tags with the same members pick by name, so every client
+     *  records the same one. Null for single-item slots and lists that match no tag. */
+    private fun detectTag(slotView: IRecipeSlotView?, exemplar: ItemStack): String? {
+        if (slotView == null || exemplar.isEmpty) return null
+        val shown = slotView.itemStacks.map { it.item }.toList().toSet()
+        if (shown.size < 2) return null
+        return damien.nodeworks.card.ItemTagLookup.tagsOf(exemplar.item)
+            .filter { damien.nodeworks.card.ItemTagLookup.membersOf(it).toSet() == shown }
+            .minOrNull()
     }
 
     /**
@@ -494,6 +520,8 @@ class ProcessingSetGhostHandler : IGhostIngredientHandler<ProcessingSetScreen> {
             PlatformServices.clientNetworking.sendToServer(
                 SetProcessingApiSlotPayload(gui.menu.containerId, slotIndex, ingredient.copyWithCount(1))
             )
+            // A new item means no tag, as the server will decide too.
+            if (slotIndex < ProcessingSetScreenHandler.INPUT_SLOTS) gui.menu.inputTags[slotIndex] = null
         }
     }
 }

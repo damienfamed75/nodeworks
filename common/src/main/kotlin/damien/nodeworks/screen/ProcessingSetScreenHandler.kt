@@ -42,6 +42,10 @@ class ProcessingSetScreenHandler(
     var serial: Boolean = false
     var fuzzy: Boolean = false
 
+    /** Tag each input slot accepts any member of while [fuzzy] is on, null for exact. Set
+     *  from a JEI transfer, cleared whenever the slot's item changes. */
+    val inputTags: Array<String?> = arrayOfNulls(INPUT_SLOTS)
+
     /** Set true the first time a user action mutates configurable state.
      *  [removed] skips the save (and the >1-stack split-copy side effect)
      *  when this stays false, so opening a stack of unprogrammed Processing
@@ -113,6 +117,10 @@ class ProcessingSetScreenHandler(
                 it.cardName = ProcessingSet.getCardName(stack)
                 it.serial = ProcessingSet.isSerial(stack)
                 it.fuzzy = ProcessingSet.isFuzzy(stack)
+                for ((i, ingr) in inputs.withIndex()) {
+                    val slot = inputSlots.getOrElse(i) { i }
+                    if (slot in 0 until INPUT_SLOTS) it.inputTags[slot] = ingr.tag
+                }
             }
         }
 
@@ -148,6 +156,10 @@ class ProcessingSetScreenHandler(
                 it.cardName = openData.name
                 it.serial = openData.serial
                 it.fuzzy = openData.fuzzy
+                for ((i, ingr) in openData.inputs.withIndex()) {
+                    val slot = openData.inputSlots.getOrElse(i) { i }
+                    if (slot in 0 until INPUT_SLOTS) it.inputTags[slot] = ingr.tag
+                }
             }
         }
     }
@@ -193,6 +205,7 @@ class ProcessingSetScreenHandler(
                 when {
                     slotId < INPUT_SLOTS -> {
                         inputGrid.setItem(slotId, ItemStack.EMPTY)
+                        inputTags[slotId] = null
                         data.set(slotId, 1)
                     }
                     else -> {
@@ -236,8 +249,12 @@ class ProcessingSetScreenHandler(
                 } else {
                     carried.count.coerceAtLeast(1)
                 }
-                if (isInput) inputGrid.setItem(slotId, carried.copyWithCount(1))
-                else outputGrid.setItem(outIdx, carried.copyWithCount(1))
+                if (isInput) {
+                    inputGrid.setItem(slotId, carried.copyWithCount(1))
+                    inputTags[slotId] = null
+                } else {
+                    outputGrid.setItem(outIdx, carried.copyWithCount(1))
+                }
                 data.set(dataIdx, newCount)
             }
             dirty = true
@@ -291,9 +308,22 @@ class ProcessingSetScreenHandler(
     fun setSlotFromStack(slotIndex: Int, stack: ItemStack) {
         val placed = if (stack.isEmpty) ItemStack.EMPTY else stack.copyWithCount(1)
         when {
-            slotIndex < INPUT_SLOTS -> inputGrid.setItem(slotIndex, placed)
+            slotIndex < INPUT_SLOTS -> {
+                inputGrid.setItem(slotIndex, placed)
+                inputTags[slotIndex] = null
+            }
             slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, placed)
         }
+        dirty = true
+    }
+
+    /** Set the tag input [slotIndex] accepts, or clear it with null. Only kept when the
+     *  slot's item is a member, so a stale or forged tag can never widen a recipe. */
+    fun setInputTag(slotIndex: Int, tagId: String?) {
+        if (slotIndex !in 0 until INPUT_SLOTS) return
+        val item = inputGrid.getItem(slotIndex)
+        val valid = tagId != null && !item.isEmpty && damien.nodeworks.card.ItemTagLookup.isMember(item.item, tagId)
+        inputTags[slotIndex] = if (valid) tagId else null
         dirty = true
     }
 
@@ -320,7 +350,7 @@ class ProcessingSetScreenHandler(
             val count = data.get(i).coerceAtLeast(1)
             // copyWithCount(1) snapshots item + components without leaking the
             // ghost slot's runtime count into the recipe definition.
-            inputs.add(damien.nodeworks.script.RecipeIngredient(stack.copyWithCount(1), count))
+            inputs.add(damien.nodeworks.script.RecipeIngredient(stack.copyWithCount(1), count, inputTags[i]))
             inputSlots.add(i)
         }
 

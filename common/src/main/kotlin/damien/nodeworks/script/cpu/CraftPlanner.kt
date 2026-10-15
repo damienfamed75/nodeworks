@@ -120,7 +120,8 @@ object CraftPlanner {
                         dependsOn = inputDeps,
                         processingApiName = node.templateName,
                         inputs = inputs,
-                        outputs = listOf(node.itemId to node.count.toLong())
+                        outputs = listOf(node.itemId to node.count.toLong()),
+                        resolvedInputs = node.resolvedInputs,
                     )
                     op.outputNodeId = node.nodeId
                     ops += op

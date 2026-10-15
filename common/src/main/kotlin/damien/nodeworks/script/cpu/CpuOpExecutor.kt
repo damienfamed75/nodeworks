@@ -507,6 +507,15 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         data class Insufficient(val message: String) : BatchSetup()
     }
 
+    /** The inputs this op runs with: the planner's substitutions when it made any,
+     *  otherwise the recipe's own. A saved list that no longer lines up with the recipe
+     *  is ignored rather than trusted. */
+    private fun effectiveInputs(
+        op: Operation.Process,
+        api: damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo,
+    ): List<damien.nodeworks.script.RecipeIngredient> =
+        op.resolvedInputs?.takeIf { it.size == api.inputs.size } ?: api.inputs
+
     /** Resolve (or build + cache) the per-op [BatchProgress] for a processing
      *  recipe. Shared by the Lua handler path ([executeProcess]) and the
      *  block handler path ([executeBlockHandler]) so the buffer pre-check
@@ -529,7 +538,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // Strength Potions checks the (potion, <strength-hash>) bucket, not
         // the generic potion bucket.
         val perKeyInputs = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Long>()
-        for (ingr in apiMatch.api.inputs) {
+        val inputs = effectiveInputs(op, apiMatch.api)
+        for (ingr in inputs) {
             val key = ingr.bufferKey()
             perKeyInputs[key] = (perKeyInputs[key] ?: 0L) + ingr.count.toLong()
         }
@@ -544,7 +554,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val progress = if (apiMatch.api.serial) {
             // Serial: one handler invocation per batch. Each invocation receives the
             // api's per-slot inputs exactly as declared (preserves order + duplicates).
-            val perBatchInputs = apiMatch.api.inputs.map { it.itemId to it.count.toLong() }
+            val perBatchInputs = inputs.map { it.itemId to it.count.toLong() }
             BatchProgress(batches, 0L, perBatchInputs, outputItemId, outputPerBatch, batches)
         } else {
             // Parallel: one handler invocation handles the whole demand. Scale each
@@ -556,7 +566,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 val left = (chunk.total - chunk.done).coerceAtLeast(1L)
                 if (chunk.fit > 0L) minOf(left, chunk.fit) else left
             } else batches
-            val perBatchInputs = apiMatch.api.inputs.map { it.itemId to (it.count.toLong() * batchesLeft) }
+            val perBatchInputs = inputs.map { it.itemId to (it.count.toLong() * batchesLeft) }
             BatchProgress(
                 totalBatches = 1L,
                 batchesDone = 0L,
@@ -704,7 +714,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             // BufferSource keys on the variant's BufferKey (e.g. strength-
             // potion bucket, not the generic potion bucket). The display name
             // also picks up the variant's hover name (Potion of Strength).
-            val ingr = apiMatch.api.inputs.getOrNull(idx)
+            val ingr = effectiveInputs(op, apiMatch.api).getOrNull(idx)
             val ingrStack = ingr?.stack ?: ItemStack(item)
             val bufferKey = ingr?.bufferKey() ?: damien.nodeworks.script.BufferKey.Key(itemId, "")
             itemsTable.set(
@@ -958,6 +968,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 perBatchInputs = progress.perBatchInputs,
                 bulkOutputOverride = null,
                 opId = op.id,
+                inputs = effectiveInputs(op, apiMatch.api),
+                channelKeys = apiMatch.api.inputs.map { handlerBE.channelKeyFor(it) },
             )
         } else {
             invokeChunk(op, lvl, apiMatch, handlerBE, progress)
@@ -1020,7 +1032,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             ?: damien.nodeworks.block.entity.CraftingCoreBlockEntity.ChunkProgress(progress.batches, 0L, 0L)
         val left = (chunk.total - chunk.done).coerceAtLeast(1L)
         val remaining = if (chunk.fit > 0L) minOf(left, chunk.fit) else left
-        val batches = BlockProcessingHandler.fittingBatches(apiMatch.api, handlerBE, remaining)
+        val inputs = effectiveInputs(op, apiMatch.api)
+        val channelKeys = apiMatch.api.inputs.map { handlerBE.channelKeyFor(it) }
+        val batches = BlockProcessingHandler.fittingBatches(apiMatch.api, handlerBE, remaining, inputs, channelKeys)
         if (batches <= 0L) {
             return BlockProcessingHandler.InvokeResult.Retry("the machine has no room for even one batch of '${apiMatch.api.name}'")
         }
@@ -1029,9 +1043,11 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             level = lvl,
             api = apiMatch.api,
             handlerBE = handlerBE,
-            perBatchInputs = apiMatch.api.inputs.map { it.itemId to it.count.toLong() * batches },
+            perBatchInputs = inputs.map { it.itemId to it.count.toLong() * batches },
             bulkOutputOverride = apiMatch.api.outputs.map { it to it.count.toLong() * batches },
             opId = op.id,
+            inputs = inputs,
+            channelKeys = channelKeys,
         )
         if (result is BlockProcessingHandler.InvokeResult.InProgress || result is BlockProcessingHandler.InvokeResult.CompletedSync) {
             cpu.setChunkProgress(op.id, chunk.copy(inFlight = batches))

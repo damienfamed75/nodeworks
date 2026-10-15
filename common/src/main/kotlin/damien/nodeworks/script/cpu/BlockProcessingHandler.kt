@@ -84,6 +84,11 @@ object BlockProcessingHandler {
         perBatchInputs: List<Pair<String, Long>>,
         bulkOutputOverride: List<Pair<damien.nodeworks.script.RecipeIngredient, Long>>?,
         opId: Int,
+        /** The item each slot moves, the planner's substitutions or the recipe's own. */
+        inputs: List<damien.nodeworks.script.RecipeIngredient> = api.inputs,
+        /** Per slot, the recipe's own input key, which is what the handler's channel map
+         *  is bound to, so a substituted slot still routes to its authored channel. */
+        channelKeys: List<damien.nodeworks.script.BufferKey.Key> = inputs.map { it.bufferKey() },
     ): InvokeResult {
         // The cpu and the handler may live on different networks (and even
         // different dimensions when reached through a Broadcast / Receiver
@@ -119,23 +124,24 @@ object BlockProcessingHandler {
         // and destination insert. Without that pairing, a recipe that wants
         // Potion of Strength would route from the generic potion bucket and
         // hand the handler bare uncraftable potions.
-        val rolledBack = mutableListOf<Pair<damien.nodeworks.script.BufferKey.Key, Long>>()
+        val rolledBack = mutableListOf<Moved>()
         for ((idx, slotData) in perBatchInputs.withIndex()) {
             val (itemId, batchCount) = slotData
             if (batchCount <= 0L) continue
-            val ingredient = api.inputs.getOrNull(idx)
+            val ingredient = inputs.getOrNull(idx)
             // Look up the channel by full variant key so a recipe that takes
             // Strength + Fire Resistance potion inputs can route each to its
             // own channel. Falls back to the itemId-only lookup for legacy
             // recipes that don't have variant-bearing inputs.
             val bufferKey = ingredient?.bufferKey() ?: damien.nodeworks.script.BufferKey.Key(itemId, "")
-            val color = handlerBE.getInputChannel(bufferKey)
+            val channelKey = channelKeys.getOrNull(idx) ?: bufferKey
+            val color = handlerBE.getInputChannel(channelKey)
             val moveOk = routeInputAtomic(
                 handlerLevel, microSnapshot, cpu, handlerBE,
                 itemId, ingredient, batchCount, ChannelFilter.Color(color),
             )
             if (moveOk) {
-                rolledBack += bufferKey to batchCount
+                rolledBack += Moved(bufferKey, channelKey, batchCount)
                 continue
             }
             // Couldn't route this input. Unwind anything already moved so the
@@ -352,6 +358,8 @@ object BlockProcessingHandler {
         api: ProcessingStorageBlockEntity.ProcessingApiInfo,
         handlerBE: ProcessingHandlerBlockEntity,
         maxBatches: Long,
+        inputs: List<damien.nodeworks.script.RecipeIngredient> = api.inputs,
+        channelKeys: List<damien.nodeworks.script.BufferKey.Key> = inputs.map { it.bufferKey() },
     ): Long {
         val handlerLevel = handlerBE.level as? ServerLevel ?: return 0L
         val snapshot = NetworkDiscovery.discoverNetwork(handlerLevel, handlerBE.blockPos.relative(handlerBE.frontFace))
@@ -359,17 +367,19 @@ object BlockProcessingHandler {
         if (NetworkStorageHelper.getStorageCards(snapshot).none { outputChannel.matches(it.channel) }) return maxBatches
         // Duplicate slots of one input share its capacity, so they are summed per batch.
         val perBatch = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Pair<damien.nodeworks.script.RecipeIngredient, Long>>()
-        for (ingr in api.inputs) {
+        val channelOf = HashMap<damien.nodeworks.script.BufferKey.Key, damien.nodeworks.script.BufferKey.Key>()
+        for ((idx, ingr) in inputs.withIndex()) {
             val key = ingr.bufferKey()
             val prev = perBatch[key]
             perBatch[key] = ingr to ((prev?.second ?: 0L) + ingr.count.toLong())
+            channelOf.putIfAbsent(key, channelKeys.getOrNull(idx) ?: key)
         }
         var best = maxBatches
         for ((key, entry) in perBatch) {
             val (ingr, count) = entry
             if (count <= 0L) continue
             val item = ingr.stack.item
-            val channel = ChannelFilter.Color(handlerBE.getInputChannel(key))
+            val channel = ChannelFilter.Color(handlerBE.getInputChannel(channelOf[key] ?: key))
             val need = count * best
             var capacity = 0L
             for (card in inputCards(handlerLevel, snapshot, key.itemId, ingr, channel)) {
@@ -384,6 +394,13 @@ object BlockProcessingHandler {
         }
         return best
     }
+
+    /** One routed slot: what moved, the authored key its channel is bound to, how many. */
+    private data class Moved(
+        val bufferKey: damien.nodeworks.script.BufferKey.Key,
+        val channelKey: damien.nodeworks.script.BufferKey.Key,
+        val count: Long,
+    )
 
     /**
      * Reverse of [routeInputAtomic]: pull each previously-moved input back
@@ -400,15 +417,15 @@ object BlockProcessingHandler {
         snapshot: NetworkSnapshot,
         cpu: CraftingCoreBlockEntity,
         handlerBE: ProcessingHandlerBlockEntity,
-        moved: List<Pair<damien.nodeworks.script.BufferKey.Key, Long>>,
+        moved: List<Moved>,
     ) {
         val allCards = NetworkStorageHelper.getStorageCards(snapshot)
-        for ((bufferKey, count) in moved) {
+        for ((bufferKey, channelKey, count) in moved) {
             // Pull only from cards on the channel the forward route used. Items
             // were JUST placed there a few microseconds ago; scanning the full
             // network would let same-tick mutations from other devices steal
             // items we're trying to recover.
-            val channel = ChannelFilter.Color(handlerBE.getInputChannel(bufferKey))
+            val channel = ChannelFilter.Color(handlerBE.getInputChannel(channelKey))
             val itemId = bufferKey.itemId
             val wantHash = bufferKey.componentsHash
             var stillNeeded = count

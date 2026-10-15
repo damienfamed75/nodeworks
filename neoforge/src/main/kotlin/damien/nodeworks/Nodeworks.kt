@@ -877,6 +877,19 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         }
 
         registrar.playToServer(
+            damien.nodeworks.network.SetProcessingApiSlotTagPayload.TYPE,
+            damien.nodeworks.network.SetProcessingApiSlotTagPayload.CODEC,
+        ) { payload, context ->
+            context.enqueueWork {
+                val player = context.player()
+                val menu = player.containerMenu
+                if (menu is damien.nodeworks.screen.ProcessingSetScreenHandler && menu.containerId == payload.containerId) {
+                    menu.setInputTag(payload.slotIndex, payload.tagId.takeIf { it.isNotEmpty() })
+                }
+            }
+        }
+
+        registrar.playToServer(
             damien.nodeworks.network.SetStorageMeterTargetPayload.TYPE,
             damien.nodeworks.network.SetStorageMeterTargetPayload.CODEC,
         ) { payload, context ->

@@ -91,6 +91,7 @@ class ProcessingSetScreen(
         private const val PARALLEL_GROUP_CENTER_X = CONTROLS_START_X + TIMEOUT_GROUP_W + GROUP_GAP + TOGGLE_W / 2
         private const val TOGGLE_X = CONTROLS_START_X + TIMEOUT_GROUP_W + GROUP_GAP
 
+        private const val TAG_CYCLE_PERIOD_MS = 1200L
         private const val CLEAR_BTN_SIZE = 14
         private const val CLEAR_BTN_X = 16
         // Stacked pair: fuzzy toggle on top, clear button beneath, centered as a
@@ -209,10 +210,7 @@ class ProcessingSetScreen(
             5, 5, WHITE)
         if (clearHover) queueTooltip(mouseX, mouseY, "Clear slots")
 
-        // Fuzzy-mode toggle. Reuses the substitution icons so the visual
-        // language matches Instruction Sets: ON when the recipe accepts any
-        // component variant (e.g. any potion), OFF when it requires exact
-        // component matching (e.g. specifically Potion of Strength).
+        // Substitutions toggle, same icons as the Instruction Set editor.
         val fuzzyX = x + FUZZY_BTN_X
         val fuzzyY = y + FUZZY_BTN_Y
         val fuzzyDrawW = FUZZY_BTN_SIZE - 1
@@ -227,18 +225,18 @@ class ProcessingSetScreen(
             FUZZY_ICON_SIZE, FUZZY_ICON_SIZE,
         )
         if (fuzzyHover) {
-            // Fuzzy currently only differentiates the recipe identity
-            // (RecipeId.of mixes the flag into the canonical hash so a
-            // "fuzzy" recipe is distinct from its strict twin). Runtime
-            // ingredient matching is still variant-exact; widening that
-            // is tracked as a follow-up.
-            queueTooltip(
-                mouseX, mouseY,
-                "Fuzzy: ${if (menu.fuzzy) "On" else "Off"}",
-                "Marks this recipe as a separate variant (different recipe id).",
-                "Runtime matching is still strict per ingredient.",
-                "Click to toggle.",
+            val lines = mutableListOf(
+                "Substitutions: ${if (menu.fuzzy) "On" else "Off"}",
+                "Tag inputs accept any item in their tag,",
+                "other inputs accept any component variant.",
+                "JEI's (+) sets a tag on inputs that show several items.",
             )
+            for (i in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) {
+                val tag = menu.inputTags[i] ?: continue
+                lines += "Slot ${i + 1}: #$tag"
+            }
+            lines += "Click to toggle."
+            queueTooltip(mouseX, mouseY, *lines.toTypedArray())
         }
 
         // Stepper buttons, draw the 9-slice background first, then paint the +/- glyph
@@ -270,6 +268,26 @@ class ProcessingSetScreen(
         NineSlice.WINDOW_FRAME.draw(graphics, x, y + INV_PANEL_Y, FRAME_W, INV_PANEL_H)
         graphics.drawString(font, "Inventory", x + INV_X, y + INV_LABEL_Y, LABEL_COLOR)
         NineSlice.drawPlayerInventory(graphics, x + INV_X, y + INV_GRID_Y, HOTBAR_GAP)
+    }
+
+    /** Members of each tag slot's tag, looked up once per tag. */
+    private val tagMemberCache = HashMap<String, List<net.minecraft.world.item.Item>>()
+
+    /** A tag input shows its tag's members in turn instead of its example item, so the
+     *  player can see what the slot accepts. The slot's real item is untouched. Our own
+     *  count badges are drawn later, so nothing else of the vanilla draw is needed. */
+    override fun extractSlot(graphics: GuiGraphicsExtractor, slot: net.minecraft.world.inventory.Slot, mouseX: Int, mouseY: Int) {
+        val idx = slot.index
+        val tag = if (menu.fuzzy && idx in 0 until ProcessingSetScreenHandler.INPUT_SLOTS) menu.inputTags[idx] else null
+        if (tag != null && slot.hasItem() && menu.carried.isEmpty) {
+            val members = tagMemberCache.getOrPut(tag) { damien.nodeworks.card.ItemTagLookup.membersOf(tag) }
+            if (members.isNotEmpty()) {
+                val shown = members[((net.minecraft.util.Util.getMillis() / TAG_CYCLE_PERIOD_MS) % members.size).toInt()]
+                graphics.renderItem(net.minecraft.world.item.ItemStack(shown), slot.x, slot.y)
+                return
+            }
+        }
+        super.extractSlot(graphics, slot, mouseX, mouseY)
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -363,6 +381,7 @@ class ProcessingSetScreen(
                     SetProcessingApiSlotPayload(menu.containerId, i, net.minecraft.world.item.ItemStack.EMPTY)
                 )
             }
+            menu.inputTags.fill(null)
             return true
         }
 
@@ -426,6 +445,7 @@ class ProcessingSetScreen(
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiSlotPayload(menu.containerId, i, net.minecraft.world.item.ItemStack.EMPTY)
                 )
+                if (isInput) menu.inputTags[i] = null
             } else {
                 val key = if (isInput) "input" else "output"
                 val slotIdx = if (isInput) i else i - ProcessingSetScreenHandler.INPUT_SLOTS

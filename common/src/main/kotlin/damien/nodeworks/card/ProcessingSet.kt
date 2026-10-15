@@ -78,8 +78,15 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 .withStyle(ChatFormatting.DARK_GRAY))
         }
         if (isFuzzy(stack)) {
-            tooltip.accept(Component.literal("  Fuzzy: any component variant matches")
+            tooltip.accept(Component.literal("  Substitutions: any tag member or component variant")
                 .withStyle(ChatFormatting.DARK_GRAY))
+            val registries = context.registries()
+            if (registries != null) {
+                for (ingr in getInputs(stack, registries)) {
+                    val tag = ingr.tag ?: continue
+                    tooltip.accept(Component.literal("  #$tag ×${ingr.count}").withStyle(ChatFormatting.DARK_GRAY))
+                }
+            }
         }
     }
 
@@ -122,6 +129,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         private const val ENTRY_STACK_KEY = "stack"
         private const val ENTRY_COUNT_KEY = "count"
         private const val ENTRY_SLOT_KEY = "slot"
+        private const val ENTRY_TAG_KEY = "tag"
 
         // v1 NBT keys, still read for backward compatibility. Migrated to v2
         // shape (with empty components) on the next save.
@@ -202,9 +210,10 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             return customData.copyTag().getBooleanOr(SERIAL_KEY, false)
         }
 
-        /** True when the recipe accepts any component variant of its declared
-         *  inputs (e.g. any potion in the input slot, not specifically a
-         *  Potion of Strength). Default false = exact-component matching. */
+        /** True when the recipe accepts substitutions: any member of a tag input's
+         *  tag, and any component variant of every input. Shown as "Substitutions" in
+         *  the editor, kept under the fuzzy key so existing recipe ids don't change.
+         *  Default false = exact matching. */
         fun isFuzzy(stack: ItemStack): Boolean {
             val customData = stack.get(DataComponents.CUSTOM_DATA) ?: return false
             return customData.copyTag().getBooleanOr(FUZZY_KEY, false)
@@ -286,6 +295,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 entry.put(ENTRY_STACK_KEY, stackTag)
                 entry.putInt(ENTRY_COUNT_KEY, ingr.count.coerceAtLeast(1))
                 entry.putInt(ENTRY_SLOT_KEY, slotsOverride?.getOrElse(i) { i } ?: i)
+                ingr.tag?.let { entry.putString(ENTRY_TAG_KEY, it) }
                 list.add(entry)
             }
             return list
@@ -317,7 +327,8 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                     val ingrStack = ItemStack.CODEC.parse(ops, stackTag).result().orElse(null) ?: continue
                     if (ingrStack.isEmpty) continue
                     val count = entry.getInt(ENTRY_COUNT_KEY).orElse(1).coerceAtLeast(1)
-                    out.add(RecipeIngredient(ingrStack, count))
+                    val tag = entry.getStringOr(ENTRY_TAG_KEY, "").takeIf { it.isNotEmpty() }
+                    out.add(RecipeIngredient(ingrStack, count, tag))
                 }
                 return out
             }

@@ -128,6 +128,20 @@ class ProcessingHandlerBlockEntity(
     fun getInputChannel(key: damien.nodeworks.script.BufferKey.Key): DyeColor =
         inputChannelsByKey[key] ?: DyeColor.BLUE
 
+    /** The bound key a recipe input's channel lives under. The input's own key when it
+     *  is bound. For a tag input bound from a set that showed another member of the tag,
+     *  that member's key, so sets sharing a tag recipe share the handler's channels. */
+    fun channelKeyFor(ingr: damien.nodeworks.script.RecipeIngredient): damien.nodeworks.script.BufferKey.Key {
+        val key = ingr.bufferKey()
+        if (key in inputChannelsByKey) return key
+        val tag = ingr.tag ?: return key
+        return inputChannelsByKey.keys.firstOrNull { bound ->
+            val item = net.minecraft.resources.Identifier.tryParse(bound.itemId)
+                ?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
+            item != null && damien.nodeworks.card.ItemTagLookup.isMember(item, tag)
+        } ?: key
+    }
+
     /** Backwards-compat lookup by itemId only. Returns the first registered
      *  entry sharing the id (regardless of variant), or BLUE when none. Only
      *  meaningful for callers that don't know the variant. */

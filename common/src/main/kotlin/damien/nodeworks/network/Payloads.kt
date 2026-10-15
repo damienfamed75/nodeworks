@@ -477,6 +477,20 @@ data class SetProcessingApiNamePayload(val containerId: Int, val name: String) :
     override fun type() = TYPE
 }
 
+/** C2S: Set the tag a Processing Set input slot accepts, empty to clear. Sent by the JEI
+ *  recipe transfer after the slot's item, so the item is in place when the server checks
+ *  that it is a member. */
+data class SetProcessingApiSlotTagPayload(val containerId: Int, val slotIndex: Int, val tagId: String) : CustomPacketPayload {
+    companion object {
+        val TYPE: CustomPacketPayload.Type<SetProcessingApiSlotTagPayload> = CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("nodeworks", "set_processing_api_slot_tag"))
+        val CODEC: StreamCodec<FriendlyByteBuf, SetProcessingApiSlotTagPayload> = CustomPacketPayload.codec(
+            { p, buf -> buf.writeVarInt(p.containerId); buf.writeVarInt(p.slotIndex); buf.writeUtf(p.tagId, 256) },
+            { buf -> SetProcessingApiSlotTagPayload(buf.readVarInt(), buf.readVarInt(), buf.readUtf(256)) }
+        )
+    }
+    override fun type() = TYPE
+}
+
 /**
  * C2S: Set a single ghost slot on the Processing Set by item ID.
  * slotIndex 0-8 = input, 9-11 = output. Empty string = clear slot.

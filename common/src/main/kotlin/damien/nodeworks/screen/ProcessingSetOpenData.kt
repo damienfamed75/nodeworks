@@ -33,6 +33,7 @@ data class ProcessingSetOpenData(
         // Display name (cosmetic), no longer the handler key. 1024 chars is
         // already excessive but matches the pre-component cap.
         private const val MAX_NAME_LEN = 1024
+        const val MAX_TAG_LEN = 256
 
         val STREAM_CODEC: StreamCodec<FriendlyByteBuf, ProcessingSetOpenData> = object : StreamCodec<FriendlyByteBuf, ProcessingSetOpenData> {
             override fun decode(buf: FriendlyByteBuf): ProcessingSetOpenData {
@@ -42,7 +43,8 @@ data class ProcessingSetOpenData(
                 val inputs = (0 until inputCount).map {
                     val stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
                     val cnt = buf.readVarInt()
-                    RecipeIngredient(stack, cnt)
+                    val tag = buf.readUtf(MAX_TAG_LEN).takeIf { it.isNotEmpty() }
+                    RecipeIngredient(stack, cnt, tag)
                 }
                 val inputSlots = IntArray(inputCount) { buf.readVarInt() }
                 val outputCount = buf.readVarInt().coerceAtMost(3)
@@ -65,6 +67,7 @@ data class ProcessingSetOpenData(
                 for (ingr in data.inputs) {
                     ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, ingr.stack)
                     buf.writeVarInt(ingr.count)
+                    buf.writeUtf(ingr.tag ?: "", MAX_TAG_LEN)
                 }
                 for (i in data.inputs.indices) {
                     buf.writeVarInt(data.inputSlots.getOrElse(i) { i })
