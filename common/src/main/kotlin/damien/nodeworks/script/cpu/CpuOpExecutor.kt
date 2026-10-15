@@ -265,16 +265,20 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             val prev = spare[key]
             spare[key] = (prev?.first ?: stack.copyWithCount(1)) to ((prev?.second ?: 0L) + stack.count)
         }
+        // Ingredients taken for the craft in progress, returned if anything throws before it lands.
+        var inHand: Array<ItemStack?>? = null
         try {
             var done = 0L
             while (done < executions) {
                 // Real stacks per slot, so leftovers come from the actual item (a crystal keeps its wear).
                 val taken = arrayOfNulls<ItemStack>(op.recipe.size)
+                inHand = taken
                 for ((slot, ing) in op.recipe.withIndex()) {
                     if (ing.isEmpty()) continue
                     val stack = held[ing]?.removeFirstOrNull() ?: takeIngredient(ing)
                     if (stack == null) {
                         val had = taken.count { it != null && BuiltInRegistries.ITEM.getKey(it.item).toString() == ing }
+                        inHand = null
                         for (s in taken) if (s != null) keepLeftover(s)
                         return CraftScheduler.OpResult.Failed(
                             "Execute iteration underflow: $ing x${ingredientCounts[ing]} (had $had)"
@@ -284,7 +288,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 }
                 val output = expected.copyWithCount(expected.getCount())
                 // Keeps the recipe's components, the bucket stays plain.
-                if (!cpu.addCraftedToBuffer(expectedItemId, output, output.getCount().toLong())) {
+                val landed = cpu.addCraftedToBuffer(expectedItemId, output, output.getCount().toLong())
+                inHand = null
+                if (!landed) {
                     for (s in taken) if (s != null) keepLeftover(s)
                     return CraftScheduler.OpResult.Failed(
                         "Buffer refused crafted $expectedItemId x${output.getCount()}"
@@ -306,6 +312,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             }
             return CraftScheduler.OpResult.Completed
         } finally {
+            inHand?.forEach { if (it != null) keepLeftover(it) }
             for (stacks in held.values) for (s in stacks) keepLeftover(s)
             if (spare.isNotEmpty()) {
                 val snap = snapshotForTick(lvl)
@@ -650,7 +657,13 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             .groupBy { it.first }
             .mapValues { (_, pairs) -> pairs.sumOf { it.second } }
         if (apiMatch.api.serial) {
-            return invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name, apiMatch.api.outputsAsPairs)
+            val result = invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name, apiMatch.api.outputsAsPairs)
+            // Outputs already waiting finish the batch on the spot, that is one batch, not the op.
+            if (result !is CraftScheduler.OpResult.Completed) return result
+            if (!finishBatch(op, progress)) return CraftScheduler.OpResult.InProgress
+            processRetries.remove(op.id)
+            processBatchProgress.remove(op.id)
+            return result
         }
         return invokeLuaChunk(op, state, perBatchInputMap, apiMatch, progress)
     }
@@ -920,7 +933,8 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     ): BlockProcessingHandler.InvokeResult {
         val chunk = cpu.opChunkProgress[op.id]
             ?: damien.nodeworks.block.entity.CraftingCoreBlockEntity.ChunkProgress(progress.batches, 0L, 0L)
-        val remaining = (chunk.total - chunk.done).coerceAtLeast(1L)
+        val left = (chunk.total - chunk.done).coerceAtLeast(1L)
+        val remaining = if (chunk.fit > 0L) minOf(left, chunk.fit) else left
         val batches = BlockProcessingHandler.fittingBatches(apiMatch.api, handlerBE, remaining)
         if (batches <= 0L) {
             return BlockProcessingHandler.InvokeResult.Retry("the machine has no room for even one batch of '${apiMatch.api.name}'")
@@ -936,6 +950,9 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         )
         if (result is BlockProcessingHandler.InvokeResult.InProgress || result is BlockProcessingHandler.InvokeResult.CompletedSync) {
             cpu.setChunkProgress(op.id, chunk.copy(inFlight = batches))
+        } else if (result is BlockProcessingHandler.InvokeResult.Retry && batches > 1L) {
+            // The probe read high, e.g. two inputs sharing one inventory. Cap the next try lower.
+            cpu.setChunkProgress(op.id, chunk.copy(fit = batches / 2L))
         }
         return result
     }
