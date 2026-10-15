@@ -221,6 +221,16 @@ class NeoForgeStorageService : StorageService {
         return out
     }
 
+    /** Take up to [maxCount] from one [slot] of [storage] as real stacks, components intact.
+     *  Empty when the slot doesn't exist (any more). */
+    fun extractFromSlot(storage: ItemStorageHandle, slot: Int, maxCount: Long): List<ItemStack> {
+        val handler = (storage as NeoForgeItemStorageHandle).handler
+        if (maxCount <= 0L || slot !in 0 until handler.slots) return emptyList()
+        val out = ArrayList<ItemStack>()
+        drainSlot(handler, slot, maxCount) { out.add(it) }
+        return out
+    }
+
     override fun extractStacksByPredicate(
         storage: ItemStorageHandle,
         filter: (ItemStack) -> Boolean,

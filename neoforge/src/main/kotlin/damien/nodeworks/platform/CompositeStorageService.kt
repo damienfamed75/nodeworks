@@ -227,14 +227,64 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         maxCount: Long,
         cursor: ScanCursor?,
     ): Long {
-        // ME storage has no slots to resume in, so only the plain path uses the cursor.
         if (!crossesBackend(source, dest)) return base.moveItems(source, dest, filter, maxCount, cursor)
         if (maxCount <= 0L) return 0L
         val s = ae2(source)
         val d = ae2(dest)
         if (s != null && d != null) return Ae2Storage.moveKeys(s, d, { filter(idOf(it)) }, maxCount)
         if (s != null) return moveFromMe(s, dest, { filter(idOf(it)) }, maxCount)
+        // Only a slotted source can resume a scan, ME has no slots.
+        val handler = (source as? NeoForgeItemStorageHandle)?.handler
+        if (cursor != null && d != null && handler != null) return moveSlotsToMe(source, handler, d, filter, maxCount, cursor)
         return moveInRounds(source, dest, maxCount) { extractItemStacksMatching(source, filter, it) }
+    }
+
+    /** Slotted source into ME, scanned from [cursor] and wrapping, so a source bigger than one
+     *  call can get through is covered over several calls. ME is asked first, so a type it
+     *  won't take (a full type limit) is skipped without being pulled out and put back, and
+     *  later slots still get their turn. Items are taken before they are inserted, and
+     *  whatever ME then refuses goes back, as in [moveInRounds]. */
+    private fun moveSlotsToMe(
+        source: ItemStorageHandle,
+        handler: net.neoforged.neoforge.items.IItemHandler,
+        d: Ae2ItemStorageHandle,
+        filter: (String) -> Boolean,
+        maxCount: Long,
+        cursor: ScanCursor,
+    ): Long {
+        val slots = handler.slots
+        if (slots <= 0) return 0L
+        val start = cursor.slot.takeIf { it in 0 until slots } ?: 0
+        val refused = HashSet<net.neoforged.neoforge.transfer.item.ItemResource>()
+        var remaining = maxCount
+        var moved = 0L
+        for (i in 0 until slots) {
+            val slot = (start + i) % slots
+            if (remaining <= 0L || MoveDeadline.expired()) {
+                cursor.slot = slot
+                return moved
+            }
+            // A source can shrink mid-scan, never read past its current end.
+            if (slot >= handler.slots) continue
+            val stack = handler.getStackInSlot(slot)
+            if (stack.isEmpty || !filter(idOf(stack))) continue
+            val resource = net.neoforged.neoforge.transfer.item.ItemResource.of(stack)
+            if (resource in refused) continue
+            val want = minOf(remaining, stack.count.toLong())
+            val fits = Ae2Storage.simulateInsertStacks(d, listOf(stack.copyWithCount(want.toInt())))
+            if (fits <= 0L) {
+                refused += resource
+                continue
+            }
+            val taken = base.extractFromSlot(source, slot, fits)
+            if (taken.isEmpty()) continue
+            val movedNow = moveStacks(source, d, taken)
+            moved += movedNow
+            remaining -= movedNow
+            // ME took less than it said it would, it is full for this type now.
+            if (movedNow < taken.sumOf { it.count.toLong() }) refused += resource
+        }
+        return moved
     }
 
     override fun moveItemsVariant(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String, Boolean) -> Boolean, maxCount: Long): Long {
