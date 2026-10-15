@@ -134,8 +134,16 @@ interface StorageService {
     /** Get a fluid storage handle for a block at [pos] accessed from [face]. Returns null if not available or unsupported on this platform. */
     fun getFluidStorage(level: ServerLevel, pos: BlockPos, face: Direction): FluidStorageHandle? = null
 
-    /** Move items between storages. Returns number moved. */
-    fun moveItems(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long
+    /** Move items between storages. Returns number moved. With a [cursor], a slot-based
+     *  source is scanned from where the last call stopped and wraps at the end, so a huge
+     *  source is covered over several calls instead of restarting at its first slot. */
+    fun moveItems(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (String) -> Boolean,
+        maxCount: Long,
+        cursor: ScanCursor? = null,
+    ): Long
 
     /** Move items with data-aware filter. Filter receives (itemId, hasData). */
     fun moveItemsVariant(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String, Boolean) -> Boolean, maxCount: Long): Long {
@@ -380,6 +388,12 @@ data class ItemInfo(
     val componentsPatch: DataComponentPatch = DataComponentPatch.EMPTY,
 ) {
     val stackable: Boolean get() = maxStackSize > 1
+}
+
+/** Where a resumable [StorageService.moveItems] scan picks up next. Only a hint, a slot
+ *  past the end of the source starts again at the first slot. */
+class ScanCursor {
+    var slot: Int = 0
 }
 
 /** Result of [StorageService.previewMove]. [available] is how many matching items the

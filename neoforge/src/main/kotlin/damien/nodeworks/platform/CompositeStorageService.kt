@@ -220,8 +220,15 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         return moved
     }
 
-    override fun moveItems(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Long {
-        if (!crossesBackend(source, dest)) return base.moveItems(source, dest, filter, maxCount)
+    override fun moveItems(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (String) -> Boolean,
+        maxCount: Long,
+        cursor: ScanCursor?,
+    ): Long {
+        // ME storage has no slots to resume in, so only the plain path uses the cursor.
+        if (!crossesBackend(source, dest)) return base.moveItems(source, dest, filter, maxCount, cursor)
         if (maxCount <= 0L) return 0L
         val s = ae2(source)
         val d = ae2(dest)

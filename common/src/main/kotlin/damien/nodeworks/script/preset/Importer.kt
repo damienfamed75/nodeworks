@@ -133,6 +133,13 @@ class ImporterBuilder(
     private var resolvedSources: List<ResolvedRef> = emptyList()
     private var resolvedTargets: List<ResolvedRef> = emptyList()
 
+    /** Where each card-to-card pair's source scan resumes, so a source with more slots than
+     *  one run can get through is still covered, a stretch per run. */
+    private val scanCursors = HashMap<String, damien.nodeworks.platform.ScanCursor>()
+
+    private fun cursorKey(source: ResolvedRef.Card, target: ResolvedRef.Card): String =
+        "${source.snapshot.effectiveAlias}|${source.faceOverride}>${target.snapshot.effectiveAlias}|${target.faceOverride}"
+
     override val presetName = "importer"
 
     fun to(targets: List<CardRef>): ImporterBuilder {
@@ -166,6 +173,11 @@ class ImporterBuilder(
     override fun onSnapshotChanged(snapshot: NetworkSnapshot) {
         resolvedSources = sources.flatMap { expandCardRef(snapshot, it) }
         resolvedTargets = targets.flatMap { expandCardRef(snapshot, it) }
+        val livePairs = HashSet<String>()
+        for (s in resolvedSources) for (t in resolvedTargets) {
+            if (s is ResolvedRef.Card && t is ResolvedRef.Card) livePairs += cursorKey(s, t)
+        }
+        scanCursors.keys.retainAll(livePairs)
         if (resolvedTargets.isNotEmpty() && rrCursor >= resolvedTargets.size) {
             rrCursor %= resolvedTargets.size
             rrServedToCurrent = 0
@@ -290,7 +302,8 @@ class ImporterBuilder(
                     is ResolvedRef.Card -> {
                         val dest = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
                         if (!CardStorage.hasRoom(srcStorage, dest, filterPred, maxCount)) return 0L
-                        PlatformServices.storage.moveItems(srcStorage, dest, filterPred, maxCount)
+                        val cursor = scanCursors.getOrPut(cursorKey(source, target)) { damien.nodeworks.platform.ScanCursor() }
+                        PlatformServices.storage.moveItems(srcStorage, dest, filterPred, maxCount, cursor)
                     }
                     is ResolvedRef.Pool -> NetworkStorageHelper.insertItems(
                         level, snapshot, srcStorage, filter,
