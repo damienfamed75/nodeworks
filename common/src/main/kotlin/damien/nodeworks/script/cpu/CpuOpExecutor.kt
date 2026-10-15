@@ -398,15 +398,21 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         } else {
             // Parallel: one handler invocation handles the whole demand. Scale each
             // slot's declared count by the number of batches needed to satisfy the
-            // total output, preserving slot order + duplicates.
-            val perBatchInputs = apiMatch.api.inputs.map { it.itemId to (it.count.toLong() * batches) }
+            // total output, preserving slot order + duplicates. Once the op runs in chunks,
+            // only the next chunk is scaled.
+            val chunk = cpu.opChunkProgress[op.id]
+            val batchesLeft = if (chunk != null) {
+                val left = (chunk.total - chunk.done).coerceAtLeast(1L)
+                if (chunk.fit > 0L) minOf(left, chunk.fit) else left
+            } else batches
+            val perBatchInputs = apiMatch.api.inputs.map { it.itemId to (it.count.toLong() * batchesLeft) }
             BatchProgress(
                 totalBatches = 1L,
                 batchesDone = 0L,
                 perBatchInputs = perBatchInputs,
                 outputItemId = outputItemId,
                 outputPerBatch = outputTotal,
-                batches = batches,
+                batches = batchesLeft,
             )
         }
         processBatchProgress[op.id] = progress
@@ -431,13 +437,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 }
                 // One batch done. Advance progress, if more batches remain, start the next one.
                 val progress = processBatchProgress[op.id]
-                if (progress != null) {
-                    progress.batchesDone++
-                    if (progress.batchesDone >= progress.totalBatches) {
-                        processRetries.remove(op.id)
-                        processBatchProgress.remove(op.id)
-                        return CraftScheduler.OpResult.Completed
-                    }
+                if (progress != null && finishBatch(op, progress)) {
+                    processRetries.remove(op.id)
+                    processBatchProgress.remove(op.id)
+                    return CraftScheduler.OpResult.Completed
                 }
                 // Fall through to start the next batch invocation below.
             } else {
@@ -588,7 +591,49 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         val perBatchInputMap = progress.perBatchInputs
             .groupBy { it.first }
             .mapValues { (_, pairs) -> pairs.sumOf { it.second } }
-        return invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name, apiMatch.api.outputsAsPairs)
+        if (apiMatch.api.serial) {
+            return invokeHandlerAndAnalyze(op, state, perBatchInputMap, apiMatch.api.name, apiMatch.api.outputsAsPairs)
+        }
+        return invokeLuaChunk(op, state, perBatchInputMap, apiMatch, progress)
+    }
+
+    /** Parallel Lua-handler call for the next chunk of the op's batches. A handler can't be
+     *  probed, so when it moves nothing the next try halves the chunk without using up a
+     *  retry, and the size that worked is kept for the chunks after it. Everything fitting
+     *  in one go behaves exactly as before. */
+    private fun invokeLuaChunk(
+        op: Operation.Process,
+        state: ProcessState,
+        declaredInputs: Map<String, Long>,
+        apiMatch: damien.nodeworks.network.ProcessingApiMatch,
+        progress: BatchProgress,
+    ): CraftScheduler.OpResult {
+        val chunk = cpu.opChunkProgress[op.id]
+            ?: damien.nodeworks.block.entity.CraftingCoreBlockEntity.ChunkProgress(progress.batches, 0L, 0L)
+        val tried = progress.batches
+        val pre = declaredInputs.mapValues { (id, _) -> cpu.getBufferCount(id) }
+        val retriesBefore = processRetries[op.id]
+        val result = invokeHandlerAndAnalyze(op, state, declaredInputs, apiMatch.api.name, apiMatch.api.outputsAsPairs)
+        if (processState[op.id] === state) {
+            cpu.setChunkProgress(op.id, chunk.copy(inFlight = tried, fit = tried))
+            return result
+        }
+        if (result is CraftScheduler.OpResult.Completed) {
+            cpu.setChunkProgress(op.id, chunk.copy(inFlight = tried, fit = tried))
+            if (!finishBatch(op, progress)) return CraftScheduler.OpResult.InProgress
+            processRetries.remove(op.id)
+            processBatchProgress.remove(op.id)
+            return result
+        }
+        // A retry that left the buffer untouched, so a smaller chunk is safe to try.
+        val untouched = declaredInputs.keys.all { cpu.getBufferCount(it) == pre[it] }
+        if (result is CraftScheduler.OpResult.InProgress && tried > 1L && untouched) {
+            cpu.setChunkProgress(op.id, chunk.copy(fit = tried / 2L))
+            // Rebuilt on the next dispatch at the smaller size.
+            processBatchProgress.remove(op.id)
+            if (retriesBefore == null) processRetries.remove(op.id) else processRetries[op.id] = retriesBefore
+        }
+        return result
     }
 
     /**
@@ -730,25 +775,22 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return CraftScheduler.OpResult.InProgress
         }
 
-        // Same scaling as the Lua-handler path: full recipe outputs scaled by
-        // [progress.batches], not [progress.totalBatches].
-        val bulkOutputOverride: List<Pair<damien.nodeworks.script.RecipeIngredient, Long>>? = if (!apiMatch.api.serial) {
-            apiMatch.api.outputs.map { ingr ->
-                ingr to (ingr.count.toLong() * progress.batches)
-            }
-        } else null
-
         cpu.setCrafting(true, outputItemId.substringAfter(':').replace('_', ' '))
 
-        val invokeResult = BlockProcessingHandler.invoke(
-            cpu = cpu,
-            level = lvl,
-            api = apiMatch.api,
-            handlerBE = handlerBE,
-            perBatchInputs = progress.perBatchInputs,
-            bulkOutputOverride = bulkOutputOverride,
-            opId = op.id,
-        )
+        // Serial runs one batch per call. Parallel runs chunks sized to what the machine takes.
+        val invokeResult = if (apiMatch.api.serial) {
+            BlockProcessingHandler.invoke(
+                cpu = cpu,
+                level = lvl,
+                api = apiMatch.api,
+                handlerBE = handlerBE,
+                perBatchInputs = progress.perBatchInputs,
+                bulkOutputOverride = null,
+                opId = op.id,
+            )
+        } else {
+            invokeChunk(op, lvl, apiMatch, handlerBE, progress)
+        }
         return when (invokeResult) {
             is BlockProcessingHandler.InvokeResult.InProgress -> {
                 val state = ProcessState(
@@ -764,8 +806,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             is BlockProcessingHandler.InvokeResult.CompletedSync -> {
                 if (invokeResult.pending.success) {
                     // One batch done. Match the Lua path's batch advancement.
-                    progress.batchesDone++
-                    if (progress.batchesDone >= progress.totalBatches) {
+                    if (finishBatch(op, progress)) {
                         processRetries.remove(op.id)
                         processBatchProgress.remove(op.id)
                         CraftScheduler.OpResult.Completed
@@ -791,6 +832,60 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
     }
 
+
+    /** Parallel block-handler call for as many of the op's remaining batches as the machine
+     *  takes right now, so a request bigger than the machine's slots runs in chunks instead
+     *  of retrying until it fails. The chunk is sized by a simulate-only probe and the handler
+     *  is called once, exactly as before when everything fits. When not even one batch fits
+     *  nothing is moved and it counts as a retry. */
+    private fun invokeChunk(
+        op: Operation.Process,
+        lvl: ServerLevel,
+        apiMatch: damien.nodeworks.network.ProcessingApiMatch,
+        handlerBE: damien.nodeworks.block.entity.ProcessingHandlerBlockEntity,
+        progress: BatchProgress,
+    ): BlockProcessingHandler.InvokeResult {
+        val chunk = cpu.opChunkProgress[op.id]
+            ?: damien.nodeworks.block.entity.CraftingCoreBlockEntity.ChunkProgress(progress.batches, 0L, 0L)
+        val remaining = (chunk.total - chunk.done).coerceAtLeast(1L)
+        val batches = BlockProcessingHandler.fittingBatches(apiMatch.api, handlerBE, remaining)
+        if (batches <= 0L) {
+            return BlockProcessingHandler.InvokeResult.Retry("the machine has no room for even one batch of '${apiMatch.api.name}'")
+        }
+        val result = BlockProcessingHandler.invoke(
+            cpu = cpu,
+            level = lvl,
+            api = apiMatch.api,
+            handlerBE = handlerBE,
+            perBatchInputs = apiMatch.api.inputs.map { it.itemId to it.count.toLong() * batches },
+            bulkOutputOverride = apiMatch.api.outputs.map { it to it.count.toLong() * batches },
+            opId = op.id,
+        )
+        if (result is BlockProcessingHandler.InvokeResult.InProgress || result is BlockProcessingHandler.InvokeResult.CompletedSync) {
+            cpu.setChunkProgress(op.id, chunk.copy(inFlight = batches))
+        }
+        return result
+    }
+
+    /** Count a handler call that just finished, true when the op is done. A chunked op adds
+     *  its in-flight chunk and is done once every batch has run, otherwise its progress is
+     *  dropped so the next dispatch rebuilds it and sends the next chunk. */
+    private fun finishBatch(op: Operation.Process, progress: BatchProgress): Boolean {
+        val chunk = cpu.opChunkProgress[op.id]
+        if (chunk != null && chunk.inFlight > 0L) {
+            val done = chunk.done + chunk.inFlight
+            if (done >= chunk.total) {
+                cpu.clearChunkProgress(op.id)
+                return true
+            }
+            cpu.setChunkProgress(op.id, chunk.copy(done = done, inFlight = 0L))
+            processBatchProgress.remove(op.id)
+            processRetries.remove(op.id)
+            return false
+        }
+        progress.batchesDone++
+        return progress.batchesDone >= progress.totalBatches
+    }
 
     /**
      * Resume an in-flight Process op after world reload. The handler's items survived the
@@ -853,6 +948,11 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         // we ticked), don't bother stashing state, collapse straight to Completed/Failed.
         if (pending.isComplete) {
             return if (pending.success) {
+                // A chunked op still has chunks to run after the one that was in flight.
+                if (cpu.opChunkProgress[op.id] != null) {
+                    val progress = processBatchProgress[op.id]
+                    if (progress != null && !finishBatch(op, progress)) return CraftScheduler.OpResult.InProgress
+                }
                 processBatchProgress[op.id]?.let { it.batchesDone = it.totalBatches }
                 CraftScheduler.OpResult.Completed
             } else {

@@ -209,14 +209,7 @@ object BlockProcessingHandler {
         // Storage cards are already sorted by priority descending in the
         // snapshot, so walking in order naturally targets filtered + high
         // priority cards first.
-        val registries = level.registryAccess()
-        val componentsPatch = ingredient?.stack?.componentsPatch ?: net.minecraft.core.component.DataComponentPatch.EMPTY
-        val cards = NetworkStorageHelper.getStorageCards(snapshot).filter { card ->
-            if (!channel.matches(card.channel)) return@filter false
-            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
-                ?: return@filter true
-            cap.acceptsItem(itemId, componentsPatch, registries)
-        }
+        val cards = inputCards(level, snapshot, itemId, ingredient, channel)
         if (cards.isEmpty()) return false
 
         // Capacity probe in priority order. Sum simulateInsertItem across
@@ -329,6 +322,67 @@ object BlockProcessingHandler {
             return false
         }
         return true
+    }
+
+    /** Cards on [channel] whose filter accepts this input, in priority order. Shared by
+     *  [routeInputAtomic] and [fittingBatches] so the probe and the route agree. */
+    private fun inputCards(
+        level: ServerLevel,
+        snapshot: NetworkSnapshot,
+        itemId: String,
+        ingredient: damien.nodeworks.script.RecipeIngredient?,
+        channel: ChannelFilter,
+    ): List<CardSnapshot> {
+        val registries = level.registryAccess()
+        val componentsPatch = ingredient?.stack?.componentsPatch ?: net.minecraft.core.component.DataComponentPatch.EMPTY
+        return NetworkStorageHelper.getStorageCards(snapshot).filter { card ->
+            if (!channel.matches(card.channel)) return@filter false
+            val cap = card.capability as? damien.nodeworks.card.StorageSideCapability
+                ?: return@filter true
+            cap.acceptsItem(itemId, componentsPatch, registries)
+        }
+    }
+
+    /** Most whole batches of [api], up to [maxBatches], whose inputs the handler's input
+     *  cards have room for right now, 0 when not even one fits. Simulate only, nothing
+     *  moves. Inputs sharing one machine slot are checked separately, so this can read
+     *  high, in which case the real route still refuses cleanly. Without output cards it
+     *  returns [maxBatches] so [invoke] reports that before moving anything. */
+    fun fittingBatches(
+        api: ProcessingStorageBlockEntity.ProcessingApiInfo,
+        handlerBE: ProcessingHandlerBlockEntity,
+        maxBatches: Long,
+    ): Long {
+        val handlerLevel = handlerBE.level as? ServerLevel ?: return 0L
+        val snapshot = NetworkDiscovery.discoverNetwork(handlerLevel, handlerBE.blockPos.relative(handlerBE.frontFace))
+        val outputChannel = ChannelFilter.Color(handlerBE.outputChannel)
+        if (NetworkStorageHelper.getStorageCards(snapshot).none { outputChannel.matches(it.channel) }) return maxBatches
+        // Duplicate slots of one input share its capacity, so they are summed per batch.
+        val perBatch = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, Pair<damien.nodeworks.script.RecipeIngredient, Long>>()
+        for (ingr in api.inputs) {
+            val key = ingr.bufferKey()
+            val prev = perBatch[key]
+            perBatch[key] = ingr to ((prev?.second ?: 0L) + ingr.count.toLong())
+        }
+        var best = maxBatches
+        for ((key, entry) in perBatch) {
+            val (ingr, count) = entry
+            if (count <= 0L) continue
+            val item = ingr.stack.item
+            val channel = ChannelFilter.Color(handlerBE.getInputChannel(key))
+            val need = count * best
+            var capacity = 0L
+            for (card in inputCards(handlerLevel, snapshot, key.itemId, ingr, channel)) {
+                if (capacity >= need) break
+                val dest = NetworkStorageHelper.getStorage(handlerLevel, card) ?: continue
+                capacity += try {
+                    PlatformServices.storage.simulateInsertItem(dest, item, need - capacity)
+                } catch (_: Exception) { 0L }
+            }
+            best = minOf(best, capacity / count)
+            if (best <= 0L) return 0L
+        }
+        return best
     }
 
     /**

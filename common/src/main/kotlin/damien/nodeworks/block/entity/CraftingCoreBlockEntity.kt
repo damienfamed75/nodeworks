@@ -135,8 +135,9 @@ class CraftingCoreBlockEntity(
         // incorrectly trigger the resume path (which skips handler invocation).
         // The save/load resume flow does NOT go through here, it restores the same plan
         // it saved, with the matching opResumeInfo intact, via NBT.
-        if (opResumeInfo.isNotEmpty()) {
+        if (opResumeInfo.isNotEmpty() || opChunkProgress.isNotEmpty()) {
             opResumeInfo.clear()
+            opChunkProgress.clear()
             setChanged()
         }
         onComplete?.let { opExecutor.registerCompletionListener(plan, it) }
@@ -344,6 +345,24 @@ class CraftingCoreBlockEntity(
         if (opResumeInfo.remove(opId) != null) setChanged()
     }
 
+    /** Recipe batches of a parallel Process op that a block handler runs in chunks, as many
+     *  as the machine takes at once. [inFlight] batches are in the machine. [fit] is the chunk
+     *  size a Lua handler last managed, 0 to try everything left. Saved so a reload mid-request
+     *  carries on with the remaining chunks. */
+    data class ChunkProgress(val total: Long, val done: Long, val inFlight: Long, val fit: Long = 0L)
+
+    /** Keyed by Operation.id. Persisted across save/load. */
+    val opChunkProgress: MutableMap<Int, ChunkProgress> = mutableMapOf()
+
+    fun setChunkProgress(opId: Int, progress: ChunkProgress) {
+        opChunkProgress[opId] = progress
+        setChanged()
+    }
+
+    fun clearChunkProgress(opId: Int) {
+        if (opChunkProgress.remove(opId) != null) setChanged()
+    }
+
     /** Wipe all pending job metadata (but keep originalCraft, cleared by clearAllCraftState). */
     fun clearPendingJob() {
         if (pendingOutputs.isNotEmpty() || pendingCount > 0 || pendingPullTargets.isNotEmpty()) {
@@ -362,8 +381,9 @@ class CraftingCoreBlockEntity(
         clearPendingJob()
         // Op IDs are plan-scoped (planner starts at 0). Stale entries would collide with
         // the next plan's op IDs and incorrectly trigger the resume path.
-        if (opResumeInfo.isNotEmpty()) {
+        if (opResumeInfo.isNotEmpty() || opChunkProgress.isNotEmpty()) {
             opResumeInfo.clear()
+            opChunkProgress.clear()
             setChanged()
         }
     }
@@ -982,6 +1002,17 @@ class CraftingCoreBlockEntity(
                 }
             }
         }
+        if (opChunkProgress.isNotEmpty()) {
+            val list = output.childrenList("opChunkProgress")
+            for ((opId, p) in opChunkProgress) {
+                val c = list.addChild()
+                c.putInt("op", opId)
+                c.putLong("total", p.total)
+                c.putLong("done", p.done)
+                c.putLong("inFlight", p.inFlight)
+                c.putLong("fit", p.fit)
+            }
+        }
     }
 
     override fun loadAdditional(input: ValueInput) {
@@ -1100,6 +1131,14 @@ class CraftingCoreBlockEntity(
         val planOpIds = scheduler.currentPlan?.ops?.map { it.id }?.toSet().orEmpty()
         if (opResumeInfo.keys.any { it !in planOpIds }) {
             opResumeInfo.keys.retainAll(planOpIds)
+        }
+        opChunkProgress.clear()
+        for (c in input.childrenListOrEmpty("opChunkProgress")) {
+            val opId = c.getIntOr("op", -1)
+            if (opId !in planOpIds) continue
+            opChunkProgress[opId] = ChunkProgress(
+                c.getLongOr("total", 0L), c.getLongOr("done", 0L), c.getLongOr("inFlight", 0L), c.getLongOr("fit", 0L),
+            )
         }
     }
 
