@@ -303,12 +303,17 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
     }
 
-    /** One [itemId] out of the buffer as a real stack. The plain bucket goes first, then
-     *  any variant of the item, so a worn crystal back in storage still crafts. */
+    /** One [itemId] out of the buffer as a real stack. The plain bucket goes first, then a
+     *  copy that differs only by wear, so a worn crystal back in storage still crafts. A
+     *  renamed or enchanted copy is never used up. */
     private fun takeIngredient(itemId: String): ItemStack? {
         val plain = damien.nodeworks.script.BufferKey.Key(itemId, "")
         val keys = sequenceOf(plain) + sequence {
-            yieldAll(cpu.bufferState.contents().keys.filter { it.itemId == itemId && it != plain })
+            for ((key, entry) in cpu.bufferState.contents()) {
+                if (key.itemId != itemId || key == plain) continue
+                val patch = entry.template.componentsPatch
+                if (patch.size() > 0 && patch.entrySet().all { it.key == net.minecraft.core.component.DataComponents.DAMAGE }) yield(key)
+            }
         }
         for (key in keys) {
             if (cpu.getBufferCount(key) <= 0L) continue
