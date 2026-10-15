@@ -324,9 +324,10 @@ class StockerBuilder(
             return totalMoved
         }
 
-        // Card target.
+        // Card target. A Storage Card only takes what its own rules allow.
         val card = resolvedTarget as? ResolvedRef.Card ?: return 0L
         val destStorage = CardStorage.forCard(level, card.snapshot, card.faceOverride) ?: return 0L
+        val accept = CardStorage.acceptFilter(level, card.snapshot)
         val cache = engine.inventoryCache
         var remaining = maxCount
         var totalMoved = 0L
@@ -345,7 +346,8 @@ class StockerBuilder(
                     storage, destStorage,
                     { stack ->
                         val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
-                        sid == info.itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+                        sid == info.itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash &&
+                            (accept == null || accept(stack))
                     },
                     remaining,
                 )
