@@ -398,8 +398,12 @@ class ScanCursor {
     var slot: Int = 0
 
     /** For a source with no slots (ME), the item type the last call stopped on. The next
-     *  call starts after it, or from the top when it is gone. */
+     *  call starts there, or from the top when it is gone. */
     var key: Any? = null
+
+    /** True when [key] already had its full turn (the call ran out of time, not items), so
+     *  the next call starts after it and a slow type can't hold the scan in place. */
+    var keyDone: Boolean = false
 }
 
 /** Result of [StorageService.previewMove]. [available] is how many matching items the

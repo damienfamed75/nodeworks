@@ -218,8 +218,14 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         if (accepted == null) {
             // Resuming where the last call stopped means every type gets its turn, even when
             // dest is slow to ask and a call only gets through part of a big network.
-            if (cursor != null) cursor.key = Ae2Storage.forEachStackFrom(s, filter, cursor.key, step)
-            else Ae2Storage.forEachStack(s, filter, step)
+            if (cursor != null) {
+                cursor.key = Ae2Storage.forEachStackFrom(s, filter, cursor.key, cursor.keyDone, step)
+                // Out of items, the type it stopped on likely has more, so start on it again.
+                // Out of time, that type had its turn, so move past it.
+                cursor.keyDone = remaining > 0L
+            } else {
+                Ae2Storage.forEachStack(s, filter, step)
+            }
         } else {
             for (template in accepted) {
                 if (!filter(template)) continue

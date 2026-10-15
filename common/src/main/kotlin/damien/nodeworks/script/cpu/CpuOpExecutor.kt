@@ -267,6 +267,11 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
         // Ingredients taken for the craft in progress, returned if anything throws before it lands.
         var inHand: Array<ItemStack?>? = null
+        var inStandby: Array<ItemStack?>? = null
+        // Fresh ingredients a craft in this op used that the recipe gave nothing back for. Only
+        // an empty answer is ever reused, and only for the exact same stacks, so skipping the
+        // lookup can never invent a leftover or drop one the recipe would have given.
+        var noLeftoversFor: List<ItemStack?>? = null
         try {
             var done = 0L
             while (done < executions) {
@@ -274,11 +279,16 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                 val taken = arrayOfNulls<ItemStack>(op.recipe.size)
                 // Slots holding a worn copy or a reused leftover rather than a fresh one.
                 val worn = BooleanArray(op.recipe.size)
+                // Fresh copies taken alongside a reused leftover, see below.
+                val standby = arrayOfNulls<ItemStack>(op.recipe.size)
                 inHand = taken
+                inStandby = standby
                 fun underflow(ing: String): CraftScheduler.OpResult {
                     val had = taken.count { it != null && BuiltInRegistries.ITEM.getKey(it.item).toString() == ing }
                     inHand = null
+                    inStandby = null
                     for (s in taken) if (s != null) keepLeftover(s)
+                    for (s in standby) if (s != null) keepLeftover(s)
                     return CraftScheduler.OpResult.Failed(
                         "Execute iteration underflow: $ing x${ingredientCounts[ing]} (had $had)"
                     )
@@ -289,6 +299,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                     if (reused != null) {
                         taken[slot] = reused
                         worn[slot] = true
+                        // Still take the fresh copy planned for this craft, so the buffer drains as it
+                        // would without reuse and spare copies never crowd out the outputs. It goes to
+                        // storage, unless the reused one is turned down below and it is used instead.
+                        standby[slot] = takeIngredient(ing, allowWorn = false)?.first
                         continue
                     }
                     val (stack, fresh) = takeIngredient(ing, allowWorn = true) ?: return underflow(ing)
@@ -302,9 +316,16 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                         if (!worn[slot]) continue
                         taken[slot]?.let { keepLeftover(it) }
                         taken[slot] = null
-                        taken[slot] = takeIngredient(ing, allowWorn = false)?.first ?: return underflow(ing)
+                        taken[slot] = standby[slot]?.also { standby[slot] = null }
+                            ?: takeIngredient(ing, allowWorn = false)?.first
+                            ?: return underflow(ing)
                     }
                 }
+                for (i in standby.indices) {
+                    standby[i]?.let { keepLeftover(it) }
+                    standby[i] = null
+                }
+                inStandby = null
                 val output = expected.copyWithCount(expected.getCount())
                 // Keeps the recipe's components, the bucket stays plain.
                 val landed = cpu.addCraftedToBuffer(expectedItemId, output, output.getCount().toLong())
@@ -315,11 +336,21 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
                         "Buffer refused crafted $expectedItemId x${output.getCount()}"
                     )
                 }
-                val leftovers = try {
-                    recipeHolder.value().getRemainingItems(CraftingInput.of(3, 3, taken.map { it ?: ItemStack.EMPTY }))
-                } catch (e: Exception) {
-                    logger.warn("Leftovers for {} threw, none kept: {}", expectedItemId, e.message)
+                val allFresh = worn.none { it }
+                val leftovers: List<ItemStack> = if (allFresh && noLeftoversFor?.let { sameStacks(it, taken) } == true) {
                     emptyList()
+                } else {
+                    // Copied before asking, in case a recipe changes its input stacks.
+                    val asked = if (allFresh) taken.map { it?.copy() } else null
+                    val result = try {
+                        recipeHolder.value().getRemainingItems(CraftingInput.of(3, 3, taken.map { it ?: ItemStack.EMPTY }))
+                    } catch (e: Exception) {
+                        logger.warn("Leftovers for {} threw, none kept: {}", expectedItemId, e.message)
+                        null
+                    }
+                    // A throw is not an answer, so only a real empty result is remembered.
+                    if (asked != null && result != null && result.all { it.isEmpty }) noLeftoversFor = asked
+                    result ?: emptyList()
                 }
                 for (left in leftovers) {
                     if (left.isEmpty) continue
@@ -332,6 +363,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
             return CraftScheduler.OpResult.Completed
         } finally {
             inHand?.forEach { if (it != null) keepLeftover(it) }
+            inStandby?.forEach { if (it != null) keepLeftover(it) }
             for (stacks in held.values) for (s in stacks) keepLeftover(s)
             if (spare.isNotEmpty()) {
                 val snap = snapshotForTick(lvl)
@@ -360,25 +392,41 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
      *  wear, so a worn crystal back in storage still crafts. A renamed or enchanted copy is
      *  never used up. */
     private fun takeIngredient(itemId: String, allowWorn: Boolean): Pair<ItemStack, Boolean>? {
-        val plain = damien.nodeworks.script.BufferKey.Key(itemId, "")
-        val keys = sequenceOf(plain) + sequence {
-            if (!allowWorn) return@sequence
-            for ((key, entry) in cpu.bufferState.contents()) {
-                if (key.itemId != itemId || key == plain) continue
-                val patch = entry.template.componentsPatch
-                if (patch.size() > 0 && patch.entrySet().all { it.key == net.minecraft.core.component.DataComponents.DAMAGE }) yield(key)
-            }
-        }
-        for (key in keys) {
-            if (cpu.getBufferCount(key) <= 0L) continue
-            // Built before removing, so an item that can't be rebuilt is never taken.
-            val stack = cpu.getBufferTemplate(key)?.takeIf { !it.isEmpty }?.copyWithCount(1)
-                ?: Identifier.tryParse(itemId)?.let { BuiltInRegistries.ITEM.getValue(it) }?.let { ItemStack(it, 1) }
-                ?: continue
-            if (cpu.removeFromBuffer(key, 1L) < 1L) continue
-            return stack to (key == plain)
+        takeOne(damien.nodeworks.script.BufferKey.Key(itemId, ""), itemId)?.let { return it to true }
+        if (!allowWorn) return null
+        for ((key, entry) in cpu.bufferState.contents()) {
+            if (key.itemId != itemId || key.isPlain) continue
+            val patch = entry.template.componentsPatch
+            if (patch.size() == 0 || !patch.entrySet().all { it.key == net.minecraft.core.component.DataComponents.DAMAGE }) continue
+            takeOne(key, itemId)?.let { return it to false }
         }
         return null
+    }
+
+    /** One item out of [key]'s bucket as a real stack. Built before removing, so an item that
+     *  can't be rebuilt is never taken. */
+    private fun takeOne(key: damien.nodeworks.script.BufferKey.Key, itemId: String): ItemStack? {
+        if (cpu.getBufferCount(key) <= 0L) return null
+        val stack = cpu.getBufferTemplate(key)?.takeIf { !it.isEmpty }?.copyWithCount(1)
+            ?: Identifier.tryParse(itemId)?.let { BuiltInRegistries.ITEM.getValue(it) }?.let { ItemStack(it, 1) }
+            ?: return null
+        if (cpu.removeFromBuffer(key, 1L) < 1L) return null
+        return stack
+    }
+
+    /** True when both grids hold the same item, components and count in every slot. */
+    private fun sameStacks(a: List<ItemStack?>, b: Array<ItemStack?>): Boolean {
+        if (a.size != b.size) return false
+        for (i in b.indices) {
+            val x = a[i]
+            val y = b[i]
+            if (x == null || y == null) {
+                if (x != null || y != null) return false
+                continue
+            }
+            if (x.count != y.count || !ItemStack.isSameItemSameComponents(x, y)) return false
+        }
+        return true
     }
 
     // =====================================================================

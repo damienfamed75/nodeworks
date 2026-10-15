@@ -302,17 +302,38 @@ object Ae2Storage {
         }
     }
 
-    /** Like [forEachStack], but starts at the type after [after] when it is still there
-     *  and wraps, visiting each type at most once. Returns the type [visit] stopped on, or
-     *  null when every type was visited. */
-    fun forEachStackFrom(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, after: Any?, visit: (ItemStack, Long) -> Boolean): Any? {
-        val entries = ArrayList<Pair<AEItemKey, Long>>()
-        forEachItem(h, { true }) { key, n -> if (filter(key.readOnlyStack)) entries += key to n }
-        if (entries.isEmpty()) return null
-        val start = (entries.indexOfFirst { it.first == after } + 1) % entries.size
-        for (i in entries.indices) {
-            val (key, n) = entries[(start + i) % entries.size]
-            if (!visit(key.toStack(1), n)) return key
+    /** Like [forEachStack], but starts at type [from] when it is still there and wraps,
+     *  visiting each type at most once. With [skipFrom] the walk starts just after [from]
+     *  instead and leaves it out. Returns the type [visit] stopped on, or null when every
+     *  type was visited. Two passes over one snapshot, [from] to the end then the start up
+     *  to [from], so nothing is collected up front and the walk ends the moment [visit]
+     *  does. Skipping ahead costs only key comparisons. */
+    fun forEachStackFrom(
+        h: Ae2ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        from: Any?,
+        skipFrom: Boolean,
+        visit: (ItemStack, Long) -> Boolean,
+    ): Any? {
+        // Our deltas only change existing keys in place or swap in a new copy, so this one
+        // snapshot stays safe to walk twice while visit moves items.
+        val snap = snapshot(h.me, h.grid)
+        var started = false
+        for (entry in snap) {
+            val key = entry.key as? AEItemKey ?: continue
+            if (!started) {
+                if (key != from) continue
+                started = true
+                if (skipFrom) continue
+            }
+            if (entry.longValue <= 0L || !filter(key.readOnlyStack)) continue
+            if (!visit(key.toStack(1), entry.longValue)) return key
+        }
+        for (entry in snap) {
+            val key = entry.key as? AEItemKey ?: continue
+            if (key == from) break
+            if (entry.longValue <= 0L || !filter(key.readOnlyStack)) continue
+            if (!visit(key.toStack(1), entry.longValue)) return key
         }
         return null
     }
