@@ -94,6 +94,7 @@ StockerBuilder:to(target: string | CardHandle | network): StockerBuilder
 Sets the destination. Accepts a card alias, CardHandle object, or `network`
 for "keep the level in the pool itself." The stocker counts matching items in
 the target, when you use `network`, it counts across every storage card.
+A Storage Card target keeps its own rules, so only items they allow are moved into it.
 
 ### keep
 

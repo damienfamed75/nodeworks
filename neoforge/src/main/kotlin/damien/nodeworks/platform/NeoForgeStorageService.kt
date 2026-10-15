@@ -34,6 +34,7 @@ class NeoForgeStorageService : StorageService {
         filter: (String) -> Boolean,
         maxCount: Long,
         cursor: ScanCursor?,
+        accept: ((ItemStack) -> Boolean)?,
     ): Long {
         val src = (source as NeoForgeItemStorageHandle).handler
         val dst = (dest as NeoForgeItemStorageHandle).handler
@@ -57,6 +58,7 @@ class NeoForgeStorageService : StorageService {
             if (stack.isEmpty) continue
             val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString() ?: continue
             if (!filter(itemId)) continue
+            if (accept != null && !accept(stack)) continue
             if (ItemResource.of(stack) in refused) continue
 
             val moved = moveFromSlot(src, slot, dest, remaining, refused)

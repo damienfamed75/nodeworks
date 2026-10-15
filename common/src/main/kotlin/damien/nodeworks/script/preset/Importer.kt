@@ -301,9 +301,11 @@ class ImporterBuilder(
                 when (target) {
                     is ResolvedRef.Card -> {
                         val dest = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
-                        if (!CardStorage.hasRoom(srcStorage, dest, filterPred, maxCount)) return 0L
+                        // A Storage Card target only takes what its own rules allow.
+                        val accept = CardStorage.acceptFilter(level, target.snapshot)
+                        if (!CardStorage.hasRoom(srcStorage, dest, filterPred, maxCount, accept)) return 0L
                         val cursor = scanCursors.getOrPut(cursorKey(source, target)) { damien.nodeworks.platform.ScanCursor() }
-                        PlatformServices.storage.moveItems(srcStorage, dest, filterPred, maxCount, cursor)
+                        PlatformServices.storage.moveItems(srcStorage, dest, filterPred, maxCount, cursor, accept)
                     }
                     is ResolvedRef.Pool -> NetworkStorageHelper.insertItems(
                         level, snapshot, srcStorage, filter,
@@ -395,6 +397,7 @@ class ImporterBuilder(
         sourceChannel: damien.nodeworks.network.ChannelFilter = damien.nodeworks.network.ChannelFilter.All,
     ): Long {
         val destStorage = CardStorage.forCard(level, target.snapshot, target.faceOverride) ?: return 0L
+        val accept = CardStorage.acceptFilter(level, target.snapshot)
         val cache = engine.inventoryCache
         var remaining = maxCount
         var totalMoved = 0L
@@ -411,7 +414,8 @@ class ImporterBuilder(
                     poolStorage, destStorage,
                     { stack ->
                         val sid = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
-                        sid == info.itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash
+                        sid == info.itemId && damien.nodeworks.script.BufferKey.componentsHash(stack) == wantHash &&
+                            (accept == null || accept(stack))
                     },
                     remaining,
                 )

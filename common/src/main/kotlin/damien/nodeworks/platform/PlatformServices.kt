@@ -143,6 +143,9 @@ interface StorageService {
         filter: (String) -> Boolean,
         maxCount: Long,
         cursor: ScanCursor? = null,
+        /** Extra per-stack check on top of [filter], for a destination with its own rules
+         *  such as a Storage Card. Sees the real stack, components included. */
+        accept: ((ItemStack) -> Boolean)? = null,
     ): Long
 
     /** Move items with data-aware filter. Filter receives (itemId, hasData). */

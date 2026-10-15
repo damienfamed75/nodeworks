@@ -47,6 +47,11 @@ ImporterBuilder:to(...targets: string | CardHandle | network): ImporterBuilder
 Sets the destinations. Same polymorphism as `:from`: card aliases, CardHandle
 objects, or `network` for the pool. At least one target is required.
 
+A Storage Card target keeps its own rules. Only items its rule list,
+stackability and data filters allow are moved into it, the same as
+`network:insert`, so an armour-only card stays armour-only whatever the
+importer's `:filter` says.
+
 <LuaCode>
 ```lua
 importer:from("farm"):to("storage1", "storage2"):start()

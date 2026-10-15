@@ -241,16 +241,18 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         filter: (String) -> Boolean,
         maxCount: Long,
         cursor: ScanCursor?,
+        accept: ((ItemStack) -> Boolean)?,
     ): Long {
-        if (!crossesBackend(source, dest)) return base.moveItems(source, dest, filter, maxCount, cursor)
+        if (!crossesBackend(source, dest)) return base.moveItems(source, dest, filter, maxCount, cursor, accept)
         if (maxCount <= 0L) return 0L
+        val pred: (ItemStack) -> Boolean = { filter(idOf(it)) && (accept == null || accept(it)) }
         val s = ae2(source)
         val d = ae2(dest)
-        if (s != null && d != null) return Ae2Storage.moveKeys(s, d, { filter(idOf(it)) }, maxCount)
-        if (s != null) return moveFromMe(s, dest, { filter(idOf(it)) }, maxCount, cursor)
+        if (s != null && d != null) return Ae2Storage.moveKeys(s, d, pred, maxCount)
+        if (s != null) return moveFromMe(s, dest, pred, maxCount, cursor)
         val handler = (source as? NeoForgeItemStorageHandle)?.handler
-        if (cursor != null && d != null && handler != null) return moveSlotsToMe(source, handler, d, filter, maxCount, cursor)
-        return moveInRounds(source, dest, maxCount) { extractItemStacksMatching(source, filter, it) }
+        if (cursor != null && d != null && handler != null) return moveSlotsToMe(source, handler, d, pred, maxCount, cursor)
+        return moveInRounds(source, dest, maxCount) { extractStacksByPredicate(source, pred, it) }
     }
 
     /** Slotted source into ME, scanned from [cursor] and wrapping, so a source bigger than one
@@ -262,7 +264,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         source: ItemStorageHandle,
         handler: net.neoforged.neoforge.items.IItemHandler,
         d: Ae2ItemStorageHandle,
-        filter: (String) -> Boolean,
+        filter: (ItemStack) -> Boolean,
         maxCount: Long,
         cursor: ScanCursor,
     ): Long {
@@ -281,7 +283,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
             // A source can shrink mid-scan, never read past its current end.
             if (slot >= handler.slots) continue
             val stack = handler.getStackInSlot(slot)
-            if (stack.isEmpty || !filter(idOf(stack))) continue
+            if (stack.isEmpty || !filter(stack)) continue
             val resource = net.neoforged.neoforge.transfer.item.ItemResource.of(stack)
             if (resource in refused) continue
             val want = minOf(remaining, stack.count.toLong())

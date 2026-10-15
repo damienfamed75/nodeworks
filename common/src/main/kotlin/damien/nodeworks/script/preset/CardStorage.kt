@@ -32,13 +32,29 @@ internal object CardStorage {
         return PlatformServices.storage.getItemStorage(level, cap.adjacentPos, face)
     }
 
+    /** The rules a Storage Card enforces on what goes into its block, as a check on each
+     *  stack: its rule list, stackability and data filters. Null for cards with no rules,
+     *  so the caller can skip the check. */
+    fun acceptFilter(level: ServerLevel, card: CardSnapshot): ((net.minecraft.world.item.ItemStack) -> Boolean)? {
+        val cap = card.capability as? StorageSideCapability ?: return null
+        val registries = level.registryAccess()
+        return { stack -> cap.acceptsItem(stack, registries) }
+    }
+
     /** False when a dry run that saw everything the source has shows [dest] takes none
      *  of it, so a full target costs a cheap simulation instead of an extract and a give back. */
-    fun hasRoom(source: ItemStorageHandle, dest: ItemStorageHandle, filter: (String) -> Boolean, maxCount: Long): Boolean {
+    fun hasRoom(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        filter: (String) -> Boolean,
+        maxCount: Long,
+        accept: ((net.minecraft.world.item.ItemStack) -> Boolean)? = null,
+    ): Boolean {
         val previewed = minOf(maxCount, damien.nodeworks.script.NetworkBudget.MAX_ATOMIC_ITEMS)
         val preview = try {
             PlatformServices.storage.previewMove(
-                source, dest, { filter(BuiltInRegistries.ITEM.getKey(it.item).toString()) },
+                source, dest,
+                { filter(BuiltInRegistries.ITEM.getKey(it.item).toString()) && (accept == null || accept(it)) },
                 previewed, damien.nodeworks.script.NetworkBudget.FULLNESS_CHECK_STACKS,
             )
         } catch (e: Exception) {
