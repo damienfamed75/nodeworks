@@ -30,11 +30,14 @@ object SoulSandInteraction {
         if (!level.getBlockState(pos).`is`(Blocks.SOUL_SAND)) return InteractionResult.PASS
         if (stack.isEmpty) return InteractionResult.PASS
 
-        // Client-side short-circuit, the server does the real work. Returning
-        // SUCCESS on the client suppresses the swing-arm animation from firing
-        // for a PASS and gives the usual "interaction happened" feel while we
-        // wait for the server's authoritative response.
-        if (level.isClientSide) return InteractionResult.SUCCESS
+        // Client-side short-circuit, the server does the real work. Only claim the click
+        // when a synced recipe matches, otherwise every held item (backpacks, bundles) would
+        // lose its own right-click while soul sand is under the cursor.
+        if (level.isClientSide) {
+            val matches = damien.nodeworks.recipe.SoulSandInfusionClientCache.recipes()
+                .any { it.value().heldIngredient.test(stack) }
+            return if (matches) InteractionResult.SUCCESS else InteractionResult.PASS
+        }
         val serverLevel = level as? ServerLevel ?: return InteractionResult.PASS
 
         // Look up the recipe by held stack. RecipeManager.getRecipeFor filters
