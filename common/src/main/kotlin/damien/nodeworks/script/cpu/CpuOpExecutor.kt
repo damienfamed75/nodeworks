@@ -1130,6 +1130,10 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
     // Lifecycle
     // =====================================================================
 
+    override fun onPlanStarted(plan: CraftPlan) {
+        cpu.clearOpState()
+    }
+
     override fun onPlanCompleted(plan: CraftPlan) {
         // Defensive: should be empty by now (each op cleans on completion), but a stuck
         // entry would leak across plans since op IDs reset to 0 each plan.

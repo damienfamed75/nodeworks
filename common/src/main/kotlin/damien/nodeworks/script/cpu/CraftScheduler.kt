@@ -54,6 +54,10 @@ class CraftScheduler(
          *  handlers ran. Pair with [onTickStart] to bound per-tick caches. */
         fun onTickEnd() {}
 
+        /** Called when a fresh plan becomes the running plan, from an idle submit or the
+         *  backlog. Never called for a plan restored from a save. */
+        fun onPlanStarted(plan: CraftPlan) {}
+
         /** Called when a plan reaches the DONE state (all terminal ops completed). */
         fun onPlanCompleted(plan: CraftPlan) {}
 
@@ -209,6 +213,7 @@ class CraftScheduler(
             op.inProgress = false
         }
         state = if (p.ops.isEmpty()) State.DONE else State.RUNNING
+        executor.onPlanStarted(p)
     }
 
     private fun reset() {

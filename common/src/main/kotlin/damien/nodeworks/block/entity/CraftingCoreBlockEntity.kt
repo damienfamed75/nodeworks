@@ -130,16 +130,8 @@ class CraftingCoreBlockEntity(
      * reaches DONE (true) or FAILED (false). Safe to call from any server-side context.
      */
     fun submitCraft(plan: CraftPlan, currentTick: Long, onComplete: ((Boolean) -> Unit)? = null) {
-        // Wipe ALL stale resume info, opIds are plan-scoped (planner starts at 0) and any
-        // entry left over from a previous craft will collide with this plan's op IDs and
-        // incorrectly trigger the resume path (which skips handler invocation).
-        // The save/load resume flow does NOT go through here, it restores the same plan
-        // it saved, with the matching opResumeInfo intact, via NBT.
-        if (opResumeInfo.isNotEmpty() || opChunkProgress.isNotEmpty()) {
-            opResumeInfo.clear()
-            opChunkProgress.clear()
-            setChanged()
-        }
+        // Stale per-op state is wiped by [clearOpState] when the plan actually starts, so a
+        // plan queued behind a running one never touches the running plan's state.
         onComplete?.let { opExecutor.registerCompletionListener(plan, it) }
         scheduler.submit(plan, currentTick)
         setCrafting(true, plan.rootItemId.substringAfter(':').replace('_', ' '))
@@ -363,6 +355,16 @@ class CraftingCoreBlockEntity(
         if (opChunkProgress.remove(opId) != null) setChanged()
     }
 
+    /** Wipe all per-op state. Op IDs restart at 0 each plan, so entries left from an earlier
+     *  plan would collide with the next plan's ops and wrongly trigger the resume path. */
+    fun clearOpState() {
+        if (opResumeInfo.isNotEmpty() || opChunkProgress.isNotEmpty()) {
+            opResumeInfo.clear()
+            opChunkProgress.clear()
+            setChanged()
+        }
+    }
+
     /** Wipe all pending job metadata (but keep originalCraft, cleared by clearAllCraftState). */
     fun clearPendingJob() {
         if (pendingOutputs.isNotEmpty() || pendingCount > 0 || pendingPullTargets.isNotEmpty()) {
@@ -379,13 +381,9 @@ class CraftingCoreBlockEntity(
         originalCraftCount = 0L
         craftTreeSnapshot = null
         clearPendingJob()
-        // Op IDs are plan-scoped (planner starts at 0). Stale entries would collide with
-        // the next plan's op IDs and incorrectly trigger the resume path.
-        if (opResumeInfo.isNotEmpty() || opChunkProgress.isNotEmpty()) {
-            opResumeInfo.clear()
-            opChunkProgress.clear()
-            setChanged()
-        }
+        // A plan that already started owns the per-op state, and the next plan clears it
+        // when it starts anyway.
+        if (scheduler.currentPlan == null) clearOpState()
     }
 
     // =====================================================================
