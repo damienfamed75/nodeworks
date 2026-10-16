@@ -340,9 +340,9 @@ want to read.
 
 <LuaCode>
 ```lua
-local dat = network:get("otherTerminalObserver"):data()
-if dat then
-    print("stored: " .. dat.scripts[1].text)
+local dat = network:get("reactorWatcher"):data()
+if dat and dat.heat > 75 then
+    network:get("reactorRedstoneCard"):set(false)
 end
 ```
 </LuaCode>
