@@ -625,6 +625,12 @@ class ScriptEngine(
     private val blockDataCache = HashMap<net.minecraft.core.BlockPos, BlockDataEntry>()
 
     private fun blockEntityData(pos: net.minecraft.core.BlockPos): LuaValue {
+        // Checked before the cache so an admin's /reload applies at once, not after the
+        // cached read expires.
+        val state = level.getBlockState(pos)
+        if (ObserverDenyList.isDenied(state)) {
+            throw LuaError("Reading ${blockIdOf(state)} with :data() is disabled on this server.")
+        }
         val tick = PlatformServices.modState.tickCount
         val entity = level.getBlockEntity(pos)
         val cached = blockDataCache[pos]

@@ -34,6 +34,7 @@ object NodeworksServerConfig {
     val MAX_CALLBACKS_PER_KIND: ModConfigSpec.IntValue
     val ENABLED_MODULES: ModConfigSpec.ConfigValue<List<String>>
     val DISABLED_METHODS: ModConfigSpec.ConfigValue<List<String>>
+    val OBSERVER_DENIED_BLOCKS: ModConfigSpec.ConfigValue<List<String>>
     val USER_DENIED_ITEMS: ModConfigSpec.ConfigValue<List<String>>
     val NETWORK_CONTROLLER_CHUNK_LOADING: ModConfigSpec.BooleanValue
     val GRAPPLE_MAX_DISTANCE: ModConfigSpec.IntValue
@@ -359,6 +360,23 @@ object NodeworksServerConfig {
                 { "Network:insert" },
             ) { it is String }
 
+        OBSERVER_DENIED_BLOCKS = builder
+            .comment(
+                " Blocks whose data `ObserverCard:data()` won't read, for blocks you",
+                " don't want scripts to see the internals of. Bare ids match exactly,",
+                " entries starting with `#` match a block tag. Reading a listed block",
+                " throws an error in the script. To turn off `data()` everywhere,",
+                " add \"ObserverCard:data\" to disabledMethods instead.",
+                " Defaults to the scripting Terminal, so one player's scripts can't",
+                " be read by another's. Example: [\"nodeworks:terminal\", \"#c:chests\"]",
+                " Empty list = no restrictions."
+            )
+            .defineListAllowEmpty(
+                "observerDeniedBlocks",
+                ServerSafetySettings.Defaults.observerDeniedBlocks,
+                { "minecraft:chest" },
+            ) { it is String }
+
         builder.pop()
         builder
             .comment(
@@ -445,6 +463,7 @@ object NodeworksServerConfig {
         maxCallbacksPerKind = MAX_CALLBACKS_PER_KIND.get(),
         enabledModules = ENABLED_MODULES.get().toSet(),
         disabledMethods = DISABLED_METHODS.get().toSet(),
+        observerDeniedBlocks = OBSERVER_DENIED_BLOCKS.get().toList(),
         userDeniedItems = USER_DENIED_ITEMS.get().toList(),
         networkControllerChunkLoading = NETWORK_CONTROLLER_CHUNK_LOADING.get(),
         grappleMaxDistance = GRAPPLE_MAX_DISTANCE.get(),

@@ -161,6 +161,12 @@ data class ServerSafetySettings(
      *    `"VariableHandle:set"`, `"RedstoneCard:set"`, `"Scheduler:tick"`. */
     val disabledMethods: Set<String> = emptySet(),
 
+    /** Block ids and `#namespace:tag` patterns whose block entity data
+     *  `ObserverCard:data()` refuses to read. For blocks an admin doesn't want
+     *  scripts to see the internals of, while keeping `data()` on for the rest.
+     *  Resolved by [ObserverDenyList]. Empty by default, nothing is excluded. */
+    val observerDeniedBlocks: List<String> = emptyList(),
+
     /** Item ids and `#namespace:tag` patterns the User device refuses to drive.
      *  Stops automation from spamming food consumption (auto-feed exploits) or
      *  ranged-weapon shots (auto-bow farms) by default. Resolved by
