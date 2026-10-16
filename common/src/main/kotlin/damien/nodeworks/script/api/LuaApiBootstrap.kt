@@ -50,6 +50,7 @@ object LuaApiBootstrap {
         LuaApiRegistry.register(NetworkHandleApi)
         LuaApiRegistry.register(SchedulerApi)
         LuaApiRegistry.register(ItemsHandleApi)
+        LuaApiRegistry.register(EnergyInfoApi)
         LuaApiRegistry.register(CardHandleApi)
         LuaApiRegistry.register(JobApi)
         LuaApiRegistry.register(RedstoneCardApi)

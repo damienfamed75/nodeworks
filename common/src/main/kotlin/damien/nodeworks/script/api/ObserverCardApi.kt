@@ -28,6 +28,18 @@ val ObserverCardApi: ApiSurface = api(ObserverCard, parent = NetworkHandle) {
         guidebookRef = "nodeworks:lua-api/card-handle.md#state"
     }
 
+    method("data") {
+        returns(Any)
+        description = "The watched block entity's saved data as a nested table (energy, progress, contents, whatever the block saves). Nil for a block with no entity. Read at most once a second, capped at 8192 values."
+        guidebookRef = "nodeworks:lua-api/card-handle.md#data"
+    }
+
+    method("energy") {
+        returns(EnergyInfo.optional())
+        description = "The block's energy storage, nil for a block without one. Check for nil before reading its fields."
+        guidebookRef = "nodeworks:lua-api/card-handle.md#energy"
+    }
+
     callback("onChange") {
         fn {
             param("block", BlockId)

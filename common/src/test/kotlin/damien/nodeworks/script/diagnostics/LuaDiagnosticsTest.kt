@@ -390,6 +390,22 @@ class LuaDiagnosticsTest {
     }
 
     @Test
+    fun observerEnergyIsNullableUntilChecked() {
+        // ObserverCard:energy returns EnergyInfo?, so a bare field read is flagged and
+        // the same read inside a nil check isn't.
+        val bare = "local e = watcher:energy()\nprint(e.stored)"
+        val bareDiag = LuaDiagnostics.analyze(bare, mapOf("watcher" to "ObserverCard"))
+            .firstOrNull { it.code == "nullable-misuse" }
+        assertNotNull(bareDiag, "expected nullable-misuse on unguarded energy read")
+        assertEquals("e", bare.substring(bareDiag!!.range.start, bareDiag.range.end))
+
+        val guarded = "local e = watcher:energy()\nif e then print(e.stored, e.capacity) end"
+        val guardedDiag = LuaDiagnostics.analyze(guarded, mapOf("watcher" to "ObserverCard"))
+            .firstOrNull { it.code == "nullable-misuse" }
+        assertNull(guardedDiag, "nil-checked energy read should pass, got $guardedDiag")
+    }
+
+    @Test
     fun nullableInferredFromRegistryFindFlags() {
         // No explicit annotation, but `network:find` returns ItemsHandle?, so the
         // analyzer should still flag the unguarded access.

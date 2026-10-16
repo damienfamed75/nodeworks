@@ -373,7 +373,16 @@ interface StorageService {
 
     /** Extract up to [maxAmount] mB matching [filter] from [storage]. Returns amount actually removed. */
     fun extractFluid(storage: FluidStorageHandle, filter: (String) -> Boolean, maxAmount: Long): Long = 0L
+
+    // --- Energy side (read only, default no-op to keep non-implementing loaders compiling) ---
+
+    /** Stored energy and capacity of the block at [pos] as seen from [face], null when it
+     *  has no energy storage. */
+    fun getEnergy(level: ServerLevel, pos: BlockPos, face: Direction): EnergyInfo? = null
 }
+
+/** A block's energy storage, in the loader's energy unit (FE on NeoForge). */
+data class EnergyInfo(val stored: Long, val capacity: Long)
 
 /** Metadata for an item found in storage.
  *

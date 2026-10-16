@@ -343,7 +343,7 @@ object NodeworksServerConfig {
                 "   Scheduler          global scheduler table (scheduler:tick, second, delay, cancel)",
                 "   CardHandle         storage card methods (insert, tryInsert, find, findEach, count, face, slots)",
                 "   RedstoneCard       redstone card methods (powered, strength, set, onChange)",
-                "   ObserverCard       observer card methods (block, state, onChange)",
+                "   ObserverCard       observer card methods (block, state, data, energy, onChange)",
                 "   VariableHandle     variable card methods (get, set, cas, increment, decrement, etc.)",
                 "   PlacerHandle       placer methods (place, block, isBlocked)",
                 "   BreakerHandle      breaker methods (mine, cancel, block, state, isMining, progress)",

@@ -41,6 +41,8 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         return base.getItemStorage(level, pos, face)
     }
 
+    override fun getEnergy(level: ServerLevel, pos: BlockPos, face: Direction): EnergyInfo? = base.getEnergy(level, pos, face)
+
     override fun getFluidStorage(level: ServerLevel, pos: BlockPos, face: Direction): FluidStorageHandle? {
         if (Ae2Compat.isLoaded) Ae2Storage.getFluidStorage(level, pos, face)?.let { return it }
         return base.getFluidStorage(level, pos, face)

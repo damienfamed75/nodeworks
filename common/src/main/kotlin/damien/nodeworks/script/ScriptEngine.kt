@@ -20,6 +20,9 @@ import org.luaj.vm2.lib.jse.JseMathLib
  *  [network:count] / [network:find] as the right alternative for aggregate work. */
 private const val MAX_FINDEACH_RESULTS = 10_000
 
+/** How long one observer `data()` read of a block stays good for, in ticks. */
+private const val DATA_CACHE_TICKS = 20L
+
 /**
  * Manages a sandboxed Lua VM for one terminal. Provides the Nodeworks API
  * (card, scheduler, print) and gates each Lua entry point with a wall-clock
@@ -362,6 +365,8 @@ class ScriptEngine(
         processingHandlers.clear()
         redstoneCallbacks.clear()
         observerCallbacks.clear()
+        blockDataCache.clear()
+        energyCache.clear()
         // Stop every registered preset before wiping the scheduler so per-preset
         // cleanup (Stocker's pending craft callbacks, cached CardSnapshot lookups,
         // etc.) runs while the scheduler task ids are still valid. Exceptions in
@@ -604,6 +609,55 @@ class ScriptEngine(
      *  surface as Lua numbers, booleans as booleans, and enum-like properties (facing,
      *  half, axis, …) as lowercase strings to match Minecraft's command syntax. Block
      *  types with no properties produce an empty table. */
+    /** One observer's saved-data read: when it was taken, which block entity it came from,
+     *  and the data. A different entity at the same position means the block was replaced,
+     *  so the entry is stale whatever its age. */
+    private class BlockDataEntry(
+        val tick: Long,
+        val entity: net.minecraft.world.level.block.entity.BlockEntity?,
+        val tag: net.minecraft.nbt.CompoundTag?,
+    )
+
+    /** Saved data of the block entity at [pos]. Serializing a block entity is the costly
+     *  part, so each position is saved at most once a second for this script, however
+     *  often it asks. A fresh table is built each call, so a script can't change what the
+     *  next read sees. */
+    private val blockDataCache = HashMap<net.minecraft.core.BlockPos, BlockDataEntry>()
+
+    private fun blockEntityData(pos: net.minecraft.core.BlockPos): LuaValue {
+        val tick = PlatformServices.modState.tickCount
+        val entity = level.getBlockEntity(pos)
+        val cached = blockDataCache[pos]
+        val tag = if (cached != null && cached.entity === entity && tick - cached.tick < DATA_CACHE_TICKS) {
+            cached.tag
+        } else {
+            val fresh = try {
+                entity?.saveCustomOnly(level.registryAccess())
+            } catch (e: Exception) {
+                org.slf4j.LoggerFactory.getLogger("nodeworks-observer")
+                    .warn("Block entity at {} threw while saving its data for an observer", pos, e)
+                null
+            }
+            if (blockDataCache.size >= 64) blockDataCache.clear()
+            blockDataCache[pos] = BlockDataEntry(tick, entity, fresh)
+            fresh
+        }
+        return if (tag == null) LuaValue.NIL else damien.nodeworks.script.NbtToLua.convert(tag)
+    }
+
+    /** Energy is cheap to read and should be current, so it is only shared within a tick. */
+    private val energyCache = HashMap<net.minecraft.core.BlockPos, Pair<Long, damien.nodeworks.platform.EnergyInfo?>>()
+
+    private fun blockEnergy(pos: net.minecraft.core.BlockPos, face: net.minecraft.core.Direction): damien.nodeworks.platform.EnergyInfo? {
+        val tick = PlatformServices.modState.tickCount
+        val cached = energyCache[pos]
+        if (cached != null && cached.first == tick) return cached.second
+        val fresh = PlatformServices.storage.getEnergy(level, pos, face)
+        if (energyCache.size >= 64) energyCache.clear()
+        energyCache[pos] = tick to fresh
+        return fresh
+    }
+
     private fun blockStateToLua(state: net.minecraft.world.level.block.state.BlockState): LuaTable {
         val t = LuaTable()
         for (prop in state.properties) {
@@ -905,6 +959,26 @@ class ScriptEngine(
                 override fun call(selfArg: LuaValue): LuaValue {
                     verifyCardPresent()
                     return blockStateToLua(level.getBlockState(cap.adjacentPos))
+                }
+            })
+
+            // data() → table, the watched block entity's saved data, nil for a plain block.
+            table.setGuarded("ObserverCard", "data", object : OneArgFunction() {
+                override fun call(selfArg: LuaValue): LuaValue {
+                    verifyCardPresent()
+                    return blockEntityData(cap.adjacentPos)
+                }
+            })
+
+            // energy() → { stored, capacity }, nil when the block stores no energy.
+            table.setGuarded("ObserverCard", "energy", object : OneArgFunction() {
+                override fun call(selfArg: LuaValue): LuaValue {
+                    verifyCardPresent()
+                    val info = blockEnergy(cap.adjacentPos, cap.accessFace) ?: return LuaValue.NIL
+                    val t = LuaTable()
+                    t.set("stored", LuaValue.valueOf(info.stored.toDouble()))
+                    t.set("capacity", LuaValue.valueOf(info.capacity.toDouble()))
+                    return t
                 }
             })
 

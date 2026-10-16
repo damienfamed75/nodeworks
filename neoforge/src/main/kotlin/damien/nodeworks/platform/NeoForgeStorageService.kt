@@ -574,6 +574,16 @@ class NeoForgeStorageService : StorageService {
         return NeoForgeSlottedStorageHandle(IItemHandler.of(resourceHandler))
     }
 
+    // --- Energy side ---
+
+    override fun getEnergy(level: ServerLevel, pos: BlockPos, face: Direction): EnergyInfo? {
+        // Some blocks only answer a side-less query, so that is the fallback.
+        val handler = level.getCapability(Capabilities.Energy.BLOCK, pos, face)
+            ?: level.getCapability(Capabilities.Energy.BLOCK, pos, null)
+            ?: return null
+        return EnergyInfo(handler.getAmountAsLong(), handler.getCapacityAsLong())
+    }
+
     // --- Fluid side ---
 
     override fun getFluidStorage(level: ServerLevel, pos: BlockPos, face: Direction): FluidStorageHandle? {
