@@ -367,8 +367,7 @@ object NodeworksServerConfig {
                 " entries starting with `#` match a block tag. Reading a listed block",
                 " throws an error in the script. To turn off `data()` everywhere,",
                 " add \"ObserverCard:data\" to disabledMethods instead.",
-                " Defaults to the scripting Terminal, so one player's scripts can't",
-                " be read by another's. Example: [\"nodeworks:terminal\", \"#c:chests\"]",
+                " Example: [\"nodeworks:terminal\", \"#c:chests\"]",
                 " Empty list = no restrictions."
             )
             .defineListAllowEmpty(
