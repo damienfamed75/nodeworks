@@ -7,10 +7,9 @@ import net.minecraft.server.level.ServerLevel
 import org.luaj.vm2.*
 import org.luaj.vm2.lib.*
 
-/** Longest a machine must be quiet before a job short on a guaranteed output borrows a
- *  bonus copy back from storage, see [ProcessingJob.borrowShortfall]. The actual wait
- *  follows the machine's own pace, down to [MIN_QUIET_TICKS]. */
-private const val OPTIONAL_GRACE_TICKS = 100L
+/** Shortest a machine must be quiet before a job short on a guaranteed output borrows a
+ *  bonus copy back from storage, see [ProcessingJob.borrowShortfall]. The wait follows the
+ *  machine's own pace and has no ceiling, a slow machine is never judged early. */
 private const val MIN_QUIET_TICKS = 20L
 
 /**
@@ -110,27 +109,23 @@ class ProcessingJob(
     }
     private val startGeneration = cpu.jobGeneration
 
-    /** Last tick anything was collected, guaranteed or optional. */
+    /** Last tick anything was collected, guaranteed or optional. Starts at the job's
+     *  start, so the wait for the first output counts as the first gap. */
     private var lastProgressTick: Long = scheduler.currentTick
 
-    /** Whether any output has been collected yet, so the first gap isn't measured from
-     *  the job's start. */
-    private var sawOutput: Boolean = false
-
-    /** Longest gap seen between two outputs from this machine. Twice this is how long
-     *  it must be quiet before the job treats it as finished, so a fast machine is judged
-     *  in a second and a slow one gets the full [OPTIONAL_GRACE_TICKS]. */
+    /** Longest gap seen between this machine's outputs, the start to the first output
+     *  included since that is about one operation. Twice this is how long it must be
+     *  quiet before the job treats it as finished, whatever its speed. */
     private var maxGapTicks: Long = 0L
 
     /** Last tick a borrow-back was attempted, so a failed one isn't retried every tick. */
     private var lastBorrowTick: Long = Long.MIN_VALUE
 
-    private val quietTicks: Long get() = (2L * maxGapTicks).coerceIn(MIN_QUIET_TICKS, OPTIONAL_GRACE_TICKS)
+    private val quietTicks: Long get() = maxOf(MIN_QUIET_TICKS, 2L * maxGapTicks)
 
     private fun noteProgress() {
         val now = scheduler.currentTick
-        if (sawOutput) maxGapTicks = maxOf(maxGapTicks, now - lastProgressTick)
-        sawOutput = true
+        maxGapTicks = maxOf(maxGapTicks, now - lastProgressTick)
         lastProgressTick = now
     }
 
