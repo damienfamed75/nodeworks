@@ -7,9 +7,11 @@ import net.minecraft.server.level.ServerLevel
 import org.luaj.vm2.*
 import org.luaj.vm2.lib.*
 
-/** How long the machine must be quiet before a job short on a guaranteed output borrows
- *  a bonus copy back from storage, see [ProcessingJob.borrowShortfall]. */
+/** Longest a machine must be quiet before a job short on a guaranteed output borrows a
+ *  bonus copy back from storage, see [ProcessingJob.borrowShortfall]. The actual wait
+ *  follows the machine's own pace, down to [MIN_QUIET_TICKS]. */
 private const val OPTIONAL_GRACE_TICKS = 100L
+private const val MIN_QUIET_TICKS = 20L
 
 /**
  * Represents a processing job context passed as the first argument to handler functions.
@@ -60,15 +62,25 @@ class ProcessingJob(
         amount = ct,
     )
 
+    /** One state per item on one side, two slots of the same item fold into one so
+     *  neither is left waiting for what the other collected. */
+    private fun merged(optional: Boolean): MutableList<OutputState> {
+        val out = LinkedHashMap<damien.nodeworks.script.BufferKey.Key, OutputState>()
+        for ((ingr, ct) in declaredOutputs) {
+            if (ingr.optional != optional) continue
+            val prev = out[ingr.bufferKey()]
+            if (prev == null) out[ingr.bufferKey()] = stateOf(ingr, ct) else prev.amount += ct
+        }
+        return out.values.toMutableList()
+    }
+
     /** Guaranteed outputs still to collect. The job completes when this is empty. */
-    private val remaining: MutableList<OutputState> =
-        declaredOutputs.filter { !it.first.optional }.map { (ingr, ct) -> stateOf(ingr, ct) }.toMutableList()
+    private val remaining: MutableList<OutputState> = merged(optional = false)
 
     /** Outputs the machine only sometimes makes. Taken when present, up to the declared
      *  count, never waited for, and sent to network storage rather than the CPU buffer so
      *  the craft is never held up by luck. */
-    private val optional: MutableList<OutputState> =
-        declaredOutputs.filter { it.first.optional }.map { (ingr, ct) -> stateOf(ingr, ct) }.toMutableList()
+    private val optional: MutableList<OutputState> = merged(optional = true)
 
     /** One item the job collects, with its guaranteed and optional sides together. A bonus
      *  copy of the main output (an 80% chance of a second dust) shares the guaranteed one's
@@ -100,6 +112,27 @@ class ProcessingJob(
 
     /** Last tick anything was collected, guaranteed or optional. */
     private var lastProgressTick: Long = scheduler.currentTick
+
+    /** Whether any output has been collected yet, so the first gap isn't measured from
+     *  the job's start. */
+    private var sawOutput: Boolean = false
+
+    /** Longest gap seen between two outputs from this machine. Twice this is how long
+     *  it must be quiet before the job treats it as finished, so a fast machine is judged
+     *  in a second and a slow one gets the full [OPTIONAL_GRACE_TICKS]. */
+    private var maxGapTicks: Long = 0L
+
+    /** Last tick a borrow-back was attempted, so a failed one isn't retried every tick. */
+    private var lastBorrowTick: Long = Long.MIN_VALUE
+
+    private val quietTicks: Long get() = (2L * maxGapTicks).coerceIn(MIN_QUIET_TICKS, OPTIONAL_GRACE_TICKS)
+
+    private fun noteProgress() {
+        val now = scheduler.currentTick
+        if (sawOutput) maxGapTicks = maxOf(maxGapTicks, now - lastProgressTick)
+        sawOutput = true
+        lastProgressTick = now
+    }
 
     /** When the pending poll times out, so an optional wait never runs into it. */
     private var deadlineTick: Long = Long.MAX_VALUE
@@ -162,15 +195,11 @@ class ProcessingJob(
                 // exact op that was in-flight, the legacy global addPendingOp is still called
                 // for backwards compat with the legacy resume path.
                 cpu.addPendingOp(
-                    api.outputs.map { it.stack.copyWithCount(1) to it.count.toLong() },
+                    api.outputs.filter { !it.optional }.map { it.stack.copyWithCount(1) to it.count.toLong() },
                     pullTargets,
                 )
                 if (opId >= 0) {
-                    cpu.setOpResume(opId, CraftingCoreBlockEntity.OpResumeInfo(
-                        processingApiName = api.name,
-                        outputs = remaining.map { it.template.copyWithCount(1) to it.amount },
-                        pullTargets = pullTargets
-                    ))
+                    cpu.setOpResume(opId, resumeInfo(pullTargets))
                 }
 
                 // Register for polling each tick
@@ -241,7 +270,7 @@ class ProcessingJob(
             }
             val k = found.sumOf { it.first.count.toLong() }
             if (k <= 0L) continue
-            lastProgressTick = scheduler.currentTick
+            noteProgress()
 
             // Split this poll's haul. Both sides present: the machine finished
             // ceil(k / perOp) operations this tick, each of which made its guaranteed
@@ -289,11 +318,30 @@ class ProcessingJob(
         // Update per-op resume info so a save mid-stream resumes with the right remaining count.
         if (opId >= 0 && cpu.opResumeInfo[opId] != null) {
             val existing = cpu.opResumeInfo[opId]!!
-            cpu.setOpResume(opId, existing.copy(
-                outputs = remaining.map { it.template.copyWithCount(1) to it.amount }
-            ))
+            cpu.setOpResume(opId, resumeInfo(existing.pullTargets))
         }
         return false
+    }
+
+    /** What a reload needs to carry this job on: every output still outstanding, with its
+     *  per-operation count so a bonus copy of the main output is still told apart. */
+    private fun resumeInfo(
+        pullTargets: List<Pair<net.minecraft.core.BlockPos, net.minecraft.core.Direction>>,
+    ): CraftingCoreBlockEntity.OpResumeInfo {
+        fun perOp(state: OutputState): Int {
+            val group = groups.firstOrNull { it.required === state || it.optional === state } ?: return 1
+            val n = if (group.required === state) group.perOpRequired else group.perOpOptional
+            return n.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+        }
+        return CraftingCoreBlockEntity.OpResumeInfo(
+            processingApiName = api.name,
+            outputs = remaining.map { it.template.copyWithCount(1) to it.amount },
+            pullTargets = pullTargets,
+            outputsPerOp = remaining.map { perOp(it) },
+            optionals = optional.filter { it.amount > 0L }.map {
+                CraftingCoreBlockEntity.ResumeOutput(it.template.copyWithCount(1), it.amount, perOp(it))
+            },
+        )
     }
 
     /** Two operations finishing in one tick with no bonus look like one with a bonus, so a
@@ -304,8 +352,12 @@ class ProcessingJob(
         val short = groups.filter { (it.required?.amount ?: 0L) > 0L }
         if (short.isEmpty()) return true
         if (short.any { it.optionalSent < it.required!!.amount }) return false
-        val quiet = scheduler.currentTick - lastProgressTick >= OPTIONAL_GRACE_TICKS
-        if (!quiet && scheduler.currentTick + 1 < deadlineTick) return false
+        val now = scheduler.currentTick
+        val quiet = now - lastProgressTick >= quietTicks
+        if (!quiet && now + 1 < deadlineTick) return false
+        // Borrowing walks every storage card, so a failed attempt waits another quiet period.
+        if (now - lastBorrowTick < quietTicks) return false
+        lastBorrowTick = now
         for (group in short) {
             val req = group.required!!
             val stacks = try {
@@ -363,15 +415,11 @@ class ProcessingJob(
         }
         if (pullTargets.isNotEmpty()) {
             cpu.addPendingOp(
-                api.outputs.map { it.stack.copyWithCount(1) to it.count.toLong() },
+                api.outputs.filter { !it.optional }.map { it.stack.copyWithCount(1) to it.count.toLong() },
                 pullTargets,
             )
             if (opId >= 0) {
-                cpu.setOpResume(opId, CraftingCoreBlockEntity.OpResumeInfo(
-                    processingApiName = api.name,
-                    outputs = remaining.map { it.template.copyWithCount(1) to it.amount },
-                    pullTargets = pullTargets,
-                ))
+                cpu.setOpResume(opId, resumeInfo(pullTargets))
             }
         }
         val timeoutTicks = if (api.timeout > 0) api.timeout.toLong() else 6000L

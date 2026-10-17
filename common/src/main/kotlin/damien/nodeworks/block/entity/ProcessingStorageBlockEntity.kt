@@ -69,7 +69,8 @@ class ProcessingStorageBlockEntity(
             val timeout = ProcessingSet.getTimeout(stack)
             val serial = ProcessingSet.isSerial(stack)
             val fuzzy = ProcessingSet.isFuzzy(stack)
-            if (outputs.isEmpty()) continue
+            // A set with no guaranteed output can't be counted on, so it isn't a recipe.
+            if (outputs.none { !it.optional }) continue
             val name = ProcessingSet.computeRecipeId(stack, registries)
             result.add(ProcessingApiInfo(name, inputs, outputs, timeout, serial, fuzzy))
         }

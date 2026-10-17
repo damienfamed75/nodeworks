@@ -42,6 +42,7 @@ data class TerminalOpenData(
             buf.writeVarInt(api.outputs.size)
             for (ingr in api.outputs) {
                 buf.writeUtf(ingr.itemId, 256); buf.writeVarInt(ingr.count)
+                buf.writeBoolean(ingr.optional)
             }
             buf.writeVarInt(api.timeout)
             buf.writeBoolean(api.serial)
@@ -67,10 +68,11 @@ data class TerminalOpenData(
             repeat(outputCount) {
                 val id = buf.readUtf(256)
                 val count = buf.readVarInt()
+                val optional = buf.readBoolean()
                 val identifier = net.minecraft.resources.Identifier.tryParse(id)
                 val item = identifier?.let { net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(it) }
                 if (item != null) {
-                    outputs.add(damien.nodeworks.script.RecipeIngredient(net.minecraft.world.item.ItemStack(item), count))
+                    outputs.add(damien.nodeworks.script.RecipeIngredient(net.minecraft.world.item.ItemStack(item), count, optional = optional))
                 }
             }
             val timeout = buf.readVarInt()

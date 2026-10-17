@@ -434,10 +434,16 @@ class ProcessingSetTransferHandler : IUniversalRecipeTransferHandler<ProcessingS
                 PlatformServices.clientNetworking.sendToServer(
                     SetProcessingApiDataPayload(container.containerId, "output", index, count)
                 )
-                // Goes after the slot payload, which clears the mark server side.
-                val optional = chance[index] && !stack.isEmpty
-                container.outputOptional[index] = optional
-                if (optional) {
+            }
+            // Marks go after every slot payload, so the server judges them against the whole
+            // grid, and never leave a set with no guaranteed output.
+            val marks = BooleanArray(ProcessingSetScreenHandler.OUTPUT_SLOTS) { chance[it] && !shown[it].isEmpty }
+            if (shown.indices.none { !shown[it].isEmpty && !marks[it] }) {
+                shown.indices.firstOrNull { !shown[it].isEmpty }?.let { marks[it] = false }
+            }
+            for (index in 0 until ProcessingSetScreenHandler.OUTPUT_SLOTS) {
+                container.outputOptional[index] = marks[index]
+                if (marks[index]) {
                     PlatformServices.clientNetworking.sendToServer(
                         SetProcessingApiDataPayload(container.containerId, "optional", index, 1)
                     )

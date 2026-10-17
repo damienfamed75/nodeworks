@@ -89,7 +89,7 @@ dusts. A job only waits for the guaranteed outputs. Optional ones go straight
 to network storage whenever they show up, up to the set count. If the bonus is
 an extra copy of the main output, the extra made in the same tick counts as
 the bonus. The CPU never plans a craft for an optional output, so every set
-needs at least one guaranteed output.
+keeps at least one guaranteed output. The editor won't mark the last one.
 
 JEI's (+) marks chance outputs for you when the mod's recipe records a
 chance per output. Mods that don't record one need the mark set by hand.

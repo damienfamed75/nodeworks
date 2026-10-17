@@ -553,6 +553,8 @@ class NetworkInventoryCache(
                 for (procApi in api.apis) {
                     for (output in procApi.outputs) {
                         if (output.itemId.isEmpty()) continue
+                        // A chance output can't be crafted on demand, the planner skips it too.
+                        if (output.optional) continue
                         // Pass the full stack so the phantom carries any
                         // DataComponents (potion contents, dyed color,
                         // enchantments) and renders as the proper variant

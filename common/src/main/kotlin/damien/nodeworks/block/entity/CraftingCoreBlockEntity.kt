@@ -309,10 +309,19 @@ class CraftingCoreBlockEntity(
      *
      *  [outputs] pairs a template [ItemStack] (carrying variant components)
      *  with the remaining count so a resumed poll matches the exact variant. */
+    /** An output a resumed job still collects: what, how many more, and how many one
+     *  machine operation makes, which is what tells a bonus copy from a guaranteed one. */
+    data class ResumeOutput(val template: net.minecraft.world.item.ItemStack, val remaining: Long, val perOp: Int)
+
     data class OpResumeInfo(
         val processingApiName: String,
         val outputs: List<Pair<net.minecraft.world.item.ItemStack, Long>>,
-        val pullTargets: List<Pair<BlockPos, net.minecraft.core.Direction>>
+        val pullTargets: List<Pair<BlockPos, net.minecraft.core.Direction>>,
+        /** Per-operation count of each entry in [outputs]. Empty for saves from before it
+         *  was recorded, which then count the whole remainder as one operation. */
+        val outputsPerOp: List<Int> = emptyList(),
+        /** Optional outputs still being collected. */
+        val optionals: List<ResumeOutput> = emptyList(),
     )
 
     /** Keyed by Operation.id. Persisted across save/load. */
@@ -987,10 +996,21 @@ class CraftingCoreBlockEntity(
                 c.putInt("op", opId)
                 c.putString("api", info.processingApiName)
                 val outsList = c.childrenList("outputs")
-                for ((template, ct) in info.outputs) {
+                for ((i, out) in info.outputs.withIndex()) {
+                    val (template, ct) = out
                     val o = outsList.addChild()
                     o.store("stack", net.minecraft.world.item.ItemStack.OPTIONAL_CODEC, template)
                     o.putLong("ct", ct)
+                    info.outputsPerOp.getOrNull(i)?.let { o.putInt("op", it) }
+                }
+                if (info.optionals.isNotEmpty()) {
+                    val optList = c.childrenList("optionals")
+                    for (out in info.optionals) {
+                        val o = optList.addChild()
+                        o.store("stack", net.minecraft.world.item.ItemStack.OPTIONAL_CODEC, out.template)
+                        o.putLong("ct", out.remaining)
+                        o.putInt("op", out.perOp)
+                    }
                 }
                 val tgtsList = c.childrenList("targets")
                 for ((pos, face) in info.pullTargets) {
@@ -1099,6 +1119,7 @@ class CraftingCoreBlockEntity(
             if (opId < 0) continue
             val api = c.getStringOr("api", "")
             val outputs = ArrayList<Pair<net.minecraft.world.item.ItemStack, Long>>()
+            val outputsPerOp = ArrayList<Int>()
             for (o in c.childrenListOrEmpty("outputs")) {
                 val ct = o.getLongOr("ct", 0L)
                 val stack = o.read("stack", net.minecraft.world.item.ItemStack.OPTIONAL_CODEC)
@@ -1113,6 +1134,13 @@ class CraftingCoreBlockEntity(
                     }
                     ?: continue
                 outputs += stack to ct
+                outputsPerOp += o.getIntOr("op", ct.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt())
+            }
+            val optionals = ArrayList<ResumeOutput>()
+            for (o in c.childrenListOrEmpty("optionals")) {
+                val stack = o.read("stack", net.minecraft.world.item.ItemStack.OPTIONAL_CODEC)
+                    .orElse(null)?.takeIf { !it.isEmpty } ?: continue
+                optionals += ResumeOutput(stack, o.getLongOr("ct", 0L), o.getIntOr("op", 1))
             }
             val targets = ArrayList<Pair<BlockPos, net.minecraft.core.Direction>>()
             for (t in c.childrenListOrEmpty("targets")) {
@@ -1122,7 +1150,7 @@ class CraftingCoreBlockEntity(
                 if (f !in faces.indices) continue
                 targets += BlockPos.of(p) to faces[f]
             }
-            opResumeInfo[opId] = OpResumeInfo(api, outputs, targets)
+            opResumeInfo[opId] = OpResumeInfo(api, outputs, targets, outputsPerOp, optionals)
         }
         // Defensive cleanup: opResumeInfo entries reference op IDs that only mean anything
         // within the loaded scheduler plan. If no plan (or different ops), drop them.

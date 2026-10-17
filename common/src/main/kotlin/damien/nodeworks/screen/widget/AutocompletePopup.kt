@@ -2597,6 +2597,7 @@ class AutocompletePopup(
         val variantItemIdsFromApis = mutableSetOf<String>()
         for (api in localApis) {
             for (ingr in api.outputs) {
+                if (ingr.optional) continue
                 if (ingr.stack.componentsPatch.size() > 0) variantItemIdsFromApis.add(ingr.itemId)
                 else plainItemIdsFromApis.add(ingr.itemId)
             }
@@ -2635,7 +2636,7 @@ class AutocompletePopup(
         val out = mutableListOf<net.minecraft.world.item.ItemStack>()
         for (api in localApis) {
             for (ingr in api.outputs) {
-                if (ingr.stack.componentsPatch.size() == 0) continue
+                if (ingr.optional || ingr.stack.componentsPatch.size() == 0) continue
                 val key = ingr.bufferKey()
                 if (seen.add(key)) out.add(ingr.stack.copy())
             }

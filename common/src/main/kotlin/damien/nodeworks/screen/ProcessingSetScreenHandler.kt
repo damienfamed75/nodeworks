@@ -224,7 +224,7 @@ class ProcessingSetScreenHandler(
                         val outIdx = slotId - INPUT_SLOTS
                         // Right-click marks a filled output optional, left-click clears it.
                         if (button == 1 && !outputGrid.getItem(outIdx).isEmpty) {
-                            outputOptional[outIdx] = !outputOptional[outIdx]
+                            if (outputOptional[outIdx] || hasOtherGuaranteed(outIdx)) outputOptional[outIdx] = !outputOptional[outIdx]
                         } else {
                             outputGrid.setItem(outIdx, ItemStack.EMPTY)
                             outputOptional[outIdx] = false
@@ -352,9 +352,13 @@ class ProcessingSetScreenHandler(
     /** Mark output [slotIndex] optional or not. Only a filled slot can be optional. */
     fun setOutputOptional(slotIndex: Int, optional: Boolean) {
         if (slotIndex !in 0 until OUTPUT_SLOTS) return
-        outputOptional[slotIndex] = optional && !outputGrid.getItem(slotIndex).isEmpty
+        outputOptional[slotIndex] = optional && !outputGrid.getItem(slotIndex).isEmpty && hasOtherGuaranteed(slotIndex)
         dirty = true
     }
+
+    /** A set must keep one guaranteed output, or nothing could ever count on it. */
+    private fun hasOtherGuaranteed(except: Int): Boolean =
+        (0 until OUTPUT_SLOTS).any { it != except && !outputGrid.getItem(it).isEmpty && !outputOptional[it] }
 
     /** Mark the recipe as edited from outside the slot/click path (e.g. UI controls
      *  that toggle `serial` or `cardName`). Without this, toggling serial mode and

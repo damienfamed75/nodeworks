@@ -1112,22 +1112,30 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         }
         val scheduler = damien.nodeworks.script.ResumeScheduler.scheduler
         val pending = CraftingHelper.PendingHandlerJob()
+        // Each entry is the per-operation count with the remainder alongside, the shape the
+        // job's bulk override takes, so a bonus copy of the main output is still told apart.
+        val resumeOutputs = buildList {
+            for ((i, out) in info.outputs.withIndex()) {
+                val (template, count) = out
+                if (template.isEmpty) continue
+                val perOp = info.outputsPerOp.getOrNull(i) ?: count.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+                add(damien.nodeworks.script.RecipeIngredient(template.copyWithCount(1), perOp) to count)
+            }
+            for (out in info.optionals) {
+                if (out.template.isEmpty) continue
+                add(damien.nodeworks.script.RecipeIngredient(out.template.copyWithCount(1), out.perOp, optional = true) to out.remaining)
+            }
+        }
         val syntheticApi = damien.nodeworks.block.entity.ProcessingStorageBlockEntity.ProcessingApiInfo(
             name = info.processingApiName,
             inputs = emptyList(),
             // Persisted template stacks carry variant components, so the
             // poll matches the exact output variant.
-            outputs = info.outputs.mapNotNull { (template, count) ->
-                if (template.isEmpty) return@mapNotNull null
-                damien.nodeworks.script.RecipeIngredient(
-                    template.copyWithCount(1),
-                    count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                )
-            },
+            outputs = resumeOutputs.map { it.first },
             timeout = 6000,
             serial = false
         )
-        val resumeJob = ProcessingJob(syntheticApi, cpu, lvl, scheduler, pending, null, op.id)
+        val resumeJob = ProcessingJob(syntheticApi, cpu, lvl, scheduler, pending, resumeOutputs, op.id)
         val getters = info.pullTargets.map { (pos, face) ->
             damien.nodeworks.script.CardHandle.StorageGetter {
                 PlatformServices.storage.getItemStorage(lvl, pos, face)
