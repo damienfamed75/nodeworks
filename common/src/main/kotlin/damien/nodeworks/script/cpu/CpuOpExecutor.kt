@@ -528,7 +528,7 @@ class CpuOpExecutor(private val cpu: CraftingCoreBlockEntity) : CraftScheduler.O
         processBatchProgress[op.id]?.let { return BatchSetup.Ok(it) }
         val outputTotal = op.outputs.first().second
         val outputPerBatch = apiMatch.api.outputs
-            .firstOrNull { it.itemId == outputItemId }?.count?.toLong()?.coerceAtLeast(1L)
+            .firstOrNull { !it.optional && it.itemId == outputItemId }?.count?.toLong()?.coerceAtLeast(1L)
             ?: 1L
         // Feasibility check: sum each recipe input across slots (handles
         // duplicates like 2× iron) and require that much in the variant-

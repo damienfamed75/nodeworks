@@ -26,6 +26,9 @@ import net.minecraft.world.item.ItemStack
 data class RecipeIconTooltip(
     val inputs: List<ItemStack>,
     val outputs: List<ItemStack>,
+    /** Indices into [outputs] the machine only sometimes makes, drawn with a `?` badge
+     *  like the Processing Set editor shows them. */
+    val optionalOutputs: Set<Int> = emptySet(),
 ) : TooltipComponent {
     companion object {
         const val INPUT_SLOTS = 9
@@ -105,10 +108,13 @@ class RecipeIconTooltipRenderer(
             val sy = gridY + idx * SLOT_SIZE + 1
             graphics.renderFakeItem(stack, sx, sy)
             graphics.renderItemDecorations(font, stack, sx, sy)
+            if (idx in data.optionalOutputs) graphics.text(font, "?", sx + 1, sy + 1, OPTIONAL_BADGE, true)
         }
     }
 
     companion object {
+        /** Same colour as the editor's optional badge. */
+        private const val OPTIONAL_BADGE = 0xFF55FFFF.toInt()
         private const val SLOT_SIZE = 18
         private const val GRID_W = 3 * SLOT_SIZE  // 54
         private const val GRID_H = 3 * SLOT_SIZE  // 54

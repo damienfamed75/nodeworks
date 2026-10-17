@@ -37,6 +37,9 @@ data class RecipeIngredient(
      *  substitutions on. [stack] is then just the example shown in the editor. Null for
      *  exact inputs and for outputs. */
     val tag: String? = null,
+    /** An output the machine only sometimes makes. A job never waits for it, takes it
+     *  when it turns up, and the planner never counts on it. Inputs are never optional. */
+    val optional: Boolean = false,
 ) {
     val itemId: String get() = BuiltInRegistries.ITEM.getKey(stack.item).toString()
 
@@ -45,7 +48,7 @@ data class RecipeIngredient(
     /** Canonical key for hashing into a [RecipeId]. Includes count so a recipe
      *  consuming 8 iron differs from one consuming 1 iron, and includes the
      *  components hash so a strength potion differs from a healing potion. */
-    val canonicalKey: String get() = "$itemId@$count#$componentsHash"
+    val canonicalKey: String get() = "$itemId@$count#$componentsHash" + (if (optional) "~" else "")
 
     /** Key for a set with substitutions on: a tag input keys on its tag, so sets built
      *  from the same tag recipe share an id whatever example item each shows. */
@@ -148,7 +151,7 @@ object RecipeId {
     ): String {
         val canonical = canonicalString(inputs, outputs, fuzzy) { ingr ->
             if (fuzzy && ingr.tag != null) "#${ingr.tag}@${ingr.count}"
-            else "${ingr.itemId}@${ingr.count}#${BufferKey.stableComponentsHash(ingr.stack, registries)}"
+            else "${ingr.itemId}@${ingr.count}#${BufferKey.stableComponentsHash(ingr.stack, registries)}" + (if (ingr.optional) "~" else "")
         }
         return digestTo(canonical)
     }

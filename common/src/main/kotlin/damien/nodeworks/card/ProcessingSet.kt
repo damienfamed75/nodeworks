@@ -77,6 +77,13 @@ class ProcessingSet(properties: Properties) : Item(properties) {
             tooltip.accept(Component.literal("  Timeout: ${timeout}t (${timeout / 20.0}s)")
                 .withStyle(ChatFormatting.DARK_GRAY))
         }
+        context.registries()?.let { registries ->
+            val optional = getOutputs(stack, registries).filter { it.optional }
+            if (optional.isNotEmpty()) {
+                tooltip.accept(Component.literal("  Optional: " + optional.joinToString { it.stack.hoverName.string })
+                    .withStyle(ChatFormatting.DARK_GRAY))
+            }
+        }
         if (isFuzzy(stack)) {
             tooltip.accept(Component.literal("  Substitutions: any tag member or component variant")
                 .withStyle(ChatFormatting.DARK_GRAY))
@@ -115,9 +122,11 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 inputs[slotIdx] = ingr.stack.copyWithCount(ingr.count)
             }
         }
-        val outputs = getOutputs(stack, registries).map { it.stack.copyWithCount(it.count) }
+        val rawOutputs = getOutputs(stack, registries)
+        val outputs = rawOutputs.map { it.stack.copyWithCount(it.count) }
+        val optional = rawOutputs.withIndex().filter { it.value.optional }.map { it.index }.toSet()
         if (inputs.all { it.isEmpty } && outputs.isEmpty()) return java.util.Optional.empty()
-        return java.util.Optional.of(damien.nodeworks.screen.tooltip.RecipeIconTooltip(inputs, outputs))
+        return java.util.Optional.of(damien.nodeworks.screen.tooltip.RecipeIconTooltip(inputs, outputs, optional))
     }
 
     companion object {
@@ -130,6 +139,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
         private const val ENTRY_COUNT_KEY = "count"
         private const val ENTRY_SLOT_KEY = "slot"
         private const val ENTRY_TAG_KEY = "tag"
+        private const val ENTRY_OPTIONAL_KEY = "optional"
 
         // v1 NBT keys, still read for backward compatibility. Migrated to v2
         // shape (with empty components) on the next save.
@@ -296,6 +306,7 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                 entry.putInt(ENTRY_COUNT_KEY, ingr.count.coerceAtLeast(1))
                 entry.putInt(ENTRY_SLOT_KEY, slotsOverride?.getOrElse(i) { i } ?: i)
                 ingr.tag?.let { entry.putString(ENTRY_TAG_KEY, it) }
+                if (ingr.optional) entry.putBoolean(ENTRY_OPTIONAL_KEY, true)
                 list.add(entry)
             }
             return list
@@ -328,7 +339,8 @@ class ProcessingSet(properties: Properties) : Item(properties) {
                     if (ingrStack.isEmpty) continue
                     val count = entry.getInt(ENTRY_COUNT_KEY).orElse(1).coerceAtLeast(1)
                     val tag = entry.getStringOr(ENTRY_TAG_KEY, "").takeIf { it.isNotEmpty() }
-                    out.add(RecipeIngredient(ingrStack, count, tag))
+                    val optional = entry.getBooleanOr(ENTRY_OPTIONAL_KEY, false)
+                    out.add(RecipeIngredient(ingrStack, count, tag, optional))
                 }
                 return out
             }

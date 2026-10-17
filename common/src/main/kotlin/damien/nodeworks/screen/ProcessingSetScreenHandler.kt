@@ -46,6 +46,10 @@ class ProcessingSetScreenHandler(
      *  from a JEI transfer, cleared whenever the slot's item changes. */
     val inputTags: Array<String?> = arrayOfNulls(INPUT_SLOTS)
 
+    /** Output slots the machine only sometimes fills. Toggled by right-clicking the slot
+     *  with an empty cursor, cleared when the slot's item changes. */
+    val outputOptional: BooleanArray = BooleanArray(OUTPUT_SLOTS)
+
     /** Set true the first time a user action mutates configurable state.
      *  [removed] skips the save (and the >1-stack split-copy side effect)
      *  when this stays false, so opening a stack of unprogrammed Processing
@@ -121,6 +125,10 @@ class ProcessingSetScreenHandler(
                     val slot = inputSlots.getOrElse(i) { i }
                     if (slot in 0 until INPUT_SLOTS) it.inputTags[slot] = ingr.tag
                 }
+                for ((i, ingr) in outputs.withIndex()) {
+                    val slot = outputSlots.getOrElse(i) { i }
+                    if (slot in 0 until OUTPUT_SLOTS) it.outputOptional[slot] = ingr.optional
+                }
             }
         }
 
@@ -159,6 +167,10 @@ class ProcessingSetScreenHandler(
                 for ((i, ingr) in openData.inputs.withIndex()) {
                     val slot = openData.inputSlots.getOrElse(i) { i }
                     if (slot in 0 until INPUT_SLOTS) it.inputTags[slot] = ingr.tag
+                }
+                for ((i, ingr) in openData.outputs.withIndex()) {
+                    val slot = openData.outputSlots.getOrElse(i) { i }
+                    if (slot in 0 until OUTPUT_SLOTS) it.outputOptional[slot] = ingr.optional
                 }
             }
         }
@@ -210,8 +222,14 @@ class ProcessingSetScreenHandler(
                     }
                     else -> {
                         val outIdx = slotId - INPUT_SLOTS
-                        outputGrid.setItem(outIdx, ItemStack.EMPTY)
-                        data.set(INPUT_SLOTS + outIdx, 1)
+                        // Right-click marks a filled output optional, left-click clears it.
+                        if (button == 1 && !outputGrid.getItem(outIdx).isEmpty) {
+                            outputOptional[outIdx] = !outputOptional[outIdx]
+                        } else {
+                            outputGrid.setItem(outIdx, ItemStack.EMPTY)
+                            outputOptional[outIdx] = false
+                            data.set(INPUT_SLOTS + outIdx, 1)
+                        }
                     }
                 }
             } else {
@@ -254,6 +272,7 @@ class ProcessingSetScreenHandler(
                     inputTags[slotId] = null
                 } else {
                     outputGrid.setItem(outIdx, carried.copyWithCount(1))
+                    if (!sameItem) outputOptional[outIdx] = false
                 }
                 data.set(dataIdx, newCount)
             }
@@ -312,7 +331,10 @@ class ProcessingSetScreenHandler(
                 inputGrid.setItem(slotIndex, placed)
                 inputTags[slotIndex] = null
             }
-            slotIndex < TOTAL_GHOST_SLOTS -> outputGrid.setItem(slotIndex - INPUT_SLOTS, placed)
+            slotIndex < TOTAL_GHOST_SLOTS -> {
+                outputGrid.setItem(slotIndex - INPUT_SLOTS, placed)
+                outputOptional[slotIndex - INPUT_SLOTS] = false
+            }
         }
         dirty = true
     }
@@ -324,6 +346,13 @@ class ProcessingSetScreenHandler(
         val item = inputGrid.getItem(slotIndex)
         val valid = tagId != null && !item.isEmpty && damien.nodeworks.card.ItemTagLookup.isMember(item.item, tagId)
         inputTags[slotIndex] = if (valid) tagId else null
+        dirty = true
+    }
+
+    /** Mark output [slotIndex] optional or not. Only a filled slot can be optional. */
+    fun setOutputOptional(slotIndex: Int, optional: Boolean) {
+        if (slotIndex !in 0 until OUTPUT_SLOTS) return
+        outputOptional[slotIndex] = optional && !outputGrid.getItem(slotIndex).isEmpty
         dirty = true
     }
 
@@ -360,7 +389,7 @@ class ProcessingSetScreenHandler(
             val stack = outputGrid.getItem(i)
             if (stack.isEmpty) continue
             val count = data.get(INPUT_SLOTS + i).coerceAtLeast(1)
-            outputs.add(damien.nodeworks.script.RecipeIngredient(stack.copyWithCount(1), count))
+            outputs.add(damien.nodeworks.script.RecipeIngredient(stack.copyWithCount(1), count, optional = outputOptional[i]))
             outputSlots.add(i)
         }
 

@@ -92,6 +92,7 @@ class ProcessingSetScreen(
         private const val TOGGLE_X = CONTROLS_START_X + TIMEOUT_GROUP_W + GROUP_GAP
 
         private const val TAG_CYCLE_PERIOD_MS = 1200L
+        private const val OPTIONAL_BADGE = 0xFF55FFFF.toInt()
         private const val CLEAR_BTN_SIZE = 14
         private const val CLEAR_BTN_X = 16
         // Stacked pair: fuzzy toggle on top, clear button beneath, centered as a
@@ -323,6 +324,8 @@ class ProcessingSetScreen(
             if (slot.hasItem()) {
                 val count = outputCounts[i].coerceAtLeast(1)
                 if (count > 1) drawStackCountBadge(graphics, leftPos + slot.x, topPos + slot.y, count)
+                // An optional output wears a question mark in its top-left corner.
+                if (menu.outputOptional[i]) graphics.text(font, "?", leftPos + slot.x + 1, topPos + slot.y + 1, OPTIONAL_BADGE, true)
             }
         }
         // 26.1: slot tooltips are handled automatically by ACS's
@@ -382,6 +385,7 @@ class ProcessingSetScreen(
                 )
             }
             menu.inputTags.fill(null)
+            menu.outputOptional.fill(false)
             return true
         }
 
@@ -446,6 +450,7 @@ class ProcessingSetScreen(
                     SetProcessingApiSlotPayload(menu.containerId, i, net.minecraft.world.item.ItemStack.EMPTY)
                 )
                 if (isInput) menu.inputTags[i] = null
+                else menu.outputOptional[i - ProcessingSetScreenHandler.INPUT_SLOTS] = false
             } else {
                 val key = if (isInput) "input" else "output"
                 val slotIdx = if (isInput) i else i - ProcessingSetScreenHandler.INPUT_SLOTS

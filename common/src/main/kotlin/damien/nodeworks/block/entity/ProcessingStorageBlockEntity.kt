@@ -133,9 +133,10 @@ class ProcessingStorageBlockEntity(
         private val inputsPairsOverride: List<Pair<String, Int>>? = null,
         private val outputsPairsOverride: List<Pair<String, Int>>? = null,
     ) {
-        /** All output item IDs. Strips components, used by consumers that just
-         *  need to know which items the recipe can produce by name. */
-        val outputItemIds: List<String> get() = outputsAsPairs.map { it.first }
+        /** Item IDs the recipe can be counted on to produce. Strips components and
+         *  leaves out optional outputs, so the planner never plans a craft on a chance drop. */
+        val outputItemIds: List<String>
+            get() = outputsPairsOverride?.map { it.first } ?: outputs.filter { !it.optional }.map { it.itemId }
 
         /** Legacy `(itemId, count)` projection for consumers that haven't
          *  been widened to component-aware reads yet. Components are dropped. */

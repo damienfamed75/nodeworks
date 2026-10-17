@@ -51,7 +51,8 @@ data class ProcessingSetOpenData(
                 val outputs = (0 until outputCount).map {
                     val stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(regBuf)
                     val cnt = buf.readVarInt()
-                    RecipeIngredient(stack, cnt)
+                    val optional = buf.readBoolean()
+                    RecipeIngredient(stack, cnt, optional = optional)
                 }
                 val outputSlots = IntArray(outputCount) { buf.readVarInt() }
                 val timeout = buf.readVarInt()
@@ -76,6 +77,7 @@ data class ProcessingSetOpenData(
                 for (ingr in data.outputs) {
                     ItemStack.OPTIONAL_STREAM_CODEC.encode(regBuf, ingr.stack)
                     buf.writeVarInt(ingr.count)
+                    buf.writeBoolean(ingr.optional)
                 }
                 for (i in data.outputs.indices) {
                     buf.writeVarInt(data.outputSlots.getOrElse(i) { i })

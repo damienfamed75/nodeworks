@@ -214,7 +214,7 @@ object CraftTreeBuilder {
 
             // Processing APIs can yield >1 per batch (e.g. a smelting handler that produces
             // 9 nuggets per ingot). Round request up to a whole batch, same as Instruction Sets.
-            val matchingOutput = api.outputs.firstOrNull { it.itemId == itemId }
+            val matchingOutput = api.outputs.firstOrNull { !it.optional && it.itemId == itemId }
             val perBatch = matchingOutput?.count?.coerceAtLeast(1) ?: 1
             val batches = (count + perBatch - 1) / perBatch
             val actualCount = batches * perBatch

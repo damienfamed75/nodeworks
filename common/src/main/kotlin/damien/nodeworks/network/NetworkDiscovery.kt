@@ -574,7 +574,7 @@ data class NetworkSnapshot(
         for (snapshot in processingApis) {
             for (api in snapshot.apis) {
                 for (ingr in api.outputs) {
-                    if (ingr.itemId == outputItemId && ingr.componentsHash == requestedHash) {
+                    if (!ingr.optional && ingr.itemId == outputItemId && ingr.componentsHash == requestedHash) {
                         out.add(ProcessingApiMatch(snapshot, api))
                         break
                     }

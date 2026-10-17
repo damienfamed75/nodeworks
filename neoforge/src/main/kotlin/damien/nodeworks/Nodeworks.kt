@@ -656,6 +656,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
                             menu.fuzzy = payload.value != 0
                             menu.markDirty()
                         }
+                        "optional" -> menu.setOutputOptional(payload.slotIndex, payload.value != 0)
                     }
                 }
             }
