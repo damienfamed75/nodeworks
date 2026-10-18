@@ -186,9 +186,18 @@ class NetworkInventoryCache(
     // can't revert the entries map to the pre-hook count. Without this, a Terminal
     // extract that happens mid-cycle would briefly flicker back to the pre-extract
     // count when the cycle ends, since the polled `frontBuffer` value is older
-    // than the hook-updated `entries` value. Cleared after each [applyDiff].
+    // than the hook-updated `entries` value. A key stays protected through the
+    // cycle after the hook as well: an ME network's own inventory cache lags an
+    // extraction until AE2's next tick, so the next cycle's snapshot, taken inside
+    // that window, would still carry the old total and write it back, and the
+    // cycle after would correct it again, a visible flicker on every pull.
     private val dirtyKeys = mutableSetOf<BufferKey.Key>()
     private val dirtyFluidKeys = mutableSetOf<String>()
+    private var lastDirtyKeys: Set<BufferKey.Key> = emptySet()
+    private var lastDirtyFluidKeys: Set<String> = emptySet()
+
+    private fun isDirty(key: BufferKey.Key) = key in dirtyKeys || key in lastDirtyKeys
+    private fun isDirtyFluid(key: String) = key in dirtyFluidKeys || key in lastDirtyFluidKeys
 
     companion object {
         // Slices per cycle, controls how many ticks one full poll spans.
@@ -626,7 +635,7 @@ class NetworkInventoryCache(
         // Iterator-based eviction avoids a full keyset copy every cycle-end.
         val keysToRemove = mutableListOf<BufferKey.Key>()
         for ((key, entry) in entries) {
-            if (key in dirtyKeys) continue
+            if (isDirty(key)) continue
             if (key in frontBuffer) continue
             keysToRemove.add(key)
             removedSerials.add(entry.serial)
@@ -642,7 +651,7 @@ class NetworkInventoryCache(
         // without touching count, the count-only check missed that case so
         // recipe registrations never reached the client.
         for ((key, info) in frontBuffer) {
-            if (key in dirtyKeys) continue
+            if (isDirty(key)) continue
             val existing = entries[key]
             if (existing == null) {
                 val serial = nextSerial++
@@ -675,7 +684,7 @@ class NetworkInventoryCache(
         val fluidIter = fluidEntries.entries.iterator()
         while (fluidIter.hasNext()) {
             val (key, entry) = fluidIter.next()
-            if (key in dirtyFluidKeys) continue
+            if (isDirtyFluid(key)) continue
             if (key in fluidFrontBuffer) continue
             fluidIter.remove()
             removedSerials.add(entry.serial)
@@ -683,7 +692,7 @@ class NetworkInventoryCache(
             changed = true
         }
         for ((key, info) in fluidFrontBuffer) {
-            if (key in dirtyFluidKeys) continue
+            if (isDirtyFluid(key)) continue
             val existing = fluidEntries[key]
             if (existing == null) {
                 val serial = nextSerial++
@@ -697,6 +706,8 @@ class NetworkInventoryCache(
             }
         }
 
+        lastDirtyKeys = dirtyKeys.toSet()
+        lastDirtyFluidKeys = dirtyFluidKeys.toSet()
         dirtyKeys.clear()
         dirtyFluidKeys.clear()
 
@@ -707,8 +718,8 @@ class NetworkInventoryCache(
      *  their current counts, same as [applyDiff], so a poll older than the hook
      *  can't revert them. Must run before [applyDiff] clears the dirty sets. */
     private fun swapChannelCounts(): Boolean {
-        for (key in dirtyKeys) keepCurrent(key, channelItems, channelFront)
-        for (key in dirtyFluidKeys) keepCurrent(key, channelFluids, channelFluidFront)
+        for (key in dirtyKeys + lastDirtyKeys) keepCurrent(key, channelItems, channelFront)
+        for (key in dirtyFluidKeys + lastDirtyFluidKeys) keepCurrent(key, channelFluids, channelFluidFront)
         val changed = channelFront != channelItems || channelFluidFront != channelFluids
         channelItems = channelFront
         channelFluids = channelFluidFront

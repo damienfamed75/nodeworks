@@ -10,7 +10,8 @@ import damien.nodeworks.platform.ItemInfo
  * Supports JEI-style search syntax:
  * - Plain text: search by item name
  * - @mod: filter by mod/namespace (e.g. @minecraft)
- * - #tag: filter by item tag (e.g. #forge:ingots), future, currently matches itemId
+ * - #tag: filter by tag, matching any tag id that contains the text, so `#gems` finds
+ *   everything in `c:gems` and `c:gems/diamond` and `#c:ingots` narrows to that tag
  */
 class InventoryRepo {
 
@@ -155,7 +156,7 @@ class InventoryRepo {
         view = entries.values
             .asSequence()
             .filter { entry -> matchesKindMode(entry) }
-            .filter { entry -> matchesSearch(entry.info, search) }
+            .filter { entry -> matchesSearch(entry, search) }
             .filter { entry -> matchesFilter(entry.info) }
             .sortedWith(getComparator())
             .toList()
@@ -167,7 +168,19 @@ class InventoryRepo {
         KindMode.FLUIDS_ONLY -> entry.isFluid
     }
 
-    private fun matchesSearch(info: ItemInfo, search: String): Boolean {
+    /** Lowercased ids of every tag a resource is in, looked up once per id. Fluids are
+     *  kept apart from items, the two registries can share an id. */
+    private val tagCache = HashMap<String, List<String>>()
+
+    private fun tagsOf(id: String, fluid: Boolean): List<String> = tagCache.getOrPut(if (fluid) "fluid/$id" else id) {
+        val ident = net.minecraft.resources.Identifier.tryParse(id) ?: return@getOrPut emptyList()
+        val holder = if (fluid) net.minecraft.core.registries.BuiltInRegistries.FLUID.getValue(ident)?.builtInRegistryHolder()
+            else net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(ident)?.builtInRegistryHolder()
+        holder?.tags()?.map { it.location().toString().lowercase() }?.toList() ?: emptyList()
+    }
+
+    private fun matchesSearch(entry: RepoEntry, search: String): Boolean {
+        val info = entry.info
         if (search.isEmpty()) return true
 
         // Parse search tokens (space-separated, each can be @mod, #tag, or plain text)
@@ -180,9 +193,9 @@ class InventoryRepo {
                     info.itemId.lowercase().substringBefore(":").contains(mod)
                 }
                 token.startsWith("#") -> {
-                    // Tag filter: matches against itemId for now
+                    // Tag filter, JEI style: any of the resource's tags containing the text.
                     val tag = token.substring(1).lowercase()
-                    info.itemId.lowercase().contains(tag) || info.name.lowercase().contains(tag)
+                    tag.isEmpty() || tagsOf(info.itemId, entry.isFluid).any { it.contains(tag) }
                 }
                 else -> {
                     // Plain text: match name or itemId

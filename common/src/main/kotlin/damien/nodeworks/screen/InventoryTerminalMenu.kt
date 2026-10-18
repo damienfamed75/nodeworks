@@ -132,7 +132,6 @@ class InventoryTerminalMenu(
     private var lastShiftInserted: ItemStack = ItemStack.EMPTY
     private var autoPullPattern: List<ItemStack>? = null  // captured right before craft output is taken
     private var suppressSlotsChanged = false
-    private var pendingAutoPull = false  // deferred to next tick to avoid MC packet reconciliation conflicts
     // Scoped to one [clicked] call. Any other route into [quickMoveStack]
     // (other mods, vanilla paths) gets the one-stack default.
     private var craftAllOnQuickMove = false
@@ -615,8 +614,10 @@ class InventoryTerminalMenu(
 
     override fun clicked(slotId: Int, button: Int, clickType: net.minecraft.world.inventory.ContainerInput, player: Player) {
         // Capture the grid pattern BEFORE super.clicked() consumes ingredients
+        var resultBefore: ItemStack? = null
         if (slotId == CRAFT_OUTPUT_SLOT && !resultContainer.getItem(0).isEmpty && autoPull) {
             autoPullPattern = snapshotCraftPattern()
+            resultBefore = resultContainer.getItem(0).copy()
         }
         val craftAll = slotId == CRAFT_OUTPUT_SLOT &&
             clickType == net.minecraft.world.inventory.ContainerInput.QUICK_MOVE &&
@@ -629,9 +630,27 @@ class InventoryTerminalMenu(
         } finally {
             craftAllOnQuickMove = false
         }
+        // Refill right here, not from broadcastChanges. A rapid second click arrives with
+        // a stale state id, and the server then calls broadcastFullState instead, so a
+        // refill deferred to broadcastChanges would land a tick late with an empty result
+        // slot in between.
         if (autoPullPattern != null) {
-            pendingAutoPull = true
+            if (serverLevel != null) autoPullRefill() else predictRefill(resultBefore)
         }
+    }
+
+    /** The client's guess at the server's refill, so the grid and result don't blink
+     *  empty for a round trip on every craft. The grid gets the pattern back and the
+     *  result its previous stack, which is what a successful refill produces. The
+     *  server's slot sync corrects both when the network can't supply an ingredient. */
+    private fun predictRefill(resultBefore: ItemStack?) {
+        val pattern = autoPullPattern ?: return
+        autoPullPattern = null
+        for ((i, template) in pattern.withIndex()) {
+            if (template.isEmpty || !craftingContainer.getItem(i).isEmpty) continue
+            craftingContainer.setItem(i, template.copy())
+        }
+        if (resultBefore != null && !resultBefore.isEmpty) resultContainer.setItem(0, resultBefore)
     }
 
     /**
@@ -1697,7 +1716,11 @@ class InventoryTerminalMenu(
 
     override fun removed(player: Player) {
         super.removed(player)
-        drainCraftingGridOnClose(player)
+        // The screen's removed() runs this on the client too, including when JEI swaps
+        // its recipe view in front. Only the server owns the grid, the client copy must
+        // keep showing it. Vanilla's crafting table gets the same guard from its
+        // ContainerLevelAccess being a no-op client side.
+        if (!player.level().isClientSide) drainCraftingGridOnClose(player)
         // Mark completed queue entries as seen so they're cleared on next open.
         // Scoped to the current network, closing this terminal shouldn't acknowledge
         // jobs on other networks the player has open queues for.
@@ -1808,12 +1831,6 @@ class InventoryTerminalMenu(
     }
 
     override fun broadcastChanges() {
-        // Process deferred auto-pull (must happen after MC's click packet reconciliation)
-        if (pendingAutoPull) {
-            pendingAutoPull = false
-            autoPullRefill()
-        }
-
         super.broadcastChanges()
 
         val serverPlayer = playerInventory.player as? ServerPlayer ?: return

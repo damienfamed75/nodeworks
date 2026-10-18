@@ -246,6 +246,9 @@ class InventoryTerminalScreen(
 
     override fun init() {
         super.init()
+        // The client menu predicts auto-pull refills, so it needs the same flag the
+        // server is told about.
+        menu.autoPull = ClientConfig.invTerminalAutoPull
         // JEI's recipe view overlays this screen via setScreen, so the
         // recipe-transfer handler can't reach the live terminal through
         // `Minecraft.getInstance().screen` and reads through here instead.
@@ -490,6 +493,7 @@ class InventoryTerminalScreen(
             val autoPullIcon = if (ClientConfig.invTerminalAutoPull) Icons.AUTO_PULL_ON else Icons.AUTO_PULL_OFF
             addRenderableWidget(SlicedButton.create(ubX, craftY + 37, ubW, ubH, "", autoPullIcon) { _ ->
                 ClientConfig.invTerminalAutoPull = !ClientConfig.invTerminalAutoPull
+                menu.autoPull = ClientConfig.invTerminalAutoPull
                 PlatformServices.clientNetworking.sendToServer(
                     damien.nodeworks.network.InvTerminalCraftGridActionPayload(menu.containerId, 2)
                 )
