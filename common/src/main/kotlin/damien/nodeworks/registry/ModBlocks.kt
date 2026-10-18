@@ -335,7 +335,8 @@ object ModBlocks {
             .strength(3.0f, 6.0f)
             .sound(net.minecraft.world.level.block.SoundType.COPPER)
             .requiresCorrectToolForDrops()
-            .noOcclusion()
+            .noOcclusion(),
+        itemFactory = { block, props -> damien.nodeworks.item.ChestBlockItem(block, props, damien.nodeworks.item.ChestBlockItem::describeImport) },
     )
 
     /** Export Chest. Buffer + network output device. Mirror of [IMPORT_CHEST]. */
@@ -346,7 +347,8 @@ object ModBlocks {
             .strength(3.0f, 6.0f)
             .sound(net.minecraft.world.level.block.SoundType.COPPER)
             .requiresCorrectToolForDrops()
-            .noOcclusion()
+            .noOcclusion(),
+        itemFactory = { block, props -> damien.nodeworks.item.ChestBlockItem(block, props, damien.nodeworks.item.ChestBlockItem::describeExport) },
     )
 
     /** Processing Handler. Block-based equivalent of `network:handle(...)`. The

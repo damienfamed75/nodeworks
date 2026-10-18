@@ -492,6 +492,23 @@ class ExportChestBlockEntity(
     }
 
     // --- Serialization ---
+    /** The GUI settings, in the same keys [loadAdditional] reads, so they can ride on
+     *  the dropped item and come back when it is placed. Null when every setting is at
+     *  its default, a never-configured chest then stacks with fresh ones. Contents,
+     *  connections and network membership stay behind on purpose. */
+    fun settingsTag(): CompoundTag? {
+        val configured = filterRules.isNotEmpty() || channel != ChannelFilter.All || pushFace != null ||
+            redstoneMode != REDSTONE_IGNORED || tickInterval != DEFAULT_TICK_INTERVAL
+        if (!configured) return null
+        val tag = CompoundTag()
+        tag.putString("filterRules", filterRules.joinToString("\n"))
+        tag.putInt("channel", channel.toNbtInt())
+        pushFace?.let { tag.putString("pushFace", it.name) }
+        tag.putInt("redstoneMode", redstoneMode)
+        tag.putInt("tickInterval", tickInterval)
+        return tag
+    }
+
     override fun saveAdditional(output: ValueOutput) {
         super.saveAdditional(output)
         ContainerHelper.saveAllItems(output, items)

@@ -148,4 +148,22 @@ class ExportChestBlock(properties: Properties) : BaseEntityBlock(properties), Wr
         }
         return super.playerWillDestroy(level, pos, state, player)
     }
+
+    /** The loot table lists the bare item. The settings are stamped on here, where
+     *  the block entity is still at hand, so a moved chest comes back configured.
+     *  Runs for every drop path that carries the entity, explosions included. */
+    override fun getDrops(
+        state: BlockState,
+        params: net.minecraft.world.level.storage.loot.LootParams.Builder,
+    ): List<net.minecraft.world.item.ItemStack> {
+        val drops = super.getDrops(state, params)
+        val be = params.getOptionalParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.BLOCK_ENTITY)
+            as? ExportChestBlockEntity ?: return drops
+        val tag = be.settingsTag() ?: return drops
+        val data = net.minecraft.world.item.component.TypedEntityData.of(be.type, tag)
+        for (stack in drops) {
+            if (stack.item == asItem()) stack.set(net.minecraft.core.component.DataComponents.BLOCK_ENTITY_DATA, data)
+        }
+        return drops
+    }
 }
