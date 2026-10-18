@@ -1250,6 +1250,18 @@ class StorageCardScreen(
         return super.mouseScrolled(mouseX, mouseY, deltaX, deltaY)
     }
 
+    /** Commit before the close packet goes out. [removed] runs after
+     *  [net.minecraft.client.player.LocalPlayer.closeContainer] has already told the
+     *  server to drop the menu, so a rule still being typed when the player hit Escape
+     *  arrived at a closed container and was discarded. A deny card then had no rules,
+     *  which accepts everything. */
+    override fun onClose() {
+        commitPriorityField()
+        commitAllRuleFields()
+        super.onClose()
+    }
+
+    /** Still needed for screen swaps (guidebook, JEI) where the menu stays open. */
     override fun removed() {
         commitPriorityField()
         commitAllRuleFields()

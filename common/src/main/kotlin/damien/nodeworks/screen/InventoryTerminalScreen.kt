@@ -895,16 +895,15 @@ class InventoryTerminalScreen(
                 }
             }
         } else if (menu.hasCrystalSlot && isCrystalSlotAt(mouseX, mouseY)) {
-            // Crystal slot, MC real slot, pointable directly.
-            hoveredSlot = menu.slots[InventoryTerminalMenu.CRYSTAL_SLOT]
+            hoveredSlot = jeiSlotFor(menu.slots[InventoryTerminalMenu.CRYSTAL_SLOT], crystalSlotX + 1, crystalSlotY + 1)
         } else {
             // Check crafting grid
             val craftSlot = getCraftSlotAt(mouseX, mouseY)
             if (craftSlot >= 0) {
                 val slot = menu.slots[InventoryTerminalMenu.CRAFT_INPUT_START + craftSlot]
-                hoveredSlot = slot
+                hoveredSlot = jeiSlotFor(slot, craftX + (craftSlot % 3) * 18 + 1, craftY + (craftSlot / 3) * 18 + 1)
             } else if (isCraftOutputAt(mouseX, mouseY)) {
-                hoveredSlot = menu.slots[InventoryTerminalMenu.CRAFT_OUTPUT_SLOT]
+                hoveredSlot = jeiSlotFor(menu.slots[InventoryTerminalMenu.CRAFT_OUTPUT_SLOT], craftX + 3 * 18 + 16 + 1, craftY + 18 + 1)
             } else {
                 // Check player inventory
                 val mainSlot = playerMainGrid.getSlotAt(mouseX, mouseY)
@@ -1875,6 +1874,16 @@ class InventoryTerminalScreen(
         val row = relY / 18
         return row * 3 + col
     }
+
+    /** JEI reads the hovered slot's item and then checks that the slot's rectangle
+     *  contains the mouse, and the menu parks every real slot at -999 so vanilla
+     *  neither draws nor hit-tests them. Pointing JEI at the real slot therefore
+     *  never matched, and R and U did nothing over the crafting grid. This stand-in
+     *  sits where the slot is drawn, reads the same container slot, and carries
+     *  the real menu index so vanilla's number-key swap still targets the right
+     *  slot. [x] and [y] are absolute screen coordinates of the item. */
+    private fun jeiSlotFor(real: net.minecraft.world.inventory.Slot, x: Int, y: Int): net.minecraft.world.inventory.Slot =
+        net.minecraft.world.inventory.Slot(real.container, real.containerSlot, x - leftPos, y - topPos).also { it.index = real.index }
 
     /** Find the crafting output slot at mouse position. */
     private fun isCraftOutputAt(mx: Int, my: Int): Boolean {
