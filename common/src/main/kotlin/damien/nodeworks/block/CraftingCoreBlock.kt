@@ -121,13 +121,10 @@ class CraftingCoreBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, orientation: net.minecraft.world.level.redstone.Orientation?, movedByPiston: Boolean) {
         super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
+        if (CraftingCoreBlockEntity.pushingStates) return
         val entity = level.getBlockEntity(pos) as? CraftingCoreBlockEntity ?: return
-        entity.recalculateCapacity()
-        // Update block state to reflect formed status (drives emissive model variant)
-        val formed = entity.isFormed
-        if (state.getValue(FORMED) != formed) {
-            level.setBlock(pos, state.setValue(FORMED, formed), Block.UPDATE_ALL)
-        }
+        // The scan pushes the formed blockstate itself once it runs.
+        entity.requestRecalculate()
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {

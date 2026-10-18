@@ -2,6 +2,7 @@ package damien.nodeworks.block
 
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.CpuComponentBlockEntity
+import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import damien.nodeworks.block.entity.StabilizerBlockEntity
 import net.minecraft.core.BlockPos
 import net.minecraft.world.entity.player.Player
@@ -32,13 +33,14 @@ class StabilizerBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, orientation: net.minecraft.world.level.redstone.Orientation?, movedByPiston: Boolean) {
         super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
+        if (CraftingCoreBlockEntity.pushingStates) return
         level.getBlockEntity(pos) as? StabilizerBlockEntity ?: return
-        CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.recalculateCapacity() }
+        CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.requestRecalculate() }
     }
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
         if (!level.isClientSide) {
-            CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.recalculateCapacity() }
+            CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.requestRecalculate() }
         }
         return super.playerWillDestroy(level, pos, state, player)
     }

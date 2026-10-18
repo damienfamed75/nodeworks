@@ -21,14 +21,17 @@ interface CpuComponentBlockEntity {
          * [CraftingCoreBlockEntity]s reachable via a chain of adjacent components.
          *
          * Used to notify every affected Core when a component is placed/removed/retiered.
+         * Walks at most [damien.nodeworks.script.cpu.CpuRules.COMPONENTS_PER_CPU_CAP]
+         * components, the same bound the Core's own scan has.
          */
         fun findConnectedCores(level: Level, startPos: BlockPos): Set<CraftingCoreBlockEntity> {
             val cores = mutableSetOf<CraftingCoreBlockEntity>()
             val visited = mutableSetOf(startPos)
             val queue = ArrayDeque<BlockPos>()
             queue.add(startPos)
+            var discovered = 0
 
-            while (queue.isNotEmpty()) {
+            while (queue.isNotEmpty() && discovered < damien.nodeworks.script.cpu.CpuRules.COMPONENTS_PER_CPU_CAP) {
                 val cur = queue.removeFirst()
                 for (dir in Direction.entries) {
                     val n = cur.relative(dir)
@@ -36,7 +39,10 @@ interface CpuComponentBlockEntity {
                     visited.add(n)
                     when (val entity = level.getBlockEntity(n)) {
                         is CraftingCoreBlockEntity -> cores.add(entity)
-                        is CpuComponentBlockEntity -> queue.add(n)
+                        is CpuComponentBlockEntity -> {
+                            queue.add(n)
+                            discovered++
+                        }
                         else -> Unit
                     }
                 }

@@ -82,6 +82,37 @@ class CraftingCoreBlockEntity(
      *  Currently single-threaded, Co-Processor blocks will add threads. */
     val scheduler: CraftScheduler = CraftScheduler(threadCount = 1, executor = opExecutor)
 
+    companion object {
+        private var pushDepth = 0
+
+        /** True while a Core writes formed and overheat blockstates into its structure.
+         *  Those writes fire neighbor updates on every component, and a component hook
+         *  must not answer them with another structure scan: the layout did not change,
+         *  only its lights did. With two Cores on one structure that answer fed itself
+         *  until the server crawled. */
+        val pushingStates: Boolean get() = pushDepth > 0
+    }
+
+    /** The other Core that drives the structure this Core is part of, null when this
+     *  Core drives it (or stands alone). A driven Core stays unformed and idle. */
+    var drivenBy: BlockPos? = null
+        private set
+
+    /** Persisted so the Core that formed a structure first keeps it across reloads. */
+    private var claimsStructure: Boolean = false
+
+    /** Set by block hooks, consumed by [serverTick]. Every neighbor update of a placement
+     *  asks for a rescan, so one tick's worth of requests collapses into one scan. */
+    @Transient
+    private var recalcRequested: Boolean = false
+
+    /** Rescan the structure on the next server tick. Hooks call this rather than
+     *  [recalculateCapacity] so a single block change costs one scan, not one per
+     *  notified neighbor, and so a block being destroyed is gone by the time we look. */
+    fun requestRecalculate() {
+        recalcRequested = true
+    }
+
     /** Number of Co-Processor blocks discovered in the last multiblock scan. */
     var coProcessorCount: Int = 0
         private set
@@ -148,8 +179,12 @@ class CraftingCoreBlockEntity(
     fun serverTick(level: ServerLevel) {
         if (!capacityInitialized) {
             capacityInitialized = true
+            recalcRequested = false
             recalculateCapacity()
             rebuildResumedQueueEntries()
+        } else if (recalcRequested) {
+            recalcRequested = false
+            recalculateCapacity()
         }
         scheduler.tick(level.gameTime)
     }
@@ -520,6 +555,8 @@ class CraftingCoreBlockEntity(
      * [CpuComponentBlockEntity] and accumulates per-type contributions.
      *
      * Capped by [CpuRules.COMPONENTS_PER_CPU_CAP] to bound work on chunk load.
+     *
+     * Runs synchronously. Block hooks go through [requestRecalculate] instead.
      */
     fun recalculateCapacity() {
         var totalCount = CpuRules.CORE_BASE_COUNT
@@ -537,6 +574,7 @@ class CraftingCoreBlockEntity(
         val substratePositions = HashSet<BlockPos>()
         val coProcessorPositions = ArrayList<BlockPos>()
         val bufferPositions = ArrayList<BlockPos>()
+        val rivals = ArrayList<CraftingCoreBlockEntity>()
 
         val visited = mutableSetOf(worldPosition)
         val queue = ArrayDeque<BlockPos>()
@@ -550,6 +588,12 @@ class CraftingCoreBlockEntity(
                 if (neighbor in visited) continue
                 visited.add(neighbor)
                 val entity = level?.getBlockEntity(neighbor) ?: continue
+                if (entity is CraftingCoreBlockEntity) {
+                    // Reached through a component, so it shares our structure. Two Cores
+                    // touching face to face with no component between them stay separate.
+                    if (pos != worldPosition) rivals.add(entity)
+                    continue
+                }
                 if (entity is CpuComponentBlockEntity) {
                     queue.add(neighbor)
                     discovered++
@@ -668,7 +712,8 @@ class CraftingCoreBlockEntity(
         // "Formed" now also requires an active network membership, disconnecting the
         //  Core from the laser network flips this false, which drives every cluster
         //  block to swap its emissive-on model for the plain one.
-        isFormed = bufferCount > 0 && networkId != null
+        drivenBy = resolveDriver(rivals)
+        isFormed = drivenBy == null && bufferCount > 0 && networkId != null
         coProcessorCount = coProcessors
         heatGenerated = totalHeat
         heatCooled = totalCooled
@@ -686,14 +731,42 @@ class CraftingCoreBlockEntity(
         }
         // Push formed + overheating flags out to each heat-gen component so emissive
         // variants reflect cooling status per block. Only issues setBlock when the
-        // state actually changes.
-        updateHeatGenBlockStates(
-            coProcessorPositions, bufferPositions,
-            isFormed, overheatLevelByPosition
-        )
+        // state actually changes. A driven Core leaves the components to their driver,
+        // otherwise the two would overwrite each other's formed flag forever.
+        pushDepth++
+        try {
+            if (drivenBy == null) {
+                updateHeatGenBlockStates(
+                    coProcessorPositions, bufferPositions,
+                    isFormed, overheatLevelByPosition
+                )
+            }
+            updateBlockState()
+        } finally {
+            pushDepth--
+        }
 
         markDirtyAndSync()
-        updateBlockState()
+    }
+
+    /** Exactly one Core drives a structure. The Core that already claims it keeps it,
+     *  so adding a second Core to a working CPU parks the new one and leaves the CPU
+     *  alone. When several claim it (two formed CPUs joined by a new block, or a world
+     *  saved before this rule) the lowest Core wins, by Y, then X, then Z. Returns the
+     *  driver's position, or null when this Core drives. */
+    private fun resolveDriver(rivals: List<CraftingCoreBlockEntity>): BlockPos? {
+        val claimers = rivals.filter { it.claimsStructure }
+        if (claimers.isEmpty()) {
+            claimsStructure = true
+            return null
+        }
+        val candidates = if (claimsStructure) claimers + this else claimers
+        val winner = candidates.minWith(
+            compareBy({ it.worldPosition.y }, { it.worldPosition.x }, { it.worldPosition.z })
+        )
+        if (winner === this) return null
+        claimsStructure = false
+        return winner.worldPosition
     }
 
     private fun updateHeatGenBlockStates(
@@ -943,6 +1016,8 @@ class CraftingCoreBlockEntity(
         super.saveAdditional(output)
         output.putBlockPosList("connections", connections)
         output.putBoolean("isFormed", isFormed)
+        output.putBoolean("claims", claimsStructure)
+        drivenBy?.let { output.store("drivenBy", BlockPos.CODEC, it) }
         output.putBoolean("isCrafting", isCrafting)
         output.putString("currentCraftItem", currentCraftItem)
         if (lastFailureReason.isNotEmpty()) output.putString("lastFailureReason", lastFailureReason)
@@ -1038,6 +1113,8 @@ class CraftingCoreBlockEntity(
         connections.clear()
         connections.addAll(input.getBlockPosList("connections"))
         isFormed = input.getBooleanOr("isFormed", false)
+        claimsStructure = input.getBooleanOr("claims", false)
+        drivenBy = input.read("drivenBy", BlockPos.CODEC).orElse(null)
         isCrafting = input.getBooleanOr("isCrafting", false)
         currentCraftItem = input.getStringOr("currentCraftItem", "")
         lastFailureReason = input.getStringOr("lastFailureReason", "")

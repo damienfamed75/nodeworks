@@ -3,6 +3,7 @@ package damien.nodeworks.block
 import com.mojang.serialization.MapCodec
 import damien.nodeworks.block.entity.CoProcessorBlockEntity
 import damien.nodeworks.block.entity.CpuComponentBlockEntity
+import damien.nodeworks.block.entity.CraftingCoreBlockEntity
 import net.minecraft.core.BlockPos
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.util.RandomSource
@@ -55,6 +56,7 @@ class CoProcessorBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun neighborChanged(state: BlockState, level: Level, pos: BlockPos, neighborBlock: Block, orientation: net.minecraft.world.level.redstone.Orientation?, movedByPiston: Boolean) {
         super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston)
+        if (CraftingCoreBlockEntity.pushingStates) return
         level.getBlockEntity(pos) as? CoProcessorBlockEntity ?: return
         val cores = CpuComponentBlockEntity.findConnectedCores(level, pos)
         if (cores.isEmpty()) {
@@ -65,7 +67,7 @@ class CoProcessorBlock(properties: Properties) : BaseEntityBlock(properties) {
             if (next.getValue(OVERHEAT_LEVEL) != 0) next = next.setValue(OVERHEAT_LEVEL, 0)
             if (next !== state) level.setBlock(pos, next, Block.UPDATE_ALL)
         } else {
-            cores.forEach { it.recalculateCapacity() }
+            cores.forEach { it.requestRecalculate() }
         }
     }
 
@@ -91,7 +93,7 @@ class CoProcessorBlock(properties: Properties) : BaseEntityBlock(properties) {
 
     override fun playerWillDestroy(level: Level, pos: BlockPos, state: BlockState, player: Player): BlockState {
         if (!level.isClientSide) {
-            CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.recalculateCapacity() }
+            CpuComponentBlockEntity.findConnectedCores(level, pos).forEach { it.requestRecalculate() }
         }
         return super.playerWillDestroy(level, pos, state, player)
     }

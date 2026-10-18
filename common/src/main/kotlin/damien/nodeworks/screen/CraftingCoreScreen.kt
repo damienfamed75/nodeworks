@@ -222,11 +222,13 @@ class CraftingCoreScreen(
     ) {
         // Status line
         val statusLabel = when {
+            coreEntity?.drivenBy != null -> "Standby"
             !menu.isFormed -> "Not Formed"
             menu.isCrafting -> "Crafting"
             else -> "Idle"
         }
         val statusColor = when {
+            coreEntity?.drivenBy != null -> 0xFFFFAA00.toInt()
             !menu.isFormed -> 0xFFFF5555.toInt()
             menu.isCrafting -> 0xFF55FF55.toInt()
             else -> 0xFFAAAAAA.toInt()
@@ -310,7 +312,15 @@ class CraftingCoreScreen(
         bufferGridH = gridH
 
         if (!menu.isFormed) {
-            graphics.drawString(font, "Not formed", contentLeft + 4, gridTop + 4, 0xFF888888.toInt())
+            val driver = (Minecraft.getInstance().level?.getBlockEntity(menu.corePos) as? damien.nodeworks.block.entity.CraftingCoreBlockEntity)?.drivenBy
+            if (driver != null) {
+                val lines = listOf("Another Core drives", "this structure:", "${driver.x}, ${driver.y}, ${driver.z}")
+                for ((i, line) in lines.withIndex()) {
+                    graphics.drawString(font, line, contentLeft + 4, gridTop + 4 + i * 10, 0xFF888888.toInt())
+                }
+            } else {
+                graphics.drawString(font, "Not formed", contentLeft + 4, gridTop + 4, 0xFF888888.toInt())
+            }
         } else {
             renderBufferGrid(graphics, contentLeft, gridTop, gridW, gridH, cols, sbX, scrollbarW)
         }

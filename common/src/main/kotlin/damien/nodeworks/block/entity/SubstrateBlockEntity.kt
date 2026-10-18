@@ -31,7 +31,7 @@ class SubstrateBlockEntity(
 
     private fun notifyAdjacentCores() {
         val lvl = level ?: return
-        CpuComponentBlockEntity.findConnectedCores(lvl, worldPosition).forEach { it.recalculateCapacity() }
+        CpuComponentBlockEntity.findConnectedCores(lvl, worldPosition).forEach { it.requestRecalculate() }
     }
 
     override fun saveAdditional(output: ValueOutput) {

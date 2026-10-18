@@ -176,6 +176,7 @@ class DiagnosticToolItem(properties: Properties) : Item(properties) {
                 is damien.nodeworks.block.entity.CraftingCoreBlockEntity -> {
                     details.add("Buffer: ${entity.bufferUsed} / ${entity.bufferCapacity}")
                     details.add("Formed: ${if (entity.isFormed) "yes" else "no"}")
+                    entity.drivenBy?.let { details.add("Standby: Core at ${it.x}, ${it.y}, ${it.z} drives this structure") }
                     if (entity.isCrafting) details.add("Crafting: ${entity.currentCraftItem}")
                     details.add("Efficiency: ${(entity.throttle * 100f).toInt()}%")
                     if (entity.lastFailureReason.isNotEmpty()) {

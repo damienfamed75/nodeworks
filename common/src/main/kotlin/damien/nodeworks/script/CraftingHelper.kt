@@ -212,7 +212,9 @@ object CraftingHelper {
                 return null
             }
             if (!entity.isFormed) {
-                lastFailReason = "Crafting CPU at $cpuPos is not formed"
+                val driver = entity.drivenBy
+                lastFailReason = if (driver != null) "Crafting CPU at $cpuPos is on standby, the Core at $driver drives its structure"
+                    else "Crafting CPU at $cpuPos is not formed"
                 return null
             }
             // Feasibility still enforced on the explicit CPU
