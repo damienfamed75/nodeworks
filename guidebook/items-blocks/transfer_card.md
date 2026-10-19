@@ -49,6 +49,14 @@ The button at the top of the filter section switches the mode:
 Switching modes keeps your rules, so you can flip a card back and forth without
 retyping them.
 
+### Fluids
+
+If the adjacent block is a tank, the card moves fluids the same way it moves
+items: Import drains the tank into tanks behind Storage Cards, Export fills it
+from them. A block that holds both items and fluids gets both. Rules apply to
+fluids too, so `minecraft:water` moves water, and `$fluid:*` means every fluid
+but no items.
+
 ### Rules
 
 Rules use the same syntax as the <ItemLink id="storage_card" />, and you add

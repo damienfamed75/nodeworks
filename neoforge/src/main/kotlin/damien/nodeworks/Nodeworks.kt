@@ -1119,6 +1119,7 @@ class Nodeworks(modBus: IEventBus, container: ModContainer) {
         for (cache in damien.nodeworks.script.NetworkInventoryCache.getAll()) {
             cache.tick()
         }
+        damien.nodeworks.script.NetworkInventoryCache.evictOrphans(tickCount.toLong())
         for (level in event.server.allLevels) {
             damien.nodeworks.script.MonitorUpdateHelper.tick(level, tickCount)
         }

@@ -41,6 +41,10 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
          *  Node carries the network but shows nothing, so a solid block of empty Nodes
          *  draws no beams at all. The Node body still tints with the network colour. */
         val drawThroughBeam: Boolean,
+        /** Game time it was built. A neighbour chunk that loads later fires no update
+         *  into this Node, so the cache also rebuilds every few seconds, staggered by
+         *  position so a big build spreads its rebuilds across frames. */
+        val builtAt: Long,
     )
 
     class NodeRenderState : ConnectableRenderState() {
@@ -65,6 +69,10 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
 
     companion object {
         private val LASER_TEXTURE = Identifier.fromNamespaceAndPath("nodeworks", "textures/block/laser_trail.png")
+
+        /** Cached card beams are rebuilt at least this often, plus up to 31 ticks of
+         *  per-position stagger. */
+        private const val CACHE_REFRESH_TICKS = 100L
 
         /** Per-card-type beam colour (r, g, b 0-255). */
         private val CARD_COLORS = mapOf(
@@ -113,7 +121,10 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val level = blockEntity.level
         if (level != null) {
             val cached = (blockEntity.renderCache as? CachedLinks)
-                ?.takeIf { it.version == blockEntity.renderCacheVersion }
+                ?.takeIf {
+                    it.version == blockEntity.renderCacheVersion &&
+                        level.gameTime - it.builtAt < CACHE_REFRESH_TICKS + (blockEntity.blockPos.hashCode() and 31)
+                }
                 ?: buildCache(blockEntity, level, state.pipeDirections).also { blockEntity.renderCache = it }
             state.cardLinks = cached.links
             state.drawThroughBeam = cached.drawThroughBeam
@@ -155,7 +166,7 @@ open class NodeRenderer(context: BlockEntityRendererProvider.Context) :
         val touchesNonNode = pipeDirections.any { dir ->
             level.getBlockState(blockEntity.blockPos.relative(dir)).block !is NodeBlock
         }
-        return CachedLinks(blockEntity.renderCacheVersion, links, hasCards || touchesNonNode)
+        return CachedLinks(blockEntity.renderCacheVersion, links, hasCards || touchesNonNode, level.gameTime)
     }
 
     override fun submitConnectable(

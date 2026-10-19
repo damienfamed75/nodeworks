@@ -194,7 +194,7 @@ class ImportChestBlockEntity(
         // The cache lookup here is best-effort, used to fire onInserted hooks for the
         // Inventory Terminal's delta sync. Null when no consumer has opened a cache yet,
         // the helpers tolerate that.
-        val cache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(level, worldPosition)
+        val cache = damien.nodeworks.script.NetworkInventoryCache.existing(level, worldPosition)
 
         val cursor = if (roundRobin) roundRobinCursor else null
         var changed = false

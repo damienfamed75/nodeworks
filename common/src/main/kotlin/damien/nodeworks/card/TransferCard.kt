@@ -102,6 +102,12 @@ class TransferCard(properties: Properties) : NodeCard(properties) {
          *  stopped next run, so a large store is covered over several runs. */
         const val MAX_ITEMS_PER_RUN = 9L * 64L
 
+        const val BUCKET_MB = 1000L
+
+        /** Fluids move alongside items when the faced block has a tank: nine buckets per
+         *  run, the fluid counterpart of nine stacks. */
+        const val MAX_FLUID_PER_RUN = 9L * BUCKET_MB
+
         /** Import feeds the faced inventory into the network's Storage Cards. Export
          *  pulls rule-matched items from them into the faced inventory. */
         enum class Mode { IMPORT, EXPORT }

@@ -35,6 +35,7 @@ class NeoForgeStorageService : StorageService {
         maxCount: Long,
         cursor: ScanCursor?,
         accept: ((ItemStack) -> Boolean)?,
+        onMoved: ((ItemStack, Long) -> Unit)?,
     ): Long {
         val src = (source as NeoForgeItemStorageHandle).handler
         val dst = (dest as NeoForgeItemStorageHandle).handler
@@ -61,9 +62,14 @@ class NeoForgeStorageService : StorageService {
             if (accept != null && !accept(stack)) continue
             if (ItemResource.of(stack) in refused) continue
 
-            val moved = moveFromSlot(src, slot, dest, remaining, refused)
+            val moved = moveFromSlot(src, slot, dest, remaining, refused, onMoved)
             total += moved
             remaining -= moved
+            // The count is met on this slot, which may hold more, so the next call starts here.
+            if (remaining <= 0L) {
+                cursor?.slot = slot
+                return total
+            }
         }
         return total
     }
@@ -143,7 +149,14 @@ class NeoForgeStorageService : StorageService {
      *  it is met, the slot runs dry, dest refuses, or the [MoveDeadline] passes. A type dest
      *  refuses goes in [refused] so the caller skips its other slots. Dest only fills up during
      *  one move, so a refused type can't fit later in it. */
-    private fun moveFromSlot(src: IItemHandler, slot: Int, dest: NeoForgeItemStorageHandle, amount: Long, refused: MutableSet<ItemResource>): Long {
+    private fun moveFromSlot(
+        src: IItemHandler,
+        slot: Int,
+        dest: NeoForgeItemStorageHandle,
+        amount: Long,
+        refused: MutableSet<ItemResource>,
+        onMoved: ((ItemStack, Long) -> Unit)? = null,
+    ): Long {
         var moved = 0L
         var first: ItemStack? = null
         while (moved < amount) {
@@ -161,6 +174,7 @@ class NeoForgeStorageService : StorageService {
             }
             val taken = src.extractItem(slot, inserted, false).count
             moved += inserted
+            onMoved?.invoke(offered, inserted.toLong())
             // A source giving back less than it offered would duplicate, never repeat that.
             if (taken < inserted || inserted < offered.count) break
             // Less than a stack means the slot ran out or the request is met.
@@ -237,22 +251,113 @@ class NeoForgeStorageService : StorageService {
         storage: ItemStorageHandle,
         filter: (ItemStack) -> Boolean,
         maxCount: Long,
+        cursor: ScanCursor?,
     ): List<ItemStack> {
         if (maxCount <= 0L) return emptyList()
         val handler = (storage as NeoForgeItemStorageHandle).handler
         val out = ArrayList<ItemStack>()
         var remaining = maxCount
-        for (slot in 0 until handler.slots) {
-            if (remaining <= 0L) break
+        val slots = handler.slots
+        // Each slot is visited at most once per call, starting where the last call
+        // stopped, and the cursor lands after the last slot that gave something up so
+        // the next call carries on from there instead of rescanning the start.
+        val start = cursor?.slot?.takeIf { it in 0 until slots } ?: 0
+        var lastTaken = -1
+        for (i in 0 until slots) {
+            val slot = (start + i) % slots
+            if (remaining <= 0L) {
+                cursor?.slot = slot
+                return out
+            }
+            if (slot >= handler.slots) continue
             val stack = handler.getStackInSlot(slot)
             if (stack.isEmpty) continue
             // Predicate sees the full slot stack so the caller can match on
             // component-bearing identity (e.g. only Strength Potions, not
             // every variant of `minecraft:potion`).
             if (!filter(stack)) continue
-            remaining -= drainSlot(handler, slot, remaining) { out.add(it) }
+            val got = drainSlot(handler, slot, remaining) { out.add(it) }
+            if (got > 0L) lastTaken = slot
+            remaining -= got
         }
+        if (cursor != null && lastTaken >= 0 && slots > 0) cursor.slot = (lastTaken + 1) % slots
         return out
+    }
+
+    override fun isSameInventory(a: ItemStorageHandle, b: ItemStorageHandle): Boolean {
+        if (a === b) return true
+        val ha = (a as? NeoForgeItemStorageHandle)?.handler ?: return false
+        val hb = (b as? NeoForgeItemStorageHandle)?.handler ?: return false
+        return ha === hb
+    }
+
+    override fun moveItemsRoundRobin(
+        source: ItemStorageHandle,
+        targets: List<RoundRobinTarget>,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+        cursor: ScanCursor?,
+        startIndex: Int,
+        onMoved: ((RoundRobinTarget, ItemStack, Long) -> Unit)?,
+    ): RoundRobinResult {
+        if (targets.isEmpty() || maxCount <= 0L) return RoundRobinResult(0L, startIndex)
+        val src = (source as NeoForgeItemStorageHandle).handler
+        val handles = targets.map { it.storage as NeoForgeItemStorageHandle }
+        val n = targets.size
+        var index = startIndex.mod(n)
+        var remaining = maxCount
+        var moved = 0L
+        val slots = src.slots
+        if (slots <= 0) return RoundRobinResult(0L, index)
+        val start = cursor?.slot?.takeIf { it in 0 until slots } ?: 0
+        val dead = BooleanArray(n)
+        val tally = LongArray(n)
+        for (i in 0 until slots) {
+            val slot = (start + i) % slots
+            if (remaining <= 0L || MoveDeadline.expired()) {
+                cursor?.slot = slot
+                return RoundRobinResult(moved, index)
+            }
+            if (slot >= src.slots) continue
+            val stack = src.getStackInSlot(slot)
+            if (stack.isEmpty || !filter(stack)) continue
+            dead.fill(false)
+            tally.fill(0L)
+            val template = stack.copyWithCount(1)
+            // One unit at a time: placed in its target first, taken from the source after,
+            // so nothing is lifted without a home. A target that refuses this stack, by
+            // rule or by being full, is skipped for the rest of it without using its turn.
+            while (remaining > 0L && !MoveDeadline.expired()) {
+                val offered = src.extractItem(slot, 1, true)
+                if (offered.isEmpty || !ItemStack.isSameItemSameComponents(offered, template)) break
+                var placedIdx = -1
+                for (k in 0 until n) {
+                    val idx = (index + k) % n
+                    if (dead[idx]) continue
+                    val target = targets[idx]
+                    if (target.accept?.invoke(offered) == false) { dead[idx] = true; continue }
+                    if (insertInto(handles[idx], offered, simulate = false) <= 0) { dead[idx] = true; continue }
+                    placedIdx = idx
+                    break
+                }
+                if (placedIdx < 0) break
+                val taken = src.extractItem(slot, 1, false)
+                tally[placedIdx] += 1L
+                moved += 1L
+                remaining -= 1L
+                index = (placedIdx + 1) % n
+                // A source giving back less than it offered would duplicate, never repeat that.
+                if (taken.isEmpty) break
+            }
+            if (onMoved != null) {
+                for (k in 0 until n) if (tally[k] > 0L) onMoved(targets[k], template, tally[k])
+            }
+            if (remaining <= 0L) {
+                cursor?.slot = slot
+                return RoundRobinResult(moved, index)
+            }
+        }
+        return RoundRobinResult(moved, index)
     }
 
     override fun countStacksByPredicate(

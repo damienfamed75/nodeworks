@@ -32,9 +32,18 @@ class NetworkInventoryCache(
      *  Mirroring [init]'s scan here populates the cache before the caller returns. */
     fun rebindEntryPoint(pos: BlockPos) {
         if (networkEntryNode == pos) return
+        // Only an entry that is gone has left this cache polling nothing, so only then is
+        // a synchronous rescan worth its cost. Two live consumers taking turns to reseat
+        // the entry, two terminals or a terminal and a monitor, must not each force one.
+        val old = networkEntryNode
+        val oldGone = level.isLoaded(old) &&
+            damien.nodeworks.network.NodeConnectionHelper.getConnectable(level, old) == null
         networkEntryNode = pos
-        fullScan()
+        if (oldGone) fullScan()
     }
+
+    /** Consecutive orphan checks that found the entry point gone, see [isOrphan]. */
+    private var deadEntryChecks = 0
 
     /** Synchronous scan of every card, then restart the poll cycle. A cycle left
      *  running would keep adding its remaining units into the front buffer this
@@ -199,6 +208,23 @@ class NetworkInventoryCache(
     private fun isDirty(key: BufferKey.Key) = key in dirtyKeys || key in lastDirtyKeys
     private fun isDirtyFluid(key: String) = key in dirtyFluidKeys || key in lastDirtyFluidKeys
 
+    /** True when the network reachable from the entry point no longer carries [key],
+     *  the id this cache is registered under. That happens when a controller-less
+     *  network's anchoring Node is replaced, two networks merge, or a controller is
+     *  added. Unknown while the entry point is unloaded, which counts as not orphaned. */
+    fun isOrphan(key: String): Boolean {
+        if (!level.isLoaded(networkEntryNode)) return false
+        if (damien.nodeworks.network.NodeConnectionHelper.getConnectable(level, networkEntryNode) == null) {
+            // The entry block is gone. A consumer that still reads this cache reseats the
+            // entry within a second, so only a cache nobody reseats for a while is abandoned.
+            return ++deadEntryChecks >= 3
+        }
+        deadEntryChecks = 0
+        val snapshot = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, networkEntryNode)
+        val current = snapshot.networkId?.toString() ?: "${level.dimension().toString()}:${networkEntryNode.asLong()}"
+        return current != key
+    }
+
     companion object {
         // Slices per cycle, controls how many ticks one full poll spans.
         // MIN = active cycle (5 ticks per cycle, scan ~1/5 of cards each tick).
@@ -251,6 +277,29 @@ class NetworkInventoryCache(
 
         fun removeByUUID(uuid: java.util.UUID) {
             caches.remove(uuid.toString())
+        }
+
+        /** The cache a network already has, or null. Never creates one, so a device that
+         *  only wants to keep an open terminal current does not start a poller on a
+         *  network nobody is looking at. */
+        fun existing(level: ServerLevel, networkEntryNode: BlockPos): NetworkInventoryCache? {
+            val id = damien.nodeworks.network.NetworkDiscovery.discoverNetwork(level, networkEntryNode).networkId ?: return null
+            return caches[id.toString()]
+        }
+
+        private const val ORPHAN_CHECK_TICKS = 200L
+
+        /** Drops caches whose network now lives under another id. Nothing else removes
+         *  them and each would poll forever. A consumer still holding one re-resolves
+         *  through [getOrCreate] on its next connection check. One network walk per
+         *  cache every ten seconds, served from the per-tick discovery cache. */
+        fun evictOrphans(gameTime: Long) {
+            if (gameTime % ORPHAN_CHECK_TICKS != 0L) return
+            val it = caches.entries.iterator()
+            while (it.hasNext()) {
+                val entry = it.next()
+                if (entry.value.isOrphan(entry.key)) it.remove()
+            }
         }
 
         fun remove(level: ServerLevel, networkEntryNode: BlockPos) {

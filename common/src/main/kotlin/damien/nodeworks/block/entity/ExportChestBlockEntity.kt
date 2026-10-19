@@ -214,9 +214,15 @@ class ExportChestBlockEntity(
         }
         if (totalSpace <= 0L) return
 
-        val cache = damien.nodeworks.script.NetworkInventoryCache.getOrCreate(level, worldPosition)
+        val cache = damien.nodeworks.script.NetworkInventoryCache.existing(level, worldPosition)
         val placed = damien.nodeworks.script.NetworkTransfer.pull(
-            level, snapshot, cache, filterRules, channel, totalSpace, sink = ::placeIntoBuffer,
+            level, snapshot, cache, filterRules, channel, totalSpace,
+            spill = { stack ->
+                net.minecraft.world.Containers.dropItemStack(
+                    level, worldPosition.x + 0.5, worldPosition.y + 0.5, worldPosition.z + 0.5, stack,
+                )
+            },
+            sink = ::placeIntoBuffer,
         )
         if (placed > 0L) setChanged()
     }

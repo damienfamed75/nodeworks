@@ -489,6 +489,24 @@ class InventoryTerminalMenu(
      *     resolve. This is what lets the menu recover transparently when the antenna's
      *     chunk loads back in or the player walks back into range.
      */
+    /** The registry can replace a cache underneath us when its network's id moves to
+     *  another anchor or a controller, or when an orphan is evicted. Runs once a second
+     *  for every terminal, fixed or handheld, so the view never freezes on a cache
+     *  nobody polls any more. Looks the cache up without reseating its entry point,
+     *  two terminals on one network must not take turns forcing rescans. */
+    private fun refreshCacheBinding() {
+        val lvl = serverLevel ?: return
+        val src = source ?: return
+        val current = cache ?: return
+        val live = NetworkInventoryCache.existing(lvl, src.entryPoint)
+            ?: NetworkInventoryCache.getOrCreate(lvl, src.entryPoint)
+        if (live !== current) {
+            cache = live
+            networkNeedsSync = true
+            fullSyncChunks = null
+        }
+    }
+
     private fun tickRefreshConnection() {
         if (crystalHolderProvider == null) return
         val serverPlayer = playerInventory.player as? ServerPlayer ?: return
@@ -1870,6 +1888,8 @@ class InventoryTerminalMenu(
         val serverPlayer = playerInventory.player as? ServerPlayer ?: return
         tickCounter++
         applyRequestedChannel()
+
+        if (tickCounter % 20 == 0) refreshCacheBinding()
 
         // Handheld recovery: once per second verify the source is still valid and
         // re-attempt resolve if the menu is disconnected. Fixed terminals skip this.

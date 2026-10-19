@@ -115,10 +115,33 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         else base.extractItemStacksMatching(storage, filter, maxCount)
     }
 
-    override fun extractStacksByPredicate(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): List<ItemStack> {
+    override fun extractStacksByPredicate(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long, cursor: ScanCursor?): List<ItemStack> {
         val a = ae2(storage)
-        return if (a != null) Ae2Storage.extractStacksByPredicate(a, filter, maxCount)
-        else base.extractStacksByPredicate(storage, filter, maxCount)
+        return if (a != null) Ae2Storage.extractStacksByPredicate(a, filter, maxCount, cursor)
+        else base.extractStacksByPredicate(storage, filter, maxCount, cursor)
+    }
+
+    override fun moveItemsRoundRobin(
+        source: ItemStorageHandle,
+        targets: List<RoundRobinTarget>,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+        cursor: ScanCursor?,
+        startIndex: Int,
+        onMoved: ((RoundRobinTarget, ItemStack, Long) -> Unit)?,
+    ): RoundRobinResult {
+        // With ME on either end the unit moves go through this service's own
+        // [moveItems], which knows both backends. Pure item handlers walk slots natively.
+        val meInvolved = ae2(source) != null || targets.any { ae2(it.storage) != null }
+        return if (meInvolved) super.moveItemsRoundRobin(source, targets, filter, maxCount, cursor, startIndex, onMoved)
+        else base.moveItemsRoundRobin(source, targets, filter, maxCount, cursor, startIndex, onMoved)
+    }
+
+    override fun isSameInventory(a: ItemStorageHandle, b: ItemStorageHandle): Boolean {
+        val sa = ae2(a)
+        val sb = ae2(b)
+        if (sa != null || sb != null) return sa != null && sb != null && sa.me === sb.me
+        return base.isSameInventory(a, b)
     }
 
     override fun countStacksByPredicate(storage: ItemStorageHandle, filter: (ItemStack) -> Boolean): Long {
@@ -147,7 +170,12 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         ae2(source) != null || ae2(dest) != null
 
     /** Loss-free move on the routed primitives: whatever dest rejects goes back to source. */
-    private fun moveStacks(source: ItemStorageHandle, dest: ItemStorageHandle, taken: List<ItemStack>): Long {
+    private fun moveStacks(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        taken: List<ItemStack>,
+        onMoved: ((ItemStack, Long) -> Unit)? = null,
+    ): Long {
         var moved = 0L
         // First stack not yet handed to dest, everything from here on is still ours.
         var next = 0
@@ -158,6 +186,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
                 val inserted = insertItemStack(dest, stack)
                 next++
                 moved += inserted
+                if (inserted > 0) onMoved?.invoke(stack, inserted.toLong())
                 if (inserted < stack.count) returnToSource(source, dest, stack.copyWithCount(stack.count - inserted))
             }
         } catch (e: Throwable) {
@@ -178,13 +207,19 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
      *  source (an ME network) holds little in flight and can stop at a deadline between
      *  rounds. Stops when the request is met, the source runs dry, dest starts rejecting,
      *  or the [MoveDeadline] passes. */
-    private fun moveInRounds(source: ItemStorageHandle, dest: ItemStorageHandle, maxCount: Long, extract: (Long) -> List<ItemStack>): Long {
+    private fun moveInRounds(
+        source: ItemStorageHandle,
+        dest: ItemStorageHandle,
+        maxCount: Long,
+        onMoved: ((ItemStack, Long) -> Unit)? = null,
+        extract: (Long) -> List<ItemStack>,
+    ): Long {
         var remaining = maxCount
         var moved = 0L
         while (remaining > 0L && !MoveDeadline.expired()) {
             val taken = extract(minOf(remaining, ROUND_ITEMS))
             if (taken.isEmpty()) break
-            val movedNow = moveStacks(source, dest, taken)
+            val movedNow = moveStacks(source, dest, taken, onMoved)
             moved += movedNow
             remaining -= movedNow
             if (movedNow < taken.sumOf { it.count.toLong() }) break
@@ -202,6 +237,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         filter: (ItemStack) -> Boolean,
         maxCount: Long,
         cursor: ScanCursor? = null,
+        onMoved: ((ItemStack, Long) -> Unit)? = null,
     ): Long {
         var remaining = maxCount
         var moved = 0L
@@ -210,7 +246,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
             if (want <= 0L) return@step remaining > 0L
             val fits = base.simulateInsertStacks(dest, listOf(template.copyWithCount(want.toInt()))) ?: want
             if (fits > 0L) {
-                val movedNow = moveStacks(s, dest, Ae2Storage.extractOf(s, template, fits))
+                val movedNow = moveStacks(s, dest, Ae2Storage.extractOf(s, template, fits), onMoved)
                 moved += movedNow
                 remaining -= movedNow
             }
@@ -244,17 +280,18 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         maxCount: Long,
         cursor: ScanCursor?,
         accept: ((ItemStack) -> Boolean)?,
+        onMoved: ((ItemStack, Long) -> Unit)?,
     ): Long {
-        if (!crossesBackend(source, dest)) return base.moveItems(source, dest, filter, maxCount, cursor, accept)
+        if (!crossesBackend(source, dest)) return base.moveItems(source, dest, filter, maxCount, cursor, accept, onMoved)
         if (maxCount <= 0L) return 0L
         val pred: (ItemStack) -> Boolean = { filter(idOf(it)) && (accept == null || accept(it)) }
         val s = ae2(source)
         val d = ae2(dest)
-        if (s != null && d != null) return Ae2Storage.moveKeys(s, d, pred, maxCount)
-        if (s != null) return moveFromMe(s, dest, pred, maxCount, cursor)
+        if (s != null && d != null) return Ae2Storage.moveKeys(s, d, pred, maxCount, onMoved)
+        if (s != null) return moveFromMe(s, dest, pred, maxCount, cursor, onMoved)
         val handler = (source as? NeoForgeItemStorageHandle)?.handler
-        if (cursor != null && d != null && handler != null) return moveSlotsToMe(source, handler, d, pred, maxCount, cursor)
-        return moveInRounds(source, dest, maxCount) { extractStacksByPredicate(source, pred, it) }
+        if (cursor != null && d != null && handler != null) return moveSlotsToMe(source, handler, d, pred, maxCount, cursor, onMoved)
+        return moveInRounds(source, dest, maxCount, onMoved) { extractStacksByPredicate(source, pred, it) }
     }
 
     /** Slotted source into ME, scanned from [cursor] and wrapping, so a source bigger than one
@@ -269,6 +306,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
         filter: (ItemStack) -> Boolean,
         maxCount: Long,
         cursor: ScanCursor,
+        onMoved: ((ItemStack, Long) -> Unit)? = null,
     ): Long {
         val slots = handler.slots
         if (slots <= 0) return 0L
@@ -296,7 +334,7 @@ class CompositeStorageService(private val base: NeoForgeStorageService) : Storag
             }
             val taken = base.extractFromSlot(source, slot, fits)
             if (taken.isEmpty()) continue
-            val movedNow = moveStacks(source, d, taken)
+            val movedNow = moveStacks(source, d, taken, onMoved)
             moved += movedNow
             remaining -= movedNow
             // ME took less than it said it would, it is full for this type now.

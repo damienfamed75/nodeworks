@@ -259,15 +259,33 @@ object Ae2Storage {
         return out
     }
 
-    fun extractStacksByPredicate(h: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): List<ItemStack> {
+    fun extractStacksByPredicate(
+        h: Ae2ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+        cursor: damien.nodeworks.platform.ScanCursor? = null,
+    ): List<ItemStack> {
         val out = ArrayList<ItemStack>()
         var remaining = maxCount
-        forEachItem(h, { true }) { key, available ->
-            if (remaining <= 0L || out.size >= MAX_STACKS_PER_EXTRACT) return out
-            if (filter(key.readOnlyStack)) {
-                remaining -= extractStacks(h.me, key, minOf(remaining, available), MAX_STACKS_PER_EXTRACT - out.size, out)
+        if (cursor == null) {
+            forEachItem(h, { true }) { key, available ->
+                if (remaining <= 0L || out.size >= MAX_STACKS_PER_EXTRACT) return out
+                if (filter(key.readOnlyStack)) {
+                    remaining -= extractStacks(h.me, key, minOf(remaining, available), MAX_STACKS_PER_EXTRACT - out.size, out)
+                }
             }
+            return out
         }
+        // Resumes from the type the last call stopped on, as [CompositeStorageService]'s
+        // ME source move does, so every type gets its turn across calls.
+        val step: (ItemStack, Long) -> Boolean = step@{ template, available ->
+            if (remaining <= 0L || out.size >= MAX_STACKS_PER_EXTRACT) return@step false
+            val key = AEItemKey.of(template) ?: return@step true
+            remaining -= extractStacks(h.me, key, minOf(remaining, available), MAX_STACKS_PER_EXTRACT - out.size, out)
+            remaining > 0L && out.size < MAX_STACKS_PER_EXTRACT
+        }
+        cursor.key = forEachStackFrom(h, filter, cursor.key, cursor.keyDone, step)
+        cursor.keyDone = remaining > 0L
         return out
     }
 
@@ -400,7 +418,13 @@ object Ae2Storage {
 
     /** ME to ME move at the key level: no stacks exist at any point, so moving a
      *  billion items costs O(distinct types). Whatever dest rejects goes back. */
-    fun moveKeys(src: Ae2ItemStorageHandle, dst: Ae2ItemStorageHandle, filter: (ItemStack) -> Boolean, maxCount: Long): Long {
+    fun moveKeys(
+        src: Ae2ItemStorageHandle,
+        dst: Ae2ItemStorageHandle,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+        onMoved: ((ItemStack, Long) -> Unit)? = null,
+    ): Long {
         var remaining = maxCount
         var moved = 0L
         forEachItem(src, { true }) { key, available ->
@@ -418,6 +442,7 @@ object Ae2Storage {
             noteChange(dst.me, key, put)
             if (put > 0L) damien.nodeworks.platform.MoveDeadline.progressed()
             if (put < got) giveBack(src, key, got - put)
+            if (put > 0L) onMoved?.invoke(key.toStack(1), put)
             moved += put
             remaining -= put
         }

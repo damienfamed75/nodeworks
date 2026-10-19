@@ -146,6 +146,9 @@ interface StorageService {
         /** Extra per-stack check on top of [filter], for a destination with its own rules
          *  such as a Storage Card. Sees the real stack, components included. */
         accept: ((ItemStack) -> Boolean)? = null,
+        /** Told each stack that landed and how much of it, so a caller can keep an
+         *  inventory cache current without rescanning anything. */
+        onMoved: ((ItemStack, Long) -> Unit)? = null,
     ): Long
 
     /** Move items with data-aware filter. Filter receives (itemId, hasData). */
@@ -254,6 +257,9 @@ interface StorageService {
         storage: ItemStorageHandle,
         filter: (ItemStack) -> Boolean,
         maxCount: Long,
+        /** With a cursor the scan starts where the last call stopped and wraps, see
+         *  [moveItems]. Loaders honour it, this default does not. */
+        cursor: ScanCursor? = null,
     ): List<ItemStack> {
         // Default: extract everything matching by itemId-of-anything-stored, then
         // filter the returned stacks and re-insert the rejects. Loaders can do
@@ -283,6 +289,56 @@ interface StorageService {
 
     /** Insert an ItemStack into storage. Returns count actually inserted. */
     fun insertItemStack(storage: ItemStorageHandle, stack: net.minecraft.world.item.ItemStack): Int
+
+    /** True when [a] and [b] are one storage behind two handles: the same handler, or the
+     *  same ME grid. A move between them would only shuffle items. Blocks that present one
+     *  inventory through several positions, like a double chest, are the caller's to
+     *  exclude by position, this never scans contents. */
+    fun isSameInventory(a: ItemStorageHandle, b: ItemStorageHandle): Boolean = a === b
+
+    /**
+     * One item at a time to the next target that takes it, the Import Chest's round
+     * robin, and never lifting an item that has no home: each unit is placed in its
+     * target before it leaves the source. [filter] picks source stacks, a target's
+     * [RoundRobinTarget.accept] can refuse a stack without using up its turn, and a
+     * target that refuses or is full is skipped for the rest of that stack. Resumable
+     * through [cursor] like [moveItems]. Returns what moved and the index the next call
+     * starts at, so turns carry across calls. This default drives [moveItems] one unit
+     * at a time, which is correct everywhere but rescans the source per unit, so loaders
+     * walk slots directly where they can.
+     */
+    fun moveItemsRoundRobin(
+        source: ItemStorageHandle,
+        targets: List<RoundRobinTarget>,
+        filter: (ItemStack) -> Boolean,
+        maxCount: Long,
+        cursor: ScanCursor?,
+        startIndex: Int,
+        onMoved: ((RoundRobinTarget, ItemStack, Long) -> Unit)? = null,
+    ): RoundRobinResult {
+        if (targets.isEmpty() || maxCount <= 0L) return RoundRobinResult(0L, startIndex)
+        var index = startIndex.mod(targets.size)
+        var moved = 0L
+        while (moved < maxCount && !MoveDeadline.expired()) {
+            var placed = false
+            for (k in targets.indices) {
+                val idx = (index + k) % targets.size
+                val target = targets[idx]
+                val got = moveItems(
+                    source, target.storage, { true }, 1L, cursor,
+                    { stack -> filter(stack) && (target.accept?.invoke(stack) ?: true) },
+                ) { stack, n -> onMoved?.invoke(target, stack, n) }
+                if (got > 0L) {
+                    moved += got
+                    index = (idx + 1) % targets.size
+                    placed = true
+                    break
+                }
+            }
+            if (!placed) break
+        }
+        return RoundRobinResult(moved, index)
+    }
 
     /**
      * Insert exactly [count] items of [item] into [dest] atomically.
@@ -403,6 +459,17 @@ data class ItemInfo(
 ) {
     val stackable: Boolean get() = maxStackSize > 1
 }
+
+/** One destination of [StorageService.moveItemsRoundRobin]. [tag] rides along to the
+ *  move callback so the caller can tell which destination took what. */
+class RoundRobinTarget(
+    val storage: ItemStorageHandle,
+    val accept: ((ItemStack) -> Boolean)?,
+    val tag: Any? = null,
+)
+
+/** Result of [StorageService.moveItemsRoundRobin]. */
+data class RoundRobinResult(val moved: Long, val nextIndex: Int)
 
 /** Where a resumable [StorageService.moveItems] scan picks up next. Only a hint, a slot
  *  past the end of the source starts again at the first slot. */

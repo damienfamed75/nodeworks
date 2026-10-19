@@ -55,6 +55,9 @@ object NetworkTransfer {
         channel: ChannelFilter,
         cursor: RoundRobinCursor? = null,
         exclude: Set<BlockPos> = emptySet(),
+        /** The cards to rotate over, when the caller has already narrowed them. Null
+         *  means every card on [channel] outside [exclude]. */
+        cards: List<CardSnapshot>? = null,
     ): Int {
         if (stack.isEmpty) return 0
         if (cursor == null) {
@@ -62,7 +65,7 @@ object NetworkTransfer {
             if (moved > 0) stack.shrink(moved)
             return moved
         }
-        val cards = destinationCards(snapshot, channel, exclude)
+        val cards = cards ?: destinationCards(snapshot, channel, exclude)
         if (cards.isEmpty()) return 0
         val registries = level.registryAccess()
         var total = 0
@@ -103,7 +106,9 @@ object NetworkTransfer {
      * it kept, anything it could not take goes straight back to network storage.
      * Returns the total the sink kept. Rules use the Storage Card syntax and match
      * the full stack, so `id[components]` narrows to that variant. An empty rule
-     * list pulls nothing, the caller decides whether that means idle.
+     * list pulls nothing, the caller decides whether that means idle. Anything that
+     * fits neither the sink, the card it came from, nor the rest of the network is
+     * handed to [spill], so nothing is ever lost.
      */
     fun pull(
         level: ServerLevel,
@@ -113,6 +118,7 @@ object NetworkTransfer {
         channel: ChannelFilter,
         maxItems: Long,
         exclude: Set<BlockPos> = emptySet(),
+        spill: (ItemStack) -> Unit,
         sink: (ItemStack) -> Int,
     ): Long {
         if (rules.isEmpty() || maxItems <= 0L) return 0L
@@ -126,19 +132,37 @@ object NetworkTransfer {
             val extracted = PlatformServices.storage.extractStacksByPredicate(storage, matches, remaining)
             for (stack in extracted) {
                 if (stack.isEmpty) continue
+                val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
+                val patch = stack.componentsPatch
+                val hasData = !patch.isEmpty
+                // The whole stack has left the card, so the cache hears the whole stack
+                // leave, and then hears each part that comes back. Reporting only what the
+                // sink kept, and then letting the network insert report its share as new,
+                // over-counted the spill until the next poll.
+                if (itemId != null && cache != null) {
+                    cache.onExtracted(itemId, hasData, stack.count.toLong(), patch)
+                    cache.onChannelDelta(card.channel, itemId, patch, -stack.count.toLong())
+                }
                 val placed = sink(stack)
                 if (placed > 0) {
-                    val itemId = BuiltInRegistries.ITEM.getKey(stack.item)?.toString()
-                    if (itemId != null) {
-                        cache?.onExtracted(itemId, !stack.componentsPatch.isEmpty, placed.toLong(), stack.componentsPatch)
-                    }
                     remaining -= placed
                     total += placed
                 }
                 if (placed < stack.count) {
-                    // The sink filled mid-stack, the rest goes back where it came from.
-                    val leftover = stack.copyWithCount(stack.count - placed)
-                    NetworkStorageHelper.insertItemStack(level, snapshot, leftover, cache)
+                    // The sink filled mid-stack. Back into the card it came from first,
+                    // then anywhere on the network, and the caller gets the rest.
+                    var leftover = stack.copyWithCount(stack.count - placed)
+                    val home = PlatformServices.storage.insertItemStack(storage, leftover.copy())
+                    if (home > 0 && itemId != null && cache != null) {
+                        cache.onInserted(itemId, hasData, home.toLong(), patch)
+                        cache.onChannelDelta(card.channel, itemId, patch, home.toLong())
+                    }
+                    if (home < leftover.count) {
+                        leftover = leftover.copyWithCount(leftover.count - home)
+                        // Reports its own insert to the cache.
+                        val elsewhere = NetworkStorageHelper.insertItemStack(level, snapshot, leftover, cache)
+                        if (elsewhere < leftover.count) spill(leftover.copyWithCount(leftover.count - elsewhere))
+                    }
                 }
             }
         }
